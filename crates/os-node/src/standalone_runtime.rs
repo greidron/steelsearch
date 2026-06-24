@@ -8867,6 +8867,9 @@ impl SteelNode {
                 }
             }
         };
+        if let Some(response) = apply_url_query_string_search_params(&mut body, &request.query_params) {
+            return response;
+        }
         let search_pipeline_config = match request.query_params.get("search_pipeline") {
             Some(pipeline_id) => match self.resolve_search_pipeline_execution_config(pipeline_id) {
                 Ok(config) => config,
@@ -19038,6 +19041,54 @@ fn apply_search_source_query_params(
             object.insert("terminate_after".to_string(), Value::from(terminate_after));
         }
     }
+    None
+}
+
+fn apply_url_query_string_search_params(
+    body: &mut Value,
+    query_params: &BTreeMap<String, String>,
+) -> Option<RestResponse> {
+    let Some(raw_query) = query_params.get("q") else {
+        return None;
+    };
+    let Some(object) = body.as_object_mut() else {
+        return Some(build_unsupported_search_response(
+            "unsupported search request body",
+        ));
+    };
+    for field in ["analyze_wildcard", "lenient"] {
+        if let Some(response) = validate_opensearch_boolean_query_param(query_params.get(field)) {
+            return Some(response);
+        }
+    }
+    for field in ["analyzer", "analyze_wildcard", "lenient"] {
+        if query_params.contains_key(field) {
+            return Some(build_unsupported_search_response(&format!(
+                "unsupported search option [{field}]"
+            )));
+        }
+    }
+    let mut query_string = serde_json::Map::new();
+    query_string.insert("query".to_string(), Value::String(raw_query.clone()));
+    if let Some(default_field) = query_params.get("df") {
+        query_string.insert(
+            "fields".to_string(),
+            Value::Array(vec![Value::String(default_field.clone())]),
+        );
+    }
+    if let Some(default_operator) = query_params.get("default_operator") {
+        let normalized = default_operator.to_ascii_lowercase();
+        if normalized != "and" && normalized != "or" {
+            return Some(build_unsupported_search_response(
+                "unsupported query_string default operator",
+            ));
+        }
+        query_string.insert("default_operator".to_string(), Value::String(normalized));
+    }
+    object.insert(
+        "query".to_string(),
+        serde_json::json!({ "query_string": Value::Object(query_string) }),
+    );
     None
 }
 
@@ -39320,6 +39371,65 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             sorted_window.body["hits"]["hits"][0]["sort"],
             serde_json::json!(["tenant-b"])
+        );
+
+        let query_string_query_param_overrides_body = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/logs-search-params-a/_search?q=beta&df=message&default_operator=AND",
+            )
+            .with_json_body(serde_json::json!({
+                "query": { "match_all": {} },
+                "sort": [{ "rank": "asc" }]
+            })),
+        );
+        assert_eq!(query_string_query_param_overrides_body.status, 200);
+        assert_eq!(
+            query_string_query_param_overrides_body.body["hits"]["total"]["value"],
+            1
+        );
+        assert_eq!(
+            query_string_query_param_overrides_body.body["hits"]["hits"][0]["_id"],
+            "doc-2"
+        );
+
+        let invalid_query_string_default_operator = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/logs-search-params-a/_search?q=beta&default_operator=maybe",
+            )
+            .with_json_body(serde_json::json!({})),
+        );
+        assert_eq!(invalid_query_string_default_operator.status, 400);
+        assert_eq!(
+            invalid_query_string_default_operator.body["error"]["reason"],
+            "unsupported query_string default operator"
+        );
+
+        let unsupported_query_string_analyzer = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/logs-search-params-a/_search?q=beta&analyzer=standard",
+            )
+            .with_json_body(serde_json::json!({})),
+        );
+        assert_eq!(unsupported_query_string_analyzer.status, 400);
+        assert_eq!(
+            unsupported_query_string_analyzer.body["error"]["reason"],
+            "unsupported search option [analyzer]"
+        );
+
+        let invalid_query_string_lenient = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/logs-search-params-a/_search?q=beta&lenient=maybe",
+            )
+            .with_json_body(serde_json::json!({})),
+        );
+        assert_eq!(invalid_query_string_lenient.status, 400);
+        assert_eq!(
+            invalid_query_string_lenient.body["error"]["reason"],
+            "Failed to parse value [maybe] as only [true] or [false] are allowed."
         );
 
         let version_and_seq_query_params = node.handle_rest_request(
