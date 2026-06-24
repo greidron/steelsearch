@@ -3584,6 +3584,31 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "hit_metadata_query_params_enable_body_false_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search?version=true&seq_no_primary_term=true",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "version": false,
+        "seq_no_primary_term": false,
+        "sort": [
+          {
+            "ts": {
+              "order": "asc"
+            }
+          }
+        ],
+        "size": 2
+      },
+      "extract": "search_hit_metadata",
+      "family": "fetch",
+      "description": "[fetch] query params enable body-disabled hit metadata projection search",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "wildcard_match_search",
       "area": "search",
       "method": "POST",

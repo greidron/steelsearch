@@ -110,6 +110,7 @@ def main() -> int:
             "hit_metadata_projection_search",
             "hit_metadata_projection_body_search",
             "hit_metadata_query_params_override_body_search",
+            "hit_metadata_query_params_enable_body_false_search",
             "completion_suggest_search",
             "phrase_suggest_search",
             "term_suggest_search",
