@@ -12,7 +12,7 @@ const ITERATIONS: usize = 400_000;
 fn main() {
     let request = OpenSearchRecoveryRequestWire::default();
 
-    let request_encode = measure("recovery_reject_request_encode", ITERATIONS, || {
+    let request_encode = measure("recovery_request_encode", ITERATIONS, || {
         let frame = build_opensearch_recovery_request_message(
             29,
             OPENSEARCH_3_7_0_TRANSPORT,
@@ -26,7 +26,7 @@ fn main() {
         build_opensearch_recovery_request_message(29, OPENSEARCH_3_7_0_TRANSPORT, &request)
             .expect("recovery request encode should succeed");
 
-    let request_decode = measure("recovery_reject_request_decode", ITERATIONS, || {
+    let request_decode = measure("recovery_request_decode", ITERATIONS, || {
         let mut frame = black_box(request_frame.clone());
         let message = decode_message(&mut frame);
         let decoded = read_opensearch_recovery_request_message(black_box(&message))
@@ -34,22 +34,22 @@ fn main() {
         black_box(decoded);
     });
 
-    let reject_validate = measure("recovery_reject_validation", ITERATIONS, || {
+    let supported_validate = measure("recovery_supported_validation", ITERATIONS, || {
         let mut frame = black_box(request_frame.clone());
         let message = decode_message(&mut frame);
         let decoded = read_opensearch_recovery_request_message(black_box(&message))
             .expect("recovery request decode");
-        let err = decoded
-            .reject_unsupported_execution()
-            .expect_err("recovery execution should reject");
-        black_box(err);
+        decoded
+            .validate_supported_subset()
+            .expect("recovery default subset should validate");
+        black_box(decoded);
     });
 
     let combined_ops_per_second = request_encode
         .ops_per_second
         .min(request_decode.ops_per_second)
-        .min(reject_validate.ops_per_second);
-    println!("recovery_reject_wire_bottleneck_ops_per_second={combined_ops_per_second:.2}");
+        .min(supported_validate.ops_per_second);
+    println!("recovery_wire_bottleneck_ops_per_second={combined_ops_per_second:.2}");
 }
 
 #[derive(Clone, Copy)]

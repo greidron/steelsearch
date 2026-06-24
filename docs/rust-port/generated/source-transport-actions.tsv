@@ -93,7 +93,7 @@ partial	SearchScrollAction.INSTANCE	TransportSearchScrollAction.class	/home/ubun
 partial	MultiSearchAction.INSTANCE	TransportMultiSearchAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	760
 partial	ExplainAction.INSTANCE	TransportExplainAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	761
 partial	ClearScrollAction.INSTANCE	TransportClearScrollAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	762
-partial	RecoveryAction.INSTANCE	TransportRecoveryAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	763
+implemented	RecoveryAction.INSTANCE	TransportRecoveryAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	763
 partial	SegmentReplicationStatsAction.INSTANCE	TransportSegmentReplicationStatsAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	764
 partial	NodesReloadSecureSettingsAction.INSTANCE	TransportNodesReloadSecureSettingsAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	765
 partial	AutoCreateAction.INSTANCE	AutoCreateAction.TransportAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	766

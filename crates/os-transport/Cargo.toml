@@ -466,8 +466,8 @@ name = "cluster-search-shards-reject-wire-benchmark"
 path = "benchmarks/cluster_search_shards_reject_wire.rs"
 
 [[bin]]
-name = "recovery-reject-wire-benchmark"
-path = "benchmarks/recovery_reject_wire.rs"
+name = "recovery-wire-benchmark"
+path = "benchmarks/recovery_wire.rs"
 
 [[bin]]
 name = "indices-segments-reject-wire-benchmark"

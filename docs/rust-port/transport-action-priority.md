@@ -177,8 +177,8 @@ The source-derived transport inventory currently has 160 rows:
 
 | Status | Count | Meaning |
 | --- | ---: | --- |
-| `implemented` | 15 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
-| `partial` | 145 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
+| `implemented` | 16 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
+| `partial` | 144 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
 | `planned` | 0 | No source-derived transport action remains unclassified. |
 
 The k-NN plugin action sweep is complete at the boundary layer. All 12
@@ -279,7 +279,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `indices:monitor/settings/get` (rejected fail-closed)
 - `indices:admin/shards/search_shards` (rejected fail-closed)
 - `indices:data/read/field_caps` (rejected fail-closed)
-- `indices:monitor/recovery` (rejected fail-closed)
+- `indices:monitor/recovery` (implemented local empty-recovery subset)
 - `indices:monitor/segment_replication` (rejected fail-closed)
 - `indices:monitor/segments` (rejected fail-closed)
 - `indices:monitor/point_in_time/segments` (rejected fail-closed)
@@ -1796,10 +1796,12 @@ The recovery boundary covers:
 - OpenSearch `RecoveryRequest` parent task, indices array,
   `IndicesOptions.STRICT_EXPAND_OPEN_CLOSED`, `detailed`, and `activeOnly` at
   the wire decode/build layer;
-- explicit fail-closed classification for `indices:monitor/recovery` until
-  shard recovery metadata response rendering is implemented;
+- implemented local-node `indices:monitor/recovery` request admission for the
+  default all-index, non-detailed, non-active-only subset, backed by the daemon
+  transport response path that renders an empty Java-compatible recovery node
+  response with local node identity;
 - explicit rejection for index filters, custom indices options, detailed
-  recovery output, active-only filtering, and recovery execution.
+  recovery output, and active-only filtering.
 
 The segment-replication-stats boundary covers:
 
@@ -4420,22 +4422,22 @@ options, and slice-present flag before rejecting at admission. At roughly 1.52M
 ops/s in the latest local release run, it remains in the lightweight admin
 transport range.
 
-Current recovery reject wire microbenchmark:
+Current recovery supported-subset wire microbenchmark:
 
 ```text
-cargo run -p os-transport --release --bin recovery-reject-wire-benchmark
-recovery_reject_request_encode iterations=400000 elapsed_ms=220.369 ops_per_second=1815138.66 nanos_per_op=550.92
-recovery_reject_request_decode iterations=400000 elapsed_ms=225.133 ops_per_second=1776727.50 nanos_per_op=562.83
-recovery_reject_validation iterations=400000 elapsed_ms=227.547 ops_per_second=1757875.29 nanos_per_op=568.87
-recovery_reject_wire_bottleneck_ops_per_second=1757875.29
+cargo run -p os-transport --release --bin recovery-wire-benchmark
+recovery_request_encode ops_per_second=1593087.41 nanos_per_op=627.71
+recovery_request_decode ops_per_second=1595473.35 nanos_per_op=626.77
+recovery_supported_validation ops_per_second=1108841.63 nanos_per_op=901.84
+recovery_wire_bottleneck_ops_per_second=1108841.63
 ```
 
-The current recovery fail-closed boundary bottleneck is validation. This path
-carries the BroadcastRequest parent task, empty index array, strict open/closed
-index options, detailed flag, and active-only flag before rejecting at
-admission. At roughly 1.76M ops/s in the latest local release run, the boundary
-is lighter than the cluster-search-shards reject path and does not expose a
-material wire-codec bottleneck.
+The current recovery supported-subset boundary carries the BroadcastRequest
+parent task, empty index array, strict open/closed index options, detailed flag,
+and active-only flag. The first performance-sensitive work beyond this boundary
+is populating non-empty shard recovery metadata and rendering detailed recovery
+responses. At roughly 1.11M ops/s in the latest local run, this path does not
+introduce a new transport admission hotspot.
 
 Current segment-replication-stats reject wire microbenchmark:
 

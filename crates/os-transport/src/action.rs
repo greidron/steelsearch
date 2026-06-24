@@ -2214,8 +2214,8 @@ pub fn classify_opensearch_transport_action(
         },
         OPENSEARCH_RECOVERY_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
-            disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "recovery transport execution requires shard recovery metadata response rendering",
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "recovery transport adapter is available for the local empty-recovery subset",
         },
         OPENSEARCH_SEGMENT_REPLICATION_STATS_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -21091,11 +21091,11 @@ impl OpenSearchRecoveryRequestWire {
         Ok(request)
     }
 
-    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+    pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
         if !self.indices.is_empty() {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "recovery index filter",
-                reason: "index-scoped recovery reads require shard recovery metadata rendering",
+                reason: "index-scoped recovery reads are outside the local empty-recovery subset",
             });
         }
         if self.indices_options
@@ -21103,25 +21103,30 @@ impl OpenSearchRecoveryRequestWire {
         {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "recovery indices options",
-                reason: "custom recovery indices options require index resolution semantics",
+                reason: "custom recovery indices options are outside the local empty-recovery subset",
             });
         }
         if self.detailed {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "recovery detailed",
-                reason: "detailed recovery output requires file-level recovery metadata rendering",
+                reason: "detailed recovery output is outside the local empty-recovery subset",
             });
         }
         if self.active_only {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "recovery active only",
-                reason: "active-only recovery filtering requires shard recovery stage mapping",
+                reason: "active-only recovery filtering is outside the local empty-recovery subset",
             });
         }
+        Ok(())
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        self.validate_supported_subset()?;
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "recovery execution",
             reason:
-                "recovery transport execution requires shard recovery metadata response rendering",
+                "use validate_supported_subset for the implemented local empty-recovery adapter",
         })
     }
 }
@@ -32959,7 +32964,7 @@ mod tests {
         );
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_RECOVERY_ACTION_NAME).disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_SEGMENT_REPLICATION_STATS_ACTION_NAME)
@@ -33104,6 +33109,7 @@ mod tests {
                 || spec.action_name == OPENSEARCH_DELETE_ACTION_NAME
                 || spec.action_name == OPENSEARCH_REFRESH_ACTION_NAME
                 || spec.action_name == OPENSEARCH_INDICES_STATS_ACTION_NAME
+                || spec.action_name == OPENSEARCH_RECOVERY_ACTION_NAME
             {
                 assert_eq!(
                     decision.disposition,
@@ -33164,7 +33170,6 @@ mod tests {
                 || spec.action_name == OPENSEARCH_GET_SETTINGS_ACTION_NAME
                 || spec.action_name == OPENSEARCH_CLUSTER_SEARCH_SHARDS_ACTION_NAME
                 || spec.action_name == OPENSEARCH_FIELD_CAPABILITIES_ACTION_NAME
-                || spec.action_name == OPENSEARCH_RECOVERY_ACTION_NAME
                 || spec.action_name == OPENSEARCH_SEGMENT_REPLICATION_STATS_ACTION_NAME
                 || spec.action_name == OPENSEARCH_INDICES_SEGMENTS_ACTION_NAME
                 || spec.action_name == OPENSEARCH_PIT_SEGMENTS_ACTION_NAME
@@ -50078,20 +50083,14 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_recovery_request_wire_round_trips_and_rejects_execution_boundary() {
+    fn opensearch_recovery_request_wire_round_trips_supported_local_subset() {
         let request = OpenSearchRecoveryRequestWire::default();
         let mut output = StreamOutput::new();
         request.write(&mut output);
 
         let decoded = OpenSearchRecoveryRequestWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, request);
-        assert!(matches!(
-            decoded.reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "recovery execution",
-                ..
-            })
-        ));
+        decoded.validate_supported_subset().unwrap();
     }
 
     #[test]
@@ -50101,7 +50100,7 @@ mod tests {
             ..OpenSearchRecoveryRequestWire::default()
         };
         assert!(matches!(
-            index_filter.reject_unsupported_execution(),
+            index_filter.validate_supported_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "recovery index filter",
                 ..
@@ -50116,7 +50115,7 @@ mod tests {
             ..OpenSearchRecoveryRequestWire::default()
         };
         assert!(matches!(
-            custom_options.reject_unsupported_execution(),
+            custom_options.validate_supported_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "recovery indices options",
                 ..
@@ -50128,7 +50127,7 @@ mod tests {
             ..OpenSearchRecoveryRequestWire::default()
         };
         assert!(matches!(
-            detailed.reject_unsupported_execution(),
+            detailed.validate_supported_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "recovery detailed",
                 ..
@@ -50140,7 +50139,7 @@ mod tests {
             ..OpenSearchRecoveryRequestWire::default()
         };
         assert!(matches!(
-            active_only.reject_unsupported_execution(),
+            active_only.validate_supported_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "recovery active only",
                 ..
@@ -50149,7 +50148,7 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_recovery_transport_messages_bind_rejected_action_frame() {
+    fn opensearch_recovery_transport_messages_bind_supported_action_frame() {
         let request = OpenSearchRecoveryRequestWire::default();
         let mut frame =
             build_opensearch_recovery_request_message(40, OPENSEARCH_3_7_0_TRANSPORT, &request)
@@ -50161,15 +50160,10 @@ mod tests {
             read_opensearch_recovery_request_message(&message).unwrap(),
             request
         );
-        assert!(matches!(
-            read_opensearch_recovery_request_message(&message)
-                .unwrap()
-                .reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "recovery execution",
-                ..
-            })
-        ));
+        read_opensearch_recovery_request_message(&message)
+            .unwrap()
+            .validate_supported_subset()
+            .unwrap();
     }
 
     #[test]
