@@ -7882,6 +7882,8 @@ impl SteelNode {
             ("requestCache", "request_cache"),
             ("allow_partial_search_results", "allow_partial_search_results"),
             ("phase_took", "phase_took"),
+            ("cancel_after_time_interval", "cancel_after_time_interval"),
+            ("cancelAfterTimeInterval", "cancel_after_time_interval"),
             ("ignore_unavailable", "ignore_unavailable"),
             ("ignoreUnavailable", "ignore_unavailable"),
             ("allow_no_indices", "allow_no_indices"),
@@ -8944,6 +8946,16 @@ impl SteelNode {
             validate_opensearch_boolean_query_param(request.query_params.get("request_cache"))
         {
             return response;
+        }
+        if let Some(cancel_after_time_interval) =
+            request.query_params.get("cancel_after_time_interval")
+        {
+            if parse_time_value_millis(cancel_after_time_interval).is_none() {
+                return search_time_query_param_parse_error(
+                    "cancel_after_time_interval",
+                    cancel_after_time_interval,
+                );
+            }
         }
         for field in [
             "phase_took",
@@ -18538,12 +18550,16 @@ fn search_timeout_parse_error(timeout: &Value) -> RestResponse {
         .as_str()
         .map(ToOwned::to_owned)
         .unwrap_or_else(|| timeout.to_string());
+    search_time_query_param_parse_error("timeout", &rendered)
+}
+
+fn search_time_query_param_parse_error(param: &str, value: &str) -> RestResponse {
     RestResponse::json(
         400,
         serde_json::json!({
             "error": {
                 "type": "illegal_argument_exception",
-                "reason": format!("failed to parse setting [timeout] with value [{rendered}] as a time value")
+                "reason": format!("failed to parse setting [{param}] with value [{value}] as a time value")
             },
             "status": 400
         }),
@@ -40345,6 +40361,40 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             invalid_allow_partial_metadata.body["responses"][0]["error"]["reason"],
             "Failed to parse value [maybe] as only [true] or [false] are allowed."
         );
+
+        let cancel_after_metadata = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_msearch")
+                .with_header("content-type", "application/x-ndjson")
+                .with_body(
+                    b"{\"cancel_after_time_interval\":\"1s\"}\n{\"query\":{\"match_all\":{}}}\n".to_vec(),
+                ),
+        );
+        assert_eq!(cancel_after_metadata.status, 200);
+        assert_eq!(cancel_after_metadata.body["responses"][0]["status"], 200);
+
+        let cancel_after_alias_metadata = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_msearch")
+                .with_header("content-type", "application/x-ndjson")
+                .with_body(
+                    b"{\"cancelAfterTimeInterval\":\"2s\"}\n{\"query\":{\"match_all\":{}}}\n".to_vec(),
+                ),
+        );
+        assert_eq!(cancel_after_alias_metadata.status, 200);
+        assert_eq!(cancel_after_alias_metadata.body["responses"][0]["status"], 200);
+
+        let invalid_cancel_after_metadata = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_msearch")
+                .with_header("content-type", "application/x-ndjson")
+                .with_body(
+                    b"{\"cancelAfterTimeInterval\":\"soon\"}\n{\"query\":{\"match_all\":{}}}\n".to_vec(),
+                ),
+        );
+        assert_eq!(invalid_cancel_after_metadata.status, 200);
+        assert_eq!(invalid_cancel_after_metadata.body["responses"][0]["status"], 400);
+        assert_eq!(
+            invalid_cancel_after_metadata.body["responses"][0]["error"]["reason"],
+            "failed to parse setting [cancel_after_time_interval] with value [soon] as a time value"
+        );
     }
 
     #[test]
@@ -41032,6 +41082,32 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             boolean_execution_query_params.body["hits"]["hits"][0]["_id"],
             "doc-1"
+        );
+
+        let cancel_after_time_query_param = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/logs-search-params-a/_search?cancel_after_time_interval=1s",
+            )
+            .with_json_body(serde_json::json!({
+                "query": { "match_all": {} }
+            })),
+        );
+        assert_eq!(cancel_after_time_query_param.status, 200);
+
+        let invalid_cancel_after_time_query_param = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/logs-search-params-a/_search?cancel_after_time_interval=soon",
+            )
+            .with_json_body(serde_json::json!({
+                "query": { "match_all": {} }
+            })),
+        );
+        assert_eq!(invalid_cancel_after_time_query_param.status, 400);
+        assert_eq!(
+            invalid_cancel_after_time_query_param.body["error"]["reason"],
+            "failed to parse setting [cancel_after_time_interval] with value [soon] as a time value"
         );
 
         for invalid_param in [
