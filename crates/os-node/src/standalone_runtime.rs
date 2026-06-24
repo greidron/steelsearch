@@ -9170,6 +9170,7 @@ impl SteelNode {
                 terminated_early = true;
             }
         }
+        let track_total_hits_disabled = body.get("track_total_hits") == Some(&Value::Bool(false));
         if let Some(threshold) = body.get("track_total_hits").and_then(Value::as_u64) {
             if total_matches > threshold {
                 total_value = threshold;
@@ -9264,24 +9265,36 @@ impl SteelNode {
                     .collect::<Vec<_>>()
             }),
         );
-        response.insert(
-            "hits".to_string(),
-            serde_json::json!({
-                "total": if rest_total_hits_as_int {
-                    serde_json::json!(total_value)
+        let mut hits_body = serde_json::Map::new();
+        if rest_total_hits_as_int {
+            hits_body.insert(
+                "total".to_string(),
+                Value::from(if track_total_hits_disabled {
+                    -1_i64
                 } else {
-                    serde_json::json!({
-                        "value": total_value,
-                        "relation": total_relation
-                    })
-                },
-                "max_score": paged_hits
-                    .iter()
-                    .filter_map(|hit| hit.get("_score").and_then(Value::as_f64))
-                    .max_by(|left, right| left.partial_cmp(right).unwrap_or(std::cmp::Ordering::Equal)),
-                "hits": paged_hits
-            }),
+                    total_value as i64
+                }),
+            );
+        } else if !track_total_hits_disabled {
+            hits_body.insert(
+                "total".to_string(),
+                serde_json::json!({
+                    "value": total_value,
+                    "relation": total_relation
+                }),
+            );
+        }
+        hits_body.insert(
+            "max_score".to_string(),
+            paged_hits
+                .iter()
+                .filter_map(|hit| hit.get("_score").and_then(Value::as_f64))
+                .max_by(|left, right| left.partial_cmp(right).unwrap_or(std::cmp::Ordering::Equal))
+                .map(Value::from)
+                .unwrap_or(Value::Null),
         );
+        hits_body.insert("hits".to_string(), Value::Array(paged_hits));
+        response.insert("hits".to_string(), Value::Object(hits_body));
         if terminated_early {
             response.insert("terminated_early".to_string(), Value::Bool(true));
         }
@@ -18291,13 +18304,20 @@ fn native_search_response_to_rest_response(
         failures: Vec::new(),
     };
     let mut response_body = response.to_opensearch_body(1);
+    let track_total_hits_disabled = body.get("track_total_hits") == Some(&Value::Bool(false));
     if let Some(threshold) = body.get("track_total_hits").and_then(Value::as_u64) {
         if response.total_hits > threshold {
             response_body["hits"]["total"] =
                 serde_json::json!({ "value": threshold, "relation": "gte" });
         }
     }
-    if rest_total_hits_as_int {
+    if track_total_hits_disabled {
+        if rest_total_hits_as_int {
+            response_body["hits"]["total"] = Value::from(-1);
+        } else if let Some(hits) = response_body.get_mut("hits").and_then(Value::as_object_mut) {
+            hits.remove("total");
+        }
+    } else if rest_total_hits_as_int {
         response_body["hits"]["total"] = serde_json::json!(response.total_hits);
     }
     RestResponse::json(200, response_body)
@@ -18559,7 +18579,7 @@ fn validate_search_request_body(body: &Value) -> Option<RestResponse> {
         }
     }
     if let Some(track_total_hits) = body.get("track_total_hits") {
-        if track_total_hits != &Value::Bool(true)
+        if !matches!(track_total_hits, Value::Bool(_))
             && track_total_hits.as_u64().is_none()
         {
             return Some(build_unsupported_search_response(
@@ -18658,7 +18678,44 @@ fn apply_search_source_query_params(
         sort_values.extend(parse_rest_search_sort_values(raw_sort));
         object.insert("sort".to_string(), Value::Array(sort_values));
     }
+    if let Some(raw_track_total_hits) = query_params.get("track_total_hits") {
+        let Some(track_total_hits) = parse_rest_track_total_hits(raw_track_total_hits) else {
+            return Some(track_total_hits_query_param_parse_error(raw_track_total_hits));
+        };
+        let Some(object) = body.as_object_mut() else {
+            return Some(build_unsupported_search_response(
+                "unsupported search request body",
+            ));
+        };
+        object.insert("track_total_hits".to_string(), track_total_hits);
+    }
     None
+}
+
+fn parse_rest_track_total_hits(raw: &str) -> Option<Value> {
+    match raw {
+        "true" => Some(Value::Bool(true)),
+        "false" => Some(Value::Bool(false)),
+        _ => {
+            if raw.starts_with('-') {
+                return None;
+            }
+            raw.parse::<u64>().ok().map(Value::from)
+        }
+    }
+}
+
+fn track_total_hits_query_param_parse_error(value: &str) -> RestResponse {
+    RestResponse::json(
+        400,
+        serde_json::json!({
+            "error": {
+                "type": "illegal_argument_exception",
+                "reason": format!("Failed to parse value [{value}] for [track_total_hits]")
+            },
+            "status": 400
+        }),
+    )
 }
 
 fn parse_rest_search_sort_values(raw: &str) -> Vec<Value> {
@@ -38196,6 +38253,54 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(total_hits_threshold.status, 200);
         assert_eq!(total_hits_threshold.body["hits"]["total"]["value"], 1);
         assert_eq!(total_hits_threshold.body["hits"]["total"]["relation"], "gte");
+
+        let query_param_total_hits_threshold = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/logs-search-params-*/_search?track_total_hits=1",
+            )
+            .with_json_body(serde_json::json!({
+                "query": { "match_all": {} },
+                "sort": [{ "tenant": "asc" }],
+                "size": 1,
+                "track_total_hits": true
+            })),
+        );
+        assert_eq!(query_param_total_hits_threshold.status, 200);
+        assert_eq!(
+            query_param_total_hits_threshold.body["hits"]["total"]["value"],
+            1
+        );
+        assert_eq!(
+            query_param_total_hits_threshold.body["hits"]["total"]["relation"],
+            "gte"
+        );
+
+        let query_param_total_hits_disabled = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/logs-search-params-*/_search?track_total_hits=false",
+            )
+            .with_json_body(serde_json::json!({
+                "query": { "match_all": {} },
+                "sort": [{ "tenant": "asc" }]
+            })),
+        );
+        assert_eq!(query_param_total_hits_disabled.status, 200);
+        assert!(query_param_total_hits_disabled.body["hits"]["total"].is_null());
+
+        let total_hits_disabled_as_int = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/logs-search-params-*/_search?track_total_hits=false&rest_total_hits_as_int=true",
+            )
+            .with_json_body(serde_json::json!({
+                "query": { "match_all": {} },
+                "sort": [{ "tenant": "asc" }]
+            })),
+        );
+        assert_eq!(total_hits_disabled_as_int.status, 200);
+        assert_eq!(total_hits_disabled_as_int.body["hits"]["total"], -1);
 
         let total_hits_as_int = node.handle_rest_request(
             RestRequest::new(

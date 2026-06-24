@@ -2178,6 +2178,9 @@ The search boundary covers:
   request-body values, with non-negative integer validation.
 - REST search source parsing appends comma-separated `sort` query parameters
   using OpenSearch `field[:asc|desc]` syntax.
+- REST search source parsing applies boolean and numeric `track_total_hits`
+  query parameters, including omitted `hits.total` when tracking is disabled
+  and `-1` in `rest_total_hits_as_int` compatibility mode.
 
 The stream-search boundary covers:
 
