@@ -9672,6 +9672,18 @@ impl SteelNode {
             Ok(indices) => indices,
             Err(response) => return response,
         };
+        let requested_routing = request
+            .query_params
+            .get("routing")
+            .map(|routing| {
+                routing
+                    .split(',')
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                    .map(ToOwned::to_owned)
+                    .collect::<Vec<_>>()
+            })
+            .filter(|routings| !routings.is_empty());
         let documents = {
             let docs = self
                 .documents_state
@@ -9680,10 +9692,18 @@ impl SteelNode {
             docs.iter()
                 .filter_map(|(key, record)| {
                     let (doc_index, _, _) = split_document_key(key)?;
-                    resolved_indices
-                        .iter()
-                        .any(|candidate| candidate == doc_index)
-                        .then(|| (key.clone(), record.clone()))
+                    if !resolved_indices.iter().any(|candidate| candidate == doc_index) {
+                        return None;
+                    }
+                    if requested_routing.as_ref().is_some_and(|routings| {
+                        !record
+                            .routing
+                            .as_deref()
+                            .is_some_and(|routing| routings.iter().any(|candidate| candidate == routing))
+                    }) {
+                        return None;
+                    }
+                    Some((key.clone(), record.clone()))
                 })
                 .collect::<BTreeMap<_, _>>()
         };
@@ -35095,6 +35115,55 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_search/point_in_time/_all"));
         assert_eq!(list_after_array_close.status, 200);
         assert_eq!(list_after_array_close.body["pits"].as_array().map(|pits| pits.len()), Some(0));
+
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(RestMethod::Put, "/logs-routed-pit-000001"))
+                .status,
+            200
+        );
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, "/logs-routed-pit-000001/_doc/doc-a?routing=tenant-a")
+                    .with_json_body(serde_json::json!({ "tenant": "a" })),
+            )
+            .status,
+            201
+        );
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, "/logs-routed-pit-000001/_doc/doc-b?routing=tenant-b")
+                    .with_json_body(serde_json::json!({ "tenant": "b" })),
+            )
+            .status,
+            201
+        );
+
+        let routed_pit = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/logs-routed-pit-000001/_search/point_in_time?keep_alive=1m&routing=tenant-a",
+        ));
+        assert_eq!(routed_pit.status, 200);
+        assert_eq!(routed_pit.body["pit_id"], "pit-3");
+
+        let routed_pit_search = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_search")
+                .with_json_body(serde_json::json!({
+                    "pit": {
+                        "id": routed_pit.body["pit_id"].as_str().unwrap(),
+                        "keep_alive": "1m"
+                    },
+                    "query": { "match_all": {} }
+                })),
+        );
+        assert_eq!(routed_pit_search.status, 200);
+        assert_eq!(routed_pit_search.body["hits"]["total"]["value"], 1);
+        assert_eq!(routed_pit_search.body["hits"]["hits"][0]["_id"], "doc-a");
+
+        let close_routed_pit = node.handle_rest_request(
+            RestRequest::new(RestMethod::Delete, "/_search/point_in_time")
+                .with_json_body(serde_json::json!({ "pit_id": "pit-3" })),
+        );
+        assert_eq!(close_routed_pit.status, 200);
 
         let clear_pits = node.handle_rest_request(RestRequest::new(
             RestMethod::Delete,
