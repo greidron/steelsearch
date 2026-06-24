@@ -355,6 +355,7 @@ Required semantic cases:
 - `pit_search_with_default_ignore_throttled`
 - `pit_search_with_order_sensitive_default_wildcards`
 - `pit_search_with_default_ccs_minimize_roundtrips`
+- `pit_search_rejects_explicit_rest_options`
 - `scroll_initial_search`
 - `scroll_follow_up_search`
 - `search_after_search`
