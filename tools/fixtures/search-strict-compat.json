@@ -2051,6 +2051,48 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "pit_search_with_default_ccs_minimize_roundtrips",
+      "area": "search",
+      "extract": "search_hits",
+      "steps": [
+        {
+          "name": "pit-open",
+          "method": "POST",
+          "path": "/logs-compat/_search/point_in_time?keep_alive=1m",
+          "body": null,
+          "expected_status": 200,
+          "extract": "pit_open"
+        },
+        {
+          "name": "pit-search",
+          "method": "POST",
+          "path": "/_search?ccs_minimize_roundtrips=false",
+          "body": {
+            "pit": {
+              "id": "${last.id}",
+              "keep_alive": "1m"
+            },
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "ts": {
+                  "order": "asc"
+                }
+              }
+            ],
+            "size": 1
+          },
+          "expected_status": 200,
+          "extract": "search_hits"
+        }
+      ],
+      "family": "lexical",
+      "description": "[lexical] pit search with default ccs_minimize_roundtrips search",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "pre_filter_shard_size_search",
       "area": "search",
       "method": "POST",
