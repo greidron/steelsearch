@@ -9900,6 +9900,10 @@ impl SteelNode {
             Ok(_) => {}
             Err(response) => return response,
         }
+        self.clear_all_point_in_time_contexts()
+    }
+
+    fn clear_all_point_in_time_contexts(&self) -> RestResponse {
         let mut contexts = self
             .pit_contexts
             .lock()
@@ -10087,6 +10091,9 @@ impl SteelNode {
             Ok(ids) => ids,
             Err(response) => return response,
         };
+        if ids.len() == 1 && ids.first().is_some_and(|id| id == "_all") {
+            return self.clear_all_point_in_time_contexts();
+        }
         let mut contexts = self
             .pit_contexts
             .lock()
@@ -37736,6 +37743,37 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(list_after_array_close.status, 200);
         assert_eq!(list_after_array_close.body["pits"].as_array().map(|pits| pits.len()), Some(0));
 
+        let all_body_first_pit = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/logs-session-000001/_search/point_in_time?keep_alive=1m",
+        ));
+        assert_eq!(all_body_first_pit.status, 200);
+        assert_eq!(all_body_first_pit.body["pit_id"], "pit-8");
+        let all_body_second_pit = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/logs-session-000001/_search/point_in_time?keep_alive=1m",
+        ));
+        assert_eq!(all_body_second_pit.status, 200);
+        assert_eq!(all_body_second_pit.body["pit_id"], "pit-9");
+        let close_all_body_pit = node.handle_rest_request(
+            RestRequest::new(RestMethod::Delete, "/_search/point_in_time")
+                .with_json_body(serde_json::json!({ "pit_id": "_all" })),
+        );
+        assert_eq!(close_all_body_pit.status, 200);
+        assert_eq!(close_all_body_pit.body["pits"].as_array().map(|pits| pits.len()), Some(2));
+        assert!(close_all_body_pit.body["pits"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|pit| pit["successful"] == true));
+        let list_after_all_body_close =
+            node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_search/point_in_time/_all"));
+        assert_eq!(list_after_all_body_close.status, 200);
+        assert_eq!(
+            list_after_all_body_close.body["pits"].as_array().map(|pits| pits.len()),
+            Some(0)
+        );
+
         assert_eq!(
             node.handle_rest_request(RestRequest::new(RestMethod::Put, "/logs-routed-pit-000001"))
                 .status,
@@ -37763,7 +37801,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             "/logs-routed-pit-000001/_search/point_in_time?keep_alive=1m&routing=tenant-a",
         ));
         assert_eq!(routed_pit.status, 200);
-        assert_eq!(routed_pit.body["pit_id"], "pit-8");
+        assert_eq!(routed_pit.body["pit_id"], "pit-10");
 
         let routed_live_search = node.handle_rest_request(
             RestRequest::new(
@@ -37794,7 +37832,9 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
 
         let close_routed_pit = node.handle_rest_request(
             RestRequest::new(RestMethod::Delete, "/_search/point_in_time")
-                .with_json_body(serde_json::json!({ "pit_id": "pit-8" })),
+                .with_json_body(serde_json::json!({
+                    "pit_id": routed_pit.body["pit_id"].as_str().unwrap()
+                })),
         );
         assert_eq!(close_routed_pit.status, 200);
 
@@ -37803,7 +37843,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             "/logs-empty-pit-*/_search/point_in_time?keep_alive=1m&allow_no_indices=true",
         ));
         assert_eq!(allow_no_indices_pit.status, 200);
-        assert_eq!(allow_no_indices_pit.body["pit_id"], "pit-9");
+        assert_eq!(allow_no_indices_pit.body["pit_id"], "pit-11");
         assert_eq!(allow_no_indices_pit.body["_shards"]["total"], 0);
         assert_eq!(allow_no_indices_pit.body["_shards"]["successful"], 0);
 
@@ -37822,7 +37862,9 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
 
         let close_allow_no_indices_pit = node.handle_rest_request(
             RestRequest::new(RestMethod::Delete, "/_search/point_in_time")
-                .with_json_body(serde_json::json!({ "pit_id": "pit-9" })),
+                .with_json_body(serde_json::json!({
+                    "pit_id": allow_no_indices_pit.body["pit_id"].as_str().unwrap()
+                })),
         );
         assert_eq!(close_allow_no_indices_pit.status, 200);
 

@@ -1831,6 +1831,34 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "pit_clear_all_body_search",
+      "area": "search",
+      "extract": "pit_clear",
+      "steps": [
+        {
+          "name": "pit-open",
+          "method": "POST",
+          "path": "/logs-compat/_search/point_in_time?keep_alive=1m",
+          "body": null,
+          "expected_status": 200,
+          "extract": "pit_open"
+        },
+        {
+          "name": "pit-clear-all-body",
+          "method": "DELETE",
+          "path": "/_search/point_in_time",
+          "body": {
+            "pit_id": "_all"
+          },
+          "expected_status": 200,
+          "extract": "pit_clear"
+        }
+      ],
+      "family": "lexical",
+      "description": "[lexical] pit clear all body search",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "pit_open_search",
       "area": "search",
       "method": "POST",

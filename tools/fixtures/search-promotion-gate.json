@@ -32,6 +32,7 @@
         "pit_open_search",
         "pit_list_search",
         "pit_clear_all_search",
+        "pit_clear_all_body_search",
         "pit_search",
         "scroll_initial_search",
         "scroll_follow_up_search",
