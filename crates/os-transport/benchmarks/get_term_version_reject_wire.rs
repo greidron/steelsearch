@@ -1,7 +1,8 @@
 use os_core::OPENSEARCH_3_7_0_TRANSPORT;
 use os_transport::action::{
-    build_get_term_version_request_message, read_get_term_version_request_message,
-    GetTermVersionRequestWire,
+    build_get_term_version_request_message, build_get_term_version_response_message,
+    read_get_term_version_request_message, read_get_term_version_response_message,
+    GetTermVersionRequestWire, GetTermVersionResponseWire,
 };
 use os_transport::frame::{decode_frame, DecodedFrame};
 use std::hint::black_box;
@@ -11,8 +12,15 @@ const ITERATIONS: usize = 400_000;
 
 fn main() {
     let request = GetTermVersionRequestWire::default();
+    let response = GetTermVersionResponseWire {
+        cluster_name: "steelsearch-dev".to_string(),
+        cluster_uuid: "_na_".to_string(),
+        term: 7,
+        version: 11,
+        state_present_in_remote: Some(false),
+    };
 
-    let request_encode = measure("get_term_version_reject_request_encode", ITERATIONS, || {
+    let request_encode = measure("get_term_version_request_encode", ITERATIONS, || {
         let frame = build_get_term_version_request_message(
             73,
             OPENSEARCH_3_7_0_TRANSPORT,
@@ -26,7 +34,7 @@ fn main() {
         build_get_term_version_request_message(73, OPENSEARCH_3_7_0_TRANSPORT, &request)
             .expect("get-term-version request encode should succeed");
 
-    let request_decode = measure("get_term_version_reject_request_decode", ITERATIONS, || {
+    let request_decode = measure("get_term_version_request_decode", ITERATIONS, || {
         let mut frame = black_box(request_frame.clone());
         let message = decode_message(&mut frame);
         let decoded = read_get_term_version_request_message(black_box(&message))
@@ -34,22 +42,46 @@ fn main() {
         black_box(decoded);
     });
 
-    let reject_validate = measure("get_term_version_reject_validation", ITERATIONS, || {
+    let request_validate = measure("get_term_version_request_validate", ITERATIONS, || {
         let mut frame = black_box(request_frame.clone());
         let message = decode_message(&mut frame);
         let decoded = read_get_term_version_request_message(black_box(&message))
             .expect("get-term-version request decode");
-        let err = decoded
-            .reject_unsupported_execution()
-            .expect_err("get-term-version execution should reject");
-        black_box(err);
+        decoded
+            .validate_supported_subset()
+            .expect("get-term-version request should validate");
+        black_box(decoded);
+    });
+
+    let response_encode = measure("get_term_version_response_encode", ITERATIONS, || {
+        let frame = build_get_term_version_response_message(
+            73,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            black_box(&response),
+        )
+        .expect("get-term-version response encode should succeed");
+        black_box(frame);
+    });
+
+    let response_frame =
+        build_get_term_version_response_message(73, OPENSEARCH_3_7_0_TRANSPORT, &response)
+            .expect("get-term-version response encode should succeed");
+
+    let response_decode = measure("get_term_version_response_decode", ITERATIONS, || {
+        let mut frame = black_box(response_frame.clone());
+        let message = decode_message(&mut frame);
+        let decoded = read_get_term_version_response_message(black_box(&message))
+            .expect("get-term-version response decode");
+        black_box(decoded);
     });
 
     let combined_ops_per_second = request_encode
         .ops_per_second
         .min(request_decode.ops_per_second)
-        .min(reject_validate.ops_per_second);
-    println!("get_term_version_reject_wire_bottleneck_ops_per_second={combined_ops_per_second:.2}");
+        .min(request_validate.ops_per_second)
+        .min(response_encode.ops_per_second)
+        .min(response_decode.ops_per_second);
+    println!("get_term_version_wire_bottleneck_ops_per_second={combined_ops_per_second:.2}");
 }
 
 #[derive(Clone, Copy)]

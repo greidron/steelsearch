@@ -971,6 +971,30 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end,
             &mut connection_end_at_ms,
         )?;
+    } else if is_request && normalized_action_hint == Some("internal:monitor/term") {
+        let response =
+            build_get_term_version_response(request_id, header_version_id, transport_identity);
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("internal:monitor/term[n]"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
     } else if is_request && normalized_action_hint == Some("cluster:monitor/task") {
         let response =
             build_pending_cluster_tasks_response(request_id, header_version_id, transport_identity);
@@ -2846,6 +2870,52 @@ fn main_response_from_identity(
     }
 }
 
+fn build_get_term_version_response(
+    request_id: i64,
+    header_version_id: u32,
+    transport_identity: &DevTransportIdentity,
+) -> Vec<u8> {
+    os_transport::action::build_get_term_version_response_message(
+        request_id,
+        Version::from_id(header_version_id as i32),
+        &get_term_version_response_from_identity(transport_identity),
+    )
+    .map(|frame| frame.to_vec())
+    .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
+}
+
+fn get_term_version_response_from_identity(
+    transport_identity: &DevTransportIdentity,
+) -> os_transport::action::GetTermVersionResponseWire {
+    let (cluster_uuid, term, version) = transport_identity
+        .coordination_state
+        .lock()
+        .ok()
+        .map(|state| {
+            if let Some(cluster_state) = state.cached_cluster_state.as_ref() {
+                (
+                    cluster_state.metadata.cluster_uuid.clone(),
+                    cluster_state.metadata.coordination.term,
+                    cluster_state.header.version,
+                )
+            } else {
+                (
+                    "_na_".to_string(),
+                    state.last_accepted_term.max(0),
+                    state.last_accepted_version.max(0),
+                )
+            }
+        })
+        .unwrap_or_else(|| ("_na_".to_string(), 0, 0));
+    os_transport::action::GetTermVersionResponseWire {
+        cluster_name: transport_identity.cluster_name.clone(),
+        cluster_uuid,
+        term,
+        version,
+        state_present_in_remote: Some(false),
+    }
+}
+
 fn build_empty_wlm_stats_response(
     request_id: i64,
     header_version_id: u32,
@@ -4510,6 +4580,11 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
         Some("cluster:monitor/remote/info") => Some(build_empty_remote_info_response(
             request_id,
             header_version_id,
+        )),
+        Some("internal:monitor/term") => Some(build_get_term_version_response(
+            request_id,
+            header_version_id,
+            transport_identity,
         )),
         Some("cluster:monitor/task") => Some(build_pending_cluster_tasks_response(
             request_id,
@@ -8621,6 +8696,51 @@ mod tests {
             response,
             os_transport::action::RemoteInfoResponseWire::default()
         );
+    }
+
+    #[test]
+    fn get_term_version_transport_route_builds_opensearch_shaped_response_from_identity() {
+        let transport_identity = DevTransportIdentity {
+            cluster_name: "steelsearch-dev".to_string(),
+            node_name: "steel-node".to_string(),
+            node_id: "steel-node-id".to_string(),
+            ephemeral_id: "steel-node-ephemeral".to_string(),
+            transport_address: "127.0.0.1:9300".parse().unwrap(),
+            attributes: Vec::new(),
+            roles: vec!["cluster_manager".to_string(), "data".to_string()],
+            seed_peer_identity: None,
+            seed_peer_identities: Vec::new(),
+            coordination_state: Arc::new(Mutex::new(DevTransportCoordinationState {
+                last_accepted_term: 7,
+                last_accepted_version: 11,
+                ..DevTransportCoordinationState::default()
+            })),
+            remote_transport_queue_gate: Arc::new(RemoteTransportQueueGate::new(1, 1000)),
+            task_queue_state: None,
+        };
+        let response = build_get_term_version_response(
+            74,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &transport_identity,
+        );
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected get-term-version response message");
+        };
+
+        assert_eq!(message.request_id, 74);
+        assert!(!message.status.is_request());
+        let response =
+            os_transport::action::read_get_term_version_response_message(&message).unwrap();
+        assert_eq!(response.cluster_name, "steelsearch-dev");
+        assert_eq!(response.cluster_uuid, "_na_");
+        assert_eq!(response.term, 7);
+        assert_eq!(response.version, 11);
+        assert_eq!(response.state_present_in_remote, Some(false));
     }
 
     #[test]

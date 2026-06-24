@@ -1650,8 +1650,8 @@ pub fn classify_opensearch_transport_action(
         },
         GET_TERM_VERSION_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
-            disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "get-term-version transport execution requires cluster term/version response rendering",
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "get-term-version transport adapter is available for the current cluster term/version response subset",
         },
         CLUSTER_STATE_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -4744,6 +4744,35 @@ pub fn read_get_term_version_request_message(
         });
     }
     GetTermVersionRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_get_term_version_response_message(
+    request_id: i64,
+    version: Version,
+    response: &GetTermVersionResponseWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    response.write(&mut body)?;
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::response(),
+        version,
+        variable_header: BytesMut::new(),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_get_term_version_response_message(
+    message: &TransportMessage,
+) -> Result<GetTermVersionResponseWire, TransportActionWireError> {
+    if message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "response",
+            actual: message.status.bits(),
+        });
+    }
+    GetTermVersionResponseWire::read(message.body.clone().freeze())
 }
 
 pub fn build_cat_shards_request_message(
@@ -25046,7 +25075,7 @@ impl GetTermVersionRequestWire {
         Ok(request)
     }
 
-    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+    pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
         if self.cluster_manager_timeout != TimeValueWire::seconds(30) {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "get term version cluster-manager timeout",
@@ -25060,11 +25089,76 @@ impl GetTermVersionRequestWire {
                 reason: "local get-term-version execution requires local cluster-state term/version semantics",
             });
         }
+        Ok(())
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        self.validate_supported_subset()?;
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "get term version execution",
-            reason:
-                "get-term-version transport execution requires cluster term/version response rendering",
+            reason: "use validate_supported_subset for the implemented get-term-version adapter",
         })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct GetTermVersionResponseWire {
+    pub cluster_name: String,
+    pub cluster_uuid: String,
+    pub term: i64,
+    pub version: i64,
+    pub state_present_in_remote: Option<bool>,
+}
+
+impl GetTermVersionResponseWire {
+    pub fn write(&self, output: &mut StreamOutput) -> Result<(), TransportActionWireError> {
+        self.validate_supported_subset()?;
+        output.write_string(&self.cluster_name);
+        output.write_string(&self.cluster_uuid);
+        output.write_i64(self.term);
+        output.write_i64(self.version);
+        write_optional_bool(output, self.state_present_in_remote);
+        Ok(())
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let response = Self {
+            cluster_name: input.read_string()?,
+            cluster_uuid: input.read_string()?,
+            term: input.read_i64()?,
+            version: input.read_i64()?,
+            state_present_in_remote: read_optional_bool(&mut input)?,
+        };
+        require_no_trailing_bytes(&input)?;
+        response.validate_supported_subset()?;
+        Ok(response)
+    }
+
+    pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
+        if self.cluster_name.is_empty() {
+            return Err(TransportActionWireError::MissingRequiredField {
+                field: "get term version cluster name",
+            });
+        }
+        if self.cluster_uuid.is_empty() {
+            return Err(TransportActionWireError::MissingRequiredField {
+                field: "get term version cluster uuid",
+            });
+        }
+        if self.term < 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get term version term",
+                reason: "cluster-state term must be non-negative",
+            });
+        }
+        if self.version < 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get term version version",
+                reason: "cluster-state version must be non-negative",
+            });
+        }
+        Ok(())
     }
 }
 
@@ -33477,7 +33571,7 @@ mod tests {
         );
         assert_eq!(
             classify_opensearch_transport_action(GET_TERM_VERSION_ACTION_NAME).disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_SEARCH_ACTION_NAME).disposition,
@@ -36431,7 +36525,7 @@ mod tests {
     }
 
     #[test]
-    fn get_term_version_request_wire_round_trips_and_rejects_execution_boundary() {
+    fn get_term_version_request_wire_round_trips_supported_subset() {
         let request = GetTermVersionRequestWire {
             parent_task_node: "term-node".to_string(),
             parent_task_id: Some(44),
@@ -36442,13 +36536,24 @@ mod tests {
 
         let decoded = GetTermVersionRequestWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, request);
-        assert!(matches!(
-            decoded.reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "get term version execution",
-                ..
-            })
-        ));
+        decoded.validate_supported_subset().unwrap();
+    }
+
+    #[test]
+    fn get_term_version_response_wire_round_trips_cluster_term_version() {
+        let response = GetTermVersionResponseWire {
+            cluster_name: "steelsearch-dev".to_string(),
+            cluster_uuid: "cluster-uuid".to_string(),
+            term: 7,
+            version: 11,
+            state_present_in_remote: Some(false),
+        };
+        let mut output = StreamOutput::new();
+        response.write(&mut output).unwrap();
+
+        let decoded = GetTermVersionResponseWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, response);
+        decoded.validate_supported_subset().unwrap();
     }
 
     #[test]
@@ -36479,7 +36584,7 @@ mod tests {
     }
 
     #[test]
-    fn get_term_version_transport_messages_bind_rejected_action_frame() {
+    fn get_term_version_transport_messages_bind_supported_action_frame_and_response() {
         let request = GetTermVersionRequestWire::default();
         let mut frame =
             build_get_term_version_request_message(73, OPENSEARCH_3_7_0_TRANSPORT, &request)
@@ -36491,15 +36596,34 @@ mod tests {
             read_get_term_version_request_message(&message).unwrap(),
             request
         );
-        assert!(matches!(
-            read_get_term_version_request_message(&message)
+        assert_eq!(
+            classify_opensearch_transport_request_message(&message)
                 .unwrap()
-                .reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "get term version execution",
-                ..
-            })
-        ));
+                .disposition,
+            OpenSearchTransportActionDisposition::Implemented
+        );
+        read_get_term_version_request_message(&message)
+            .unwrap()
+            .validate_supported_subset()
+            .unwrap();
+
+        let response = GetTermVersionResponseWire {
+            cluster_name: "steelsearch-dev".to_string(),
+            cluster_uuid: "cluster-uuid".to_string(),
+            term: 7,
+            version: 11,
+            state_present_in_remote: Some(false),
+        };
+        let mut frame =
+            build_get_term_version_response_message(73, OPENSEARCH_3_7_0_TRANSPORT, &response)
+                .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected get-term-version response message");
+        };
+        assert_eq!(
+            read_get_term_version_response_message(&message).unwrap(),
+            response
+        );
     }
 
     #[test]
