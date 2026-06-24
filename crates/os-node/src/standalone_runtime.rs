@@ -9557,6 +9557,13 @@ impl SteelNode {
                 }
             }
         }
+        if body.get("seq_no_primary_term") != Some(&Value::Bool(true)) {
+            for hit in &mut paged_hits {
+                if let Some(hit_object) = hit.as_object_mut() {
+                    hit_object.remove("_seq_no");
+                }
+            }
+        }
         let mut response = serde_json::Map::new();
         if let Some(pit_id) = point_in_time_response_id {
             response.insert("pit_id".to_string(), Value::String(pit_id));
