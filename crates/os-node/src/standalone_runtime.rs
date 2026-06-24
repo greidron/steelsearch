@@ -9720,6 +9720,10 @@ impl SteelNode {
                 .collect::<BTreeMap<_, _>>()
         };
         let creation_time_millis = current_epoch_millis();
+        let total_shards = resolved_indices
+            .iter()
+            .map(|index| self.index_primary_shard_count(index))
+            .sum::<usize>();
         let mut next_id = self
             .next_pit_id
             .lock()
@@ -9745,8 +9749,8 @@ impl SteelNode {
                 "pit_id": pit_id,
                 "creation_time": creation_time_millis,
                 "_shards": {
-                    "total": 1,
-                    "successful": 1,
+                    "total": total_shards,
+                    "successful": total_shards,
                     "skipped": 0,
                     "failed": 0
                 }
@@ -34860,6 +34864,8 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         ));
         assert_eq!(open_pit.status, 200);
         assert_eq!(open_pit.body["pit_id"], "pit-1");
+        assert_eq!(open_pit.body["_shards"]["total"], 1);
+        assert_eq!(open_pit.body["_shards"]["successful"], 1);
 
         let second_open_pit = node.handle_rest_request(RestRequest::new(
             RestMethod::Post,
@@ -35183,6 +35189,8 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         ));
         assert_eq!(allow_no_indices_pit.status, 200);
         assert_eq!(allow_no_indices_pit.body["pit_id"], "pit-4");
+        assert_eq!(allow_no_indices_pit.body["_shards"]["total"], 0);
+        assert_eq!(allow_no_indices_pit.body["_shards"]["successful"], 0);
 
         let allow_no_indices_search = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/_search")
