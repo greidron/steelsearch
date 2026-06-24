@@ -11739,6 +11739,13 @@ impl SteelNode {
         };
         let body = serde_json::from_slice::<Value>(&request.body).unwrap_or(Value::Null);
         let resolved_index = self.resolve_index_or_alias(index);
+        let requested_routing_values = request
+            .query_params
+            .get("routing")
+            .cloned()
+            .or_else(|| self.resolve_alias_search_routing(index))
+            .map(|routing| parse_routing_values(&routing))
+            .filter(|routing| !routing.is_empty());
         let mut deleted = 0_u64;
         {
             let mut docs = self
@@ -11751,6 +11758,14 @@ impl SteelNode {
                     let mut parts = key.splitn(3, ':');
                     let doc_index = parts.next()?;
                     if doc_index != resolved_index {
+                        return None;
+                    }
+                    if requested_routing_values.as_ref().is_some_and(|routings| {
+                        !doc
+                            .routing
+                            .as_deref()
+                            .is_some_and(|routing| routings.iter().any(|candidate| candidate == routing))
+                    }) {
                         return None;
                     }
                     if matches_query_body(&doc.source, body.get("query")) {
@@ -11799,6 +11814,13 @@ impl SteelNode {
         };
         let body = serde_json::from_slice::<Value>(&request.body).unwrap_or(Value::Null);
         let resolved_index = self.resolve_index_or_alias(index);
+        let requested_routing_values = request
+            .query_params
+            .get("routing")
+            .cloned()
+            .or_else(|| self.resolve_alias_search_routing(index))
+            .map(|routing| parse_routing_values(&routing))
+            .filter(|routing| !routing.is_empty());
         let mut total = 0_u64;
         let mut updated = 0_u64;
         let mut noops = 0_u64;
@@ -11811,6 +11833,14 @@ impl SteelNode {
                 let mut parts = key.splitn(3, ':');
                 let doc_index = parts.next().unwrap_or_default();
                 if doc_index != resolved_index {
+                    continue;
+                }
+                if requested_routing_values.as_ref().is_some_and(|routings| {
+                    !doc
+                        .routing
+                        .as_deref()
+                        .is_some_and(|routing| routings.iter().any(|candidate| candidate == routing))
+                }) {
                     continue;
                 }
                 if !matches_query_body(&doc.source, body.get("query")) {
@@ -33834,6 +33864,64 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         ));
         assert_eq!(remaining_doc.status, 200);
         assert_eq!(remaining_doc.body["_source"]["message"], "keep me");
+
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(
+                    RestMethod::Put,
+                    "/logs-delete-query-probe/_doc/doc-routed-a?routing=tenant-a",
+                )
+                .with_json_body(serde_json::json!({
+                    "tenant": "tenant-routed",
+                    "message": "delete routed a"
+                })),
+            )
+            .status,
+            201
+        );
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(
+                    RestMethod::Put,
+                    "/logs-delete-query-probe/_doc/doc-routed-b?routing=tenant-b",
+                )
+                .with_json_body(serde_json::json!({
+                    "tenant": "tenant-routed",
+                    "message": "keep routed b"
+                })),
+            )
+            .status,
+            201
+        );
+
+        let routed = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/logs-delete-query-probe/_delete_by_query?routing=tenant-a",
+            )
+            .with_json_body(serde_json::json!({
+                "query": {
+                    "term": { "tenant": "tenant-routed" }
+                }
+            })),
+        );
+        assert_eq!(routed.status, 200);
+        assert_eq!(routed.body["total"], 1);
+        assert_eq!(routed.body["deleted"], 1);
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(
+                RestMethod::Get,
+                "/logs-delete-query-probe/_doc/doc-routed-a?routing=tenant-a",
+            ))
+            .status,
+            404
+        );
+        let routed_remaining = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/logs-delete-query-probe/_doc/doc-routed-b?routing=tenant-b",
+        ));
+        assert_eq!(routed_remaining.status, 200);
+        assert_eq!(routed_remaining.body["_source"]["message"], "keep routed b");
     }
 
     #[test]
@@ -33926,6 +34014,65 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         ));
         assert_eq!(updated.status, 200);
         assert_eq!(updated.body["_source"]["processed"], Value::Bool(true));
+
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(
+                    RestMethod::Put,
+                    "/logs-update-query-probe/_doc/doc-routed-a?routing=tenant-a",
+                )
+                .with_json_body(serde_json::json!({
+                    "tenant": "tenant-routed",
+                    "processed": false
+                })),
+            )
+            .status,
+            201
+        );
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(
+                    RestMethod::Put,
+                    "/logs-update-query-probe/_doc/doc-routed-b?routing=tenant-b",
+                )
+                .with_json_body(serde_json::json!({
+                    "tenant": "tenant-routed",
+                    "processed": false
+                })),
+            )
+            .status,
+            201
+        );
+        let routed = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/logs-update-query-probe/_update_by_query?routing=tenant-a",
+            )
+            .with_json_body(serde_json::json!({
+                "query": {
+                    "term": { "tenant": "tenant-routed" }
+                },
+                "script": {
+                    "source": "ctx._source.processed = true"
+                }
+            })),
+        );
+        assert_eq!(routed.status, 200);
+        assert_eq!(routed.body["total"], 1);
+        assert_eq!(routed.body["updated"], 1);
+
+        let routed_updated = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/logs-update-query-probe/_doc/doc-routed-a?routing=tenant-a",
+        ));
+        assert_eq!(routed_updated.status, 200);
+        assert_eq!(routed_updated.body["_source"]["processed"], Value::Bool(true));
+        let routed_untouched = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/logs-update-query-probe/_doc/doc-routed-b?routing=tenant-b",
+        ));
+        assert_eq!(routed_untouched.status, 200);
+        assert_eq!(routed_untouched.body["_source"]["processed"], Value::Bool(false));
     }
 
     #[test]
