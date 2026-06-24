@@ -12,11 +12,11 @@ use os_node::{
     apply_gateway_metadata_state_to_manifest,
     bind_rest_http_listener, serve_rest_http_listener_until, validate_production_mode_request,
     collect_live_publication_acknowledgement_details, collect_live_publication_apply_details,
-    ClusterCoordinationState, DevelopmentClusterNode, DevelopmentClusterView,
-    DevelopmentCoordinationStatus, DiscoveryConfig, DiscoveryPeer, ElectionAttemptWindow,
-    ElectionResult, ElectionScheduler, ElectionSchedulerConfig, ExtensionBoundaryRegistry,
-    LiveTransportDiscoveryPeerProber, NodeInfo, PersistedClusterManagerTaskQueueState,
-    PersistedGatewayState, PersistedPublicationState,
+    ClusterCoordinationState, ClusterManagerTaskRecord, ClusterManagerTaskState,
+    DevelopmentClusterNode, DevelopmentClusterView, DevelopmentCoordinationStatus, DiscoveryConfig,
+    DiscoveryPeer, ElectionAttemptWindow, ElectionResult, ElectionScheduler,
+    ElectionSchedulerConfig, ExtensionBoundaryRegistry, LiveTransportDiscoveryPeerProber, NodeInfo,
+    PersistedClusterManagerTaskQueueState, PersistedGatewayState, PersistedPublicationState,
     ProductionMembershipState, ReleaseReadinessChecklist, RestServerConfig, RestTlsConfig,
     SecurityBoundaryPolicy, SteelNode, load_gateway_state_manifest, persist_gateway_state_manifest,
     validate_rest_tls_config,
@@ -77,6 +77,7 @@ struct DevTransportIdentity {
     seed_peer_identities: Vec<InteropSeedPeerIdentityManifest>,
     coordination_state: Arc<Mutex<DevTransportCoordinationState>>,
     remote_transport_queue_gate: Arc<RemoteTransportQueueGate>,
+    task_queue_state: Option<PersistedClusterManagerTaskQueueState>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -311,6 +312,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let extension_registry = effective_extension_registry(&config)?;
     let remote_transport_queue_gate = remote_transport_queue_gate_from_env();
+    let task_queue_state_for_transport = cluster_view
+        .coordination
+        .as_ref()
+        .and_then(|coordination| coordination.task_queue_state.clone());
     let mut node = SteelNode::new(NodeInfo {
         name: config.node_name.clone(),
         version: OPENSEARCH_3_7_0_TRANSPORT,
@@ -347,6 +352,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         seed_peer_identities: config.seed_peer_identities.clone(),
         coordination_state: Arc::new(Mutex::new(DevTransportCoordinationState::default())),
         remote_transport_queue_gate,
+        task_queue_state: task_queue_state_for_transport,
     };
     if config.mixed_java_native_transport_join_participation_enabled()
         && env::var("STEELSEARCH_DISABLE_PROACTIVE_JOIN")
@@ -940,7 +946,11 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end_at_ms,
         )?;
     } else if is_request && normalized_action_hint == Some("cluster:monitor/task") {
-        let response = build_empty_pending_cluster_tasks_response(request_id, header_version_id);
+        let response = build_pending_cluster_tasks_response(
+            request_id,
+            header_version_id,
+            transport_identity,
+        );
         response_frame = summarize_transport_response_frame_for_action(
             &response,
             Some("cluster:monitor/task[n]"),
@@ -2703,14 +2713,49 @@ fn build_empty_remote_info_response(request_id: i64, header_version_id: u32) -> 
     .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
 }
 
-fn build_empty_pending_cluster_tasks_response(request_id: i64, header_version_id: u32) -> Vec<u8> {
+fn build_pending_cluster_tasks_response(
+    request_id: i64,
+    header_version_id: u32,
+    transport_identity: &DevTransportIdentity,
+) -> Vec<u8> {
     os_transport::action::build_pending_cluster_tasks_response_message(
         request_id,
         Version::from_id(header_version_id as i32),
-        &os_transport::action::PendingClusterTasksResponseWire { tasks: Vec::new() },
+        &pending_cluster_tasks_response_from_identity(transport_identity),
     )
     .map(|frame| frame.to_vec())
     .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
+}
+
+fn pending_cluster_tasks_response_from_identity(
+    transport_identity: &DevTransportIdentity,
+) -> os_transport::action::PendingClusterTasksResponseWire {
+    let Some(queue) = transport_identity.task_queue_state.as_ref() else {
+        return os_transport::action::PendingClusterTasksResponseWire { tasks: Vec::new() };
+    };
+    os_transport::action::PendingClusterTasksResponseWire {
+        tasks: pending_cluster_task_records_from_queue(queue)
+            .map(pending_cluster_task_wire_from_record)
+            .collect(),
+    }
+}
+
+fn pending_cluster_task_records_from_queue(
+    queue: &PersistedClusterManagerTaskQueueState,
+) -> impl Iterator<Item = &ClusterManagerTaskRecord> {
+    queue.pending.iter().chain(queue.in_flight.iter())
+}
+
+fn pending_cluster_task_wire_from_record(
+    record: &ClusterManagerTaskRecord,
+) -> os_transport::action::PendingClusterTaskWire {
+    os_transport::action::PendingClusterTaskWire {
+        insert_order: record.task_id as i64,
+        priority: "URGENT".to_string(),
+        source: record.task.source.clone(),
+        executing: record.state == ClusterManagerTaskState::InFlight,
+        time_in_queue_millis: 0,
+    }
 }
 
 fn build_empty_list_tasks_response(request_id: i64, header_version_id: u32) -> Vec<u8> {
@@ -3819,9 +3864,10 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
         Some("cluster:monitor/remote/info") => {
             Some(build_empty_remote_info_response(request_id, header_version_id))
         }
-        Some("cluster:monitor/task") => Some(build_empty_pending_cluster_tasks_response(
+        Some("cluster:monitor/task") => Some(build_pending_cluster_tasks_response(
             request_id,
             header_version_id,
+            transport_identity,
         )),
         Some("cluster:monitor/tasks/lists") => {
             Some(build_empty_list_tasks_response(request_id, header_version_id))
@@ -7758,6 +7804,7 @@ mod tests {
             seed_peer_identities: Vec::new(),
             coordination_state: Arc::new(Mutex::new(DevTransportCoordinationState::default())),
             remote_transport_queue_gate: Arc::new(RemoteTransportQueueGate::new(1, 1000)),
+            task_queue_state: None,
         };
         let capture_write_lock = Arc::new(Mutex::new(()));
         let server_capture_path = capture_path.clone();
@@ -7837,6 +7884,7 @@ mod tests {
             seed_peer_identities: Vec::new(),
             coordination_state: Arc::new(Mutex::new(DevTransportCoordinationState::default())),
             remote_transport_queue_gate: Arc::clone(&gate),
+            task_queue_state: None,
         };
 
         let response = maybe_build_query_phase_response_with_remote_transport_admission(
@@ -7892,9 +7940,74 @@ mod tests {
     }
 
     #[test]
-    fn pending_cluster_tasks_transport_route_builds_opensearch_shaped_empty_response() {
-        let response =
-            build_empty_pending_cluster_tasks_response(81, OPENSEARCH_3_7_0_TRANSPORT.id() as u32);
+    fn pending_cluster_tasks_transport_route_builds_opensearch_shaped_response_from_queue() {
+        let transport_identity = DevTransportIdentity {
+            cluster_name: "steelsearch-dev".to_string(),
+            node_name: "steel-node".to_string(),
+            node_id: "steel-node-id".to_string(),
+            ephemeral_id: "steel-node-ephemeral".to_string(),
+            transport_address: "127.0.0.1:9300".parse().unwrap(),
+            attributes: Vec::new(),
+            roles: vec!["cluster_manager".to_string(), "data".to_string()],
+            seed_peer_identity: None,
+            seed_peer_identities: Vec::new(),
+            coordination_state: Arc::new(Mutex::new(DevTransportCoordinationState::default())),
+            remote_transport_queue_gate: Arc::new(RemoteTransportQueueGate::new(1, 1000)),
+            task_queue_state: Some(PersistedClusterManagerTaskQueueState {
+                pending: vec![ClusterManagerTaskRecord {
+                    task_id: 11,
+                    task: os_node::ClusterManagerTask {
+                        source: "reroute shards".to_string(),
+                        kind: os_node::ClusterManagerTaskKind::Reroute,
+                    },
+                    state: ClusterManagerTaskState::Queued,
+                    parent_task_id: None,
+                    headers: BTreeMap::new(),
+                    failure_reason: None,
+                }],
+                in_flight: vec![ClusterManagerTaskRecord {
+                    task_id: 12,
+                    task: os_node::ClusterManagerTask {
+                        source: "remove-node [node-b]".to_string(),
+                        kind: os_node::ClusterManagerTaskKind::RemoveNode {
+                            node_id: "node-b".to_string(),
+                        },
+                    },
+                    state: ClusterManagerTaskState::InFlight,
+                    parent_task_id: None,
+                    headers: BTreeMap::new(),
+                    failure_reason: None,
+                }],
+                acknowledged: vec![ClusterManagerTaskRecord {
+                    task_id: 13,
+                    task: os_node::ClusterManagerTask {
+                        source: "acknowledged task".to_string(),
+                        kind: os_node::ClusterManagerTaskKind::Reroute,
+                    },
+                    state: ClusterManagerTaskState::Acknowledged,
+                    parent_task_id: None,
+                    headers: BTreeMap::new(),
+                    failure_reason: None,
+                }],
+                failed: vec![ClusterManagerTaskRecord {
+                    task_id: 14,
+                    task: os_node::ClusterManagerTask {
+                        source: "failed task".to_string(),
+                        kind: os_node::ClusterManagerTaskKind::Reroute,
+                    },
+                    state: ClusterManagerTaskState::Failed,
+                    parent_task_id: None,
+                    headers: BTreeMap::new(),
+                    failure_reason: Some("boom".to_string()),
+                }],
+                ..PersistedClusterManagerTaskQueueState::default()
+            }),
+        };
+        let response = build_pending_cluster_tasks_response(
+            81,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &transport_identity,
+        );
         let mut frame = BytesMut::from(&response[..]);
         let os_transport::frame::DecodedFrame::Message(message) =
             os_transport::frame::decode_frame(&mut frame).unwrap().unwrap()
@@ -7906,7 +8019,15 @@ mod tests {
         assert!(!message.status.is_request());
         let response =
             os_transport::action::read_pending_cluster_tasks_response_message(&message).unwrap();
-        assert!(response.tasks.is_empty());
+        assert_eq!(response.tasks.len(), 2);
+        assert_eq!(response.tasks[0].insert_order, 11);
+        assert_eq!(response.tasks[0].priority, "URGENT");
+        assert_eq!(response.tasks[0].source, "reroute shards");
+        assert!(!response.tasks[0].executing);
+        assert_eq!(response.tasks[0].time_in_queue_millis, 0);
+        assert_eq!(response.tasks[1].insert_order, 12);
+        assert_eq!(response.tasks[1].source, "remove-node [node-b]");
+        assert!(response.tasks[1].executing);
     }
 
     #[test]

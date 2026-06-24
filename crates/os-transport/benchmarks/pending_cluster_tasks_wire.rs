@@ -2,7 +2,7 @@ use os_core::OPENSEARCH_3_7_0_TRANSPORT;
 use os_transport::action::{
     build_pending_cluster_tasks_request_message, build_pending_cluster_tasks_response_message,
     read_pending_cluster_tasks_request_message, read_pending_cluster_tasks_response_message,
-    PendingClusterTasksRequestWire, PendingClusterTasksResponseWire,
+    PendingClusterTaskWire, PendingClusterTasksRequestWire, PendingClusterTasksResponseWire,
 };
 use os_transport::frame::{decode_frame, DecodedFrame};
 use std::hint::black_box;
@@ -12,7 +12,24 @@ const ITERATIONS: usize = 400_000;
 
 fn main() {
     let request = PendingClusterTasksRequestWire::default();
-    let response = PendingClusterTasksResponseWire { tasks: Vec::new() };
+    let response = PendingClusterTasksResponseWire {
+        tasks: vec![
+            PendingClusterTaskWire {
+                insert_order: 11,
+                priority: "URGENT".to_string(),
+                source: "reroute shards".to_string(),
+                executing: false,
+                time_in_queue_millis: 0,
+            },
+            PendingClusterTaskWire {
+                insert_order: 12,
+                priority: "URGENT".to_string(),
+                source: "remove-node [node-b]".to_string(),
+                executing: true,
+                time_in_queue_millis: 0,
+            },
+        ],
+    };
 
     let request_encode = measure("pending_cluster_tasks_request_encode", ITERATIONS, || {
         let frame = build_pending_cluster_tasks_request_message(
@@ -60,9 +77,7 @@ fn main() {
         .min(response_encode.ops_per_second)
         .min(request_decode.ops_per_second)
         .min(response_decode.ops_per_second);
-    println!(
-        "pending_cluster_tasks_wire_bottleneck_ops_per_second={combined_ops_per_second:.2}"
-    );
+    println!("pending_cluster_tasks_wire_bottleneck_ops_per_second={combined_ops_per_second:.2}");
 }
 
 #[derive(Clone, Copy)]

@@ -313,7 +313,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `indices:data/read/point_in_time/create` (rejected fail-closed)
 - `indices:data/read/point_in_time/delete` (rejected fail-closed)
 - `indices:data/read/point_in_time/readall` (rejected fail-closed)
-- `cluster:monitor/task` (implemented empty pending-task subset)
+- `cluster:monitor/task` (implemented pending/in-flight task subset)
 - `cluster:monitor/tasks/lists` (implemented empty default subset)
 - `cluster:monitor/task/get` (rejected fail-closed)
 - `cluster:admin/tasks/cancel` (implemented no-active-task default subset)
@@ -5106,17 +5106,17 @@ Current pending-cluster-tasks wire microbenchmark:
 
 ```text
 cargo run -p os-transport --release --bin pending-cluster-tasks-wire-benchmark
-pending_cluster_tasks_request_encode ops_per_second=2150902.98 nanos_per_op=464.92
-pending_cluster_tasks_response_encode ops_per_second=4583061.17 nanos_per_op=218.19
-pending_cluster_tasks_request_decode ops_per_second=2295565.87 nanos_per_op=435.62
-pending_cluster_tasks_response_decode ops_per_second=4285352.77 nanos_per_op=233.35
-pending_cluster_tasks_wire_bottleneck_ops_per_second=2150902.98
+pending_cluster_tasks_request_encode ops_per_second=2134584.13 nanos_per_op=468.48
+pending_cluster_tasks_response_encode ops_per_second=1136492.64 nanos_per_op=879.90
+pending_cluster_tasks_request_decode ops_per_second=2348150.27 nanos_per_op=425.87
+pending_cluster_tasks_response_decode ops_per_second=1394374.44 nanos_per_op=717.17
+pending_cluster_tasks_wire_bottleneck_ops_per_second=1136492.64
 ```
 
-The current pending-cluster-tasks wire bottleneck is request encode. The empty
-transport subset remains above 2.15M ops/s in the latest local release run; the
-first meaningful execution cost to watch is runtime pending task materialization
-and non-empty response rendering.
+The current pending-cluster-tasks wire bottleneck is non-empty response encode
+for a two-task pending/in-flight response. The transport subset remains above
+1.13M ops/s in the latest local release run; the next meaningful execution cost
+to watch is live runtime pending task snapshot refresh when tasks are mutating.
 
 Current list-tasks wire microbenchmark:
 
