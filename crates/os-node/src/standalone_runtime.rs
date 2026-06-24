@@ -18363,6 +18363,23 @@ impl SteelNode {
             }
         }
 
+        if let Some(script_fields) = body.get("script_fields").and_then(Value::as_object) {
+            for (field_name, definition) in script_fields {
+                let Some(definition_object) = definition.as_object() else {
+                    continue;
+                };
+                let Some(script_source) = script_field_script_source(definition_object) else {
+                    continue;
+                };
+                let Some(source_field) = parse_script_field_source(script_source) else {
+                    continue;
+                };
+                if let Some(value) = extract_source_path_value(source, &source_field) {
+                    fields.insert(field_name.clone(), search_field_values(value));
+                }
+            }
+        }
+
         if fields.is_empty() {
             None
         } else {
@@ -18581,6 +18598,7 @@ fn standalone_search_body_allows_native_engine(body: &Value) -> bool {
         "runtime_mappings",
         "search_after",
         "seq_no_primary_term",
+        "script_fields",
         "stored_fields",
         "suggest",
         "terminate_after",
@@ -19039,6 +19057,11 @@ fn validate_search_request_body(body: &Value, scroll: bool) -> Option<RestRespon
     }
     if let Some(fetch_fields) = body.get("fields") {
         if let Some(response) = validate_fetch_fields_request_body(fetch_fields) {
+            return Some(response);
+        }
+    }
+    if let Some(script_fields) = body.get("script_fields") {
+        if let Some(response) = validate_script_fields_request_body(script_fields) {
             return Some(response);
         }
     }
@@ -20266,6 +20289,48 @@ fn validate_fetch_fields_request_body(fetch_fields: &Value) -> Option<RestRespon
         if spec.get("field").and_then(Value::as_str).is_none() {
             return Some(build_unsupported_search_response(
                 "unsupported search option [fields]",
+            ));
+        }
+    }
+    None
+}
+
+fn validate_script_fields_request_body(script_fields: &Value) -> Option<RestResponse> {
+    let Some(fields) = script_fields.as_object() else {
+        return Some(build_unsupported_search_response(
+            "unsupported search option [script_fields]",
+        ));
+    };
+    for definition in fields.values() {
+        let Some(definition_object) = definition.as_object() else {
+            return Some(build_unsupported_search_response(
+                "unsupported search option [script_fields]",
+            ));
+        };
+        if definition_object
+            .keys()
+            .any(|key| key != "script" && key != "ignore_failure")
+        {
+            return Some(build_unsupported_search_response(
+                "unsupported search option [script_fields]",
+            ));
+        }
+        if definition_object
+            .get("ignore_failure")
+            .is_some_and(|value| !value.is_boolean())
+        {
+            return Some(build_unsupported_search_response(
+                "unsupported search option [script_fields]",
+            ));
+        }
+        let Some(script_source) = script_field_script_source(definition_object) else {
+            return Some(build_unsupported_search_response(
+                "unsupported search option [script_fields]",
+            ));
+        };
+        if parse_script_field_source(script_source).is_none() {
+            return Some(build_unsupported_search_response(
+                "unsupported search option [script_fields]",
             ));
         }
     }
@@ -21544,6 +21609,29 @@ fn parse_runtime_mapping_script_source(source: &str) -> Option<String> {
     None
 }
 
+fn parse_script_field_source(source: &str) -> Option<String> {
+    let source = source.trim();
+    let expression = source
+        .strip_prefix("emit(")
+        .and_then(|remaining| remaining.strip_suffix(')'))
+        .unwrap_or(source)
+        .trim();
+    for (prefix, suffix_marker) in [
+        ("doc['", "'].value"),
+        ("doc[\"", "\"].value"),
+        ("params._source['", "']"),
+        ("params._source[\"", "\"]"),
+    ] {
+        if let Some(field_expr) = expression.strip_prefix(prefix) {
+            let (field_name, suffix) = field_expr.split_once(suffix_marker)?;
+            if suffix.is_empty() && !field_name.is_empty() {
+                return Some(field_name.to_string());
+            }
+        }
+    }
+    None
+}
+
 fn apply_request_scoped_fields_to_source(source: &Value, body: &Value) -> Value {
     let effective = apply_request_scoped_field_definitions_to_source(source, body.get("runtime_mappings"));
     apply_request_scoped_field_definitions_to_source(&effective, body.get("derived"))
@@ -21575,6 +21663,19 @@ fn apply_request_scoped_field_definitions_to_source(source: &Value, definitions:
 }
 
 fn request_scoped_field_script_source(definition_object: &serde_json::Map<String, Value>) -> Option<&str> {
+    match definition_object.get("script")? {
+        Value::String(source) => Some(source.as_str()),
+        Value::Object(script) => {
+            if script.keys().any(|key| key != "source") {
+                return None;
+            }
+            script.get("source").and_then(Value::as_str)
+        }
+        _ => None,
+    }
+}
+
+fn script_field_script_source(definition_object: &serde_json::Map<String, Value>) -> Option<&str> {
     match definition_object.get("script")? {
         Value::String(source) => Some(source.as_str()),
         Value::Object(script) => {
@@ -41645,6 +41746,54 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             nested_fields_body.body["hits"]["hits"][0]["fields"]["comments.author"],
             serde_json::json!(["ann", "bob"])
+        );
+
+        let script_fields_body = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-params-a/_search")
+                .with_json_body(serde_json::json!({
+                    "query": { "match_all": {} },
+                    "script_fields": {
+                        "tenant_copy": {
+                            "script": {
+                                "source": "params._source[\"tenant\"]"
+                            }
+                        },
+                        "rank_copy": {
+                            "script": "emit(doc[\"rank\"].value)",
+                            "ignore_failure": false
+                        }
+                    },
+                    "sort": [{ "rank": "asc" }],
+                    "size": 1
+                })),
+        );
+        assert_eq!(script_fields_body.status, 200);
+        assert_eq!(
+            script_fields_body.body["hits"]["hits"][0]["fields"]["tenant_copy"],
+            serde_json::json!(["tenant-a"])
+        );
+        assert_eq!(
+            script_fields_body.body["hits"]["hits"][0]["fields"]["rank_copy"],
+            serde_json::json!([1])
+        );
+
+        let invalid_script_fields_body = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-params-a/_search")
+                .with_json_body(serde_json::json!({
+                    "query": { "match_all": {} },
+                    "script_fields": {
+                        "bad": {
+                            "script": {
+                                "source": "doc[\"rank\"].value + 1"
+                            }
+                        }
+                    }
+                })),
+        );
+        assert_eq!(invalid_script_fields_body.status, 400);
+        assert_eq!(
+            invalid_script_fields_body.body["error"]["reason"],
+            "unsupported search option [script_fields]"
         );
 
         let stored_field_string_body = node.handle_rest_request(
