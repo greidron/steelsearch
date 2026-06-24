@@ -327,6 +327,7 @@ Required route evidence:
 Required semantic cases:
 
 - `exists_query_search`
+- `source_filtering_search`
 - `validate_query_empty_search`
 - `validate_query_target_rewrite_search`
 - `match_query_scoring_order_total_hits`
@@ -366,6 +367,9 @@ Required semantic cases:
 - `allow_partial_search_results_true_search`
 - `track_scores_field_sort_search`
 - `search_boolean_execution_query_params`
+- `min_score_search`
+- `post_filter_search`
+- `hit_metadata_projection_search`
 - `completion_suggest_search`
 - `phrase_suggest_search`
 - `term_suggest_search`

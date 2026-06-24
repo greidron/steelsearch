@@ -1407,6 +1407,33 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "source_filtering_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "_source": [
+          "service",
+          "level"
+        ],
+        "sort": [
+          {
+            "ts": {
+              "order": "asc"
+            }
+          }
+        ],
+        "size": 2
+      },
+      "extract": "search_hits",
+      "family": "fetch",
+      "description": "[fetch] source filtering search",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "validate_query_empty_search",
       "area": "search",
       "method": "POST",
@@ -3196,6 +3223,72 @@
       "extract": "search_summary",
       "family": "lexical",
       "description": "[lexical] timeout search",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "min_score_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "min_score": 1.5
+      },
+      "extract": "search_hits",
+      "family": "ranking",
+      "description": "[ranking] top-level min_score search",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "post_filter_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "post_filter": {
+          "term": {
+            "tag": "cache"
+          }
+        },
+        "sort": [
+          {
+            "ts": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "extract": "search_hits",
+      "family": "fetch",
+      "description": "[fetch] post filter search",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "hit_metadata_projection_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search?version=true&seq_no_primary_term=true",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "sort": [
+          {
+            "ts": {
+              "order": "asc"
+            }
+          }
+        ],
+        "size": 2
+      },
+      "extract": "search_hit_metadata",
+      "family": "fetch",
+      "description": "[fetch] hit metadata projection search",
       "strict_source_parity_required": true
     },
     {

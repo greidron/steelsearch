@@ -1631,6 +1631,19 @@ def extract(kind: str, response: dict[str, Any]) -> Any:
             ],
             "ids": [hit.get("_id") for hit in hits if isinstance(hit, dict)],
         }
+    if kind == "search_hit_metadata":
+        hits = ((body.get("hits") or {}).get("hits") or [])
+        return {
+            "status": response["status"],
+            "ids": [hit.get("_id") for hit in hits if isinstance(hit, dict)],
+            "versions": [hit.get("_version") for hit in hits if isinstance(hit, dict)],
+            "seq_no_are_numbers": [
+                isinstance(hit.get("_seq_no"), int) for hit in hits if isinstance(hit, dict)
+            ],
+            "primary_terms": [
+                hit.get("_primary_term") for hit in hits if isinstance(hit, dict)
+            ],
+        }
     if kind == "search_result_semantic":
         hits = ((body.get("hits") or {}).get("hits") or [])
         total = (body.get("hits") or {}).get("total")
