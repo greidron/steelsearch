@@ -2395,6 +2395,8 @@ pub struct PitContext {
     pub creation_time_millis: u128,
 }
 
+const DEFAULT_MAX_PIT_KEEP_ALIVE_MILLIS: u64 = 86_400_000;
+
 #[derive(Clone, Debug)]
 struct ParsedMsearchRequest {
     target: Option<String>,
@@ -8881,7 +8883,12 @@ impl SteelNode {
                 .and_then(Value::as_str);
             let keep_alive_millis = match keep_alive {
                 Some(keep_alive) => match parse_time_value_millis(keep_alive) {
-                    Some(millis) => Some(millis),
+                    Some(millis) => {
+                        if let Some(response) = validate_pit_keep_alive_limit(millis) {
+                            return response;
+                        }
+                        Some(millis)
+                    }
                     None => {
                         return RestResponse::json(
                             400,
@@ -9733,6 +9740,9 @@ impl SteelNode {
                 }),
             );
         };
+        if let Some(response) = validate_pit_keep_alive_limit(keep_alive_millis) {
+            return response;
+        }
         let ignore_unavailable = query_param_is_true(request.query_params.get("ignore_unavailable"));
         let allow_no_indices = query_param_is_true(request.query_params.get("allow_no_indices"));
         let expand_wildcards = request
@@ -19827,6 +19837,41 @@ fn parse_time_value_millis(value: &str) -> Option<u64> {
         return Some(1);
     }
     amount.checked_mul(multiplier)
+}
+
+fn validate_pit_keep_alive_limit(keep_alive_millis: u64) -> Option<RestResponse> {
+    if keep_alive_millis <= DEFAULT_MAX_PIT_KEEP_ALIVE_MILLIS {
+        return None;
+    }
+    Some(RestResponse::json(
+        400,
+        serde_json::json!({
+            "error": {
+                "type": "illegal_argument_exception",
+                "reason": format!(
+                    "Keep alive for request ({}) is too large. It must be less than ({}). This limit can be set by changing the [point_in_time.max_keep_alive] cluster level setting.",
+                    format_time_value_millis(keep_alive_millis),
+                    format_time_value_millis(DEFAULT_MAX_PIT_KEEP_ALIVE_MILLIS)
+                )
+            },
+            "status": 400
+        }),
+    ))
+}
+
+fn format_time_value_millis(value: u64) -> String {
+    const HOUR: u64 = 3_600_000;
+    const MINUTE: u64 = 60_000;
+    const SECOND: u64 = 1_000;
+    if value % HOUR == 0 {
+        format!("{}h", value / HOUR)
+    } else if value % MINUTE == 0 {
+        format!("{}m", value / MINUTE)
+    } else if value % SECOND == 0 {
+        format!("{}s", value / SECOND)
+    } else {
+        format!("{value}ms")
+    }
 }
 
 fn extract_knn_field_name(query: &Value) -> Option<&str> {
@@ -34985,6 +35030,20 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             "Failed to parse value [maybe] as only [true] or [false] are allowed."
         );
 
+        let too_large_open_pit = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/logs-session-000001/_search/point_in_time?keep_alive=25h",
+        ));
+        assert_eq!(too_large_open_pit.status, 400);
+        assert_eq!(
+            too_large_open_pit.body["error"]["type"],
+            "illegal_argument_exception"
+        );
+        assert_eq!(
+            too_large_open_pit.body["error"]["reason"],
+            "Keep alive for request (25h) is too large. It must be less than (24h). This limit can be set by changing the [point_in_time.max_keep_alive] cluster level setting."
+        );
+
         let open_pit = node.handle_rest_request(RestRequest::new(
             RestMethod::Post,
             "/logs-session-000001/_search/point_in_time?keep_alive=1m&allow_partial_pit_creation",
@@ -35132,6 +35191,22 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             invalid_pit_keep_alive.body["error"]["type"],
             "illegal_argument_exception"
+        );
+
+        let too_large_pit_keep_alive = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_search")
+                .with_json_body(serde_json::json!({
+                    "pit": {
+                        "id": second_open_pit.body["pit_id"].as_str().unwrap(),
+                        "keep_alive": "25h"
+                    },
+                    "query": { "match_all": {} }
+                })),
+        );
+        assert_eq!(too_large_pit_keep_alive.status, 400);
+        assert_eq!(
+            too_large_pit_keep_alive.body["error"]["reason"],
+            "Keep alive for request (25h) is too large. It must be less than (24h). This limit can be set by changing the [point_in_time.max_keep_alive] cluster level setting."
         );
 
         let numeric_pit_keep_alive = node.handle_rest_request(

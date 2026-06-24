@@ -2260,6 +2260,8 @@ The create-PIT boundary covers:
   PIT context store, including the resolved index set, document snapshot,
   primary-shard count, keep-alive expiry bookkeeping, and read-all/delete
   visibility through the same lifecycle state;
+- REST create-PIT and PIT-search keep-alive extension reject values above the
+  OpenSearch default `point_in_time.max_keep_alive` of `24h`;
 - manifest-backed create-PIT index option handling for unavailable targets,
   `allow_no_indices`, ignored aliases, alias fanout guards, open/closed
   wildcard expansion, and hidden wildcard expansion;
