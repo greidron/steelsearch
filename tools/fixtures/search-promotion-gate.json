@@ -33,6 +33,7 @@
         "pit_list_search",
         "pit_clear_all_search",
         "pit_clear_all_body_search",
+        "pit_search_after_close_missing_context",
         "pit_search",
         "pit_snapshot_after_update_delete_search",
         "pit_search_with_default_ignore_throttled",

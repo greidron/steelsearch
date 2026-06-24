@@ -70,6 +70,7 @@ def main() -> int:
             "wildcard_query_search",
             "nested_query_search",
             "pit_open_search",
+            "pit_search_after_close_missing_context",
             "pit_search",
             "pit_snapshot_after_update_delete_search",
             "scroll_initial_search",

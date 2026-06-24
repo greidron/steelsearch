@@ -10130,16 +10130,7 @@ impl SteelNode {
             contexts.remove(pit_id);
         }
         let Some(context) = contexts.get_mut(pit_id) else {
-            return Err(RestResponse::json(
-                404,
-                serde_json::json!({
-                    "error": {
-                        "type": "search_context_missing_exception",
-                        "reason": format!("No search context found for id [{pit_id}]")
-                    },
-                    "status": 404
-                }),
-            ));
+            return Err(search_phase_missing_pit_context_response(pit_id));
         };
         if let Some(keep_alive_millis) = keep_alive_millis {
             context.keep_alive_millis = keep_alive_millis;
@@ -20286,6 +20277,31 @@ fn search_phase_illegal_argument(reason: &str) -> RestResponse {
                 }
             },
             "status": 400
+        }),
+    )
+}
+
+fn search_phase_missing_pit_context_response(pit_id: &str) -> RestResponse {
+    let reason = format!("No search context found for id [{pit_id}]");
+    RestResponse::json(
+        404,
+        serde_json::json!({
+            "error": {
+                "type": "search_phase_execution_exception",
+                "reason": "all shards failed",
+                "root_cause": [
+                    {
+                        "type": "search_context_missing_exception",
+                        "reason": reason
+                    }
+                ],
+                "caused_by": {
+                    "type": "search_context_missing_exception",
+                    "reason": reason
+                },
+                "failed_shards": []
+            },
+            "status": 404
         }),
     )
 }
@@ -38692,6 +38708,10 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(empty_pit_id_search.status, 404);
         assert_eq!(
             empty_pit_id_search.body["error"]["type"],
+            "search_phase_execution_exception"
+        );
+        assert_eq!(
+            empty_pit_id_search.body["error"]["caused_by"]["type"],
             "search_context_missing_exception"
         );
 

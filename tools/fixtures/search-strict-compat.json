@@ -1779,6 +1779,53 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "pit_search_after_close_missing_context",
+      "area": "search",
+      "extract": "search_error",
+      "steps": [
+        {
+          "name": "pit-open",
+          "method": "POST",
+          "path": "/logs-compat/_search/point_in_time?keep_alive=1m",
+          "body": null,
+          "expected_status": 200,
+          "extract": "pit_open",
+          "save": {
+            "pit_id": "body.pit_id"
+          }
+        },
+        {
+          "name": "pit-clear",
+          "method": "DELETE",
+          "path": "/_search/point_in_time",
+          "body": {
+            "pit_id": "${saved.pit_id}"
+          },
+          "expected_status": 200,
+          "extract": "pit_clear"
+        },
+        {
+          "name": "pit-search-after-close",
+          "method": "POST",
+          "path": "/_search",
+          "body": {
+            "pit": {
+              "id": "${saved.pit_id}",
+              "keep_alive": "1m"
+            },
+            "query": {
+              "match_all": {}
+            }
+          },
+          "expected_status": 404,
+          "extract": "search_error"
+        }
+      ],
+      "family": "lexical",
+      "description": "[lexical] closed PIT search returns a missing search context error",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "pit_list_search",
       "area": "search",
       "extract": "pit_list",
