@@ -20324,35 +20324,19 @@ fn apply_search_sort(hits: &mut [Value], sort: &Value) {
     }
     hits.sort_by(|left, right| {
         for field_spec in sort_fields {
-            if let Some(field_name) = field_spec.as_str() {
-                if field_name == "_score" {
-                    let left_score = left["_score"].as_f64().unwrap_or(0.0);
-                    let right_score = right["_score"].as_f64().unwrap_or(0.0);
-                    let ordering = right_score
-                        .partial_cmp(&left_score)
-                        .unwrap_or(std::cmp::Ordering::Equal);
-                    if ordering != std::cmp::Ordering::Equal {
-                        return ordering;
-                    }
-                }
-                continue;
-            }
-            let Some(field_object) = field_spec.as_object() else {
+            let Some(field_name) = sort_field_name(field_spec) else {
                 continue;
             };
-            for (field_name, field_options) in field_object {
-                let desc = field_options
-                    .get("order")
-                    .and_then(Value::as_str)
-                    .unwrap_or("asc")
-                    == "desc";
-                let left_value = extract_sort_value(left, field_name);
-                let right_value = extract_sort_value(right, field_name);
-                let ordering = compare_json_scalars(&left_value, &right_value);
-                let ordering = if desc { ordering.reverse() } else { ordering };
-                if ordering != std::cmp::Ordering::Equal {
-                    return ordering;
-                }
+            let left_value = extract_sort_value(left, field_name);
+            let right_value = extract_sort_value(right, field_name);
+            let ordering = compare_json_scalars(&left_value, &right_value);
+            let ordering = if sort_field_descending(field_spec) {
+                ordering.reverse()
+            } else {
+                ordering
+            };
+            if ordering != std::cmp::Ordering::Equal {
+                return ordering;
             }
         }
         left["_seq_no"]
@@ -20426,8 +20410,11 @@ fn sort_field_descending(sort_field: &Value) -> bool {
     sort_field
         .as_object()
         .and_then(|object| object.values().next())
-        .and_then(|options| options.get("order"))
-        .and_then(Value::as_str)
+        .and_then(|options| {
+            options
+                .as_str()
+                .or_else(|| options.get("order").and_then(Value::as_str))
+        })
         .is_some_and(|order| order == "desc")
 }
 
@@ -35559,6 +35546,41 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             pit_shard_doc_second_page.body["hits"]["hits"][0]["sort"],
             serde_json::json!([1])
+        );
+
+        let pit_shard_doc_desc = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_search")
+                .with_json_body(serde_json::json!({
+                    "pit": {
+                        "id": second_open_pit.body["pit_id"].as_str().unwrap(),
+                        "keep_alive": "1m"
+                    },
+                    "sort": [{ "_shard_doc": "desc" }],
+                    "query": { "match_all": {} }
+                })),
+        );
+        assert_eq!(pit_shard_doc_desc.status, 200);
+        assert_eq!(
+            pit_shard_doc_desc.body["hits"]["hits"][0]["sort"],
+            serde_json::json!([1])
+        );
+
+        let pit_shard_doc_desc_beyond_end = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_search")
+                .with_json_body(serde_json::json!({
+                    "pit": {
+                        "id": second_open_pit.body["pit_id"].as_str().unwrap(),
+                        "keep_alive": "1m"
+                    },
+                    "sort": [{ "_shard_doc": "desc" }],
+                    "search_after": [-1],
+                    "query": { "match_all": {} }
+                })),
+        );
+        assert_eq!(pit_shard_doc_desc_beyond_end.status, 200);
+        assert_eq!(
+            pit_shard_doc_desc_beyond_end.body["hits"]["hits"].as_array().map(Vec::len),
+            Some(0)
         );
 
         let duplicate_pit_shard_doc_sort = node.handle_rest_request(
