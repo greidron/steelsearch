@@ -36176,6 +36176,34 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(second_open_pit.status, 200);
         assert_eq!(second_open_pit.body["pit_id"], "pit-2");
 
+        let preferred_open_pit = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/logs-session-000001/_search/point_in_time?keep_alive=1m&preference=_local",
+        ));
+        assert_eq!(preferred_open_pit.status, 200);
+        assert_eq!(preferred_open_pit.body["pit_id"], "pit-3");
+        assert_eq!(preferred_open_pit.body["_shards"]["total"], 1);
+
+        let preferred_pit_search = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_search")
+                .with_json_body(serde_json::json!({
+                    "pit": {
+                        "id": preferred_open_pit.body["pit_id"].as_str().unwrap(),
+                        "keep_alive": "1m"
+                    },
+                    "query": { "match_all": {} }
+                })),
+        );
+        assert_eq!(preferred_pit_search.status, 200);
+        assert_eq!(preferred_pit_search.body["pit_id"], "pit-3");
+        assert_eq!(preferred_pit_search.body["hits"]["total"]["value"], 2);
+
+        let close_preferred_pit = node.handle_rest_request(
+            RestRequest::new(RestMethod::Delete, "/_search/point_in_time")
+                .with_json_body(serde_json::json!({ "pit_id": "pit-3" })),
+        );
+        assert_eq!(close_preferred_pit.status, 200);
+
         assert_eq!(
             node.handle_rest_request(
                 RestRequest::new(RestMethod::Put, "/logs-session-000001/_doc/doc-3")
@@ -36776,7 +36804,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             "/logs-routed-pit-000001/_search/point_in_time?keep_alive=1m&routing=tenant-a",
         ));
         assert_eq!(routed_pit.status, 200);
-        assert_eq!(routed_pit.body["pit_id"], "pit-3");
+        assert_eq!(routed_pit.body["pit_id"], "pit-4");
 
         let routed_live_search = node.handle_rest_request(
             RestRequest::new(
@@ -36807,7 +36835,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
 
         let close_routed_pit = node.handle_rest_request(
             RestRequest::new(RestMethod::Delete, "/_search/point_in_time")
-                .with_json_body(serde_json::json!({ "pit_id": "pit-3" })),
+                .with_json_body(serde_json::json!({ "pit_id": "pit-4" })),
         );
         assert_eq!(close_routed_pit.status, 200);
 
@@ -36816,7 +36844,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             "/logs-empty-pit-*/_search/point_in_time?keep_alive=1m&allow_no_indices=true",
         ));
         assert_eq!(allow_no_indices_pit.status, 200);
-        assert_eq!(allow_no_indices_pit.body["pit_id"], "pit-4");
+        assert_eq!(allow_no_indices_pit.body["pit_id"], "pit-5");
         assert_eq!(allow_no_indices_pit.body["_shards"]["total"], 0);
         assert_eq!(allow_no_indices_pit.body["_shards"]["successful"], 0);
 
@@ -36835,7 +36863,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
 
         let close_allow_no_indices_pit = node.handle_rest_request(
             RestRequest::new(RestMethod::Delete, "/_search/point_in_time")
-                .with_json_body(serde_json::json!({ "pit_id": "pit-4" })),
+                .with_json_body(serde_json::json!({ "pit_id": "pit-5" })),
         );
         assert_eq!(close_allow_no_indices_pit.status, 200);
 

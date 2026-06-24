@@ -254,6 +254,7 @@ part of the OpenSearch parity target.
     - `DELETE /_search/scroll`
   - `pit`
     - `POST /{index}/_search/point_in_time`
+    - create-PIT `preference` admission in the standalone single-node profile
     - `_search` with `pit.id`
     - `DELETE /_search/point_in_time`
   - `search_after`

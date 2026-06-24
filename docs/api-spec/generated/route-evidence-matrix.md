@@ -354,13 +354,13 @@ status and the canonical comparison/profile owner when one exists.
 | search | implemented-stateful | POST | `/_count` | `search` | `tools/run-phase-a-acceptance-harness.sh --scope search` |
 | search | implemented-read | GET | `/{index}/_count` | `search` | `tools/run-phase-a-acceptance-harness.sh --scope search` |
 | search | implemented-stateful | POST | `/{index}/_count` | `search` | `tools/run-phase-a-acceptance-harness.sh --scope search` |
-| search | implemented-stateful | POST | `/{index}/_search/point_in_time` | `search` | `tools/run-phase-a-acceptance-harness.sh --scope search` |
-| search | implemented-stateful | DELETE | `/_search/point_in_time` | `search` | `tools/run-phase-a-acceptance-harness.sh --scope search` |
-| search | implemented-stateful | DELETE | `/_search/point_in_time/_all` | `search` | `tools/run-phase-a-acceptance-harness.sh --scope search` |
+| search | implemented | POST | `/{index}/_search/point_in_time` | `search` | `tools/run-phase-a-acceptance-harness.sh --scope search` |
+| search | implemented | DELETE | `/_search/point_in_time` | `search` | `tools/run-phase-a-acceptance-harness.sh --scope search` |
+| search | implemented | DELETE | `/_search/point_in_time/_all` | `search` | `tools/run-phase-a-acceptance-harness.sh --scope search` |
 | search | implemented-stateful | DELETE | `/_search/pipeline/{id}` | `search` | `tools/run-phase-a-acceptance-harness.sh --scope search` |
 | search | implemented-read | GET | `/{index}/_explain/{id}` | `search` | `tools/run-phase-a-acceptance-harness.sh --scope search` |
 | search | implemented-stateful | POST | `/{index}/_explain/{id}` | `search` | `tools/run-phase-a-acceptance-harness.sh --scope search` |
-| search | implemented-stateful | GET | `/_search/point_in_time/_all` | `search` | `tools/run-phase-a-acceptance-harness.sh --scope search` |
+| search | implemented | GET | `/_search/point_in_time/_all` | `search` | `tools/run-phase-a-acceptance-harness.sh --scope search` |
 | search | implemented-read | GET | `/_search/pipeline` | `search` | `tools/run-phase-a-acceptance-harness.sh --scope search` |
 | search | implemented-stateful | GET | `/_search/pipeline/{id}` | `search` | `tools/run-phase-a-acceptance-harness.sh --scope search` |
 | search | implemented-read | GET | `/_msearch` | `search` | `tools/run-phase-a-acceptance-harness.sh --scope search` |

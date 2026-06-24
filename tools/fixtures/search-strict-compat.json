@@ -1690,6 +1690,17 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "pit_open_with_preference_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search/point_in_time?keep_alive=1m&preference=_local",
+      "body": null,
+      "extract": "pit_open",
+      "family": "lexical",
+      "description": "[lexical] pit open with preference search",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "pit_search",
       "area": "search",
       "extract": "search_hits",

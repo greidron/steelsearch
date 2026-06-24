@@ -967,7 +967,7 @@
   "info": {
     "description": "Generated OpenAPI companion built from the source-derived REST route inventory. This reflects route inventory and evidence ownership, not a claim that every listed route is fully implemented.",
     "title": "Steelsearch API",
-    "version": "0.2.3"
+    "version": "0.2.4"
   },
   "openapi": "3.0.3",
   "paths": {
@@ -13119,7 +13119,7 @@
     },
     "/_search/point_in_time": {
       "delete": {
-        "description": "Stateful route handling is present in the standalone runtime; deeper mutation semantics, error parity, and compare fixtures may still remain.",
+        "description": "Remaining gaps are mostly parity depth, option coverage, and production-hardening.",
         "operationId": "delete__search_point_in_time",
         "parameters": [],
         "responses": {
@@ -13163,12 +13163,12 @@
         "x-opensearch-source": "/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/search/RestDeletePitAction.java",
         "x-opensearch-source-line": "57",
         "x-steelsearch-family": "search",
-        "x-steelsearch-status": "implemented-stateful"
+        "x-steelsearch-status": "implemented"
       }
     },
     "/_search/point_in_time/_all": {
       "delete": {
-        "description": "Stateful route handling is present in the standalone runtime; deeper mutation semantics, error parity, and compare fixtures may still remain.",
+        "description": "Remaining gaps are mostly parity depth, option coverage, and production-hardening.",
         "operationId": "delete__search_point_in_time__all",
         "parameters": [],
         "responses": {
@@ -13212,10 +13212,10 @@
         "x-opensearch-source": "/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/search/RestDeletePitAction.java",
         "x-opensearch-source-line": "57",
         "x-steelsearch-family": "search",
-        "x-steelsearch-status": "implemented-stateful"
+        "x-steelsearch-status": "implemented"
       },
       "get": {
-        "description": "Stateful route handling is present in the standalone runtime; deeper mutation semantics, error parity, and compare fixtures may still remain.",
+        "description": "Remaining gaps are mostly parity depth, option coverage, and production-hardening.",
         "operationId": "get__search_point_in_time__all",
         "parameters": [
           {
@@ -13284,7 +13284,7 @@
         "x-opensearch-source": "/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/search/RestGetAllPitsAction.java",
         "x-opensearch-source-line": "88",
         "x-steelsearch-family": "search",
-        "x-steelsearch-status": "implemented-stateful"
+        "x-steelsearch-status": "implemented"
       }
     },
     "/_search/scroll": {
@@ -22256,7 +22256,7 @@
     },
     "/{index}/_search/point_in_time": {
       "post": {
-        "description": "Stateful route handling is present in the standalone runtime; deeper mutation semantics, error parity, and compare fixtures may still remain.",
+        "description": "Remaining gaps are mostly parity depth, option coverage, and production-hardening.",
         "operationId": "post_by_index__search_point_in_time",
         "parameters": [
           {
@@ -22343,7 +22343,7 @@
         "x-opensearch-source": "/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/search/RestCreatePitAction.java",
         "x-opensearch-source-line": "54",
         "x-steelsearch-family": "search",
-        "x-steelsearch-status": "implemented-stateful"
+        "x-steelsearch-status": "implemented"
       }
     },
     "/{index}/_search/template": {
