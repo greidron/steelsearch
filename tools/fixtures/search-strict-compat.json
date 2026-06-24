@@ -1407,6 +1407,36 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "validate_query_empty_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/_validate/query",
+      "body": {
+        "query": {}
+      },
+      "extract": "validate_query_result",
+      "family": "failure-path",
+      "description": "[failure-path] validate query empty body query",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "validate_query_target_rewrite_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_validate/query?rewrite=true",
+      "body": {
+        "query": {
+          "term": {
+            "service": "catalog"
+          }
+        }
+      },
+      "extract": "validate_query_semantic",
+      "family": "lexical",
+      "description": "[lexical] validate query target rewrite explanation",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "expand_wildcards_open_search",
       "area": "search",
       "method": "POST",

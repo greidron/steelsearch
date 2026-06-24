@@ -63,6 +63,8 @@ def main() -> int:
         semantic.get("required_cases") or [],
         {
             "exists_query_search",
+            "validate_query_empty_search",
+            "validate_query_target_rewrite_search",
             "prefix_query_search",
             "query_string_search",
             "query_string_url_q_overrides_body_search",
