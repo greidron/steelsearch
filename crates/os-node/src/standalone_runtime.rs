@@ -9025,6 +9025,11 @@ impl SteelNode {
             }
             mappings
         };
+        if let Some(response) =
+            validate_search_after_sort_values_against_mappings(&body, &index_mappings)
+        {
+            return response;
+        }
         if let Some(response) = self.validate_knn_target_capabilities(&body["query"], &resolved_indices) {
             return response;
         }
@@ -19257,6 +19262,50 @@ fn search_after_validation_error(reason: impl Into<String>) -> RestResponse {
             "status": 400
         }),
     )
+}
+
+fn validate_search_after_sort_values_against_mappings(
+    body: &Value,
+    index_mappings: &std::collections::HashMap<String, Value>,
+) -> Option<RestResponse> {
+    let sort_fields = body.get("sort").and_then(Value::as_array)?;
+    let search_after = body.get("search_after").and_then(Value::as_array)?;
+    for (sort_field, after_value) in sort_fields.iter().zip(search_after.iter()) {
+        let Some(field_name) = sort_field_name(sort_field) else {
+            continue;
+        };
+        if field_name.starts_with('_') {
+            continue;
+        }
+        let Some(field_type) = index_mappings
+            .values()
+            .find_map(|mappings| lookup_mapping_property(mappings, field_name))
+            .and_then(|mapping| mapping.get("type"))
+            .and_then(Value::as_str)
+        else {
+            continue;
+        };
+        if search_after_value_mismatches_sort_type(after_value, field_type) {
+            return Some(search_after_validation_error(format!(
+                "Failed to parse search_after value for field [{field_name}]."
+            )));
+        }
+    }
+    None
+}
+
+fn search_after_value_mismatches_sort_type(value: &Value, field_type: &str) -> bool {
+    if !matches!(
+        field_type,
+        "long" | "integer" | "short" | "byte" | "double" | "float" | "half_float" | "scaled_float"
+    ) {
+        return false;
+    }
+    match value {
+        Value::Number(_) => false,
+        Value::String(raw) => raw.parse::<f64>().is_err(),
+        _ => true,
+    }
 }
 
 fn validate_highlight_request_body(highlight: &Value) -> Option<RestResponse> {
@@ -38392,18 +38441,32 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 .status,
             200
         );
+        for index in ["logs-search-params-a", "logs-search-params-b"] {
+            assert_eq!(
+                node.handle_rest_request(
+                    RestRequest::new(RestMethod::Put, &format!("/{index}/_mappings"))
+                        .with_json_body(serde_json::json!({
+                            "properties": {
+                                "rank": { "type": "long" }
+                            }
+                        })),
+                )
+                .status,
+                200
+            );
+        }
         for (path, body) in [
             (
                 "/logs-search-params-a/_doc/doc-1",
-                serde_json::json!({ "tenant": "tenant-a", "message": "alpha" }),
+                serde_json::json!({ "tenant": "tenant-a", "message": "alpha", "rank": 1 }),
             ),
             (
                 "/logs-search-params-a/_doc/doc-2",
-                serde_json::json!({ "tenant": "tenant-b", "message": "beta" }),
+                serde_json::json!({ "tenant": "tenant-b", "message": "beta", "rank": 2 }),
             ),
             (
                 "/logs-search-params-b/_doc/doc-3",
-                serde_json::json!({ "tenant": "tenant-c", "message": "gamma" }),
+                serde_json::json!({ "tenant": "tenant-c", "message": "gamma", "rank": 3 }),
             ),
         ] {
             assert_eq!(
@@ -38493,6 +38556,20 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             search_after_sort_length_mismatch.body["error"]["root_cause"][0]["reason"],
             "search_after has 1 value(s) but sort has 2."
+        );
+
+        let search_after_sort_parse_mismatch = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-params-*/_search")
+                .with_json_body(serde_json::json!({
+                    "query": { "match_all": {} },
+                    "sort": [{ "rank": "asc" }],
+                    "search_after": ["toto"]
+                })),
+        );
+        assert_eq!(search_after_sort_parse_mismatch.status, 400);
+        assert_eq!(
+            search_after_sort_parse_mismatch.body["error"]["root_cause"][0]["reason"],
+            "Failed to parse search_after value for field [rank]."
         );
 
         let query_param_sort = node.handle_rest_request(

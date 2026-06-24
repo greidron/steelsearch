@@ -2183,9 +2183,9 @@ The search boundary covers:
   and `-1` in `rest_total_hits_as_int` compatibility mode.
 - REST search source parsing applies positive `terminate_after` query
   parameters and preserves body `terminate_after` when the query value is `0`.
-- REST search validates `search_after` scroll/from/sort-count constraints with
-  OpenSearch-shaped shard failure errors and renders requested hit `sort`
-  values for reuse by follow-up pages.
+- REST search validates `search_after` scroll/from/sort-count and sort-value
+  type constraints with OpenSearch-shaped shard failure errors and renders
+  requested hit `sort` values for reuse by follow-up pages.
 
 The stream-search boundary covers:
 
