@@ -19697,12 +19697,30 @@ fn pit_search_uses_non_default_indices_options(query_params: &BTreeMap<String, S
 }
 
 fn expand_wildcards_matches_search_default(value: &str) -> bool {
-    let values = value
-        .split(',')
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .collect::<Vec<_>>();
-    values.is_empty() || values == ["open"]
+    let mut seen = false;
+    let mut include_open = false;
+    let mut include_closed = false;
+    let mut include_hidden = false;
+    for wildcard in value.split(',').map(str::trim).filter(|value| !value.is_empty()) {
+        seen = true;
+        match wildcard {
+            "open" => include_open = true,
+            "closed" => include_closed = true,
+            "hidden" => include_hidden = true,
+            "all" => {
+                include_open = true;
+                include_closed = true;
+                include_hidden = true;
+            }
+            "none" => {
+                include_open = false;
+                include_closed = false;
+                include_hidden = false;
+            }
+            _ => return false,
+        }
+    }
+    !seen || (include_open && !include_closed && !include_hidden)
 }
 
 fn validate_opensearch_boolean_query_param(raw: Option<&String>) -> Option<RestResponse> {
@@ -37439,6 +37457,42 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             default_indices_options_pit_search.body["hits"]["total"]["value"],
             2
         );
+
+        let order_sensitive_default_wildcards_pit_search = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_search?expand_wildcards=none,open")
+                .with_json_body(serde_json::json!({
+                    "pit": {
+                        "id": second_open_pit.body["pit_id"].as_str().unwrap(),
+                        "keep_alive": "1m"
+                    },
+                    "query": { "match_all": {} }
+                })),
+        );
+        assert_eq!(order_sensitive_default_wildcards_pit_search.status, 200);
+        assert_eq!(
+            order_sensitive_default_wildcards_pit_search.body["hits"]["total"]["value"],
+            2
+        );
+
+        let order_sensitive_non_default_wildcards_pit_search = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_search?expand_wildcards=open,none")
+                .with_json_body(serde_json::json!({
+                    "pit": {
+                        "id": second_open_pit.body["pit_id"].as_str().unwrap(),
+                        "keep_alive": "1m"
+                    },
+                    "query": { "match_all": {} }
+                })),
+        );
+        assert_eq!(order_sensitive_non_default_wildcards_pit_search.status, 400);
+        assert_eq!(
+            order_sensitive_non_default_wildcards_pit_search.body["error"]["type"],
+            "action_request_validation_exception"
+        );
+        assert!(order_sensitive_non_default_wildcards_pit_search.body["error"]["reason"]
+            .as_str()
+            .unwrap()
+            .contains("[indicesOptions] cannot be used with point in time"));
 
         let default_ignore_throttled_pit_search = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/_search?ignore_throttled=true")
