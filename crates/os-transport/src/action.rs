@@ -15,6 +15,7 @@ use serde_json::Value;
 use std::collections::BTreeMap;
 use thiserror::Error;
 
+use crate::error::{read_exception, TransportError, TransportErrorDecodeError};
 use crate::frame::encode_message;
 use crate::variable_header::{RequestVariableHeader, ResponseVariableHeader};
 use crate::TransportMessage;
@@ -25268,8 +25269,70 @@ impl ListTasksRequestWire {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ListTasksResponseWire {
     pub task_failure_count: i32,
-    pub node_failure_count: i32,
+    pub node_failures: Vec<FailedNodeExceptionWire>,
     pub tasks: Vec<ListTaskInfoWire>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FailedNodeExceptionWire {
+    pub node_id: String,
+    pub message: Option<String>,
+    pub cause: Option<TransportError>,
+}
+
+impl FailedNodeExceptionWire {
+    pub fn resource_not_found(node_id: String, reason: String) -> Self {
+        Self {
+            message: Some(format!("Failed node [{node_id}]")),
+            node_id,
+            cause: Some(TransportError {
+                class_name: "org.opensearch.ResourceNotFoundException".to_string(),
+                message: Some(reason),
+                cause: None,
+            }),
+        }
+    }
+
+    pub fn illegal_argument(node_id: String, reason: String) -> Self {
+        Self {
+            message: Some(format!("Failed node [{node_id}]")),
+            node_id,
+            cause: Some(TransportError {
+                class_name: "java.lang.IllegalArgumentException".to_string(),
+                message: Some(reason),
+                cause: None,
+            }),
+        }
+    }
+
+    pub fn write(&self, output: &mut StreamOutput) -> Result<(), TransportActionWireError> {
+        output.write_optional_string(self.message.as_deref());
+        write_supported_exception(output, self.cause.as_ref())?;
+        write_empty_stack_trace(output);
+        write_empty_string_list_map(output);
+        write_empty_string_list_map(output);
+        output.write_optional_string(Some(&self.node_id));
+        Ok(())
+    }
+
+    pub fn read(input: &mut StreamInput) -> Result<Self, TransportActionWireError> {
+        let message = input.read_optional_string()?;
+        let cause = read_exception(input)?;
+        skip_stack_trace(input)?;
+        skip_string_list_map(input)?;
+        skip_string_list_map(input)?;
+        let node_id =
+            input
+                .read_optional_string()?
+                .ok_or(TransportActionWireError::MissingRequiredField {
+                    field: "failed node id",
+                })?;
+        Ok(Self {
+            node_id,
+            message,
+            cause,
+        })
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -25364,7 +25427,7 @@ impl ListTasksResponseWire {
     pub fn empty() -> Self {
         Self {
             task_failure_count: 0,
-            node_failure_count: 0,
+            node_failures: Vec::new(),
             tasks: Vec::new(),
         }
     }
@@ -25376,14 +25439,11 @@ impl ListTasksResponseWire {
                 reason: "task failure exception payloads are not encoded by this adapter yet",
             });
         }
-        if self.node_failure_count != 0 {
-            return Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "list tasks node failures",
-                reason: "node failure exception payloads are not encoded by this adapter yet",
-            });
+        output.write_vint(0);
+        output.write_vint(self.node_failures.len() as i32);
+        for failure in &self.node_failures {
+            failure.write(output)?;
         }
-        output.write_vint(0);
-        output.write_vint(0);
         output.write_vint(self.tasks.len() as i32);
         for task in &self.tasks {
             task.write(output);
@@ -25400,12 +25460,10 @@ impl ListTasksResponseWire {
                 reason: "task failure exception payloads are not decoded by this adapter yet",
             });
         }
-        let node_failure_count = input.read_vint()?;
-        if node_failure_count != 0 {
-            return Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "list tasks node failures",
-                reason: "node failure exception payloads are not decoded by this adapter yet",
-            });
+        let node_failure_count = read_len(&mut input)?;
+        let mut node_failures = Vec::with_capacity(node_failure_count);
+        for _ in 0..node_failure_count {
+            node_failures.push(FailedNodeExceptionWire::read(&mut input)?);
         }
         let task_count = read_len(&mut input)?;
         let mut tasks = Vec::with_capacity(task_count);
@@ -25415,10 +25473,81 @@ impl ListTasksResponseWire {
         require_no_trailing_bytes(&input)?;
         Ok(Self {
             task_failure_count,
-            node_failure_count,
+            node_failures,
             tasks,
         })
     }
+}
+
+fn write_supported_exception(
+    output: &mut StreamOutput,
+    error: Option<&TransportError>,
+) -> Result<(), TransportActionWireError> {
+    let Some(error) = error else {
+        output.write_bool(false);
+        return Ok(());
+    };
+    output.write_bool(true);
+    match error.class_name.as_str() {
+        "org.opensearch.ResourceNotFoundException" => {
+            output.write_vint(0);
+            output.write_vint(19);
+            output.write_optional_string(error.message.as_deref());
+            write_supported_exception(output, error.cause.as_deref())?;
+            write_empty_stack_trace(output);
+            write_empty_string_list_map(output);
+            write_empty_string_list_map(output);
+        }
+        "java.lang.IllegalArgumentException" => {
+            output.write_vint(6);
+            output.write_optional_string(error.message.as_deref());
+            write_supported_exception(output, error.cause.as_deref())?;
+            write_empty_stack_trace(output);
+        }
+        _ => {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "failed node exception cause",
+                reason: "only ResourceNotFoundException and IllegalArgumentException causes are encoded by this adapter",
+            });
+        }
+    }
+    Ok(())
+}
+
+fn write_empty_stack_trace(output: &mut StreamOutput) {
+    output.write_vint(0);
+    output.write_vint(0);
+}
+
+fn write_empty_string_list_map(output: &mut StreamOutput) {
+    output.write_vint(0);
+}
+
+fn skip_stack_trace(input: &mut StreamInput) -> Result<(), TransportActionWireError> {
+    let frame_count = read_len(input)?;
+    for _ in 0..frame_count {
+        let _declaring_class = input.read_string()?;
+        let _file_name = input.read_optional_string()?;
+        let _method_name = input.read_string()?;
+        let _line_number = input.read_vint()?;
+    }
+    let suppressed_count = read_len(input)?;
+    for _ in 0..suppressed_count {
+        let _suppressed = read_exception(input)?;
+    }
+    Ok(())
+}
+
+fn skip_string_list_map(input: &mut StreamInput) -> Result<(), TransportActionWireError> {
+    let len = read_len(input)?;
+    for _ in 0..len {
+        let _key = input.read_string()?;
+        let values_len = read_len(input)?;
+        for _ in 0..values_len {
+            let _value = input.read_string()?;
+        }
+    }
+    Ok(())
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -30576,6 +30705,8 @@ pub enum TransportActionWireError {
     JsonEncode(#[source] serde_json::Error),
     #[error("json section decode failed")]
     JsonDecode(#[source] serde_json::Error),
+    #[error("transport exception decode failed")]
+    TransportErrorDecode(#[from] TransportErrorDecodeError),
     #[error("trailing bytes after action body: {0}")]
     TrailingBytes(usize),
     #[error("unexpected transport action: expected {expected}, got {actual}")]
@@ -54546,7 +54677,7 @@ mod tests {
         headers.insert("x-opaque-id".to_string(), "request-1".to_string());
         let response = ListTasksResponseWire {
             task_failure_count: 0,
-            node_failure_count: 0,
+            node_failures: Vec::new(),
             tasks: vec![ListTaskInfoWire {
                 node_id: "node-a".to_string(),
                 task_id: 7,
@@ -54610,7 +54741,7 @@ mod tests {
 
         let response = ListTasksResponseWire {
             task_failure_count: 0,
-            node_failure_count: 0,
+            node_failures: Vec::new(),
             tasks: vec![ListTaskInfoWire {
                 node_id: "node-a".to_string(),
                 task_id: 7,
@@ -54862,7 +54993,7 @@ mod tests {
     fn cancel_tasks_response_wire_round_trips_cancelled_task_info_subset() {
         let response = CancelTasksResponseWire {
             task_failure_count: 0,
-            node_failure_count: 0,
+            node_failures: Vec::new(),
             tasks: vec![ListTaskInfoWire {
                 node_id: "node-a".to_string(),
                 task_id: 7,
@@ -54889,6 +55020,46 @@ mod tests {
     }
 
     #[test]
+    fn cancel_tasks_response_wire_round_trips_failed_node_subset() {
+        let response = CancelTasksResponseWire {
+            task_failure_count: 0,
+            node_failures: vec![
+                FailedNodeExceptionWire::resource_not_found(
+                    "node-a".to_string(),
+                    "task [node-a:404] is not found".to_string(),
+                ),
+                FailedNodeExceptionWire::illegal_argument(
+                    "node-a".to_string(),
+                    "task [node-a:7] doesn't support cancellation".to_string(),
+                ),
+            ],
+            tasks: Vec::new(),
+        };
+        let mut output = StreamOutput::new();
+        response.write(&mut output).unwrap();
+
+        let decoded = CancelTasksResponseWire::read(output.freeze()).unwrap();
+
+        assert_eq!(decoded, response);
+        assert_eq!(
+            decoded.node_failures[0]
+                .cause
+                .as_ref()
+                .unwrap()
+                .class_name,
+            "org.opensearch.ResourceNotFoundException"
+        );
+        assert_eq!(
+            decoded.node_failures[1]
+                .cause
+                .as_ref()
+                .unwrap()
+                .class_name,
+            "java.lang.IllegalArgumentException"
+        );
+    }
+
+    #[test]
     fn cancel_tasks_transport_messages_bind_action_frames() {
         let request = CancelTasksRequestWire {
             task_id: TaskIdWire {
@@ -54909,7 +55080,7 @@ mod tests {
 
         let response = CancelTasksResponseWire {
             task_failure_count: 0,
-            node_failure_count: 0,
+            node_failures: Vec::new(),
             tasks: vec![ListTaskInfoWire {
                 node_id: "node-a".to_string(),
                 task_id: 7,

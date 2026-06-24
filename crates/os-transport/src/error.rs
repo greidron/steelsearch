@@ -186,6 +186,9 @@ fn read_non_negative_len(input: &mut StreamInput) -> Result<usize, TransportErro
 
 fn opensearch_exception_class_name(id: i32) -> &'static str {
     match id {
+        19 => "org.opensearch.ResourceNotFoundException",
+        68 => "org.opensearch.OpenSearchException",
+        71 => "org.opensearch.action.FailedNodeException",
         101 => "org.opensearch.transport.ActionNotFoundTransportException",
         102 => "org.opensearch.transport.TransportSerializationException",
         103 => "org.opensearch.transport.RemoteTransportException",

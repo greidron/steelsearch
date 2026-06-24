@@ -15,7 +15,7 @@ fn main() {
     let request = ListTasksRequestWire::default();
     let response = ListTasksResponseWire {
         task_failure_count: 0,
-        node_failure_count: 0,
+        node_failures: Vec::new(),
         tasks: vec![ListTaskInfoWire {
             node_id: "node-a".to_string(),
             task_id: 7,
