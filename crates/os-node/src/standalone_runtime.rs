@@ -9158,6 +9158,11 @@ impl SteelNode {
         {
             return response;
         }
+        if let Some(response) =
+            validate_search_sort_unmapped_fields_against_mappings(&body, &index_mappings)
+        {
+            return response;
+        }
         if let Some(response) = self.validate_knn_target_capabilities(&body["query"], &resolved_indices) {
             return response;
         }
@@ -20609,6 +20614,13 @@ fn validate_search_sort_object(object: &serde_json::Map<String, Value>) -> Optio
                         "malformed sort format, sort mode must be a string",
                     ));
                 }
+                if let Some(unmapped_type) = options.get("unmapped_type") {
+                    if !unmapped_type.as_str().is_some_and(|value| !value.is_empty()) {
+                        return Some(malformed_sort_response(
+                            "malformed sort format, unmapped_type must be a non-empty string",
+                        ));
+                    }
+                }
             }
             _ => {
                 return Some(malformed_sort_response(
@@ -20824,6 +20836,41 @@ fn validate_search_sort_modes_against_mappings(
         }
     }
     None
+}
+
+fn validate_search_sort_unmapped_fields_against_mappings(
+    body: &Value,
+    index_mappings: &std::collections::HashMap<String, Value>,
+) -> Option<RestResponse> {
+    let sort_fields = body.get("sort").and_then(search_sort_fields)?;
+    for sort_field in sort_fields {
+        let Some(field_name) = sort_field_name(sort_field) else {
+            continue;
+        };
+        if field_name.starts_with('_')
+            || sort_field_unmapped_type(sort_field).is_some()
+            || request_scoped_sort_field_is_defined(body, field_name)
+        {
+            continue;
+        }
+        if index_mappings
+            .values()
+            .any(|mappings| lookup_mapping_property(mappings, field_name).is_none())
+        {
+            return Some(search_after_validation_error(format!(
+                "No mapping found for [{field_name}] in order to sort on"
+            )));
+        }
+    }
+    None
+}
+
+fn request_scoped_sort_field_is_defined(body: &Value, field_name: &str) -> bool {
+    ["runtime_mappings", "derived"].iter().any(|field_container| {
+        body.get(*field_container)
+            .and_then(Value::as_object)
+            .is_some_and(|fields| fields.contains_key(field_name))
+    })
 }
 
 fn search_after_value_mismatches_sort_type(value: &Value, field_type: &str) -> bool {
@@ -22009,7 +22056,9 @@ fn compare_sort_field_values(
     let left_missing = left_value.is_null();
     let right_missing = right_value.is_null();
     if left_missing || right_missing {
-        if let Some(marker) = sort_field_missing_marker(sort_field) {
+        if let Some(marker) = sort_field_missing_marker(sort_field)
+            .or_else(|| sort_field_custom_missing_value(sort_field).is_none().then_some("_last"))
+        {
             return match (left_missing, right_missing, marker) {
                 (true, true, _) => std::cmp::Ordering::Equal,
                 (true, false, "_first") | (false, true, "_last") => std::cmp::Ordering::Less,
@@ -22045,7 +22094,9 @@ fn compare_sort_field_value_to_after(
 ) -> std::cmp::Ordering {
     let sort_value = extract_mode_sort_value(hit, sort_field, field_name, descending);
     let sort_missing = sort_value.is_null();
-    if let Some(marker) = sort_field_missing_marker(sort_field) {
+    if let Some(marker) = sort_field_missing_marker(sort_field)
+        .or_else(|| sort_field_custom_missing_value(sort_field).is_none().then_some("_last"))
+    {
         if sort_missing && after_value.is_null() {
             return std::cmp::Ordering::Equal;
         }
@@ -22111,6 +22162,16 @@ fn sort_field_mode(sort_field: &Value) -> Option<&str> {
         .and_then(|options| options.as_object())
         .and_then(|options| options.get("mode"))
         .and_then(Value::as_str)
+}
+
+fn sort_field_unmapped_type(sort_field: &Value) -> Option<&str> {
+    sort_field
+        .as_object()
+        .and_then(|object| object.values().next())
+        .and_then(|options| options.as_object())
+        .and_then(|options| options.get("unmapped_type"))
+        .and_then(Value::as_str)
+        .filter(|value| !value.is_empty())
 }
 
 fn sort_mode_is_supported(mode: &str) -> bool {
@@ -41944,6 +42005,85 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         );
 
         assert_eq!(
+            node.handle_rest_request(RestRequest::new(RestMethod::Put, "/logs-sort-unmapped-a"))
+                .status,
+            200
+        );
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(RestMethod::Put, "/logs-sort-unmapped-b"))
+                .status,
+            200
+        );
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, "/logs-sort-unmapped-a/_doc/doc-a")
+                    .with_json_body(serde_json::json!({
+                        "rank": 10,
+                        "message": "mapped",
+                        "tenant": "tenant-unmapped-a"
+                    })),
+            )
+            .status,
+            201
+        );
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, "/logs-sort-unmapped-b/_doc/doc-b")
+                    .with_json_body(serde_json::json!({
+                        "message": "unmapped",
+                        "tenant": "tenant-unmapped-b"
+                    })),
+            )
+            .status,
+            201
+        );
+
+        let unmapped_without_type_sort = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-sort-unmapped-*/_search")
+                .with_json_body(serde_json::json!({
+                    "query": { "match_all": {} },
+                    "sort": [{ "rank": { "order": "asc" } }]
+                })),
+        );
+        assert_eq!(unmapped_without_type_sort.status, 400);
+        assert_eq!(
+            unmapped_without_type_sort.body["error"]["root_cause"][0]["reason"],
+            "No mapping found for [rank] in order to sort on"
+        );
+
+        let unmapped_with_type_sort = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-sort-unmapped-*/_search")
+                .with_json_body(serde_json::json!({
+                    "query": { "match_all": {} },
+                    "sort": [{ "rank": { "order": "asc", "unmapped_type": "long" } }],
+                    "size": 2
+                })),
+        );
+        assert_eq!(unmapped_with_type_sort.status, 200);
+        assert_eq!(
+            unmapped_with_type_sort.body["hits"]["hits"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|hit| (hit["_id"].as_str().unwrap(), hit["sort"][0].clone()))
+                .collect::<Vec<_>>(),
+            vec![("doc-a", serde_json::json!(10)), ("doc-b", Value::Null)]
+        );
+
+        let invalid_unmapped_type_sort = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-sort-unmapped-*/_search")
+                .with_json_body(serde_json::json!({
+                    "query": { "match_all": {} },
+                    "sort": [{ "rank": { "order": "asc", "unmapped_type": "" } }]
+                })),
+        );
+        assert_eq!(invalid_unmapped_type_sort.status, 400);
+        assert_eq!(
+            invalid_unmapped_type_sort.body["error"]["reason"],
+            "malformed sort format, unmapped_type must be a non-empty string"
+        );
+
+        assert_eq!(
             node.handle_rest_request(RestRequest::new(RestMethod::Put, "/logs-sort-mode-000001"))
                 .status,
             200
@@ -41962,9 +42102,30 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             200
         );
         for (id, body) in [
-            ("doc-a", serde_json::json!({ "scores": [3, 1], "tags": ["b", "a"] })),
-            ("doc-b", serde_json::json!({ "scores": [2, 9], "tags": ["c", "d"] })),
-            ("doc-c", serde_json::json!({ "scores": [6, 4], "tags": ["e", "f"] })),
+            (
+                "doc-a",
+                serde_json::json!({
+                    "scores": [3, 1],
+                    "tags": ["b", "a"],
+                    "tenant": "tenant-mode-a"
+                }),
+            ),
+            (
+                "doc-b",
+                serde_json::json!({
+                    "scores": [2, 9],
+                    "tags": ["c", "d"],
+                    "tenant": "tenant-mode-b"
+                }),
+            ),
+            (
+                "doc-c",
+                serde_json::json!({
+                    "scores": [6, 4],
+                    "tags": ["e", "f"],
+                    "tenant": "tenant-mode-c"
+                }),
+            ),
         ] {
             assert_eq!(
                 node.handle_rest_request(
