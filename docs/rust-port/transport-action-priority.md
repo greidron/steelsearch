@@ -177,8 +177,8 @@ The source-derived transport inventory currently has 160 rows:
 
 | Status | Count | Meaning |
 | --- | ---: | --- |
-| `implemented` | 36 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
-| `partial` | 124 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
+| `implemented` | 37 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
+| `partial` | 123 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
 | `planned` | 0 | No source-derived transport action remains unclassified. |
 
 The k-NN plugin action sweep is complete at the boundary layer. All 12
@@ -312,7 +312,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `indices:data/read/explain` (rejected fail-closed)
 - `indices:data/read/point_in_time/create` (rejected fail-closed)
 - `indices:data/read/point_in_time/delete` (rejected fail-closed)
-- `indices:data/read/point_in_time/readall` (rejected fail-closed)
+- `indices:data/read/point_in_time/readall` (implemented empty PIT-list subset)
 - `cluster:monitor/task` (implemented pending/in-flight task subset)
 - `cluster:monitor/tasks/lists` (implemented pending/in-flight task info subset)
 - `cluster:monitor/task/get` (implemented tracked running task result subset)
@@ -2235,11 +2235,12 @@ The get-all-PITs boundary covers:
 
 - OpenSearch `GetAllPitNodesRequest` parent task, nullable node ids, concrete
   node payload presence, and optional timeout at the wire decode/build layer;
-- explicit fail-closed classification for
-  `indices:data/read/point_in_time/readall` until PIT context listing and node
-  fanout response rendering are mapped;
+- OpenSearch `GetAllPitNodesResponse` empty `BaseNodesResponse` rendering with
+  cluster name, zero node responses, and zero failed-node entries;
+- positive transport route response generation for the default all-nodes
+  request;
 - explicit rejection for concrete node payloads, node filters, timeout
-  semantics, and get-all-PITs execution.
+  semantics, non-empty node responses, and failed-node payloads.
 
 The create-PIT boundary covers:
 
@@ -5070,23 +5071,23 @@ the boundary itself is lightweight; the first performance point to inspect
 before accepting execution is PIT context lookup/invalidation and delete-PIT
 response rendering.
 
-Current get-all-PITs reject wire microbenchmark:
+Current get-all-PITs wire microbenchmark:
 
 ```text
-cargo run -p os-transport --release --bin get-all-pits-reject-wire-benchmark
-get_all_pits_reject_request_encode iterations=400000 elapsed_ms=239.247 ops_per_second=1671915.35 nanos_per_op=598.12
-get_all_pits_reject_request_decode iterations=400000 elapsed_ms=224.108 ops_per_second=1784851.02 nanos_per_op=560.27
-get_all_pits_reject_validation iterations=400000 elapsed_ms=226.532 ops_per_second=1765751.18 nanos_per_op=566.33
-get_all_pits_reject_wire_bottleneck_ops_per_second=1671915.35
+cargo run -p os-transport --release --bin get-all-pits-wire-benchmark
+get_all_pits_request_encode iterations=400000 elapsed_ms=239.733 ops_per_second=1668522.12 nanos_per_op=599.33
+get_all_pits_request_decode iterations=400000 elapsed_ms=222.021 ops_per_second=1801633.45 nanos_per_op=555.05
+get_all_pits_request_validate iterations=400000 elapsed_ms=223.579 ops_per_second=1789074.88 nanos_per_op=558.95
+get_all_pits_response_encode iterations=400000 elapsed_ms=124.649 ops_per_second=3209018.60 nanos_per_op=311.62
+get_all_pits_response_decode iterations=400000 elapsed_ms=118.328 ops_per_second=3380436.28 nanos_per_op=295.82
+get_all_pits_wire_bottleneck_ops_per_second=1668522.12
 ```
 
-The current get-all-PITs fail-closed boundary bottleneck is request encode.
-This path carries the ActionRequest parent task, nullable node id filters,
-concrete-node presence marker, and optional timeout before rejecting execution.
-At roughly 1.67M ops/s in the latest local release run, the boundary itself is
-lightweight; the first performance point to inspect before accepting execution
-is PIT context enumeration, node fanout, and `GetAllPitNodesResponse`
-rendering.
+The current get-all-PITs implemented subset bottleneck is request encode. The
+new empty response encode/decode path runs above 3.2M ops/s in the latest local
+release run, so the response adapter is not the first bottleneck. The first
+performance point to inspect before expanding this subset is non-empty PIT
+context enumeration and node fanout.
 
 Current create-PIT reject wire microbenchmark:
 

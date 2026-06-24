@@ -2393,8 +2393,8 @@ pub fn classify_opensearch_transport_action(
         },
         OPENSEARCH_GET_ALL_PITS_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
-            disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "get-all-PITs transport execution requires PIT context listing response rendering",
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "get-all-PITs transport adapter returns an OpenSearch-shaped empty PIT list response for the default all-nodes request",
         },
         OPENSEARCH_GET_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -11996,6 +11996,35 @@ pub fn read_opensearch_get_all_pits_request_message(
         });
     }
     OpenSearchGetAllPitsRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_opensearch_get_all_pits_response_message(
+    request_id: i64,
+    version: Version,
+    response: &OpenSearchGetAllPitsResponseWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    response.write(&mut body)?;
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::response(),
+        version,
+        variable_header: BytesMut::new(),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_get_all_pits_response_message(
+    message: &TransportMessage,
+) -> Result<OpenSearchGetAllPitsResponseWire, TransportActionWireError> {
+    if message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "response",
+            actual: message.status.bits(),
+        });
+    }
+    OpenSearchGetAllPitsResponseWire::read(message.body.clone().freeze())
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -26115,7 +26144,7 @@ impl OpenSearchGetAllPitsRequestWire {
         Ok(request)
     }
 
-    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+    pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
         if self
             .node_ids
             .as_ref()
@@ -26132,11 +26161,90 @@ impl OpenSearchGetAllPitsRequestWire {
                 reason: "get-all-PITs timeout semantics require runtime PIT listing fanout",
             });
         }
+        Ok(())
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        self.validate_supported_subset()?;
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "get all pits execution",
-            reason:
-                "get-all-PITs transport execution requires PIT context listing response rendering",
+            reason: "use validate_supported_subset for the implemented empty get-all-PITs adapter",
         })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchGetAllPitsResponseWire {
+    pub cluster_name: String,
+}
+
+impl Default for OpenSearchGetAllPitsResponseWire {
+    fn default() -> Self {
+        Self {
+            cluster_name: "steelsearch".to_string(),
+        }
+    }
+}
+
+impl OpenSearchGetAllPitsResponseWire {
+    pub fn empty(cluster_name: impl Into<String>) -> Self {
+        Self {
+            cluster_name: cluster_name.into(),
+        }
+    }
+
+    pub fn write(&self, output: &mut StreamOutput) -> Result<(), TransportActionWireError> {
+        self.validate_supported_subset()?;
+        output.write_string(&self.cluster_name);
+        output.write_vint(0);
+        output.write_vint(0);
+        Ok(())
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let cluster_name = input.read_string()?;
+        let nodes_count = input.read_vint()?;
+        if nodes_count < 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get all pits response nodes count",
+                reason: "GetAllPitNodesResponse nodes count must be non-negative",
+            });
+        }
+        if nodes_count != 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get all pits node responses",
+                reason:
+                    "GetAllPitNodesResponse node responses require DiscoveryNode and PIT info decoding",
+            });
+        }
+        let failures_count = input.read_vint()?;
+        if failures_count < 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get all pits response failures count",
+                reason: "GetAllPitNodesResponse failures count must be non-negative",
+            });
+        }
+        if failures_count != 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get all pits node failures",
+                reason: "GetAllPitNodesResponse node failures require FailedNodeException decoding",
+            });
+        }
+        require_no_trailing_bytes(&input)?;
+        let response = Self { cluster_name };
+        response.validate_supported_subset()?;
+        Ok(response)
+    }
+
+    pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
+        if self.cluster_name.trim().is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get all pits response cluster name",
+                reason: "GetAllPitNodesResponse cluster name must be non-empty",
+            });
+        }
+        Ok(())
     }
 }
 
@@ -34971,7 +35079,7 @@ mod tests {
         );
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_GET_ALL_PITS_ACTION_NAME).disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_GET_ACTION_NAME).disposition,
@@ -35401,6 +35509,7 @@ mod tests {
                 || spec.action_name == OPENSEARCH_LIST_VIEW_NAMES_ACTION_NAME
                 || spec.action_name == OPENSEARCH_LIST_DANGLING_INDICES_ACTION_NAME
                 || spec.action_name == OPENSEARCH_FIND_DANGLING_INDEX_ACTION_NAME
+                || spec.action_name == OPENSEARCH_GET_ALL_PITS_ACTION_NAME
                 || spec.action_name == OPENSEARCH_GET_ALIASES_ACTION_NAME
                 || spec.action_name == OPENSEARCH_GET_SETTINGS_ACTION_NAME
             {
@@ -35485,7 +35594,6 @@ mod tests {
                 || spec.action_name == OPENSEARCH_EXPLAIN_ACTION_NAME
                 || spec.action_name == OPENSEARCH_CREATE_PIT_ACTION_NAME
                 || spec.action_name == OPENSEARCH_DELETE_PIT_ACTION_NAME
-                || spec.action_name == OPENSEARCH_GET_ALL_PITS_ACTION_NAME
             {
                 assert_eq!(
                     decision.disposition,
@@ -56855,13 +56963,14 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_get_all_pits_request_wire_round_trips_and_rejects_execution_boundary() {
+    fn opensearch_get_all_pits_request_wire_round_trips_and_validates_default_subset() {
         let request = OpenSearchGetAllPitsRequestWire::default();
         let mut output = StreamOutput::new();
         request.write(&mut output);
 
         let decoded = OpenSearchGetAllPitsRequestWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, request);
+        decoded.validate_supported_subset().unwrap();
         assert!(matches!(
             decoded.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
@@ -56911,7 +57020,52 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_get_all_pits_transport_messages_bind_rejected_action_frame() {
+    fn opensearch_get_all_pits_response_wire_round_trips_empty_subset() {
+        let response = OpenSearchGetAllPitsResponseWire::empty("steelsearch-dev");
+        let mut output = StreamOutput::new();
+        response.write(&mut output).unwrap();
+
+        let decoded = OpenSearchGetAllPitsResponseWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, response);
+        decoded.validate_supported_subset().unwrap();
+    }
+
+    #[test]
+    fn opensearch_get_all_pits_response_rejects_non_empty_nodes_or_failures() {
+        let mut node_payload = StreamOutput::new();
+        node_payload.write_string("steelsearch-dev");
+        node_payload.write_vint(1);
+        assert!(matches!(
+            OpenSearchGetAllPitsResponseWire::read(node_payload.freeze()),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get all pits node responses",
+                ..
+            })
+        ));
+
+        let mut failure_payload = StreamOutput::new();
+        failure_payload.write_string("steelsearch-dev");
+        failure_payload.write_vint(0);
+        failure_payload.write_vint(1);
+        assert!(matches!(
+            OpenSearchGetAllPitsResponseWire::read(failure_payload.freeze()),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get all pits node failures",
+                ..
+            })
+        ));
+
+        assert!(matches!(
+            OpenSearchGetAllPitsResponseWire::empty(" ").validate_supported_subset(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get all pits response cluster name",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_get_all_pits_transport_messages_bind_action_frames() {
         let request = OpenSearchGetAllPitsRequestWire::default();
         let mut frame =
             build_opensearch_get_all_pits_request_message(55, OPENSEARCH_3_7_0_TRANSPORT, &request)
@@ -56923,14 +57077,31 @@ mod tests {
             read_opensearch_get_all_pits_request_message(&message).unwrap(),
             request
         );
+        read_opensearch_get_all_pits_request_message(&message)
+            .unwrap()
+            .validate_supported_subset()
+            .unwrap();
+
+        let response = OpenSearchGetAllPitsResponseWire::empty("steelsearch-dev");
+        let mut frame = build_opensearch_get_all_pits_response_message(
+            55,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &response,
+        )
+        .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected get-all-PITs response message");
+        };
+        assert_eq!(
+            read_opensearch_get_all_pits_response_message(&message).unwrap(),
+            response
+        );
         assert!(matches!(
-            read_opensearch_get_all_pits_request_message(&message)
-                .unwrap()
-                .reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "get all pits execution",
+            read_opensearch_get_all_pits_request_message(&message).unwrap_err(),
+            TransportActionWireError::UnexpectedMessageStatus {
+                expected: "request",
                 ..
-            })
+            }
         ));
     }
 
