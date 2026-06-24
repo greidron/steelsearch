@@ -8,18 +8,18 @@ use os_cluster_state::{
 };
 use os_core::version::{Version, OPENSEARCH_3_7_0, OPENSEARCH_3_7_0_TRANSPORT};
 use os_node::{
-    apply_gateway_metadata_commit_state_to_manifest,
-    apply_gateway_metadata_state_to_manifest,
-    bind_rest_http_listener, serve_rest_http_listener_until, validate_production_mode_request,
-    collect_live_publication_acknowledgement_details, collect_live_publication_apply_details,
-    ClusterCoordinationState, ClusterManagerTaskRecord, ClusterManagerTaskState,
-    DevelopmentClusterNode, DevelopmentClusterView, DevelopmentCoordinationStatus, DiscoveryConfig,
-    DiscoveryPeer, ElectionAttemptWindow, ElectionResult, ElectionScheduler,
-    ElectionSchedulerConfig, ExtensionBoundaryRegistry, LiveTransportDiscoveryPeerProber, NodeInfo,
+    apply_gateway_metadata_commit_state_to_manifest, apply_gateway_metadata_state_to_manifest,
+    bind_rest_http_listener, collect_live_publication_acknowledgement_details,
+    collect_live_publication_apply_details, load_gateway_state_manifest,
+    persist_gateway_state_manifest, serve_rest_http_listener_until,
+    validate_production_mode_request, validate_rest_tls_config, ClusterCoordinationState,
+    ClusterManagerTaskRecord, ClusterManagerTaskState, DevelopmentClusterNode,
+    DevelopmentClusterView, DevelopmentCoordinationStatus, DiscoveryConfig, DiscoveryPeer,
+    ElectionAttemptWindow, ElectionResult, ElectionScheduler, ElectionSchedulerConfig,
+    ExtensionBoundaryRegistry, LiveTransportDiscoveryPeerProber, NodeInfo,
     PersistedClusterManagerTaskQueueState, PersistedGatewayState, PersistedPublicationState,
     ProductionMembershipState, ReleaseReadinessChecklist, RestServerConfig, RestTlsConfig,
-    SecurityBoundaryPolicy, SteelNode, load_gateway_state_manifest, persist_gateway_state_manifest,
-    validate_rest_tls_config,
+    SecurityBoundaryPolicy, SteelNode,
 };
 use os_node_rest_core::{
     parse_authentication_users_json, AuthenticationUsersFile, SecurityBoundaryState,
@@ -174,10 +174,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         os_node::cluster_settings_route_registration::CLUSTER_SETTINGS_RUNTIME_REGISTRATION_BODY;
     let _cluster_settings_real_traffic_dispatch_table =
         _cluster_settings_real_traffic_runtime_registration;
-    let _cluster_settings_live_readback_activation =
-        _cluster_settings_real_traffic_dispatch_table;
-    let _cluster_settings_runtime_dispatch_table =
-        _cluster_settings_live_readback_activation;
+    let _cluster_settings_live_readback_activation = _cluster_settings_real_traffic_dispatch_table;
+    let _cluster_settings_runtime_dispatch_table = _cluster_settings_live_readback_activation;
     let _create_index_runtime_route_table =
         os_node::create_index_route_registration::CREATE_INDEX_ROUTE_REGISTRY_TABLE;
     let _data_stream_runtime_route_table =
@@ -242,12 +240,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             &serde_json::json!({}),
             &serde_json::json!({}),
         );
-    let _snapshot_repository_live_route_activation =
-        (
-            _snapshot_repository_real_traffic_runtime_dispatch_table,
-            _snapshot_repository_handle_rest_request_call_site,
-            _snapshot_repository_local_route_activation_harness,
-        );
+    let _snapshot_repository_live_route_activation = (
+        _snapshot_repository_real_traffic_runtime_dispatch_table,
+        _snapshot_repository_handle_rest_request_call_site,
+        _snapshot_repository_local_route_activation_harness,
+    );
     let _snapshot_lifecycle_runtime_route_table =
         os_node::snapshot_lifecycle_route_registration::SNAPSHOT_LIFECYCLE_ROUTE_REGISTRY_TABLE;
     let _snapshot_lifecycle_runtime_dispatch_table =
@@ -299,9 +296,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let _cluster_pending_tasks_runtime_route_table =
         os_node::pending_tasks_route_registration::PENDING_TASKS_ROUTE_REGISTRY_TABLE;
     let _stats_runtime_route_table = os_node::stats_route_registration::STATS_ROUTE_REGISTRY_TABLE;
-    let _stats_runtime_dispatch_table = os_node::stats_route_registration::STATS_ROUTE_REGISTRY_TABLE;
+    let _stats_runtime_dispatch_table =
+        os_node::stats_route_registration::STATS_ROUTE_REGISTRY_TABLE;
     let _tasks_runtime_route_table = os_node::tasks_route_registration::TASKS_ROUTE_REGISTRY_TABLE;
-    let _tasks_runtime_dispatch_table = os_node::tasks_route_registration::TASKS_ROUTE_REGISTRY_TABLE;
+    let _tasks_runtime_dispatch_table =
+        os_node::tasks_route_registration::TASKS_ROUTE_REGISTRY_TABLE;
     let metadata_path = gateway_paths.cluster_metadata_path;
     restore_gateway_cluster_metadata_manifest(
         &metadata_path,
@@ -515,12 +514,18 @@ fn load_transport_rustls_server_config(
 fn load_transport_rustls_private_key(path: &Path) -> std::io::Result<rustls::PrivateKey> {
     let file = File::open(path)?;
     let mut reader = BufReader::new(file);
-    if let Some(key) = rustls_pemfile::pkcs8_private_keys(&mut reader)?.into_iter().next() {
+    if let Some(key) = rustls_pemfile::pkcs8_private_keys(&mut reader)?
+        .into_iter()
+        .next()
+    {
         return Ok(rustls::PrivateKey(key));
     }
     let file = File::open(path)?;
     let mut reader = BufReader::new(file);
-    if let Some(key) = rustls_pemfile::rsa_private_keys(&mut reader)?.into_iter().next() {
+    if let Some(key) = rustls_pemfile::rsa_private_keys(&mut reader)?
+        .into_iter()
+        .next()
+    {
         return Ok(rustls::PrivateKey(key));
     }
     Err(std::io::Error::new(
@@ -751,12 +756,11 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             request_id
         );
         response_frame_sent_at_ms = Some(unix_time_ms());
-        let immediate_proactive_ping_after_response = env::var(
-            "STEELSEARCH_TCP_HANDSHAKE_IMMEDIATE_PROACTIVE_PING_AFTER_RESPONSE",
-        )
-        .ok()
-        .map(|value| value == "1")
-        .unwrap_or(false);
+        let immediate_proactive_ping_after_response =
+            env::var("STEELSEARCH_TCP_HANDSHAKE_IMMEDIATE_PROACTIVE_PING_AFTER_RESPONSE")
+                .ok()
+                .map(|value| value == "1")
+                .unwrap_or(false);
         if immediate_proactive_ping_after_response {
             let ping = build_keepalive_ping_frame();
             stream.write_all(&ping)?;
@@ -770,12 +774,11 @@ fn handle_transport_seed_connection<S: TransportConnection>(
                 request_id
             );
         }
-        let direct_hold_open_after_tcp_response = env::var(
-            "STEELSEARCH_TCP_HANDSHAKE_DIRECT_HOLD_OPEN_AFTER_RESPONSE",
-        )
-        .ok()
-        .map(|value| value == "1")
-        .unwrap_or(false);
+        let direct_hold_open_after_tcp_response =
+            env::var("STEELSEARCH_TCP_HANDSHAKE_DIRECT_HOLD_OPEN_AFTER_RESPONSE")
+                .ok()
+                .map(|value| value == "1")
+                .unwrap_or(false);
         if direct_hold_open_after_tcp_response {
             eprintln!(
                 "steelsearch_tcp_handshake_response_stage=direct_hold_open_after_response request_id={}",
@@ -969,11 +972,8 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end_at_ms,
         )?;
     } else if is_request && normalized_action_hint == Some("cluster:monitor/task") {
-        let response = build_pending_cluster_tasks_response(
-            request_id,
-            header_version_id,
-            transport_identity,
-        );
+        let response =
+            build_pending_cluster_tasks_response(request_id, header_version_id, transport_identity);
         response_frame = summarize_transport_response_frame_for_action(
             &response,
             Some("cluster:monitor/task[n]"),
@@ -1125,14 +1125,35 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end_at_ms,
         )?;
     } else if is_request && normalized_action_hint == Some("cluster:monitor/nodes/stats") {
-        let response = build_empty_nodes_stats_response(
-            request_id,
-            header_version_id,
-            transport_identity,
-        );
+        let response =
+            build_empty_nodes_stats_response(request_id, header_version_id, transport_identity);
         response_frame = summarize_transport_response_frame_for_action(
             &response,
             Some("cluster:monitor/nodes/stats[n]"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request && normalized_action_hint == Some("cluster:monitor/wlm/stats") {
+        let response =
+            build_empty_wlm_stats_response(request_id, header_version_id, transport_identity);
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("cluster:monitor/wlm/stats[n]"),
         );
         stream.write_all(&response)?;
         stream.flush()?;
@@ -1175,11 +1196,7 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end_at_ms,
         )?;
     } else if is_request && normalized_action_hint == Some("cluster:monitor/nodes/info") {
-        let response = build_nodes_info_response(
-            request_id,
-            header_version_id,
-            transport_identity,
-        );
+        let response = build_nodes_info_response(request_id, header_version_id, transport_identity);
         response_frame = summarize_transport_response_frame_for_action(
             &response,
             Some("cluster:monitor/nodes/info[n]"),
@@ -1285,8 +1302,7 @@ fn handle_transport_seed_connection<S: TransportConnection>(
         && matches!(
             action_hint.as_deref(),
             Some("internal:index/shard/recovery/start_recovery")
-                |
-            Some("internal:index/shard/recovery/filesInfo")
+                | Some("internal:index/shard/recovery/filesInfo")
                 | Some("internal:index/shard/recovery/file_chunk")
                 | Some("internal:index/shard/recovery/clean_files")
                 | Some("internal:index/shard/recovery/prepare_translog")
@@ -1299,11 +1315,12 @@ fn handle_transport_seed_connection<S: TransportConnection>(
                 maybe_complete_source_side_recovery(peer_addr, &body, header_version_id);
             }
         }
-        let response = if action_hint.as_deref() == Some("internal:index/shard/recovery/start_recovery") {
-            build_java_recovery_response(request_id, header_version_id)
-        } else {
-            build_empty_transport_response(request_id, header_version_id)
-        };
+        let response =
+            if action_hint.as_deref() == Some("internal:index/shard/recovery/start_recovery") {
+                build_java_recovery_response(request_id, header_version_id)
+            } else {
+                build_empty_transport_response(request_id, header_version_id)
+            };
         response_frame = summarize_transport_response_frame(&response);
         stream.write_all(&response)?;
         stream.flush()?;
@@ -1322,8 +1339,11 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end,
             &mut connection_end_at_ms,
         )?;
-    } else if is_request && action_hint.as_deref() == Some("internal:index/shard/recovery/translog_ops") {
-        let response = build_recovery_translog_operations_response(request_id, header_version_id, 0);
+    } else if is_request
+        && action_hint.as_deref() == Some("internal:index/shard/recovery/translog_ops")
+    {
+        let response =
+            build_recovery_translog_operations_response(request_id, header_version_id, 0);
         response_frame = summarize_transport_response_frame(&response);
         stream.write_all(&response)?;
         stream.flush()?;
@@ -1342,7 +1362,9 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end,
             &mut connection_end_at_ms,
         )?;
-    } else if is_request && action_hint.as_deref() == Some("internal:cluster/coordination/publish_state") {
+    } else if is_request
+        && action_hint.as_deref() == Some("internal:cluster/coordination/publish_state")
+    {
         let publish_state_started = std::time::Instant::now();
         let decode_started = std::time::Instant::now();
         let cached_cluster_state = transport_identity
@@ -1394,21 +1416,18 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             "steelsearch_publish_state_decode_ms={}",
             decode_started.elapsed().as_millis()
         );
-        let (
-            join_last_accepted_term,
-            join_last_accepted_version,
-            cached_cluster_manager_node_id,
-        ) = transport_identity
-            .coordination_state
-            .lock()
-            .map(|state| {
-                (
-                    state.last_accepted_term,
-                    state.last_accepted_version,
-                    state.cluster_manager_node_id.clone(),
-                )
-            })
-            .unwrap_or((0, 0, None));
+        let (join_last_accepted_term, join_last_accepted_version, cached_cluster_manager_node_id) =
+            transport_identity
+                .coordination_state
+                .lock()
+                .map(|state| {
+                    (
+                        state.last_accepted_term,
+                        state.last_accepted_version,
+                        state.cluster_manager_node_id.clone(),
+                    )
+                })
+                .unwrap_or((0, 0, None));
         let term = applied_cluster_state
             .as_ref()
             .map(|state| state.metadata.coordination.term)
@@ -1428,8 +1447,7 @@ fn handle_transport_seed_connection<S: TransportConnection>(
                 coordination_state.cluster_manager_node_id = Some(node_id);
             }
             coordination_state.non_self_publish_seen = true;
-            coordination_state.local_initializing_replicas =
-                local_initializing_replicas.clone();
+            coordination_state.local_initializing_replicas = local_initializing_replicas.clone();
             if let Some(cluster_state) = applied_cluster_state.clone() {
                 coordination_state.cached_cluster_state = Some(cluster_state);
             }
@@ -1546,7 +1564,9 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end,
             &mut connection_end_at_ms,
         )?;
-    } else if is_request && action_hint.as_deref() == Some("internal:cluster/coordination/commit_state") {
+    } else if is_request
+        && action_hint.as_deref() == Some("internal:cluster/coordination/commit_state")
+    {
         let response = build_empty_transport_response(request_id, header_version_id);
         response_frame = summarize_transport_response_frame(&response);
         stream.write_all(&response)?;
@@ -1593,7 +1613,9 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end,
             &mut connection_end_at_ms,
         )?;
-    } else if is_request && action_hint.as_deref() == Some("internal:cluster/coordination/start_join") {
+    } else if is_request
+        && action_hint.as_deref() == Some("internal:cluster/coordination/start_join")
+    {
         maybe_send_join_request_to_seed_peer(header_version_id, &body, transport_identity);
         let response = build_empty_transport_response(request_id, header_version_id);
         response_frame = summarize_transport_response_frame(&response);
@@ -1614,7 +1636,8 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end,
             &mut connection_end_at_ms,
         )?;
-    } else if is_request && action_hint.as_deref() == Some("indices:data/read/search[phase/query]") {
+    } else if is_request && action_hint.as_deref() == Some("indices:data/read/search[phase/query]")
+    {
         if let Some(response) = maybe_build_query_phase_response_with_remote_transport_admission(
             request_id,
             &body,
@@ -1710,7 +1733,12 @@ fn read_transport_seed_frame_detailed<S: Read>(
     let mut header = [0_u8; 6];
     match stream.read_exact(&mut header) {
         Ok(()) => {}
-        Err(error) if matches!(error.kind(), std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut) => {
+        Err(error)
+            if matches!(
+                error.kind(),
+                std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
+            ) =>
+        {
             return Ok(TransportSeedFrameRead::TimedOut);
         }
         Err(error) if error.kind() == std::io::ErrorKind::UnexpectedEof => {
@@ -1768,9 +1796,10 @@ fn summarize_transport_seed_frame(header: &[u8; 6], body: &[u8]) -> serde_json::
                 | "internal:index/shard/recovery/translog_ops"
                 | "internal:index/shard/recovery/finalize"
         ) {
-            summary["body_hex"] = serde_json::json!(
-                body.iter().map(|byte| format!("{byte:02x}")).collect::<String>()
-            );
+            summary["body_hex"] = serde_json::json!(body
+                .iter()
+                .map(|byte| format!("{byte:02x}"))
+                .collect::<String>());
         }
         summary["action_hint"] = serde_json::json!(action_hint);
     }
@@ -1781,7 +1810,10 @@ fn transport_frame_action_hint(body: &[u8]) -> Option<String> {
     let needles: [&[u8]; 3] = [b"internal:", b"cluster:", b"indices:"];
     let start = needles
         .iter()
-        .filter_map(|needle| body.windows(needle.len()).position(|window| window == *needle))
+        .filter_map(|needle| {
+            body.windows(needle.len())
+                .position(|window| window == *needle)
+        })
         .min()?;
     let tail = &body[start..];
     let end = tail
@@ -2137,7 +2169,10 @@ fn build_java_start_recovery_request_payload(
         .arg("--source-host-address")
         .arg(&source_node.host_address)
         .arg("--source-transport-address")
-        .arg(format!("{}:{}", source_transport_address.ip, source_transport_address.port))
+        .arg(format!(
+            "{}:{}",
+            source_transport_address.ip, source_transport_address.port
+        ))
         .arg("--source-roles")
         .arg(source_roles)
         .arg("--source-version-id")
@@ -2219,7 +2254,10 @@ fn maybe_send_shard_started(
     assignment: &PublishedReplicaAssignment,
     header_version_id: u32,
 ) {
-    let Some(cluster_manager_node_id) = cluster_state.discovery_nodes.cluster_manager_node_id.as_ref()
+    let Some(cluster_manager_node_id) = cluster_state
+        .discovery_nodes
+        .cluster_manager_node_id
+        .as_ref()
     else {
         return;
     };
@@ -2235,8 +2273,10 @@ fn maybe_send_shard_started(
         .stream_address
         .as_ref()
         .unwrap_or(&cluster_manager_node.address);
-    let target_transport_address =
-        SocketAddr::from((cluster_manager_address.ip, cluster_manager_address.port as u16));
+    let target_transport_address = SocketAddr::from((
+        cluster_manager_address.ip,
+        cluster_manager_address.port as u16,
+    ));
     let request_id = TRANSPORT_REQUEST_SEQUENCE.fetch_add(1, Ordering::Relaxed);
     let Some(payload) = build_java_shard_started_request_payload(
         assignment,
@@ -2258,10 +2298,7 @@ fn maybe_send_shard_started(
     );
     eprintln!(
         "steelsearch_shard_started_send index={} shard={} request_id={} cluster_manager={}",
-        assignment.index_name,
-        assignment.shard_id,
-        request_id,
-        target_transport_address
+        assignment.index_name, assignment.shard_id, request_id, target_transport_address
     );
     thread::spawn(move || {
         if let Err(error) = send_transport_request_and_hold_for_response(
@@ -2293,14 +2330,17 @@ fn maybe_start_peer_recoveries(
         return;
     };
     for assignment in local_initializing_replicas {
-        let Some(source_transport_address) = assignment.source_primary_transport_address.as_ref() else {
+        let Some(source_transport_address) = assignment.source_primary_transport_address.as_ref()
+        else {
             continue;
         };
         let Some(local_allocation_id) = assignment.local_allocation_id.as_ref() else {
             continue;
         };
-        let recovery_key =
-            format!("{}:{}:{local_allocation_id}", assignment.index_name, assignment.shard_id);
+        let recovery_key = format!(
+            "{}:{}:{local_allocation_id}",
+            assignment.index_name, assignment.shard_id
+        );
         let should_start = transport_identity
             .coordination_state
             .lock()
@@ -2362,11 +2402,7 @@ fn maybe_start_peer_recoveries(
                     "steelsearch_start_recovery_response_received request_id={} source={}",
                     request_id, target_transport_address
                 );
-                maybe_send_shard_started(
-                    &cluster_state,
-                    &assignment,
-                    header_version_id,
-                );
+                maybe_send_shard_started(&cluster_state, &assignment, header_version_id);
             }
         });
     }
@@ -2427,16 +2463,17 @@ fn maybe_refresh_cached_match_all_total_hits(
     transport_identity: &DevTransportIdentity,
     cluster_state: &ClusterState,
 ) {
-    let Some(assignment) = resolve_local_query_phase_assignment_from_cluster_state(
-        cluster_state,
-        transport_identity,
-    ) else {
+    let Some(assignment) =
+        resolve_local_query_phase_assignment_from_cluster_state(cluster_state, transport_identity)
+    else {
         return;
     };
     let Some(source_primary_node_id) = assignment.source_primary_node_id.as_deref() else {
         return;
     };
-    let Some(http_address) = lookup_seed_peer_http_address(transport_identity, source_primary_node_id) else {
+    let Some(http_address) =
+        lookup_seed_peer_http_address(transport_identity, source_primary_node_id)
+    else {
         return;
     };
     let cache_key = query_phase_cache_key(&assignment.index_name, assignment.shard_id);
@@ -2525,7 +2562,8 @@ fn resolve_local_query_phase_assignment_from_cluster_state(
         .flat_map(|index| {
             index.shards.iter().flat_map(move |shard| {
                 shard.shard_routings.iter().filter_map(move |routing| {
-                    (routing.current_node_id.as_deref() == Some(transport_identity.node_id.as_str())
+                    (routing.current_node_id.as_deref()
+                        == Some(transport_identity.node_id.as_str())
                         && matches!(
                             routing.state,
                             ShardRoutingState::Initializing | ShardRoutingState::Started
@@ -2565,23 +2603,29 @@ fn resolve_local_query_phase_assignment_from_cluster_state(
             )
     });
     let source_primary_node_id = source_primary.and_then(|routing| routing.current_node_id.clone());
-    let source_primary_transport_address = source_primary_node_id.as_ref().and_then(|source_primary_node_id| {
-        cluster_state
-            .discovery_nodes
-            .nodes
-            .iter()
-            .find(|node| node.id == *source_primary_node_id)
-            .map(|node| {
-                let address = node.stream_address.as_ref().unwrap_or(&node.address);
-                format!("{}:{}", address.ip, address.port)
-            })
-    });
+    let source_primary_transport_address =
+        source_primary_node_id
+            .as_ref()
+            .and_then(|source_primary_node_id| {
+                cluster_state
+                    .discovery_nodes
+                    .nodes
+                    .iter()
+                    .find(|node| node.id == *source_primary_node_id)
+                    .map(|node| {
+                        let address = node.stream_address.as_ref().unwrap_or(&node.address);
+                        format!("{}:{}", address.ip, address.port)
+                    })
+            });
     Some(PublishedReplicaAssignment {
         index_name: index.index_name.clone(),
         shard_id: shard.shard_id,
         source_primary_node_id,
         source_primary_transport_address,
-        local_allocation_id: local_routing.allocation_id.as_ref().map(|allocation_id| allocation_id.id.clone()),
+        local_allocation_id: local_routing
+            .allocation_id
+            .as_ref()
+            .map(|allocation_id| allocation_id.id.clone()),
     })
 }
 
@@ -2645,12 +2689,19 @@ fn maybe_build_query_phase_response(
     transport_identity: &DevTransportIdentity,
 ) -> Option<Vec<u8>> {
     let cached_assignment = resolve_local_query_phase_assignment(transport_identity)?;
-    let cache_key = query_phase_cache_key(&cached_assignment.index_name, cached_assignment.shard_id);
-    if let Some(cached_response_body) = transport_identity
-        .coordination_state
-        .lock()
-        .ok()
-        .and_then(|state| state.cached_query_phase_response_bodies.get(&cache_key).cloned())
+    let cache_key =
+        query_phase_cache_key(&cached_assignment.index_name, cached_assignment.shard_id);
+    if let Some(cached_response_body) =
+        transport_identity
+            .coordination_state
+            .lock()
+            .ok()
+            .and_then(|state| {
+                state
+                    .cached_query_phase_response_bodies
+                    .get(&cache_key)
+                    .cloned()
+            })
     {
         return Some(build_transport_frame_from_body(
             &rewrite_transport_body_request_id(&cached_response_body, request_id),
@@ -2729,10 +2780,9 @@ fn maybe_build_query_phase_response_with_remote_transport_admission(
             {
                 thread::sleep(Duration::from_millis(pause_millis));
             }
-            maybe_build_query_phase_response(request_id, body, transport_identity)
-                .ok_or_else(|| {
-                    InternalTransportError::Handler("query phase response missing".into())
-                })
+            maybe_build_query_phase_response(request_id, body, transport_identity).ok_or_else(
+                || InternalTransportError::Handler("query phase response missing".into()),
+            )
         }) {
         Ok(response) => Some(response),
         Err(InternalTransportError::Rejected {
@@ -2793,6 +2843,67 @@ fn main_response_from_identity(
         cluster_name: transport_identity.cluster_name.clone(),
         cluster_uuid: "_na_".to_string(),
         build: os_transport::action::MainBuildWire::default(),
+    }
+}
+
+fn build_empty_wlm_stats_response(
+    request_id: i64,
+    header_version_id: u32,
+    transport_identity: &DevTransportIdentity,
+) -> Vec<u8> {
+    os_transport::action::build_wlm_stats_response_message(
+        request_id,
+        Version::from_id(header_version_id as i32),
+        &wlm_stats_response_from_identity(transport_identity),
+    )
+    .map(|frame| frame.to_vec())
+    .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
+}
+
+fn wlm_stats_response_from_identity(
+    transport_identity: &DevTransportIdentity,
+) -> os_transport::action::WlmStatsResponseWire {
+    os_transport::action::WlmStatsResponseWire::empty_local(
+        transport_identity.cluster_name.clone(),
+        os_transport::action::WlmStatsNodeWire::empty(discovery_node_wire_from_identity(
+            transport_identity,
+        )),
+    )
+}
+
+fn discovery_node_wire_from_identity(
+    transport_identity: &DevTransportIdentity,
+) -> os_transport::action::OpenSearchDiscoveryNodeWire {
+    let host = transport_identity.transport_address.ip().to_string();
+    os_transport::action::OpenSearchDiscoveryNodeWire {
+        name: transport_identity.node_name.clone(),
+        id: transport_identity.node_id.clone(),
+        ephemeral_id: transport_identity.ephemeral_id.clone(),
+        host_name: host.clone(),
+        host_address: host.clone(),
+        transport_address: os_transport::action::OpenSearchTransportAddressWire {
+            ip: transport_identity.transport_address.ip(),
+            host,
+            port: i32::from(transport_identity.transport_address.port()),
+        },
+        attributes: transport_identity
+            .attributes
+            .iter()
+            .cloned()
+            .collect::<BTreeMap<_, _>>(),
+        roles: transport_identity
+            .roles
+            .iter()
+            .map(|role| {
+                let (abbreviation, can_contain_data) = transport_role_wire_compat(role);
+                os_transport::action::OpenSearchDiscoveryNodeRoleWire {
+                    name: role.clone(),
+                    abbreviation: abbreviation.to_string(),
+                    can_contain_data,
+                }
+            })
+            .collect(),
+        version: OPENSEARCH_3_7_0,
     }
 }
 
@@ -2911,13 +3022,15 @@ fn list_tasks_record_matches_request(
 ) -> bool {
     let node_id = queue_task_node_id(record, transport_identity);
     if request.task_id.is_set()
-        && (request.task_id.id != Some(record.task_id as i64)
-            || request.task_id.node_id != node_id)
+        && (request.task_id.id != Some(record.task_id as i64) || request.task_id.node_id != node_id)
     {
         return false;
     }
     if !request.nodes.is_empty()
-        && !request.nodes.iter().any(|requested_node| requested_node == &node_id)
+        && !request
+            .nodes
+            .iter()
+            .any(|requested_node| requested_node == &node_id)
     {
         return false;
     }
@@ -3114,22 +3227,29 @@ fn cancel_tasks_response_from_identity(
             } else {
                 (
                     Vec::new(),
-                    vec![os_transport::action::FailedNodeExceptionWire::illegal_argument(
-                        request.task_id.node_id.clone(),
-                        format!(
-                            "task [{}] doesn't support cancellation",
-                            task_id_wire_display(&request.task_id)
+                    vec![
+                        os_transport::action::FailedNodeExceptionWire::illegal_argument(
+                            request.task_id.node_id.clone(),
+                            format!(
+                                "task [{}] doesn't support cancellation",
+                                task_id_wire_display(&request.task_id)
+                            ),
                         ),
-                    )],
+                    ],
                 )
             }
         } else {
             (
                 Vec::new(),
-                vec![os_transport::action::FailedNodeExceptionWire::resource_not_found(
-                    request.task_id.node_id.clone(),
-                    format!("task [{}] is not found", task_id_wire_display(&request.task_id)),
-                )],
+                vec![
+                    os_transport::action::FailedNodeExceptionWire::resource_not_found(
+                        request.task_id.node_id.clone(),
+                        format!(
+                            "task [{}] is not found",
+                            task_id_wire_display(&request.task_id)
+                        ),
+                    ),
+                ],
             )
         }
     } else {
@@ -3166,7 +3286,10 @@ fn cancel_tasks_record_matches_request(
 ) -> bool {
     let node_id = queue_task_node_id(record, transport_identity);
     if !request.nodes.is_empty()
-        && !request.nodes.iter().any(|requested_node| requested_node == &node_id)
+        && !request
+            .nodes
+            .iter()
+            .any(|requested_node| requested_node == &node_id)
     {
         return false;
     }
@@ -3265,7 +3388,10 @@ fn decode_transport_message_from_body(body: &[u8]) -> Option<os_transport::Trans
     frame.extend_from_slice(b"ES");
     frame.extend_from_slice(&len.to_be_bytes());
     frame.extend_from_slice(body);
-    match os_transport::frame::decode_frame(&mut frame).ok().flatten()? {
+    match os_transport::frame::decode_frame(&mut frame)
+        .ok()
+        .flatten()?
+    {
         os_transport::frame::DecodedFrame::Message(message) => Some(message),
         os_transport::frame::DecodedFrame::Ping => None,
     }
@@ -3350,7 +3476,9 @@ fn parse_java_start_recovery_request(
     if let Some(payload_offset) = transport_request_payload_offset(request_body) {
         let direct_tail = request_body[payload_offset..].to_vec();
         if !direct_tail.is_empty()
-            && !candidates.iter().any(|(_, existing)| *existing == direct_tail)
+            && !candidates
+                .iter()
+                .any(|(_, existing)| *existing == direct_tail)
         {
             candidates.push(("direct_tail", direct_tail));
         }
@@ -3493,19 +3621,27 @@ fn maybe_complete_source_side_recovery(
     let Some(prepare_payload) =
         build_java_prepare_translog_request_payload(&request, request_seq_prepare)
     else {
-        eprintln!("steelsearch_source_recovery_prepare_payload_missing recovery_id={}", request.recovery_id);
+        eprintln!(
+            "steelsearch_source_recovery_prepare_payload_missing recovery_id={}",
+            request.recovery_id
+        );
         return;
     };
-    let Some(translog_payload) =
-        build_java_translog_ops_request_payload(&request, request_seq_ops)
+    let Some(translog_payload) = build_java_translog_ops_request_payload(&request, request_seq_ops)
     else {
-        eprintln!("steelsearch_source_recovery_translog_payload_missing recovery_id={}", request.recovery_id);
+        eprintln!(
+            "steelsearch_source_recovery_translog_payload_missing recovery_id={}",
+            request.recovery_id
+        );
         return;
     };
     let Some(finalize_payload) =
         build_java_finalize_recovery_request_payload(&request, request_seq_finalize)
     else {
-        eprintln!("steelsearch_source_recovery_finalize_payload_missing recovery_id={}", request.recovery_id);
+        eprintln!(
+            "steelsearch_source_recovery_finalize_payload_missing recovery_id={}",
+            request.recovery_id
+        );
         return;
     };
     let prepare_frame = build_transport_request_frame(
@@ -3593,7 +3729,10 @@ fn build_empty_nodes_stats_response(
         {
             if output.status.success() {
                 if let Some(payload) = decode_hex_bytes(
-                    std::str::from_utf8(&output.stdout).ok().unwrap_or("").trim(),
+                    std::str::from_utf8(&output.stdout)
+                        .ok()
+                        .unwrap_or("")
+                        .trim(),
                 ) {
                     return build_transport_response_frame(request_id, header_version_id, payload);
                 }
@@ -3642,7 +3781,10 @@ fn build_nodes_info_response(
         {
             if output.status.success() {
                 if let Some(payload) = decode_hex_bytes(
-                    std::str::from_utf8(&output.stdout).ok().unwrap_or("").trim(),
+                    std::str::from_utf8(&output.stdout)
+                        .ok()
+                        .unwrap_or("")
+                        .trim(),
                 ) {
                     return build_transport_response_frame(request_id, header_version_id, payload);
                 }
@@ -3784,7 +3926,9 @@ fn decode_local_initializing_replicas_from_publish_state(
     }
 
     let wrapped_payload = unwrap_bytes_transport_request_payload(&request_body[payload_offset..])
-        .map_err(|error| format!("failed to unwrap publish_state bytes transport request: {error}"))?;
+        .map_err(|error| {
+        format!("failed to unwrap publish_state bytes transport request: {error}")
+    })?;
     let payload = if wrapped_payload.starts_with(b"DFL\0") {
         decompress_deflate_body(&wrapped_payload)
             .map_err(|error| format!("failed to inflate publish_state payload: {error}"))?
@@ -3813,10 +3957,27 @@ fn decode_local_initializing_replicas_from_publish_state(
             .ok_or_else(|| {
                 "received diff publish_state before cached_cluster_state was available".to_string()
             })?;
-        let applied = match read_publication_cluster_state_diff(Bytes::from(payload), stream_version)
-        {
-            Ok(diff) => match apply_publication_diff_and_ack(previous, diff) {
-                Ok(outcome) => outcome.state,
+        let applied =
+            match read_publication_cluster_state_diff(Bytes::from(payload), stream_version) {
+                Ok(diff) => match apply_publication_diff_and_ack(previous, diff) {
+                    Ok(outcome) => outcome.state,
+                    Err(error) => {
+                        let fallback = transport_identity
+                            .and_then(|identity| {
+                                bootstrap_cached_cluster_state_from_seed_peers(
+                                    header_version_id_from_request_body(request_body)?,
+                                    stream_version,
+                                    identity,
+                                )
+                                .ok()
+                            })
+                            .ok_or_else(|| {
+                                format!("failed to apply publish_state diff: {error}")
+                            })?;
+                        eprintln!("steelsearch_publish_state_resync_after_apply_error={error}");
+                        fallback
+                    }
+                },
                 Err(error) => {
                     let fallback = transport_identity
                         .and_then(|identity| {
@@ -3827,32 +3988,11 @@ fn decode_local_initializing_replicas_from_publish_state(
                             )
                             .ok()
                         })
-                        .ok_or_else(|| {
-                            format!("failed to apply publish_state diff: {error}")
-                        })?;
-                    eprintln!(
-                        "steelsearch_publish_state_resync_after_apply_error={error}"
-                    );
+                        .ok_or_else(|| format!("failed to decode publish_state diff: {error}"))?;
+                    eprintln!("steelsearch_publish_state_resync_after_decode_error={error}");
                     fallback
                 }
-            },
-            Err(error) => {
-                let fallback = transport_identity
-                    .and_then(|identity| {
-                        bootstrap_cached_cluster_state_from_seed_peers(
-                            header_version_id_from_request_body(request_body)?,
-                            stream_version,
-                            identity,
-                        )
-                        .ok()
-                    })
-                    .ok_or_else(|| format!("failed to decode publish_state diff: {error}"))?;
-                eprintln!(
-                    "steelsearch_publish_state_resync_after_decode_error={error}"
-                );
-                fallback
-            }
-        };
+            };
         let assignments =
             extract_local_initializing_replicas_from_cluster_state(&applied, local_node_id);
         return Ok((assignments, Some(applied)));
@@ -3931,14 +4071,17 @@ fn bootstrap_cached_cluster_state_from_seed_peers(
             Ok(cluster_state) => {
                 eprintln!(
                     "steelsearch_cluster_state_bootstrap peer={} state_uuid={} version={}",
-                    target_transport_address, cluster_state.header.state_uuid, cluster_state.header.version
+                    target_transport_address,
+                    cluster_state.header.state_uuid,
+                    cluster_state.header.version
                 );
                 return Ok(cluster_state);
             }
             Err(error) => last_error = Some(format!("{target_transport_address}: {error}")),
         }
     }
-    Err(last_error.unwrap_or_else(|| "no seed peers available for cluster state bootstrap".to_string()))
+    Err(last_error
+        .unwrap_or_else(|| "no seed peers available for cluster state bootstrap".to_string()))
 }
 
 fn fetch_cluster_state_from_seed_peer(
@@ -4005,9 +4148,9 @@ fn fetch_cluster_state_from_seed_peer(
                 };
                 let response = ClusterStateResponsePrefix::read(Bytes::from(payload.to_vec()))
                     .map_err(|error| format!("failed to decode cluster state response: {error}"))?;
-                return response
-                    .into_cluster_state()
-                    .map_err(|error| format!("failed to materialize cluster state response: {error}"));
+                return response.into_cluster_state().map_err(|error| {
+                    format!("failed to materialize cluster state response: {error}")
+                });
             }
             TransportSeedFrameRead::Ping(_header) => {
                 let response = build_keepalive_ping_frame();
@@ -4129,9 +4272,8 @@ fn refresh_local_initializing_replicas_from_seed_peers(
     }
 
     latest_snapshot.ok_or_else(|| {
-        last_error.unwrap_or_else(|| {
-            "no seed peers available for cluster state refresh".to_string()
-        })
+        last_error
+            .unwrap_or_else(|| "no seed peers available for cluster state refresh".to_string())
     })
 }
 
@@ -4143,9 +4285,7 @@ fn maybe_refresh_local_initializing_replicas_from_seed_peers(
     let should_refresh = transport_identity
         .coordination_state
         .lock()
-        .map(|state| {
-            state.local_initializing_replicas.is_empty()
-        })
+        .map(|state| state.local_initializing_replicas.is_empty())
         .unwrap_or(false);
     if !should_refresh {
         return;
@@ -4158,10 +4298,10 @@ fn maybe_refresh_local_initializing_replicas_from_seed_peers(
             stream_version,
         ) {
             Ok(snapshot) => snapshot,
-        Err(error) => {
-            eprintln!("steelsearch_cluster_state_refresh_error={error}");
-            return;
-        }
+            Err(error) => {
+                eprintln!("steelsearch_cluster_state_refresh_error={error}");
+                return;
+            }
         };
     maybe_refresh_cached_match_all_total_hits(transport_identity, &refreshed);
     if let Ok(mut coordination_state) = transport_identity.coordination_state.lock() {
@@ -4241,10 +4381,16 @@ fn hold_transport_channel_open<S: TransportConnection>(
             TransportSeedFrameRead::Frame((post_header, post_body)) => {
                 if post_follow_up_frame.is_none() {
                     *post_follow_up_frame_received_at_ms = Some(unix_time_ms());
-                    *post_follow_up_frame = Some(summarize_transport_seed_frame(&post_header, &post_body));
+                    *post_follow_up_frame =
+                        Some(summarize_transport_seed_frame(&post_header, &post_body));
                 }
                 let peer_addr = stream.peer_addr().ok();
-                if handle_subsequent_transport_request(stream, &post_body, transport_identity, peer_addr)? {
+                if handle_subsequent_transport_request(
+                    stream,
+                    &post_body,
+                    transport_identity,
+                    peer_addr,
+                )? {
                     if first_post_response_event.is_none() {
                         *first_post_response_event = Some("handled_follow_up_request".to_string());
                     }
@@ -4339,7 +4485,9 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
     }
     let header_version_id = u32::from_be_bytes([body[9], body[10], body[11], body[12]]);
     let action_hint = transport_frame_action_hint(body);
-    let normalized_action_hint = action_hint.as_deref().map(|action| action.strip_suffix("[n]").unwrap_or(action));
+    let normalized_action_hint = action_hint
+        .as_deref()
+        .map(|action| action.strip_suffix("[n]").unwrap_or(action));
     eprintln!(
         "steelsearch_followup_request request_id={} action_hint={:?} header_version_id={}",
         request_id, action_hint, header_version_id
@@ -4359,9 +4507,10 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
         Some("internal:discovery/request_peers") => {
             Some(build_request_peers_response(request_id, header_version_id))
         }
-        Some("cluster:monitor/remote/info") => {
-            Some(build_empty_remote_info_response(request_id, header_version_id))
-        }
+        Some("cluster:monitor/remote/info") => Some(build_empty_remote_info_response(
+            request_id,
+            header_version_id,
+        )),
         Some("cluster:monitor/task") => Some(build_pending_cluster_tasks_response(
             request_id,
             header_version_id,
@@ -4379,14 +4528,12 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
             transport_identity,
             body,
         )),
-        Some("cluster:admin/tasks/cancel") => {
-            Some(build_cancel_tasks_response_for_request(
-                request_id,
-                header_version_id,
-                transport_identity,
-                Some(body),
-            ))
-        }
+        Some("cluster:admin/tasks/cancel") => Some(build_cancel_tasks_response_for_request(
+            request_id,
+            header_version_id,
+            transport_identity,
+            Some(body),
+        )),
         Some("internal:cluster/request_pre_vote") => Some(build_pre_vote_response(
             request_id,
             header_version_id,
@@ -4404,9 +4551,15 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
             header_version_id,
             transport_identity,
         )),
-        Some("cluster:admin/knn_stats_action") => {
-            Some(build_empty_knn_stats_response(request_id, header_version_id))
-        }
+        Some("cluster:monitor/wlm/stats") => Some(build_empty_wlm_stats_response(
+            request_id,
+            header_version_id,
+            transport_identity,
+        )),
+        Some("cluster:admin/knn_stats_action") => Some(build_empty_knn_stats_response(
+            request_id,
+            header_version_id,
+        )),
         Some("cluster:monitor/nodes/info") => Some(build_nodes_info_response(
             request_id,
             header_version_id,
@@ -4430,21 +4583,16 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
             )
         }
         Some("indices:admin/seq_no/retention_lease_background_sync")
-        | Some("indices:admin/seq_no/retention_lease_background_sync[r]") => {
-            Some(build_replication_replica_response(
-                request_id,
-                header_version_id,
-                0,
-                0,
-            ))
-        }
-        Some("internal:cluster/nodes/indices/shard/store/batch") => Some(
-            build_empty_shard_store_batch_response(
+        | Some("indices:admin/seq_no/retention_lease_background_sync[r]") => Some(
+            build_replication_replica_response(request_id, header_version_id, 0, 0),
+        ),
+        Some("internal:cluster/nodes/indices/shard/store/batch") => {
+            Some(build_empty_shard_store_batch_response(
                 request_id,
                 header_version_id,
                 transport_identity,
-            ),
-        ),
+            ))
+        }
         Some("internal:index/shard/recovery/start_recovery") => {
             if let Some(peer_addr) = peer_addr {
                 maybe_complete_source_side_recovery(peer_addr, body, header_version_id);
@@ -4456,9 +4604,9 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
         | Some("internal:index/shard/recovery/clean_files")
         | Some("internal:index/shard/recovery/prepare_translog")
         | Some("internal:index/shard/recovery/finalize")
-        | Some("internal:index/shard/recovery/handoff_primary_context") => {
-            Some(build_empty_transport_response(request_id, header_version_id))
-        }
+        | Some("internal:index/shard/recovery/handoff_primary_context") => Some(
+            build_empty_transport_response(request_id, header_version_id),
+        ),
         Some("internal:index/shard/recovery/translog_ops") => Some(
             build_recovery_translog_operations_response(request_id, header_version_id, 0),
         ),
@@ -4486,11 +4634,17 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
                     );
                 });
             }
-            Some(build_empty_transport_response(request_id, header_version_id))
+            Some(build_empty_transport_response(
+                request_id,
+                header_version_id,
+            ))
         }
         Some("internal:cluster/coordination/start_join") => {
             maybe_send_join_request_to_seed_peer(header_version_id, body, transport_identity);
-            Some(build_empty_transport_response(request_id, header_version_id))
+            Some(build_empty_transport_response(
+                request_id,
+                header_version_id,
+            ))
         }
         Some("internal:cluster/coordination/publish_state") => {
             let cached_cluster_state = transport_identity
@@ -4621,12 +4775,10 @@ fn summarize_transport_response_frame_for_action(
             | Some("internal:coordination/fault_detection/follower_check")
             | Some("internal:transport/handshake")
     ) {
-        summary["body_hex"] = serde_json::json!(
-            frame[6..]
-                .iter()
-                .map(|byte| format!("{byte:02x}"))
-                .collect::<String>()
-        );
+        summary["body_hex"] = serde_json::json!(frame[6..]
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>());
     }
     if let Some(action_hint) = action_hint {
         summary["action_hint"] = serde_json::json!(action_hint);
@@ -4658,7 +4810,9 @@ fn maybe_send_join_request_to_seed_peer(
             transport_identity,
             seed_peer_identity,
         );
-        let Ok(target_transport_address) = seed_peer_identity.discovery_node.transport_address.parse() else {
+        let Ok(target_transport_address) =
+            seed_peer_identity.discovery_node.transport_address.parse()
+        else {
             continue;
         };
         let _ = send_join_request_over_managed_channel(
@@ -4721,14 +4875,12 @@ fn send_join_request_over_managed_channel(
                         request_id,
                         action_hint
                     );
-                    if let Err(error) =
-                        handle_subsequent_transport_request(
-                            &mut stream,
-                            &body,
-                            &transport_identity,
-                            Some(target_transport_address),
-                        )
-                    {
+                    if let Err(error) = handle_subsequent_transport_request(
+                        &mut stream,
+                        &body,
+                        &transport_identity,
+                        Some(target_transport_address),
+                    ) {
                         eprintln!(
                             "steelsearch_join_channel_followup_error context={} peer={} error={}",
                             context, target_transport_address, error
@@ -4749,7 +4901,9 @@ fn send_join_request_over_managed_channel(
                 Ok(TransportSeedFrameRead::TimedOut) => {
                     if !sent_keepalive {
                         let response = build_keepalive_ping_frame();
-                        if let Err(error) = stream.write_all(&response).and_then(|()| stream.flush()) {
+                        if let Err(error) =
+                            stream.write_all(&response).and_then(|()| stream.flush())
+                        {
                             eprintln!(
                                 "steelsearch_join_channel_keepalive_error context={} peer={} error={}",
                                 context, target_transport_address, error
@@ -4813,10 +4967,8 @@ fn spawn_proactive_seed_join_loop(transport_identity: DevTransportIdentity) {
                     &transport_identity,
                     seed_peer_identity,
                 );
-                let Ok(target_transport_address) = seed_peer_identity
-                    .discovery_node
-                    .transport_address
-                    .parse()
+                let Ok(target_transport_address) =
+                    seed_peer_identity.discovery_node.transport_address.parse()
                 else {
                     continue;
                 };
@@ -5036,7 +5188,8 @@ fn build_transport_response_frame(
 }
 
 fn hex_prefix(bytes: &[u8], max_len: usize) -> String {
-    bytes.iter()
+    bytes
+        .iter()
         .take(max_len)
         .map(|byte| format!("{byte:02x}"))
         .collect::<String>()
@@ -5581,7 +5734,9 @@ where
         http_tls_certificate_path: vars
             .get("STEELSEARCH_HTTP_TLS_CERTIFICATE")
             .map(PathBuf::from),
-        http_tls_private_key_path: vars.get("STEELSEARCH_HTTP_TLS_PRIVATE_KEY").map(PathBuf::from),
+        http_tls_private_key_path: vars
+            .get("STEELSEARCH_HTTP_TLS_PRIVATE_KEY")
+            .map(PathBuf::from),
         transport_tls_certificate_path: vars
             .get("STEELSEARCH_TRANSPORT_TLS_CERTIFICATE")
             .map(PathBuf::from),
@@ -5598,7 +5753,9 @@ where
     let mut release_readiness_evidence_path = vars
         .get("STEELSEARCH_RELEASE_READINESS_FILE")
         .map(PathBuf::from);
-    let mut extension_manifest_path = vars.get("STEELSEARCH_EXTENSION_MANIFEST").map(PathBuf::from);
+    let mut extension_manifest_path = vars
+        .get("STEELSEARCH_EXTENSION_MANIFEST")
+        .map(PathBuf::from);
     let mut extension_registry_overrides = ExtensionRegistryOverrideConfig {
         knn_plugin_enabled: parse_bool_env(vars, "STEELSEARCH_ENABLE_KNN_PLUGIN")?,
         ml_commons_enabled: parse_bool_env(vars, "STEELSEARCH_ENABLE_ML_COMMONS")?,
@@ -5711,7 +5868,8 @@ where
             }
             "--release.readiness_file" => {
                 release_readiness_evidence_path = Some(PathBuf::from(
-                    args.next().ok_or("--release.readiness_file requires a value")?,
+                    args.next()
+                        .ok_or("--release.readiness_file requires a value")?,
                 ));
             }
             "--extensions.knn" => {
@@ -5730,7 +5888,8 @@ where
             }
             "--extensions.manifest" => {
                 extension_manifest_path = Some(PathBuf::from(
-                    args.next().ok_or("--extensions.manifest requires a value")?,
+                    args.next()
+                        .ok_or("--extensions.manifest requires a value")?,
                 ));
             }
             "--interop.java_write_forwarding_validated" => {
@@ -6021,7 +6180,10 @@ fn startup_preflight_blockers(config: &DaemonConfig) -> Vec<String> {
             ));
         }
     }
-    if !blockers.iter().any(|blocker| blocker.contains("--path.data must be a directory")) {
+    if !blockers
+        .iter()
+        .any(|blocker| blocker.contains("--path.data must be a directory"))
+    {
         if let Err(error) = fs::create_dir_all(&config.data_path) {
             blockers.push(format!(
                 "[daemon] --path.data must be creatable ({}): {error}",
@@ -6062,9 +6224,7 @@ fn startup_preflight_blockers(config: &DaemonConfig) -> Vec<String> {
             .as_ref()
             .and_then(|path| load_release_readiness_checklist(path).ok())
             .unwrap_or_default();
-        if let Err(error) =
-            validate_production_mode_request(&security_policy, release_checklist)
-        {
+        if let Err(error) = validate_production_mode_request(&security_policy, release_checklist) {
             blockers.push(format!("[production] Steelsearch {error}"));
         }
     }
@@ -6405,9 +6565,8 @@ fn contains_pem_private_key_markers(raw: &str) -> bool {
         raw.contains("-----BEGIN PRIVATE KEY-----") && raw.contains("-----END PRIVATE KEY-----");
     let has_rsa_private_key = raw.contains("-----BEGIN RSA PRIVATE KEY-----")
         && raw.contains("-----END RSA PRIVATE KEY-----");
-    let has_ec_private_key =
-        raw.contains("-----BEGIN EC PRIVATE KEY-----")
-            && raw.contains("-----END EC PRIVATE KEY-----");
+    let has_ec_private_key = raw.contains("-----BEGIN EC PRIVATE KEY-----")
+        && raw.contains("-----END EC PRIVATE KEY-----");
     has_private_key || has_rsa_private_key || has_ec_private_key
 }
 
@@ -6455,7 +6614,9 @@ fn validate_data_path_unlocked(path: &std::path::Path) -> Result<(), Box<dyn std
     Ok(())
 }
 
-fn validate_data_path_not_readonly(path: &std::path::Path) -> Result<(), Box<dyn std::error::Error>> {
+fn validate_data_path_not_readonly(
+    path: &std::path::Path,
+) -> Result<(), Box<dyn std::error::Error>> {
     let metadata = fs::metadata(path).map_err(|error| {
         format!(
             "--path.data metadata must be readable before startup ({}): {error}",
@@ -6492,15 +6653,15 @@ fn development_cluster_view(
             .iter()
             .find(|manifest| manifest.discovery_node.transport_address == *seed_host)
         {
-                nodes.push(DevelopmentClusterNode {
-                    node_id: seed_peer_identity.discovery_node.id.clone(),
-                    node_name: seed_peer_identity.discovery_node.name.clone(),
-                    http_address: seed_peer_identity.discovery_node.http_address.clone(),
-                    transport_address: seed_peer_identity.discovery_node.transport_address.clone(),
-                    roles: seed_peer_identity.discovery_node.roles.clone(),
-                    local: false,
-                });
-                continue;
+            nodes.push(DevelopmentClusterNode {
+                node_id: seed_peer_identity.discovery_node.id.clone(),
+                node_name: seed_peer_identity.discovery_node.name.clone(),
+                http_address: seed_peer_identity.discovery_node.http_address.clone(),
+                transport_address: seed_peer_identity.discovery_node.transport_address.clone(),
+                roles: seed_peer_identity.discovery_node.roles.clone(),
+                local: false,
+            });
+            continue;
         }
         nodes.push(DevelopmentClusterNode {
             node_id: format!("seed-{}-{}", index + 1, sanitize_node_id(seed_host)),
@@ -6687,8 +6848,14 @@ fn restore_gateway_cluster_metadata_manifest(
     validate_gateway_metadata_replay_state(persisted_gateway_state)?;
     if let Some(routing_metadata) = persisted_gateway_state.routing_metadata.as_ref() {
         if let Some(manifest) = cluster_metadata_manifest.as_object_mut() {
-            manifest.insert("routing_table".to_string(), routing_metadata.routing_table.clone());
-            manifest.insert("allocation".to_string(), routing_metadata.allocation.clone());
+            manifest.insert(
+                "routing_table".to_string(),
+                routing_metadata.routing_table.clone(),
+            );
+            manifest.insert(
+                "allocation".to_string(),
+                routing_metadata.allocation.clone(),
+            );
         }
     }
     if let Some(metadata_state) = persisted_gateway_state.metadata_state.as_ref() {
@@ -6776,7 +6943,10 @@ fn validate_gateway_metadata_replay_state(
             ),
         ));
     }
-    if !metadata_commit_state.applied_node_ids.contains(local_node_id) {
+    if !metadata_commit_state
+        .applied_node_ids
+        .contains(local_node_id)
+    {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidData,
             format!(
@@ -6875,12 +7045,8 @@ fn apply_development_coordination_with_persisted_state(
         2,
         Duration::from_millis(200),
     );
-    let liveness_outcome = run_periodic_liveness_checks(
-        &mut coordination,
-        &config,
-        2,
-        Duration::from_millis(200),
-    );
+    let liveness_outcome =
+        run_periodic_liveness_checks(&mut coordination, &config, 2, Duration::from_millis(200));
     if let Some(re_election) = liveness_outcome.re_election {
         election = re_election;
     }
@@ -7081,8 +7247,8 @@ where
         let window = scheduler.next_attempt();
         let mut result = elect();
         windows.push(window);
-        let quorum_satisfied =
-            result.elected_node_id.is_some() && (result.votes.len() as u64) >= result.required_quorum;
+        let quorum_satisfied = result.elected_node_id.is_some()
+            && (result.votes.len() as u64) >= result.required_quorum;
         if quorum_satisfied {
             return (result, windows);
         }
@@ -7129,7 +7295,10 @@ where
         .is_some_and(|record| record.phase == os_node::CoordinationFaultPhase::Faulted);
 
     coordination.cluster_manager_node_id = None;
-    coordination.liveness.leader_checks.remove(&previous_manager);
+    coordination
+        .liveness
+        .leader_checks
+        .remove(&previous_manager);
     let had_fault_record = coordination
         .fault_detection
         .leader_nodes
@@ -7139,8 +7308,8 @@ where
         return None;
     }
     let election = re_elect(coordination, config, connect_timeout);
-    let quorum_satisfied =
-        election.elected_node_id.is_some() && (election.votes.len() as u64) >= election.required_quorum;
+    let quorum_satisfied = election.elected_node_id.is_some()
+        && (election.votes.len() as u64) >= election.required_quorum;
     if quorum_satisfied {
         coordination.liveness.clear_local_fence();
         return Some(election);
@@ -7645,7 +7814,10 @@ mod tests {
         let registry = effective_extension_registry(&config).unwrap();
         assert!(registry.knn_plugin_enabled);
         assert!(registry.ml_commons_enabled);
-        assert_eq!(registry.manifest_path.as_deref(), Some(manifest_path.as_path()));
+        assert_eq!(
+            registry.manifest_path.as_deref(),
+            Some(manifest_path.as_path())
+        );
 
         let _ = fs::remove_file(manifest_path);
     }
@@ -7672,7 +7844,9 @@ mod tests {
         )
         .unwrap();
 
-        let error = effective_extension_registry(&config).unwrap_err().to_string();
+        let error = effective_extension_registry(&config)
+            .unwrap_err()
+            .to_string();
         assert!(error.contains("invalid extension manifest"));
         assert!(error.contains(manifest_path.to_str().unwrap()));
 
@@ -7705,7 +7879,9 @@ mod tests {
         )
         .unwrap();
 
-        let error = effective_extension_registry(&config).unwrap_err().to_string();
+        let error = effective_extension_registry(&config)
+            .unwrap_err()
+            .to_string();
         assert!(error.contains("unsupported Java plugin ABI manifest"));
         assert!(error.contains(manifest_path.to_str().unwrap()));
 
@@ -7770,10 +7946,8 @@ mod tests {
         ));
 
         config.mode = DaemonMode::Production;
-        let production_transcript = startup_extension_registry_transcript(
-            &config,
-            &ExtensionBoundaryRegistry::default(),
-        );
+        let production_transcript =
+            startup_extension_registry_transcript(&config, &ExtensionBoundaryRegistry::default());
         assert!(production_transcript.contains("profile=production"));
         assert!(production_transcript.contains("manifest=inline/default"));
         assert!(production_transcript.contains("registered_components=steelsearch-runtime"));
@@ -7970,9 +8144,7 @@ mod tests {
         let mut config = minimal_daemon_config(path.clone());
         config.mode = DaemonMode::Production;
 
-        let startup_error = validate_startup_preflight(&config)
-            .unwrap_err()
-            .to_string();
+        let startup_error = validate_startup_preflight(&config).unwrap_err().to_string();
         let readiness = startup_readiness_report(&config);
 
         let _ = fs::remove_dir_all(path);
@@ -8003,8 +8175,14 @@ mod tests {
 
         let _ = fs::remove_file(path);
         assert!(!readiness.ready);
-        assert!(readiness.blockers.iter().any(|blocker| blocker.starts_with("[daemon]")));
-        assert!(readiness.blockers.iter().any(|blocker| blocker.starts_with("[security]")));
+        assert!(readiness
+            .blockers
+            .iter()
+            .any(|blocker| blocker.starts_with("[daemon]")));
+        assert!(readiness
+            .blockers
+            .iter()
+            .any(|blocker| blocker.starts_with("[security]")));
         assert!(readiness
             .blockers
             .iter()
@@ -8139,9 +8317,7 @@ mod tests {
             secure_settings_path: Some(secure_settings),
         };
 
-        let startup_error = validate_startup_preflight(&config)
-            .unwrap_err()
-            .to_string();
+        let startup_error = validate_startup_preflight(&config).unwrap_err().to_string();
         let readiness = startup_readiness_report(&config);
 
         let _ = fs::remove_dir_all(path);
@@ -8264,12 +8440,7 @@ mod tests {
 }"#,
         )
         .unwrap();
-        for artifact in [
-            "load.md",
-            "chaos.md",
-            "packaging.md",
-            "rolling-upgrade.md",
-        ] {
+        for artifact in ["load.md", "chaos.md", "packaging.md", "rolling-upgrade.md"] {
             fs::write(material_root.join(artifact), b"release evidence\n").unwrap();
         }
         let mut config = minimal_daemon_config(path.clone());
@@ -8331,13 +8502,12 @@ mod tests {
             )
         });
 
-        let certificate = rustls_pemfile::certs(&mut BufReader::new(
-            VALID_RUSTLS_HTTP_TLS_CERTIFICATE,
-        ))
-        .unwrap()
-        .into_iter()
-        .next()
-        .unwrap();
+        let certificate =
+            rustls_pemfile::certs(&mut BufReader::new(VALID_RUSTLS_HTTP_TLS_CERTIFICATE))
+                .unwrap()
+                .into_iter()
+                .next()
+                .unwrap();
         let mut roots = rustls::RootCertStore::empty();
         roots.add(&rustls::Certificate(certificate)).unwrap();
         let client_config = rustls::ClientConfig::builder()
@@ -8413,11 +8583,12 @@ mod tests {
 
     #[test]
     fn knn_stats_transport_route_builds_opensearch_shaped_empty_response() {
-        let response =
-            build_empty_knn_stats_response(77, OPENSEARCH_3_7_0_TRANSPORT.id() as u32);
+        let response = build_empty_knn_stats_response(77, OPENSEARCH_3_7_0_TRANSPORT.id() as u32);
         let mut frame = BytesMut::from(&response[..]);
         let os_transport::frame::DecodedFrame::Message(message) =
-            os_transport::frame::decode_frame(&mut frame).unwrap().unwrap()
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
         else {
             panic!("expected knn stats response message");
         };
@@ -8433,11 +8604,12 @@ mod tests {
 
     #[test]
     fn remote_info_transport_route_builds_opensearch_shaped_empty_response() {
-        let response =
-            build_empty_remote_info_response(78, OPENSEARCH_3_7_0_TRANSPORT.id() as u32);
+        let response = build_empty_remote_info_response(78, OPENSEARCH_3_7_0_TRANSPORT.id() as u32);
         let mut frame = BytesMut::from(&response[..]);
         let os_transport::frame::DecodedFrame::Message(message) =
-            os_transport::frame::decode_frame(&mut frame).unwrap().unwrap()
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
         else {
             panic!("expected remote info response message");
         };
@@ -8474,7 +8646,9 @@ mod tests {
         );
         let mut frame = BytesMut::from(&response[..]);
         let os_transport::frame::DecodedFrame::Message(message) =
-            os_transport::frame::decode_frame(&mut frame).unwrap().unwrap()
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
         else {
             panic!("expected main response message");
         };
@@ -8487,6 +8661,46 @@ mod tests {
         assert_eq!(response.cluster_name, "steelsearch-dev");
         assert_eq!(response.cluster_uuid, "_na_");
         assert_eq!(response.build.distribution, "opensearch");
+    }
+
+    #[test]
+    fn wlm_stats_transport_route_builds_opensearch_shaped_empty_local_response() {
+        let transport_identity = DevTransportIdentity {
+            cluster_name: "steelsearch-dev".to_string(),
+            node_name: "steel-node".to_string(),
+            node_id: "steel-node-id".to_string(),
+            ephemeral_id: "steel-node-ephemeral".to_string(),
+            transport_address: "127.0.0.1:9300".parse().unwrap(),
+            attributes: Vec::new(),
+            roles: vec!["cluster_manager".to_string(), "data".to_string()],
+            seed_peer_identity: None,
+            seed_peer_identities: Vec::new(),
+            coordination_state: Arc::new(Mutex::new(DevTransportCoordinationState::default())),
+            remote_transport_queue_gate: Arc::new(RemoteTransportQueueGate::new(1, 1000)),
+            task_queue_state: None,
+        };
+        let response = build_empty_wlm_stats_response(
+            79,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &transport_identity,
+        );
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected wlm stats response message");
+        };
+
+        assert_eq!(message.request_id, 79);
+        assert!(!message.status.is_request());
+        let response = os_transport::action::read_wlm_stats_response_message(&message).unwrap();
+        assert_eq!(response.cluster_name, "steelsearch-dev");
+        assert_eq!(response.nodes.len(), 1);
+        assert_eq!(response.nodes[0].node.id, "steel-node-id");
+        assert_eq!(response.nodes[0].workload_group_count, 0);
+        assert!(response.failures.is_empty());
     }
 
     #[test]
@@ -8560,7 +8774,9 @@ mod tests {
         );
         let mut frame = BytesMut::from(&response[..]);
         let os_transport::frame::DecodedFrame::Message(message) =
-            os_transport::frame::decode_frame(&mut frame).unwrap().unwrap()
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
         else {
             panic!("expected pending cluster tasks response message");
         };
@@ -8618,7 +8834,9 @@ mod tests {
         );
         let mut frame = BytesMut::from(&response[..]);
         let os_transport::frame::DecodedFrame::Message(message) =
-            os_transport::frame::decode_frame(&mut frame).unwrap().unwrap()
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
         else {
             panic!("expected list tasks response message");
         };
@@ -8632,13 +8850,13 @@ mod tests {
         assert_eq!(task.task_id, 21);
         assert_eq!(task.task_type, "transport");
         assert_eq!(task.action, "cluster:admin/reroute");
-        assert_eq!(
-            task.description.as_deref(),
-            Some("reroute shards [queued]")
-        );
+        assert_eq!(task.description.as_deref(), Some("reroute shards [queued]"));
         assert!(task.cancellable);
         assert!(!task.cancelled);
-        assert_eq!(task.headers.get("x-opaque-id").map(String::as_str), Some("request-1"));
+        assert_eq!(
+            task.headers.get("x-opaque-id").map(String::as_str),
+            Some("request-1")
+        );
     }
 
     #[test]
@@ -8729,7 +8947,9 @@ mod tests {
         );
         let mut frame = BytesMut::from(&response[..]);
         let os_transport::frame::DecodedFrame::Message(message) =
-            os_transport::frame::decode_frame(&mut frame).unwrap().unwrap()
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
         else {
             panic!("expected list tasks response message");
         };
@@ -8798,7 +9018,9 @@ mod tests {
         let request_body = request_frame[6..].to_vec();
         let mut request_frame = request_frame;
         let os_transport::frame::DecodedFrame::Message(request_message) =
-            os_transport::frame::decode_frame(&mut request_frame).unwrap().unwrap()
+            os_transport::frame::decode_frame(&mut request_frame)
+                .unwrap()
+                .unwrap()
         else {
             panic!("expected get task request message");
         };
@@ -8812,7 +9034,9 @@ mod tests {
         );
         let mut frame = BytesMut::from(&response[..]);
         let os_transport::frame::DecodedFrame::Message(message) =
-            os_transport::frame::decode_frame(&mut frame).unwrap().unwrap()
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
         else {
             panic!("expected get task response message");
         };
@@ -8826,10 +9050,7 @@ mod tests {
         assert_eq!(task.node_id, "steel-node-id");
         assert_eq!(task.task_id, 41);
         assert_eq!(task.action, "cluster:admin/reroute");
-        assert_eq!(
-            task.description.as_deref(),
-            Some("reroute shards [queued]")
-        );
+        assert_eq!(task.description.as_deref(), Some("reroute shards [queued]"));
 
         let request_frame = os_transport::action::build_get_task_request_message(
             83,
@@ -8849,7 +9070,9 @@ mod tests {
         );
         let mut frame = BytesMut::from(&response[..]);
         let os_transport::frame::DecodedFrame::Message(message) =
-            os_transport::frame::decode_frame(&mut frame).unwrap().unwrap()
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
         else {
             panic!("expected get task response message");
         };
@@ -8915,7 +9138,9 @@ mod tests {
         );
         let mut frame = BytesMut::from(&response[..]);
         let os_transport::frame::DecodedFrame::Message(message) =
-            os_transport::frame::decode_frame(&mut frame).unwrap().unwrap()
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
         else {
             panic!("expected cancel tasks response message");
         };
@@ -8999,7 +9224,9 @@ mod tests {
         );
         let mut frame = BytesMut::from(&response[..]);
         let os_transport::frame::DecodedFrame::Message(message) =
-            os_transport::frame::decode_frame(&mut frame).unwrap().unwrap()
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
         else {
             panic!("expected cancel tasks response message");
         };
@@ -9035,7 +9262,9 @@ mod tests {
         );
         let mut frame = BytesMut::from(&response[..]);
         let os_transport::frame::DecodedFrame::Message(message) =
-            os_transport::frame::decode_frame(&mut frame).unwrap().unwrap()
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
         else {
             panic!("expected cancel tasks response message");
         };
@@ -9132,7 +9361,9 @@ mod tests {
         );
         let mut frame = BytesMut::from(&response[..]);
         let os_transport::frame::DecodedFrame::Message(message) =
-            os_transport::frame::decode_frame(&mut frame).unwrap().unwrap()
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
         else {
             panic!("expected cancel tasks response message");
         };
@@ -9186,7 +9417,9 @@ mod tests {
         );
         let mut frame = BytesMut::from(&response[..]);
         let os_transport::frame::DecodedFrame::Message(message) =
-            os_transport::frame::decode_frame(&mut frame).unwrap().unwrap()
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
         else {
             panic!("expected cancel tasks response message");
         };
@@ -9259,7 +9492,9 @@ mod tests {
         );
         let mut frame = BytesMut::from(&response[..]);
         let os_transport::frame::DecodedFrame::Message(message) =
-            os_transport::frame::decode_frame(&mut frame).unwrap().unwrap()
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
         else {
             panic!("expected cancel tasks response message");
         };
@@ -9303,7 +9538,8 @@ mod tests {
     #[test]
     fn production_startup_preflight_rejects_invalid_tls_bootstrap_material() {
         let path = unique_test_path("steelsearch-production-security-invalid-tls-data");
-        let material_root = unique_test_path("steelsearch-production-security-invalid-tls-material");
+        let material_root =
+            unique_test_path("steelsearch-production-security-invalid-tls-material");
         fs::create_dir_all(&material_root).unwrap();
         let http_cert = material_root.join("http.crt");
         let http_key = material_root.join("http.key");
@@ -9357,7 +9593,8 @@ mod tests {
     #[test]
     fn production_startup_preflight_rejects_swapped_tls_bootstrap_material_roles() {
         let path = unique_test_path("steelsearch-production-security-swapped-tls-data");
-        let material_root = unique_test_path("steelsearch-production-security-swapped-tls-material");
+        let material_root =
+            unique_test_path("steelsearch-production-security-swapped-tls-material");
         fs::create_dir_all(&material_root).unwrap();
         let http_cert = material_root.join("http.crt");
         let http_key = material_root.join("http.key");
@@ -9558,7 +9795,8 @@ mod tests {
         runtime_security_enabled: bool,
     ) -> StartupReadinessReport {
         let path = unique_test_path("steelsearch-production-security-invalid-users-data");
-        let material_root = unique_test_path("steelsearch-production-security-invalid-users-material");
+        let material_root =
+            unique_test_path("steelsearch-production-security-invalid-users-material");
         fs::create_dir_all(&material_root).unwrap();
         let http_cert = material_root.join("http.crt");
         let http_key = material_root.join("http.key");
@@ -9754,12 +9992,9 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         let vars = BTreeMap::new();
         let error = daemon_config_from_sources(
             &vars,
-            [
-                "--discovery.seed_hosts",
-                "127.0.0.1:19301,127.0.0.1:19301",
-            ]
-            .into_iter()
-            .map(ToOwned::to_owned),
+            ["--discovery.seed_hosts", "127.0.0.1:19301,127.0.0.1:19301"]
+                .into_iter()
+                .map(ToOwned::to_owned),
         )
         .unwrap_err()
         .to_string();
@@ -10151,9 +10386,14 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(coordination.votes.len(), 1);
         assert!(coordination.publication_committed);
         assert_eq!(coordination.publication_round_versions, vec![1, 2]);
-        assert_eq!(coordination.last_completed_publication_round_version, Some(1));
         assert_eq!(
-            coordination.last_completed_publication_round_state_uuid.as_deref(),
+            coordination.last_completed_publication_round_version,
+            Some(1)
+        );
+        assert_eq!(
+            coordination
+                .last_completed_publication_round_state_uuid
+                .as_deref(),
             Some("cluster-uuid-dev-state-1")
         );
         assert_eq!(coordination.acked_nodes.len(), 1);
@@ -10232,17 +10472,28 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
 
         assert_eq!(coordination.term, 8);
         assert_eq!(coordination.publication_round_versions, vec![5, 6]);
-        assert_eq!(coordination.last_completed_publication_round_version, Some(5));
         assert_eq!(
-            coordination.last_completed_publication_round_state_uuid.as_deref(),
+            coordination.last_completed_publication_round_version,
+            Some(5)
+        );
+        assert_eq!(
+            coordination
+                .last_completed_publication_round_state_uuid
+                .as_deref(),
             Some("cluster-uuid-dev-state-5")
         );
         assert_eq!(coordination.last_accepted_version, 6);
-        assert_eq!(coordination.last_accepted_state_uuid, "cluster-uuid-dev-state-6");
+        assert_eq!(
+            coordination.last_accepted_state_uuid,
+            "cluster-uuid-dev-state-6"
+        );
         assert_eq!(reloaded.coordination_state.current_term, 8);
         assert_eq!(reloaded.coordination_state.last_accepted_version, 6);
         assert_eq!(
-            reloaded.coordination_state.cluster_manager_node_id.as_deref(),
+            reloaded
+                .coordination_state
+                .cluster_manager_node_id
+                .as_deref(),
             Some("node-a")
         );
         assert_eq!(reloaded.cluster_state.local_node_id, "node-a");
@@ -10345,13 +10596,11 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             reloaded.task_queue_state,
             Some(persisted_task_queue_state.clone())
         );
-        assert!(
-            reloaded
-                .task_queue_state
-                .as_ref()
-                .unwrap()
-                .has_interrupted_tasks()
-        );
+        assert!(reloaded
+            .task_queue_state
+            .as_ref()
+            .unwrap()
+            .has_interrupted_tasks());
 
         let _ = std::fs::remove_file(&manifest_path);
     }
@@ -10525,7 +10774,10 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         let temp_root = unique_test_path("gateway-paths");
         let paths = GatewayManifestPaths::for_data_path(&temp_root);
 
-        assert_eq!(paths.coordination_path, temp_root.join("gateway-state.json"));
+        assert_eq!(
+            paths.coordination_path,
+            temp_root.join("gateway-state.json")
+        );
         assert_eq!(
             paths.cluster_metadata_path,
             temp_root.join("gateway-cluster-state.json")
@@ -10625,11 +10877,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         restore_gateway_cluster_metadata_manifest(
             &metadata_path,
             Some(&PersistedGatewayState {
-                coordination_state: committed_gateway_coordination_state(
-                    "node-a",
-                    "state-9",
-                    9,
-                ),
+                coordination_state: committed_gateway_coordination_state("node-a", "state-9", 9),
                 cluster_state: DevelopmentClusterView {
                     cluster_name: "steelsearch-dev".to_string(),
                     cluster_uuid: "cluster-uuid".to_string(),
@@ -10668,8 +10916,14 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             restored["routing_table"]["indices"]["logs-000001"]["shards"]["0"][0]["node"],
             "node-b"
         );
-        assert_eq!(restored["allocation"]["nodes"]["node-a"]["assigned_shards"], 0);
-        assert_eq!(restored["allocation"]["nodes"]["node-b"]["assigned_shards"], 1);
+        assert_eq!(
+            restored["allocation"]["nodes"]["node-a"]["assigned_shards"],
+            0
+        );
+        assert_eq!(
+            restored["allocation"]["nodes"]["node-b"]["assigned_shards"],
+            1
+        );
 
         let _ = std::fs::remove_file(&metadata_path);
     }
@@ -10699,7 +10953,9 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             }
         });
         let coordination_state = committed_gateway_coordination_state("node-a", "state-9", 9);
-        assert!(coordination_state.last_completed_publication_round.is_some());
+        assert!(coordination_state
+            .last_completed_publication_round
+            .is_some());
         restore_gateway_cluster_metadata_manifest(
             &metadata_path,
             Some(&PersistedGatewayState {
@@ -10753,9 +11009,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                     )]),
                 }),
                 metadata_commit_state: Some(committed_gateway_metadata_commit_state(
-                    "node-a",
-                    "state-9",
-                    9,
+                    "node-a", "state-9", 9,
                 )),
                 task_queue_state: None,
             }),
@@ -10843,23 +11097,25 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
 
     #[test]
     fn gateway_startup_restore_rejects_partially_applied_metadata_round() {
-        let metadata_path = unique_test_path("gateway-cluster-partially-applied-metadata-state.json");
+        let metadata_path =
+            unique_test_path("gateway-cluster-partially-applied-metadata-state.json");
         let mut coordination_state =
             committed_gateway_coordination_state("node-a", "cluster-uuid-dev-state-3", 3);
-        coordination_state.last_completed_publication_round = Some(os_node::PublicationRoundState {
-            state_uuid: "cluster-uuid-dev-state-3".to_string(),
-            version: 3,
-            term: 1,
-            target_nodes: BTreeSet::from(["node-a".to_string(), "node-b".to_string()]),
-            acknowledged_nodes: BTreeSet::from(["node-a".to_string(), "node-b".to_string()]),
-            applied_nodes: BTreeSet::from(["node-a".to_string()]),
-            missing_nodes: BTreeSet::from(["node-b".to_string()]),
-            proposal_transport_failures: BTreeMap::new(),
-            acknowledgement_transport_failures: BTreeMap::new(),
-            apply_transport_failures: BTreeMap::new(),
-            required_quorum: 1,
-            committed: true,
-        });
+        coordination_state.last_completed_publication_round =
+            Some(os_node::PublicationRoundState {
+                state_uuid: "cluster-uuid-dev-state-3".to_string(),
+                version: 3,
+                term: 1,
+                target_nodes: BTreeSet::from(["node-a".to_string(), "node-b".to_string()]),
+                acknowledged_nodes: BTreeSet::from(["node-a".to_string(), "node-b".to_string()]),
+                applied_nodes: BTreeSet::from(["node-a".to_string()]),
+                missing_nodes: BTreeSet::from(["node-b".to_string()]),
+                proposal_transport_failures: BTreeMap::new(),
+                acknowledgement_transport_failures: BTreeMap::new(),
+                apply_transport_failures: BTreeMap::new(),
+                required_quorum: 1,
+                committed: true,
+            });
 
         let error = restore_gateway_cluster_metadata_manifest(
             &metadata_path,
@@ -10881,10 +11137,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 metadata_commit_state: Some(os_node::PersistedGatewayMetadataCommitState {
                     committed_version: 3,
                     committed_state_uuid: "cluster-uuid-dev-state-3".to_string(),
-                    target_node_ids: BTreeSet::from([
-                        "node-a".to_string(),
-                        "node-b".to_string(),
-                    ]),
+                    target_node_ids: BTreeSet::from(["node-a".to_string(), "node-b".to_string()]),
                     applied_node_ids: BTreeSet::from(["node-a".to_string()]),
                 }),
                 task_queue_state: None,
@@ -11008,13 +11261,11 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         let recovered_gateway = load_gateway_state_manifest(&gateway_manifest_path)
             .unwrap()
             .unwrap();
-        let restored_cluster_view = restore_gateway_startup_cluster_view(
-            &config,
-            "cluster-uuid",
-            Some(&recovered_gateway),
-        )
-        .unwrap();
-        restore_gateway_cluster_metadata_manifest(&metadata_path, Some(&recovered_gateway)).unwrap();
+        let restored_cluster_view =
+            restore_gateway_startup_cluster_view(&config, "cluster-uuid", Some(&recovered_gateway))
+                .unwrap();
+        restore_gateway_cluster_metadata_manifest(&metadata_path, Some(&recovered_gateway))
+            .unwrap();
         let coordinated_view = apply_development_coordination_with_persisted_state(
             restored_cluster_view,
             Some(recovered_gateway.coordination_state.clone()),
@@ -11086,10 +11337,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         );
         assert_eq!(reloaded_gateway.coordination_state.current_term, 8);
         assert!(
-            reloaded_gateway
-                .cluster_metadata_manifest
-                .as_ref()
-                .unwrap()["indices"]
+            reloaded_gateway.cluster_metadata_manifest.as_ref().unwrap()["indices"]
                 .get("logs-000001")
                 .is_some()
         );
@@ -11151,13 +11399,11 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         let recovered_gateway = load_gateway_state_manifest(&gateway_manifest_path)
             .unwrap()
             .unwrap();
-        let restored_cluster_view = restore_gateway_startup_cluster_view(
-            &config,
-            "cluster-uuid",
-            Some(&recovered_gateway),
-        )
-        .unwrap();
-        restore_gateway_cluster_metadata_manifest(&metadata_path, Some(&recovered_gateway)).unwrap();
+        let restored_cluster_view =
+            restore_gateway_startup_cluster_view(&config, "cluster-uuid", Some(&recovered_gateway))
+                .unwrap();
+        restore_gateway_cluster_metadata_manifest(&metadata_path, Some(&recovered_gateway))
+            .unwrap();
         let coordinated_view = apply_development_coordination_with_persisted_state(
             restored_cluster_view,
             Some(recovered_gateway.coordination_state.clone()),
@@ -11213,7 +11459,9 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             get.body["logs-000002"]["mappings"]["properties"]["message"]["type"],
             "text"
         );
-        assert!(get.body["logs-000002"]["aliases"].get("logs-read").is_some());
+        assert!(get.body["logs-000002"]["aliases"]
+            .get("logs-read")
+            .is_some());
     }
 
     #[test]
@@ -11285,13 +11533,11 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         let recovered_gateway = load_gateway_state_manifest(&gateway_manifest_path)
             .unwrap()
             .unwrap();
-        let restored_cluster_view = restore_gateway_startup_cluster_view(
-            &config,
-            "cluster-uuid",
-            Some(&recovered_gateway),
-        )
-        .unwrap();
-        restore_gateway_cluster_metadata_manifest(&metadata_path, Some(&recovered_gateway)).unwrap();
+        let restored_cluster_view =
+            restore_gateway_startup_cluster_view(&config, "cluster-uuid", Some(&recovered_gateway))
+                .unwrap();
+        restore_gateway_cluster_metadata_manifest(&metadata_path, Some(&recovered_gateway))
+            .unwrap();
         let coordinated_view = apply_development_coordination_with_persisted_state(
             restored_cluster_view,
             Some(recovered_gateway.coordination_state.clone()),
@@ -11405,13 +11651,11 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         let recovered_gateway = load_gateway_state_manifest(&gateway_manifest_path)
             .unwrap()
             .unwrap();
-        let restored_cluster_view = restore_gateway_startup_cluster_view(
-            &config,
-            "cluster-uuid",
-            Some(&recovered_gateway),
-        )
-        .unwrap();
-        restore_gateway_cluster_metadata_manifest(&metadata_path, Some(&recovered_gateway)).unwrap();
+        let restored_cluster_view =
+            restore_gateway_startup_cluster_view(&config, "cluster-uuid", Some(&recovered_gateway))
+                .unwrap();
+        restore_gateway_cluster_metadata_manifest(&metadata_path, Some(&recovered_gateway))
+            .unwrap();
         let coordinated_view = apply_development_coordination_with_persisted_state(
             restored_cluster_view,
             Some(recovered_gateway.coordination_state.clone()),
@@ -11452,25 +11696,39 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         ));
 
         assert_eq!(global.status, 200);
-        assert!(global.body["logs-000001"]["aliases"].get("logs-read").is_some());
+        assert!(global.body["logs-000001"]["aliases"]
+            .get("logs-read")
+            .is_some());
         assert!(global.body.get("metrics-000001").is_none());
 
         assert_eq!(index_scoped.status, 200);
-        assert!(index_scoped.body["logs-000001"]["aliases"].get("logs-read").is_some());
-        assert!(index_scoped.body["logs-000001"]["aliases"].get("logs-write").is_some());
+        assert!(index_scoped.body["logs-000001"]["aliases"]
+            .get("logs-read")
+            .is_some());
+        assert!(index_scoped.body["logs-000001"]["aliases"]
+            .get("logs-write")
+            .is_some());
         assert!(index_scoped.body.get("metrics-000001").is_none());
 
         assert_eq!(wildcard.status, 200);
-        assert!(wildcard.body["logs-000001"]["aliases"].get("logs-read").is_some());
-        assert!(wildcard.body["metrics-000001"]["aliases"].get("metrics-read").is_some());
-        assert!(wildcard.body["logs-000001"]["aliases"].get("logs-write").is_none());
+        assert!(wildcard.body["logs-000001"]["aliases"]
+            .get("logs-read")
+            .is_some());
+        assert!(wildcard.body["metrics-000001"]["aliases"]
+            .get("metrics-read")
+            .is_some());
+        assert!(wildcard.body["logs-000001"]["aliases"]
+            .get("logs-write")
+            .is_none());
 
         assert_eq!(registry.status, 200);
         assert_eq!(
             registry.body["logs-000001"]["aliases"]["logs-write"]["is_write_index"],
             true
         );
-        assert!(registry.body["metrics-000001"]["aliases"].get("metrics-read").is_some());
+        assert!(registry.body["metrics-000001"]["aliases"]
+            .get("metrics-read")
+            .is_some());
     }
 
     #[test]
@@ -11532,13 +11790,11 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         let recovered_gateway = load_gateway_state_manifest(&gateway_manifest_path)
             .unwrap()
             .unwrap();
-        let restored_cluster_view = restore_gateway_startup_cluster_view(
-            &config,
-            "cluster-uuid",
-            Some(&recovered_gateway),
-        )
-        .unwrap();
-        restore_gateway_cluster_metadata_manifest(&metadata_path, Some(&recovered_gateway)).unwrap();
+        let restored_cluster_view =
+            restore_gateway_startup_cluster_view(&config, "cluster-uuid", Some(&recovered_gateway))
+                .unwrap();
+        restore_gateway_cluster_metadata_manifest(&metadata_path, Some(&recovered_gateway))
+            .unwrap();
         let coordinated_view = apply_development_coordination_with_persisted_state(
             restored_cluster_view,
             Some(recovered_gateway.coordination_state.clone()),
@@ -11627,16 +11883,18 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
 
         assert_eq!(bulk.status, 200);
         assert_eq!(bulk.body["acknowledged"], true);
-        assert!(get_after_bulk.body["logs-000001"]["aliases"].get("logs-read").is_none());
-        assert!(
-            get_after_bulk.body["logs-000001"]["aliases"]["logs-search"]
-                .get("filter")
-                .is_some()
-        );
+        assert!(get_after_bulk.body["logs-000001"]["aliases"]
+            .get("logs-read")
+            .is_none());
+        assert!(get_after_bulk.body["logs-000001"]["aliases"]["logs-search"]
+            .get("filter")
+            .is_some());
 
         assert_eq!(delete.status, 200);
         assert_eq!(delete.body["acknowledged"], true);
-        assert!(get_after_delete.body["logs-000001"]["aliases"].get("logs-search").is_none());
+        assert!(get_after_delete.body["logs-000001"]["aliases"]
+            .get("logs-search")
+            .is_none());
     }
 
     #[test]
@@ -11697,13 +11955,11 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         let recovered_gateway = load_gateway_state_manifest(&gateway_manifest_path)
             .unwrap()
             .unwrap();
-        let restored_cluster_view = restore_gateway_startup_cluster_view(
-            &config,
-            "cluster-uuid",
-            Some(&recovered_gateway),
-        )
-        .unwrap();
-        restore_gateway_cluster_metadata_manifest(&metadata_path, Some(&recovered_gateway)).unwrap();
+        let restored_cluster_view =
+            restore_gateway_startup_cluster_view(&config, "cluster-uuid", Some(&recovered_gateway))
+                .unwrap();
+        restore_gateway_cluster_metadata_manifest(&metadata_path, Some(&recovered_gateway))
+            .unwrap();
         let coordinated_view = apply_development_coordination_with_persisted_state(
             restored_cluster_view,
             Some(recovered_gateway.coordination_state.clone()),
@@ -11747,22 +12003,19 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             "/_component_template/logs-component",
         ));
         let put_index_template = node.handle_rest_request(
-            os_rest::RestRequest::new(
-                os_rest::RestMethod::Put,
-                "/_index_template/logs-template",
-            )
-            .with_json_body(serde_json::json!({
-                "index_patterns": ["logs-*"],
-                "composed_of": ["logs-component"],
-                "template": {
-                    "settings": {
-                        "index": {
-                            "number_of_shards": 1
+            os_rest::RestRequest::new(os_rest::RestMethod::Put, "/_index_template/logs-template")
+                .with_json_body(serde_json::json!({
+                    "index_patterns": ["logs-*"],
+                    "composed_of": ["logs-component"],
+                    "template": {
+                        "settings": {
+                            "index": {
+                                "number_of_shards": 1
+                            }
                         }
-                    }
-                },
-                "priority": 10
-            })),
+                    },
+                    "priority": 10
+                })),
         );
         let get_index_template = node.handle_rest_request(os_rest::RestRequest::new(
             os_rest::RestMethod::Get,
@@ -11842,13 +12095,11 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         let recovered_gateway = load_gateway_state_manifest(&gateway_manifest_path)
             .unwrap()
             .unwrap();
-        let restored_cluster_view = restore_gateway_startup_cluster_view(
-            &config,
-            "cluster-uuid",
-            Some(&recovered_gateway),
-        )
-        .unwrap();
-        restore_gateway_cluster_metadata_manifest(&metadata_path, Some(&recovered_gateway)).unwrap();
+        let restored_cluster_view =
+            restore_gateway_startup_cluster_view(&config, "cluster-uuid", Some(&recovered_gateway))
+                .unwrap();
+        restore_gateway_cluster_metadata_manifest(&metadata_path, Some(&recovered_gateway))
+            .unwrap();
         let coordinated_view = apply_development_coordination_with_persisted_state(
             restored_cluster_view,
             Some(recovered_gateway.coordination_state.clone()),
@@ -11872,19 +12123,16 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         node.start_rest();
 
         let put_legacy_template = node.handle_rest_request(
-            os_rest::RestRequest::new(
-                os_rest::RestMethod::Put,
-                "/_template/logs-legacy-template",
-            )
-            .with_json_body(serde_json::json!({
-                "index_patterns": ["logs-*"],
-                "order": 5,
-                "settings": {
-                    "index": {
-                        "number_of_replicas": 0
+            os_rest::RestRequest::new(os_rest::RestMethod::Put, "/_template/logs-legacy-template")
+                .with_json_body(serde_json::json!({
+                    "index_patterns": ["logs-*"],
+                    "order": 5,
+                    "settings": {
+                        "index": {
+                            "number_of_replicas": 0
+                        }
                     }
-                }
-            })),
+                })),
         );
         let get_legacy_template = node.handle_rest_request(os_rest::RestRequest::new(
             os_rest::RestMethod::Get,
@@ -11893,7 +12141,10 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
 
         assert_eq!(put_legacy_template.status, 200);
         assert_eq!(put_legacy_template.body["acknowledged"], true);
-        assert!(get_legacy_template.body.get("logs-legacy-template").is_some());
+        assert!(get_legacy_template
+            .body
+            .get("logs-legacy-template")
+            .is_some());
     }
 
     #[test]
@@ -11954,13 +12205,11 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         let recovered_gateway = load_gateway_state_manifest(&gateway_manifest_path)
             .unwrap()
             .unwrap();
-        let restored_cluster_view = restore_gateway_startup_cluster_view(
-            &config,
-            "cluster-uuid",
-            Some(&recovered_gateway),
-        )
-        .unwrap();
-        restore_gateway_cluster_metadata_manifest(&metadata_path, Some(&recovered_gateway)).unwrap();
+        let restored_cluster_view =
+            restore_gateway_startup_cluster_view(&config, "cluster-uuid", Some(&recovered_gateway))
+                .unwrap();
+        restore_gateway_cluster_metadata_manifest(&metadata_path, Some(&recovered_gateway))
+            .unwrap();
         let coordinated_view = apply_development_coordination_with_persisted_state(
             restored_cluster_view,
             Some(recovered_gateway.coordination_state.clone()),
@@ -12005,13 +12254,19 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(get_stats.status, 200);
         assert_eq!(get_stats.body["data_stream_count"], serde_json::json!(0));
         assert_eq!(put_named.status, 400);
-        assert_eq!(put_named.body["error"]["type"], "illegal_argument_exception");
+        assert_eq!(
+            put_named.body["error"]["type"],
+            "illegal_argument_exception"
+        );
         assert_eq!(
             put_named.body["error"]["reason"],
             "no matching index template with data_stream for [logs-ds]"
         );
         assert_eq!(delete_named.status, 404);
-        assert_eq!(delete_named.body["error"]["type"], "resource_not_found_exception");
+        assert_eq!(
+            delete_named.body["error"]["type"],
+            "resource_not_found_exception"
+        );
     }
 
     #[test]
@@ -12072,13 +12327,11 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         let recovered_gateway = load_gateway_state_manifest(&gateway_manifest_path)
             .unwrap()
             .unwrap();
-        let restored_cluster_view = restore_gateway_startup_cluster_view(
-            &config,
-            "cluster-uuid",
-            Some(&recovered_gateway),
-        )
-        .unwrap();
-        restore_gateway_cluster_metadata_manifest(&metadata_path, Some(&recovered_gateway)).unwrap();
+        let restored_cluster_view =
+            restore_gateway_startup_cluster_view(&config, "cluster-uuid", Some(&recovered_gateway))
+                .unwrap();
+        restore_gateway_cluster_metadata_manifest(&metadata_path, Some(&recovered_gateway))
+            .unwrap();
         let coordinated_view = apply_development_coordination_with_persisted_state(
             restored_cluster_view,
             Some(recovered_gateway.coordination_state.clone()),
@@ -12189,13 +12442,11 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         let recovered_gateway = load_gateway_state_manifest(&gateway_manifest_path)
             .unwrap()
             .unwrap();
-        let restored_cluster_view = restore_gateway_startup_cluster_view(
-            &config,
-            "cluster-uuid",
-            Some(&recovered_gateway),
-        )
-        .unwrap();
-        restore_gateway_cluster_metadata_manifest(&metadata_path, Some(&recovered_gateway)).unwrap();
+        let restored_cluster_view =
+            restore_gateway_startup_cluster_view(&config, "cluster-uuid", Some(&recovered_gateway))
+                .unwrap();
+        restore_gateway_cluster_metadata_manifest(&metadata_path, Some(&recovered_gateway))
+            .unwrap();
         let coordinated_view = apply_development_coordination_with_persisted_state(
             restored_cluster_view,
             Some(recovered_gateway.coordination_state.clone()),
@@ -12306,13 +12557,11 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         let recovered_gateway = load_gateway_state_manifest(&gateway_manifest_path)
             .unwrap()
             .unwrap();
-        let restored_cluster_view = restore_gateway_startup_cluster_view(
-            &config,
-            "cluster-uuid",
-            Some(&recovered_gateway),
-        )
-        .unwrap();
-        restore_gateway_cluster_metadata_manifest(&metadata_path, Some(&recovered_gateway)).unwrap();
+        let restored_cluster_view =
+            restore_gateway_startup_cluster_view(&config, "cluster-uuid", Some(&recovered_gateway))
+                .unwrap();
+        restore_gateway_cluster_metadata_manifest(&metadata_path, Some(&recovered_gateway))
+            .unwrap();
         let coordinated_view = apply_development_coordination_with_persisted_state(
             restored_cluster_view,
             Some(recovered_gateway.coordination_state.clone()),
@@ -12440,13 +12689,11 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         let recovered_gateway = load_gateway_state_manifest(&gateway_manifest_path)
             .unwrap()
             .unwrap();
-        let restored_cluster_view = restore_gateway_startup_cluster_view(
-            &config,
-            "cluster-uuid",
-            Some(&recovered_gateway),
-        )
-        .unwrap();
-        restore_gateway_cluster_metadata_manifest(&metadata_path, Some(&recovered_gateway)).unwrap();
+        let restored_cluster_view =
+            restore_gateway_startup_cluster_view(&config, "cluster-uuid", Some(&recovered_gateway))
+                .unwrap();
+        restore_gateway_cluster_metadata_manifest(&metadata_path, Some(&recovered_gateway))
+            .unwrap();
         let coordinated_view = apply_development_coordination_with_persisted_state(
             restored_cluster_view,
             Some(recovered_gateway.coordination_state.clone()),
@@ -12562,13 +12809,11 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         let recovered_gateway = load_gateway_state_manifest(&gateway_manifest_path)
             .unwrap()
             .unwrap();
-        let restored_cluster_view = restore_gateway_startup_cluster_view(
-            &config,
-            "cluster-uuid",
-            Some(&recovered_gateway),
-        )
-        .unwrap();
-        restore_gateway_cluster_metadata_manifest(&metadata_path, Some(&recovered_gateway)).unwrap();
+        let restored_cluster_view =
+            restore_gateway_startup_cluster_view(&config, "cluster-uuid", Some(&recovered_gateway))
+                .unwrap();
+        restore_gateway_cluster_metadata_manifest(&metadata_path, Some(&recovered_gateway))
+            .unwrap();
         let coordinated_view = apply_development_coordination_with_persisted_state(
             restored_cluster_view,
             Some(recovered_gateway.coordination_state.clone()),
@@ -12592,14 +12837,13 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         node.start_rest();
 
         let put = node.handle_rest_request(
-            os_rest::RestRequest::new(os_rest::RestMethod::Put, "/logs-000001/_settings").with_body(
-                serde_json::json!({
+            os_rest::RestRequest::new(os_rest::RestMethod::Put, "/logs-000001/_settings")
+                .with_body(serde_json::json!({
                     "index": {
                         "number_of_replicas": 0,
                         "refresh_interval": "1s"
                     }
-                }),
-            ),
+                })),
         );
         let get = node.handle_rest_request(os_rest::RestRequest::new(
             os_rest::RestMethod::Get,
@@ -12682,13 +12926,11 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         let recovered_gateway = load_gateway_state_manifest(&gateway_manifest_path)
             .unwrap()
             .unwrap();
-        let restored_cluster_view = restore_gateway_startup_cluster_view(
-            &config,
-            "cluster-uuid",
-            Some(&recovered_gateway),
-        )
-        .unwrap();
-        restore_gateway_cluster_metadata_manifest(&metadata_path, Some(&recovered_gateway)).unwrap();
+        let restored_cluster_view =
+            restore_gateway_startup_cluster_view(&config, "cluster-uuid", Some(&recovered_gateway))
+                .unwrap();
+        restore_gateway_cluster_metadata_manifest(&metadata_path, Some(&recovered_gateway))
+            .unwrap();
         let coordinated_view = apply_development_coordination_with_persisted_state(
             restored_cluster_view,
             Some(recovered_gateway.coordination_state.clone()),
@@ -12833,14 +13075,9 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         let vars = BTreeMap::new();
         let config = daemon_config_from_sources(
             &vars,
-            [
-                "--node.id",
-                "node-a",
-                "--transport.port",
-                "19301",
-            ]
-            .into_iter()
-            .map(ToOwned::to_owned),
+            ["--node.id", "node-a", "--transport.port", "19301"]
+                .into_iter()
+                .map(ToOwned::to_owned),
         )
         .unwrap();
 
@@ -12856,20 +13093,19 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             seed_peers: Vec::new(),
         });
 
-        let mut manager_peer =
-            development_peer_from_node(
-                "steelsearch-dev",
-                "cluster-uuid",
-                &DevelopmentClusterNode {
-                    node_id: "node-b".to_string(),
-                    node_name: "node-b".to_string(),
-                    http_address: None,
-                    transport_address: "192.0.2.10:1".to_string(),
-                    roles: vec!["cluster_manager".to_string()],
-                    local: false,
-                },
-            )
-            .unwrap();
+        let mut manager_peer = development_peer_from_node(
+            "steelsearch-dev",
+            "cluster-uuid",
+            &DevelopmentClusterNode {
+                node_id: "node-b".to_string(),
+                node_name: "node-b".to_string(),
+                http_address: None,
+                transport_address: "192.0.2.10:1".to_string(),
+                roles: vec!["cluster_manager".to_string()],
+                local: false,
+            },
+        )
+        .unwrap();
         manager_peer.host = "192.0.2.10".to_string();
         manager_peer.port = 1;
         coordination
@@ -12888,7 +13124,9 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 manager_peer,
             )
             .unwrap();
-        coordination.propose_voting_config_addition("node-b").unwrap();
+        coordination
+            .propose_voting_config_addition("node-b")
+            .unwrap();
         coordination.apply_voting_config_reconfiguration_proposals();
         coordination.cluster_manager_node_id = Some("node-b".to_string());
 
@@ -12949,8 +13187,12 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             membership_epoch: 1,
         };
         let mut coordination = ClusterCoordinationState::bootstrap(&discovery);
-        coordination.join_peer(&discovery, manager_peer.clone()).unwrap();
-        coordination.propose_voting_config_addition("node-b").unwrap();
+        coordination
+            .join_peer(&discovery, manager_peer.clone())
+            .unwrap();
+        coordination
+            .propose_voting_config_addition("node-b")
+            .unwrap();
         coordination.apply_voting_config_reconfiguration_proposals();
         coordination.cluster_manager_node_id = Some(manager_peer.node_id.clone());
 
@@ -13025,9 +13267,14 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         let coordination = view.coordination.unwrap();
 
         assert_eq!(coordination.publication_round_versions, vec![1, 2]);
-        assert_eq!(coordination.last_completed_publication_round_version, Some(1));
         assert_eq!(
-            coordination.last_completed_publication_round_state_uuid.as_deref(),
+            coordination.last_completed_publication_round_version,
+            Some(1)
+        );
+        assert_eq!(
+            coordination
+                .last_completed_publication_round_state_uuid
+                .as_deref(),
             Some("cluster-uuid-dev-state-1")
         );
         assert_eq!(coordination.acked_nodes, vec!["node-a".to_string()]);
@@ -13061,8 +13308,12 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             membership_epoch: 1,
         };
         let mut coordination = ClusterCoordinationState::bootstrap(&discovery);
-        coordination.join_peer(&discovery, unreachable_peer).unwrap();
-        coordination.propose_voting_config_addition("node-b").unwrap();
+        coordination
+            .join_peer(&discovery, unreachable_peer)
+            .unwrap();
+        coordination
+            .propose_voting_config_addition("node-b")
+            .unwrap();
         coordination.apply_voting_config_reconfiguration_proposals();
         coordination.cluster_manager_node_id = Some("node-a".to_string());
 
@@ -13115,7 +13366,9 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         };
         let mut coordination = ClusterCoordinationState::bootstrap(&discovery);
         coordination.join_peer(&discovery, follower_peer).unwrap();
-        coordination.propose_voting_config_addition("node-b").unwrap();
+        coordination
+            .propose_voting_config_addition("node-b")
+            .unwrap();
         coordination.apply_voting_config_reconfiguration_proposals();
         coordination.cluster_manager_node_id = Some("node-a".to_string());
 
@@ -13168,7 +13421,9 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 },
             )
             .unwrap();
-        coordination.propose_voting_config_addition("node-b").unwrap();
+        coordination
+            .propose_voting_config_addition("node-b")
+            .unwrap();
         coordination
             .join_peer(
                 &discovery,
@@ -13185,10 +13440,14 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 },
             )
             .unwrap();
-        coordination.propose_voting_config_addition("node-c").unwrap();
+        coordination
+            .propose_voting_config_addition("node-c")
+            .unwrap();
         coordination.apply_voting_config_reconfiguration_proposals();
         coordination.cluster_manager_node_id = Some("node-b".to_string());
-        coordination.liveness.record_quorum_loss(2, "leader check failed repeatedly against manager [node-b]");
+        coordination
+            .liveness
+            .record_quorum_loss(2, "leader check failed repeatedly against manager [node-b]");
         coordination
             .fault_detection
             .record_leader_failure("node-b", 2, "leader unreachable");
@@ -13218,10 +13477,16 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             outcome.as_ref().and_then(|e| e.elected_node_id.as_deref()),
             Some("node-a")
         );
-        assert_eq!(coordination.cluster_manager_node_id.as_deref(), Some("node-a"));
+        assert_eq!(
+            coordination.cluster_manager_node_id.as_deref(),
+            Some("node-a")
+        );
         assert_eq!(coordination.liveness.local_fence_reason, None);
         assert_eq!(coordination.liveness.quorum_lost_at_tick, None);
-        assert_eq!(coordination.fault_detection.leader_nodes.get("node-b"), None);
+        assert_eq!(
+            coordination.fault_detection.leader_nodes.get("node-b"),
+            None
+        );
     }
 
     #[test]
@@ -13258,7 +13523,9 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                     },
                 )
                 .unwrap();
-            coordination.propose_voting_config_addition(node_id).unwrap();
+            coordination
+                .propose_voting_config_addition(node_id)
+                .unwrap();
         }
         coordination.apply_voting_config_reconfiguration_proposals();
 
@@ -13272,9 +13539,13 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         let publish = coordination.publish_committed_state(
             "cluster-uuid-dev-state-2".to_string(),
             2,
-            ["node-a".to_string(), "node-b".to_string(), "node-c".to_string()]
-                .into_iter()
-                .collect(),
+            [
+                "node-a".to_string(),
+                "node-b".to_string(),
+                "node-c".to_string(),
+            ]
+            .into_iter()
+            .collect(),
         );
         assert!(publish.committed);
         assert_eq!(
@@ -13332,8 +13603,12 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             std::collections::BTreeSet::from(["node-a".to_string()])
         );
 
-        coordination.propose_voting_config_addition("node-b").unwrap();
-        coordination.propose_voting_config_addition("node-c").unwrap();
+        coordination
+            .propose_voting_config_addition("node-b")
+            .unwrap();
+        coordination
+            .propose_voting_config_addition("node-c")
+            .unwrap();
         coordination.apply_voting_config_reconfiguration_proposals();
 
         let after = coordination.elect_cluster_manager_with_live_pre_votes(
@@ -13440,7 +13715,9 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                     },
                 )
                 .unwrap();
-            coordination.propose_voting_config_addition(node_id).unwrap();
+            coordination
+                .propose_voting_config_addition(node_id)
+                .unwrap();
         }
         coordination.apply_voting_config_reconfiguration_proposals();
         coordination.cluster_manager_node_id = Some("node-a".to_string());
@@ -13455,7 +13732,10 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         accept_thread.join().unwrap();
         assert_eq!(outcome.ticks, vec![1]);
         assert!(outcome.re_election.is_none());
-        assert_eq!(coordination.cluster_manager_node_id.as_deref(), Some("node-a"));
+        assert_eq!(
+            coordination.cluster_manager_node_id.as_deref(),
+            Some("node-a")
+        );
         assert_eq!(coordination.liveness.quorum_lost_at_tick, None);
         assert_eq!(coordination.liveness.local_fence_reason, None);
     }
@@ -13494,7 +13774,9 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                     },
                 )
                 .unwrap();
-            coordination.propose_voting_config_addition(node_id).unwrap();
+            coordination
+                .propose_voting_config_addition(node_id)
+                .unwrap();
         }
         coordination.apply_voting_config_reconfiguration_proposals();
         coordination.cluster_manager_node_id = Some("node-b".to_string());
@@ -13551,7 +13833,9 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                     },
                 )
                 .unwrap();
-            coordination.propose_voting_config_addition(node_id).unwrap();
+            coordination
+                .propose_voting_config_addition(node_id)
+                .unwrap();
         }
         coordination.apply_voting_config_reconfiguration_proposals();
 
@@ -13590,10 +13874,8 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             seed_peers: Vec::new(),
         };
         let mut original = ClusterCoordinationState::bootstrap(&discovery);
-        original.last_accepted_voting_configuration = std::collections::BTreeSet::from([
-            "node-a".to_string(),
-            "node-b".to_string(),
-        ]);
+        original.last_accepted_voting_configuration =
+            std::collections::BTreeSet::from(["node-a".to_string(), "node-b".to_string()]);
         original.last_committed_voting_configuration = std::collections::BTreeSet::from([
             "node-a".to_string(),
             "node-b".to_string(),
@@ -13615,10 +13897,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
 
         assert_eq!(
             restored.last_accepted_voting_configuration,
-            std::collections::BTreeSet::from([
-                "node-a".to_string(),
-                "node-b".to_string(),
-            ])
+            std::collections::BTreeSet::from(["node-a".to_string(), "node-b".to_string(),])
         );
         assert_eq!(
             restored.last_committed_voting_configuration,
@@ -13765,10 +14044,8 @@ mod cluster_settings_live_route_parity_tests {
         let node = build_cluster_settings_live_route_node(&metadata_path, &gateway_manifest_path);
 
         for path in ["/_cluster/settings?local=true"] {
-            let response = node.handle_rest_request(os_rest::RestRequest::new(
-                os_rest::RestMethod::Get,
-                path,
-            ));
+            let response =
+                node.handle_rest_request(os_rest::RestRequest::new(os_rest::RestMethod::Get, path));
             assert_eq!(response.status, 400, "unexpected success for {path}");
         }
     }
@@ -13908,8 +14185,7 @@ mod pending_tasks_live_route_parity_tests {
                 && task.get("time_in_queue_millis").is_some()
         }));
         assert!(tasks.iter().any(|task| {
-            task["source"] == serde_json::json!("node-left")
-                && task.get("executing").is_some()
+            task["source"] == serde_json::json!("node-left") && task.get("executing").is_some()
         }));
     }
 }
@@ -14599,8 +14875,7 @@ mod single_doc_delete_live_route_parity_tests {
     fn delete_doc_live_route_exposes_bounded_delete_shape_and_not_found_result() {
         let metadata_path = unique_test_path("single-doc-delete-live-route-metadata.json");
         let gateway_manifest_path = unique_test_path("single-doc-delete-live-route-gateway.json");
-        let node =
-            build_single_doc_delete_live_route_node(&metadata_path, &gateway_manifest_path);
+        let node = build_single_doc_delete_live_route_node(&metadata_path, &gateway_manifest_path);
 
         let create_index = node.handle_rest_request(
             os_rest::RestRequest::new(os_rest::RestMethod::Put, "/logs-000001")
@@ -14724,8 +14999,7 @@ mod single_doc_update_live_route_parity_tests {
     fn update_doc_live_route_exposes_bounded_update_and_upsert_shapes() {
         let metadata_path = unique_test_path("single-doc-update-live-route-metadata.json");
         let gateway_manifest_path = unique_test_path("single-doc-update-live-route-gateway.json");
-        let node =
-            build_single_doc_update_live_route_node(&metadata_path, &gateway_manifest_path);
+        let node = build_single_doc_update_live_route_node(&metadata_path, &gateway_manifest_path);
 
         let create_index = node.handle_rest_request(
             os_rest::RestRequest::new(os_rest::RestMethod::Put, "/logs-000001")
@@ -14887,8 +15161,7 @@ mod snapshot_repository_live_route_parity_tests {
     #[test]
     fn snapshot_repository_live_route_exposes_bounded_readback_mutation_and_verify() {
         let metadata_path = unique_test_path("snapshot-repository-live-route-metadata.json");
-        let gateway_manifest_path =
-            unique_test_path("snapshot-repository-live-route-gateway.json");
+        let gateway_manifest_path = unique_test_path("snapshot-repository-live-route-gateway.json");
         let node = build_snapshot_live_route_node(&metadata_path, &gateway_manifest_path);
 
         let put = node.handle_rest_request(
@@ -14926,7 +15199,8 @@ mod snapshot_lifecycle_live_route_parity_tests {
     use super::*;
 
     #[test]
-    fn snapshot_lifecycle_local_activation_harness_exposes_bounded_create_readback_status_and_restore() {
+    fn snapshot_lifecycle_local_activation_harness_exposes_bounded_create_readback_status_and_restore(
+    ) {
         let create =
             os_node::snapshot_lifecycle_route_registration::run_snapshot_lifecycle_local_route_activation(
                 "PUT",
@@ -14994,8 +15268,7 @@ mod snapshot_lifecycle_live_route_parity_tests {
     #[test]
     fn snapshot_lifecycle_live_route_exposes_bounded_create_readback_status_and_restore() {
         let metadata_path = unique_test_path("snapshot-lifecycle-live-route-metadata.json");
-        let gateway_manifest_path =
-            unique_test_path("snapshot-lifecycle-live-route-gateway.json");
+        let gateway_manifest_path = unique_test_path("snapshot-lifecycle-live-route-gateway.json");
         let node = snapshot_repository_live_route_parity_tests::build_snapshot_live_route_node(
             &metadata_path,
             &gateway_manifest_path,
@@ -15013,17 +15286,14 @@ mod snapshot_lifecycle_live_route_parity_tests {
         assert_eq!(register.status, 200);
 
         let create = node.handle_rest_request(
-            os_rest::RestRequest::new(
-                os_rest::RestMethod::Put,
-                "/_snapshot/repo-a/snapshot-a",
-            )
-            .with_json_body(serde_json::json!({
-                "indices": ["logs-000001"],
-                "include_global_state": false,
-                "metadata": {
-                    "owner": "tests"
-                }
-            })),
+            os_rest::RestRequest::new(os_rest::RestMethod::Put, "/_snapshot/repo-a/snapshot-a")
+                .with_json_body(serde_json::json!({
+                    "indices": ["logs-000001"],
+                    "include_global_state": false,
+                    "metadata": {
+                        "owner": "tests"
+                    }
+                })),
         );
         let readback = node.handle_rest_request(os_rest::RestRequest::new(
             os_rest::RestMethod::Get,
@@ -15049,7 +15319,9 @@ mod snapshot_lifecycle_live_route_parity_tests {
         assert_eq!(create.body["accepted"], true);
         assert_eq!(readback.status, 200);
         assert_eq!(readback.body["snapshots"][0]["snapshot"], "snapshot-a");
-        assert!(readback.body["snapshots"][0].get("feature_states").is_none());
+        assert!(readback.body["snapshots"][0]
+            .get("feature_states")
+            .is_none());
         assert_eq!(status.status, 200);
         assert_eq!(status.body["snapshots"][0]["repository"], "repo-a");
         assert!(status.body["snapshots"][0].get("stats").is_none());
@@ -15115,13 +15387,10 @@ mod snapshot_cleanup_live_route_parity_tests {
         );
         assert_eq!(register.status, 200);
         let create = node.handle_rest_request(
-            os_rest::RestRequest::new(
-                os_rest::RestMethod::Put,
-                "/_snapshot/repo-a/snapshot-a",
-            )
-            .with_json_body(serde_json::json!({
-                "indices": ["logs-000001"]
-            })),
+            os_rest::RestRequest::new(os_rest::RestMethod::Put, "/_snapshot/repo-a/snapshot-a")
+                .with_json_body(serde_json::json!({
+                    "indices": ["logs-000001"]
+                })),
         );
         assert_eq!(create.status, 200);
 
@@ -15186,41 +15455,38 @@ mod vector_live_route_parity_tests {
         let node = build_vector_live_route_node(&metadata_path, &gateway_manifest_path);
 
         let create_index = node.handle_rest_request(
-            os_rest::RestRequest::new(
-                os_rest::RestMethod::Put,
-                "/vector-search-compat-000001",
-            )
-            .with_json_body(serde_json::json!({
-                "settings": {
-                    "index": {
-                        "number_of_shards": 1,
-                        "number_of_replicas": 0,
-                        "knn": true
-                    }
-                },
-                "mappings": {
-                    "properties": {
-                        "title": { "type": "text" },
-                        "tenant": { "type": "keyword" },
-                        "embedding": {
-                            "type": "knn_vector",
-                            "dimension": 3,
-                            "data_type": "float",
-                            "mode": "in_memory",
-                            "compression_level": "1x",
-                            "doc_values": true,
-                            "store": false,
-                            "_meta": {
-                                "owner": "vector-live-route"
-                            },
-                            "method": {
-                                "name": "hnsw",
-                                "engine": "lucene"
+            os_rest::RestRequest::new(os_rest::RestMethod::Put, "/vector-search-compat-000001")
+                .with_json_body(serde_json::json!({
+                    "settings": {
+                        "index": {
+                            "number_of_shards": 1,
+                            "number_of_replicas": 0,
+                            "knn": true
+                        }
+                    },
+                    "mappings": {
+                        "properties": {
+                            "title": { "type": "text" },
+                            "tenant": { "type": "keyword" },
+                            "embedding": {
+                                "type": "knn_vector",
+                                "dimension": 3,
+                                "data_type": "float",
+                                "mode": "in_memory",
+                                "compression_level": "1x",
+                                "doc_values": true,
+                                "store": false,
+                                "_meta": {
+                                    "owner": "vector-live-route"
+                                },
+                                "method": {
+                                    "name": "hnsw",
+                                    "engine": "lucene"
+                                }
                             }
                         }
                     }
-                }
-            })),
+                })),
         );
         assert_eq!(create_index.status, 200);
 
@@ -15464,8 +15730,14 @@ mod vector_live_route_parity_tests {
             })),
         );
         assert_eq!(hybrid_minimum_should_match.status, 200);
-        assert_eq!(hybrid_minimum_should_match.body["hits"]["total"]["value"], 1);
-        assert_eq!(hybrid_minimum_should_match.body["hits"]["hits"][0]["_id"], "doc-1");
+        assert_eq!(
+            hybrid_minimum_should_match.body["hits"]["total"]["value"],
+            1
+        );
+        assert_eq!(
+            hybrid_minimum_should_match.body["hits"]["hits"][0]["_id"],
+            "doc-1"
+        );
 
         let unsupported = node.handle_rest_request(
             os_rest::RestRequest::new(
@@ -15485,7 +15757,10 @@ mod vector_live_route_parity_tests {
             })),
         );
         assert_eq!(unsupported.status, 400);
-        assert_eq!(unsupported.body["error"]["type"], "x_content_parse_exception");
+        assert_eq!(
+            unsupported.body["error"]["type"],
+            "x_content_parse_exception"
+        );
 
         let warmup = node.handle_rest_request(
             os_rest::RestRequest::new(
@@ -15509,19 +15784,16 @@ mod vector_live_route_parity_tests {
         assert_eq!(clear_cache.status, 200);
 
         let train_model = node.handle_rest_request(
-            os_rest::RestRequest::new(
-                os_rest::RestMethod::Post,
-                "/_plugins/_knn/models/_train",
-            )
-            .with_json_body(serde_json::json!({
-                "training_index": "vector-search-compat-000001",
-                "dimension": 3,
-                "description": "vector test model",
-                "method": {
-                    "name": "hnsw",
-                    "engine": "lucene"
-                }
-            })),
+            os_rest::RestRequest::new(os_rest::RestMethod::Post, "/_plugins/_knn/models/_train")
+                .with_json_body(serde_json::json!({
+                    "training_index": "vector-search-compat-000001",
+                    "dimension": 3,
+                    "description": "vector test model",
+                    "method": {
+                        "name": "hnsw",
+                        "engine": "lucene"
+                    }
+                })),
         );
         assert_eq!(train_model.status, 200);
         let model_id = train_model.body["model_id"].as_str().unwrap_or("");
@@ -15536,17 +15808,14 @@ mod vector_live_route_parity_tests {
         assert_eq!(get_model.body["method"]["engine"], "lucene");
 
         let search_model = node.handle_rest_request(
-            os_rest::RestRequest::new(
-                os_rest::RestMethod::Post,
-                "/_plugins/_knn/models/_search",
-            )
-            .with_json_body(serde_json::json!({
-                "query": {
-                    "term": {
-                        "model_id": model_id
+            os_rest::RestRequest::new(os_rest::RestMethod::Post, "/_plugins/_knn/models/_search")
+                .with_json_body(serde_json::json!({
+                    "query": {
+                        "term": {
+                            "model_id": model_id
+                        }
                     }
-                }
-            })),
+                })),
         );
         assert_eq!(search_model.status, 200);
         assert_eq!(search_model.body["hits"]["total"]["value"], 1);
@@ -15558,7 +15827,10 @@ mod vector_live_route_parity_tests {
         ));
         assert_eq!(stats_after_train.status, 200);
         assert_eq!(stats_after_train.body["nodes"]["local"]["model_count"], 1);
-        assert_eq!(stats_after_train.body["nodes"]["local"]["training_requests"], 1);
+        assert_eq!(
+            stats_after_train.body["nodes"]["local"]["training_requests"],
+            1
+        );
 
         let delete_model = node.handle_rest_request(os_rest::RestRequest::new(
             os_rest::RestMethod::Delete,
@@ -15568,15 +15840,12 @@ mod vector_live_route_parity_tests {
         assert_eq!(delete_model.body["result"], "deleted");
 
         let register_ml_model = node.handle_rest_request(
-            os_rest::RestRequest::new(
-                os_rest::RestMethod::Post,
-                "/_plugins/_ml/models/_register",
-            )
-            .with_json_body(serde_json::json!({
-                "name": "compat-text-embedding",
-                "function_name": "text_embedding",
-                "dimension": 3
-            })),
+            os_rest::RestRequest::new(os_rest::RestMethod::Post, "/_plugins/_ml/models/_register")
+                .with_json_body(serde_json::json!({
+                    "name": "compat-text-embedding",
+                    "function_name": "text_embedding",
+                    "dimension": 3
+                })),
         );
         assert_eq!(register_ml_model.status, 200);
         let ml_model_id = register_ml_model.body["model_id"].as_str().unwrap_or("");
@@ -15607,16 +15876,16 @@ mod vector_live_route_parity_tests {
             })),
         );
         assert_eq!(predict_ml_model.status, 200);
-        assert_eq!(predict_ml_model.body["inference_results"][0]["model_id"], ml_model_id);
+        assert_eq!(
+            predict_ml_model.body["inference_results"][0]["model_id"],
+            ml_model_id
+        );
 
         let search_ml_model = node.handle_rest_request(
-            os_rest::RestRequest::new(
-                os_rest::RestMethod::Post,
-                "/_plugins/_ml/models/_search",
-            )
-            .with_json_body(serde_json::json!({
-                "query": { "term": { "model_id": ml_model_id } }
-            })),
+            os_rest::RestRequest::new(os_rest::RestMethod::Post, "/_plugins/_ml/models/_search")
+                .with_json_body(serde_json::json!({
+                    "query": { "term": { "model_id": ml_model_id } }
+                })),
         );
         assert_eq!(search_ml_model.status, 200);
         assert_eq!(search_ml_model.body["hits"]["total"]["value"], 1);
@@ -15710,8 +15979,7 @@ mod allocation_explain_live_route_parity_tests {
     fn cluster_allocation_explain_live_route_exposes_bounded_shape() {
         let metadata_path = unique_test_path("allocation-explain-live-route-metadata.json");
         let gateway_manifest_path = unique_test_path("allocation-explain-live-route-gateway.json");
-        let node =
-            build_allocation_explain_live_route_node(&metadata_path, &gateway_manifest_path);
+        let node = build_allocation_explain_live_route_node(&metadata_path, &gateway_manifest_path);
 
         let create_index = node.handle_rest_request(
             os_rest::RestRequest::new(os_rest::RestMethod::Put, "/logs-allocation-000001")

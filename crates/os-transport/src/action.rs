@@ -13,6 +13,7 @@ use os_wire::TransportStatus;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::BTreeMap;
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use thiserror::Error;
 
 use crate::error::{read_exception, TransportError, TransportErrorDecodeError};
@@ -1684,8 +1685,8 @@ pub fn classify_opensearch_transport_action(
         },
         WLM_STATS_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
-            disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "wlm-stats transport execution requires workload group runtime telemetry mapping",
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "wlm-stats transport adapter returns an OpenSearch-shaped local node response with empty workload group stats",
         },
         REMOTE_STORE_STATS_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -3487,19 +3488,22 @@ impl NodesStatsRequestWire {
         if !self.node_ids.is_empty() {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "nodes stats node filter",
-                reason: "nodes-stats node-scoped routing is outside the local empty-node-stats subset",
+                reason:
+                    "nodes-stats node-scoped routing is outside the local empty-node-stats subset",
             });
         }
         if self.timeout.is_some() {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "nodes stats timeout",
-                reason: "nodes-stats timeout semantics are outside the local empty-node-stats subset",
+                reason:
+                    "nodes-stats timeout semantics are outside the local empty-node-stats subset",
             });
         }
         if !self.indices.is_default_all_stats_shape() {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "nodes stats indices flags",
-                reason: "nodes-stats index flag subsets are outside the local empty-node-stats subset",
+                reason:
+                    "nodes-stats index flag subsets are outside the local empty-node-stats subset",
             });
         }
         if !self.requested_metrics.is_empty() {
@@ -3515,7 +3519,8 @@ impl NodesStatsRequestWire {
         self.validate_supported_subset()?;
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "nodes stats execution",
-            reason: "use validate_supported_subset for the implemented local empty-node-stats adapter",
+            reason:
+                "use validate_supported_subset for the implemented local empty-node-stats adapter",
         })
     }
 }
@@ -3576,18 +3581,18 @@ impl WlmStatsRequestWire {
         Ok(request)
     }
 
-    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+    pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
         if !self.node_ids.is_empty() {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "wlm stats node filter",
-                reason: "wlm-stats node-scoped routing requires runtime workload group telemetry mapping",
+                reason: "wlm-stats node-scoped routing requires node resolution semantics",
             });
         }
         if self.timeout.is_some() {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "wlm stats timeout",
                 reason:
-                    "wlm-stats timeout semantics require runtime workload group telemetry mapping",
+                    "wlm-stats timeout semantics require transport nodes action execution timing",
             });
         }
         if !self.workload_group_ids.is_empty() {
@@ -3602,10 +3607,289 @@ impl WlmStatsRequestWire {
                 reason: "breach filtering requires workload group threshold evaluation semantics",
             });
         }
+        Ok(())
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        self.validate_supported_subset()?;
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "wlm stats execution",
-            reason:
-                "wlm-stats transport execution requires workload group runtime telemetry mapping",
+            reason: "use validate_supported_subset for the implemented empty WLM stats adapter",
+        })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct WlmStatsResponseWire {
+    pub cluster_name: String,
+    pub nodes: Vec<WlmStatsNodeWire>,
+    pub failures: Vec<FailedNodeExceptionWire>,
+}
+
+impl WlmStatsResponseWire {
+    pub fn empty_local(cluster_name: String, node: WlmStatsNodeWire) -> Self {
+        Self {
+            cluster_name,
+            nodes: vec![node],
+            failures: Vec::new(),
+        }
+    }
+
+    pub fn write(&self, output: &mut StreamOutput) -> Result<(), TransportActionWireError> {
+        if self.cluster_name.is_empty() {
+            return Err(TransportActionWireError::MissingRequiredField {
+                field: "wlm stats response cluster name",
+            });
+        }
+        output.write_string(&self.cluster_name);
+        output.write_vint(self.nodes.len() as i32);
+        for node in &self.nodes {
+            node.write(output)?;
+        }
+        output.write_vint(self.failures.len() as i32);
+        for failure in &self.failures {
+            failure.write(output)?;
+        }
+        Ok(())
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let cluster_name = input.read_string()?;
+        let node_count = read_len(&mut input)?;
+        let mut nodes = Vec::with_capacity(node_count);
+        for _ in 0..node_count {
+            nodes.push(WlmStatsNodeWire::read(&mut input)?);
+        }
+        let failure_count = read_len(&mut input)?;
+        let mut failures = Vec::with_capacity(failure_count);
+        for _ in 0..failure_count {
+            failures.push(FailedNodeExceptionWire::read(&mut input)?);
+        }
+        require_no_trailing_bytes(&input)?;
+        let response = Self {
+            cluster_name,
+            nodes,
+            failures,
+        };
+        response.validate_supported_subset()?;
+        Ok(response)
+    }
+
+    pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
+        if self.cluster_name.is_empty() {
+            return Err(TransportActionWireError::MissingRequiredField {
+                field: "wlm stats response cluster name",
+            });
+        }
+        for node in &self.nodes {
+            node.validate_supported_subset()?;
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct WlmStatsNodeWire {
+    pub node: OpenSearchDiscoveryNodeWire,
+    pub workload_group_count: i32,
+}
+
+impl WlmStatsNodeWire {
+    pub fn empty(node: OpenSearchDiscoveryNodeWire) -> Self {
+        Self {
+            node,
+            workload_group_count: 0,
+        }
+    }
+
+    fn write(&self, output: &mut StreamOutput) -> Result<(), TransportActionWireError> {
+        self.validate_supported_subset()?;
+        self.node.write(output);
+        output.write_vint(self.workload_group_count);
+        Ok(())
+    }
+
+    fn read(input: &mut StreamInput) -> Result<Self, TransportActionWireError> {
+        let node = OpenSearchDiscoveryNodeWire::read(input)?;
+        let workload_group_count = input.read_vint()?;
+        let response = Self {
+            node,
+            workload_group_count,
+        };
+        response.validate_supported_subset()?;
+        Ok(response)
+    }
+
+    fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
+        self.node.validate_supported_subset()?;
+        if self.workload_group_count < 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "wlm stats workload group count",
+                reason: "wlm-stats workload group count must be non-negative",
+            });
+        }
+        if self.workload_group_count != 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "wlm stats workload groups",
+                reason: "wlm-stats workload group entries require runtime telemetry mapping",
+            });
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchDiscoveryNodeWire {
+    pub name: String,
+    pub id: String,
+    pub ephemeral_id: String,
+    pub host_name: String,
+    pub host_address: String,
+    pub transport_address: OpenSearchTransportAddressWire,
+    pub attributes: BTreeMap<String, String>,
+    pub roles: Vec<OpenSearchDiscoveryNodeRoleWire>,
+    pub version: Version,
+}
+
+impl OpenSearchDiscoveryNodeWire {
+    pub fn write(&self, output: &mut StreamOutput) {
+        output.write_string(&self.name);
+        output.write_string(&self.id);
+        output.write_string(&self.ephemeral_id);
+        output.write_string(&self.host_name);
+        output.write_string(&self.host_address);
+        self.transport_address.write(output);
+        output.write_bool(false);
+        output.write_string_map(&self.attributes);
+        output.write_vint(self.roles.len() as i32);
+        for role in &self.roles {
+            role.write(output);
+        }
+        output.write_vint(self.version.id());
+    }
+
+    pub fn read(input: &mut StreamInput) -> Result<Self, TransportActionWireError> {
+        let name = input.read_string()?;
+        let id = input.read_string()?;
+        let ephemeral_id = input.read_string()?;
+        let host_name = input.read_string()?;
+        let host_address = input.read_string()?;
+        let transport_address = OpenSearchTransportAddressWire::read(input)?;
+        if input.read_bool()? {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "discovery node stream address",
+                reason: "wlm-stats adapter only supports absent stream address",
+            });
+        }
+        let attributes = input.read_string_map()?;
+        let role_count = read_len(input)?;
+        let mut roles = Vec::with_capacity(role_count);
+        for _ in 0..role_count {
+            roles.push(OpenSearchDiscoveryNodeRoleWire::read(input)?);
+        }
+        let version = Version::from_id(input.read_vint()?);
+        let node = Self {
+            name,
+            id,
+            ephemeral_id,
+            host_name,
+            host_address,
+            transport_address,
+            attributes,
+            roles,
+            version,
+        };
+        node.validate_supported_subset()?;
+        Ok(node)
+    }
+
+    fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
+        if self.id.is_empty() {
+            return Err(TransportActionWireError::MissingRequiredField {
+                field: "discovery node id",
+            });
+        }
+        if self.ephemeral_id.is_empty() {
+            return Err(TransportActionWireError::MissingRequiredField {
+                field: "discovery node ephemeral id",
+            });
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchDiscoveryNodeRoleWire {
+    pub name: String,
+    pub abbreviation: String,
+    pub can_contain_data: bool,
+}
+
+impl OpenSearchDiscoveryNodeRoleWire {
+    fn write(&self, output: &mut StreamOutput) {
+        output.write_string(&self.name);
+        output.write_string(&self.abbreviation);
+        output.write_bool(self.can_contain_data);
+    }
+
+    fn read(input: &mut StreamInput) -> Result<Self, TransportActionWireError> {
+        Ok(Self {
+            name: input.read_string()?,
+            abbreviation: input.read_string()?,
+            can_contain_data: input.read_bool()?,
+        })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchTransportAddressWire {
+    pub ip: IpAddr,
+    pub host: String,
+    pub port: i32,
+}
+
+impl OpenSearchTransportAddressWire {
+    fn write(&self, output: &mut StreamOutput) {
+        match self.ip {
+            IpAddr::V4(ip) => {
+                output.write_byte(4);
+                for byte in ip.octets() {
+                    output.write_byte(byte);
+                }
+            }
+            IpAddr::V6(ip) => {
+                output.write_byte(16);
+                for byte in ip.octets() {
+                    output.write_byte(byte);
+                }
+            }
+        }
+        output.write_string(&self.host);
+        output.write_i32(self.port);
+    }
+
+    fn read(input: &mut StreamInput) -> Result<Self, TransportActionWireError> {
+        let len = input.read_byte()? as usize;
+        let raw = input.read_bytes(len)?;
+        let ip = match len {
+            4 => IpAddr::V4(Ipv4Addr::new(raw[0], raw[1], raw[2], raw[3])),
+            16 => {
+                let mut octets = [0_u8; 16];
+                octets.copy_from_slice(&raw);
+                IpAddr::V6(Ipv6Addr::from(octets))
+            }
+            _ => {
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "transport address ip length",
+                    reason: "transport address IP must be IPv4 or IPv6",
+                });
+            }
+        };
+        Ok(Self {
+            ip,
+            host: input.read_string()?,
+            port: input.read_i32()?,
         })
     }
 }
@@ -4612,6 +4896,35 @@ pub fn read_wlm_stats_request_message(
         });
     }
     WlmStatsRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_wlm_stats_response_message(
+    request_id: i64,
+    version: Version,
+    response: &WlmStatsResponseWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    response.write(&mut body)?;
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::response(),
+        version,
+        variable_header: BytesMut::new(),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_wlm_stats_response_message(
+    message: &TransportMessage,
+) -> Result<WlmStatsResponseWire, TransportActionWireError> {
+    if message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "response",
+            actual: message.status.bits(),
+        });
+    }
+    WlmStatsResponseWire::read(message.body.clone().freeze())
 }
 
 pub fn build_remote_store_stats_request_message(
@@ -21162,7 +21475,8 @@ impl OpenSearchRecoveryRequestWire {
         {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "recovery indices options",
-                reason: "custom recovery indices options are outside the local empty-recovery subset",
+                reason:
+                    "custom recovery indices options are outside the local empty-recovery subset",
             });
         }
         if self.detailed {
@@ -25416,12 +25730,11 @@ impl FailedNodeExceptionWire {
         skip_stack_trace(input)?;
         skip_string_list_map(input)?;
         skip_string_list_map(input)?;
-        let node_id =
-            input
-                .read_optional_string()?
-                .ok_or(TransportActionWireError::MissingRequiredField {
-                    field: "failed node id",
-                })?;
+        let node_id = input.read_optional_string()?.ok_or(
+            TransportActionWireError::MissingRequiredField {
+                field: "failed node id",
+            },
+        )?;
         Ok(Self {
             node_id,
             message,
@@ -31645,6 +31958,35 @@ mod tests {
     use serde::Deserialize;
     use serde_json::json;
 
+    fn test_discovery_node_wire() -> OpenSearchDiscoveryNodeWire {
+        OpenSearchDiscoveryNodeWire {
+            name: "steel-node".to_string(),
+            id: "steel-node-id".to_string(),
+            ephemeral_id: "steel-node-ephemeral".to_string(),
+            host_name: "127.0.0.1".to_string(),
+            host_address: "127.0.0.1".to_string(),
+            transport_address: OpenSearchTransportAddressWire {
+                ip: "127.0.0.1".parse().unwrap(),
+                host: "127.0.0.1".to_string(),
+                port: 9300,
+            },
+            attributes: BTreeMap::new(),
+            roles: vec![
+                OpenSearchDiscoveryNodeRoleWire {
+                    name: "cluster_manager".to_string(),
+                    abbreviation: "m".to_string(),
+                    can_contain_data: false,
+                },
+                OpenSearchDiscoveryNodeRoleWire {
+                    name: "data".to_string(),
+                    abbreviation: "d".to_string(),
+                    can_contain_data: true,
+                },
+            ],
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        }
+    }
+
     fn valid_cluster_put_weighted_routing_request() -> ClusterPutWeightedRoutingRequestWire {
         ClusterPutWeightedRoutingRequestWire {
             parent_task_node: "cluster-manager".to_string(),
@@ -33031,7 +33373,7 @@ mod tests {
         );
         assert_eq!(
             classify_opensearch_transport_action(WLM_STATS_ACTION_NAME).disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             classify_opensearch_transport_action(REMOTE_STORE_STATS_ACTION_NAME).disposition,
@@ -36082,7 +36424,10 @@ mod tests {
         let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
             panic!("expected remote-info response message");
         };
-        assert_eq!(read_remote_info_response_message(&message).unwrap(), response);
+        assert_eq!(
+            read_remote_info_response_message(&message).unwrap(),
+            response
+        );
     }
 
     #[test]
@@ -36579,7 +36924,7 @@ mod tests {
     }
 
     #[test]
-    fn wlm_stats_request_wire_round_trips_and_rejects_execution_boundary() {
+    fn wlm_stats_request_wire_round_trips_supported_subset() {
         let request = WlmStatsRequestWire {
             parent_task_node: "wlm-node".to_string(),
             parent_task_id: Some(27),
@@ -36590,13 +36935,21 @@ mod tests {
 
         let decoded = WlmStatsRequestWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, request);
-        assert!(matches!(
-            decoded.reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "wlm stats execution",
-                ..
-            })
-        ));
+        decoded.validate_supported_subset().unwrap();
+    }
+
+    #[test]
+    fn wlm_stats_response_wire_round_trips_empty_local_node_stats() {
+        let response = WlmStatsResponseWire::empty_local(
+            "steelsearch-dev".to_string(),
+            WlmStatsNodeWire::empty(test_discovery_node_wire()),
+        );
+        let mut output = StreamOutput::new();
+        response.write(&mut output).unwrap();
+
+        let decoded = WlmStatsResponseWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, response);
+        decoded.validate_supported_subset().unwrap();
     }
 
     #[test]
@@ -36679,7 +37032,7 @@ mod tests {
     }
 
     #[test]
-    fn wlm_stats_transport_messages_bind_rejected_action_frame() {
+    fn wlm_stats_transport_messages_bind_supported_action_frame_and_response() {
         let request = WlmStatsRequestWire::default();
         let mut frame =
             build_wlm_stats_request_message(27, OPENSEARCH_3_7_0_TRANSPORT, &request).unwrap();
@@ -36687,15 +37040,27 @@ mod tests {
             panic!("expected wlm stats request message");
         };
         assert_eq!(read_wlm_stats_request_message(&message).unwrap(), request);
-        assert!(matches!(
-            read_wlm_stats_request_message(&message)
+        assert_eq!(
+            classify_opensearch_transport_request_message(&message)
                 .unwrap()
-                .reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "wlm stats execution",
-                ..
-            })
-        ));
+                .disposition,
+            OpenSearchTransportActionDisposition::Implemented
+        );
+        read_wlm_stats_request_message(&message)
+            .unwrap()
+            .validate_supported_subset()
+            .unwrap();
+
+        let response = WlmStatsResponseWire::empty_local(
+            "steelsearch-dev".to_string(),
+            WlmStatsNodeWire::empty(test_discovery_node_wire()),
+        );
+        let mut frame =
+            build_wlm_stats_response_message(27, OPENSEARCH_3_7_0_TRANSPORT, &response).unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected wlm stats response message");
+        };
+        assert_eq!(read_wlm_stats_response_message(&message).unwrap(), response);
     }
 
     #[test]
@@ -54923,7 +55288,10 @@ mod tests {
         let mut output = StreamOutput::new();
         response.write(&mut output).unwrap();
 
-        assert_eq!(GetTaskResponseWire::read(output.freeze()).unwrap(), response);
+        assert_eq!(
+            GetTaskResponseWire::read(output.freeze()).unwrap(),
+            response
+        );
 
         let mut output = StreamOutput::new();
         completed.write(&mut output).unwrap();
@@ -54999,10 +55367,7 @@ mod tests {
         let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
             panic!("expected get task response message");
         };
-        assert_eq!(
-            read_get_task_response_message(&message).unwrap(),
-            response
-        );
+        assert_eq!(read_get_task_response_message(&message).unwrap(), response);
     }
 
     #[test]
@@ -55123,19 +55488,11 @@ mod tests {
 
         assert_eq!(decoded, response);
         assert_eq!(
-            decoded.node_failures[0]
-                .cause
-                .as_ref()
-                .unwrap()
-                .class_name,
+            decoded.node_failures[0].cause.as_ref().unwrap().class_name,
             "org.opensearch.ResourceNotFoundException"
         );
         assert_eq!(
-            decoded.node_failures[1]
-                .cause
-                .as_ref()
-                .unwrap()
-                .class_name,
+            decoded.node_failures[1].cause.as_ref().unwrap().class_name,
             "java.lang.IllegalArgumentException"
         );
     }

@@ -3,7 +3,7 @@ implemented	MainAction.INSTANCE	TransportMainAction.class	/home/ubuntu/OpenSearc
 implemented	NodesInfoAction.INSTANCE	TransportNodesInfoAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	657
 implemented	RemoteInfoAction.INSTANCE	TransportRemoteInfoAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	658
 implemented	NodesStatsAction.INSTANCE	TransportNodesStatsAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	659
-partial	WlmStatsAction.INSTANCE	TransportWlmStatsAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	660
+implemented	WlmStatsAction.INSTANCE	TransportWlmStatsAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	660
 partial	RemoteStoreStatsAction.INSTANCE	TransportRemoteStoreStatsAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	661
 partial	RemoteStoreMetadataAction.INSTANCE	TransportRemoteStoreMetadataAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	662
 partial	NodesUsageAction.INSTANCE	TransportNodesUsageAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	663
