@@ -23604,6 +23604,10 @@ fn build_phrase_suggest_options(text: &str, candidates: &BTreeMap<String, u64>) 
             corrected_tokens.push(token);
             continue;
         }
+        if token.chars().count() < 3 {
+            corrected_tokens.push(token);
+            continue;
+        }
         let mut ranked = candidates
             .iter()
             .map(|(candidate, frequency)| {

@@ -846,6 +846,96 @@
       "description": "[lexical] search term suggest size semantic"
     },
     {
+      "name": "search_phrase_suggest_semantic",
+      "area": "search-semantic",
+      "method": "POST",
+      "path": "/logs-search-semantic-000001/_search",
+      "body": {
+        "suggest": {
+          "message_phrase": {
+            "text": "lg doc",
+            "phrase": {
+              "field": "message"
+            }
+          }
+        }
+      },
+      "extract": "suggest_response",
+      "family": "lexical",
+      "description": "[lexical] search phrase suggest semantic"
+    },
+    {
+      "name": "search_completion_suggest_semantic",
+      "area": "search-semantic",
+      "extract": "suggest_response",
+      "steps": [
+        {
+          "name": "create-completion-index",
+          "method": "PUT",
+          "path": "/suggest-search-semantic-000001",
+          "body": {
+            "mappings": {
+              "properties": {
+                "service_suggest": {
+                  "type": "completion"
+                }
+              }
+            }
+          },
+          "expected_status": 200,
+          "extract": "status_only"
+        },
+        {
+          "name": "index-completion-doc-1",
+          "method": "PUT",
+          "path": "/suggest-search-semantic-000001/_doc/suggest-1",
+          "body": {
+            "service_suggest": "log-entry"
+          },
+          "expected_status": 201,
+          "extract": "status_only"
+        },
+        {
+          "name": "index-completion-doc-2",
+          "method": "PUT",
+          "path": "/suggest-search-semantic-000001/_doc/suggest-2",
+          "body": {
+            "service_suggest": "log-null"
+          },
+          "expected_status": 201,
+          "extract": "status_only"
+        },
+        {
+          "name": "refresh-completion-index",
+          "method": "POST",
+          "path": "/suggest-search-semantic-000001/_refresh",
+          "body": {},
+          "expected_status": 200,
+          "extract": "status_only"
+        },
+        {
+          "name": "completion-suggest",
+          "method": "POST",
+          "path": "/suggest-search-semantic-000001/_search",
+          "body": {
+            "suggest": {
+              "service_completion": {
+                "prefix": "log-",
+                "completion": {
+                  "field": "service_suggest",
+                  "size": 2
+                }
+              }
+            }
+          },
+          "expected_status": 200,
+          "extract": "suggest_response"
+        }
+      ],
+      "family": "lexical",
+      "description": "[lexical] search completion suggest semantic"
+    },
+    {
       "name": "search_template_missing_error",
       "area": "search-semantic",
       "method": "POST",
