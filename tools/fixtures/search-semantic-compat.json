@@ -296,6 +296,36 @@
       "description": "[failure-path] collapse search_after sort mismatch error"
     },
     {
+      "name": "profile_true_semantic",
+      "area": "search-semantic",
+      "method": "POST",
+      "path": "/logs-search-semantic-000001/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "profile": true
+      },
+      "extract": "search_profile",
+      "family": "ranking",
+      "description": "[ranking] profile true semantic"
+    },
+    {
+      "name": "profile_false_semantic",
+      "area": "search-semantic",
+      "method": "POST",
+      "path": "/logs-search-semantic-000001/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "profile": false
+      },
+      "extract": "search_profile",
+      "family": "ranking",
+      "description": "[ranking] profile false semantic"
+    },
+    {
       "name": "count_root_term_semantic",
       "area": "search-semantic",
       "method": "POST",
