@@ -177,8 +177,8 @@ The source-derived transport inventory currently has 160 rows:
 
 | Status | Count | Meaning |
 | --- | ---: | --- |
-| `implemented` | 17 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
-| `partial` | 143 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
+| `implemented` | 27 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
+| `partial` | 133 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
 | `planned` | 0 | No source-derived transport action remains unclassified. |
 
 The k-NN plugin action sweep is complete at the boundary layer. All 12
@@ -1155,10 +1155,10 @@ The get-mappings boundary covers:
 - OpenSearch `GetMappingsRequest` parent task, cluster-manager timeout, indices
   array, `local` flag, and `IndicesOptions.strictExpandOpen()` at the wire
   decode/build layer;
-- explicit fail-closed classification for `indices:admin/mappings/get` until
-  mapping metadata response rendering is implemented;
+- implemented classification for `indices:admin/mappings/get` default
+  all-indices request admission and empty mappings response rendering;
 - explicit rejection for custom cluster-manager timeout, index filters, local
-  reads, custom indices options, and get-mappings execution.
+  reads, custom indices options, and non-empty mapping metadata payloads.
 
 The get-field-mappings boundary covers:
 
@@ -3590,14 +3590,16 @@ boundary is not the primary expected performance risk; the first
 performance-sensitive work is version-conflict handling, weighted routing
 metadata deletion, cluster-state publication, and acknowledgement rendering.
 
-Current get-mappings reject wire microbenchmark:
+Current get-mappings wire microbenchmark:
 
 ```text
-cargo run -p os-transport --release --bin get-mappings-reject-wire-benchmark
-get_mappings_reject_request_encode iterations=400000 elapsed_ms=234.612 ops_per_second=1704941.84 nanos_per_op=586.53
-get_mappings_reject_request_decode iterations=400000 elapsed_ms=226.785 ops_per_second=1763782.95 nanos_per_op=566.96
-get_mappings_reject_validation iterations=400000 elapsed_ms=230.615 ops_per_second=1734492.03 nanos_per_op=576.54
-get_mappings_reject_wire_bottleneck_ops_per_second=1704941.84
+cargo run -p os-transport --release --bin get-mappings-wire-benchmark
+get_mappings_request_encode iterations=400000 elapsed_ms=227.536 ops_per_second=1757964.64 nanos_per_op=568.84
+get_mappings_request_decode iterations=400000 elapsed_ms=223.413 ops_per_second=1790407.21 nanos_per_op=558.53
+get_mappings_request_validate iterations=400000 elapsed_ms=226.847 ops_per_second=1763304.45 nanos_per_op=567.12
+get_mappings_response_encode iterations=400000 elapsed_ms=85.259 ops_per_second=4691560.29 nanos_per_op=213.15
+get_mappings_response_decode iterations=400000 elapsed_ms=93.764 ops_per_second=4266027.65 nanos_per_op=234.41
+get_mappings_wire_bottleneck_ops_per_second=1757964.64
 ```
 
 The current get-mappings fail-closed boundary bottleneck is request encode. The
@@ -6279,7 +6281,6 @@ response-shape examples.
 
 ## Tier 2: Strong Phase A Follow-Up Read/Admin Actions
 
-- `GetMappingsAction.INSTANCE`
 - `GetFieldMappingsAction.INSTANCE`
 - `ClusterSearchShardsAction.INSTANCE`
 - `RecoveryAction.INSTANCE`

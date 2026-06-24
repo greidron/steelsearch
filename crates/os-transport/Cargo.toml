@@ -270,8 +270,8 @@ name = "get-repositories-wire-benchmark"
 path = "benchmarks/get_repositories_wire.rs"
 
 [[bin]]
-name = "get-mappings-reject-wire-benchmark"
-path = "benchmarks/get_mappings_reject_wire.rs"
+name = "get-mappings-wire-benchmark"
+path = "benchmarks/get_mappings_wire.rs"
 
 [[bin]]
 name = "get-field-mappings-reject-wire-benchmark"
