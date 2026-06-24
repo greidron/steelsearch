@@ -20586,6 +20586,14 @@ fn validate_search_sort_object(object: &serde_json::Map<String, Value>) -> Optio
                 } else if options.get("order").is_some() {
                     return Some(malformed_sort_response("No enum constant SortOrder"));
                 }
+                if options
+                    .get("missing")
+                    .is_some_and(|missing| missing.is_array() || missing.is_object())
+                {
+                    return Some(malformed_sort_response(
+                        "malformed sort format, missing value must be a scalar",
+                    ));
+                }
             }
             _ => {
                 return Some(malformed_sort_response(
@@ -21810,14 +21818,13 @@ fn apply_search_sort(hits: &mut [Value], sort: &Value) {
             let Some(field_name) = sort_field_name(field_spec) else {
                 continue;
             };
-            let left_value = extract_sort_value(left, field_name);
-            let right_value = extract_sort_value(right, field_name);
-            let ordering = compare_json_scalars(&left_value, &right_value);
-            let ordering = if sort_field_descending(field_spec) {
-                ordering.reverse()
-            } else {
-                ordering
-            };
+            let ordering = compare_sort_field_values(
+                left,
+                right,
+                field_spec,
+                field_name,
+                sort_field_descending(field_spec),
+            );
             if ordering != std::cmp::Ordering::Equal {
                 return ordering;
             }
@@ -21842,16 +21849,17 @@ fn apply_search_after(hits: Vec<Value>, sort: &Value, search_after: &[Value]) ->
                 let Some(field_name) = sort_field_name(sort_field) else {
                     continue;
                 };
-                let sort_value = extract_sort_value(hit, field_name);
-                let ordering = compare_json_scalars(&sort_value, after_value);
+                let ordering = compare_sort_field_value_to_after(
+                    hit,
+                    sort_field,
+                    field_name,
+                    after_value,
+                    sort_field_descending(sort_field),
+                );
                 if ordering == std::cmp::Ordering::Equal {
                     continue;
                 }
-                return if sort_field_descending(sort_field) {
-                    ordering == std::cmp::Ordering::Less
-                } else {
-                    ordering == std::cmp::Ordering::Greater
-                };
+                return ordering == std::cmp::Ordering::Greater;
             }
             false
         })
@@ -21869,8 +21877,10 @@ fn append_search_hit_sort_values(hits: &mut [Value], sort: Option<&Value>) {
         let sort_values = sort_fields
             .iter()
             .copied()
-            .filter_map(|sort_field| sort_field_name(sort_field))
-            .map(|field_name| extract_sort_value(hit, field_name))
+            .filter_map(|sort_field| {
+                let field_name = sort_field_name(sort_field)?;
+                Some(extract_rendered_sort_value(hit, sort_field, field_name))
+            })
             .collect::<Vec<_>>();
         if let Some(hit_object) = hit.as_object_mut() {
             hit_object.insert("sort".to_string(), Value::Array(sort_values));
@@ -21913,6 +21923,115 @@ fn sort_field_descending(sort_field: &Value) -> bool {
                 .or_else(|| options.get("order").and_then(Value::as_str))
         })
         .is_some_and(|order| order == "desc")
+}
+
+fn sort_field_missing(sort_field: &Value) -> Option<&Value> {
+    sort_field
+        .as_object()
+        .and_then(|object| object.values().next())
+        .and_then(|options| options.as_object())
+        .and_then(|options| options.get("missing"))
+}
+
+fn sort_field_missing_marker(sort_field: &Value) -> Option<&str> {
+    sort_field_missing(sort_field)
+        .and_then(Value::as_str)
+        .filter(|marker| matches!(*marker, "_first" | "_last"))
+}
+
+fn sort_field_custom_missing_value(sort_field: &Value) -> Option<&Value> {
+    sort_field_missing(sort_field)
+        .filter(|value| sort_field_missing_marker(sort_field).is_none() && !value.is_null())
+}
+
+fn compare_sort_field_values(
+    left: &Value,
+    right: &Value,
+    sort_field: &Value,
+    field_name: &str,
+    descending: bool,
+) -> std::cmp::Ordering {
+    let left_value = extract_sort_value(left, field_name);
+    let right_value = extract_sort_value(right, field_name);
+    let left_missing = left_value.is_null();
+    let right_missing = right_value.is_null();
+    if left_missing || right_missing {
+        if let Some(marker) = sort_field_missing_marker(sort_field) {
+            return match (left_missing, right_missing, marker) {
+                (true, true, _) => std::cmp::Ordering::Equal,
+                (true, false, "_first") | (false, true, "_last") => std::cmp::Ordering::Less,
+                (true, false, "_last") | (false, true, "_first") => std::cmp::Ordering::Greater,
+                _ => std::cmp::Ordering::Equal,
+            };
+        }
+    }
+    let left_value = if left_missing {
+        sort_field_custom_missing_value(sort_field).unwrap_or(&left_value)
+    } else {
+        &left_value
+    };
+    let right_value = if right_missing {
+        sort_field_custom_missing_value(sort_field).unwrap_or(&right_value)
+    } else {
+        &right_value
+    };
+    let ordering = compare_json_scalars(left_value, right_value);
+    if descending {
+        ordering.reverse()
+    } else {
+        ordering
+    }
+}
+
+fn compare_sort_field_value_to_after(
+    hit: &Value,
+    sort_field: &Value,
+    field_name: &str,
+    after_value: &Value,
+    descending: bool,
+) -> std::cmp::Ordering {
+    let sort_value = extract_sort_value(hit, field_name);
+    let sort_missing = sort_value.is_null();
+    if let Some(marker) = sort_field_missing_marker(sort_field) {
+        if sort_missing && after_value.is_null() {
+            return std::cmp::Ordering::Equal;
+        }
+        if sort_missing {
+            return if marker == "_first" {
+                std::cmp::Ordering::Less
+            } else {
+                std::cmp::Ordering::Greater
+            };
+        }
+        if after_value.is_null() {
+            return if marker == "_first" {
+                std::cmp::Ordering::Greater
+            } else {
+                std::cmp::Ordering::Less
+            };
+        }
+    }
+    let sort_value = if sort_missing {
+        sort_field_custom_missing_value(sort_field).unwrap_or(&sort_value)
+    } else {
+        &sort_value
+    };
+    let ordering = compare_json_scalars(sort_value, after_value);
+    if descending {
+        ordering.reverse()
+    } else {
+        ordering
+    }
+}
+
+fn extract_rendered_sort_value(hit: &Value, sort_field: &Value, field_name: &str) -> Value {
+    let value = extract_sort_value(hit, field_name);
+    if value.is_null() {
+        if let Some(custom_missing) = sort_field_custom_missing_value(sort_field) {
+            return custom_missing.clone();
+        }
+    }
+    value
 }
 
 fn parse_runtime_mapping_script_source(source: &str) -> Option<String> {
@@ -41564,6 +41683,135 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             node.handle_rest_request(RestRequest::new(RestMethod::Post, "/_refresh"))
                 .status,
             200
+        );
+
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(RestMethod::Put, "/logs-sort-missing-000001"))
+                .status,
+            200
+        );
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, "/logs-sort-missing-000001/_mappings")
+                    .with_json_body(serde_json::json!({
+                        "properties": {
+                            "rank": { "type": "long" },
+                            "tenant": { "type": "keyword" }
+                        }
+                    })),
+            )
+            .status,
+            200
+        );
+        for (id, body) in [
+            ("doc-missing", serde_json::json!({ "tenant": "tenant-missing" })),
+            ("doc-low", serde_json::json!({ "tenant": "tenant-low", "rank": 1 })),
+            ("doc-high", serde_json::json!({ "tenant": "tenant-high", "rank": 5 })),
+        ] {
+            assert_eq!(
+                node.handle_rest_request(
+                    RestRequest::new(
+                        RestMethod::Put,
+                        &format!("/logs-sort-missing-000001/_doc/{id}"),
+                    )
+                    .with_json_body(body),
+                )
+                .status,
+                201
+            );
+        }
+
+        let missing_last_sort = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-sort-missing-000001/_search")
+                .with_json_body(serde_json::json!({
+                    "query": { "match_all": {} },
+                    "sort": [{ "rank": { "order": "asc", "missing": "_last" } }],
+                    "size": 3
+                })),
+        );
+        assert_eq!(missing_last_sort.status, 200);
+        assert_eq!(
+            missing_last_sort.body["hits"]["hits"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|hit| hit["_id"].as_str().unwrap())
+                .collect::<Vec<_>>(),
+            vec!["doc-low", "doc-high", "doc-missing"]
+        );
+
+        let missing_last_desc_sort = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-sort-missing-000001/_search")
+                .with_json_body(serde_json::json!({
+                    "query": { "match_all": {} },
+                    "sort": [{ "rank": { "order": "desc", "missing": "_last" } }],
+                    "size": 3
+                })),
+        );
+        assert_eq!(missing_last_desc_sort.status, 200);
+        assert_eq!(
+            missing_last_desc_sort.body["hits"]["hits"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|hit| hit["_id"].as_str().unwrap())
+                .collect::<Vec<_>>(),
+            vec!["doc-high", "doc-low", "doc-missing"]
+        );
+
+        let missing_first_sort = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-sort-missing-000001/_search")
+                .with_json_body(serde_json::json!({
+                    "query": { "match_all": {} },
+                    "sort": [{ "rank": { "order": "asc", "missing": "_first" } }],
+                    "size": 3
+                })),
+        );
+        assert_eq!(missing_first_sort.status, 200);
+        assert_eq!(
+            missing_first_sort.body["hits"]["hits"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|hit| hit["_id"].as_str().unwrap())
+                .collect::<Vec<_>>(),
+            vec!["doc-missing", "doc-low", "doc-high"]
+        );
+
+        let custom_missing_sort = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-sort-missing-000001/_search")
+                .with_json_body(serde_json::json!({
+                    "query": { "match_all": {} },
+                    "sort": [{ "rank": { "order": "asc", "missing": 3 } }],
+                    "size": 3
+                })),
+        );
+        assert_eq!(custom_missing_sort.status, 200);
+        assert_eq!(
+            custom_missing_sort.body["hits"]["hits"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|hit| (hit["_id"].as_str().unwrap(), hit["sort"][0].clone()))
+                .collect::<Vec<_>>(),
+            vec![
+                ("doc-low", serde_json::json!(1)),
+                ("doc-missing", serde_json::json!(3)),
+                ("doc-high", serde_json::json!(5))
+            ]
+        );
+
+        let invalid_missing_sort = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-sort-missing-000001/_search")
+                .with_json_body(serde_json::json!({
+                    "query": { "match_all": {} },
+                    "sort": [{ "rank": { "order": "asc", "missing": ["_last"] } }]
+                })),
+        );
+        assert_eq!(invalid_missing_sort.status, 400);
+        assert_eq!(
+            invalid_missing_sort.body["error"]["reason"],
+            "malformed sort format, missing value must be a scalar"
         );
 
         let sorted_window = node.handle_rest_request(
