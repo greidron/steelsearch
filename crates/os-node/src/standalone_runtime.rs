@@ -8805,6 +8805,7 @@ impl SteelNode {
         if let Some(response) = validate_search_request_body(&body) {
             return response;
         }
+        let mut point_in_time_response_id = None;
         let pit_context = if let Some(pit_id) = body
             .get("pit")
             .and_then(Value::as_object)
@@ -8838,7 +8839,10 @@ impl SteelNode {
                 None => None,
             };
             match self.resolve_pit_context(pit_id, keep_alive_millis) {
-                Ok(context) => Some(context),
+                Ok(context) => {
+                    point_in_time_response_id = Some(pit_id.to_string());
+                    Some(context)
+                }
                 Err(response) => return response,
             }
         } else {
@@ -9119,6 +9123,9 @@ impl SteelNode {
             }
         }
         let mut response = serde_json::Map::new();
+        if let Some(pit_id) = point_in_time_response_id {
+            response.insert("pit_id".to_string(), Value::String(pit_id));
+        }
         response.insert("took".to_string(), serde_json::json!(1));
         response.insert("timed_out".to_string(), serde_json::json!(false));
         let total_shards = resolved_indices
@@ -34815,6 +34822,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 })),
         );
         assert_eq!(pit_search.status, 200);
+        assert_eq!(pit_search.body["pit_id"], "pit-2");
         assert_eq!(pit_search.body["hits"]["total"]["value"], 2);
         assert!(pit_search.body["hits"]["hits"]
             .as_array()
