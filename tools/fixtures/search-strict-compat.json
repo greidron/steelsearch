@@ -1520,6 +1520,40 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "script_fields_projection_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "script_fields": {
+          "service_copy": {
+            "script": {
+              "source": "params._source[\"service\"]"
+            }
+          },
+          "bytes_copy": {
+            "script": "doc[\"bytes\"].value",
+            "ignore_failure": false
+          }
+        },
+        "sort": [
+          {
+            "ts": {
+              "order": "asc"
+            }
+          }
+        ],
+        "size": 2
+      },
+      "extract": "search_fields",
+      "family": "fetch",
+      "description": "[fetch] script fields projection search",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "exists_query_search",
       "area": "search",
       "method": "POST",
