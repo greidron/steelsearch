@@ -254,8 +254,8 @@ name = "cluster-allocation-explain-reject-wire-benchmark"
 path = "benchmarks/cluster_allocation_explain_reject_wire.rs"
 
 [[bin]]
-name = "indices-stats-reject-wire-benchmark"
-path = "benchmarks/indices_stats_reject_wire.rs"
+name = "indices-stats-wire-benchmark"
+path = "benchmarks/indices_stats_wire.rs"
 
 [[bin]]
 name = "cluster-update-settings-reject-wire-benchmark"

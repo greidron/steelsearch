@@ -2444,8 +2444,8 @@ pub fn classify_opensearch_transport_action(
         },
         OPENSEARCH_INDICES_STATS_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
-            disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "indices-stats transport execution requires runtime index stats aggregation mapping",
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "indices-stats transport adapter is available for the local empty-index-stats subset",
         },
         _ if OPENSEARCH_PRIORITY_TRANSPORT_ACTIONS
             .iter()
@@ -4148,32 +4148,37 @@ impl OpenSearchIndicesStatsRequestWire {
         Ok(request)
     }
 
-    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+    pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
         if !self.indices.is_empty() {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "indices stats index filter",
                 reason:
-                    "indices-stats index-scoped aggregation requires runtime index stats mapping",
+                    "indices-stats index-scoped aggregation is outside the local empty-index-stats subset",
             });
         }
         if self.indices_options != OpenSearchIndicesOptionsWire::strict_expand_open_forbid_closed()
         {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "indices stats indices options",
-                reason: "indices-stats non-default indices options require runtime index resolution mapping",
+                reason: "indices-stats non-default indices options are outside the local empty-index-stats subset",
             });
         }
         if !self.flags.is_default_all_stats_shape() {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "indices stats flags",
                 reason:
-                    "indices-stats metric subsets require field-level stats aggregation mapping",
+                    "indices-stats metric subsets are outside the local empty-index-stats subset",
             });
         }
+        Ok(())
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        self.validate_supported_subset()?;
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "indices stats execution",
             reason:
-                "indices-stats transport execution requires runtime index stats aggregation mapping",
+                "use validate_supported_subset for the implemented local empty-index-stats adapter",
         })
     }
 }
@@ -32721,7 +32726,7 @@ mod tests {
         );
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_INDICES_STATS_ACTION_NAME).disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_GET_MAPPINGS_ACTION_NAME).disposition,
@@ -33098,6 +33103,7 @@ mod tests {
                 || spec.action_name == OPENSEARCH_UPDATE_ACTION_NAME
                 || spec.action_name == OPENSEARCH_DELETE_ACTION_NAME
                 || spec.action_name == OPENSEARCH_REFRESH_ACTION_NAME
+                || spec.action_name == OPENSEARCH_INDICES_STATS_ACTION_NAME
             {
                 assert_eq!(
                     decision.disposition,
@@ -33107,8 +33113,7 @@ mod tests {
                 );
                 continue;
             }
-            if spec.action_name == OPENSEARCH_INDICES_STATS_ACTION_NAME
-                || spec.action_name == OPENSEARCH_TERM_VECTORS_ACTION_NAME
+            if spec.action_name == OPENSEARCH_TERM_VECTORS_ACTION_NAME
                 || spec.action_name == OPENSEARCH_MULTI_TERM_VECTORS_ACTION_NAME
                 || spec.action_name == OPENSEARCH_GET_MAPPINGS_ACTION_NAME
                 || spec.action_name == OPENSEARCH_GET_FIELD_MAPPINGS_ACTION_NAME
@@ -36776,20 +36781,14 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_indices_stats_request_wire_round_trips_and_rejects_execution_boundary() {
+    fn opensearch_indices_stats_request_wire_round_trips_supported_local_subset() {
         let request = OpenSearchIndicesStatsRequestWire::default();
         let mut output = StreamOutput::new();
         request.write(&mut output);
 
         let decoded = OpenSearchIndicesStatsRequestWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, request);
-        assert!(matches!(
-            decoded.reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "indices stats execution",
-                ..
-            })
-        ));
+        decoded.validate_supported_subset().unwrap();
     }
 
     #[test]
@@ -36799,7 +36798,7 @@ mod tests {
             ..OpenSearchIndicesStatsRequestWire::default()
         };
         assert!(matches!(
-            index_filter.reject_unsupported_execution(),
+            index_filter.validate_supported_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "indices stats index filter",
                 ..
@@ -36814,7 +36813,7 @@ mod tests {
             ..OpenSearchIndicesStatsRequestWire::default()
         };
         assert!(matches!(
-            custom_options.reject_unsupported_execution(),
+            custom_options.validate_supported_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "indices stats indices options",
                 ..
@@ -36829,7 +36828,7 @@ mod tests {
             ..OpenSearchIndicesStatsRequestWire::default()
         };
         assert!(matches!(
-            flags.reject_unsupported_execution(),
+            flags.validate_supported_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "indices stats flags",
                 ..
@@ -36838,7 +36837,7 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_indices_stats_transport_messages_bind_rejected_action_frame() {
+    fn opensearch_indices_stats_transport_messages_bind_supported_action_frame() {
         let request = OpenSearchIndicesStatsRequestWire::default();
         let mut frame = build_opensearch_indices_stats_request_message(
             23,
@@ -36853,15 +36852,10 @@ mod tests {
             read_opensearch_indices_stats_request_message(&message).unwrap(),
             request
         );
-        assert!(matches!(
-            read_opensearch_indices_stats_request_message(&message)
-                .unwrap()
-                .reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "indices stats execution",
-                ..
-            })
-        ));
+        read_opensearch_indices_stats_request_message(&message)
+            .unwrap()
+            .validate_supported_subset()
+            .unwrap();
     }
 
     #[test]

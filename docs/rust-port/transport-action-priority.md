@@ -177,8 +177,8 @@ The source-derived transport inventory currently has 160 rows:
 
 | Status | Count | Meaning |
 | --- | ---: | --- |
-| `implemented` | 14 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
-| `partial` | 146 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
+| `implemented` | 15 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
+| `partial` | 145 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
 | `planned` | 0 | No source-derived transport action remains unclassified. |
 
 The k-NN plugin action sweep is complete at the boundary layer. All 12
@@ -343,7 +343,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `indices:monitor/upgrade` (rejected fail-closed)
 - `internal:indices/admin/upgrade` (rejected fail-closed)
 - `indices:admin/cache/clear` (rejected fail-closed)
-- `indices:monitor/stats` (rejected fail-closed)
+- `indices:monitor/stats` (implemented local empty-index-stats subset)
 
 The health adapter covers:
 
@@ -2249,10 +2249,12 @@ The indices-stats boundary covers:
 
 - OpenSearch `IndicesStatsRequest` parent task, indices array, indices options,
   and `CommonStatsFlags` at the wire decode/build layer;
-- explicit fail-closed classification for `indices:monitor/stats` until runtime
-  index stats aggregation and field-level metric mapping are implemented;
+- implemented local-node `indices:monitor/stats` request admission for the
+  default all-index, all-stats subset, backed by the daemon transport response
+  path that renders an empty Java-compatible index stats node response with
+  local node identity;
 - explicit rejection for index filters, non-default indices options,
-  non-default stats flags, and indices-stats execution.
+  and non-default stats flags.
 
 The list-tasks adapter covers:
 
@@ -5062,21 +5064,22 @@ nullable PIT id array, and verbose flag before rejecting execution. At roughly
 lightweight; the first performance point to inspect before accepting execution
 is PIT context lookup plus shard segment metadata response rendering.
 
-Current indices-stats reject wire microbenchmark:
+Current indices-stats supported-subset wire microbenchmark:
 
 ```text
-cargo run -p os-transport --release --bin indices-stats-reject-wire-benchmark
-indices_stats_reject_request_encode ops_per_second=1615710.56 nanos_per_op=618.92
-indices_stats_reject_request_decode ops_per_second=1581358.53 nanos_per_op=632.37
-indices_stats_reject_validation ops_per_second=1530091.56 nanos_per_op=653.56
-indices_stats_reject_wire_bottleneck_ops_per_second=1530091.56
+cargo run -p os-transport --release --bin indices-stats-wire-benchmark
+indices_stats_request_encode ops_per_second=1467011.01 nanos_per_op=681.66
+indices_stats_request_decode ops_per_second=1466008.80 nanos_per_op=682.12
+indices_stats_supported_validation ops_per_second=1167065.14 nanos_per_op=856.85
+indices_stats_wire_bottleneck_ops_per_second=1167065.14
 ```
 
-The current indices-stats fail-closed boundary bottleneck is validation. This
-path checks both indices options and the full `CommonStatsFlags` default shape
-after decode, so it is slightly heavier than nodes-stats. At roughly 1.53M ops/s
-in the latest local release run, it remains in the lightweight admin transport
-range and does not introduce a source-materialization bottleneck.
+The current indices-stats supported-subset boundary checks indices options and
+the full `CommonStatsFlags` default shape after decode. The first
+performance-sensitive work beyond this boundary is populating non-empty index
+stats groups and rendering full stats responses. At roughly 1.17M ops/s in the
+latest local run, this path does not introduce a new transport admission
+hotspot.
 
 Current list-tasks wire microbenchmark:
 
