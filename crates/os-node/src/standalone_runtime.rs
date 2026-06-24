@@ -18188,6 +18188,7 @@ fn standalone_search_body_allows_native_engine(body: &Value) -> bool {
     !query_contains_nested_knn(body.get("query").unwrap_or(&Value::Null))
         && ![
         "collapse",
+        "explain",
         "profile",
         "rescore",
         "runtime_mappings",
@@ -18624,7 +18625,7 @@ fn validate_search_request_body(body: &Value, scroll: bool) -> Option<RestRespon
             ));
         }
     }
-    for option in ["version", "seq_no_primary_term"] {
+    for option in ["version", "seq_no_primary_term", "explain", "profile"] {
         if body.get(option).is_some_and(|value| !value.is_boolean()) {
             return Some(build_unsupported_search_response(&format!(
                 "unsupported search option [{option}]"
@@ -18654,15 +18655,6 @@ fn validate_search_request_body(body: &Value, scroll: bool) -> Option<RestRespon
             scroll,
         ) {
             return Some(response);
-        }
-    }
-    for option in ["explain", "profile"] {
-        if let Some(value) = body.get(option) {
-            if value != &Value::Bool(true) {
-                return Some(build_unsupported_search_response(&format!(
-                    "unsupported search option [{option}]"
-                )));
-            }
         }
     }
     if let Some(rescore) = body.get("rescore") {
@@ -18780,7 +18772,7 @@ fn apply_search_source_query_params(
         };
         object.insert("track_total_hits".to_string(), track_total_hits);
     }
-    for field in ["version", "seq_no_primary_term"] {
+    for field in ["version", "seq_no_primary_term", "explain"] {
         let Some(raw) = query_params.get(field) else {
             continue;
         };
@@ -38748,6 +38740,62 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             invalid_version_body.body["error"]["reason"],
             "unsupported search option [version]"
+        );
+
+        let disabled_explain_body = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-params-a/_search")
+                .with_json_body(serde_json::json!({
+                    "query": { "match_all": {} },
+                    "explain": false
+                })),
+        );
+        assert_eq!(disabled_explain_body.status, 200);
+        assert!(disabled_explain_body.body["hits"]["hits"][0]["_explanation"].is_null());
+
+        let query_param_explain_overrides_body = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/logs-search-params-a/_search?explain=false",
+            )
+            .with_json_body(serde_json::json!({
+                "query": { "match_all": {} },
+                "explain": true
+            })),
+        );
+        assert_eq!(query_param_explain_overrides_body.status, 200);
+        assert!(query_param_explain_overrides_body.body["hits"]["hits"][0]["_explanation"].is_null());
+
+        let profile_body_true = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-params-a/_search")
+                .with_json_body(serde_json::json!({
+                    "query": { "match_all": {} },
+                    "profile": true
+                })),
+        );
+        assert_eq!(profile_body_true.status, 200);
+        assert!(profile_body_true.body["profile"].is_object());
+
+        let profile_body_false = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-params-a/_search")
+                .with_json_body(serde_json::json!({
+                    "query": { "match_all": {} },
+                    "profile": false
+                })),
+        );
+        assert_eq!(profile_body_false.status, 200);
+        assert!(profile_body_false.body["profile"].is_null());
+
+        let invalid_profile_body = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-params-a/_search")
+                .with_json_body(serde_json::json!({
+                    "query": { "match_all": {} },
+                    "profile": "true"
+                })),
+        );
+        assert_eq!(invalid_profile_body.status, 400);
+        assert_eq!(
+            invalid_profile_body.body["error"]["reason"],
+            "unsupported search option [profile]"
         );
 
         let search_after_without_sort = node.handle_rest_request(

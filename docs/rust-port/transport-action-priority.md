@@ -2183,8 +2183,9 @@ The search boundary covers:
   and `-1` in `rest_total_hits_as_int` compatibility mode.
 - REST search source parsing applies positive `terminate_after` query
   parameters and preserves body `terminate_after` when the query value is `0`.
-- REST search source parsing applies `version` and `seq_no_primary_term`
-  boolean body/query parameters and renders requested hit metadata.
+- REST search source parsing applies `explain`, `version`, and
+  `seq_no_primary_term` boolean body/query parameters, accepts body `profile`
+  booleans, and renders requested hit metadata/profile data.
 - REST search validates `search_after` scroll/from/sort-count and sort-value
   type constraints with OpenSearch-shaped shard failure errors and renders
   requested hit `sort` values for reuse by follow-up pages.
