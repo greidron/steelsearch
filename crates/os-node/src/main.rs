@@ -1196,6 +1196,30 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end,
             &mut connection_end_at_ms,
         )?;
+    } else if is_request && normalized_action_hint == Some("cluster:monitor/nodes/usage") {
+        let response =
+            build_default_nodes_usage_response(request_id, header_version_id, transport_identity);
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("cluster:monitor/nodes/usage[n]"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
     } else if is_request && normalized_action_hint == Some("cluster:admin/knn_stats_action") {
         let response = build_empty_knn_stats_response(request_id, header_version_id);
         response_frame = summarize_transport_response_frame_for_action(
@@ -2941,6 +2965,32 @@ fn wlm_stats_response_from_identity(
     )
 }
 
+fn build_default_nodes_usage_response(
+    request_id: i64,
+    header_version_id: u32,
+    transport_identity: &DevTransportIdentity,
+) -> Vec<u8> {
+    os_transport::action::build_nodes_usage_response_message(
+        request_id,
+        Version::from_id(header_version_id as i32),
+        &nodes_usage_response_from_identity(transport_identity),
+    )
+    .map(|frame| frame.to_vec())
+    .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
+}
+
+fn nodes_usage_response_from_identity(
+    transport_identity: &DevTransportIdentity,
+) -> os_transport::action::NodesUsageResponseWire {
+    os_transport::action::NodesUsageResponseWire::default_local(
+        transport_identity.cluster_name.clone(),
+        os_transport::action::NodeUsageWire::no_telemetry(
+            discovery_node_wire_from_identity(transport_identity),
+            now_epoch_ms() as i64,
+        ),
+    )
+}
+
 fn discovery_node_wire_from_identity(
     transport_identity: &DevTransportIdentity,
 ) -> os_transport::action::OpenSearchDiscoveryNodeWire {
@@ -4627,6 +4677,11 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
             transport_identity,
         )),
         Some("cluster:monitor/wlm/stats") => Some(build_empty_wlm_stats_response(
+            request_id,
+            header_version_id,
+            transport_identity,
+        )),
+        Some("cluster:monitor/nodes/usage") => Some(build_default_nodes_usage_response(
             request_id,
             header_version_id,
             transport_identity,
@@ -8820,6 +8875,52 @@ mod tests {
         assert_eq!(response.nodes.len(), 1);
         assert_eq!(response.nodes[0].node.id, "steel-node-id");
         assert_eq!(response.nodes[0].workload_group_count, 0);
+        assert!(response.failures.is_empty());
+    }
+
+    #[test]
+    fn nodes_usage_transport_route_builds_opensearch_shaped_default_local_response() {
+        let transport_identity = DevTransportIdentity {
+            cluster_name: "steelsearch-dev".to_string(),
+            node_name: "steel-node".to_string(),
+            node_id: "steel-node-id".to_string(),
+            ephemeral_id: "steel-node-ephemeral".to_string(),
+            transport_address: "127.0.0.1:9300".parse().unwrap(),
+            attributes: Vec::new(),
+            roles: vec!["cluster_manager".to_string(), "data".to_string()],
+            seed_peer_identity: None,
+            seed_peer_identities: Vec::new(),
+            coordination_state: Arc::new(Mutex::new(DevTransportCoordinationState::default())),
+            remote_transport_queue_gate: Arc::new(RemoteTransportQueueGate::new(1, 1000)),
+            task_queue_state: None,
+        };
+        let response = build_default_nodes_usage_response(
+            80,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &transport_identity,
+        );
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected nodes usage response message");
+        };
+
+        assert_eq!(message.request_id, 80);
+        assert!(!message.status.is_request());
+        let response = os_transport::action::read_nodes_usage_response_message(&message).unwrap();
+        assert_eq!(response.cluster_name, "steelsearch-dev");
+        assert_eq!(response.nodes.len(), 1);
+        assert_eq!(response.nodes[0].node.id, "steel-node-id");
+        assert!(response.nodes[0].timestamp_millis >= 0);
+        assert_eq!(
+            response.nodes[0].timestamp_millis,
+            response.nodes[0].since_time_millis
+        );
+        assert!(!response.nodes[0].rest_actions_present);
+        assert!(!response.nodes[0].aggregations_present);
         assert!(response.failures.is_empty());
     }
 

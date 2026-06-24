@@ -395,7 +395,7 @@ transport_action	planned	action	NodesStatsAction.INSTANCE	TransportNodesStatsAct
 transport_action	planned	action	WlmStatsAction.INSTANCE	TransportWlmStatsAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	660
 transport_action	planned	action	RemoteStoreStatsAction.INSTANCE	TransportRemoteStoreStatsAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	661
 transport_action	planned	action	RemoteStoreMetadataAction.INSTANCE	TransportRemoteStoreMetadataAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	662
-transport_action	planned	action	NodesUsageAction.INSTANCE	TransportNodesUsageAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	663
+transport_action	implemented	action	NodesUsageAction.INSTANCE	TransportNodesUsageAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	663
 transport_action	planned	action	NodesHotThreadsAction.INSTANCE	TransportNodesHotThreadsAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	664
 transport_action	planned	action	ListTasksAction.INSTANCE	TransportListTasksAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	665
 transport_action	planned	action	GetTaskAction.INSTANCE	TransportGetTaskAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	666

@@ -234,8 +234,8 @@ name = "delete-weighted-routing-reject-wire-benchmark"
 path = "benchmarks/delete_weighted_routing_reject_wire.rs"
 
 [[bin]]
-name = "nodes-usage-reject-wire-benchmark"
-path = "benchmarks/nodes_usage_reject_wire.rs"
+name = "nodes-usage-wire-benchmark"
+path = "benchmarks/nodes_usage_wire.rs"
 
 [[bin]]
 name = "nodes-hot-threads-reject-wire-benchmark"

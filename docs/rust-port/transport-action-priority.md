@@ -2714,21 +2714,25 @@ bottleneck; the first performance-sensitive work is repository metadata
 validation, cluster-state publication, repository verification, and
 acknowledgement rendering.
 
-Current nodes-usage reject wire microbenchmark:
+Current nodes-usage wire microbenchmark:
 
 ```text
-cargo run -p os-transport --release --bin nodes-usage-reject-wire-benchmark
-nodes_usage_reject_request_encode iterations=400000 elapsed_ms=209.850 ops_per_second=1906122.53 nanos_per_op=524.63
-nodes_usage_reject_request_decode iterations=400000 elapsed_ms=196.421 ops_per_second=2036446.99 nanos_per_op=491.05
-nodes_usage_reject_validation iterations=400000 elapsed_ms=205.378 ops_per_second=1947629.65 nanos_per_op=513.44
-nodes_usage_reject_wire_bottleneck_ops_per_second=1906122.53
+cargo run -p os-transport --release --bin nodes-usage-wire-benchmark
+nodes_usage_request_encode iterations=400000 elapsed_ms=205.457 ops_per_second=1946875.60 nanos_per_op=513.64
+nodes_usage_request_decode iterations=400000 elapsed_ms=201.323 ops_per_second=1986857.72 nanos_per_op=503.31
+nodes_usage_request_validate iterations=400000 elapsed_ms=200.227 ops_per_second=1997731.07 nanos_per_op=500.57
+nodes_usage_response_encode iterations=400000 elapsed_ms=576.678 ops_per_second=693628.25 nanos_per_op=1441.69
+nodes_usage_response_decode iterations=400000 elapsed_ms=641.297 ops_per_second=623736.31 nanos_per_op=1603.24
+nodes_usage_wire_bottleneck_ops_per_second=623736.31
 ```
 
-The current nodes-usage fail-closed boundary bottleneck is request encode. The
-request payload is compact, with only the BaseNodesRequest envelope and two
-boolean usage flags, so validation does not add measurable overhead. At roughly
-1.91M ops/s in the latest local release run, this is one of the lightest admin
-transport boundaries.
+The current nodes-usage implemented-path bottleneck is response decode. The
+request payload remains compact, but the OpenSearch-shaped response now includes
+the BaseNodesResponse envelope plus local DiscoveryNode identity and null usage
+maps. At roughly 624k ops/s in the latest local release run, this remains in the
+lightweight admin transport range; the next performance-sensitive work is
+populating real REST action or aggregation usage telemetry without adding
+per-request allocation spikes.
 
 Current nodes-hot-threads reject wire microbenchmark:
 
@@ -6271,7 +6275,6 @@ response-shape examples.
 ## Tier 2: Strong Phase A Follow-Up Read/Admin Actions
 
 - `NodesInfoAction.INSTANCE`
-- `NodesUsageAction.INSTANCE`
 - `NodesHotThreadsAction.INSTANCE`
 - `GetRepositoriesAction.INSTANCE`
 - `GetMappingsAction.INSTANCE`

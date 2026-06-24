@@ -1700,8 +1700,8 @@ pub fn classify_opensearch_transport_action(
         },
         NODES_USAGE_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
-            disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "nodes-usage transport execution requires runtime usage telemetry mapping",
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "nodes-usage transport adapter returns an OpenSearch-shaped local node response for the default no-telemetry request",
         },
         NODES_HOT_THREADS_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -4237,7 +4237,7 @@ impl NodesUsageRequestWire {
         Ok(request)
     }
 
-    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+    pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
         if !self.node_ids.is_empty() {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "nodes usage node filter",
@@ -4262,10 +4262,156 @@ impl NodesUsageRequestWire {
                 reason: "aggregation usage telemetry is not mapped by this adapter",
             });
         }
+        Ok(())
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        self.validate_supported_subset()?;
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "nodes usage execution",
-            reason: "nodes-usage transport execution requires runtime usage telemetry mapping",
+            reason: "use validate_supported_subset for the implemented default nodes-usage adapter",
         })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NodesUsageResponseWire {
+    pub cluster_name: String,
+    pub nodes: Vec<NodeUsageWire>,
+    pub failures: Vec<FailedNodeExceptionWire>,
+}
+
+impl NodesUsageResponseWire {
+    pub fn default_local(cluster_name: String, node: NodeUsageWire) -> Self {
+        Self {
+            cluster_name,
+            nodes: vec![node],
+            failures: Vec::new(),
+        }
+    }
+
+    pub fn write(&self, output: &mut StreamOutput) -> Result<(), TransportActionWireError> {
+        if self.cluster_name.is_empty() {
+            return Err(TransportActionWireError::MissingRequiredField {
+                field: "nodes usage response cluster name",
+            });
+        }
+        output.write_string(&self.cluster_name);
+        output.write_vint(self.nodes.len() as i32);
+        for node in &self.nodes {
+            node.write(output)?;
+        }
+        output.write_vint(self.failures.len() as i32);
+        for failure in &self.failures {
+            failure.write(output)?;
+        }
+        Ok(())
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let cluster_name = input.read_string()?;
+        let node_count = read_len(&mut input)?;
+        let mut nodes = Vec::with_capacity(node_count);
+        for _ in 0..node_count {
+            nodes.push(NodeUsageWire::read(&mut input)?);
+        }
+        let failure_count = read_len(&mut input)?;
+        let mut failures = Vec::with_capacity(failure_count);
+        for _ in 0..failure_count {
+            failures.push(FailedNodeExceptionWire::read(&mut input)?);
+        }
+        require_no_trailing_bytes(&input)?;
+        let response = Self {
+            cluster_name,
+            nodes,
+            failures,
+        };
+        response.validate_supported_subset()?;
+        Ok(response)
+    }
+
+    pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
+        if self.cluster_name.is_empty() {
+            return Err(TransportActionWireError::MissingRequiredField {
+                field: "nodes usage response cluster name",
+            });
+        }
+        for node in &self.nodes {
+            node.validate_supported_subset()?;
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NodeUsageWire {
+    pub node: OpenSearchDiscoveryNodeWire,
+    pub timestamp_millis: i64,
+    pub since_time_millis: i64,
+    pub rest_actions_present: bool,
+    pub aggregations_present: bool,
+}
+
+impl NodeUsageWire {
+    pub fn no_telemetry(node: OpenSearchDiscoveryNodeWire, timestamp_millis: i64) -> Self {
+        Self {
+            node,
+            timestamp_millis,
+            since_time_millis: timestamp_millis,
+            rest_actions_present: false,
+            aggregations_present: false,
+        }
+    }
+
+    fn write(&self, output: &mut StreamOutput) -> Result<(), TransportActionWireError> {
+        self.validate_supported_subset()?;
+        self.node.write(output);
+        output.write_i64(self.timestamp_millis);
+        output.write_i64(self.since_time_millis);
+        write_generic_map_presence(output, self.rest_actions_present);
+        write_generic_map_presence(output, self.aggregations_present);
+        Ok(())
+    }
+
+    fn read(input: &mut StreamInput) -> Result<Self, TransportActionWireError> {
+        let node = OpenSearchDiscoveryNodeWire::read(input)?;
+        let timestamp_millis = input.read_i64()?;
+        let since_time_millis = input.read_i64()?;
+        let rest_actions_present = read_generic_map_has_entries(input)?;
+        let aggregations_present = read_generic_map_has_entries(input)?;
+        let response = Self {
+            node,
+            timestamp_millis,
+            since_time_millis,
+            rest_actions_present,
+            aggregations_present,
+        };
+        response.validate_supported_subset()?;
+        Ok(response)
+    }
+
+    fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
+        self.node.validate_supported_subset()?;
+        if self.timestamp_millis < 0 || self.since_time_millis < 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "nodes usage timestamp",
+                reason: "nodes-usage timestamps must be non-negative epoch millis",
+            });
+        }
+        if self.rest_actions_present {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "nodes usage rest actions",
+                reason: "REST action usage telemetry is not mapped by this adapter",
+            });
+        }
+        if self.aggregations_present {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "nodes usage aggregations",
+                reason: "aggregation usage telemetry is not mapped by this adapter",
+            });
+        }
+        Ok(())
     }
 }
 
@@ -5144,6 +5290,36 @@ pub fn read_nodes_usage_request_message(
         });
     }
     NodesUsageRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_nodes_usage_response_message(
+    request_id: i64,
+    version: Version,
+    response: &NodesUsageResponseWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    response.write(&mut body)?;
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::response(),
+        version,
+        variable_header: BytesMut::from(&ResponseVariableHeader::default().to_bytes()[..]),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_nodes_usage_response_message(
+    message: &TransportMessage,
+) -> Result<NodesUsageResponseWire, TransportActionWireError> {
+    if !message.status.is_response() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "response",
+            actual: message.status.bits(),
+        });
+    }
+    let _header = ResponseVariableHeader::read(message.variable_header.clone().freeze())?;
+    NodesUsageResponseWire::read(message.body.clone().freeze())
 }
 
 pub fn build_nodes_hot_threads_request_message(
@@ -33492,7 +33668,7 @@ mod tests {
         );
         assert_eq!(
             classify_opensearch_transport_action(NODES_USAGE_ACTION_NAME).disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             classify_opensearch_transport_action(NODES_HOT_THREADS_ACTION_NAME).disposition,
@@ -37565,20 +37741,14 @@ mod tests {
     }
 
     #[test]
-    fn nodes_usage_request_wire_round_trips_and_rejects_execution_boundary() {
+    fn nodes_usage_request_wire_round_trips_and_validates_supported_default() {
         let request = NodesUsageRequestWire::default();
         let mut output = StreamOutput::new();
         request.write(&mut output);
 
         let decoded = NodesUsageRequestWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, request);
-        assert!(matches!(
-            decoded.reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "nodes usage execution",
-                ..
-            })
-        ));
+        decoded.validate_supported_subset().unwrap();
     }
 
     #[test]
@@ -37649,7 +37819,7 @@ mod tests {
     }
 
     #[test]
-    fn nodes_usage_transport_messages_bind_rejected_action_frame() {
+    fn nodes_usage_transport_messages_bind_implemented_action_frame() {
         let request = NodesUsageRequestWire::default();
         let mut frame =
             build_nodes_usage_request_message(31, OPENSEARCH_3_7_0_TRANSPORT, &request).unwrap();
@@ -37657,15 +37827,43 @@ mod tests {
             panic!("expected nodes usage request message");
         };
         assert_eq!(read_nodes_usage_request_message(&message).unwrap(), request);
-        assert!(matches!(
-            read_nodes_usage_request_message(&message)
-                .unwrap()
-                .reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "nodes usage execution",
-                ..
-            })
-        ));
+        read_nodes_usage_request_message(&message)
+            .unwrap()
+            .validate_supported_subset()
+            .unwrap();
+    }
+
+    #[test]
+    fn nodes_usage_response_wire_round_trips_default_local_node() {
+        let response = NodesUsageResponseWire::default_local(
+            "steelsearch-dev".to_string(),
+            NodeUsageWire::no_telemetry(test_discovery_node_wire(), 1_772_000_000_000),
+        );
+        let mut output = StreamOutput::new();
+        response.write(&mut output).unwrap();
+
+        let decoded = NodesUsageResponseWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, response);
+        decoded.validate_supported_subset().unwrap();
+        assert_eq!(decoded.nodes[0].timestamp_millis, 1_772_000_000_000);
+        assert!(!decoded.nodes[0].rest_actions_present);
+        assert!(!decoded.nodes[0].aggregations_present);
+    }
+
+    #[test]
+    fn nodes_usage_response_message_round_trips_default_local_node() {
+        let response = NodesUsageResponseWire::default_local(
+            "steelsearch-dev".to_string(),
+            NodeUsageWire::no_telemetry(test_discovery_node_wire(), 1_772_000_000_000),
+        );
+        let mut frame =
+            build_nodes_usage_response_message(31, OPENSEARCH_3_7_0_TRANSPORT, &response).unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected nodes usage response message");
+        };
+
+        let decoded = read_nodes_usage_response_message(&message).unwrap();
+        assert_eq!(decoded, response);
     }
 
     #[test]
