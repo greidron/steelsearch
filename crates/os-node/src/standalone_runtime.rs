@@ -7873,6 +7873,7 @@ impl SteelNode {
             "allow_no_indices",
             "expand_wildcards",
             "ignore_throttled",
+            "ccs_minimize_roundtrips",
         ]
         .into_iter()
         .filter_map(|key| {
@@ -39920,6 +39921,53 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 .as_str()
                 .unwrap()
                 .contains("[ccs_minimize_roundtrips] cannot be used with point in time")
+        );
+
+        let metadata_default_ccs_pit_body = format!(
+            "{{\"ccs_minimize_roundtrips\":false}}\n{{\"pit\":{{\"id\":\"{pit_id}\",\"keep_alive\":\"1m\"}},\"query\":{{\"match_all\":{{}}}}}}\n"
+        );
+        let metadata_default_ccs_msearch = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_msearch")
+                .with_header("content-type", "application/x-ndjson")
+                .with_body(metadata_default_ccs_pit_body.into_bytes()),
+        );
+        assert_eq!(metadata_default_ccs_msearch.status, 200);
+        assert_eq!(metadata_default_ccs_msearch.body["responses"][0]["status"], 200);
+        assert_eq!(
+            metadata_default_ccs_msearch.body["responses"][0]["hits"]["total"]["value"],
+            1
+        );
+
+        let metadata_true_ccs_pit_body = format!(
+            "{{\"ccs_minimize_roundtrips\":true}}\n{{\"pit\":{{\"id\":\"{pit_id}\",\"keep_alive\":\"1m\"}},\"query\":{{\"match_all\":{{}}}}}}\n"
+        );
+        let metadata_true_ccs_msearch = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_msearch")
+                .with_header("content-type", "application/x-ndjson")
+                .with_body(metadata_true_ccs_pit_body.into_bytes()),
+        );
+        assert_eq!(metadata_true_ccs_msearch.status, 200);
+        assert_eq!(metadata_true_ccs_msearch.body["responses"][0]["status"], 400);
+        assert!(
+            metadata_true_ccs_msearch.body["responses"][0]["error"]["reason"]
+                .as_str()
+                .unwrap()
+                .contains("[ccs_minimize_roundtrips] cannot be used with point in time")
+        );
+
+        let metadata_invalid_ccs_pit_body = format!(
+            "{{\"ccs_minimize_roundtrips\":\"maybe\"}}\n{{\"pit\":{{\"id\":\"{pit_id}\",\"keep_alive\":\"1m\"}},\"query\":{{\"match_all\":{{}}}}}}\n"
+        );
+        let metadata_invalid_ccs_msearch = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_msearch")
+                .with_header("content-type", "application/x-ndjson")
+                .with_body(metadata_invalid_ccs_pit_body.into_bytes()),
+        );
+        assert_eq!(metadata_invalid_ccs_msearch.status, 200);
+        assert_eq!(metadata_invalid_ccs_msearch.body["responses"][0]["status"], 400);
+        assert_eq!(
+            metadata_invalid_ccs_msearch.body["responses"][0]["error"]["type"],
+            "illegal_argument_exception"
         );
 
         let targeted_pit_body = format!(
