@@ -15,7 +15,7 @@ fn main() {
     let response =
         OpenSearchCreatePitResponseWire::success("pit-context", 1_700_000_000_000, 3);
 
-    let request_encode = measure("create_pit_reject_request_encode", ITERATIONS, || {
+    let request_encode = measure("create_pit_request_encode", ITERATIONS, || {
         let frame = build_opensearch_create_pit_request_message(
             53,
             OPENSEARCH_3_7_0_TRANSPORT,
@@ -29,7 +29,7 @@ fn main() {
         build_opensearch_create_pit_request_message(53, OPENSEARCH_3_7_0_TRANSPORT, &request)
             .expect("create-PIT request encode should succeed");
 
-    let request_decode = measure("create_pit_reject_request_decode", ITERATIONS, || {
+    let request_decode = measure("create_pit_request_decode", ITERATIONS, || {
         let mut frame = black_box(request_frame.clone());
         let message = decode_message(&mut frame);
         let decoded = read_opensearch_create_pit_request_message(black_box(&message))
@@ -37,15 +37,14 @@ fn main() {
         black_box(decoded);
     });
 
-    let reject_validate = measure("create_pit_reject_validation", ITERATIONS, || {
+    let request_validate = measure("create_pit_request_validate", ITERATIONS, || {
         let mut frame = black_box(request_frame.clone());
         let message = decode_message(&mut frame);
         let decoded = read_opensearch_create_pit_request_message(black_box(&message))
             .expect("create-PIT request decode");
-        let err = decoded
-            .reject_unsupported_execution()
-            .expect_err("create-PIT execution should reject");
-        black_box(err);
+        decoded
+            .validate_supported_subset()
+            .expect("create-PIT request subset should validate");
     });
 
     let response_encode = measure("create_pit_response_encode", ITERATIONS, || {
@@ -73,10 +72,10 @@ fn main() {
     let combined_ops_per_second = request_encode
         .ops_per_second
         .min(request_decode.ops_per_second)
-        .min(reject_validate.ops_per_second)
+        .min(request_validate.ops_per_second)
         .min(response_encode.ops_per_second)
         .min(response_decode.ops_per_second);
-    println!("create_pit_reject_wire_bottleneck_ops_per_second={combined_ops_per_second:.2}");
+    println!("create_pit_wire_bottleneck_ops_per_second={combined_ops_per_second:.2}");
 }
 
 #[derive(Clone, Copy)]

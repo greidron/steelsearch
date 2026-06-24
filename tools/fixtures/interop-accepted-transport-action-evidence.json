@@ -255,6 +255,13 @@
       "response_evidence": "crates/os-transport/src/action.rs::opensearch_clear_scroll_transport_messages_bind_action_frames"
     },
     {
+      "action_name": "indices:data/read/point_in_time/create",
+      "disposition": "implemented",
+      "evidence_kind": "wire_round_trip",
+      "request_evidence": "crates/os-transport/src/action.rs::opensearch_create_pit_transport_messages_bind_action_frame_and_response",
+      "response_evidence": "crates/os-transport/src/action.rs::opensearch_create_pit_transport_messages_bind_action_frame_and_response"
+    },
+    {
       "action_name": "indices:data/read/point_in_time/delete",
       "disposition": "implemented",
       "evidence_kind": "wire_round_trip",

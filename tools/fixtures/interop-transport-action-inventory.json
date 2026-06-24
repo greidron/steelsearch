@@ -1296,8 +1296,8 @@
       "transport_action": "TransportCreatePitAction",
       "request_wire_type": "CreatePitRequest",
       "response_wire_type": "CreatePitResponse",
-      "disposition": "rejected",
-      "reason": "Create-PIT transport execution requires PIT context lifecycle mapping before Steelsearch can serve OpenSearch PIT creation semantics."
+      "disposition": "implemented",
+      "reason": "Create-pit transport adapter creates local PIT lifecycle contexts for the default all-indices request subset"
     },
     {
       "action_name": "indices:data/read/point_in_time/delete",

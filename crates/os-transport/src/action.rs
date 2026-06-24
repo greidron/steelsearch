@@ -2383,8 +2383,8 @@ pub fn classify_opensearch_transport_action(
         },
         OPENSEARCH_CREATE_PIT_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
-            disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "create-pit transport execution requires PIT context lifecycle mapping",
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "create-pit transport adapter creates local PIT lifecycle contexts for the default all-indices request subset",
         },
         OPENSEARCH_DELETE_PIT_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -26284,11 +26284,17 @@ impl OpenSearchCreatePitRequestWire {
         Ok(request)
     }
 
-    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+    pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
         if self.keep_alive.duration <= 0 {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "create pit keep alive",
                 reason: "OpenSearch create-PIT requests require a positive keep-alive value",
+            });
+        }
+        if self.keep_alive.time_unit_ordinal > 6 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "create pit keep alive unit",
+                reason: "OpenSearch create-PIT keep-alive uses an unknown time unit",
             });
         }
         if !self.indices.is_empty() {
@@ -26323,9 +26329,14 @@ impl OpenSearchCreatePitRequestWire {
                 reason: "partial PIT creation requires shard failure aggregation semantics",
             });
         }
+        Ok(())
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        self.validate_supported_subset()?;
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "create pit execution",
-            reason: "create-PIT transport execution requires PIT context lifecycle mapping",
+            reason: "use validate_supported_subset for the implemented local PIT lifecycle adapter",
         })
     }
 }
@@ -57574,13 +57585,14 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_create_pit_request_wire_round_trips_and_rejects_execution_boundary() {
+    fn opensearch_create_pit_request_wire_round_trips_and_validates_default_subset() {
         let request = OpenSearchCreatePitRequestWire::default();
         let mut output = StreamOutput::new();
         request.write(&mut output);
 
         let decoded = OpenSearchCreatePitRequestWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, request);
+        decoded.validate_supported_subset().unwrap();
         assert!(matches!(
             decoded.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
@@ -57603,6 +57615,21 @@ mod tests {
             missing_keep_alive.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "create pit keep alive",
+                ..
+            })
+        ));
+
+        let unknown_keep_alive_unit = OpenSearchCreatePitRequestWire {
+            keep_alive: TimeValueWire {
+                duration: 1,
+                time_unit_ordinal: 7,
+            },
+            ..OpenSearchCreatePitRequestWire::default()
+        };
+        assert!(matches!(
+            unknown_keep_alive_unit.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "create pit keep alive unit",
                 ..
             })
         ));
@@ -57697,7 +57724,7 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_create_pit_transport_messages_bind_rejected_action_frame_and_response() {
+    fn opensearch_create_pit_transport_messages_bind_action_frame_and_response() {
         let request = OpenSearchCreatePitRequestWire::default();
         let mut frame =
             build_opensearch_create_pit_request_message(53, OPENSEARCH_3_7_0_TRANSPORT, &request)
@@ -57709,15 +57736,10 @@ mod tests {
             read_opensearch_create_pit_request_message(&message).unwrap(),
             request
         );
-        assert!(matches!(
-            read_opensearch_create_pit_request_message(&message)
-                .unwrap()
-                .reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "create pit execution",
-                ..
-            })
-        ));
+        read_opensearch_create_pit_request_message(&message)
+            .unwrap()
+            .validate_supported_subset()
+            .unwrap();
 
         let response =
             OpenSearchCreatePitResponseWire::success("pit-context", 1_700_000_000_000, 1);

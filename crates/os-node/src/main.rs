@@ -37,12 +37,13 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpStream};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 static SHUTDOWN_REQUESTED: AtomicBool = AtomicBool::new(false);
 static TRANSPORT_REQUEST_SEQUENCE: AtomicI64 = AtomicI64::new(10_000);
+static DEV_TRANSPORT_PIT_STATE: OnceLock<Arc<Mutex<DevTransportPitState>>> = OnceLock::new();
 
 fn now_epoch_ms() -> u128 {
     SystemTime::now()
@@ -92,6 +93,23 @@ struct DevTransportCoordinationState {
     initiated_peer_recoveries: BTreeSet<String>,
     cached_query_phase_response_bodies: BTreeMap<String, Vec<u8>>,
     cached_match_all_total_hits: BTreeMap<String, i64>,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+struct DevTransportPitState {
+    next_id: u64,
+    contexts: BTreeMap<String, DevTransportPitContext>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct DevTransportPitContext {
+    creation_time_millis: i64,
+    keep_alive_millis: i64,
+    expires_at_millis: u128,
+}
+
+fn dev_transport_pit_state() -> &'static Arc<Mutex<DevTransportPitState>> {
+    DEV_TRANSPORT_PIT_STATE.get_or_init(|| Arc::new(Mutex::new(DevTransportPitState::default())))
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1530,10 +1548,36 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end_at_ms,
         )?;
     } else if is_request
-        && normalized_action_hint == Some("indices:data/read/point_in_time/delete")
-        && delete_pit_request_supports_empty_all_subset(&body)
+        && normalized_action_hint == Some("indices:data/read/point_in_time/create")
+        && create_pit_request_supports_local_lifecycle_subset(&body)
     {
-        let response = build_empty_delete_pit_response(request_id, header_version_id);
+        let response = build_local_create_pit_response(request_id, header_version_id, &body);
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("indices:data/read/point_in_time/create"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request
+        && normalized_action_hint == Some("indices:data/read/point_in_time/delete")
+        && delete_pit_request_supports_local_lifecycle_subset(&body)
+    {
+        let response = build_local_delete_pit_response(request_id, header_version_id, &body);
         response_frame = summarize_transport_response_frame_for_action(
             &response,
             Some("indices:data/read/point_in_time/delete"),
@@ -1585,7 +1629,7 @@ fn handle_transport_seed_connection<S: TransportConnection>(
         && normalized_action_hint == Some("indices:data/read/point_in_time/readall")
     {
         let response =
-            build_empty_get_all_pits_response(request_id, header_version_id, transport_identity);
+            build_local_get_all_pits_response(request_id, header_version_id, transport_identity);
         response_frame = summarize_transport_response_frame_for_action(
             &response,
             Some("indices:data/read/point_in_time/readall"),
@@ -3604,17 +3648,97 @@ fn build_empty_find_dangling_index_response(
     .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
 }
 
-fn build_empty_delete_pit_response(request_id: i64, header_version_id: u32) -> Vec<u8> {
-    os_transport::action::build_opensearch_delete_pit_response_message(
+fn build_local_create_pit_response(
+    request_id: i64,
+    header_version_id: u32,
+    body: &[u8],
+) -> Vec<u8> {
+    let Some(request) = decode_create_pit_request_from_transport_body(body) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    if request.validate_supported_subset().is_err() {
+        return build_empty_transport_response(request_id, header_version_id);
+    }
+    let now_millis = now_epoch_ms();
+    let creation_time_millis = now_millis as i64;
+    let keep_alive_millis = time_value_wire_to_millis(&request.keep_alive);
+    let pit_id = {
+        let mut state = dev_transport_pit_state()
+            .lock()
+            .expect("dev transport pit state lock poisoned");
+        state.next_id += 1;
+        let pit_id = format!("pit-{}", state.next_id);
+        state.contexts.insert(
+            pit_id.clone(),
+            DevTransportPitContext {
+                creation_time_millis,
+                keep_alive_millis,
+                expires_at_millis: now_millis + keep_alive_millis as u128,
+            },
+        );
+        pit_id
+    };
+    os_transport::action::build_opensearch_create_pit_response_message(
         request_id,
         Version::from_id(header_version_id as i32),
-        &os_transport::action::OpenSearchDeletePitResponseWire::empty(),
+        &os_transport::action::OpenSearchCreatePitResponseWire::success(
+            pit_id,
+            creation_time_millis,
+            0,
+        ),
     )
     .map(|frame| frame.to_vec())
     .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
 }
 
-fn delete_pit_request_supports_empty_all_subset(body: &[u8]) -> bool {
+fn time_value_wire_to_millis(time_value: &os_transport::action::TimeValueWire) -> i64 {
+    match time_value.time_unit_ordinal {
+        0 => (time_value.duration.saturating_add(999_999)) / 1_000_000,
+        1 => (time_value.duration.saturating_add(999)) / 1_000,
+        2 => time_value.duration,
+        3 => time_value.duration.saturating_mul(1_000),
+        4 => time_value.duration.saturating_mul(60_000),
+        5 => time_value.duration.saturating_mul(3_600_000),
+        6 => time_value.duration.saturating_mul(86_400_000),
+        _ => time_value.duration,
+    }
+}
+
+fn create_pit_request_supports_local_lifecycle_subset(body: &[u8]) -> bool {
+    decode_create_pit_request_from_transport_body(body)
+        .and_then(|request| request.validate_supported_subset().ok())
+        .is_some()
+}
+
+fn decode_create_pit_request_from_transport_body(
+    body: &[u8],
+) -> Option<os_transport::action::OpenSearchCreatePitRequestWire> {
+    let message = decode_transport_message_from_body(body)?;
+    os_transport::action::read_opensearch_create_pit_request_message(&message).ok()
+}
+
+fn build_local_delete_pit_response(
+    request_id: i64,
+    header_version_id: u32,
+    body: &[u8],
+) -> Vec<u8> {
+    let Some(request) = decode_delete_pit_request_from_transport_body(body) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    if request.validate_supported_subset().is_err() {
+        return build_empty_transport_response(request_id, header_version_id);
+    }
+    let response = delete_transport_pit_contexts(&request.pit_ids);
+    os_transport::action::build_opensearch_delete_pit_response_message(
+        request_id,
+        Version::from_id(header_version_id as i32),
+        &response,
+    )
+    .map(|frame| frame.to_vec())
+    .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
+}
+
+fn delete_pit_request_supports_local_lifecycle_subset(body: &[u8]) -> bool {
     decode_delete_pit_request_from_transport_body(body)
         .and_then(|request| request.validate_supported_subset().ok())
         .is_some()
@@ -3676,7 +3800,7 @@ fn decode_pit_segments_request_from_transport_body(
     os_transport::action::read_opensearch_pit_segments_request_message(&message).ok()
 }
 
-fn build_empty_get_all_pits_response(
+fn build_local_get_all_pits_response(
     request_id: i64,
     header_version_id: u32,
     transport_identity: &DevTransportIdentity,
@@ -3684,12 +3808,73 @@ fn build_empty_get_all_pits_response(
     os_transport::action::build_opensearch_get_all_pits_response_message(
         request_id,
         Version::from_id(header_version_id as i32),
-        &os_transport::action::OpenSearchGetAllPitsResponseWire::empty(
-            transport_identity.cluster_name.clone(),
-        ),
+        &get_all_transport_pits_response(transport_identity),
     )
     .map(|frame| frame.to_vec())
     .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
+}
+
+fn prune_expired_transport_pits(state: &mut DevTransportPitState, now_millis: u128) {
+    state
+        .contexts
+        .retain(|_, context| context.expires_at_millis > now_millis);
+}
+
+fn delete_transport_pit_contexts(
+    pit_ids: &[String],
+) -> os_transport::action::OpenSearchDeletePitResponseWire {
+    let mut state = dev_transport_pit_state()
+        .lock()
+        .expect("dev transport pit state lock poisoned");
+    prune_expired_transport_pits(&mut state, now_epoch_ms());
+    let ids = if pit_ids.iter().any(|id| id == "_all") {
+        state.contexts.keys().cloned().collect::<Vec<_>>()
+    } else {
+        pit_ids.to_vec()
+    };
+    let results = ids
+        .into_iter()
+        .map(|id| {
+            let existed = state.contexts.remove(&id).is_some();
+            os_transport::action::OpenSearchDeletePitInfoWire::new(existed, id)
+        })
+        .collect();
+    os_transport::action::OpenSearchDeletePitResponseWire::with_results(results)
+}
+
+fn get_all_transport_pits_response(
+    transport_identity: &DevTransportIdentity,
+) -> os_transport::action::OpenSearchGetAllPitsResponseWire {
+    let pit_infos = {
+        let mut state = dev_transport_pit_state()
+            .lock()
+            .expect("dev transport pit state lock poisoned");
+        prune_expired_transport_pits(&mut state, now_epoch_ms());
+        state
+            .contexts
+            .iter()
+            .map(|(pit_id, context)| {
+                os_transport::action::OpenSearchListPitInfoWire::new(
+                    pit_id.clone(),
+                    context.creation_time_millis,
+                    context.keep_alive_millis,
+                )
+            })
+            .collect::<Vec<_>>()
+    };
+    if pit_infos.is_empty() {
+        os_transport::action::OpenSearchGetAllPitsResponseWire::empty(
+            transport_identity.cluster_name.clone(),
+        )
+    } else {
+        os_transport::action::OpenSearchGetAllPitsResponseWire::with_nodes(
+            transport_identity.cluster_name.clone(),
+            vec![os_transport::action::OpenSearchGetAllPitsNodeResponseWire::new(
+                discovery_node_wire_from_identity(transport_identity),
+                pit_infos,
+            )],
+        )
+    }
 }
 
 fn build_nodes_hot_threads_response(
@@ -5492,12 +5677,22 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
                 transport_identity,
             ))
         }
-        Some("indices:data/read/point_in_time/delete")
-            if delete_pit_request_supports_empty_all_subset(body) =>
+        Some("indices:data/read/point_in_time/create")
+            if create_pit_request_supports_local_lifecycle_subset(body) =>
         {
-            Some(build_empty_delete_pit_response(
+            Some(build_local_create_pit_response(
                 request_id,
                 header_version_id,
+                body,
+            ))
+        }
+        Some("indices:data/read/point_in_time/delete")
+            if delete_pit_request_supports_local_lifecycle_subset(body) =>
+        {
+            Some(build_local_delete_pit_response(
+                request_id,
+                header_version_id,
+                body,
             ))
         }
         Some("indices:data/read/scroll/clear")
@@ -5508,7 +5703,7 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
                 header_version_id,
             ))
         }
-        Some("indices:data/read/point_in_time/readall") => Some(build_empty_get_all_pits_response(
+        Some("indices:data/read/point_in_time/readall") => Some(build_local_get_all_pits_response(
             request_id,
             header_version_id,
             transport_identity,
@@ -10134,18 +10329,89 @@ mod tests {
     }
 
     #[test]
-    fn delete_pit_transport_route_builds_opensearch_shaped_empty_all_response() {
+    fn create_list_and_delete_pit_transport_routes_share_local_lifecycle_state() {
+        dev_transport_pit_state()
+            .lock()
+            .expect("dev transport pit state lock poisoned")
+            .contexts
+            .clear();
+        dev_transport_pit_state()
+            .lock()
+            .expect("dev transport pit state lock poisoned")
+            .next_id = 0;
+        let transport_identity = DevTransportIdentity {
+            cluster_name: "steelsearch-dev".to_string(),
+            node_name: "steel-node".to_string(),
+            node_id: "steel-node-id".to_string(),
+            ephemeral_id: "steel-node-ephemeral".to_string(),
+            transport_address: "127.0.0.1:9300".parse().unwrap(),
+            attributes: Vec::new(),
+            roles: vec!["cluster_manager".to_string(), "data".to_string()],
+            seed_peer_identity: None,
+            seed_peer_identities: Vec::new(),
+            coordination_state: Arc::new(Mutex::new(DevTransportCoordinationState::default())),
+            remote_transport_queue_gate: Arc::new(RemoteTransportQueueGate::new(1, 1000)),
+            task_queue_state: None,
+        };
+        let create_request = os_transport::action::OpenSearchCreatePitRequestWire::default();
+        let create_frame = os_transport::action::build_opensearch_create_pit_request_message(
+            93,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &create_request,
+        )
+        .unwrap();
+        let create_body = &create_frame[6..];
+        assert!(create_pit_request_supports_local_lifecycle_subset(create_body));
+
+        let create_response = build_local_create_pit_response(
+            93,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            create_body,
+        );
+        let mut frame = BytesMut::from(&create_response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected create-PIT response message");
+        };
+        let create_response =
+            os_transport::action::read_opensearch_create_pit_response_message(&message).unwrap();
+        assert_eq!(create_response.pit_id, "pit-1");
+        assert_eq!(create_response.total_shards, 0);
+
+        let list_response = build_local_get_all_pits_response(
+            94,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &transport_identity,
+        );
+        let mut frame = BytesMut::from(&list_response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected get-all-PITs response message");
+        };
+        let list_response =
+            os_transport::action::read_opensearch_get_all_pits_response_message(&message).unwrap();
+        assert_eq!(list_response.nodes.len(), 1);
+        assert_eq!(list_response.nodes[0].pit_infos.len(), 1);
+        assert_eq!(list_response.nodes[0].pit_infos[0].pit_id, "pit-1");
+
         let request = os_transport::action::OpenSearchDeletePitRequestWire::default();
         let frame = os_transport::action::build_opensearch_delete_pit_request_message(
-            93,
+            95,
             OPENSEARCH_3_7_0_TRANSPORT,
             &request,
         )
         .unwrap();
         let body = &frame[6..];
-        assert!(delete_pit_request_supports_empty_all_subset(body));
+        assert!(delete_pit_request_supports_local_lifecycle_subset(body));
 
-        let response = build_empty_delete_pit_response(93, OPENSEARCH_3_7_0_TRANSPORT.id() as u32);
+        let response =
+            build_local_delete_pit_response(95, OPENSEARCH_3_7_0_TRANSPORT.id() as u32, body);
         let mut frame = BytesMut::from(&response[..]);
         let os_transport::frame::DecodedFrame::Message(message) =
             os_transport::frame::decode_frame(&mut frame)
@@ -10155,18 +10421,37 @@ mod tests {
             panic!("expected delete-PIT response message");
         };
 
-        assert_eq!(message.request_id, 93);
+        assert_eq!(message.request_id, 95);
         assert!(!message.status.is_request());
         let response =
             os_transport::action::read_opensearch_delete_pit_response_message(&message).unwrap();
+        assert_eq!(response.results.len(), 1);
+        assert_eq!(response.results[0].pit_id, "pit-1");
+        assert!(response.results[0].successful);
+
+        let list_response = build_local_get_all_pits_response(
+            96,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &transport_identity,
+        );
+        let mut frame = BytesMut::from(&list_response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected get-all-PITs response message");
+        };
+        let list_response =
+            os_transport::action::read_opensearch_get_all_pits_response_message(&message).unwrap();
         assert_eq!(
-            response,
-            os_transport::action::OpenSearchDeletePitResponseWire::empty()
+            list_response,
+            os_transport::action::OpenSearchGetAllPitsResponseWire::empty("steelsearch-dev")
         );
     }
 
     #[test]
-    fn delete_pit_transport_route_rejects_explicit_id_subset() {
+    fn delete_pit_transport_route_accepts_explicit_id_subset() {
         let request = os_transport::action::OpenSearchDeletePitRequestWire {
             pit_ids: vec!["pit-context".to_string()],
             ..os_transport::action::OpenSearchDeletePitRequestWire::default()
@@ -10177,7 +10462,7 @@ mod tests {
             &request,
         )
         .unwrap();
-        assert!(!delete_pit_request_supports_empty_all_subset(&frame[6..]));
+        assert!(delete_pit_request_supports_local_lifecycle_subset(&frame[6..]));
     }
 
     #[test]
@@ -10244,7 +10529,12 @@ mod tests {
             remote_transport_queue_gate: Arc::new(RemoteTransportQueueGate::new(1, 1000)),
             task_queue_state: None,
         };
-        let response = build_empty_get_all_pits_response(
+        dev_transport_pit_state()
+            .lock()
+            .expect("dev transport pit state lock poisoned")
+            .contexts
+            .clear();
+        let response = build_local_get_all_pits_response(
             93,
             OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
             &transport_identity,

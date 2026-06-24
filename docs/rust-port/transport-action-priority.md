@@ -310,9 +310,9 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `indices:data/read/scroll` (rejected fail-closed)
 - `indices:data/read/scroll/clear` (implemented `_all` empty clear-scroll subset)
 - `indices:data/read/explain` (rejected fail-closed)
-- `indices:data/read/point_in_time/create` (rejected fail-closed)
-- `indices:data/read/point_in_time/delete` (implemented `_all` empty PIT-delete subset)
-- `indices:data/read/point_in_time/readall` (implemented empty PIT-list subset)
+- `indices:data/read/point_in_time/create` (implemented local PIT lifecycle subset)
+- `indices:data/read/point_in_time/delete` (implemented local PIT lifecycle subset)
+- `indices:data/read/point_in_time/readall` (implemented local PIT lifecycle subset)
 - `cluster:monitor/task` (implemented pending/in-flight task subset)
 - `cluster:monitor/tasks/lists` (implemented pending/in-flight task info subset)
 - `cluster:monitor/task/get` (implemented tracked running task result subset)
@@ -2254,13 +2254,13 @@ The create-PIT boundary covers:
 - OpenSearch `CreatePitResponse` success rendering with PIT id, total,
   successful, failed, skipped shard counts, creation time, and an empty shard
   failure list;
-- explicit fail-closed classification for
-  `indices:data/read/point_in_time/create` until PIT context creation and
-  shard fanout are mapped;
-- explicit rejection for non-positive keep-alive values, index filters, custom
-  indices options, routing, preference, partial creation flags, and create-PIT
-  execution; non-empty shard failure payloads remain fail-closed until
-  `ShardSearchFailure` decoding is mapped.
+- local transport PIT context allocation for the default all-indices request
+  subset, including keep-alive expiry bookkeeping and read-all/delete
+  visibility through the same transport lifecycle state;
+- explicit rejection for non-positive keep-alive values, unknown keep-alive
+  units, index filters, custom indices options, routing, and preference; partial creation flags and
+  non-empty shard failure payloads remain fail-closed until shard-level failure
+  aggregation is mapped.
 
 The indices-stats boundary covers:
 
@@ -5101,25 +5101,24 @@ performance point to inspect before accepting execution is avoiding repeated
 node metadata serialization when runtime PIT listing fanout is wired to this
 transport action.
 
-Current create-PIT reject wire microbenchmark:
+Current create-PIT wire microbenchmark:
 
 ```text
 cargo run -p os-transport --release --bin create-pit-reject-wire-benchmark
-create_pit_reject_request_encode iterations=400000 elapsed_ms=279.845 ops_per_second=1429361.62 nanos_per_op=699.61
-create_pit_reject_request_decode iterations=400000 elapsed_ms=261.244 ops_per_second=1531133.11 nanos_per_op=653.11
-create_pit_reject_validation iterations=400000 elapsed_ms=264.501 ops_per_second=1512284.45 nanos_per_op=661.25
-create_pit_response_encode iterations=400000 elapsed_ms=122.522 ops_per_second=3264728.36 nanos_per_op=306.30
-create_pit_response_decode iterations=400000 elapsed_ms=103.135 ops_per_second=3878424.69 nanos_per_op=257.84
-create_pit_reject_wire_bottleneck_ops_per_second=1429361.62
+create_pit_request_encode iterations=400000 elapsed_ms=284.516 ops_per_second=1405895.41 nanos_per_op=711.29
+create_pit_request_decode iterations=400000 elapsed_ms=266.130 ops_per_second=1503025.67 nanos_per_op=665.32
+create_pit_request_validate iterations=400000 elapsed_ms=270.281 ops_per_second=1479941.40 nanos_per_op=675.70
+create_pit_response_encode iterations=400000 elapsed_ms=120.760 ops_per_second=3312351.46 nanos_per_op=301.90
+create_pit_response_decode iterations=400000 elapsed_ms=102.118 ops_per_second=3917023.46 nanos_per_op=255.30
+create_pit_wire_bottleneck_ops_per_second=1405895.41
 ```
 
-The current create-PIT fail-closed boundary bottleneck is request encode. This
-path carries the ActionRequest parent task, index target controls, keep-alive,
-and optional partial-creation flag before rejecting execution. The success
-response encode/decode path for an empty-failure `CreatePitResponse` remains
-above 3.2M ops/s in the latest local release run, so the first performance
-point to inspect before accepting execution is PIT context allocation and shard
-fanout.
+The current create-PIT wire subset bottleneck is request encode. This path
+carries the ActionRequest parent task, index target controls, keep-alive, and
+optional partial-creation flag before admitting the local transport PIT
+lifecycle subset. The first performance point to inspect while expanding the
+runtime path is reducing repeated request-frame encode/decode work around
+lifecycle allocation and subsequent list/delete visibility.
 
 Current PIT-segments wire microbenchmark:
 
