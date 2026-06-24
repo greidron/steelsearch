@@ -9341,13 +9341,15 @@ impl SteelNode {
         };
         let mut total_value = total_matches;
         let mut total_relation = "eq";
-        let mut terminated_early = false;
+        let mut terminated_early = None;
         if let Some(limit) = body.get("terminate_after").and_then(Value::as_u64) {
-            if total_matches > limit {
+            if limit > 0 && total_matches > limit {
                 hits.truncate(limit as usize);
                 total_value = limit;
                 total_relation = "eq";
-                terminated_early = true;
+                terminated_early = Some(true);
+            } else if limit > 0 {
+                terminated_early = Some(false);
             }
         }
         let track_total_hits_disabled = body.get("track_total_hits") == Some(&Value::Bool(false));
@@ -9495,8 +9497,8 @@ impl SteelNode {
         hits_body.insert("max_score".to_string(), max_score);
         hits_body.insert("hits".to_string(), Value::Array(paged_hits));
         response.insert("hits".to_string(), Value::Object(hits_body));
-        if terminated_early {
-            response.insert("terminated_early".to_string(), Value::Bool(true));
+        if let Some(terminated_early) = terminated_early {
+            response.insert("terminated_early".to_string(), Value::Bool(terminated_early));
         }
         if let Some(aggregations) = aggregations {
             response.insert("aggregations".to_string(), aggregations);
@@ -19132,6 +19134,16 @@ fn validate_search_request_body(body: &Value, scroll: bool) -> Option<RestRespon
     if body.get("min_score").is_some_and(|value| !value.is_number()) {
         return Some(build_unsupported_search_response(
             "unsupported search option [min_score]",
+        ));
+    }
+    if body
+        .get("terminate_after")
+        .is_some_and(|value| value.as_u64().is_none())
+    {
+        return Some(terminate_after_query_param_parse_error(
+            body.get("terminate_after")
+                .and_then(Value::as_str)
+                .unwrap_or_default(),
         ));
     }
     if let Some(post_filter) = body.get("post_filter") {
@@ -42601,6 +42613,24 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             1
         );
 
+        let body_terminate_after_not_reached = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-params-*/_search")
+                .with_json_body(serde_json::json!({
+                    "query": { "match_all": {} },
+                    "sort": [{ "tenant": "asc" }],
+                    "terminate_after": 10
+                })),
+        );
+        assert_eq!(body_terminate_after_not_reached.status, 200);
+        assert_eq!(
+            body_terminate_after_not_reached.body["terminated_early"],
+            false
+        );
+        assert_eq!(
+            body_terminate_after_not_reached.body["hits"]["total"]["value"],
+            3
+        );
+
         let zero_query_param_terminate_after_preserves_body = node.handle_rest_request(
             RestRequest::new(
                 RestMethod::Post,
@@ -42630,6 +42660,19 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(invalid_query_param_terminate_after.status, 400);
         assert_eq!(
             invalid_query_param_terminate_after.body["error"]["reason"],
+            "terminateAfter must be > 0"
+        );
+
+        let invalid_body_terminate_after = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-params-*/_search")
+                .with_json_body(serde_json::json!({
+                    "query": { "match_all": {} },
+                    "terminate_after": -1
+                })),
+        );
+        assert_eq!(invalid_body_terminate_after.status, 400);
+        assert_eq!(
+            invalid_body_terminate_after.body["error"]["reason"],
             "terminateAfter must be > 0"
         );
 
