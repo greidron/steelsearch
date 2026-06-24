@@ -19,6 +19,15 @@ fn main() {
         },
         ..CancelTasksRequestWire::default()
     };
+    let filtered_request = CancelTasksRequestWire {
+        parent_task_filter: TaskIdWire {
+            node_id: "parent-node".to_string(),
+            id: Some(99),
+        },
+        nodes: vec!["node-a".to_string()],
+        actions: vec!["cluster:admin/*".to_string()],
+        ..CancelTasksRequestWire::default()
+    };
     let response = CancelTasksResponseWire {
         task_failure_count: 0,
         node_failures: Vec::new(),
@@ -45,6 +54,15 @@ fn main() {
                 .expect("cancel tasks request encode should succeed");
         black_box(frame);
     });
+    let filtered_request_encode = measure("cancel_tasks_filtered_request_encode", ITERATIONS, || {
+        let frame = build_cancel_tasks_request_message(
+            13,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            black_box(&filtered_request),
+        )
+        .expect("filtered cancel tasks request encode should succeed");
+        black_box(frame);
+    });
     let response_encode = measure("cancel_tasks_response_encode", ITERATIONS, || {
         let frame = build_cancel_tasks_response_message(
             13,
@@ -58,6 +76,9 @@ fn main() {
     let request_frame =
         build_cancel_tasks_request_message(13, OPENSEARCH_3_7_0_TRANSPORT, &request)
             .expect("cancel tasks request encode should succeed");
+    let filtered_request_frame =
+        build_cancel_tasks_request_message(13, OPENSEARCH_3_7_0_TRANSPORT, &filtered_request)
+            .expect("filtered cancel tasks request encode should succeed");
     let response_frame =
         build_cancel_tasks_response_message(13, OPENSEARCH_3_7_0_TRANSPORT, &response)
             .expect("cancel tasks response encode should succeed");
@@ -67,6 +88,13 @@ fn main() {
         let message = decode_message(&mut frame);
         let decoded = read_cancel_tasks_request_message(black_box(&message))
             .expect("cancel tasks request decode");
+        black_box(decoded);
+    });
+    let filtered_request_decode = measure("cancel_tasks_filtered_request_decode", ITERATIONS, || {
+        let mut frame = black_box(filtered_request_frame.clone());
+        let message = decode_message(&mut frame);
+        let decoded = read_cancel_tasks_request_message(black_box(&message))
+            .expect("filtered cancel tasks request decode");
         black_box(decoded);
     });
     let response_decode = measure("cancel_tasks_response_decode", ITERATIONS, || {
@@ -79,8 +107,10 @@ fn main() {
 
     let combined_ops_per_second = request_encode
         .ops_per_second
+        .min(filtered_request_encode.ops_per_second)
         .min(response_encode.ops_per_second)
         .min(request_decode.ops_per_second)
+        .min(filtered_request_decode.ops_per_second)
         .min(response_decode.ops_per_second);
     println!("cancel_tasks_wire_bottleneck_ops_per_second={combined_ops_per_second:.2}");
 }

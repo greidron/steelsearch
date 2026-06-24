@@ -25728,24 +25728,6 @@ impl CancelTasksRequestWire {
     }
 
     pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
-        if self.parent_task_filter.is_set() {
-            return Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "cancel tasks parent task filter",
-                reason: "parent task cancellation requires runtime task lifecycle mapping",
-            });
-        }
-        if !self.nodes.is_empty() {
-            return Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "cancel tasks node filter",
-                reason: "node-scoped task cancellation is not mapped by this adapter yet",
-            });
-        }
-        if !self.actions.is_empty() {
-            return Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "cancel tasks action filter",
-                reason: "action-scoped task cancellation is not mapped by this adapter yet",
-            });
-        }
         if self.timeout.is_some() {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "cancel tasks timeout",
@@ -54903,24 +54885,39 @@ mod tests {
     }
 
     #[test]
-    fn cancel_tasks_request_rejects_filters_custom_reason_and_wait_shapes() {
+    fn cancel_tasks_request_wire_round_trips_supported_filter_subset() {
         let by_task = CancelTasksRequestWire {
             task_id: TaskIdWire {
                 node_id: "node-a".to_string(),
                 id: Some(7),
             },
+            parent_task_filter: TaskIdWire {
+                node_id: "parent-node".to_string(),
+                id: Some(99),
+            },
+            nodes: vec!["node-a".to_string()],
+            actions: vec!["cluster:admin/*".to_string()],
             ..CancelTasksRequestWire::default()
         };
-        by_task.validate_supported_subset().unwrap();
+        let mut output = StreamOutput::new();
+        by_task.write(&mut output).unwrap();
 
-        let by_action = CancelTasksRequestWire {
-            actions: vec!["indices:data/read/search".to_string()],
+        assert_eq!(
+            CancelTasksRequestWire::read(output.freeze()).unwrap(),
+            by_task
+        );
+    }
+
+    #[test]
+    fn cancel_tasks_request_rejects_custom_reason_timeout_and_wait_shapes() {
+        let timeout = CancelTasksRequestWire {
+            timeout: Some(TimeValueWire::seconds(30)),
             ..CancelTasksRequestWire::default()
         };
         assert!(matches!(
-            by_action.validate_supported_subset(),
+            timeout.validate_supported_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "cancel tasks action filter",
+                shape: "cancel tasks timeout",
                 ..
             })
         ));

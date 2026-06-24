@@ -3040,7 +3040,9 @@ fn cancel_tasks_response_from_identity(
                 && queue_task_node_id(record, transport_identity) == request.task_id.node_id
         });
         if let Some(record) = matching_record {
-            if record.state == ClusterManagerTaskState::Queued {
+            if !cancel_tasks_record_matches_request(record, transport_identity, &request) {
+                (Vec::new(), Vec::new())
+            } else if record.state == ClusterManagerTaskState::Queued {
                 (
                     vec![list_task_info_wire_from_record_with_cancel_state(
                         record,
@@ -3076,6 +3078,9 @@ fn cancel_tasks_response_from_identity(
                 .pending
                 .iter()
                 .filter(|record| record.state == ClusterManagerTaskState::Queued)
+                .filter(|record| {
+                    cancel_tasks_record_matches_request(record, transport_identity, &request)
+                })
                 .map(|record| {
                     list_task_info_wire_from_record_with_cancel_state(
                         record,
@@ -3092,6 +3097,35 @@ fn cancel_tasks_response_from_identity(
         node_failures,
         tasks,
     }
+}
+
+fn cancel_tasks_record_matches_request(
+    record: &ClusterManagerTaskRecord,
+    transport_identity: &DevTransportIdentity,
+    request: &os_transport::action::CancelTasksRequestWire,
+) -> bool {
+    let node_id = queue_task_node_id(record, transport_identity);
+    if !request.nodes.is_empty()
+        && !request.nodes.iter().any(|requested_node| requested_node == &node_id)
+    {
+        return false;
+    }
+    if request.parent_task_filter.is_set()
+        && !record_parent_task_matches_filter(record, &request.parent_task_filter)
+    {
+        return false;
+    }
+    if !request.actions.is_empty() {
+        let action = task_action_for_kind(&record.task.kind);
+        if !request
+            .actions
+            .iter()
+            .any(|pattern| transport_action_pattern_matches(pattern, &action))
+        {
+            return false;
+        }
+    }
+    true
 }
 
 fn decode_cancel_tasks_request_from_transport_body(
@@ -8816,6 +8850,139 @@ mod tests {
         let task = &response.tasks[0];
         assert_eq!(task.node_id, "steel-node-id");
         assert_eq!(task.task_id, 31);
+        assert!(task.cancelled);
+
+        let mismatched_filter_request = os_transport::action::CancelTasksRequestWire {
+            task_id: os_transport::action::TaskIdWire {
+                node_id: "steel-node-id".to_string(),
+                id: Some(31),
+            },
+            actions: vec!["cluster:admin/background".to_string()],
+            ..os_transport::action::CancelTasksRequestWire::default()
+        };
+        let request_frame = os_transport::action::build_cancel_tasks_request_message(
+            86,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &mismatched_filter_request,
+        )
+        .unwrap();
+        let request_body = request_frame[6..].to_vec();
+        let response = build_cancel_tasks_response_for_request(
+            86,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &transport_identity,
+            Some(&request_body),
+        );
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame).unwrap().unwrap()
+        else {
+            panic!("expected cancel tasks response message");
+        };
+        let response = os_transport::action::read_cancel_tasks_response_message(&message).unwrap();
+        assert!(response.tasks.is_empty());
+        assert!(response.node_failures.is_empty());
+    }
+
+    #[test]
+    fn cancel_tasks_transport_route_filters_by_node_action_and_parent() {
+        let transport_identity = DevTransportIdentity {
+            cluster_name: "steelsearch-dev".to_string(),
+            node_name: "steel-node".to_string(),
+            node_id: "steel-node-id".to_string(),
+            ephemeral_id: "steel-node-ephemeral".to_string(),
+            transport_address: "127.0.0.1:9300".parse().unwrap(),
+            attributes: Vec::new(),
+            roles: vec!["cluster_manager".to_string(), "data".to_string()],
+            seed_peer_identity: None,
+            seed_peer_identities: Vec::new(),
+            coordination_state: Arc::new(Mutex::new(DevTransportCoordinationState::default())),
+            remote_transport_queue_gate: Arc::new(RemoteTransportQueueGate::new(1, 1000)),
+            task_queue_state: Some(PersistedClusterManagerTaskQueueState {
+                pending: vec![
+                    ClusterManagerTaskRecord {
+                        task_id: 31,
+                        task: os_node::ClusterManagerTask {
+                            source: "reroute shards".to_string(),
+                            kind: os_node::ClusterManagerTaskKind::Reroute,
+                        },
+                        state: ClusterManagerTaskState::Queued,
+                        parent_task_id: None,
+                        headers: BTreeMap::new(),
+                        failure_reason: None,
+                    },
+                    ClusterManagerTaskRecord {
+                        task_id: 34,
+                        task: os_node::ClusterManagerTask {
+                            source: "remove-node [node-b]".to_string(),
+                            kind: os_node::ClusterManagerTaskKind::RemoveNode {
+                                node_id: "node-b".to_string(),
+                            },
+                        },
+                        state: ClusterManagerTaskState::Queued,
+                        parent_task_id: Some("parent-node:99".to_string()),
+                        headers: BTreeMap::new(),
+                        failure_reason: None,
+                    },
+                    ClusterManagerTaskRecord {
+                        task_id: 35,
+                        task: os_node::ClusterManagerTask {
+                            source: "remove-node [node-c]".to_string(),
+                            kind: os_node::ClusterManagerTaskKind::RemoveNode {
+                                node_id: "node-c".to_string(),
+                            },
+                        },
+                        state: ClusterManagerTaskState::Queued,
+                        parent_task_id: Some("parent-node:100".to_string()),
+                        headers: BTreeMap::new(),
+                        failure_reason: None,
+                    },
+                ],
+                task_node_ids: BTreeMap::from([
+                    (31, "steel-node-id".to_string()),
+                    (34, "remote-node-id".to_string()),
+                    (35, "remote-node-id".to_string()),
+                ]),
+                ..PersistedClusterManagerTaskQueueState::default()
+            }),
+        };
+        let request = os_transport::action::CancelTasksRequestWire {
+            parent_task_filter: os_transport::action::TaskIdWire {
+                node_id: "parent-node".to_string(),
+                id: Some(99),
+            },
+            nodes: vec!["remote-node-id".to_string()],
+            actions: vec!["cluster:admin/voting_config/*".to_string()],
+            ..os_transport::action::CancelTasksRequestWire::default()
+        };
+        let request_frame = os_transport::action::build_cancel_tasks_request_message(
+            87,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        let request_body = request_frame[6..].to_vec();
+        let response = build_cancel_tasks_response_for_request(
+            87,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &transport_identity,
+            Some(&request_body),
+        );
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame).unwrap().unwrap()
+        else {
+            panic!("expected cancel tasks response message");
+        };
+
+        let response = os_transport::action::read_cancel_tasks_response_message(&message).unwrap();
+        assert_eq!(response.tasks.len(), 1);
+        let task = &response.tasks[0];
+        assert_eq!(task.node_id, "remote-node-id");
+        assert_eq!(task.task_id, 34);
+        assert_eq!(task.action, "cluster:admin/voting_config/clear_exclusions");
+        assert_eq!(task.parent_task_node, "parent-node");
+        assert_eq!(task.parent_task_id, Some(99));
         assert!(task.cancelled);
     }
 
