@@ -105,6 +105,7 @@ def main() -> int:
             "search_boolean_execution_query_params",
             "min_score_search",
             "post_filter_search",
+            "post_filter_preserves_aggregation_input_search",
             "hit_metadata_projection_search",
             "completion_suggest_search",
             "phrase_suggest_search",

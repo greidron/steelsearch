@@ -1945,6 +1945,20 @@ def extract(kind: str, response: dict[str, Any]) -> Any:
             "status": response["status"],
             "aggregations": normalize_aggregations(body.get("aggregations") or {}),
         }
+    if kind == "post_filter_aggregation":
+        hits_section = body.get("hits") or {}
+        hits = hits_section.get("hits") or []
+        total = hits_section.get("total")
+        if isinstance(total, dict):
+            total_value = total.get("value")
+        else:
+            total_value = total
+        return {
+            "status": response["status"],
+            "total": total_value,
+            "ids": [hit.get("_id") for hit in hits if isinstance(hit, dict)],
+            "aggregations": normalize_aggregations(body.get("aggregations") or {}),
+        }
     if kind == "error_response":
         error = body.get("error") or {}
         if isinstance(error, dict):

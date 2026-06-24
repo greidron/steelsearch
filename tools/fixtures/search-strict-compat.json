@@ -3269,6 +3269,43 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "post_filter_preserves_aggregation_input_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "post_filter": {
+          "term": {
+            "tag": "cache"
+          }
+        },
+        "aggs": {
+          "tags": {
+            "terms": {
+              "field": "tag",
+              "order": {
+                "_key": "asc"
+              }
+            }
+          }
+        },
+        "sort": [
+          {
+            "ts": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "extract": "post_filter_aggregation",
+      "family": "fetch",
+      "description": "[fetch] post filter preserves aggregation input search",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "hit_metadata_projection_search",
       "area": "search",
       "method": "POST",
