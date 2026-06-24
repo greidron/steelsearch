@@ -9639,6 +9639,11 @@ impl SteelNode {
             Ok(_) => {}
             Err(response) => return response,
         }
+        if let Some(response) = validate_opensearch_boolean_query_param(
+            request.query_params.get("allow_partial_pit_creation"),
+        ) {
+            return response;
+        }
         let Some(keep_alive) = request.query_params.get("keep_alive").map(String::as_str) else {
             return RestResponse::json(
                 400,
@@ -18554,6 +18559,27 @@ fn validate_point_in_time_search_request(index: &str, request: &RestRequest) -> 
                     .map(|(index, error)| format!("{}: {};", index + 1, error))
                     .collect::<Vec<_>>()
                     .join("")
+                )
+            },
+            "status": 400
+        }),
+    ))
+}
+
+fn validate_opensearch_boolean_query_param(raw: Option<&String>) -> Option<RestResponse> {
+    let Some(value) = raw.map(String::as_str) else {
+        return None;
+    };
+    if value.is_empty() || value == "true" || value == "false" {
+        return None;
+    }
+    Some(RestResponse::json(
+        400,
+        serde_json::json!({
+            "error": {
+                "type": "illegal_argument_exception",
+                "reason": format!(
+                    "Failed to parse value [{value}] as only [true] or [false] are allowed."
                 )
             },
             "status": 400
@@ -34786,9 +34812,19 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             "Validation Failed: 1: keep alive not specified;"
         );
 
+        let invalid_allow_partial_pit = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/logs-session-000001/_search/point_in_time?keep_alive=1m&allow_partial_pit_creation=maybe",
+        ));
+        assert_eq!(invalid_allow_partial_pit.status, 400);
+        assert_eq!(
+            invalid_allow_partial_pit.body["error"]["reason"],
+            "Failed to parse value [maybe] as only [true] or [false] are allowed."
+        );
+
         let open_pit = node.handle_rest_request(RestRequest::new(
             RestMethod::Post,
-            "/logs-session-000001/_search/point_in_time?keep_alive=1m",
+            "/logs-session-000001/_search/point_in_time?keep_alive=1m&allow_partial_pit_creation",
         ));
         assert_eq!(open_pit.status, 200);
         assert_eq!(open_pit.body["pit_id"], "pit-1");
