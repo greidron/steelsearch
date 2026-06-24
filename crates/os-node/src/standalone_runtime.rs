@@ -8867,6 +8867,11 @@ impl SteelNode {
             return response;
         }
         if let Some(response) =
+            validate_scroll_context_request_body(&body, request.query_params.contains_key("scroll"))
+        {
+            return response;
+        }
+        if let Some(response) =
             validate_search_request_body(&body, request.query_params.contains_key("scroll"))
         {
             return response;
@@ -18663,6 +18668,41 @@ fn validate_search_request_body(body: &Value, scroll: bool) -> Option<RestRespon
         }
     }
     validate_search_query_body(&body["query"])
+}
+
+fn validate_scroll_context_request_body(body: &Value, scroll: bool) -> Option<RestResponse> {
+    if !scroll {
+        return None;
+    }
+    const TRACK_TOTAL_HITS_ACCURATE: u64 = i32::MAX as u64;
+    let mut validation_errors = Vec::new();
+    if body.get("track_total_hits") == Some(&Value::Bool(false))
+        || body
+            .get("track_total_hits")
+            .and_then(Value::as_u64)
+            .is_some_and(|threshold| threshold != TRACK_TOTAL_HITS_ACCURATE)
+    {
+        validation_errors.push("disabling [track_total_hits] is not allowed in a scroll context");
+    }
+    if body.get("from").and_then(Value::as_u64).unwrap_or(0) > 0 {
+        validation_errors.push("using [from] is not allowed in a scroll context");
+    }
+    if body.get("size").and_then(Value::as_u64) == Some(0) {
+        validation_errors.push("[size] cannot be [0] in a scroll context");
+    }
+    if body.get("rescore").is_some() {
+        validation_errors.push("using [rescore] is not allowed in a scroll context");
+    }
+    if body.get("pit").is_some() {
+        validation_errors.push("using [point in time] is not allowed in a scroll context");
+    }
+    if count_shard_doc_sort_fields(body.get("sort")) > 0 {
+        validation_errors.push("_shard_doc cannot be used with scroll. Use PIT + search_after instead.");
+    }
+    if validation_errors.is_empty() {
+        return None;
+    }
+    Some(action_request_validation_error(validation_errors))
 }
 
 fn apply_search_source_query_params(
@@ -35639,6 +35679,28 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             .as_str()
             .unwrap()
             .contains("using [point in time] is not allowed in a scroll context"));
+
+        let multi_error_scrolled_pit_search = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_search?scroll=1m")
+                .with_json_body(serde_json::json!({
+                    "pit": {
+                        "id": second_open_pit.body["pit_id"].as_str().unwrap(),
+                        "keep_alive": "1m"
+                    },
+                    "sort": ["_shard_doc"],
+                    "from": 10,
+                    "size": 0,
+                    "query": { "match_all": {} }
+                })),
+        );
+        assert_eq!(multi_error_scrolled_pit_search.status, 400);
+        let multi_error_scrolled_pit_reason = multi_error_scrolled_pit_search.body["error"]["reason"]
+            .as_str()
+            .unwrap();
+        assert!(multi_error_scrolled_pit_reason.contains("using [point in time] is not allowed in a scroll context"));
+        assert!(multi_error_scrolled_pit_reason.contains("_shard_doc cannot be used with scroll. Use PIT + search_after instead."));
+        assert!(multi_error_scrolled_pit_reason.contains("using [from] is not allowed in a scroll context"));
+        assert!(multi_error_scrolled_pit_reason.contains("[size] cannot be [0] in a scroll context"));
 
         let default_indices_options_pit_search = node.handle_rest_request(
             RestRequest::new(
