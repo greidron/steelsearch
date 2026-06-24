@@ -785,6 +785,28 @@
       "description": "[lexical] search template named target semantic"
     },
     {
+      "name": "msearch_template_named_root_semantic",
+      "area": "search-semantic",
+      "method": "POST",
+      "path": "/_msearch/template",
+      "raw": true,
+      "body": "{}\n{\"id\":\"probe-template\",\"params\":{\"tenant\":\"tenant-b\"}}\n{}\n{\"id\":\"probe-template\",\"params\":{\"tenant\":\"tenant-missing\"}}\n",
+      "extract": "msearch_summary",
+      "family": "lexical",
+      "description": "[lexical] msearch template named root semantic"
+    },
+    {
+      "name": "msearch_template_named_target_semantic",
+      "area": "search-semantic",
+      "method": "POST",
+      "path": "/metrics-search-semantic-*/_msearch/template",
+      "raw": true,
+      "body": "{}\n{\"id\":\"probe-template\",\"params\":{\"tenant\":\"tenant-b\"}}\n{}\n{\"id\":\"probe-template\",\"params\":{\"tenant\":\"tenant-a\"}}\n",
+      "extract": "msearch_summary",
+      "family": "lexical",
+      "description": "[lexical] msearch template named target semantic"
+    },
+    {
       "name": "search_root_sort_from_size_semantic",
       "area": "search-semantic",
       "method": "POST",
