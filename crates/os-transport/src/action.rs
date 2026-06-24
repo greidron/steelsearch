@@ -2206,8 +2206,8 @@ pub fn classify_opensearch_transport_action(
         },
         OPENSEARCH_CLUSTER_SEARCH_SHARDS_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
-            disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "cluster-search-shards transport execution requires shard routing metadata response rendering",
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "cluster-search-shards transport adapter returns an OpenSearch-shaped empty shards response for the default all-indices request",
         },
         OPENSEARCH_FIELD_CAPABILITIES_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -9956,6 +9956,36 @@ pub fn read_opensearch_cluster_search_shards_request_message(
         });
     }
     OpenSearchClusterSearchShardsRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_opensearch_cluster_search_shards_response_message(
+    request_id: i64,
+    version: Version,
+    response: &OpenSearchClusterSearchShardsResponseWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    response.write(&mut body)?;
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::response(),
+        version,
+        variable_header: BytesMut::from(&ResponseVariableHeader::default().to_bytes()[..]),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_cluster_search_shards_response_message(
+    message: &TransportMessage,
+) -> Result<OpenSearchClusterSearchShardsResponseWire, TransportActionWireError> {
+    if !message.status.is_response() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "response",
+            actual: message.status.bits(),
+        });
+    }
+    let _header = ResponseVariableHeader::read(message.variable_header.clone().freeze())?;
+    OpenSearchClusterSearchShardsResponseWire::read(message.body.clone().freeze())
 }
 
 pub fn build_opensearch_recovery_request_message(
@@ -22150,6 +22180,14 @@ impl OpenSearchClusterSearchShardsRequestWire {
     }
 
     pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        self.validate_supported_subset()?;
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "cluster search shards execution",
+            reason: "use validate_supported_subset for the implemented empty cluster-search-shards adapter",
+        })
+    }
+
+    pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
         if self.cluster_manager_timeout != TimeValueWire::seconds(30) {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "cluster search shards cluster-manager timeout",
@@ -22195,11 +22233,62 @@ impl OpenSearchClusterSearchShardsRequestWire {
                 reason: "sliced search-shards routing is not mapped by this adapter",
             });
         }
-        Err(TransportActionWireError::UnsupportedWireShape {
-            shape: "cluster search shards execution",
-            reason:
-                "cluster-search-shards transport execution requires shard routing metadata response rendering",
-        })
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct OpenSearchClusterSearchShardsResponseWire {
+    pub group_count: usize,
+    pub node_count: usize,
+    pub alias_filter_count: usize,
+}
+
+impl OpenSearchClusterSearchShardsResponseWire {
+    pub fn empty() -> Self {
+        Self::default()
+    }
+
+    pub fn write(&self, output: &mut StreamOutput) -> Result<(), TransportActionWireError> {
+        self.validate_supported_subset()?;
+        output.write_vint(self.group_count as i32);
+        output.write_vint(self.node_count as i32);
+        output.write_vint(self.alias_filter_count as i32);
+        Ok(())
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let response = Self {
+            group_count: read_len(&mut input)?,
+            node_count: read_len(&mut input)?,
+            alias_filter_count: read_len(&mut input)?,
+        };
+        require_no_trailing_bytes(&input)?;
+        response.validate_supported_subset()?;
+        Ok(response)
+    }
+
+    pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
+        if self.group_count != 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cluster search shards groups",
+                reason: "non-empty ClusterSearchShardsGroup payloads require shard routing metadata decoding",
+            });
+        }
+        if self.node_count != 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cluster search shards nodes",
+                reason: "non-empty DiscoveryNode payloads require node metadata decoding",
+            });
+        }
+        if self.alias_filter_count != 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cluster search shards alias filters",
+                reason: "non-empty AliasFilter payloads require alias filter query decoding",
+            });
+        }
+        Ok(())
     }
 }
 
@@ -34668,7 +34757,7 @@ mod tests {
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_CLUSTER_SEARCH_SHARDS_ACTION_NAME)
                 .disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_FIELD_CAPABILITIES_ACTION_NAME)
@@ -34825,6 +34914,7 @@ mod tests {
                 || spec.action_name == OPENSEARCH_RECOVERY_ACTION_NAME
                 || spec.action_name == OPENSEARCH_GET_MAPPINGS_ACTION_NAME
                 || spec.action_name == OPENSEARCH_GET_FIELD_MAPPINGS_ACTION_NAME
+                || spec.action_name == OPENSEARCH_CLUSTER_SEARCH_SHARDS_ACTION_NAME
                 || spec.action_name == OPENSEARCH_GET_ALIASES_ACTION_NAME
                 || spec.action_name == OPENSEARCH_GET_SETTINGS_ACTION_NAME
             {
@@ -34881,7 +34971,6 @@ mod tests {
                 || spec.action_name == OPENSEARCH_UPGRADE_STATUS_ACTION_NAME
                 || spec.action_name == OPENSEARCH_UPGRADE_SETTINGS_ACTION_NAME
                 || spec.action_name == OPENSEARCH_CLEAR_INDICES_CACHE_ACTION_NAME
-                || spec.action_name == OPENSEARCH_CLUSTER_SEARCH_SHARDS_ACTION_NAME
                 || spec.action_name == OPENSEARCH_FIELD_CAPABILITIES_ACTION_NAME
                 || spec.action_name == OPENSEARCH_SEGMENT_REPLICATION_STATS_ACTION_NAME
                 || spec.action_name == OPENSEARCH_INDICES_SEGMENTS_ACTION_NAME
@@ -51954,20 +52043,15 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_cluster_search_shards_request_wire_round_trips_and_rejects_execution_boundary() {
+    fn opensearch_cluster_search_shards_request_wire_round_trips_and_validates_default_all_shards()
+    {
         let request = OpenSearchClusterSearchShardsRequestWire::default();
         let mut output = StreamOutput::new();
         request.write(&mut output);
 
         let decoded = OpenSearchClusterSearchShardsRequestWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, request);
-        assert!(matches!(
-            decoded.reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "cluster search shards execution",
-                ..
-            })
-        ));
+        decoded.validate_supported_subset().unwrap();
     }
 
     #[test]
@@ -52079,7 +52163,8 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_cluster_search_shards_transport_messages_bind_rejected_action_frame() {
+    fn opensearch_cluster_search_shards_transport_messages_bind_supported_action_frame_and_empty_response(
+    ) {
         let request = OpenSearchClusterSearchShardsRequestWire::default();
         let mut frame = build_opensearch_cluster_search_shards_request_message(
             39,
@@ -52094,12 +52179,71 @@ mod tests {
             read_opensearch_cluster_search_shards_request_message(&message).unwrap(),
             request
         );
+        read_opensearch_cluster_search_shards_request_message(&message)
+            .unwrap()
+            .validate_supported_subset()
+            .unwrap();
+
+        let response = OpenSearchClusterSearchShardsResponseWire::empty();
+        let mut frame = build_opensearch_cluster_search_shards_response_message(
+            39,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &response,
+        )
+        .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected cluster search shards response message");
+        };
+        assert_eq!(
+            read_opensearch_cluster_search_shards_response_message(&message).unwrap(),
+            response
+        );
+    }
+
+    #[test]
+    fn opensearch_cluster_search_shards_response_wire_round_trips_empty_response() {
+        let response = OpenSearchClusterSearchShardsResponseWire::empty();
+        let mut output = StreamOutput::new();
+        response.write(&mut output).unwrap();
+
+        let decoded = OpenSearchClusterSearchShardsResponseWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, response);
+    }
+
+    #[test]
+    fn opensearch_cluster_search_shards_response_rejects_non_empty_sections() {
+        let mut groups = StreamOutput::new();
+        groups.write_vint(1);
+        groups.write_vint(0);
+        groups.write_vint(0);
         assert!(matches!(
-            read_opensearch_cluster_search_shards_request_message(&message)
-                .unwrap()
-                .reject_unsupported_execution(),
+            OpenSearchClusterSearchShardsResponseWire::read(groups.freeze()),
             Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "cluster search shards execution",
+                shape: "cluster search shards groups",
+                ..
+            })
+        ));
+
+        let mut nodes = StreamOutput::new();
+        nodes.write_vint(0);
+        nodes.write_vint(1);
+        nodes.write_vint(0);
+        assert!(matches!(
+            OpenSearchClusterSearchShardsResponseWire::read(nodes.freeze()),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cluster search shards nodes",
+                ..
+            })
+        ));
+
+        let mut aliases = StreamOutput::new();
+        aliases.write_vint(0);
+        aliases.write_vint(0);
+        aliases.write_vint(1);
+        assert!(matches!(
+            OpenSearchClusterSearchShardsResponseWire::read(aliases.freeze()),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cluster search shards alias filters",
                 ..
             })
         ));

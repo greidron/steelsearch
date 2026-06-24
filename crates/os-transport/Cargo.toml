@@ -462,8 +462,8 @@ name = "get-settings-wire-benchmark"
 path = "benchmarks/get_settings_wire.rs"
 
 [[bin]]
-name = "cluster-search-shards-reject-wire-benchmark"
-path = "benchmarks/cluster_search_shards_reject_wire.rs"
+name = "cluster-search-shards-wire-benchmark"
+path = "benchmarks/cluster_search_shards_wire.rs"
 
 [[bin]]
 name = "recovery-wire-benchmark"

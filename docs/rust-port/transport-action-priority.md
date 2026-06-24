@@ -177,8 +177,8 @@ The source-derived transport inventory currently has 160 rows:
 
 | Status | Count | Meaning |
 | --- | ---: | --- |
-| `implemented` | 28 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
-| `partial` | 132 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
+| `implemented` | 29 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
+| `partial` | 131 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
 | `planned` | 0 | No source-derived transport action remains unclassified. |
 
 The k-NN plugin action sweep is complete at the boundary layer. All 12
@@ -1789,11 +1789,12 @@ The cluster-search-shards boundary covers:
   `local` flag, indices array, optional routing, optional preference,
   `IndicesOptions.lenientExpandOpen()`, and OpenSearch 2.19+ slice-present flag
   at the wire decode/build layer;
-- explicit fail-closed classification for `indices:admin/shards/search_shards`
-  until shard routing metadata response rendering is implemented;
+- implemented classification for `indices:admin/shards/search_shards` default
+  all-indices/no-routing request admission and empty search-shards response
+  rendering;
 - explicit rejection for custom cluster-manager timeout, local reads, index
   filters, routing, preference, custom indices options, slice payloads, and
-  cluster-search-shards execution.
+  non-empty shard groups, nodes, or alias-filter payloads.
 
 The recovery boundary covers:
 
@@ -4444,14 +4445,16 @@ decode. The empty settings response encode/decode path is faster than request
 handling, and the full default transport path remains at roughly 1.69M ops/s in
 the latest local release run.
 
-Current cluster-search-shards reject wire microbenchmark:
+Current cluster-search-shards wire microbenchmark:
 
 ```text
-cargo run -p os-transport --release --bin cluster-search-shards-reject-wire-benchmark
-cluster_search_shards_reject_request_encode iterations=400000 elapsed_ms=263.696 ops_per_second=1516898.13 nanos_per_op=659.24
-cluster_search_shards_reject_request_decode iterations=400000 elapsed_ms=248.926 ops_per_second=1606902.99 nanos_per_op=622.32
-cluster_search_shards_reject_validation iterations=400000 elapsed_ms=254.565 ops_per_second=1571309.55 nanos_per_op=636.41
-cluster_search_shards_reject_wire_bottleneck_ops_per_second=1516898.13
+cargo run -p os-transport --release --bin cluster-search-shards-wire-benchmark
+cluster_search_shards_request_encode iterations=400000 elapsed_ms=257.667 ops_per_second=1552390.61 nanos_per_op=644.17
+cluster_search_shards_request_decode iterations=400000 elapsed_ms=249.010 ops_per_second=1606364.38 nanos_per_op=622.52
+cluster_search_shards_request_validate iterations=400000 elapsed_ms=253.447 ops_per_second=1578240.56 nanos_per_op=633.62
+cluster_search_shards_response_encode iterations=400000 elapsed_ms=86.806 ops_per_second=4607995.94 nanos_per_op=217.01
+cluster_search_shards_response_decode iterations=400000 elapsed_ms=93.972 ops_per_second=4256564.42 nanos_per_op=234.93
+cluster_search_shards_wire_bottleneck_ops_per_second=1552390.61
 ```
 
 The current cluster-search-shards fail-closed boundary bottleneck is request
@@ -6285,7 +6288,6 @@ response-shape examples.
 
 ## Tier 2: Strong Phase A Follow-Up Read/Admin Actions
 
-- `ClusterSearchShardsAction.INSTANCE`
 - `RecoveryAction.INSTANCE`
 - `IndicesSegmentsAction.INSTANCE`
 - `IndicesShardStoresAction.INSTANCE`
