@@ -8866,6 +8866,29 @@ impl SteelNode {
         if let Some(response) = validate_search_request_body(&body) {
             return response;
         }
+        if let Some(response) = validate_opensearch_boolean_query_param(
+            request.query_params.get("rest_total_hits_as_int"),
+        ) {
+            return response;
+        }
+        let rest_total_hits_as_int =
+            query_param_is_true(request.query_params.get("rest_total_hits_as_int"));
+        if rest_total_hits_as_int {
+            if let Some(threshold) = body.get("track_total_hits").and_then(Value::as_u64) {
+                return RestResponse::json(
+                    400,
+                    serde_json::json!({
+                        "error": {
+                            "type": "illegal_argument_exception",
+                            "reason": format!(
+                                "[rest_total_hits_as_int] cannot be used if the tracking of total hits is not accurate, got {threshold}"
+                            )
+                        },
+                        "status": 400
+                    }),
+                );
+            }
+        }
         let mut point_in_time_response_id = None;
         let pit_context = if let Some(pit_id) = body
             .get("pit")
@@ -9022,6 +9045,7 @@ impl SteelNode {
             if let Some(response) = self.try_native_engine_search_response(
                 &resolved_indices,
                 &body,
+                rest_total_hits_as_int,
             ) {
                 return response;
             }
@@ -9240,9 +9264,13 @@ impl SteelNode {
         response.insert(
             "hits".to_string(),
             serde_json::json!({
-                "total": {
-                    "value": total_value,
-                    "relation": total_relation
+                "total": if rest_total_hits_as_int {
+                    serde_json::json!(total_value)
+                } else {
+                    serde_json::json!({
+                        "value": total_value,
+                        "relation": total_relation
+                    })
                 },
                 "max_score": paged_hits
                     .iter()
@@ -9283,6 +9311,7 @@ impl SteelNode {
         &self,
         resolved_indices: &[String],
         body: &Value,
+        rest_total_hits_as_int: bool,
     ) -> Option<RestResponse> {
         let request = standalone_native_search_request(resolved_indices, body).ok()?;
         match self.native_engine.search(request) {
@@ -9296,6 +9325,7 @@ impl SteelNode {
                     response,
                     body,
                     total_shards,
+                    rest_total_hits_as_int,
                 ))
             }
             Err(EngineError::InvalidRequest { .. }) | Err(EngineError::IndexNotFound { .. }) => None,
@@ -18248,6 +18278,7 @@ fn native_search_response_to_rest_response(
     mut response: SearchResponse,
     body: &Value,
     total_shards: usize,
+    rest_total_hits_as_int: bool,
 ) -> RestResponse {
     response.shards = SearchShardStats {
         total: total_shards as u64,
@@ -18262,6 +18293,9 @@ fn native_search_response_to_rest_response(
             response_body["hits"]["total"] =
                 serde_json::json!({ "value": threshold, "relation": "gte" });
         }
+    }
+    if rest_total_hits_as_int {
+        response_body["hits"]["total"] = serde_json::json!(response.total_hits);
     }
     RestResponse::json(200, response_body)
 }
@@ -38029,6 +38063,36 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(total_hits_threshold.status, 200);
         assert_eq!(total_hits_threshold.body["hits"]["total"]["value"], 1);
         assert_eq!(total_hits_threshold.body["hits"]["total"]["relation"], "gte");
+
+        let total_hits_as_int = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/logs-search-params-*/_search?rest_total_hits_as_int=true",
+            )
+            .with_json_body(serde_json::json!({
+                "query": { "match_all": {} },
+                "sort": [{ "tenant": "asc" }],
+                "track_total_hits": true
+            })),
+        );
+        assert_eq!(total_hits_as_int.status, 200);
+        assert_eq!(total_hits_as_int.body["hits"]["total"], 3);
+
+        let inaccurate_total_hits_as_int = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/logs-search-params-*/_search?rest_total_hits_as_int=true",
+            )
+            .with_json_body(serde_json::json!({
+                "query": { "match_all": {} },
+                "track_total_hits": 1
+            })),
+        );
+        assert_eq!(inaccurate_total_hits_as_int.status, 400);
+        assert_eq!(
+            inaccurate_total_hits_as_int.body["error"]["reason"],
+            "[rest_total_hits_as_int] cannot be used if the tracking of total hits is not accurate, got 1"
+        );
 
         let allow_no_indices = node.handle_rest_request(
             RestRequest::new(

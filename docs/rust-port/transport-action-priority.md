@@ -2171,6 +2171,9 @@ The search boundary covers:
 - explicit rejection for source/scroll payloads, non-default index/routing/
   preference/fanout/cache/partial-results/cross-cluster/pipeline/timing shapes,
   and search execution.
+- REST search responses honor `rest_total_hits_as_int=true` for accurate total
+  hits and reject the OpenSearch-disallowed numeric `track_total_hits`
+  threshold combination.
 
 The stream-search boundary covers:
 
