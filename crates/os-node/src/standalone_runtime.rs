@@ -9132,6 +9132,13 @@ impl SteelNode {
                 index_mappings.get(&doc_index).unwrap_or(&Value::Null),
             ) {
                 if matched {
+                    if body
+                        .get("min_score")
+                        .and_then(Value::as_f64)
+                        .is_some_and(|min_score| score < min_score)
+                    {
+                        continue;
+                    }
                     let mut hit = serde_json::json!({
                         "_index": doc_index,
                         "_id": doc_id,
@@ -9156,6 +9163,27 @@ impl SteelNode {
             Ok(aggregations) => aggregations,
             Err(response) => return response,
         };
+        if let Some(post_filter) = body.get("post_filter") {
+            hits.retain(|hit| {
+                let Some(source) = hit.get("_source") else {
+                    return false;
+                };
+                let Some(index_name) = hit.get("_index").and_then(Value::as_str) else {
+                    return false;
+                };
+                let Some(doc_id) = hit.get("_id").and_then(Value::as_str) else {
+                    return false;
+                };
+                let effective_source = apply_runtime_mappings_to_source(source, body.get("runtime_mappings"));
+                evaluate_search_query_source_with_mappings(
+                    &effective_source,
+                    doc_id,
+                    post_filter,
+                    index_mappings.get(index_name).unwrap_or(&Value::Null),
+                )
+                .is_some_and(|(matched, _)| matched)
+            });
+        }
         apply_search_sort(&mut hits, &body["sort"]);
         if body.get("sort").is_none() {
             hits.sort_by(|left, right| {
@@ -18189,6 +18217,8 @@ fn standalone_search_body_allows_native_engine(body: &Value) -> bool {
         && ![
         "collapse",
         "explain",
+        "min_score",
+        "post_filter",
         "profile",
         "rescore",
         "runtime_mappings",
@@ -18623,6 +18653,21 @@ fn validate_search_request_body(body: &Value, scroll: bool) -> Option<RestRespon
             return Some(build_unsupported_search_response(
                 "unsupported search option [track_total_hits]",
             ));
+        }
+    }
+    if body.get("min_score").is_some_and(|value| !value.is_number()) {
+        return Some(build_unsupported_search_response(
+            "unsupported search option [min_score]",
+        ));
+    }
+    if let Some(post_filter) = body.get("post_filter") {
+        if !post_filter.is_object() {
+            return Some(build_unsupported_search_response(
+                "unsupported search option [post_filter]",
+            ));
+        }
+        if let Some(response) = validate_search_query_body(post_filter) {
+            return Some(response);
         }
     }
     for option in ["version", "seq_no_primary_term", "explain", "profile"] {
@@ -38796,6 +38841,77 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             invalid_profile_body.body["error"]["reason"],
             "unsupported search option [profile]"
+        );
+
+        let min_score_filters_low_scoring_hits = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-params-a/_search")
+                .with_json_body(serde_json::json!({
+                    "query": { "match_all": {} },
+                    "min_score": 1.5
+                })),
+        );
+        assert_eq!(min_score_filters_low_scoring_hits.status, 200);
+        assert_eq!(
+            min_score_filters_low_scoring_hits.body["hits"]["total"]["value"],
+            0
+        );
+
+        let invalid_min_score_body = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-params-a/_search")
+                .with_json_body(serde_json::json!({
+                    "query": { "match_all": {} },
+                    "min_score": "1.5"
+                })),
+        );
+        assert_eq!(invalid_min_score_body.status, 400);
+        assert_eq!(
+            invalid_min_score_body.body["error"]["reason"],
+            "unsupported search option [min_score]"
+        );
+
+        let post_filter_keeps_aggregation_input = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-params-a/_search")
+                .with_json_body(serde_json::json!({
+                    "query": { "match_all": {} },
+                    "post_filter": { "term": { "rank": 1 } },
+                    "aggs": {
+                        "tenants": {
+                            "terms": {
+                                "field": "tenant",
+                                "order": { "_key": "asc" }
+                            }
+                        }
+                    }
+                })),
+        );
+        assert_eq!(post_filter_keeps_aggregation_input.status, 200);
+        assert_eq!(
+            post_filter_keeps_aggregation_input.body["hits"]["total"]["value"],
+            1
+        );
+        assert_eq!(
+            post_filter_keeps_aggregation_input.body["hits"]["hits"][0]["_id"],
+            "doc-1"
+        );
+        assert_eq!(
+            post_filter_keeps_aggregation_input.body["aggregations"]["tenants"]["buckets"],
+            serde_json::json!([
+                { "key": "tenant-a", "doc_count": 1 },
+                { "key": "tenant-b", "doc_count": 1 }
+            ])
+        );
+
+        let invalid_post_filter_body = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-params-a/_search")
+                .with_json_body(serde_json::json!({
+                    "query": { "match_all": {} },
+                    "post_filter": "tenant-a"
+                })),
+        );
+        assert_eq!(invalid_post_filter_body.status, 400);
+        assert_eq!(
+            invalid_post_filter_body.body["error"]["reason"],
+            "unsupported search option [post_filter]"
         );
 
         let search_after_without_sort = node.handle_rest_request(

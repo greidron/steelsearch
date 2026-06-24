@@ -2186,6 +2186,8 @@ The search boundary covers:
 - REST search source parsing applies `explain`, `version`, and
   `seq_no_primary_term` boolean body/query parameters, accepts body `profile`
   booleans, and renders requested hit metadata/profile data.
+- REST search applies top-level `min_score` filtering and bounded
+  `post_filter` hit filtering while preserving aggregation input.
 - REST search validates `search_after` scroll/from/sort-count and sort-value
   type constraints with OpenSearch-shaped shard failure errors and renders
   requested hit `sort` values for reuse by follow-up pages.
