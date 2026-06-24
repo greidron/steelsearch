@@ -16510,25 +16510,67 @@ impl SteelNode {
     }
 
     fn handle_cat_pit_segments_route(&self, request: &RestRequest, include_all: bool) -> RestResponse {
-        if !include_all {
-            return RestResponse::json(
-                400,
-                serde_json::json!({
-                    "error": {
-                        "root_cause": [
-                            {
-                                "type": "action_request_validation_exception",
-                                "reason": "Validation Failed: 1: no pit ids specified;"
-                            }
-                        ],
-                        "type": "action_request_validation_exception",
-                        "reason": "Validation Failed: 1: no pit ids specified;"
-                    },
-                    "status": 400
-                }),
-            );
+        let pit_ids = if include_all {
+            self.pit_contexts
+                .lock()
+                .expect("pit contexts lock poisoned")
+                .keys()
+                .cloned()
+                .collect::<Vec<_>>()
+        } else {
+            let body = serde_json::from_slice::<Value>(&request.body).unwrap_or(Value::Null);
+            match parse_pit_segments_ids(&body) {
+                Ok(ids) => ids,
+                Err(response) => return response,
+            }
+        };
+        let contexts = self
+            .pit_contexts
+            .lock()
+            .expect("pit contexts lock poisoned");
+        let mut rows = Vec::new();
+        for pit_id in pit_ids {
+            let Some(context) = contexts.get(&pit_id) else {
+                continue;
+            };
+            for index in &context.indices {
+                let docs = context
+                    .documents
+                    .keys()
+                    .filter_map(|key| split_document_key(key).map(|(doc_index, _, _)| doc_index))
+                    .filter(|doc_index| doc_index == index)
+                    .count();
+                rows.push(serde_json::json!({
+                    "index": index,
+                    "shard": "0",
+                    "prirep": "p",
+                    "ip": "127.0.0.1",
+                    "id": self.info.name.clone(),
+                    "segment": "_0",
+                    "generation": "0",
+                    "docs.count": docs.to_string(),
+                    "docs.deleted": "0",
+                    "size": "0b",
+                    "size.memory": "0",
+                    "committed": "true",
+                    "searchable": "true",
+                    "version": "0",
+                    "compound": "false"
+                }));
+            }
         }
-        let rows: Vec<Value> = Vec::new();
+        rows.sort_by(|left, right| {
+            left["index"]
+                .as_str()
+                .unwrap_or_default()
+                .cmp(right["index"].as_str().unwrap_or_default())
+                .then_with(|| {
+                    left["segment"]
+                        .as_str()
+                        .unwrap_or_default()
+                        .cmp(right["segment"].as_str().unwrap_or_default())
+                })
+        });
         if request.query_params.get("format").is_some_and(|value| value == "json") {
             return RestResponse::json(200, Value::Array(rows));
         }
@@ -16539,6 +16581,25 @@ impl SteelNode {
                 "index shard prirep ip segment generation docs.count docs.deleted size size.memory committed searchable version compound"
                     .to_string(),
             );
+        }
+        for row in &rows {
+            lines.push(format!(
+                "{} {} {} {} {} {} {} {} {} {} {} {} {} {}",
+                row["index"].as_str().unwrap_or(""),
+                row["shard"].as_str().unwrap_or("0"),
+                row["prirep"].as_str().unwrap_or("p"),
+                row["ip"].as_str().unwrap_or("127.0.0.1"),
+                row["segment"].as_str().unwrap_or("_0"),
+                row["generation"].as_str().unwrap_or("0"),
+                row["docs.count"].as_str().unwrap_or("0"),
+                row["docs.deleted"].as_str().unwrap_or("0"),
+                row["size"].as_str().unwrap_or("0b"),
+                row["size.memory"].as_str().unwrap_or("0"),
+                row["committed"].as_str().unwrap_or("true"),
+                row["searchable"].as_str().unwrap_or("true"),
+                row["version"].as_str().unwrap_or("0"),
+                row["compound"].as_str().unwrap_or("false"),
+            ));
         }
         RestResponse::text(200, lines.join("\n") + "\n")
     }
@@ -19405,6 +19466,26 @@ fn parse_routing_values(routing: &str) -> Vec<String> {
 }
 
 fn parse_delete_pit_ids(body: &Value) -> Result<Vec<String>, RestResponse> {
+    parse_pit_ids_with_messages(
+        body,
+        "pit_id element should only contain pit_id",
+        "pit_id array element should only contain pit_id",
+    )
+}
+
+fn parse_pit_segments_ids(body: &Value) -> Result<Vec<String>, RestResponse> {
+    parse_pit_ids_with_messages(
+        body,
+        "pit_id element should only contain PIT identifier",
+        "pit_id array element should only contain PIT identifier",
+    )
+}
+
+fn parse_pit_ids_with_messages(
+    body: &Value,
+    scalar_error: &str,
+    array_error: &str,
+) -> Result<Vec<String>, RestResponse> {
     if body.is_null() {
         return Err(delete_pit_validation_error("no pit ids specified"));
     }
@@ -19426,9 +19507,7 @@ fn parse_delete_pit_ids(body: &Value) -> Result<Vec<String>, RestResponse> {
         let mut ids = Vec::new();
         for id in id_array {
             let Some(id) = pit_id_value_as_text(id) else {
-                return Err(delete_pit_illegal_argument(
-                    "pit_id array element should only contain pit_id",
-                ));
+                return Err(delete_pit_illegal_argument(array_error));
             };
             ids.push(id);
         }
@@ -19436,9 +19515,7 @@ fn parse_delete_pit_ids(body: &Value) -> Result<Vec<String>, RestResponse> {
     } else if let Some(id) = pit_id_value_as_text(pit_id) {
         vec![id]
     } else {
-        return Err(delete_pit_illegal_argument(
-            "pit_id element should only contain pit_id",
-        ));
+        return Err(delete_pit_illegal_argument(scalar_error));
     };
     if ids.is_empty() {
         return Err(delete_pit_validation_error("no pit ids specified"));
@@ -26543,6 +26620,54 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             "action_request_validation_exception"
         );
 
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(RestMethod::Put, "/logs-pit-segments-000001"))
+                .status,
+            200
+        );
+        for id in ["doc-1", "doc-2"] {
+            assert_eq!(
+                node.handle_rest_request(
+                    RestRequest::new(
+                        RestMethod::Put,
+                        &format!("/logs-pit-segments-000001/_doc/{id}"),
+                    )
+                    .with_json_body(serde_json::json!({ "message": id })),
+                )
+                .status,
+                201
+            );
+        }
+        let open_pit = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/logs-pit-segments-000001/_search/point_in_time?keep_alive=1m",
+        ));
+        assert_eq!(open_pit.status, 200);
+        let pit_id = open_pit.body["pit_id"].as_str().unwrap();
+
+        let mut pit_body_json_request = RestRequest::new(RestMethod::Get, "/_cat/pit_segments")
+            .with_json_body(serde_json::json!({ "pit_id": pit_id }));
+        pit_body_json_request
+            .query_params
+            .insert("format".to_string(), "json".to_string());
+        let pit_body_json_response = node.handle_rest_request(pit_body_json_request);
+        assert_eq!(pit_body_json_response.status, 200);
+        assert_eq!(
+            pit_body_json_response.body[0]["index"],
+            "logs-pit-segments-000001"
+        );
+        assert_eq!(pit_body_json_response.body[0]["docs.count"], "2");
+
+        let object_pit_segments_id = node.handle_rest_request(
+            RestRequest::new(RestMethod::Get, "/_cat/pit_segments")
+                .with_json_body(serde_json::json!({ "pit_id": { "id": pit_id } })),
+        );
+        assert_eq!(object_pit_segments_id.status, 400);
+        assert_eq!(
+            object_pit_segments_id.body["error"]["reason"],
+            "pit_id element should only contain PIT identifier"
+        );
+
         let mut pit_text_request = RestRequest::new(RestMethod::Get, "/_cat/pit_segments/_all");
         pit_text_request
             .query_params
@@ -26555,6 +26680,8 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert!(pit_text.contains(
             "index shard prirep ip segment generation docs.count docs.deleted size size.memory committed searchable version compound"
         ));
+        assert!(pit_text.contains("logs-pit-segments-000001"));
+        assert!(pit_text.contains(" 2 0 0b "));
 
         let mut pit_all_request = RestRequest::new(RestMethod::Get, "/_cat/pit_segments/_all");
         pit_all_request
@@ -26562,7 +26689,8 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             .insert("format".to_string(), "json".to_string());
         let pit_all_response = node.handle_rest_request(pit_all_request);
         assert_eq!(pit_all_response.status, 200);
-        assert_eq!(pit_all_response.body, Value::Array(Vec::new()));
+        assert_eq!(pit_all_response.body[0]["index"], "logs-pit-segments-000001");
+        assert_eq!(pit_all_response.body[0]["docs.count"], "2");
     }
 
     #[test]
