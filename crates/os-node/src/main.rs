@@ -1475,6 +1475,33 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end,
             &mut connection_end_at_ms,
         )?;
+    } else if is_request && normalized_action_hint == Some("cluster:admin/indices/dangling/find") {
+        let response = build_empty_find_dangling_index_response(
+            request_id,
+            header_version_id,
+            transport_identity,
+        );
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("cluster:admin/indices/dangling/find"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
     } else if is_request && normalized_action_hint == Some("cluster:monitor/nodes/hot_threads") {
         let response =
             build_nodes_hot_threads_response(request_id, header_version_id, transport_identity);
@@ -3413,6 +3440,22 @@ fn build_empty_list_dangling_indices_response(
     .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
 }
 
+fn build_empty_find_dangling_index_response(
+    request_id: i64,
+    header_version_id: u32,
+    transport_identity: &DevTransportIdentity,
+) -> Vec<u8> {
+    os_transport::action::build_opensearch_find_dangling_index_response_message(
+        request_id,
+        Version::from_id(header_version_id as i32),
+        &os_transport::action::OpenSearchFindDanglingIndexResponseWire::empty(
+            transport_identity.cluster_name.clone(),
+        ),
+    )
+    .map(|frame| frame.to_vec())
+    .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
+}
+
 fn build_nodes_hot_threads_response(
     request_id: i64,
     header_version_id: u32,
@@ -5193,6 +5236,13 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
         )),
         Some("cluster:admin/indices/dangling/list") => {
             Some(build_empty_list_dangling_indices_response(
+                request_id,
+                header_version_id,
+                transport_identity,
+            ))
+        }
+        Some("cluster:admin/indices/dangling/find") => {
+            Some(build_empty_find_dangling_index_response(
                 request_id,
                 header_version_id,
                 transport_identity,
@@ -9707,6 +9757,47 @@ mod tests {
             os_transport::action::OpenSearchListDanglingIndicesResponseWire::empty(
                 "steelsearch-dev"
             )
+        );
+    }
+
+    #[test]
+    fn find_dangling_index_transport_route_builds_opensearch_shaped_empty_response() {
+        let transport_identity = DevTransportIdentity {
+            cluster_name: "steelsearch-dev".to_string(),
+            node_name: "steel-node".to_string(),
+            node_id: "steel-node-id".to_string(),
+            ephemeral_id: "steel-node-ephemeral".to_string(),
+            transport_address: "127.0.0.1:9300".parse().unwrap(),
+            attributes: Vec::new(),
+            roles: vec!["cluster_manager".to_string(), "data".to_string()],
+            seed_peer_identity: None,
+            seed_peer_identities: Vec::new(),
+            coordination_state: Arc::new(Mutex::new(DevTransportCoordinationState::default())),
+            remote_transport_queue_gate: Arc::new(RemoteTransportQueueGate::new(1, 1000)),
+            task_queue_state: None,
+        };
+        let response = build_empty_find_dangling_index_response(
+            92,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &transport_identity,
+        );
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected find dangling index response message");
+        };
+
+        assert_eq!(message.request_id, 92);
+        assert!(!message.status.is_request());
+        let response =
+            os_transport::action::read_opensearch_find_dangling_index_response_message(&message)
+                .unwrap();
+        assert_eq!(
+            response,
+            os_transport::action::OpenSearchFindDanglingIndexResponseWire::empty("steelsearch-dev")
         );
     }
 

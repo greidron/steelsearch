@@ -570,8 +570,8 @@ name = "delete-dangling-index-reject-wire-benchmark"
 path = "benchmarks/delete_dangling_index_reject_wire.rs"
 
 [[bin]]
-name = "find-dangling-index-reject-wire-benchmark"
-path = "benchmarks/find_dangling_index_reject_wire.rs"
+name = "find-dangling-index-wire-benchmark"
+path = "benchmarks/find_dangling_index_wire.rs"
 
 [[bin]]
 name = "search-reject-wire-benchmark"

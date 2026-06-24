@@ -15,19 +15,15 @@ const ITERATIONS: usize = 400_000;
 fn main() {
     let request = OpenSearchFindDanglingIndexRequestWire::default();
 
-    let request_encode = measure(
-        "find_dangling_index_reject_request_encode",
-        ITERATIONS,
-        || {
-            let frame = build_opensearch_find_dangling_index_request_message(
-                96,
-                OPENSEARCH_3_7_0_TRANSPORT,
-                black_box(&request),
-            )
-            .expect("find-dangling-index request encode should succeed");
-            black_box(frame);
-        },
-    );
+    let request_encode = measure("find_dangling_index_request_encode", ITERATIONS, || {
+        let frame = build_opensearch_find_dangling_index_request_message(
+            96,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            black_box(&request),
+        )
+        .expect("find-dangling-index request encode should succeed");
+        black_box(frame);
+    });
 
     let request_frame = build_opensearch_find_dangling_index_request_message(
         96,
@@ -36,30 +32,35 @@ fn main() {
     )
     .expect("find-dangling-index request encode should succeed");
 
-    let request_decode = measure(
-        "find_dangling_index_reject_request_decode",
-        ITERATIONS,
-        || {
-            let mut frame = black_box(request_frame.clone());
-            let message = decode_message(&mut frame);
-            let decoded = read_opensearch_find_dangling_index_request_message(black_box(&message))
-                .expect("find-dangling-index request decode");
-            black_box(decoded);
-        },
-    );
-
-    let reject_validate = measure("find_dangling_index_reject_validation", ITERATIONS, || {
+    let request_decode = measure("find_dangling_index_request_decode", ITERATIONS, || {
         let mut frame = black_box(request_frame.clone());
         let message = decode_message(&mut frame);
         let decoded = read_opensearch_find_dangling_index_request_message(black_box(&message))
             .expect("find-dangling-index request decode");
-        let err = decoded
-            .reject_unsupported_execution()
-            .expect_err("find-dangling-index execution should reject");
-        black_box(err);
+        black_box(decoded);
+    });
+
+    let request_validate = measure("find_dangling_index_request_validate", ITERATIONS, || {
+        let mut frame = black_box(request_frame.clone());
+        let message = decode_message(&mut frame);
+        let decoded = read_opensearch_find_dangling_index_request_message(black_box(&message))
+            .expect("find-dangling-index request decode");
+        decoded
+            .validate_supported_subset()
+            .expect("find-dangling-index request should validate");
+        black_box(decoded);
     });
 
     let response = OpenSearchFindDanglingIndexResponseWire::default();
+    let response_encode = measure("find_dangling_index_response_encode", ITERATIONS, || {
+        let frame = build_opensearch_find_dangling_index_response_message(
+            96,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            black_box(&response),
+        )
+        .expect("find-dangling-index response encode should succeed");
+        black_box(frame);
+    });
     let response_frame = build_opensearch_find_dangling_index_response_message(
         96,
         OPENSEARCH_3_7_0_TRANSPORT,
@@ -67,26 +68,21 @@ fn main() {
     )
     .expect("find-dangling-index response encode should succeed");
 
-    let response_decode = measure(
-        "find_dangling_index_empty_response_decode",
-        ITERATIONS,
-        || {
-            let mut frame = black_box(response_frame.clone());
-            let message = decode_message(&mut frame);
-            let decoded = read_opensearch_find_dangling_index_response_message(black_box(&message))
-                .expect("find-dangling-index response decode");
-            black_box(decoded);
-        },
-    );
+    let response_decode = measure("find_dangling_index_response_decode", ITERATIONS, || {
+        let mut frame = black_box(response_frame.clone());
+        let message = decode_message(&mut frame);
+        let decoded = read_opensearch_find_dangling_index_response_message(black_box(&message))
+            .expect("find-dangling-index response decode");
+        black_box(decoded);
+    });
 
     let combined_ops_per_second = request_encode
         .ops_per_second
         .min(request_decode.ops_per_second)
-        .min(reject_validate.ops_per_second)
+        .min(request_validate.ops_per_second)
+        .min(response_encode.ops_per_second)
         .min(response_decode.ops_per_second);
-    println!(
-        "find_dangling_index_reject_wire_bottleneck_ops_per_second={combined_ops_per_second:.2}"
-    );
+    println!("find_dangling_index_wire_bottleneck_ops_per_second={combined_ops_per_second:.2}");
 }
 
 #[derive(Clone, Copy)]

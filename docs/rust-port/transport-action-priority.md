@@ -177,8 +177,8 @@ The source-derived transport inventory currently has 160 rows:
 
 | Status | Count | Meaning |
 | --- | ---: | --- |
-| `implemented` | 35 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
-| `partial` | 125 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
+| `implemented` | 36 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
+| `partial` | 124 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
 | `planned` | 0 | No source-derived transport action remains unclassified. |
 
 The k-NN plugin action sweep is complete at the boundary layer. All 12
@@ -2153,14 +2153,11 @@ The find-dangling-index boundary covers:
   the wire decode/build layer;
 - OpenSearch `FindDanglingIndexResponse` cluster name plus empty successful
   node response and failure lists as the bounded response subset;
-- explicit fail-closed classification for
-  `cluster:admin/indices/dangling/find` until BaseNodes fanout, dangling index
-  state scan, node `IndexMetadata` aggregation, failures, and response
-  rendering are implemented;
+- implemented classification for `cluster:admin/indices/dangling/find`
+  explicit UUID requests returning an OpenSearch-shaped empty result response;
 - explicit rejection for concrete DiscoveryNode payloads, node filters,
   timeout semantics, missing or oversized index UUIDs, non-empty node
-  responses, node failures, find-dangling-index execution, and response
-  rendering.
+  responses, and node failures.
 
 The search boundary covers:
 
@@ -4928,23 +4925,25 @@ admission. At roughly 1.16M ops/s in the latest local release run, future
 performance-sensitive work is dangling index lookup, index graveyard mutation,
 cluster metadata publication, and acknowledgement rendering.
 
-Current find-dangling-index reject wire microbenchmark:
+Current find-dangling-index supported-subset wire microbenchmark:
 
 ```text
-cargo run -p os-transport --release --bin find-dangling-index-reject-wire-benchmark
-find_dangling_index_reject_request_encode iterations=400000 elapsed_ms=340.891 ops_per_second=1173396.16 nanos_per_op=852.23
-find_dangling_index_reject_request_decode iterations=400000 elapsed_ms=308.503 ops_per_second=1296585.65 nanos_per_op=771.26
-find_dangling_index_reject_validation iterations=400000 elapsed_ms=305.887 ops_per_second=1307672.52 nanos_per_op=764.72
-find_dangling_index_empty_response_decode iterations=400000 elapsed_ms=103.635 ops_per_second=3859692.57 nanos_per_op=259.09
-find_dangling_index_reject_wire_bottleneck_ops_per_second=1173396.16
+cargo run -p os-transport --release --bin find-dangling-index-wire-benchmark
+find_dangling_index_request_encode iterations=400000 elapsed_ms=330.446 ops_per_second=1210485.44 nanos_per_op=826.11
+find_dangling_index_request_decode iterations=400000 elapsed_ms=304.380 ops_per_second=1314145.70 nanos_per_op=760.95
+find_dangling_index_request_validate iterations=400000 elapsed_ms=302.534 ops_per_second=1322165.11 nanos_per_op=756.34
+find_dangling_index_response_encode iterations=400000 elapsed_ms=95.970 ops_per_second=4167967.72 nanos_per_op=239.93
+find_dangling_index_response_decode iterations=400000 elapsed_ms=97.525 ops_per_second=4101522.23 nanos_per_op=243.81
+find_dangling_index_wire_bottleneck_ops_per_second=1210485.44
 ```
 
-The current find-dangling-index fail-closed boundary bottleneck is request
-encode. This path carries the `BaseNodesRequest` node filter, timeout, and
-required index UUID before rejecting at admission. At roughly 1.17M ops/s in
-the latest local release run, future performance-sensitive work is BaseNodes
-fanout, dangling index state scan, node `IndexMetadata` aggregation, failures,
-and response rendering.
+The current find-dangling-index supported subset bottleneck is request encode.
+This path carries the `BaseNodesRequest` node filter, timeout, and required
+index UUID, validates the explicit-UUID empty-result subset, and renders an
+empty OpenSearch BaseNodes response. At roughly 1.21M ops/s in the latest local
+release run, the adapter does not expose a material wire-codec regression;
+future performance-sensitive work is populated dangling index state scan, node
+`IndexMetadata` aggregation, and failure decoding.
 
 Current search reject wire microbenchmark:
 

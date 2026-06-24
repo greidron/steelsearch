@@ -517,7 +517,7 @@ transport_action	planned	action	RetentionLeaseActions.Remove.INSTANCE	RetentionL
 transport_action	implemented	action	ListDanglingIndicesAction.INSTANCE	TransportListDanglingIndicesAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	815
 transport_action	planned	action	ImportDanglingIndexAction.INSTANCE	TransportImportDanglingIndexAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	816
 transport_action	planned	action	DeleteDanglingIndexAction.INSTANCE	TransportDeleteDanglingIndexAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	817
-transport_action	planned	action	FindDanglingIndexAction.INSTANCE	TransportFindDanglingIndexAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	818
+transport_action	implemented	action	FindDanglingIndexAction.INSTANCE	TransportFindDanglingIndexAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	818
 transport_action	planned	action	CreatePitAction.INSTANCE	TransportCreatePitAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	821
 transport_action	planned	action	DeletePitAction.INSTANCE	TransportDeletePitAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	822
 transport_action	planned	action	PitSegmentsAction.INSTANCE	TransportPitSegmentsAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	823
