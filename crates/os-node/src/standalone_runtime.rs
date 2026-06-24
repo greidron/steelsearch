@@ -18624,39 +18624,79 @@ fn validate_opensearch_boolean_query_param(raw: Option<&String>) -> Option<RestR
 }
 
 fn parse_delete_pit_ids(body: &Value) -> Result<Vec<String>, RestResponse> {
-    let Some(object) = body.as_object() else {
+    if body.is_null() {
         return Err(delete_pit_validation_error("no pit ids specified"));
-    };
-    if object.keys().any(|key| key != "pit_id") {
-        return Err(RestResponse::json(
-            400,
-            serde_json::json!({
-                "error": {
-                    "type": "illegal_argument_exception",
-                    "reason": "Unknown parameter in request body"
-                },
-                "status": 400
-            }),
+    }
+    let Some(object) = body.as_object() else {
+        return Err(delete_pit_illegal_argument(
+            "Malformed content, must start with an object",
         ));
+    };
+    if let Some((key, value)) = object.iter().find(|(key, _)| key.as_str() != "pit_id") {
+        return Err(delete_pit_illegal_argument(format!(
+            "Unknown parameter [{key}] in request body or parameter is of the wrong type[{}] ",
+            xcontent_token_name(value)
+        )));
     }
     let Some(pit_id) = object.get("pit_id") else {
         return Err(delete_pit_validation_error("no pit ids specified"));
     };
-    let ids = if let Some(id) = pit_id.as_str() {
-        vec![id.to_string()]
-    } else if let Some(id_array) = pit_id.as_array() {
-        id_array
-            .iter()
-            .filter_map(Value::as_str)
-            .map(str::to_string)
-            .collect::<Vec<_>>()
+    let ids = if let Some(id_array) = pit_id.as_array() {
+        let mut ids = Vec::new();
+        for id in id_array {
+            let Some(id) = pit_id_value_as_text(id) else {
+                return Err(delete_pit_illegal_argument(
+                    "pit_id array element should only contain pit_id",
+                ));
+            };
+            ids.push(id);
+        }
+        ids
+    } else if let Some(id) = pit_id_value_as_text(pit_id) {
+        vec![id]
     } else {
-        Vec::new()
+        return Err(delete_pit_illegal_argument(
+            "pit_id element should only contain pit_id",
+        ));
     };
     if ids.is_empty() {
         return Err(delete_pit_validation_error("no pit ids specified"));
     }
     Ok(ids)
+}
+
+fn pit_id_value_as_text(value: &Value) -> Option<String> {
+    match value {
+        Value::String(value) => Some(value.clone()),
+        Value::Number(value) => Some(value.to_string()),
+        Value::Bool(value) => Some(value.to_string()),
+        Value::Null => Some("null".to_string()),
+        Value::Array(_) | Value::Object(_) => None,
+    }
+}
+
+fn xcontent_token_name(value: &Value) -> &'static str {
+    match value {
+        Value::Object(_) => "START_OBJECT",
+        Value::Array(_) => "START_ARRAY",
+        Value::String(_) => "VALUE_STRING",
+        Value::Number(_) => "VALUE_NUMBER",
+        Value::Bool(_) => "VALUE_BOOLEAN",
+        Value::Null => "VALUE_NULL",
+    }
+}
+
+fn delete_pit_illegal_argument(reason: impl Into<String>) -> RestResponse {
+    RestResponse::json(
+        400,
+        serde_json::json!({
+            "error": {
+                "type": "illegal_argument_exception",
+                "reason": reason.into()
+            },
+            "status": 400
+        }),
+    )
 }
 
 fn delete_pit_validation_error(reason: &str) -> RestResponse {
@@ -35103,6 +35143,53 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             close_missing_body_pit.body["error"]["type"],
             "action_request_validation_exception"
         );
+
+        let malformed_close_pit = node.handle_rest_request(
+            RestRequest::new(RestMethod::Delete, "/_search/point_in_time")
+                .with_json_body(serde_json::json!(["pit-1"])),
+        );
+        assert_eq!(malformed_close_pit.status, 400);
+        assert_eq!(
+            malformed_close_pit.body["error"]["reason"],
+            "Malformed content, must start with an object"
+        );
+
+        let unknown_close_pit_field = node.handle_rest_request(
+            RestRequest::new(RestMethod::Delete, "/_search/point_in_time")
+                .with_json_body(serde_json::json!({ "id": "pit-1" })),
+        );
+        assert_eq!(unknown_close_pit_field.status, 400);
+        assert_eq!(
+            unknown_close_pit_field.body["error"]["reason"],
+            "Unknown parameter [id] in request body or parameter is of the wrong type[VALUE_STRING] "
+        );
+
+        let object_close_pit_id = node.handle_rest_request(
+            RestRequest::new(RestMethod::Delete, "/_search/point_in_time")
+                .with_json_body(serde_json::json!({ "pit_id": { "id": "pit-1" } })),
+        );
+        assert_eq!(object_close_pit_id.status, 400);
+        assert_eq!(
+            object_close_pit_id.body["error"]["reason"],
+            "pit_id element should only contain pit_id"
+        );
+
+        let object_close_pit_array_id = node.handle_rest_request(
+            RestRequest::new(RestMethod::Delete, "/_search/point_in_time")
+                .with_json_body(serde_json::json!({ "pit_id": ["pit-1", { "id": "pit-2" }] })),
+        );
+        assert_eq!(object_close_pit_array_id.status, 400);
+        assert_eq!(
+            object_close_pit_array_id.body["error"]["reason"],
+            "pit_id array element should only contain pit_id"
+        );
+
+        let numeric_close_pit = node.handle_rest_request(
+            RestRequest::new(RestMethod::Delete, "/_search/point_in_time")
+                .with_json_body(serde_json::json!({ "pit_id": 7 })),
+        );
+        assert_eq!(numeric_close_pit.status, 200);
+        assert_eq!(numeric_close_pit.body["pits"][0]["pit_id"], "7");
 
         let close_single_pit = node.handle_rest_request(
             RestRequest::new(RestMethod::Delete, "/_search/point_in_time")
