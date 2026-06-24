@@ -1,6 +1,8 @@
 use os_core::OPENSEARCH_3_7_0_TRANSPORT;
 use os_transport::action::{
-    build_remote_info_request_message, read_remote_info_request_message, RemoteInfoRequestWire,
+    build_remote_info_request_message, build_remote_info_response_message,
+    read_remote_info_request_message, read_remote_info_response_message, RemoteInfoRequestWire,
+    RemoteInfoResponseWire,
 };
 use os_transport::frame::{decode_frame, DecodedFrame};
 use std::hint::black_box;
@@ -10,8 +12,9 @@ const ITERATIONS: usize = 400_000;
 
 fn main() {
     let request = RemoteInfoRequestWire::default();
+    let response = RemoteInfoResponseWire::default();
 
-    let request_encode = measure("remote_info_reject_request_encode", ITERATIONS, || {
+    let request_encode = measure("remote_info_request_encode", ITERATIONS, || {
         let frame =
             build_remote_info_request_message(72, OPENSEARCH_3_7_0_TRANSPORT, black_box(&request))
                 .expect("remote-info request encode should succeed");
@@ -21,7 +24,7 @@ fn main() {
     let request_frame = build_remote_info_request_message(72, OPENSEARCH_3_7_0_TRANSPORT, &request)
         .expect("remote-info request encode should succeed");
 
-    let request_decode = measure("remote_info_reject_request_decode", ITERATIONS, || {
+    let request_decode = measure("remote_info_request_decode", ITERATIONS, || {
         let mut frame = black_box(request_frame.clone());
         let message = decode_message(&mut frame);
         let decoded = read_remote_info_request_message(black_box(&message))
@@ -29,22 +32,45 @@ fn main() {
         black_box(decoded);
     });
 
-    let reject_validate = measure("remote_info_reject_validation", ITERATIONS, || {
+    let supported_validate = measure("remote_info_supported_validation", ITERATIONS, || {
         let mut frame = black_box(request_frame.clone());
         let message = decode_message(&mut frame);
         let decoded = read_remote_info_request_message(black_box(&message))
             .expect("remote-info request decode");
-        let err = decoded
-            .reject_unsupported_execution()
-            .expect_err("remote-info execution should reject");
-        black_box(err);
+        decoded
+            .validate_supported_subset()
+            .expect("remote-info default request should validate");
+        black_box(decoded);
+    });
+
+    let response_encode = measure("remote_info_response_encode", ITERATIONS, || {
+        let frame = build_remote_info_response_message(
+            72,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            black_box(&response),
+        )
+        .expect("remote-info response encode should succeed");
+        black_box(frame);
+    });
+
+    let response_frame =
+        build_remote_info_response_message(72, OPENSEARCH_3_7_0_TRANSPORT, &response)
+            .expect("remote-info response encode should succeed");
+    let response_decode = measure("remote_info_response_decode", ITERATIONS, || {
+        let mut frame = black_box(response_frame.clone());
+        let message = decode_message(&mut frame);
+        let decoded = read_remote_info_response_message(black_box(&message))
+            .expect("remote-info response decode");
+        black_box(decoded);
     });
 
     let combined_ops_per_second = request_encode
         .ops_per_second
         .min(request_decode.ops_per_second)
-        .min(reject_validate.ops_per_second);
-    println!("remote_info_reject_wire_bottleneck_ops_per_second={combined_ops_per_second:.2}");
+        .min(supported_validate.ops_per_second)
+        .min(response_encode.ops_per_second)
+        .min(response_decode.ops_per_second);
+    println!("remote_info_wire_bottleneck_ops_per_second={combined_ops_per_second:.2}");
 }
 
 #[derive(Clone, Copy)]

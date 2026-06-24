@@ -1643,8 +1643,8 @@ pub fn classify_opensearch_transport_action(
         },
         REMOTE_INFO_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
-            disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "remote-info transport execution requires remote connection info response rendering",
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "remote-info transport adapter is available for the empty remote-connection subset",
         },
         GET_TERM_VERSION_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -4363,6 +4363,35 @@ pub fn read_remote_info_request_message(
         });
     }
     RemoteInfoRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_remote_info_response_message(
+    request_id: i64,
+    version: Version,
+    response: &RemoteInfoResponseWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    response.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::response(),
+        version,
+        variable_header: BytesMut::new(),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_remote_info_response_message(
+    message: &TransportMessage,
+) -> Result<RemoteInfoResponseWire, TransportActionWireError> {
+    if message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "response",
+            actual: message.status.bits(),
+        });
+    }
+    RemoteInfoResponseWire::read(message.body.clone().freeze())
 }
 
 pub fn build_get_term_version_request_message(
@@ -24482,12 +24511,53 @@ impl RemoteInfoRequestWire {
         Ok(request)
     }
 
+    pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
+        Ok(())
+    }
+
     pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        self.validate_supported_subset()?;
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "remote info execution",
-            reason:
-                "remote-info transport execution requires remote connection info response rendering",
+            reason: "use validate_supported_subset for the implemented empty remote-info adapter",
         })
+    }
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct RemoteInfoResponseWire {
+    pub remote_connection_count: i32,
+}
+
+impl RemoteInfoResponseWire {
+    pub fn write(&self, output: &mut StreamOutput) {
+        output.write_vint(self.remote_connection_count);
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let remote_connection_count = read_len(&mut input)?;
+        if remote_connection_count != 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "remote info remote connections",
+                reason: "non-empty remote connection info payloads require RemoteConnectionInfo wire mapping",
+            });
+        }
+        require_no_trailing_bytes(&input)?;
+        let response = Self {
+            remote_connection_count: 0,
+        };
+        Ok(response)
+    }
+
+    pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
+        if self.remote_connection_count != 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "remote info remote connections",
+                reason: "non-empty remote connection info payloads are outside the empty remote-info subset",
+            });
+        }
+        Ok(())
     }
 }
 
@@ -32650,7 +32720,7 @@ mod tests {
         );
         assert_eq!(
             classify_opensearch_transport_action(REMOTE_INFO_ACTION_NAME).disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             classify_opensearch_transport_action(GET_TERM_VERSION_ACTION_NAME).disposition,
@@ -35508,7 +35578,7 @@ mod tests {
     }
 
     #[test]
-    fn remote_info_request_wire_round_trips_and_rejects_execution_boundary() {
+    fn remote_info_request_wire_round_trips_supported_empty_subset() {
         let request = RemoteInfoRequestWire {
             parent_task_node: "remote-node".to_string(),
             parent_task_id: Some(43),
@@ -35518,17 +35588,32 @@ mod tests {
 
         let decoded = RemoteInfoRequestWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, request);
+        decoded.validate_supported_subset().unwrap();
+    }
+
+    #[test]
+    fn remote_info_response_wire_round_trips_empty_subset() {
+        let response = RemoteInfoResponseWire::default();
+        let mut output = StreamOutput::new();
+        response.write(&mut output);
+
+        let decoded = RemoteInfoResponseWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, response);
+        decoded.validate_supported_subset().unwrap();
+
+        let mut non_empty = StreamOutput::new();
+        non_empty.write_vint(1);
         assert!(matches!(
-            decoded.reject_unsupported_execution(),
+            RemoteInfoResponseWire::read(non_empty.freeze()),
             Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "remote info execution",
+                shape: "remote info remote connections",
                 ..
             })
         ));
     }
 
     #[test]
-    fn remote_info_transport_messages_bind_rejected_action_frame() {
+    fn remote_info_transport_messages_bind_supported_action_frame_and_response() {
         let request = RemoteInfoRequestWire::default();
         let mut frame =
             build_remote_info_request_message(72, OPENSEARCH_3_7_0_TRANSPORT, &request).unwrap();
@@ -35536,15 +35621,24 @@ mod tests {
             panic!("expected remote-info request message");
         };
         assert_eq!(read_remote_info_request_message(&message).unwrap(), request);
-        assert!(matches!(
-            read_remote_info_request_message(&message)
+        assert_eq!(
+            classify_opensearch_transport_request_message(&message)
                 .unwrap()
-                .reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "remote info execution",
-                ..
-            })
-        ));
+                .disposition,
+            OpenSearchTransportActionDisposition::Implemented
+        );
+        read_remote_info_request_message(&message)
+            .unwrap()
+            .validate_supported_subset()
+            .unwrap();
+
+        let response = RemoteInfoResponseWire::default();
+        let mut frame =
+            build_remote_info_response_message(72, OPENSEARCH_3_7_0_TRANSPORT, &response).unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected remote-info response message");
+        };
+        assert_eq!(read_remote_info_response_message(&message).unwrap(), response);
     }
 
     #[test]

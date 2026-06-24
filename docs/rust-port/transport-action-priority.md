@@ -177,8 +177,8 @@ The source-derived transport inventory currently has 160 rows:
 
 | Status | Count | Meaning |
 | --- | ---: | --- |
-| `implemented` | 16 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
-| `partial` | 144 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
+| `implemented` | 17 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
+| `partial` | 143 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
 | `planned` | 0 | No source-derived transport action remains unclassified. |
 
 The k-NN plugin action sweep is complete at the boundary layer. All 12
@@ -231,7 +231,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 `crates/os-transport/src/action.rs` accepts:
 
 - `cluster:monitor/main` (rejected fail-closed)
-- `cluster:monitor/remote/info` (rejected fail-closed)
+- `cluster:monitor/remote/info` (implemented empty remote-connection subset)
 - `internal:monitor/term` (rejected fail-closed)
 - `cluster:monitor/state`
 - `cluster:monitor/health`
@@ -376,10 +376,12 @@ The main boundary covers:
 The remote-info boundary covers:
 
 - OpenSearch `RemoteInfoRequest` parent task at the wire decode/build layer;
-- explicit fail-closed classification for `cluster:monitor/remote/info` until
-  remote connection info collection and response rendering are implemented;
-- explicit rejection at execution so Steelsearch does not emit incomplete remote
-  cluster info semantics through transport.
+- OpenSearch `RemoteInfoResponse` empty remote connection list at the wire
+  decode/build layer;
+- implemented `cluster:monitor/remote/info` request admission and empty
+  response rendering for deployments without configured remote connections;
+- explicit rejection for non-empty remote connection payload decoding until
+  full remote connection info wire mapping is implemented.
 
 The get-term-version boundary covers:
 
@@ -2484,21 +2486,22 @@ release run, this boundary is not a material performance bottleneck; the first
 performance-sensitive work is main response rendering from node, cluster,
 version, and build metadata.
 
-Current remote-info reject wire microbenchmark:
+Current remote-info supported-subset wire microbenchmark:
 
 ```text
-cargo run -p os-transport --release --bin remote-info-reject-wire-benchmark
-remote_info_reject_request_encode iterations=400000 elapsed_ms=192.187 ops_per_second=2081306.99 nanos_per_op=480.47
-remote_info_reject_request_decode iterations=400000 elapsed_ms=189.142 ops_per_second=2114817.44 nanos_per_op=472.85
-remote_info_reject_validation iterations=400000 elapsed_ms=190.136 ops_per_second=2103758.30 nanos_per_op=475.34
-remote_info_reject_wire_bottleneck_ops_per_second=2081306.99
+cargo run -p os-transport --release --bin remote-info-wire-benchmark
+remote_info_request_encode ops_per_second=2026710.29 nanos_per_op=493.41
+remote_info_request_decode ops_per_second=2057269.16 nanos_per_op=486.08
+remote_info_supported_validation ops_per_second=2114831.35 nanos_per_op=472.85
+remote_info_response_encode ops_per_second=8084294.13 nanos_per_op=123.70
+remote_info_response_decode ops_per_second=6938670.65 nanos_per_op=144.12
+remote_info_wire_bottleneck_ops_per_second=2026710.29
 ```
 
-The current remote-info fail-closed boundary bottleneck is request encode over
-the parent-task-only request frame. At roughly 2.08M ops/s in the latest local
-release run, this boundary is not a material performance bottleneck; the first
-performance-sensitive work is remote connection info collection and response
-rendering.
+The current remote-info supported-subset boundary is request/response framing
+for a parent-task-only request and empty remote connection list response. The
+first performance-sensitive work beyond this boundary is non-empty remote
+connection info collection and response rendering.
 
 Current get-term-version reject wire microbenchmark:
 
