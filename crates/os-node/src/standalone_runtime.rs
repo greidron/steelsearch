@@ -9698,9 +9698,7 @@ impl SteelNode {
         RestResponse::json(
             200,
             serde_json::json!({
-                "id": pit_id,
                 "pit_id": pit_id,
-                "keep_alive": keep_alive,
                 "creation_time": creation_time_millis,
                 "_shards": {
                     "total": 1,
@@ -34778,14 +34776,13 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             "/logs-session-000001/_search/point_in_time?keep_alive=1m",
         ));
         assert_eq!(open_pit.status, 200);
-        assert_eq!(open_pit.body["id"], "pit-1");
+        assert_eq!(open_pit.body["pit_id"], "pit-1");
 
         let second_open_pit = node.handle_rest_request(RestRequest::new(
             RestMethod::Post,
             "/logs-session-000001/_search/point_in_time?keep_alive=1m",
         ));
         assert_eq!(second_open_pit.status, 200);
-        assert_eq!(second_open_pit.body["id"], "pit-2");
         assert_eq!(second_open_pit.body["pit_id"], "pit-2");
 
         assert_eq!(
@@ -41332,7 +41329,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             .with_header("Authorization", "Basic cmVhZGVyOnJlYWRlcg=="),
         );
         assert_eq!(open_pit.status, 200);
-        assert_eq!(open_pit.body["id"], "pit-1");
+        assert_eq!(open_pit.body["pit_id"], "pit-1");
 
         let writer_pit = node.handle_rest_request(
             RestRequest::new(
