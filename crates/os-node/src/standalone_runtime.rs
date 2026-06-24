@@ -9232,6 +9232,7 @@ impl SteelNode {
                 .collect::<Vec<_>>();
             (candidate_documents, docs_snapshot_for_suggest)
         };
+        let index_boosts = parse_search_indices_boosts(body.get("indices_boost"));
         let mut hits = Vec::new();
         let parsed_slice = parse_search_slice(body.get("slice"));
         for (doc_index, doc_id, source, version, seq_no, primary_term) in candidate_documents {
@@ -9248,6 +9249,7 @@ impl SteelNode {
                 index_mappings.get(&doc_index).unwrap_or(&Value::Null),
             ) {
                 if matched {
+                    let score = score * search_index_boost_for(&doc_index, &index_boosts);
                     if body
                         .get("min_score")
                         .and_then(Value::as_f64)
@@ -18604,6 +18606,7 @@ fn standalone_search_body_allows_native_engine(body: &Value) -> bool {
         "docvalue_fields",
         "explain",
         "fields",
+        "indices_boost",
         "min_score",
         "post_filter",
         "profile",
@@ -19106,6 +19109,11 @@ fn validate_search_request_body(body: &Value, scroll: bool) -> Option<RestRespon
     }
     if let Some(stats) = body.get("stats") {
         if let Some(response) = validate_search_stats_request_body(stats) {
+            return Some(response);
+        }
+    }
+    if let Some(indices_boost) = body.get("indices_boost") {
+        if let Some(response) = validate_indices_boost_request_body(indices_boost) {
             return Some(response);
         }
     }
@@ -19681,6 +19689,50 @@ fn validate_pit_request_body(pit: &Value) -> Option<RestResponse> {
         ));
     }
     None
+}
+
+fn validate_indices_boost_request_body(indices_boost: &Value) -> Option<RestResponse> {
+    match indices_boost {
+        Value::Object(boosts) => {
+            if boosts
+                .iter()
+                .any(|(index, boost)| index.is_empty() || !boost.is_number())
+            {
+                return Some(build_unsupported_search_response(
+                    "unsupported search option [indices_boost]",
+                ));
+            }
+            None
+        }
+        Value::Array(boosts) => {
+            for boost in boosts {
+                let Some(object) = boost.as_object() else {
+                    return Some(build_unsupported_search_response(
+                        "unsupported search option [indices_boost]",
+                    ));
+                };
+                if object.len() != 1 {
+                    return Some(build_unsupported_search_response(
+                        "unsupported search option [indices_boost]",
+                    ));
+                }
+                let Some((index, value)) = object.iter().next() else {
+                    return Some(build_unsupported_search_response(
+                        "unsupported search option [indices_boost]",
+                    ));
+                };
+                if index.is_empty() || !value.is_number() {
+                    return Some(build_unsupported_search_response(
+                        "unsupported search option [indices_boost]",
+                    ));
+                }
+            }
+            None
+        }
+        _ => Some(build_unsupported_search_response(
+            "unsupported search option [indices_boost]",
+        )),
+    }
 }
 
 fn validate_point_in_time_search_request(index: &str, request: &RestRequest) -> Option<RestResponse> {
@@ -23687,6 +23739,37 @@ fn wildcard_match(pattern: &str, candidate: &str) -> bool {
         }
     }
     true
+}
+
+fn parse_search_indices_boosts(indices_boost: Option<&Value>) -> Vec<(String, f64)> {
+    match indices_boost {
+        Some(Value::Object(boosts)) => boosts
+            .iter()
+            .filter_map(|(index, boost)| Some((index.clone(), boost.as_f64()?)))
+            .collect(),
+        Some(Value::Array(boosts)) => boosts
+            .iter()
+            .filter_map(|boost| {
+                let object = boost.as_object()?;
+                let (index, value) = object.iter().next()?;
+                Some((index.clone(), value.as_f64()?))
+            })
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
+fn search_index_boost_for(index: &str, boosts: &[(String, f64)]) -> f64 {
+    boosts
+        .iter()
+        .find_map(|(pattern, boost)| {
+            if pattern == index || wildcard_match(pattern, index) {
+                Some(*boost)
+            } else {
+                None
+            }
+        })
+        .unwrap_or(1.0)
 }
 
 fn stringify_leaf_scalars(value: &Value) -> Value {
@@ -41359,6 +41442,63 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             sorted_window.body["hits"]["hits"][0]["sort"],
             serde_json::json!(["tenant-b"])
+        );
+
+        let array_indices_boost = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-params-*/_search").with_json_body(
+                serde_json::json!({
+                    "query": { "match_all": {} },
+                    "indices_boost": [
+                        { "logs-search-params-b": 3.0 },
+                        { "logs-search-params-a": 1.0 }
+                    ]
+                }),
+            ),
+        );
+        assert_eq!(array_indices_boost.status, 200);
+        assert_eq!(
+            array_indices_boost.body["hits"]["hits"][0]["_id"],
+            "doc-3"
+        );
+        assert_eq!(
+            array_indices_boost.body["hits"]["hits"][0]["_score"].as_f64(),
+            Some(3.0)
+        );
+
+        let object_indices_boost = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-params-*/_search").with_json_body(
+                serde_json::json!({
+                    "query": { "match_all": {} },
+                    "indices_boost": {
+                        "logs-search-params-b": 2.0
+                    }
+                }),
+            ),
+        );
+        assert_eq!(object_indices_boost.status, 200);
+        assert_eq!(
+            object_indices_boost.body["hits"]["hits"][0]["_id"],
+            "doc-3"
+        );
+        assert_eq!(
+            object_indices_boost.body["hits"]["hits"][0]["_score"].as_f64(),
+            Some(2.0)
+        );
+
+        let invalid_indices_boost = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-params-*/_search").with_json_body(
+                serde_json::json!({
+                    "query": { "match_all": {} },
+                    "indices_boost": [
+                        { "logs-search-params-b": "high" }
+                    ]
+                }),
+            ),
+        );
+        assert_eq!(invalid_indices_boost.status, 400);
+        assert_eq!(
+            invalid_indices_boost.body["error"]["reason"],
+            "unsupported search option [indices_boost]"
         );
 
         let sliced_without_scroll_or_pit = node.handle_rest_request(
