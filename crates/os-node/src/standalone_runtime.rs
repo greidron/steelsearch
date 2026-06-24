@@ -18561,11 +18561,7 @@ fn validate_point_in_time_search_request(index: &str, request: &RestRequest) -> 
     if index != "_all" {
         validation_errors.push("[indices] cannot be used with point in time");
     }
-    if request.query_params.contains_key("ignore_unavailable")
-        || request.query_params.contains_key("allow_no_indices")
-        || request.query_params.contains_key("expand_wildcards")
-        || request.query_params.contains_key("ignore_throttled")
-    {
+    if pit_search_uses_non_default_indices_options(&request.query_params) {
         validation_errors.push("[indicesOptions] cannot be used with point in time");
     }
     if request.query_params.contains_key("routing") {
@@ -18602,6 +18598,26 @@ fn validate_point_in_time_search_request(index: &str, request: &RestRequest) -> 
             "status": 400
         }),
     ))
+}
+
+fn pit_search_uses_non_default_indices_options(query_params: &BTreeMap<String, String>) -> bool {
+    query_param_is_true(query_params.get("ignore_unavailable"))
+        || query_params
+            .get("allow_no_indices")
+            .is_some_and(|value| value == "false" || value == "0")
+        || query_params
+            .get("expand_wildcards")
+            .is_some_and(|value| !expand_wildcards_matches_search_default(value))
+        || query_param_is_true(query_params.get("ignore_throttled"))
+}
+
+fn expand_wildcards_matches_search_default(value: &str) -> bool {
+    let values = value
+        .split(',')
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .collect::<Vec<_>>();
+    values.is_empty() || values == ["open"]
 }
 
 fn validate_opensearch_boolean_query_param(raw: Option<&String>) -> Option<RestResponse> {
@@ -34953,6 +34969,25 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             .unwrap()
             .iter()
             .all(|hit| hit["_id"] != "doc-3"));
+
+        let default_indices_options_pit_search = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/_search?ignore_unavailable=false&allow_no_indices=true&expand_wildcards=open",
+            )
+            .with_json_body(serde_json::json!({
+                "pit": {
+                    "id": second_open_pit.body["pit_id"].as_str().unwrap(),
+                    "keep_alive": "1m"
+                },
+                "query": { "match_all": {} }
+            })),
+        );
+        assert_eq!(default_indices_options_pit_search.status, 200);
+        assert_eq!(
+            default_indices_options_pit_search.body["hits"]["total"]["value"],
+            2
+        );
 
         let indexed_pit_search = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/logs-session-000001/_search")
