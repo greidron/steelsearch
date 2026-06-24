@@ -1,5 +1,5 @@
 status	action	transport_handler	source	line
-partial	MainAction.INSTANCE	TransportMainAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	656
+implemented	MainAction.INSTANCE	TransportMainAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	656
 implemented	NodesInfoAction.INSTANCE	TransportNodesInfoAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	657
 implemented	RemoteInfoAction.INSTANCE	TransportRemoteInfoAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	658
 implemented	NodesStatsAction.INSTANCE	TransportNodesStatsAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	659

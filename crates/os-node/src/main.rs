@@ -6,7 +6,7 @@ use os_cluster_state::{
     ClusterState, ClusterStateRequest, ClusterStateResponsePrefix, ShardRoutingState,
     ShardRoutingStatePrefix,
 };
-use os_core::version::{Version, OPENSEARCH_3_7_0_TRANSPORT};
+use os_core::version::{Version, OPENSEARCH_3_7_0, OPENSEARCH_3_7_0_TRANSPORT};
 use os_node::{
     apply_gateway_metadata_commit_state_to_manifest,
     apply_gateway_metadata_state_to_manifest,
@@ -905,6 +905,29 @@ fn handle_transport_seed_connection<S: TransportConnection>(
     } else if is_request && action_hint.as_deref() == Some("internal:discovery/request_peers") {
         let response = build_request_peers_response(request_id, header_version_id);
         response_frame = summarize_transport_response_frame(&response);
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request && normalized_action_hint == Some("cluster:monitor/main") {
+        let response = build_main_response(request_id, header_version_id, transport_identity);
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("cluster:monitor/main[n]"),
+        );
         stream.write_all(&response)?;
         stream.flush()?;
         response_frame_sent_at_ms = Some(unix_time_ms());
@@ -2747,6 +2770,32 @@ fn build_empty_remote_info_response(request_id: i64, header_version_id: u32) -> 
     .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
 }
 
+fn build_main_response(
+    request_id: i64,
+    header_version_id: u32,
+    transport_identity: &DevTransportIdentity,
+) -> Vec<u8> {
+    os_transport::action::build_main_response_message(
+        request_id,
+        Version::from_id(header_version_id as i32),
+        &main_response_from_identity(transport_identity),
+    )
+    .map(|frame| frame.to_vec())
+    .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
+}
+
+fn main_response_from_identity(
+    transport_identity: &DevTransportIdentity,
+) -> os_transport::action::MainResponseWire {
+    os_transport::action::MainResponseWire {
+        node_name: transport_identity.node_name.clone(),
+        version: OPENSEARCH_3_7_0,
+        cluster_name: transport_identity.cluster_name.clone(),
+        cluster_uuid: "_na_".to_string(),
+        build: os_transport::action::MainBuildWire::default(),
+    }
+}
+
 fn build_pending_cluster_tasks_response(
     request_id: i64,
     header_version_id: u32,
@@ -4298,6 +4347,11 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
 
     let response = match normalized_action_hint {
         Some("internal:transport/handshake") => Some(build_transport_handshake_identity_response(
+            request_id,
+            header_version_id,
+            transport_identity,
+        )),
+        Some("cluster:monitor/main") => Some(build_main_response(
             request_id,
             header_version_id,
             transport_identity,
@@ -8395,6 +8449,44 @@ mod tests {
             response,
             os_transport::action::RemoteInfoResponseWire::default()
         );
+    }
+
+    #[test]
+    fn main_transport_route_builds_opensearch_shaped_response_from_identity() {
+        let transport_identity = DevTransportIdentity {
+            cluster_name: "steelsearch-dev".to_string(),
+            node_name: "steel-node".to_string(),
+            node_id: "steel-node-id".to_string(),
+            ephemeral_id: "steel-node-ephemeral".to_string(),
+            transport_address: "127.0.0.1:9300".parse().unwrap(),
+            attributes: Vec::new(),
+            roles: vec!["cluster_manager".to_string(), "data".to_string()],
+            seed_peer_identity: None,
+            seed_peer_identities: Vec::new(),
+            coordination_state: Arc::new(Mutex::new(DevTransportCoordinationState::default())),
+            remote_transport_queue_gate: Arc::new(RemoteTransportQueueGate::new(1, 1000)),
+            task_queue_state: None,
+        };
+        let response = build_main_response(
+            76,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &transport_identity,
+        );
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame).unwrap().unwrap()
+        else {
+            panic!("expected main response message");
+        };
+
+        assert_eq!(message.request_id, 76);
+        assert!(!message.status.is_request());
+        let response = os_transport::action::read_main_response_message(&message).unwrap();
+        assert_eq!(response.node_name, "steel-node");
+        assert_eq!(response.version, OPENSEARCH_3_7_0);
+        assert_eq!(response.cluster_name, "steelsearch-dev");
+        assert_eq!(response.cluster_uuid, "_na_");
+        assert_eq!(response.build.distribution, "opensearch");
     }
 
     #[test]

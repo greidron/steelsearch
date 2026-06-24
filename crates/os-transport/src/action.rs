@@ -1639,8 +1639,8 @@ pub fn classify_opensearch_transport_action(
     match action_name {
         MAIN_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
-            disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "main transport execution requires node, cluster, version, and build response rendering",
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "main transport adapter is available for local node, cluster, version, and build response rendering",
         },
         REMOTE_INFO_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -4326,6 +4326,35 @@ pub fn read_main_request_message(
         });
     }
     MainRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_main_response_message(
+    request_id: i64,
+    version: Version,
+    response: &MainResponseWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    response.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::response(),
+        version,
+        variable_header: BytesMut::new(),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_main_response_message(
+    message: &TransportMessage,
+) -> Result<MainResponseWire, TransportActionWireError> {
+    if !message.status.is_response() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "response",
+            actual: message.status.bits(),
+        });
+    }
+    MainResponseWire::read(message.body.clone().freeze())
 }
 
 pub fn build_remote_info_request_message(
@@ -24473,11 +24502,113 @@ impl MainRequestWire {
         Ok(request)
     }
 
+    pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
+        Ok(())
+    }
+
     pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        self.validate_supported_subset()?;
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "main execution",
-            reason: "main transport execution requires node, cluster, version, and build response rendering",
+            reason: "use validate_supported_subset for the implemented main adapter",
         })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MainBuildWire {
+    pub distribution: String,
+    pub build_type: String,
+    pub hash: String,
+    pub date: String,
+    pub snapshot: bool,
+    pub qualified_version: String,
+}
+
+impl Default for MainBuildWire {
+    fn default() -> Self {
+        Self {
+            distribution: "opensearch".to_string(),
+            build_type: "unknown".to_string(),
+            hash: "unknown".to_string(),
+            date: "unknown".to_string(),
+            snapshot: false,
+            qualified_version: "3.7.0".to_string(),
+        }
+    }
+}
+
+impl MainBuildWire {
+    fn write(&self, output: &mut StreamOutput) {
+        output.write_string(&self.distribution);
+        output.write_string(&self.build_type);
+        output.write_string(&self.hash);
+        output.write_string(&self.date);
+        output.write_bool(self.snapshot);
+        output.write_string(&self.qualified_version);
+    }
+
+    fn read(input: &mut StreamInput) -> Result<Self, TransportActionWireError> {
+        Ok(Self {
+            distribution: input.read_string()?,
+            build_type: input.read_string()?,
+            hash: input.read_string()?,
+            date: input.read_string()?,
+            snapshot: input.read_bool()?,
+            qualified_version: input.read_string()?,
+        })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MainResponseWire {
+    pub node_name: String,
+    pub version: Version,
+    pub cluster_name: String,
+    pub cluster_uuid: String,
+    pub build: MainBuildWire,
+}
+
+impl MainResponseWire {
+    pub fn write(&self, output: &mut StreamOutput) {
+        output.write_string(&self.node_name);
+        output.write_vint(self.version.id());
+        output.write_string(&self.cluster_name);
+        output.write_string(&self.cluster_uuid);
+        self.build.write(output);
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let response = Self {
+            node_name: input.read_string()?,
+            version: Version::from_id(input.read_vint()?),
+            cluster_name: input.read_string()?,
+            cluster_uuid: input.read_string()?,
+            build: MainBuildWire::read(&mut input)?,
+        };
+        require_no_trailing_bytes(&input)?;
+        response.validate_supported_subset()?;
+        Ok(response)
+    }
+
+    pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
+        if self.node_name.is_empty() {
+            return Err(TransportActionWireError::MissingRequiredField {
+                field: "main response node name",
+            });
+        }
+        if self.cluster_name.is_empty() {
+            return Err(TransportActionWireError::MissingRequiredField {
+                field: "main response cluster name",
+            });
+        }
+        if self.cluster_uuid.is_empty() {
+            return Err(TransportActionWireError::MissingRequiredField {
+                field: "main response cluster uuid",
+            });
+        }
+        Ok(())
     }
 }
 
@@ -32996,7 +33127,7 @@ mod tests {
         );
         assert_eq!(
             classify_opensearch_transport_action(MAIN_ACTION_NAME).disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             classify_opensearch_transport_action(REMOTE_INFO_ACTION_NAME).disposition,
@@ -35818,7 +35949,7 @@ mod tests {
     }
 
     #[test]
-    fn main_request_wire_round_trips_and_rejects_execution_boundary() {
+    fn main_request_wire_round_trips_supported_subset() {
         let request = MainRequestWire {
             parent_task_node: "node-1".to_string(),
             parent_task_id: Some(42),
@@ -35828,17 +35959,35 @@ mod tests {
 
         let decoded = MainRequestWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, request);
-        assert!(matches!(
-            decoded.reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "main execution",
-                ..
-            })
-        ));
+        decoded.validate_supported_subset().unwrap();
     }
 
     #[test]
-    fn main_transport_messages_bind_rejected_action_frame() {
+    fn main_response_wire_round_trips_node_cluster_version_and_build() {
+        let response = MainResponseWire {
+            node_name: "steel-node".to_string(),
+            version: os_core::OPENSEARCH_3_7_0,
+            cluster_name: "steelsearch-dev".to_string(),
+            cluster_uuid: "cluster-uuid".to_string(),
+            build: MainBuildWire {
+                distribution: "opensearch".to_string(),
+                build_type: "tar".to_string(),
+                hash: "abc123".to_string(),
+                date: "2026-06-24T00:00:00Z".to_string(),
+                snapshot: true,
+                qualified_version: "3.7.0-SNAPSHOT".to_string(),
+            },
+        };
+        let mut output = StreamOutput::new();
+        response.write(&mut output);
+
+        let decoded = MainResponseWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, response);
+        decoded.validate_supported_subset().unwrap();
+    }
+
+    #[test]
+    fn main_transport_messages_bind_supported_action_frame_and_response() {
         let request = MainRequestWire::default();
         let mut frame =
             build_main_request_message(71, OPENSEARCH_3_7_0_TRANSPORT, &request).unwrap();
@@ -35846,15 +35995,30 @@ mod tests {
             panic!("expected main request message");
         };
         assert_eq!(read_main_request_message(&message).unwrap(), request);
-        assert!(matches!(
-            read_main_request_message(&message)
+        assert_eq!(
+            classify_opensearch_transport_request_message(&message)
                 .unwrap()
-                .reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "main execution",
-                ..
-            })
-        ));
+                .disposition,
+            OpenSearchTransportActionDisposition::Implemented
+        );
+        read_main_request_message(&message)
+            .unwrap()
+            .validate_supported_subset()
+            .unwrap();
+
+        let response = MainResponseWire {
+            node_name: "steel-node".to_string(),
+            version: os_core::OPENSEARCH_3_7_0,
+            cluster_name: "steelsearch-dev".to_string(),
+            cluster_uuid: "cluster-uuid".to_string(),
+            build: MainBuildWire::default(),
+        };
+        let mut frame =
+            build_main_response_message(71, OPENSEARCH_3_7_0_TRANSPORT, &response).unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected main response message");
+        };
+        assert_eq!(read_main_response_message(&message).unwrap(), response);
     }
 
     #[test]
