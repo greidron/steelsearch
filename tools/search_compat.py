@@ -1786,13 +1786,15 @@ def extract(kind: str, response: dict[str, Any]) -> Any:
             "freed_count": freed_count,
         }
     if kind == "pit_list":
+        pit_ids = [
+            pit.get("pit_id") or pit.get("id")
+            for pit in (body.get("pits") or [])
+            if isinstance(pit, dict) and (pit.get("pit_id") or pit.get("id")) is not None
+        ]
         return {
             "status": response["status"],
-            "ids": sorted(
-                pit.get("id")
-                for pit in (body.get("pits") or [])
-                if isinstance(pit, dict) and pit.get("id") is not None
-            ),
+            "count": len(pit_ids),
+            "ids_present": all(bool(pit_id) for pit_id in pit_ids),
         }
     if kind == "tier_preference":
         tiers = body.get("tiers") if isinstance(body, dict) else None
