@@ -9609,13 +9609,20 @@ impl SteelNode {
             .pit_contexts
             .lock()
             .expect("pit contexts lock poisoned");
-        let freed = contexts.len() as u64;
+        let pits = contexts
+            .keys()
+            .map(|id| {
+                serde_json::json!({
+                    "successful": true,
+                    "pit_id": id
+                })
+            })
+            .collect::<Vec<_>>();
         contexts.clear();
         RestResponse::json(
             200,
             serde_json::json!({
-                "succeeded": true,
-                "num_freed": freed
+                "pits": pits
             }),
         )
     }
@@ -9746,31 +9753,28 @@ impl SteelNode {
             Err(response) => return response,
         }
         let body = serde_json::from_slice::<Value>(&request.body).unwrap_or(Value::Null);
-        let mut ids = Vec::new();
-        if let Some(id) = body.get("id").and_then(Value::as_str) {
-            ids.push(id.to_string());
-        } else if let Some(id) = body.get("pit_id").and_then(Value::as_str) {
-            ids.push(id.to_string());
-        } else if let Some(id_array) = body.get("id").and_then(Value::as_array) {
-            ids.extend(id_array.iter().filter_map(Value::as_str).map(str::to_string));
-        } else if let Some(id_array) = body.get("pit_id").and_then(Value::as_array) {
-            ids.extend(id_array.iter().filter_map(Value::as_str).map(str::to_string));
-        }
+        let ids = match parse_delete_pit_ids(&body) {
+            Ok(ids) => ids,
+            Err(response) => return response,
+        };
         let mut contexts = self
             .pit_contexts
             .lock()
             .expect("pit contexts lock poisoned");
-        let mut freed = 0_u64;
-        for id in ids {
-            if contexts.remove(&id).is_some() {
-                freed += 1;
-            }
-        }
+        let pits = ids
+            .into_iter()
+            .map(|id| {
+                contexts.remove(&id);
+                serde_json::json!({
+                    "successful": true,
+                    "pit_id": id
+                })
+            })
+            .collect::<Vec<_>>();
         RestResponse::json(
             200,
             serde_json::json!({
-                "succeeded": true,
-                "num_freed": freed
+                "pits": pits
             }),
         )
     }
@@ -18542,6 +18546,55 @@ fn validate_point_in_time_search_request(index: &str, request: &RestRequest) -> 
             "status": 400
         }),
     ))
+}
+
+fn parse_delete_pit_ids(body: &Value) -> Result<Vec<String>, RestResponse> {
+    let Some(object) = body.as_object() else {
+        return Err(delete_pit_validation_error("no pit ids specified"));
+    };
+    if object.keys().any(|key| key != "pit_id") {
+        return Err(RestResponse::json(
+            400,
+            serde_json::json!({
+                "error": {
+                    "type": "illegal_argument_exception",
+                    "reason": "Unknown parameter in request body"
+                },
+                "status": 400
+            }),
+        ));
+    }
+    let Some(pit_id) = object.get("pit_id") else {
+        return Err(delete_pit_validation_error("no pit ids specified"));
+    };
+    let ids = if let Some(id) = pit_id.as_str() {
+        vec![id.to_string()]
+    } else if let Some(id_array) = pit_id.as_array() {
+        id_array
+            .iter()
+            .filter_map(Value::as_str)
+            .map(str::to_string)
+            .collect::<Vec<_>>()
+    } else {
+        Vec::new()
+    };
+    if ids.is_empty() {
+        return Err(delete_pit_validation_error("no pit ids specified"));
+    }
+    Ok(ids)
+}
+
+fn delete_pit_validation_error(reason: &str) -> RestResponse {
+    RestResponse::json(
+        400,
+        serde_json::json!({
+            "error": {
+                "type": "action_request_validation_exception",
+                "reason": format!("Validation Failed: 1: {reason};")
+            },
+            "status": 400
+        }),
+    )
 }
 
 fn validate_rescore_request_body(rescore: &Value) -> Option<RestResponse> {
@@ -34905,12 +34958,23 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(reused_scroll_post.status, 404);
         assert_eq!(reused_scroll_post.body["error"]["type"], "search_context_missing_exception");
 
+        let close_missing_body_pit = node.handle_rest_request(RestRequest::new(
+            RestMethod::Delete,
+            "/_search/point_in_time",
+        ));
+        assert_eq!(close_missing_body_pit.status, 400);
+        assert_eq!(
+            close_missing_body_pit.body["error"]["type"],
+            "action_request_validation_exception"
+        );
+
         let close_single_pit = node.handle_rest_request(
             RestRequest::new(RestMethod::Delete, "/_search/point_in_time")
-                .with_json_body(serde_json::json!({ "id": "pit-1" })),
+                .with_json_body(serde_json::json!({ "pit_id": "pit-1" })),
         );
         assert_eq!(close_single_pit.status, 200);
-        assert_eq!(close_single_pit.body["num_freed"], 1);
+        assert_eq!(close_single_pit.body["pits"][0]["successful"], true);
+        assert_eq!(close_single_pit.body["pits"][0]["pit_id"], "pit-1");
 
         let list_after_single_close =
             node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_search/point_in_time/_all"));
@@ -34920,10 +34984,14 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
 
         let close_array_pit = node.handle_rest_request(
             RestRequest::new(RestMethod::Delete, "/_search/point_in_time")
-                .with_json_body(serde_json::json!({ "id": ["pit-2", "pit-missing"] })),
+                .with_json_body(serde_json::json!({ "pit_id": ["pit-2", "pit-missing"] })),
         );
         assert_eq!(close_array_pit.status, 200);
-        assert_eq!(close_array_pit.body["num_freed"], 1);
+        assert_eq!(close_array_pit.body["pits"].as_array().map(|pits| pits.len()), Some(2));
+        assert_eq!(close_array_pit.body["pits"][0]["successful"], true);
+        assert_eq!(close_array_pit.body["pits"][0]["pit_id"], "pit-2");
+        assert_eq!(close_array_pit.body["pits"][1]["successful"], true);
+        assert_eq!(close_array_pit.body["pits"][1]["pit_id"], "pit-missing");
 
         let list_after_array_close =
             node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_search/point_in_time/_all"));
@@ -34935,7 +35003,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             "/_search/point_in_time/_all",
         ));
         assert_eq!(clear_pits.status, 200);
-        assert_eq!(clear_pits.body["num_freed"], 0);
+        assert_eq!(clear_pits.body["pits"].as_array().map(|pits| pits.len()), Some(0));
     }
 
     #[test]
