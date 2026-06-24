@@ -285,7 +285,7 @@ part of the OpenSearch parity target.
   - search strict fixture
     - `--scope search` now defaults to `tools/fixtures/search-strict-compat.json`
     - vector/development-only and root-cluster operational probe cases are excluded from the lexical strict fixture and owned by their separate profiles or deferred scopes
-    - the only remaining skip in the lexical strict fixture is the explicit out-of-phase defer for closed-index wildcard expansion
+    - closed-index wildcard expansion is promoted into the strict required set through `expand_wildcards_closed_fail_closed`
   - numeric `track_total_hits`
   - `terminate_after`
   - `timeout`
