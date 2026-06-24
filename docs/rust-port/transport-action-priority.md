@@ -177,8 +177,8 @@ The source-derived transport inventory currently has 160 rows:
 
 | Status | Count | Meaning |
 | --- | ---: | --- |
-| `implemented` | 32 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
-| `partial` | 128 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
+| `implemented` | 33 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
+| `partial` | 127 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
 | `planned` | 0 | No source-derived transport action remains unclassified. |
 
 The k-NN plugin action sweep is complete at the boundary layer. All 12
@@ -1901,10 +1901,12 @@ The data-streams-stats boundary covers:
 - OpenSearch `DataStreamsStatsAction.Request` parent task, indices array, and
   `IndicesOptions.strictExpandOpenAndForbidClosed()` at the wire decode/build
   layer;
-- explicit fail-closed classification for `indices:monitor/data_stream/stats`
-  until data-stream stats aggregation and response rendering are implemented;
+- implemented classification for `indices:monitor/data_stream/stats` default
+  all-data-streams request admission and empty `DataStreamsStatsAction.Response`
+  rendering;
 - explicit rejection for name filters, custom indices options, and
-  data-streams-stats execution.
+  non-empty shard failures, data-stream counters, store size, or per-stream
+  stats metadata.
 
 The resolve-index boundary covers:
 
@@ -4596,21 +4598,24 @@ data-stream name array plus an empty `GetDataStreamAction.Response`. At roughly
 1.89M ops/s in the latest local release run, the path remains in the lightweight
 admin transport range and does not expose a material response-codec bottleneck.
 
-Current data-streams-stats reject wire microbenchmark:
+Current data-streams-stats implemented-path wire microbenchmark:
 
 ```text
-cargo run -p os-transport --release --bin data-streams-stats-reject-wire-benchmark
-data_streams_stats_reject_request_encode iterations=400000 elapsed_ms=242.482 ops_per_second=1649607.33 nanos_per_op=606.20
-data_streams_stats_reject_request_decode iterations=400000 elapsed_ms=237.477 ops_per_second=1684370.66 nanos_per_op=593.69
-data_streams_stats_reject_validation iterations=400000 elapsed_ms=241.015 ops_per_second=1659648.46 nanos_per_op=602.54
-data_streams_stats_reject_wire_bottleneck_ops_per_second=1649607.33
+cargo run -p os-transport --release --bin data-streams-stats-wire-benchmark
+data_streams_stats_request_encode iterations=400000 elapsed_ms=244.057 ops_per_second=1638962.08 nanos_per_op=610.14
+data_streams_stats_request_decode iterations=400000 elapsed_ms=235.910 ops_per_second=1695565.16 nanos_per_op=589.77
+data_streams_stats_request_validate iterations=400000 elapsed_ms=237.678 ops_per_second=1682948.36 nanos_per_op=594.20
+data_streams_stats_response_encode iterations=400000 elapsed_ms=104.884 ops_per_second=3813725.88 nanos_per_op=262.21
+data_streams_stats_response_decode iterations=400000 elapsed_ms=102.139 ops_per_second=3916221.03 nanos_per_op=255.35
+data_streams_stats_wire_bottleneck_ops_per_second=1638962.08
 ```
 
-The current data-streams-stats fail-closed boundary bottleneck is request
+The current data-streams-stats implemented-path bottleneck is request
 encode. This path carries the BroadcastRequest parent task, empty name array,
-and strict open forbid-closed index options before rejecting at admission. At
-roughly 1.65M ops/s in the latest local release run, it stays in the lightweight
-admin transport range and does not expose a material wire-codec bottleneck.
+strict open forbid-closed index options, and an empty
+`DataStreamsStatsAction.Response`. At roughly 1.64M ops/s in the latest local
+release run, it stays in the lightweight admin transport range and does not
+expose a material response-codec bottleneck.
 
 Current resolve-index reject wire microbenchmark:
 
@@ -6297,11 +6302,9 @@ response-shape examples.
 
 ## Tier 2: Strong Phase A Follow-Up Read/Admin Actions
 
-- `DataStreamsStatsAction.INSTANCE`
-
-These actions improve OpenSearch operator expectations and close obvious gaps in
-index, metadata, and search-adjacent introspection, but they follow the Tier 1
-gate.
+All listed Tier 2 read/admin actions are now implemented for their declared
+empty/default transport subsets. Further transport work should continue from
+the remaining source-derived partial inventory.
 
 ## Tier 3: Phase B/C Or Domain-Specific Follow-Up
 

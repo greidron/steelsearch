@@ -498,8 +498,8 @@ name = "get-data-stream-wire-benchmark"
 path = "benchmarks/get_data_stream_wire.rs"
 
 [[bin]]
-name = "data-streams-stats-reject-wire-benchmark"
-path = "benchmarks/data_streams_stats_reject_wire.rs"
+name = "data-streams-stats-wire-benchmark"
+path = "benchmarks/data_streams_stats_wire.rs"
 
 [[bin]]
 name = "resolve-index-reject-wire-benchmark"

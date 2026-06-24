@@ -2256,9 +2256,8 @@ pub fn classify_opensearch_transport_action(
         },
         OPENSEARCH_DATA_STREAMS_STATS_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
-            disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason:
-                "data-streams-stats transport execution requires data-stream stats aggregation and response rendering",
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "data-streams-stats transport adapter returns an OpenSearch-shaped empty stats response for the default all-data-streams request",
         },
         OPENSEARCH_RESOLVE_INDEX_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -10475,6 +10474,36 @@ pub fn read_opensearch_data_streams_stats_request_message(
         });
     }
     OpenSearchDataStreamsStatsRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_opensearch_data_streams_stats_response_message(
+    request_id: i64,
+    version: Version,
+    response: &OpenSearchDataStreamsStatsResponseWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    response.write(&mut body)?;
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::response(),
+        version,
+        variable_header: BytesMut::from(&ResponseVariableHeader::default().to_bytes()[..]),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_data_streams_stats_response_message(
+    message: &TransportMessage,
+) -> Result<OpenSearchDataStreamsStatsResponseWire, TransportActionWireError> {
+    if !message.status.is_response() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "response",
+            actual: message.status.bits(),
+        });
+    }
+    let _header = ResponseVariableHeader::read(message.variable_header.clone().freeze())?;
+    OpenSearchDataStreamsStatsResponseWire::read(message.body.clone().freeze())
 }
 
 pub fn build_opensearch_resolve_index_request_message(
@@ -23286,6 +23315,15 @@ impl OpenSearchDataStreamsStatsRequestWire {
     }
 
     pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        self.validate_supported_subset()?;
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "data streams stats execution",
+            reason:
+                "use validate_supported_subset for the implemented empty data-streams-stats adapter",
+        })
+    }
+
+    pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
         if !self.indices.is_empty() {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "data streams stats name filter",
@@ -23300,11 +23338,110 @@ impl OpenSearchDataStreamsStatsRequestWire {
                     "custom data-stream stats indices options require index resolution semantics",
             });
         }
-        Err(TransportActionWireError::UnsupportedWireShape {
-            shape: "data streams stats execution",
-            reason:
-                "data-streams-stats transport execution requires data-stream stats aggregation and response rendering",
-        })
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchDataStreamsStatsResponseWire {
+    pub total_shards: i32,
+    pub successful_shards: i32,
+    pub failed_shards: i32,
+    pub shard_failure_count: i32,
+    pub data_stream_count: i32,
+    pub backing_indices: i32,
+    pub total_store_size: OpenSearchByteSizeValueWire,
+    pub data_stream_stats_count: i32,
+}
+
+impl Default for OpenSearchDataStreamsStatsResponseWire {
+    fn default() -> Self {
+        Self {
+            total_shards: 0,
+            successful_shards: 0,
+            failed_shards: 0,
+            shard_failure_count: 0,
+            data_stream_count: 0,
+            backing_indices: 0,
+            total_store_size: OpenSearchByteSizeValueWire::bytes(0),
+            data_stream_stats_count: 0,
+        }
+    }
+}
+
+impl OpenSearchDataStreamsStatsResponseWire {
+    pub fn empty() -> Self {
+        Self::default()
+    }
+
+    pub fn write(&self, output: &mut StreamOutput) -> Result<(), TransportActionWireError> {
+        self.validate_supported_subset()?;
+        output.write_vint(self.total_shards);
+        output.write_vint(self.successful_shards);
+        output.write_vint(self.failed_shards);
+        output.write_vint(self.shard_failure_count);
+        output.write_vint(self.data_stream_count);
+        output.write_vint(self.backing_indices);
+        self.total_store_size.write(output);
+        output.write_vint(self.data_stream_stats_count);
+        Ok(())
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let response = Self {
+            total_shards: input.read_vint()?,
+            successful_shards: input.read_vint()?,
+            failed_shards: input.read_vint()?,
+            shard_failure_count: input.read_vint()?,
+            data_stream_count: input.read_vint()?,
+            backing_indices: input.read_vint()?,
+            total_store_size: OpenSearchByteSizeValueWire::read(&mut input)?,
+            data_stream_stats_count: input.read_vint()?,
+        };
+        require_no_trailing_bytes(&input)?;
+        response.validate_supported_subset()?;
+        Ok(response)
+    }
+
+    pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
+        if self.total_shards < 0 || self.successful_shards < 0 || self.failed_shards < 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "data streams stats response shard counters",
+                reason: "DataStreamsStatsAction.Response shard counters must be non-negative",
+            });
+        }
+        if self.shard_failure_count < 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "data streams stats response failure count",
+                reason: "DataStreamsStatsAction.Response shard failure count must be non-negative",
+            });
+        }
+        if self.failed_shards != 0 || self.shard_failure_count != 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "data streams stats response shard failures",
+                reason: "data-streams-stats shard failures require DefaultShardOperationFailedException decoding",
+            });
+        }
+        if self.data_stream_count != 0 || self.backing_indices != 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "data streams stats response counters",
+                reason: "only empty data-stream stats counters are supported by this adapter",
+            });
+        }
+        if self.total_store_size != OpenSearchByteSizeValueWire::bytes(0) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "data streams stats response store size",
+                reason: "only zero total store size is supported by this adapter",
+            });
+        }
+        if self.data_stream_stats_count != 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "data streams stats response metadata",
+                reason: "non-empty DataStreamStats payloads are not decoded by this transport adapter yet",
+            });
+        }
+        Ok(())
     }
 }
 
@@ -35088,7 +35225,7 @@ mod tests {
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_DATA_STREAMS_STATS_ACTION_NAME)
                 .disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_RESOLVE_INDEX_ACTION_NAME).disposition,
@@ -35201,6 +35338,7 @@ mod tests {
                 || spec.action_name == OPENSEARCH_INDICES_SEGMENTS_ACTION_NAME
                 || spec.action_name == OPENSEARCH_INDICES_SHARD_STORES_ACTION_NAME
                 || spec.action_name == OPENSEARCH_GET_DATA_STREAM_ACTION_NAME
+                || spec.action_name == OPENSEARCH_DATA_STREAMS_STATS_ACTION_NAME
                 || spec.action_name == OPENSEARCH_GET_ALIASES_ACTION_NAME
                 || spec.action_name == OPENSEARCH_GET_SETTINGS_ACTION_NAME
             {
@@ -35262,7 +35400,6 @@ mod tests {
                 || spec.action_name == OPENSEARCH_PIT_SEGMENTS_ACTION_NAME
                 || spec.action_name == OPENSEARCH_CREATE_DATA_STREAM_ACTION_NAME
                 || spec.action_name == OPENSEARCH_DELETE_DATA_STREAM_ACTION_NAME
-                || spec.action_name == OPENSEARCH_DATA_STREAMS_STATS_ACTION_NAME
                 || spec.action_name == OPENSEARCH_RESOLVE_INDEX_ACTION_NAME
                 || spec.action_name == OPENSEARCH_CREATE_VIEW_ACTION_NAME
                 || spec.action_name == OPENSEARCH_DELETE_VIEW_ACTION_NAME
@@ -53519,13 +53656,14 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_data_streams_stats_request_wire_round_trips_and_rejects_execution_boundary() {
+    fn opensearch_data_streams_stats_request_wire_round_trips_and_validates_default_subset() {
         let request = OpenSearchDataStreamsStatsRequestWire::default();
         let mut output = StreamOutput::new();
         request.write(&mut output);
 
         let decoded = OpenSearchDataStreamsStatsRequestWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, request);
+        decoded.validate_supported_subset().unwrap();
         assert!(matches!(
             decoded.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
@@ -53563,7 +53701,76 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_data_streams_stats_transport_messages_bind_rejected_action_frame() {
+    fn opensearch_data_streams_stats_response_wire_round_trips_empty_response() {
+        let response = OpenSearchDataStreamsStatsResponseWire::empty();
+        let mut output = StreamOutput::new();
+        response.write(&mut output).unwrap();
+
+        let decoded = OpenSearchDataStreamsStatsResponseWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, response);
+        decoded.validate_supported_subset().unwrap();
+    }
+
+    #[test]
+    fn opensearch_data_streams_stats_response_rejects_non_empty_sections() {
+        let failures = OpenSearchDataStreamsStatsResponseWire {
+            failed_shards: 1,
+            shard_failure_count: 1,
+            ..OpenSearchDataStreamsStatsResponseWire::empty()
+        };
+        assert!(matches!(
+            failures.write(&mut StreamOutput::new()),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "data streams stats response shard failures",
+                ..
+            })
+        ));
+
+        let counters = OpenSearchDataStreamsStatsResponseWire {
+            data_stream_count: 1,
+            backing_indices: 1,
+            ..OpenSearchDataStreamsStatsResponseWire::empty()
+        };
+        assert!(matches!(
+            counters.write(&mut StreamOutput::new()),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "data streams stats response counters",
+                ..
+            })
+        ));
+
+        let stats = OpenSearchDataStreamsStatsResponseWire {
+            data_stream_stats_count: 1,
+            ..OpenSearchDataStreamsStatsResponseWire::empty()
+        };
+        let mut output = StreamOutput::new();
+        output.write_vint(0);
+        output.write_vint(0);
+        output.write_vint(0);
+        output.write_vint(0);
+        output.write_vint(0);
+        output.write_vint(0);
+        OpenSearchByteSizeValueWire::bytes(0).write(&mut output);
+        output.write_vint(1);
+        assert!(matches!(
+            OpenSearchDataStreamsStatsResponseWire::read(output.freeze()),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "data streams stats response metadata",
+                ..
+            })
+        ));
+        assert!(matches!(
+            stats.write(&mut StreamOutput::new()),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "data streams stats response metadata",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_data_streams_stats_transport_messages_bind_supported_action_frame_and_empty_response(
+    ) {
         let request = OpenSearchDataStreamsStatsRequestWire::default();
         let mut frame = build_opensearch_data_streams_stats_request_message(
             44,
@@ -53578,6 +53785,10 @@ mod tests {
             read_opensearch_data_streams_stats_request_message(&message).unwrap(),
             request
         );
+        read_opensearch_data_streams_stats_request_message(&message)
+            .unwrap()
+            .validate_supported_subset()
+            .unwrap();
         assert!(matches!(
             read_opensearch_data_streams_stats_request_message(&message)
                 .unwrap()
@@ -53587,6 +53798,21 @@ mod tests {
                 ..
             })
         ));
+
+        let response = OpenSearchDataStreamsStatsResponseWire::empty();
+        let mut frame = build_opensearch_data_streams_stats_response_message(
+            44,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &response,
+        )
+        .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected data streams stats response message");
+        };
+        assert_eq!(
+            read_opensearch_data_streams_stats_response_message(&message).unwrap(),
+            response
+        );
     }
 
     #[test]
