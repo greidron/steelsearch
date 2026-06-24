@@ -1,7 +1,8 @@
 use os_core::OPENSEARCH_3_7_0_TRANSPORT;
 use os_transport::action::{
-    build_opensearch_create_pit_request_message, read_opensearch_create_pit_request_message,
-    OpenSearchCreatePitRequestWire,
+    build_opensearch_create_pit_request_message, build_opensearch_create_pit_response_message,
+    read_opensearch_create_pit_request_message, read_opensearch_create_pit_response_message,
+    OpenSearchCreatePitRequestWire, OpenSearchCreatePitResponseWire,
 };
 use os_transport::frame::{decode_frame, DecodedFrame};
 use std::hint::black_box;
@@ -11,6 +12,8 @@ const ITERATIONS: usize = 400_000;
 
 fn main() {
     let request = OpenSearchCreatePitRequestWire::default();
+    let response =
+        OpenSearchCreatePitResponseWire::success("pit-context", 1_700_000_000_000, 3);
 
     let request_encode = measure("create_pit_reject_request_encode", ITERATIONS, || {
         let frame = build_opensearch_create_pit_request_message(
@@ -45,10 +48,34 @@ fn main() {
         black_box(err);
     });
 
+    let response_encode = measure("create_pit_response_encode", ITERATIONS, || {
+        let frame = build_opensearch_create_pit_response_message(
+            53,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            black_box(&response),
+        )
+        .expect("create-PIT response encode should succeed");
+        black_box(frame);
+    });
+
+    let response_frame =
+        build_opensearch_create_pit_response_message(53, OPENSEARCH_3_7_0_TRANSPORT, &response)
+            .expect("create-PIT response encode should succeed");
+
+    let response_decode = measure("create_pit_response_decode", ITERATIONS, || {
+        let mut frame = black_box(response_frame.clone());
+        let message = decode_message(&mut frame);
+        let decoded = read_opensearch_create_pit_response_message(black_box(&message))
+            .expect("create-PIT response decode");
+        black_box(decoded);
+    });
+
     let combined_ops_per_second = request_encode
         .ops_per_second
         .min(request_decode.ops_per_second)
-        .min(reject_validate.ops_per_second);
+        .min(reject_validate.ops_per_second)
+        .min(response_encode.ops_per_second)
+        .min(response_decode.ops_per_second);
     println!("create_pit_reject_wire_bottleneck_ops_per_second={combined_ops_per_second:.2}");
 }
 

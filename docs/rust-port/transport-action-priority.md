@@ -2251,12 +2251,16 @@ The create-PIT boundary covers:
 - OpenSearch `CreatePitRequest` parent task, indices array, search default
   indices options, routing, preference, keep-alive time value, and optional
   `allowPartialPitCreation` flag at the wire decode/build layer;
+- OpenSearch `CreatePitResponse` success rendering with PIT id, total,
+  successful, failed, skipped shard counts, creation time, and an empty shard
+  failure list;
 - explicit fail-closed classification for
   `indices:data/read/point_in_time/create` until PIT context creation and
-  response rendering are mapped;
+  shard fanout are mapped;
 - explicit rejection for non-positive keep-alive values, index filters, custom
   indices options, routing, preference, partial creation flags, and create-PIT
-  execution.
+  execution; non-empty shard failure payloads remain fail-closed until
+  `ShardSearchFailure` decoding is mapped.
 
 The indices-stats boundary covers:
 
@@ -5101,18 +5105,21 @@ Current create-PIT reject wire microbenchmark:
 
 ```text
 cargo run -p os-transport --release --bin create-pit-reject-wire-benchmark
-create_pit_reject_request_encode iterations=400000 elapsed_ms=278.896 ops_per_second=1434226.27 nanos_per_op=697.24
-create_pit_reject_request_decode iterations=400000 elapsed_ms=263.987 ops_per_second=1515226.35 nanos_per_op=659.97
-create_pit_reject_validation iterations=400000 elapsed_ms=266.040 ops_per_second=1503533.19 nanos_per_op=665.10
-create_pit_reject_wire_bottleneck_ops_per_second=1434226.27
+create_pit_reject_request_encode iterations=400000 elapsed_ms=279.845 ops_per_second=1429361.62 nanos_per_op=699.61
+create_pit_reject_request_decode iterations=400000 elapsed_ms=261.244 ops_per_second=1531133.11 nanos_per_op=653.11
+create_pit_reject_validation iterations=400000 elapsed_ms=264.501 ops_per_second=1512284.45 nanos_per_op=661.25
+create_pit_response_encode iterations=400000 elapsed_ms=122.522 ops_per_second=3264728.36 nanos_per_op=306.30
+create_pit_response_decode iterations=400000 elapsed_ms=103.135 ops_per_second=3878424.69 nanos_per_op=257.84
+create_pit_reject_wire_bottleneck_ops_per_second=1429361.62
 ```
 
 The current create-PIT fail-closed boundary bottleneck is request encode. This
 path carries the ActionRequest parent task, index target controls, keep-alive,
-and optional partial-creation flag before rejecting execution. At roughly 1.43M
-ops/s in the latest local release run, the boundary itself is lightweight; the
-first performance point to inspect before accepting execution is PIT context
-allocation, shard fanout, and create-PIT response rendering.
+and optional partial-creation flag before rejecting execution. The success
+response encode/decode path for an empty-failure `CreatePitResponse` remains
+above 3.2M ops/s in the latest local release run, so the first performance
+point to inspect before accepting execution is PIT context allocation and shard
+fanout.
 
 Current PIT-segments wire microbenchmark:
 
