@@ -263,6 +263,7 @@ part of the OpenSearch parity target.
     - create-PIT `allow_no_indices=true` admission for empty wildcard targets
     - create-PIT order-sensitive `expand_wildcards=none` admission for empty wildcard expansion
     - create-PIT `allow_partial_pit_creation=false` admission for all-success local shard creation
+    - create-PIT `routing` admission preserves OpenSearch shard-routing semantics without document filtering
     - `_search` with `pit.id`
     - `GET /_search/point_in_time/_all`
     - `DELETE /_search/point_in_time`

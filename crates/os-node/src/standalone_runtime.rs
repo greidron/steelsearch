@@ -10064,11 +10064,6 @@ impl SteelNode {
                 .expect("next pit id lock poisoned") += 1;
             return create_pit_invalid_null_id_response();
         }
-        let requested_routing = request
-            .query_params
-            .get("routing")
-            .map(|routing| parse_routing_values(routing))
-            .filter(|routings| !routings.is_empty());
         let documents = {
             let docs = self
                 .documents_state
@@ -10078,14 +10073,6 @@ impl SteelNode {
                 .filter_map(|(key, record)| {
                     let (doc_index, _, _) = split_document_key(key)?;
                     if !resolved_indices.iter().any(|candidate| candidate == doc_index) {
-                        return None;
-                    }
-                    if requested_routing.as_ref().is_some_and(|routings| {
-                        !record
-                            .routing
-                            .as_deref()
-                            .is_some_and(|routing| routings.iter().any(|candidate| candidate == routing))
-                    }) {
                         return None;
                     }
                     Some((key.clone(), record.clone()))
@@ -39153,8 +39140,15 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 })),
         );
         assert_eq!(routed_pit_search.status, 200);
-        assert_eq!(routed_pit_search.body["hits"]["total"]["value"], 1);
-        assert_eq!(routed_pit_search.body["hits"]["hits"][0]["_id"], "doc-a");
+        assert_eq!(routed_pit_search.body["hits"]["total"]["value"], 2);
+        let routed_pit_ids = routed_pit_search.body["hits"]["hits"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|hit| hit["_id"].as_str().unwrap())
+            .collect::<Vec<_>>();
+        assert!(routed_pit_ids.contains(&"doc-a"));
+        assert!(routed_pit_ids.contains(&"doc-b"));
 
         let close_routed_pit = node.handle_rest_request(
             RestRequest::new(RestMethod::Delete, "/_search/point_in_time")

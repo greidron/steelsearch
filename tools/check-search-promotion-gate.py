@@ -76,6 +76,7 @@ def main() -> int:
             "pit_search_after_close_missing_context",
             "pit_search",
             "pit_search_extends_keep_alive",
+            "pit_search_with_routing_filter",
             "pit_snapshot_after_update_delete_search",
             "pit_search_with_default_ignore_throttled",
             "pit_search_with_order_sensitive_default_wildcards",
