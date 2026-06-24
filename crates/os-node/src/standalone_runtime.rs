@@ -9114,14 +9114,16 @@ impl SteelNode {
                         doc_index.to_string(),
                         doc_id.to_string(),
                         record.source.clone(),
+                        record.version,
                         record.seq_no,
+                        record.primary_term,
                     ))
                 })
                 .collect::<Vec<_>>();
             (candidate_documents, docs_snapshot_for_suggest)
         };
         let mut hits = Vec::new();
-        for (doc_index, doc_id, source, seq_no) in candidate_documents {
+        for (doc_index, doc_id, source, version, seq_no, primary_term) in candidate_documents {
             let effective_source = apply_runtime_mappings_to_source(&source, body.get("runtime_mappings"));
             if let Some((matched, score)) = evaluate_search_query_source_with_mappings(
                 &effective_source,
@@ -9137,6 +9139,12 @@ impl SteelNode {
                         "_score": score,
                         "_seq_no": seq_no
                     });
+                    if body.get("version") == Some(&Value::Bool(true)) {
+                        hit["_version"] = Value::from(version);
+                    }
+                    if body.get("seq_no_primary_term") == Some(&Value::Bool(true)) {
+                        hit["_primary_term"] = Value::from(primary_term);
+                    }
                     if let Some(fields) = self.build_search_hit_fields(&doc_index, &effective_source, &body) {
                         hit["fields"] = fields;
                     }
@@ -18184,8 +18192,10 @@ fn standalone_search_body_allows_native_engine(body: &Value) -> bool {
         "rescore",
         "runtime_mappings",
         "search_after",
+        "seq_no_primary_term",
         "suggest",
         "terminate_after",
+        "version",
     ]
     .iter()
     .any(|key| body.get(*key).is_some())
@@ -18614,6 +18624,13 @@ fn validate_search_request_body(body: &Value, scroll: bool) -> Option<RestRespon
             ));
         }
     }
+    for option in ["version", "seq_no_primary_term"] {
+        if body.get(option).is_some_and(|value| !value.is_boolean()) {
+            return Some(build_unsupported_search_response(&format!(
+                "unsupported search option [{option}]"
+            )));
+        }
+    }
     if let Some(highlight) = body.get("highlight") {
         if let Some(response) = validate_highlight_request_body(highlight) {
             return Some(response);
@@ -18762,6 +18779,20 @@ fn apply_search_source_query_params(
             ));
         };
         object.insert("track_total_hits".to_string(), track_total_hits);
+    }
+    for field in ["version", "seq_no_primary_term"] {
+        let Some(raw) = query_params.get(field) else {
+            continue;
+        };
+        if let Some(response) = validate_opensearch_boolean_query_param(Some(raw)) {
+            return Some(response);
+        }
+        let Some(object) = body.as_object_mut() else {
+            return Some(build_unsupported_search_response(
+                "unsupported search request body",
+            ));
+        };
+        object.insert(field.to_string(), Value::Bool(query_param_is_true(Some(raw))));
     }
     if let Some(raw_terminate_after) = query_params.get("terminate_after") {
         let Some(terminate_after) = parse_non_negative_search_int(raw_terminate_after) else {
@@ -38667,6 +38698,56 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             sorted_window.body["hits"]["hits"][0]["sort"],
             serde_json::json!(["tenant-b"])
+        );
+
+        let version_and_seq_query_params = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/logs-search-params-a/_search?version=true&seq_no_primary_term=true",
+            )
+            .with_json_body(serde_json::json!({
+                "query": { "match_all": {} },
+                "sort": [{ "tenant": "asc" }],
+                "size": 1
+            })),
+        );
+        assert_eq!(version_and_seq_query_params.status, 200);
+        assert_eq!(
+            version_and_seq_query_params.body["hits"]["hits"][0]["_version"],
+            1
+        );
+        assert_eq!(
+            version_and_seq_query_params.body["hits"]["hits"][0]["_primary_term"],
+            1
+        );
+        assert!(version_and_seq_query_params.body["hits"]["hits"][0]["_seq_no"].is_number());
+
+        let invalid_seq_no_primary_term_query_param = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/logs-search-params-a/_search?seq_no_primary_term=maybe",
+            )
+            .with_json_body(serde_json::json!({
+                "query": { "match_all": {} }
+            })),
+        );
+        assert_eq!(invalid_seq_no_primary_term_query_param.status, 400);
+        assert_eq!(
+            invalid_seq_no_primary_term_query_param.body["error"]["reason"],
+            "Failed to parse value [maybe] as only [true] or [false] are allowed."
+        );
+
+        let invalid_version_body = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-params-a/_search")
+                .with_json_body(serde_json::json!({
+                    "query": { "match_all": {} },
+                    "version": "true"
+                })),
+        );
+        assert_eq!(invalid_version_body.status, 400);
+        assert_eq!(
+            invalid_version_body.body["error"]["reason"],
+            "unsupported search option [version]"
         );
 
         let search_after_without_sort = node.handle_rest_request(

@@ -133,8 +133,8 @@ This table tracks top-level search body fields that are either:
 | `post_filter` | no dedicated handler/evaluator | no `body.get("post_filter")` path in search request validation/handler | Decide fail-closed vs documented-partial. |
 | `timeout` | no dedicated handler/evaluator | no top-level `body.get("timeout")` path in search request validation/handler; only unrelated query-param/runtime timeouts exist elsewhere | Decide fail-closed vs documented-partial. |
 | `min_score` | no dedicated top-level handler | no top-level `body.get("min_score")` path in search request validation/handler; k-NN query-level `min_score` exists separately in validation at [standalone_runtime.rs:12747](/home/ubuntu/steelsearch/crates/os-node/src/standalone_runtime.rs:12747) | Need explicit policy for top-level `min_score`. |
-| `version` | no dedicated handler/evaluator | no `body.get("version")` path in search request validation/handler | Decide fail-closed vs documented-partial. |
-| `seq_no_primary_term` | no dedicated handler/evaluator | no `body.get("seq_no_primary_term")` path in search request validation/handler | Decide fail-closed vs documented-partial. |
+| `version` | consumed + validated | boolean query/body parsing and hit `_version` projection in [standalone_runtime.rs](/home/ubuntu/steelsearch/crates/os-node/src/standalone_runtime.rs) | Bounded projection support; broad compare expansion still pending. |
+| `seq_no_primary_term` | consumed + validated | boolean query/body parsing and hit `_seq_no`/`_primary_term` projection in [standalone_runtime.rs](/home/ubuntu/steelsearch/crates/os-node/src/standalone_runtime.rs) | Bounded projection support; broad compare expansion still pending. |
 | `stats` | no dedicated handler/evaluator | no `body.get("stats")` path in search request validation/handler | Decide fail-closed vs documented-partial. |
 
 
@@ -150,8 +150,8 @@ are not yet backed by a dedicated handler/evaluator path.
 | `post_filter` | no post-query filter phase | fail closed | Silently ignoring a post-filter changes hit count and aggregation semantics. | Add negative fixture and explicit `400` path. |
 | `timeout` | no top-level search body timeout handling | fail closed | Timeouts are behavioral controls; silent ignore is unsafe for operational expectations. | Add negative fixture and explicit `400` path unless a bounded timeout model is implemented. |
 | top-level `min_score` | no top-level min-score gate; query-level k-NN `min_score` only | fail closed | Silently ignoring top-level score filtering changes hit visibility and ordering. | Add negative fixture and explicit `400` path for top-level `min_score`. |
-| `version` | no search-hit version projection path | documented partial | Missing version projection does not change search matching semantics, but it must not be claimed as supported. | Document unsupported projection behavior and later decide whether to reject or implement. |
-| `seq_no_primary_term` | no search-hit seq_no/primary_term projection path | documented partial | Same rationale as `version`: it is a projection gap, not a query-match semantic gap. | Document unsupported projection behavior and later decide whether to reject or implement. |
+| `version` | bounded search-hit version projection path | documented partial | Matching semantics are unchanged; requested hit metadata now renders for the standalone route. | Expand strict compare fixtures for body/query-param variants. |
+| `seq_no_primary_term` | bounded search-hit seq_no/primary_term projection path | documented partial | Matching semantics are unchanged; requested hit metadata now renders for the standalone route. | Expand strict compare fixtures for body/query-param variants. |
 | `stats` | no request stats group handling | documented partial | Stats groups are observability metadata; missing support is lower risk than silently changing query results. | Document as unsupported metadata and revisit after core fail-closed audit. |
 
 Decision rule used here:
