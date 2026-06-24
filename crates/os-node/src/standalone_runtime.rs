@@ -8866,7 +8866,9 @@ impl SteelNode {
         if let Some(response) = apply_search_source_query_params(&mut body, &request.query_params) {
             return response;
         }
-        if let Some(response) = validate_search_request_body(&body) {
+        if let Some(response) =
+            validate_search_request_body(&body, request.query_params.contains_key("scroll"))
+        {
             return response;
         }
         if let Some(response) =
@@ -18568,7 +18570,7 @@ fn value_contains_key(value: &Value, key: &str) -> bool {
     }
 }
 
-fn validate_search_request_body(body: &Value) -> Option<RestResponse> {
+fn validate_search_request_body(body: &Value, scroll: bool) -> Option<RestResponse> {
     if let Some(runtime_mappings) = body.get("runtime_mappings") {
         if let Some(response) = validate_runtime_mappings_request_body(runtime_mappings) {
             return Some(response);
@@ -18609,7 +18611,12 @@ fn validate_search_request_body(body: &Value) -> Option<RestResponse> {
         }
     }
     if let Some(search_after) = body.get("search_after") {
-        if let Some(response) = validate_search_after_request_body(body.get("sort"), search_after) {
+        if let Some(response) = validate_search_after_request_body(
+            body.get("sort"),
+            search_after,
+            body.get("from").and_then(Value::as_u64).unwrap_or(0),
+            scroll,
+        ) {
             return Some(response);
         }
     }
@@ -19196,10 +19203,25 @@ fn validate_docvalue_fields_request_body(docvalue_fields: &Value) -> Option<Rest
     None
 }
 
-fn validate_search_after_request_body(sort: Option<&Value>, search_after: &Value) -> Option<RestResponse> {
+fn validate_search_after_request_body(
+    sort: Option<&Value>,
+    search_after: &Value,
+    from: u64,
+    scroll: bool,
+) -> Option<RestResponse> {
+    if scroll {
+        return Some(search_after_validation_error(
+            "`search_after` cannot be used in a scroll context.",
+        ));
+    }
+    if from != 0 {
+        return Some(search_after_validation_error(
+            "`from` parameter must be set to 0 when `search_after` is used.",
+        ));
+    }
     let Some(sort_fields) = sort.and_then(Value::as_array) else {
-        return Some(build_unsupported_search_response(
-            "unsupported search option [search_after]",
+        return Some(search_after_validation_error(
+            "Sort must contain at least one field.",
         ));
     };
     let Some(after_values) = search_after.as_array() else {
@@ -19207,12 +19229,34 @@ fn validate_search_after_request_body(sort: Option<&Value>, search_after: &Value
             "unsupported search option [search_after]",
         ));
     };
-    if sort_fields.len() != 1 || after_values.len() != 1 {
-        return Some(build_unsupported_search_response(
-            "unsupported search option [search_after]",
-        ));
+    if sort_fields.len() != after_values.len() {
+        return Some(search_after_validation_error(format!(
+            "search_after has {} value(s) but sort has {}.",
+            after_values.len(),
+            sort_fields.len()
+        )));
     }
     None
+}
+
+fn search_after_validation_error(reason: impl Into<String>) -> RestResponse {
+    let reason = reason.into();
+    RestResponse::json(
+        400,
+        serde_json::json!({
+            "error": {
+                "type": "search_phase_execution_exception",
+                "reason": "all shards failed",
+                "root_cause": [
+                    {
+                        "type": "illegal_argument_exception",
+                        "reason": reason
+                    }
+                ]
+            },
+            "status": 400
+        }),
+    )
 }
 
 fn validate_highlight_request_body(highlight: &Value) -> Option<RestResponse> {
@@ -20273,38 +20317,27 @@ fn apply_search_after(hits: Vec<Value>, sort: &Value, search_after: &[Value]) ->
     let Some(sort_fields) = sort.as_array() else {
         return hits;
     };
-    let Some(first_sort) = sort_fields.first() else {
+    if sort_fields.is_empty() || sort_fields.len() != search_after.len() {
         return hits;
-    };
-    let Some(after_value) = search_after.first() else {
-        return hits;
-    };
-    let (field_name, descending) = if let Some(field_name) = first_sort.as_str() {
-        (field_name.to_string(), field_name == "_score")
-    } else if let Some(field_object) = first_sort.as_object() {
-        let Some((field_name, field_options)) = field_object.iter().next() else {
-            return hits;
-        };
-        (
-            field_name.clone(),
-            field_options
-                .get("order")
-                .and_then(Value::as_str)
-                .unwrap_or("asc")
-                == "desc",
-        )
-    } else {
-        return hits;
-    };
+    }
     hits.into_iter()
         .filter(|hit| {
-            let sort_value = extract_sort_value(hit, &field_name);
-            let ordering = compare_json_scalars(&sort_value, after_value);
-            if descending {
-                ordering == std::cmp::Ordering::Less
-            } else {
-                ordering == std::cmp::Ordering::Greater
+            for (sort_field, after_value) in sort_fields.iter().zip(search_after.iter()) {
+                let Some(field_name) = sort_field_name(sort_field) else {
+                    continue;
+                };
+                let sort_value = extract_sort_value(hit, field_name);
+                let ordering = compare_json_scalars(&sort_value, after_value);
+                if ordering == std::cmp::Ordering::Equal {
+                    continue;
+                }
+                return if sort_field_descending(sort_field) {
+                    ordering == std::cmp::Ordering::Less
+                } else {
+                    ordering == std::cmp::Ordering::Greater
+                };
             }
+            false
         })
         .collect()
 }
@@ -20335,6 +20368,18 @@ fn sort_field_name(sort_field: &Value) -> Option<&str> {
     sort_field
         .as_object()
         .and_then(|object| object.keys().next().map(String::as_str))
+}
+
+fn sort_field_descending(sort_field: &Value) -> bool {
+    if sort_field.as_str() == Some("_score") {
+        return true;
+    }
+    sort_field
+        .as_object()
+        .and_then(|object| object.values().next())
+        .and_then(|options| options.get("order"))
+        .and_then(Value::as_str)
+        .is_some_and(|order| order == "desc")
 }
 
 fn parse_runtime_mapping_script_source(source: &str) -> Option<String> {
@@ -38389,6 +38434,66 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(sorted_window.body["hits"]["total"]["value"], 3);
         assert_eq!(sorted_window.body["hits"]["hits"].as_array().map(Vec::len), Some(1));
         assert_eq!(sorted_window.body["hits"]["hits"][0]["_id"], "doc-2");
+        assert_eq!(
+            sorted_window.body["hits"]["hits"][0]["sort"],
+            serde_json::json!(["tenant-b"])
+        );
+
+        let search_after_without_sort = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-params-*/_search")
+                .with_json_body(serde_json::json!({
+                    "query": { "match_all": {} },
+                    "search_after": ["tenant-a"]
+                })),
+        );
+        assert_eq!(search_after_without_sort.status, 400);
+        assert_eq!(
+            search_after_without_sort.body["error"]["root_cause"][0]["reason"],
+            "Sort must contain at least one field."
+        );
+
+        let search_after_with_from = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-params-*/_search?from=1")
+                .with_json_body(serde_json::json!({
+                    "query": { "match_all": {} },
+                    "sort": [{ "tenant": "asc" }],
+                    "from": 0,
+                    "search_after": ["tenant-a"]
+                })),
+        );
+        assert_eq!(search_after_with_from.status, 400);
+        assert_eq!(
+            search_after_with_from.body["error"]["root_cause"][0]["reason"],
+            "`from` parameter must be set to 0 when `search_after` is used."
+        );
+
+        let search_after_with_scroll = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-params-*/_search?scroll=1m")
+                .with_json_body(serde_json::json!({
+                    "query": { "match_all": {} },
+                    "sort": [{ "tenant": "asc" }],
+                    "search_after": ["tenant-a"]
+                })),
+        );
+        assert_eq!(search_after_with_scroll.status, 400);
+        assert_eq!(
+            search_after_with_scroll.body["error"]["root_cause"][0]["reason"],
+            "`search_after` cannot be used in a scroll context."
+        );
+
+        let search_after_sort_length_mismatch = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-params-*/_search")
+                .with_json_body(serde_json::json!({
+                    "query": { "match_all": {} },
+                    "sort": [{ "tenant": "asc" }, { "message": "asc" }],
+                    "search_after": ["tenant-a"]
+                })),
+        );
+        assert_eq!(search_after_sort_length_mismatch.status, 400);
+        assert_eq!(
+            search_after_sort_length_mismatch.body["error"]["root_cause"][0]["reason"],
+            "search_after has 1 value(s) but sort has 2."
+        );
 
         let query_param_sort = node.handle_rest_request(
             RestRequest::new(
