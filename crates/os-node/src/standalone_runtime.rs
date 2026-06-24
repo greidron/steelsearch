@@ -8964,11 +8964,13 @@ impl SteelNode {
                 }),
             );
         }
-        let requested_routing = request
+        let requested_routing_values = request
             .query_params
             .get("routing")
             .cloned()
-            .or_else(|| self.resolve_alias_search_routing(index));
+            .or_else(|| self.resolve_alias_search_routing(index))
+            .map(|routing| parse_routing_values(&routing))
+            .filter(|routing| !routing.is_empty());
         let index_mappings = {
             let manifest = self
                 .metadata_manifest_state
@@ -9007,7 +9009,7 @@ impl SteelNode {
         if pit_context.is_none()
             && !resolved_indices.is_empty()
             && failed_indices.is_empty()
-            && requested_routing.is_none()
+            && requested_routing_values.is_none()
             && standalone_search_body_allows_native_engine(&body)
         {
             if let Some(response) = self.try_native_engine_search_response(
@@ -9039,9 +9041,12 @@ impl SteelNode {
                     {
                         return None;
                     }
-                    if requested_routing
-                        .as_deref()
-                        .is_some_and(|routing| record.routing.as_deref() != Some(routing))
+                    if requested_routing_values.as_ref().is_some_and(|routings| {
+                        !record
+                            .routing
+                            .as_deref()
+                            .is_some_and(|routing| routings.iter().any(|candidate| candidate == routing))
+                    })
                     {
                         return None;
                     }
@@ -9747,14 +9752,7 @@ impl SteelNode {
         let requested_routing = request
             .query_params
             .get("routing")
-            .map(|routing| {
-                routing
-                    .split(',')
-                    .map(str::trim)
-                    .filter(|value| !value.is_empty())
-                    .map(ToOwned::to_owned)
-                    .collect::<Vec<_>>()
-            })
+            .map(|routing| parse_routing_values(routing))
             .filter(|routings| !routings.is_empty());
         let documents = {
             let docs = self
@@ -18701,6 +18699,15 @@ fn validate_opensearch_boolean_query_param(raw: Option<&String>) -> Option<RestR
             "status": 400
         }),
     ))
+}
+
+fn parse_routing_values(routing: &str) -> Vec<String> {
+    routing
+        .split(',')
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned)
+        .collect()
 }
 
 fn parse_delete_pit_ids(body: &Value) -> Result<Vec<String>, RestResponse> {
@@ -35369,6 +35376,19 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(routed_pit.status, 200);
         assert_eq!(routed_pit.body["pit_id"], "pit-3");
 
+        let routed_live_search = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/logs-routed-pit-000001/_search?routing=tenant-a,tenant-missing",
+            )
+            .with_json_body(serde_json::json!({
+                "query": { "match_all": {} }
+            })),
+        );
+        assert_eq!(routed_live_search.status, 200);
+        assert_eq!(routed_live_search.body["hits"]["total"]["value"], 1);
+        assert_eq!(routed_live_search.body["hits"]["hits"][0]["_id"], "doc-a");
+
         let routed_pit_search = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/_search")
                 .with_json_body(serde_json::json!({
@@ -37091,7 +37111,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             RestRequest::new(RestMethod::Post, "/_msearch")
                 .with_header("content-type", "application/x-ndjson")
                 .with_body(
-                    b"{\"index\":\"logs-msearch-000001\",\"routing\":\"tenant-routed\"}\n{\"query\":{\"match_all\":{}}}\n".to_vec(),
+                    b"{\"index\":\"logs-msearch-000001\",\"routing\":\"tenant-routed,tenant-missing\"}\n{\"query\":{\"match_all\":{}}}\n".to_vec(),
                 ),
         );
         assert_eq!(routed_header_multi.status, 200);
