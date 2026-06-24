@@ -244,6 +244,58 @@
       "description": "[failure-path] search_after with from error"
     },
     {
+      "name": "collapse_keyword_semantic",
+      "area": "search-semantic",
+      "method": "POST",
+      "path": "/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "sort": [
+          {
+            "tenant": {
+              "order": "asc"
+            }
+          }
+        ],
+        "collapse": {
+          "field": "tenant"
+        },
+        "size": 10
+      },
+      "extract": "search_hits",
+      "family": "ranking",
+      "description": "[ranking] collapse keyword semantic"
+    },
+    {
+      "name": "collapse_search_after_sort_mismatch_error",
+      "area": "search-semantic",
+      "method": "POST",
+      "path": "/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "sort": [
+          {
+            "_id": {
+              "order": "asc"
+            }
+          }
+        ],
+        "search_after": [
+          "doc-1"
+        ],
+        "collapse": {
+          "field": "tenant"
+        }
+      },
+      "extract": "search_error",
+      "family": "failure-path",
+      "description": "[failure-path] collapse search_after sort mismatch error"
+    },
+    {
       "name": "count_root_term_semantic",
       "area": "search-semantic",
       "method": "POST",

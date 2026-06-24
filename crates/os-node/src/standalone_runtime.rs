@@ -19242,7 +19242,13 @@ fn validate_search_request_body(body: &Value, scroll: bool) -> Option<RestRespon
         }
     }
     if let Some(collapse) = body.get("collapse") {
-        if let Some(response) = validate_collapse_request_body(collapse) {
+        if let Some(response) = validate_collapse_request_body(
+            collapse,
+            body.get("sort"),
+            body.get("search_after"),
+            scroll,
+            body.get("rescore"),
+        ) {
             return Some(response);
         }
     }
@@ -20095,15 +20101,49 @@ fn validate_rescore_request_body(rescore: &Value) -> Option<RestResponse> {
     None
 }
 
-fn validate_collapse_request_body(collapse: &Value) -> Option<RestResponse> {
+fn validate_collapse_request_body(
+    collapse: &Value,
+    sort: Option<&Value>,
+    search_after: Option<&Value>,
+    scroll: bool,
+    rescore: Option<&Value>,
+) -> Option<RestResponse> {
     let Some(object) = collapse.as_object() else {
         return Some(build_unsupported_search_response(
             "unsupported search option [collapse]",
         ));
     };
-    if object.len() != 1 || object.get("field").and_then(Value::as_str).is_none() {
+    let Some(collapse_field) = object.get("field").and_then(Value::as_str) else {
         return Some(build_unsupported_search_response(
             "unsupported search option [collapse]",
+        ));
+    };
+    if object.len() != 1 {
+        return Some(build_unsupported_search_response(
+            "unsupported search option [collapse]",
+        ));
+    }
+    if scroll {
+        return Some(search_after_phase_execution_error(
+            "cannot use `collapse` in a scroll context",
+        ));
+    }
+    if search_after.is_some() {
+        let sort_fields = sort.and_then(search_sort_fields).unwrap_or_default();
+        if sort_fields.len() != 1
+            || sort_fields
+                .first()
+                .and_then(sort_field_name)
+                .map_or(true, |field| field != collapse_field)
+        {
+            return Some(search_after_phase_execution_error(
+                "collapse field and sort field must be the same when use `collapse` in conjunction with `search_after`",
+            ));
+        }
+    }
+    if rescore.is_some() {
+        return Some(search_after_phase_execution_error(
+            "cannot use `collapse` in conjunction with `rescore`",
         ));
     }
     None
