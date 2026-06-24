@@ -7880,6 +7880,8 @@ impl SteelNode {
             ("searchType", "search_type"),
             ("request_cache", "request_cache"),
             ("requestCache", "request_cache"),
+            ("allow_partial_search_results", "allow_partial_search_results"),
+            ("phase_took", "phase_took"),
             ("ignore_unavailable", "ignore_unavailable"),
             ("ignoreUnavailable", "ignore_unavailable"),
             ("allow_no_indices", "allow_no_indices"),
@@ -40293,6 +40295,54 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(invalid_request_cache_metadata.body["responses"][0]["status"], 400);
         assert_eq!(
             invalid_request_cache_metadata.body["responses"][0]["error"]["reason"],
+            "Failed to parse value [maybe] as only [true] or [false] are allowed."
+        );
+
+        let phase_took_metadata = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_msearch")
+                .with_header("content-type", "application/x-ndjson")
+                .with_body(
+                    b"{\"phase_took\":true}\n{\"query\":{\"match_all\":{}}}\n".to_vec(),
+                ),
+        );
+        assert_eq!(phase_took_metadata.status, 200);
+        assert_eq!(phase_took_metadata.body["responses"][0]["status"], 200);
+
+        let invalid_phase_took_metadata = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_msearch")
+                .with_header("content-type", "application/x-ndjson")
+                .with_body(
+                    b"{\"phase_took\":\"maybe\"}\n{\"query\":{\"match_all\":{}}}\n".to_vec(),
+                ),
+        );
+        assert_eq!(invalid_phase_took_metadata.status, 200);
+        assert_eq!(invalid_phase_took_metadata.body["responses"][0]["status"], 400);
+        assert_eq!(
+            invalid_phase_took_metadata.body["responses"][0]["error"]["reason"],
+            "Failed to parse value [maybe] as only [true] or [false] are allowed."
+        );
+
+        let allow_partial_metadata = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_msearch")
+                .with_header("content-type", "application/x-ndjson")
+                .with_body(
+                    b"{\"allow_partial_search_results\":true}\n{\"query\":{\"match_all\":{}}}\n".to_vec(),
+                ),
+        );
+        assert_eq!(allow_partial_metadata.status, 200);
+        assert_eq!(allow_partial_metadata.body["responses"][0]["status"], 200);
+
+        let invalid_allow_partial_metadata = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_msearch")
+                .with_header("content-type", "application/x-ndjson")
+                .with_body(
+                    b"{\"allow_partial_search_results\":\"maybe\"}\n{\"query\":{\"match_all\":{}}}\n".to_vec(),
+                ),
+        );
+        assert_eq!(invalid_allow_partial_metadata.status, 200);
+        assert_eq!(invalid_allow_partial_metadata.body["responses"][0]["status"], 400);
+        assert_eq!(
+            invalid_allow_partial_metadata.body["responses"][0]["error"]["reason"],
             "Failed to parse value [maybe] as only [true] or [false] are allowed."
         );
     }
