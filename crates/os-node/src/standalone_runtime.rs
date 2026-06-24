@@ -11642,6 +11642,39 @@ impl SteelNode {
                 }),
             );
         };
+        if let Some(response) =
+            validate_opensearch_boolean_query_param(request.query_params.get("require_alias"))
+        {
+            return response;
+        }
+        if request
+            .query_params
+            .get("require_alias")
+            .is_some_and(|value| query_param_is_true(Some(value)))
+            && !self.target_is_alias(dest_index)
+        {
+            return RestResponse::json(
+                404,
+                serde_json::json!({
+                    "error": {
+                        "type": "index_not_found_exception",
+                        "reason": require_alias_not_alias_reason(dest_index)
+                    },
+                    "status": 404
+                }),
+            );
+        }
+        let dest_routing = body
+            .get("dest")
+            .and_then(|dest| dest.get("routing"))
+            .and_then(Value::as_str);
+        if dest_routing.is_some_and(|routing| {
+            routing != "keep" && routing != "discard" && !routing.starts_with('=')
+        }) {
+            return action_request_validation_error(vec![
+                "routing must be unset, [keep], [discard] or [=<some new value>]",
+            ]);
+        }
         if let Some(response) = self.refuse_task_submission_if_unavailable()
         {
             return response;
@@ -11694,8 +11727,20 @@ impl SteelNode {
                 .lock()
                 .expect("documents state lock poisoned");
             for (id, routing, doc) in source_docs {
-                let key = format!("{resolved_dest}:{id}:{routing}");
-                if docs.insert(key, doc).is_some() {
+                let resolved_routing = match dest_routing {
+                    None | Some("keep") => routing,
+                    Some("discard") => String::new(),
+                    Some(forced) if forced.starts_with('=') => forced[1..].to_string(),
+                    Some(_) => unreachable!("destination routing was validated above"),
+                };
+                let mut dest_doc = doc;
+                dest_doc.routing = if resolved_routing.is_empty() {
+                    None
+                } else {
+                    Some(resolved_routing.clone())
+                };
+                let key = format!("{resolved_dest}:{id}:{resolved_routing}");
+                if docs.insert(key, dest_doc).is_some() {
                     updated += 1;
                 } else {
                     created += 1;
@@ -33776,6 +33821,203 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(created_doc.status, 200);
         assert_eq!(created_doc.body["_source"]["message"], "from source b");
         assert_eq!(created_doc.body["_source"]["tenant"], "tenant-b");
+    }
+
+    #[test]
+    fn reindex_route_honors_destination_routing_and_require_alias() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        for index in [
+            "logs-reindex-routing-source",
+            "logs-reindex-routing-keep",
+            "logs-reindex-routing-discard",
+            "logs-reindex-routing-forced",
+            "logs-reindex-routing-alias-target",
+        ] {
+            assert_eq!(
+                node.handle_rest_request(RestRequest::new(RestMethod::Put, &format!("/{index}")))
+                    .status,
+                200
+            );
+        }
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(
+                    RestMethod::Put,
+                    "/logs-reindex-routing-source/_doc/doc-a?routing=tenant-a",
+                )
+                .with_json_body(serde_json::json!({
+                    "message": "tenant a",
+                    "tenant": "tenant-a"
+                })),
+            )
+            .status,
+            201
+        );
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(
+                    RestMethod::Put,
+                    "/logs-reindex-routing-source/_doc/doc-b?routing=tenant-b",
+                )
+                .with_json_body(serde_json::json!({
+                    "message": "tenant b",
+                    "tenant": "tenant-b"
+                })),
+            )
+            .status,
+            201
+        );
+
+        let invalid_routing = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_reindex").with_json_body(serde_json::json!({
+                "source": { "index": "logs-reindex-routing-source" },
+                "dest": {
+                    "index": "logs-reindex-routing-keep",
+                    "routing": "copy"
+                }
+            })),
+        );
+        assert_eq!(invalid_routing.status, 400);
+        assert_eq!(
+            invalid_routing.body["error"]["type"],
+            "action_request_validation_exception"
+        );
+        assert_eq!(
+            invalid_routing.body["error"]["reason"],
+            "Validation Failed: 1: routing must be unset, [keep], [discard] or [=<some new value>];"
+        );
+
+        let keep = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_reindex").with_json_body(serde_json::json!({
+                "source": { "index": "logs-reindex-routing-source" },
+                "dest": {
+                    "index": "logs-reindex-routing-keep",
+                    "routing": "keep"
+                }
+            })),
+        );
+        assert_eq!(keep.status, 200);
+        assert_eq!(keep.body["created"], 2);
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(
+                RestMethod::Get,
+                "/logs-reindex-routing-keep/_doc/doc-a?routing=tenant-a",
+            ))
+            .status,
+            200
+        );
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(
+                RestMethod::Get,
+                "/logs-reindex-routing-keep/_doc/doc-a?routing=tenant-b",
+            ))
+            .status,
+            404
+        );
+
+        let discard = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_reindex").with_json_body(serde_json::json!({
+                "source": { "index": "logs-reindex-routing-source" },
+                "dest": {
+                    "index": "logs-reindex-routing-discard",
+                    "routing": "discard"
+                }
+            })),
+        );
+        assert_eq!(discard.status, 200);
+        assert_eq!(discard.body["created"], 2);
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(
+                RestMethod::Get,
+                "/logs-reindex-routing-discard/_doc/doc-a",
+            ))
+            .status,
+            200
+        );
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(
+                RestMethod::Get,
+                "/logs-reindex-routing-discard/_doc/doc-a?routing=tenant-a",
+            ))
+            .status,
+            404
+        );
+
+        let forced = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_reindex").with_json_body(serde_json::json!({
+                "source": { "index": "logs-reindex-routing-source" },
+                "dest": {
+                    "index": "logs-reindex-routing-forced",
+                    "routing": "=tenant-z"
+                }
+            })),
+        );
+        assert_eq!(forced.status, 200);
+        assert_eq!(forced.body["created"], 2);
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(
+                RestMethod::Get,
+                "/logs-reindex-routing-forced/_doc/doc-a?routing=tenant-z",
+            ))
+            .status,
+            200
+        );
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(
+                RestMethod::Get,
+                "/logs-reindex-routing-forced/_doc/doc-a?routing=tenant-a",
+            ))
+            .status,
+            404
+        );
+
+        let require_alias_on_concrete = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_reindex?require_alias=true").with_json_body(
+                serde_json::json!({
+                    "source": { "index": "logs-reindex-routing-source" },
+                    "dest": { "index": "logs-reindex-routing-forced" }
+                }),
+            ),
+        );
+        assert_eq!(require_alias_on_concrete.status, 404);
+        assert_eq!(
+            require_alias_on_concrete.body["error"]["reason"],
+            "[require_alias] request flag is [true] and [logs-reindex-routing-forced] is not an alias"
+        );
+
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(
+                RestMethod::Put,
+                "/logs-reindex-routing-alias-target/_alias/logs-reindex-routing-write",
+            ))
+            .status,
+            200
+        );
+        let require_alias_on_alias = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_reindex?require_alias=true").with_json_body(
+                serde_json::json!({
+                    "source": { "index": "logs-reindex-routing-source" },
+                    "dest": {
+                        "index": "logs-reindex-routing-write",
+                        "routing": "discard"
+                    }
+                }),
+            ),
+        );
+        assert_eq!(require_alias_on_alias.status, 200);
+        assert_eq!(require_alias_on_alias.body["created"], 2);
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(
+                RestMethod::Get,
+                "/logs-reindex-routing-alias-target/_doc/doc-a",
+            ))
+            .status,
+            200
+        );
     }
 
     #[test]
