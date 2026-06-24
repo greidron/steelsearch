@@ -135,7 +135,7 @@ This table tracks top-level search body fields that are either:
 | `min_score` | consumed + validated | top-level numeric validation and hit score filtering in `standalone_runtime.rs`; k-NN query-level `min_score` remains separately validated. | Bounded score-gate support for the standalone route. |
 | `version` | consumed + validated | boolean query/body parsing and hit `_version` projection in [standalone_runtime.rs](/home/ubuntu/steelsearch/crates/os-node/src/standalone_runtime.rs) | Bounded projection support; broad compare expansion still pending. |
 | `seq_no_primary_term` | consumed + validated | boolean query/body parsing and hit `_seq_no`/`_primary_term` projection in [standalone_runtime.rs](/home/ubuntu/steelsearch/crates/os-node/src/standalone_runtime.rs) | Bounded projection support; broad compare expansion still pending. |
-| `stats` | no dedicated handler/evaluator | no `body.get("stats")` path in search request validation/handler | Decide fail-closed vs documented-partial. |
+| `stats` | consumed + validated | body string-array validation and REST query-param comma splitting in [standalone_runtime.rs](/home/ubuntu/steelsearch/crates/os-node/src/standalone_runtime.rs) | Stats groups are accepted as observability metadata; no dedicated request stats aggregation is modeled. |
 
 
 ## Silent-Ignore Versus Fail-Closed Decision Table
@@ -152,7 +152,7 @@ are not yet backed by a dedicated handler/evaluator path.
 | top-level `min_score` | bounded top-level min-score gate | documented partial | The standalone path now rejects non-numeric values and excludes hits whose evaluated score is below the threshold. | Expand strict compare fixtures across scoring query families. |
 | `version` | bounded search-hit version projection path | documented partial | Matching semantics are unchanged; requested hit metadata now renders for the standalone route. | Expand strict compare fixtures for body/query-param variants. |
 | `seq_no_primary_term` | bounded search-hit seq_no/primary_term projection path | documented partial | Matching semantics are unchanged; requested hit metadata now renders for the standalone route. | Expand strict compare fixtures for body/query-param variants. |
-| `stats` | no request stats group handling | documented partial | Stats groups are observability metadata; missing support is lower risk than silently changing query results. | Document as unsupported metadata and revisit after core fail-closed audit. |
+| `stats` | body/query-param groups consumed and validated | documented partial | Stats groups are observability metadata; Steelsearch now accepts OpenSearch-shaped string groups and rejects unsupported body shapes instead of silently ignoring them. | Add dedicated request stats aggregation if search usage accounting becomes an operational requirement. |
 
 Decision rule used here:
 

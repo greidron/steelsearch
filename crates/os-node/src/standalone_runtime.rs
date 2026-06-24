@@ -18713,6 +18713,11 @@ fn validate_search_request_body(body: &Value, scroll: bool) -> Option<RestRespon
             return Some(search_timeout_parse_error(timeout));
         }
     }
+    if let Some(stats) = body.get("stats") {
+        if let Some(response) = validate_search_stats_request_body(stats) {
+            return Some(response);
+        }
+    }
     if body.get("min_score").is_some_and(|value| !value.is_number()) {
         return Some(build_unsupported_search_response(
             "unsupported search option [min_score]",
@@ -18886,6 +18891,22 @@ fn apply_search_source_query_params(
         };
         object.insert("timeout".to_string(), Value::String(raw_timeout.clone()));
     }
+    if let Some(raw_stats) = query_params.get("stats") {
+        let Some(object) = body.as_object_mut() else {
+            return Some(build_unsupported_search_response(
+                "unsupported search request body",
+            ));
+        };
+        object.insert(
+            "stats".to_string(),
+            Value::Array(
+                raw_stats
+                    .split(',')
+                    .map(|value| Value::String(value.to_string()))
+                    .collect(),
+            ),
+        );
+    }
     if let Some(raw_source) = query_params.get("_source") {
         let source_filter = match raw_source.as_str() {
             "true" => Value::Bool(true),
@@ -18941,6 +18962,20 @@ fn apply_search_source_query_params(
             };
             object.insert("terminate_after".to_string(), Value::from(terminate_after));
         }
+    }
+    None
+}
+
+fn validate_search_stats_request_body(stats: &Value) -> Option<RestResponse> {
+    let Some(groups) = stats.as_array() else {
+        return Some(build_unsupported_search_response(
+            "unsupported search option [stats]",
+        ));
+    };
+    if groups.iter().any(|group| !group.is_string()) {
+        return Some(build_unsupported_search_response(
+            "unsupported search option [stats]",
+        ));
     }
     None
 }
@@ -39281,6 +39316,44 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             invalid_timeout_query_param.body["error"]["reason"],
             "failed to parse setting [timeout] with value [soon] as a time value"
+        );
+
+        let body_stats_groups = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-params-a/_search")
+                .with_json_body(serde_json::json!({
+                    "query": { "match_all": {} },
+                    "stats": ["group-a", "group-b"],
+                    "sort": [{ "rank": "asc" }],
+                    "size": 1
+                })),
+        );
+        assert_eq!(body_stats_groups.status, 200);
+        assert_eq!(body_stats_groups.body["hits"]["total"]["value"], 2);
+        assert_eq!(body_stats_groups.body["hits"]["hits"][0]["_id"], "doc-1");
+
+        let query_param_stats_groups = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-params-a/_search?stats=group-a,group-b")
+                .with_json_body(serde_json::json!({
+                    "query": { "match_all": {} },
+                    "sort": [{ "rank": "asc" }],
+                    "size": 1
+                })),
+        );
+        assert_eq!(query_param_stats_groups.status, 200);
+        assert_eq!(query_param_stats_groups.body["hits"]["total"]["value"], 2);
+        assert_eq!(query_param_stats_groups.body["hits"]["hits"][0]["_id"], "doc-1");
+
+        let invalid_stats_body = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-params-a/_search")
+                .with_json_body(serde_json::json!({
+                    "query": { "match_all": {} },
+                    "stats": ["group-a", 7]
+                })),
+        );
+        assert_eq!(invalid_stats_body.status, 400);
+        assert_eq!(
+            invalid_stats_body.body["error"]["reason"],
+            "unsupported search option [stats]"
         );
 
         let source_disabled_body = node.handle_rest_request(
