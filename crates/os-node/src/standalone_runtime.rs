@@ -7866,23 +7866,29 @@ impl SteelNode {
     fn msearch_header_query_params(
         header_object: &serde_json::Map<String, Value>,
     ) -> BTreeMap<String, String> {
-        [
-            "routing",
-            "preference",
-            "ignore_unavailable",
-            "allow_no_indices",
-            "expand_wildcards",
-            "ignore_throttled",
-            "ccs_minimize_roundtrips",
-        ]
-        .into_iter()
-        .filter_map(|key| {
-            header_object
-                .get(key)
+        let mut query_params = BTreeMap::new();
+        for (header_key, query_key) in [
+            ("routing", "routing"),
+            ("preference", "preference"),
+            ("ignore_unavailable", "ignore_unavailable"),
+            ("ignoreUnavailable", "ignore_unavailable"),
+            ("allow_no_indices", "allow_no_indices"),
+            ("allowNoIndices", "allow_no_indices"),
+            ("expand_wildcards", "expand_wildcards"),
+            ("expandWildcards", "expand_wildcards"),
+            ("ignore_throttled", "ignore_throttled"),
+            ("ignoreThrottled", "ignore_throttled"),
+            ("ccs_minimize_roundtrips", "ccs_minimize_roundtrips"),
+            ("ccsMinimizeRoundtrips", "ccs_minimize_roundtrips"),
+        ] {
+            if let Some(value) = header_object
+                .get(header_key)
                 .and_then(Self::msearch_header_value_as_query_param)
-                .map(|value| (key.to_string(), value))
-        })
-        .collect()
+            {
+                query_params.insert(query_key.to_string(), value);
+            }
+        }
+        query_params
     }
 
     fn msearch_header_value_as_query_param(value: &Value) -> Option<String> {
@@ -39968,6 +39974,40 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             metadata_invalid_ccs_msearch.body["responses"][0]["error"]["type"],
             "illegal_argument_exception"
+        );
+
+        let metadata_camel_ccs_pit_body = format!(
+            "{{\"ccsMinimizeRoundtrips\":true}}\n{{\"pit\":{{\"id\":\"{pit_id}\",\"keep_alive\":\"1m\"}},\"query\":{{\"match_all\":{{}}}}}}\n"
+        );
+        let metadata_camel_ccs_msearch = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_msearch")
+                .with_header("content-type", "application/x-ndjson")
+                .with_body(metadata_camel_ccs_pit_body.into_bytes()),
+        );
+        assert_eq!(metadata_camel_ccs_msearch.status, 200);
+        assert_eq!(metadata_camel_ccs_msearch.body["responses"][0]["status"], 400);
+        assert!(
+            metadata_camel_ccs_msearch.body["responses"][0]["error"]["reason"]
+                .as_str()
+                .unwrap()
+                .contains("[ccs_minimize_roundtrips] cannot be used with point in time")
+        );
+
+        let metadata_camel_indices_pit_body = format!(
+            "{{\"ignoreUnavailable\":true,\"allowNoIndices\":false,\"expandWildcards\":\"open,none\",\"ignoreThrottled\":false}}\n{{\"pit\":{{\"id\":\"{pit_id}\",\"keep_alive\":\"1m\"}},\"query\":{{\"match_all\":{{}}}}}}\n"
+        );
+        let metadata_camel_indices_msearch = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_msearch")
+                .with_header("content-type", "application/x-ndjson")
+                .with_body(metadata_camel_indices_pit_body.into_bytes()),
+        );
+        assert_eq!(metadata_camel_indices_msearch.status, 200);
+        assert_eq!(metadata_camel_indices_msearch.body["responses"][0]["status"], 400);
+        assert!(
+            metadata_camel_indices_msearch.body["responses"][0]["error"]["reason"]
+                .as_str()
+                .unwrap()
+                .contains("[indicesOptions] cannot be used with point in time")
         );
 
         let targeted_pit_body = format!(
