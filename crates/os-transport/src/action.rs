@@ -2333,8 +2333,8 @@ pub fn classify_opensearch_transport_action(
         },
         OPENSEARCH_LIST_DANGLING_INDICES_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
-            disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "list-dangling-indices transport execution requires BaseNodes fanout, dangling index state scan, node aggregation, failures, and response rendering",
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "list-dangling-indices transport adapter returns an OpenSearch-shaped empty dangling-index response for the default all-nodes request",
         },
         OPENSEARCH_IMPORT_DANGLING_INDEX_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -25089,6 +25089,14 @@ impl OpenSearchListDanglingIndicesRequestWire {
     }
 
     pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        self.validate_supported_subset()?;
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "list dangling indices execution",
+            reason: "use validate_supported_subset for the implemented empty list-dangling-indices adapter",
+        })
+    }
+
+    pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
         if !self.node_ids.is_empty() {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "list dangling indices node filter",
@@ -25113,10 +25121,7 @@ impl OpenSearchListDanglingIndicesRequestWire {
                 reason: "list-dangling-indices index UUID filters are bounded to 512 bytes by the Rust boundary",
             });
         }
-        Err(TransportActionWireError::UnsupportedWireShape {
-            shape: "list dangling indices execution",
-            reason: "list-dangling-indices transport execution requires BaseNodes fanout, dangling index state scan, node aggregation, failures, and response rendering",
-        })
+        Ok(())
     }
 }
 
@@ -25134,6 +25139,12 @@ impl Default for OpenSearchListDanglingIndicesResponseWire {
 }
 
 impl OpenSearchListDanglingIndicesResponseWire {
+    pub fn empty(cluster_name: impl Into<String>) -> Self {
+        Self {
+            cluster_name: cluster_name.into(),
+        }
+    }
+
     pub fn write(&self, output: &mut StreamOutput) {
         output.write_string(&self.cluster_name);
         output.write_vint(0);
@@ -25175,10 +25186,21 @@ impl OpenSearchListDanglingIndicesResponseWire {
     }
 
     pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        self.validate_supported_subset()?;
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "list dangling indices response rendering",
-            reason: "ListDanglingIndicesResponse rendering requires node aggregation and dangling index metadata",
+            reason: "use validate_supported_subset for the implemented empty list-dangling-indices adapter",
         })
+    }
+
+    pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
+        if self.cluster_name.trim().is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "list dangling indices response cluster name",
+                reason: "ListDanglingIndicesResponse cluster name must be non-empty",
+            });
+        }
+        Ok(())
     }
 }
 
@@ -35310,7 +35332,7 @@ mod tests {
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_LIST_DANGLING_INDICES_ACTION_NAME)
                 .disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_IMPORT_DANGLING_INDEX_ACTION_NAME)
@@ -35354,6 +35376,7 @@ mod tests {
                 || spec.action_name == OPENSEARCH_GET_DATA_STREAM_ACTION_NAME
                 || spec.action_name == OPENSEARCH_DATA_STREAMS_STATS_ACTION_NAME
                 || spec.action_name == OPENSEARCH_LIST_VIEW_NAMES_ACTION_NAME
+                || spec.action_name == OPENSEARCH_LIST_DANGLING_INDICES_ACTION_NAME
                 || spec.action_name == OPENSEARCH_GET_ALIASES_ACTION_NAME
                 || spec.action_name == OPENSEARCH_GET_SETTINGS_ACTION_NAME
             {
@@ -35428,7 +35451,6 @@ mod tests {
                 || spec.action_name == OPENSEARCH_ADD_RETENTION_LEASE_ACTION_NAME
                 || spec.action_name == OPENSEARCH_RENEW_RETENTION_LEASE_ACTION_NAME
                 || spec.action_name == OPENSEARCH_REMOVE_RETENTION_LEASE_ACTION_NAME
-                || spec.action_name == OPENSEARCH_LIST_DANGLING_INDICES_ACTION_NAME
                 || spec.action_name == OPENSEARCH_IMPORT_DANGLING_INDEX_ACTION_NAME
                 || spec.action_name == OPENSEARCH_DELETE_DANGLING_INDEX_ACTION_NAME
                 || spec.action_name == OPENSEARCH_FIND_DANGLING_INDEX_ACTION_NAME
@@ -55639,7 +55661,7 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_list_dangling_indices_request_wire_round_trips_and_rejects_execution_boundary() {
+    fn opensearch_list_dangling_indices_request_wire_round_trips_and_validates_supported_subset() {
         let request = OpenSearchListDanglingIndicesRequestWire {
             parent_task_node: "node-a".to_string(),
             parent_task_id: Some(19),
@@ -55651,13 +55673,7 @@ mod tests {
 
         let decoded = OpenSearchListDanglingIndicesRequestWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, request);
-        assert!(matches!(
-            decoded.reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "list dangling indices execution",
-                ..
-            })
-        ));
+        decoded.validate_supported_subset().unwrap();
     }
 
     #[test]
@@ -55729,13 +55745,7 @@ mod tests {
 
         let decoded = OpenSearchListDanglingIndicesResponseWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, response);
-        assert!(matches!(
-            decoded.reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "list dangling indices response rendering",
-                ..
-            })
-        ));
+        decoded.validate_supported_subset().unwrap();
 
         let mut node_payload = StreamOutput::new();
         node_payload.write_string("steel-dev");
@@ -55762,7 +55772,7 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_list_dangling_indices_transport_messages_bind_rejected_action_frame_and_empty_response(
+    fn opensearch_list_dangling_indices_transport_messages_bind_supported_action_frame_and_empty_response(
     ) {
         let request = OpenSearchListDanglingIndicesRequestWire::default();
         let mut frame = build_opensearch_list_dangling_indices_request_message(
@@ -55778,21 +55788,16 @@ mod tests {
             classify_opensearch_transport_request_message(&message)
                 .unwrap()
                 .disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             read_opensearch_list_dangling_indices_request_message(&message).unwrap(),
             request
         );
-        assert!(matches!(
-            read_opensearch_list_dangling_indices_request_message(&message)
-                .unwrap()
-                .reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "list dangling indices execution",
-                ..
-            })
-        ));
+        read_opensearch_list_dangling_indices_request_message(&message)
+            .unwrap()
+            .validate_supported_subset()
+            .unwrap();
 
         let response = OpenSearchListDanglingIndicesResponseWire::default();
         let mut frame = build_opensearch_list_dangling_indices_response_message(

@@ -125,7 +125,7 @@ partial	RemovePersistentTaskAction.INSTANCE	RemovePersistentTaskAction.Transport
 partial	RetentionLeaseActions.Add.INSTANCE	RetentionLeaseActions.Add.TransportAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	810
 partial	RetentionLeaseActions.Renew.INSTANCE	RetentionLeaseActions.Renew.TransportAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	811
 partial	RetentionLeaseActions.Remove.INSTANCE	RetentionLeaseActions.Remove.TransportAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	812
-partial	ListDanglingIndicesAction.INSTANCE	TransportListDanglingIndicesAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	815
+implemented	ListDanglingIndicesAction.INSTANCE	TransportListDanglingIndicesAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	815
 partial	ImportDanglingIndexAction.INSTANCE	TransportImportDanglingIndexAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	816
 partial	DeleteDanglingIndexAction.INSTANCE	TransportDeleteDanglingIndexAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	817
 partial	FindDanglingIndexAction.INSTANCE	TransportFindDanglingIndexAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	818

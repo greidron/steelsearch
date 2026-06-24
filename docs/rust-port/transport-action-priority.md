@@ -177,8 +177,8 @@ The source-derived transport inventory currently has 160 rows:
 
 | Status | Count | Meaning |
 | --- | ---: | --- |
-| `implemented` | 34 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
-| `partial` | 126 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
+| `implemented` | 35 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
+| `partial` | 125 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
 | `planned` | 0 | No source-derived transport action remains unclassified. |
 
 The k-NN plugin action sweep is complete at the boundary layer. All 12
@@ -302,7 +302,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `indices:admin/seq_no/add_retention_lease` (rejected fail-closed)
 - `indices:admin/seq_no/renew_retention_lease` (rejected fail-closed)
 - `indices:admin/seq_no/remove_retention_lease` (rejected fail-closed)
-- `cluster:admin/indices/dangling/list` (rejected fail-closed)
+- `cluster:admin/indices/dangling/list` (implemented empty dangling-index subset)
 - `cluster:admin/indices/dangling/import` (rejected fail-closed)
 - `indices:data/read/search` (rejected fail-closed)
 - `indices:data/read/search/stream` (rejected fail-closed)
@@ -2111,14 +2111,12 @@ The list-dangling-indices boundary covers:
   index UUID filter at the wire decode/build layer;
 - OpenSearch `ListDanglingIndicesResponse` cluster name plus empty successful
   node response and failure lists as the bounded response subset;
-- explicit fail-closed classification for
-  `cluster:admin/indices/dangling/list` until BaseNodes fanout, dangling index
-  state scan, node aggregation, failures, and response rendering are
-  implemented;
+- implemented classification for `cluster:admin/indices/dangling/list`
+  default all-nodes requests returning an OpenSearch-shaped empty
+  dangling-index response;
 - explicit rejection for concrete DiscoveryNode payloads, node filters,
   timeout semantics, empty or oversized index UUID filters, non-empty node
-  responses, node failures, list-dangling-indices execution, and response
-  rendering.
+  responses, and node failures.
 
 The import-dangling-index boundary covers:
 
@@ -4874,23 +4872,25 @@ microbenchmark despite the smaller payload; future performance-sensitive work
 is shard routing, primary operation permit acquisition, retention lease
 removal, sync, and response rendering.
 
-Current list-dangling-indices reject wire microbenchmark:
+Current list-dangling-indices supported-subset wire microbenchmark:
 
 ```text
-cargo run -p os-transport --release --bin list-dangling-indices-reject-wire-benchmark
-list_dangling_indices_reject_request_encode iterations=400000 elapsed_ms=533.451 ops_per_second=749835.21 nanos_per_op=1333.63
-list_dangling_indices_reject_request_decode iterations=400000 elapsed_ms=433.038 ops_per_second=923706.54 nanos_per_op=1082.59
-list_dangling_indices_reject_validation iterations=400000 elapsed_ms=464.575 ops_per_second=861002.69 nanos_per_op=1161.44
-list_dangling_indices_empty_response_decode iterations=400000 elapsed_ms=99.589 ops_per_second=4016510.67 nanos_per_op=248.97
-list_dangling_indices_reject_wire_bottleneck_ops_per_second=749835.21
+cargo run -p os-transport --release --bin list-dangling-indices-wire-benchmark
+list_dangling_indices_request_encode iterations=400000 elapsed_ms=222.263 ops_per_second=1799669.27 nanos_per_op=555.66
+list_dangling_indices_request_decode iterations=400000 elapsed_ms=215.356 ops_per_second=1857390.37 nanos_per_op=538.39
+list_dangling_indices_request_validate iterations=400000 elapsed_ms=214.513 ops_per_second=1864686.55 nanos_per_op=536.28
+list_dangling_indices_response_encode iterations=400000 elapsed_ms=98.103 ops_per_second=4077351.27 nanos_per_op=245.26
+list_dangling_indices_response_decode iterations=400000 elapsed_ms=97.566 ops_per_second=4099788.06 nanos_per_op=243.92
+list_dangling_indices_wire_bottleneck_ops_per_second=1799669.27
 ```
 
-The current list-dangling-indices fail-closed boundary bottleneck is request
+The current list-dangling-indices supported subset bottleneck is request
 encode. This path carries the `BaseNodesRequest` envelope and optional index
-UUID filter before rejecting at admission. At roughly 750K ops/s in the latest
-local release run, future performance-sensitive work is BaseNodes fanout,
-dangling index state scan, node aggregation, failure decoding, and response
-rendering.
+UUID filter, validates the empty-dangling subset, and renders an empty
+OpenSearch BaseNodes response. At roughly 1.80M ops/s in the latest local
+release run, the adapter does not expose a material wire-codec regression;
+future performance-sensitive work is populated dangling index state scan,
+node aggregation, and failure decoding.
 
 Current import-dangling-index reject wire microbenchmark:
 

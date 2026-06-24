@@ -15,19 +15,15 @@ const ITERATIONS: usize = 400_000;
 fn main() {
     let request = OpenSearchListDanglingIndicesRequestWire::default();
 
-    let request_encode = measure(
-        "list_dangling_indices_reject_request_encode",
-        ITERATIONS,
-        || {
-            let frame = build_opensearch_list_dangling_indices_request_message(
-                93,
-                OPENSEARCH_3_7_0_TRANSPORT,
-                black_box(&request),
-            )
-            .expect("list-dangling-indices request encode should succeed");
-            black_box(frame);
-        },
-    );
+    let request_encode = measure("list_dangling_indices_request_encode", ITERATIONS, || {
+        let frame = build_opensearch_list_dangling_indices_request_message(
+            93,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            black_box(&request),
+        )
+        .expect("list-dangling-indices request encode should succeed");
+        black_box(frame);
+    });
 
     let request_frame = build_opensearch_list_dangling_indices_request_message(
         93,
@@ -36,36 +32,35 @@ fn main() {
     )
     .expect("list-dangling-indices request encode should succeed");
 
-    let request_decode = measure(
-        "list_dangling_indices_reject_request_decode",
-        ITERATIONS,
-        || {
-            let mut frame = black_box(request_frame.clone());
-            let message = decode_message(&mut frame);
-            let decoded =
-                read_opensearch_list_dangling_indices_request_message(black_box(&message))
-                    .expect("list-dangling-indices request decode");
-            black_box(decoded);
-        },
-    );
+    let request_decode = measure("list_dangling_indices_request_decode", ITERATIONS, || {
+        let mut frame = black_box(request_frame.clone());
+        let message = decode_message(&mut frame);
+        let decoded = read_opensearch_list_dangling_indices_request_message(black_box(&message))
+            .expect("list-dangling-indices request decode");
+        black_box(decoded);
+    });
 
-    let reject_validate = measure(
-        "list_dangling_indices_reject_validation",
-        ITERATIONS,
-        || {
-            let mut frame = black_box(request_frame.clone());
-            let message = decode_message(&mut frame);
-            let decoded =
-                read_opensearch_list_dangling_indices_request_message(black_box(&message))
-                    .expect("list-dangling-indices request decode");
-            let err = decoded
-                .reject_unsupported_execution()
-                .expect_err("list-dangling-indices execution should reject");
-            black_box(err);
-        },
-    );
+    let request_validate = measure("list_dangling_indices_request_validate", ITERATIONS, || {
+        let mut frame = black_box(request_frame.clone());
+        let message = decode_message(&mut frame);
+        let decoded = read_opensearch_list_dangling_indices_request_message(black_box(&message))
+            .expect("list-dangling-indices request decode");
+        decoded
+            .validate_supported_subset()
+            .expect("list-dangling-indices request should validate");
+        black_box(decoded);
+    });
 
     let response = OpenSearchListDanglingIndicesResponseWire::default();
+    let response_encode = measure("list_dangling_indices_response_encode", ITERATIONS, || {
+        let frame = build_opensearch_list_dangling_indices_response_message(
+            93,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            black_box(&response),
+        )
+        .expect("list-dangling-indices response encode should succeed");
+        black_box(frame);
+    });
     let response_frame = build_opensearch_list_dangling_indices_response_message(
         93,
         OPENSEARCH_3_7_0_TRANSPORT,
@@ -73,27 +68,21 @@ fn main() {
     )
     .expect("list-dangling-indices response encode should succeed");
 
-    let response_decode = measure(
-        "list_dangling_indices_empty_response_decode",
-        ITERATIONS,
-        || {
-            let mut frame = black_box(response_frame.clone());
-            let message = decode_message(&mut frame);
-            let decoded =
-                read_opensearch_list_dangling_indices_response_message(black_box(&message))
-                    .expect("list-dangling-indices response decode");
-            black_box(decoded);
-        },
-    );
+    let response_decode = measure("list_dangling_indices_response_decode", ITERATIONS, || {
+        let mut frame = black_box(response_frame.clone());
+        let message = decode_message(&mut frame);
+        let decoded = read_opensearch_list_dangling_indices_response_message(black_box(&message))
+            .expect("list-dangling-indices response decode");
+        black_box(decoded);
+    });
 
     let combined_ops_per_second = request_encode
         .ops_per_second
         .min(request_decode.ops_per_second)
-        .min(reject_validate.ops_per_second)
+        .min(request_validate.ops_per_second)
+        .min(response_encode.ops_per_second)
         .min(response_decode.ops_per_second);
-    println!(
-        "list_dangling_indices_reject_wire_bottleneck_ops_per_second={combined_ops_per_second:.2}"
-    );
+    println!("list_dangling_indices_wire_bottleneck_ops_per_second={combined_ops_per_second:.2}");
 }
 
 #[derive(Clone, Copy)]

@@ -558,8 +558,8 @@ name = "remove-retention-lease-reject-wire-benchmark"
 path = "benchmarks/remove_retention_lease_reject_wire.rs"
 
 [[bin]]
-name = "list-dangling-indices-reject-wire-benchmark"
-path = "benchmarks/list_dangling_indices_reject_wire.rs"
+name = "list-dangling-indices-wire-benchmark"
+path = "benchmarks/list_dangling_indices_wire.rs"
 
 [[bin]]
 name = "import-dangling-index-reject-wire-benchmark"
