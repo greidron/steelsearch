@@ -256,6 +256,7 @@ part of the OpenSearch parity target.
     - `POST /{index}/_search/point_in_time`
     - create-PIT `preference` admission in the standalone single-node profile
     - create-PIT `ignore_unavailable=true` admission for mixed existing/missing targets
+    - create-PIT `allow_no_indices=true` admission for empty wildcard targets
     - create-PIT `allow_partial_pit_creation=false` admission for all-success local shard creation
     - `_search` with `pit.id`
     - `DELETE /_search/point_in_time`

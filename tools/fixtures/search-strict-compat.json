@@ -1712,6 +1712,17 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "pit_open_allow_no_indices_empty_wildcard_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/missing-pit-*/_search/point_in_time?keep_alive=1m&allow_no_indices=true",
+      "body": null,
+      "extract": "pit_open",
+      "family": "lexical",
+      "description": "[lexical] pit open allows empty wildcard search",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "pit_open_with_strict_partial_creation_search",
       "area": "search",
       "method": "POST",
