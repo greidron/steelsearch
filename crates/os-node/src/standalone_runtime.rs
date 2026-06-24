@@ -9007,6 +9007,7 @@ impl SteelNode {
         if pit_context.is_none()
             && !resolved_indices.is_empty()
             && failed_indices.is_empty()
+            && requested_routing.is_none()
             && standalone_search_body_allows_native_engine(&body)
         {
             if let Some(response) = self.try_native_engine_search_response(
@@ -37016,6 +37017,17 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         );
         assert_eq!(
             node.handle_rest_request(
+                RestRequest::new(
+                    RestMethod::Put,
+                    "/logs-msearch-000001/_doc/doc-routed?routing=tenant-routed",
+                )
+                    .with_json_body(serde_json::json!({ "tenant": "tenanta" })),
+            )
+            .status,
+            201
+        );
+        assert_eq!(
+            node.handle_rest_request(
                 RestRequest::new(RestMethod::Put, "/metrics-msearch-000001/_doc/doc-2")
                     .with_json_body(serde_json::json!({ "tenant": "tenantb" })),
             )
@@ -37032,7 +37044,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_msearch"));
         assert_eq!(root_msearch.status, 200);
         assert_eq!(root_msearch.body["responses"][0]["status"], 200);
-        assert_eq!(root_msearch.body["responses"][0]["hits"]["total"]["value"], 2);
+        assert_eq!(root_msearch.body["responses"][0]["hits"]["total"]["value"], 3);
 
         let targeted_msearch = node.handle_rest_request(RestRequest::new(
             RestMethod::Post,
@@ -37040,7 +37052,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         ));
         assert_eq!(targeted_msearch.status, 200);
         assert_eq!(targeted_msearch.body["responses"][0]["status"], 200);
-        assert_eq!(targeted_msearch.body["responses"][0]["hits"]["total"]["value"], 1);
+        assert_eq!(targeted_msearch.body["responses"][0]["hits"]["total"]["value"], 2);
 
         let explain = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/logs-msearch-000001/_explain/doc-1").with_json_body(
@@ -37072,8 +37084,26 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(root_multi.body["responses"].as_array().map(Vec::len), Some(2));
         assert_eq!(root_multi.body["responses"][0]["status"], 200);
         assert_eq!(root_multi.body["responses"][1]["status"], 200);
-        assert_eq!(root_multi.body["responses"][0]["hits"]["total"]["value"], 1);
+        assert_eq!(root_multi.body["responses"][0]["hits"]["total"]["value"], 2);
         assert_eq!(root_multi.body["responses"][1]["hits"]["total"]["value"], 1);
+
+        let routed_header_multi = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_msearch")
+                .with_header("content-type", "application/x-ndjson")
+                .with_body(
+                    b"{\"index\":\"logs-msearch-000001\",\"routing\":\"tenant-routed\"}\n{\"query\":{\"match_all\":{}}}\n".to_vec(),
+                ),
+        );
+        assert_eq!(routed_header_multi.status, 200);
+        assert_eq!(routed_header_multi.body["responses"][0]["status"], 200);
+        assert_eq!(
+            routed_header_multi.body["responses"][0]["hits"]["total"]["value"],
+            1
+        );
+        assert_eq!(
+            routed_header_multi.body["responses"][0]["hits"]["hits"][0]["_id"],
+            "doc-routed"
+        );
 
         let targeted_multi = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/logs-msearch-*/_msearch")
@@ -37086,7 +37116,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(targeted_multi.body["responses"].as_array().map(Vec::len), Some(2));
         assert_eq!(targeted_multi.body["responses"][0]["status"], 200);
         assert_eq!(targeted_multi.body["responses"][1]["status"], 200);
-        assert_eq!(targeted_multi.body["responses"][0]["hits"]["total"]["value"], 1);
+        assert_eq!(targeted_multi.body["responses"][0]["hits"]["total"]["value"], 2);
         assert_eq!(targeted_multi.body["responses"][1]["hits"]["total"]["value"], 0);
     }
 
