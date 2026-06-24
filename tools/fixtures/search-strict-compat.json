@@ -1494,6 +1494,32 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "fields_unmapped_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "fields": [
+          "missing_field"
+        ],
+        "sort": [
+          {
+            "ts": {
+              "order": "asc"
+            }
+          }
+        ],
+        "size": 2
+      },
+      "extract": "search_fields",
+      "family": "fetch",
+      "description": "[fetch] unmapped fields search",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "exists_query_search",
       "area": "search",
       "method": "POST",

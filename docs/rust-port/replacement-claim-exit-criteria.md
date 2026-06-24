@@ -379,6 +379,7 @@ Required semantic cases:
 - `fields_top_level_search`
 - `fields_dot_path_array_search`
 - `fields_date_epoch_millis_search`
+- `fields_unmapped_search`
 - `metric_aggregations`
 - `filter_aggregations`
 - `terms_aggregation`
