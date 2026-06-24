@@ -7661,15 +7661,15 @@ impl SteelNode {
                     .into_iter()
                     .map(|(header_target, body)| {
                         let effective_target = header_target.as_deref().or(target).unwrap_or("_all");
+                        let search_path = if header_target.is_some() || target.is_some() {
+                            format!("/{effective_target}/_search")
+                        } else {
+                            "/_search".to_string()
+                        };
                         let mut search_request =
-                            RestRequest::new(RestMethod::Post, format!("/{effective_target}/_search"))
-                                .with_json_body(body);
+                            RestRequest::new(RestMethod::Post, search_path).with_json_body(body);
                         search_request.headers = request.headers.clone();
                         search_request.query_params = request.query_params.clone();
-                        search_request.query_params.insert(
-                            "__steelsearch_indices_explicit".to_string(),
-                            (header_target.is_some() || target.is_some()).to_string(),
-                        );
                         msearch_response_with_status(
                             self.handle_index_search_route(effective_target, &search_request),
                         )
@@ -7684,17 +7684,17 @@ impl SteelNode {
             200,
             {
                 let effective_target = target.unwrap_or("_all");
+                let search_path = if target.is_some() {
+                    format!("/{effective_target}/_search")
+                } else {
+                    "/_search".to_string()
+                };
                 let mut search_request =
-                    RestRequest::new(RestMethod::Post, format!("/{effective_target}/_search"))
-                        .with_json_body(serde_json::json!({
+                    RestRequest::new(RestMethod::Post, search_path).with_json_body(serde_json::json!({
                             "query": { "match_all": {} }
                         }));
                 search_request.headers = request.headers.clone();
                 search_request.query_params = request.query_params.clone();
-                search_request.query_params.insert(
-                    "__steelsearch_indices_explicit".to_string(),
-                    target.is_some().to_string(),
-                );
                 serde_json::json!({
                     "responses": [msearch_response_with_status(
                         self.handle_index_search_route(effective_target, &search_request)
@@ -18609,9 +18609,6 @@ fn validate_point_in_time_search_request(index: &str, request: &RestRequest) -> 
 }
 
 fn pit_search_uses_explicit_indices(index: &str, request: &RestRequest) -> bool {
-    if let Some(value) = request.query_params.get("__steelsearch_indices_explicit") {
-        return value == "true";
-    }
     index != "_all" || request.path != "/_search"
 }
 
@@ -37091,6 +37088,17 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             valid_msearch.body["responses"][0]["hits"]["total"]["value"],
             1
+        );
+
+        let root_msearch_ignores_reserved_query_name = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_msearch?__steelsearch_indices_explicit=true")
+                .with_header("content-type", "application/x-ndjson")
+                .with_body(pit_search_body.as_bytes().to_vec()),
+        );
+        assert_eq!(root_msearch_ignores_reserved_query_name.status, 200);
+        assert_eq!(
+            root_msearch_ignores_reserved_query_name.body["responses"][0]["status"],
+            200
         );
 
         let invalid_msearch = node.handle_rest_request(
