@@ -6546,6 +6546,26 @@ impl SteelNode {
         }
     }
 
+    fn validate_single_doc_require_alias(&self, target: &str, request: &RestRequest) -> Option<RestResponse> {
+        let raw = request.query_params.get("require_alias");
+        if let Some(response) = validate_opensearch_boolean_query_param(raw) {
+            return Some(response);
+        }
+        if raw.is_some_and(|value| query_param_is_true(Some(value))) && !self.target_is_alias(target) {
+            return Some(RestResponse::json(
+                404,
+                serde_json::json!({
+                    "error": {
+                        "type": "index_not_found_exception",
+                        "reason": require_alias_not_alias_reason(target)
+                    },
+                    "status": 404
+                }),
+            ));
+        }
+        None
+    }
+
     fn handle_data_stream_get_route(&self, target: Option<&str>) -> RestResponse {
         let manifest = self
             .metadata_manifest_state
@@ -9495,6 +9515,13 @@ impl SteelNode {
         let mut items = Vec::new();
         let mut had_errors = false;
         let pipeline = request.query_params.get("pipeline").cloned();
+        if let Some(response) = validate_opensearch_boolean_query_param(request.query_params.get("require_alias")) {
+            return response;
+        }
+        let default_require_alias = request
+            .query_params
+            .get("require_alias")
+            .map_or(false, |value| query_param_is_true(Some(value)));
         let forced_refresh = request
             .query_params
             .get("refresh")
@@ -9566,6 +9593,10 @@ impl SteelNode {
                 .unwrap_or_default()
                 .to_string();
             let routing = meta.get("routing").and_then(Value::as_str).unwrap_or_default().to_string();
+            let require_alias = meta
+                .get("require_alias")
+                .and_then(Value::as_bool)
+                .unwrap_or(default_require_alias);
             let effective_routing = if routing.is_empty() {
                 self.resolve_alias_write_routing(&index)
             } else {
@@ -9605,6 +9636,21 @@ impl SteelNode {
                         "error": {
                             "type": "illegal_argument_exception",
                             "reason": format!("unsupported bulk operation [{action}]")
+                        }
+                    }
+                })
+            } else if matches!(action.as_str(), "index" | "create" | "update")
+                && require_alias
+                && !self.target_is_alias(&index)
+            {
+                serde_json::json!({
+                    action: {
+                        "_index": index,
+                        "_id": id,
+                        "status": 404,
+                        "error": {
+                            "type": "index_not_found_exception",
+                            "reason": require_alias_not_alias_reason(&index)
                         }
                     }
                 })
@@ -14268,6 +14314,9 @@ impl SteelNode {
     }
 
     fn handle_put_doc_route(&self, index: &str, id: &str, request: &RestRequest) -> RestResponse {
+        if let Some(response) = self.validate_single_doc_require_alias(index, request) {
+            return response;
+        }
         if self.target_is_data_stream(index) {
             if Self::request_uses_create_op_type(request) {
                 return self.handle_create_doc_route(index, id, request);
@@ -14412,6 +14461,9 @@ impl SteelNode {
     }
 
     fn handle_create_doc_route(&self, index: &str, id: &str, request: &RestRequest) -> RestResponse {
+        if let Some(response) = self.validate_single_doc_require_alias(index, request) {
+            return response;
+        }
         let resolved_index = match self.resolve_write_target(index, true) {
             Ok(resolved_index) => resolved_index,
             Err(reason) => {
@@ -14704,6 +14756,9 @@ impl SteelNode {
     }
 
     fn handle_update_doc_route(&self, index: &str, id: &str, request: &RestRequest) -> RestResponse {
+        if let Some(response) = self.validate_single_doc_require_alias(index, request) {
+            return response;
+        }
         let resolved_index = match self.resolve_write_target(index, false) {
             Ok(resolved_index) => resolved_index,
             Err(reason) => {
@@ -19530,6 +19585,10 @@ fn doc_write_occ_query_params_error(request: &RestRequest) -> RestResponse {
             "if_seq_no and if_primary_term must be specified together",
         ]),
     }
+}
+
+fn require_alias_not_alias_reason(target: &str) -> String {
+    format!("[require_alias] request flag is [true] and [{target}] is not an alias")
 }
 
 fn pit_search_uses_explicit_indices(index: &str, request: &RestRequest) -> bool {
@@ -34164,6 +34223,56 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             "Validation Failed: 1: upsert requests don't support `if_seq_no` and `if_primary_term`;"
         );
 
+        let require_alias_on_concrete = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Put,
+                "/logs-write-negatives/_doc/doc-require-alias?require_alias=true",
+            )
+            .with_json_body(serde_json::json!({
+                "message": "concrete target should fail"
+            })),
+        );
+        assert_eq!(require_alias_on_concrete.status, 404);
+        assert_eq!(
+            require_alias_on_concrete.body["error"]["type"],
+            "index_not_found_exception"
+        );
+        assert_eq!(
+            require_alias_on_concrete.body["error"]["reason"],
+            "[require_alias] request flag is [true] and [logs-write-negatives] is not an alias"
+        );
+
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(
+                RestMethod::Put,
+                "/logs-write-negatives/_alias/logs-write-negatives-alias",
+            ))
+            .status,
+            200
+        );
+        let require_alias_on_alias = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Put,
+                "/logs-write-negatives-alias/_doc/doc-require-alias?require_alias=true",
+            )
+            .with_json_body(serde_json::json!({
+                "message": "alias target succeeds"
+            })),
+        );
+        assert_eq!(require_alias_on_alias.status, 201);
+        let update_require_alias_on_alias = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/logs-write-negatives-alias/_update/doc-require-alias?require_alias=true",
+            )
+            .with_json_body(serde_json::json!({
+                "doc": {
+                    "processed": true
+                }
+            })),
+        );
+        assert_eq!(update_require_alias_on_alias.status, 200);
+
         let wrong_routing = node.handle_rest_request(
             RestRequest::new(
                 RestMethod::Post,
@@ -43892,6 +44001,56 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         ));
         assert_eq!(routed.status, 200);
         assert_eq!(routed.body["_source"]["message"], "routed bulk create");
+
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(
+                RestMethod::Put,
+                "/logs-bulk-metadata-000001/_alias/logs-bulk-metadata-write",
+            ))
+            .status,
+            200
+        );
+        let require_alias_bulk = concat!(
+            "{\"index\":{\"_index\":\"logs-bulk-metadata-000001\",\"_id\":\"doc-require-concrete\",\"require_alias\":true}}\n",
+            "{\"message\":\"concrete target should fail\"}\n",
+            "{\"index\":{\"_index\":\"logs-bulk-metadata-write\",\"_id\":\"doc-require-alias\",\"require_alias\":true}}\n",
+            "{\"message\":\"alias target should succeed\"}\n"
+        );
+        let require_alias_bulk_response = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_bulk")
+                .with_header("content-type", "application/x-ndjson")
+                .with_body(require_alias_bulk.as_bytes().to_vec()),
+        );
+        assert_eq!(require_alias_bulk_response.status, 200);
+        assert_eq!(require_alias_bulk_response.body["errors"], Value::Bool(true));
+        assert_eq!(
+            require_alias_bulk_response.body["items"][0]["index"]["status"],
+            404
+        );
+        assert_eq!(
+            require_alias_bulk_response.body["items"][0]["index"]["error"]["reason"],
+            "[require_alias] request flag is [true] and [logs-bulk-metadata-000001] is not an alias"
+        );
+        assert_eq!(
+            require_alias_bulk_response.body["items"][1]["index"]["status"],
+            201
+        );
+
+        let require_alias_query_bulk = concat!(
+            "{\"index\":{\"_index\":\"logs-bulk-metadata-000001\",\"_id\":\"doc-require-query\"}}\n",
+            "{\"message\":\"route require alias should fail\"}\n"
+        );
+        let require_alias_query_response = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_bulk?require_alias=true")
+                .with_header("content-type", "application/x-ndjson")
+                .with_body(require_alias_query_bulk.as_bytes().to_vec()),
+        );
+        assert_eq!(require_alias_query_response.status, 200);
+        assert_eq!(require_alias_query_response.body["errors"], Value::Bool(true));
+        assert_eq!(
+            require_alias_query_response.body["items"][0]["index"]["status"],
+            404
+        );
 
         let unsupported_pipeline = concat!(
             "{\"index\":{\"_index\":\"logs-bulk-metadata-000001\",\"_id\":\"doc-pipeline\",\"pipeline\":\"ingest-1\"}}\n",
