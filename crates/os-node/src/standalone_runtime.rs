@@ -7878,6 +7878,8 @@ impl SteelNode {
             ("preference", "preference"),
             ("search_type", "search_type"),
             ("searchType", "search_type"),
+            ("request_cache", "request_cache"),
+            ("requestCache", "request_cache"),
             ("ignore_unavailable", "ignore_unavailable"),
             ("ignoreUnavailable", "ignore_unavailable"),
             ("allow_no_indices", "allow_no_indices"),
@@ -40258,6 +40260,40 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             unsupported_search_type_metadata.body["responses"][0]["error"]["reason"],
             "unsupported search_type"
+        );
+
+        let request_cache_metadata = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_msearch")
+                .with_header("content-type", "application/x-ndjson")
+                .with_body(
+                    b"{\"request_cache\":true}\n{\"query\":{\"match_all\":{}}}\n".to_vec(),
+                ),
+        );
+        assert_eq!(request_cache_metadata.status, 200);
+        assert_eq!(request_cache_metadata.body["responses"][0]["status"], 200);
+
+        let request_cache_alias_metadata = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_msearch")
+                .with_header("content-type", "application/x-ndjson")
+                .with_body(
+                    b"{\"requestCache\":false}\n{\"query\":{\"match_all\":{}}}\n".to_vec(),
+                ),
+        );
+        assert_eq!(request_cache_alias_metadata.status, 200);
+        assert_eq!(request_cache_alias_metadata.body["responses"][0]["status"], 200);
+
+        let invalid_request_cache_metadata = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_msearch")
+                .with_header("content-type", "application/x-ndjson")
+                .with_body(
+                    b"{\"requestCache\":\"maybe\"}\n{\"query\":{\"match_all\":{}}}\n".to_vec(),
+                ),
+        );
+        assert_eq!(invalid_request_cache_metadata.status, 200);
+        assert_eq!(invalid_request_cache_metadata.body["responses"][0]["status"], 400);
+        assert_eq!(
+            invalid_request_cache_metadata.body["responses"][0]["error"]["reason"],
+            "Failed to parse value [maybe] as only [true] or [false] are allowed."
         );
     }
 
