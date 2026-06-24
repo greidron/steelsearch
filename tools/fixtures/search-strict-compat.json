@@ -3103,6 +3103,29 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "search_boolean_execution_query_params",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search?phase_took=true&verbose_pipeline=false&track_scores=true&include_named_queries_score=false",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ],
+        "size": 2
+      },
+      "extract": "search_score_rendering",
+      "family": "lexical",
+      "description": "[lexical] boolean execution query params search",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "terminate_after_search",
       "area": "search",
       "method": "POST",

@@ -365,6 +365,7 @@ Required semantic cases:
 - `search_coordinator_knobs_search`
 - `allow_partial_search_results_true_search`
 - `track_scores_field_sort_search`
+- `search_boolean_execution_query_params`
 - `completion_suggest_search`
 - `phrase_suggest_search`
 - `term_suggest_search`
