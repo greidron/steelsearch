@@ -19261,6 +19261,38 @@ fn apply_search_source_query_params(
             ),
         );
     }
+    if let Some(raw_stored_fields) = query_params.get("stored_fields") {
+        let Some(object) = body.as_object_mut() else {
+            return Some(build_unsupported_search_response(
+                "unsupported search request body",
+            ));
+        };
+        let fields = split_rest_csv_values(raw_stored_fields);
+        let value = if fields.len() == 1 {
+            Value::String(fields[0].clone())
+        } else {
+            Value::Array(fields.into_iter().map(Value::String).collect())
+        };
+        object.insert("stored_fields".to_string(), value);
+    }
+    if let Some(raw_docvalue_fields) = query_params.get("docvalue_fields") {
+        if !raw_docvalue_fields.trim().is_empty() {
+            let Some(object) = body.as_object_mut() else {
+                return Some(build_unsupported_search_response(
+                    "unsupported search request body",
+                ));
+            };
+            object.insert(
+                "docvalue_fields".to_string(),
+                Value::Array(
+                    split_rest_csv_values(raw_docvalue_fields)
+                        .into_iter()
+                        .map(Value::String)
+                        .collect(),
+                ),
+            );
+        }
+    }
     if let Some(raw_source) = query_params.get("_source") {
         let source_filter = match raw_source.as_str() {
             "true" => Value::Bool(true),
@@ -19318,6 +19350,15 @@ fn apply_search_source_query_params(
         }
     }
     None
+}
+
+fn split_rest_csv_values(raw: &str) -> Vec<String> {
+    raw.split(',')
+        .filter_map(|value| {
+            let trimmed = value.trim();
+            (!trimmed.is_empty()).then(|| trimmed.to_string())
+        })
+        .collect()
 }
 
 fn apply_url_query_string_search_params(
@@ -41624,6 +41665,73 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             stored_field_string_body.body["hits"]["hits"][0]
                 .get("_source")
                 .is_some()
+        );
+
+        let stored_field_query_param = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/logs-search-params-a/_search?stored_fields=tenant",
+            )
+            .with_json_body(serde_json::json!({
+                "query": { "match_all": {} },
+                "sort": [{ "rank": "asc" }],
+                "size": 1
+            })),
+        );
+        assert_eq!(stored_field_query_param.status, 200);
+        assert_eq!(
+            stored_field_query_param.body["hits"]["hits"][0]["fields"]["tenant"],
+            serde_json::json!(["tenant-a"])
+        );
+
+        let docvalue_field_query_param = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/logs-search-params-a/_search?docvalue_fields=rank",
+            )
+            .with_json_body(serde_json::json!({
+                "query": { "match_all": {} },
+                "sort": [{ "rank": "asc" }],
+                "size": 1
+            })),
+        );
+        assert_eq!(docvalue_field_query_param.status, 200);
+        assert_eq!(
+            docvalue_field_query_param.body["hits"]["hits"][0]["fields"]["rank"],
+            serde_json::json!([1])
+        );
+
+        let stored_fields_none_query_param = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/logs-search-params-a/_search?stored_fields=_none_",
+            )
+            .with_json_body(serde_json::json!({
+                "query": { "match_all": {} },
+                "sort": [{ "rank": "asc" }],
+                "size": 1
+            })),
+        );
+        assert_eq!(stored_fields_none_query_param.status, 200);
+        assert!(
+            stored_fields_none_query_param.body["hits"]["hits"][0]
+                .get("_source")
+                .is_none()
+        );
+
+        let stored_fields_none_source_query_param = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/logs-search-params-a/_search?stored_fields=_none_&_source=true",
+            )
+            .with_json_body(serde_json::json!({
+                "query": { "match_all": {} }
+            })),
+        );
+        assert_eq!(stored_fields_none_source_query_param.status, 400);
+        assert_eq!(
+            stored_fields_none_source_query_param.body["error"]["root_cause"][0]["reason"],
+            "[stored_fields] cannot be disabled if [_source] is requested"
         );
 
         let stored_fields_none_body = node.handle_rest_request(
