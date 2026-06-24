@@ -109,7 +109,7 @@ partial	DeletePipelineAction.INSTANCE	DeletePipelineTransportAction.class	/home/
 partial	SimulatePipelineAction.INSTANCE	SimulatePipelineTransportAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	784
 partial	CreateDataStreamAction.INSTANCE	CreateDataStreamAction.TransportAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	789
 partial	DeleteDataStreamAction.INSTANCE	DeleteDataStreamAction.TransportAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	790
-partial	GetDataStreamAction.INSTANCE	GetDataStreamAction.TransportAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	791
+implemented	GetDataStreamAction.INSTANCE	GetDataStreamAction.TransportAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	791
 partial	ResolveIndexAction.INSTANCE	ResolveIndexAction.TransportAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	792
 partial	DataStreamsStatsAction.INSTANCE	DataStreamsStatsAction.TransportAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	793
 partial	CreateViewAction.INSTANCE	CreateViewAction.TransportAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	796

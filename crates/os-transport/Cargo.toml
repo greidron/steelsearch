@@ -494,8 +494,8 @@ name = "delete-data-stream-reject-wire-benchmark"
 path = "benchmarks/delete_data_stream_reject_wire.rs"
 
 [[bin]]
-name = "get-data-stream-reject-wire-benchmark"
-path = "benchmarks/get_data_stream_reject_wire.rs"
+name = "get-data-stream-wire-benchmark"
+path = "benchmarks/get_data_stream_wire.rs"
 
 [[bin]]
 name = "data-streams-stats-reject-wire-benchmark"

@@ -177,8 +177,8 @@ The source-derived transport inventory currently has 160 rows:
 
 | Status | Count | Meaning |
 | --- | ---: | --- |
-| `implemented` | 31 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
-| `partial` | 129 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
+| `implemented` | 32 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
+| `partial` | 128 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
 | `planned` | 0 | No source-derived transport action remains unclassified. |
 
 The k-NN plugin action sweep is complete at the boundary layer. All 12
@@ -1889,11 +1889,12 @@ The get-data-stream boundary covers:
 - OpenSearch `GetDataStreamAction.Request` parent task, cluster-manager
   timeout, `local` flag, and optional data-stream name array at the wire
   decode/build layer;
-- explicit fail-closed classification for `indices:admin/data_stream/get` until
-  data-stream metadata response rendering is implemented;
+- implemented classification for `indices:admin/data_stream/get` default
+  all-data-streams, non-local request admission and empty
+  `GetDataStreamAction.Response` rendering;
 - explicit rejection for custom cluster-manager timeout, local reads, name
-  filters, null name arrays outside the REST default path, and get-data-stream
-  execution.
+  filters, null name arrays outside the REST default path, and non-empty
+  data-stream metadata.
 
 The data-streams-stats boundary covers:
 
@@ -4577,21 +4578,23 @@ local release run, current overhead is still wire-codec dominated. Future
 performance-sensitive work is name/wildcard resolution, snapshot-in-progress
 protection, backing index deletion, metadata mutation, and ack rendering.
 
-Current get-data-stream reject wire microbenchmark:
+Current get-data-stream implemented-path wire microbenchmark:
 
 ```text
-cargo run -p os-transport --release --bin get-data-stream-reject-wire-benchmark
-get_data_stream_reject_request_encode iterations=400000 elapsed_ms=234.321 ops_per_second=1707063.45 nanos_per_op=585.80
-get_data_stream_reject_request_decode iterations=400000 elapsed_ms=205.351 ops_per_second=1947881.97 nanos_per_op=513.38
-get_data_stream_reject_validation iterations=400000 elapsed_ms=206.320 ops_per_second=1938732.74 nanos_per_op=515.80
-get_data_stream_reject_wire_bottleneck_ops_per_second=1707063.45
+cargo run -p os-transport --release --bin get-data-stream-wire-benchmark
+get_data_stream_request_encode iterations=400000 elapsed_ms=212.036 ops_per_second=1886469.61 nanos_per_op=530.09
+get_data_stream_request_decode iterations=400000 elapsed_ms=198.051 ops_per_second=2019677.02 nanos_per_op=495.13
+get_data_stream_request_validate iterations=400000 elapsed_ms=197.826 ops_per_second=2021982.72 nanos_per_op=494.56
+get_data_stream_response_encode iterations=400000 elapsed_ms=86.874 ops_per_second=4604355.82 nanos_per_op=217.19
+get_data_stream_response_decode iterations=400000 elapsed_ms=91.142 ops_per_second=4388756.97 nanos_per_op=227.85
+get_data_stream_wire_bottleneck_ops_per_second=1886469.61
 ```
 
-The current get-data-stream fail-closed boundary bottleneck is request encode.
+The current get-data-stream implemented-path bottleneck is request encode.
 This path carries the ClusterManagerNodeRead envelope and default empty optional
-data-stream name array before rejecting at admission. At roughly 1.71M ops/s in
-the latest local release run, the boundary remains in the lightweight admin
-transport range and does not expose a material wire-codec bottleneck.
+data-stream name array plus an empty `GetDataStreamAction.Response`. At roughly
+1.89M ops/s in the latest local release run, the path remains in the lightweight
+admin transport range and does not expose a material response-codec bottleneck.
 
 Current data-streams-stats reject wire microbenchmark:
 
@@ -6294,7 +6297,6 @@ response-shape examples.
 
 ## Tier 2: Strong Phase A Follow-Up Read/Admin Actions
 
-- `GetDataStreamAction.INSTANCE`
 - `DataStreamsStatsAction.INSTANCE`
 
 These actions improve OpenSearch operator expectations and close obvious gaps in

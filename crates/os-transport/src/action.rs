@@ -2251,9 +2251,8 @@ pub fn classify_opensearch_transport_action(
         },
         OPENSEARCH_GET_DATA_STREAM_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
-            disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason:
-                "get-data-stream transport execution requires data-stream metadata response rendering",
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "get-data-stream transport adapter returns an OpenSearch-shaped empty data-stream response for the default all-data-streams request",
         },
         OPENSEARCH_DATA_STREAMS_STATS_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -10274,6 +10273,36 @@ pub fn read_opensearch_get_data_stream_request_message(
         });
     }
     OpenSearchGetDataStreamRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_opensearch_get_data_stream_response_message(
+    request_id: i64,
+    version: Version,
+    response: &OpenSearchGetDataStreamResponseWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    response.write(&mut body)?;
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::response(),
+        version,
+        variable_header: BytesMut::from(&ResponseVariableHeader::default().to_bytes()[..]),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_get_data_stream_response_message(
+    message: &TransportMessage,
+) -> Result<OpenSearchGetDataStreamResponseWire, TransportActionWireError> {
+    if !message.status.is_response() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "response",
+            actual: message.status.bits(),
+        });
+    }
+    let _header = ResponseVariableHeader::read(message.variable_header.clone().freeze())?;
+    OpenSearchGetDataStreamResponseWire::read(message.body.clone().freeze())
 }
 
 pub fn build_opensearch_create_data_stream_request_message(
@@ -23132,6 +23161,15 @@ impl OpenSearchGetDataStreamRequestWire {
     }
 
     pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        self.validate_supported_subset()?;
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "get data stream execution",
+            reason:
+                "use validate_supported_subset for the implemented empty get-data-stream adapter",
+        })
+    }
+
+    pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
         if self.cluster_manager_timeout != TimeValueWire::seconds(30) {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "get data stream cluster-manager timeout",
@@ -23161,10 +23199,50 @@ impl OpenSearchGetDataStreamRequestWire {
                 });
             }
         }
-        Err(TransportActionWireError::UnsupportedWireShape {
-            shape: "get data stream execution",
-            reason: "get-data-stream transport execution requires data-stream metadata response rendering",
-        })
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchGetDataStreamResponseWire {
+    pub data_stream_count: usize,
+}
+
+impl OpenSearchGetDataStreamResponseWire {
+    pub fn empty() -> Self {
+        Self {
+            data_stream_count: 0,
+        }
+    }
+
+    pub fn write(&self, output: &mut StreamOutput) -> Result<(), TransportActionWireError> {
+        self.validate_supported_subset()?;
+        output.write_vint(0);
+        Ok(())
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let data_stream_count = read_len(&mut input)?;
+        if data_stream_count != 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get data stream response metadata",
+                reason:
+                    "non-empty data-stream metadata is not decoded by this transport adapter yet",
+            });
+        }
+        require_no_trailing_bytes(&input)?;
+        Ok(Self { data_stream_count })
+    }
+
+    pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
+        if self.data_stream_count != 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get data stream response metadata",
+                reason: "only empty data-stream responses are supported by this adapter",
+            });
+        }
+        Ok(())
     }
 }
 
@@ -35005,7 +35083,7 @@ mod tests {
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_GET_DATA_STREAM_ACTION_NAME)
                 .disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_DATA_STREAMS_STATS_ACTION_NAME)
@@ -35122,6 +35200,7 @@ mod tests {
                 || spec.action_name == OPENSEARCH_CLUSTER_SEARCH_SHARDS_ACTION_NAME
                 || spec.action_name == OPENSEARCH_INDICES_SEGMENTS_ACTION_NAME
                 || spec.action_name == OPENSEARCH_INDICES_SHARD_STORES_ACTION_NAME
+                || spec.action_name == OPENSEARCH_GET_DATA_STREAM_ACTION_NAME
                 || spec.action_name == OPENSEARCH_GET_ALIASES_ACTION_NAME
                 || spec.action_name == OPENSEARCH_GET_SETTINGS_ACTION_NAME
             {
@@ -35183,7 +35262,6 @@ mod tests {
                 || spec.action_name == OPENSEARCH_PIT_SEGMENTS_ACTION_NAME
                 || spec.action_name == OPENSEARCH_CREATE_DATA_STREAM_ACTION_NAME
                 || spec.action_name == OPENSEARCH_DELETE_DATA_STREAM_ACTION_NAME
-                || spec.action_name == OPENSEARCH_GET_DATA_STREAM_ACTION_NAME
                 || spec.action_name == OPENSEARCH_DATA_STREAMS_STATS_ACTION_NAME
                 || spec.action_name == OPENSEARCH_RESOLVE_INDEX_ACTION_NAME
                 || spec.action_name == OPENSEARCH_CREATE_VIEW_ACTION_NAME
@@ -53291,13 +53369,14 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_get_data_stream_request_wire_round_trips_and_rejects_execution_boundary() {
+    fn opensearch_get_data_stream_request_wire_round_trips_and_validates_default_subset() {
         let request = OpenSearchGetDataStreamRequestWire::default();
         let mut output = StreamOutput::new();
         request.write(&mut output);
 
         let decoded = OpenSearchGetDataStreamRequestWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, request);
+        decoded.validate_supported_subset().unwrap();
         assert!(matches!(
             decoded.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
@@ -53359,7 +53438,42 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_get_data_stream_transport_messages_bind_rejected_action_frame() {
+    fn opensearch_get_data_stream_response_wire_round_trips_empty_response() {
+        let response = OpenSearchGetDataStreamResponseWire::empty();
+        let mut output = StreamOutput::new();
+        response.write(&mut output).unwrap();
+
+        let decoded = OpenSearchGetDataStreamResponseWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, response);
+        decoded.validate_supported_subset().unwrap();
+    }
+
+    #[test]
+    fn opensearch_get_data_stream_response_rejects_non_empty_metadata() {
+        let response = OpenSearchGetDataStreamResponseWire {
+            data_stream_count: 1,
+        };
+        let mut output = StreamOutput::new();
+        output.write_vint(1);
+        assert!(matches!(
+            OpenSearchGetDataStreamResponseWire::read(output.freeze()),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get data stream response metadata",
+                ..
+            })
+        ));
+        assert!(matches!(
+            response.write(&mut StreamOutput::new()),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get data stream response metadata",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_get_data_stream_transport_messages_bind_supported_action_frame_and_empty_response(
+    ) {
         let request = OpenSearchGetDataStreamRequestWire::default();
         let mut frame = build_opensearch_get_data_stream_request_message(
             43,
@@ -53374,6 +53488,10 @@ mod tests {
             read_opensearch_get_data_stream_request_message(&message).unwrap(),
             request
         );
+        read_opensearch_get_data_stream_request_message(&message)
+            .unwrap()
+            .validate_supported_subset()
+            .unwrap();
         assert!(matches!(
             read_opensearch_get_data_stream_request_message(&message)
                 .unwrap()
@@ -53383,6 +53501,21 @@ mod tests {
                 ..
             })
         ));
+
+        let response = OpenSearchGetDataStreamResponseWire::empty();
+        let mut frame = build_opensearch_get_data_stream_response_message(
+            43,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &response,
+        )
+        .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected get data stream response message");
+        };
+        assert_eq!(
+            read_opensearch_get_data_stream_response_message(&message).unwrap(),
+            response
+        );
     }
 
     #[test]
