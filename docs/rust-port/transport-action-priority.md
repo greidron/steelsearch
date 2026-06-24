@@ -590,10 +590,10 @@ The get-repositories boundary covers:
 - OpenSearch `GetRepositoriesRequest` parent task, cluster-manager timeout, and
   `local` flag, and repository name/pattern array at the wire decode/build
   layer;
-- explicit fail-closed classification for `cluster:admin/repository/get` until
-  repository metadata mapping and response rendering are implemented;
+- implemented `cluster:admin/repository/get` response rendering for the default
+  all-repositories request when the repository metadata list is empty;
 - explicit rejection for custom cluster-manager timeout, repository name/pattern
-  selection, local reads, and get-repositories execution.
+  selection, and local reads until repository metadata mapping is implemented.
 
 The delete-repository boundary covers:
 
@@ -2833,21 +2833,23 @@ flags. At roughly 1.99M ops/s in the latest local release run, this boundary is
 not a material performance bottleneck; the first performance-sensitive work is
 allocation command execution, routing mutation, and reroute response rendering.
 
-Current get-repositories reject wire microbenchmark:
+Current get-repositories wire microbenchmark:
 
 ```text
-cargo run -p os-transport --release --bin get-repositories-reject-wire-benchmark
-get_repositories_reject_request_encode iterations=400000 elapsed_ms=197.691 ops_per_second=2023360.94 nanos_per_op=494.23
-get_repositories_reject_request_decode iterations=400000 elapsed_ms=197.141 ops_per_second=2029007.16 nanos_per_op=492.85
-get_repositories_reject_validation iterations=400000 elapsed_ms=198.312 ops_per_second=2017023.64 nanos_per_op=495.78
-get_repositories_reject_wire_bottleneck_ops_per_second=2017023.64
+cargo run -p os-transport --release --bin get-repositories-wire-benchmark
+get_repositories_request_encode iterations=400000 elapsed_ms=194.030 ops_per_second=2061531.79 nanos_per_op=485.08
+get_repositories_request_decode iterations=400000 elapsed_ms=191.827 ops_per_second=2085216.78 nanos_per_op=479.57
+get_repositories_request_validate iterations=400000 elapsed_ms=192.155 ops_per_second=2081652.16 nanos_per_op=480.39
+get_repositories_response_encode iterations=400000 elapsed_ms=85.993 ops_per_second=4651553.58 nanos_per_op=214.98
+get_repositories_response_decode iterations=400000 elapsed_ms=89.831 ops_per_second=4452791.35 nanos_per_op=224.58
+get_repositories_wire_bottleneck_ops_per_second=2061531.79
 ```
 
-The current get-repositories fail-closed boundary bottleneck is validation over
-the decoded default request. The payload is only the ClusterManagerNodeRead
-envelope, local flag, and an empty repository-name array, so this remains one of the
-lightest read/admin rejection paths. At roughly 2.02M ops/s in the latest local
-release run, it does not introduce a transport-wire bottleneck.
+The current get-repositories implemented-path bottleneck is request encode. The
+payload is only the ClusterManagerNodeRead envelope, local flag, and an empty
+repository-name array; the empty response is a single repository-list count. At
+roughly 2.06M ops/s in the latest local release run, it does not introduce a
+transport-wire bottleneck.
 
 Current delete-repository reject wire microbenchmark:
 
@@ -6276,7 +6278,6 @@ response-shape examples.
 
 - `NodesInfoAction.INSTANCE`
 - `NodesHotThreadsAction.INSTANCE`
-- `GetRepositoriesAction.INSTANCE`
 - `GetMappingsAction.INSTANCE`
 - `GetFieldMappingsAction.INSTANCE`
 - `GetAliasesAction.INSTANCE`

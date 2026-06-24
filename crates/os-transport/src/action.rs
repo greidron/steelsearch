@@ -1770,8 +1770,8 @@ pub fn classify_opensearch_transport_action(
         },
         GET_REPOSITORIES_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
-            disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "get-repositories transport execution requires repository metadata mapping",
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "get-repositories transport adapter returns an OpenSearch-shaped empty repository metadata response for the default all-repositories request",
         },
         DELETE_REPOSITORY_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -5662,6 +5662,36 @@ pub fn read_get_repositories_request_message(
         });
     }
     GetRepositoriesRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_get_repositories_response_message(
+    request_id: i64,
+    version: Version,
+    response: &GetRepositoriesResponseWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    response.write(&mut body)?;
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::response(),
+        version,
+        variable_header: BytesMut::from(&ResponseVariableHeader::default().to_bytes()[..]),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_get_repositories_response_message(
+    message: &TransportMessage,
+) -> Result<GetRepositoriesResponseWire, TransportActionWireError> {
+    if !message.status.is_response() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "response",
+            actual: message.status.bits(),
+        });
+    }
+    let _header = ResponseVariableHeader::read(message.variable_header.clone().freeze())?;
+    GetRepositoriesResponseWire::read(message.body.clone().freeze())
 }
 
 pub fn build_delete_repository_request_message(
@@ -11824,7 +11854,7 @@ impl GetRepositoriesRequestWire {
         Ok(request)
     }
 
-    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+    pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
         if self.cluster_manager_timeout != TimeValueWire::seconds(30) {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "get repositories cluster-manager timeout",
@@ -11845,10 +11875,60 @@ impl GetRepositoriesRequestWire {
                     "local repository metadata reads require local cluster-state response semantics",
             });
         }
+        Ok(())
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        self.validate_supported_subset()?;
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "get repositories execution",
-            reason: "get-repositories transport execution requires repository metadata mapping",
+            reason: "use validate_supported_subset for the implemented empty get-repositories adapter",
         })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Default)]
+pub struct GetRepositoriesResponseWire {
+    pub repository_count: i32,
+}
+
+impl GetRepositoriesResponseWire {
+    pub fn empty() -> Self {
+        Self {
+            repository_count: 0,
+        }
+    }
+
+    pub fn write(&self, output: &mut StreamOutput) -> Result<(), TransportActionWireError> {
+        self.validate_supported_subset()?;
+        output.write_vint(self.repository_count);
+        Ok(())
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let response = Self {
+            repository_count: input.read_vint()?,
+        };
+        require_no_trailing_bytes(&input)?;
+        response.validate_supported_subset()?;
+        Ok(response)
+    }
+
+    pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
+        if self.repository_count < 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get repositories repository count",
+                reason: "OpenSearch repository metadata list count cannot be negative",
+            });
+        }
+        if self.repository_count != 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get repositories metadata",
+                reason: "repository metadata entries require repository settings and generation mapping",
+            });
+        }
+        Ok(())
     }
 }
 
@@ -33715,7 +33795,7 @@ mod tests {
         );
         assert_eq!(
             classify_opensearch_transport_action(GET_REPOSITORIES_ACTION_NAME).disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             classify_opensearch_transport_action(DELETE_REPOSITORY_ACTION_NAME).disposition,
@@ -38822,20 +38902,14 @@ mod tests {
     }
 
     #[test]
-    fn get_repositories_request_wire_round_trips_and_rejects_execution_boundary() {
+    fn get_repositories_request_wire_round_trips_and_validates_default_all_repositories() {
         let request = GetRepositoriesRequestWire::default();
         let mut output = StreamOutput::new();
         request.write(&mut output);
 
         let decoded = GetRepositoriesRequestWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, request);
-        assert!(matches!(
-            decoded.reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "get repositories execution",
-                ..
-            })
-        ));
+        decoded.validate_supported_subset().unwrap();
     }
 
     #[test]
@@ -38878,7 +38952,7 @@ mod tests {
     }
 
     #[test]
-    fn get_repositories_transport_messages_bind_rejected_action_frame() {
+    fn get_repositories_transport_messages_bind_supported_action_frame_and_empty_response() {
         let request = GetRepositoriesRequestWire::default();
         let mut frame =
             build_get_repositories_request_message(34, OPENSEARCH_3_7_0_TRANSPORT, &request)
@@ -38890,15 +38964,36 @@ mod tests {
             read_get_repositories_request_message(&message).unwrap(),
             request
         );
-        assert!(matches!(
-            read_get_repositories_request_message(&message)
-                .unwrap()
-                .reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "get repositories execution",
-                ..
-            })
-        ));
+        read_get_repositories_request_message(&message)
+            .unwrap()
+            .validate_supported_subset()
+            .unwrap();
+
+        let response = GetRepositoriesResponseWire::empty();
+        let mut frame = build_get_repositories_response_message(
+            34,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &response,
+        )
+        .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected get repositories response message");
+        };
+        assert_eq!(
+            read_get_repositories_response_message(&message).unwrap(),
+            response
+        );
+    }
+
+    #[test]
+    fn get_repositories_response_wire_round_trips_empty_metadata() {
+        let response = GetRepositoriesResponseWire::empty();
+        let mut output = StreamOutput::new();
+        response.write(&mut output).unwrap();
+
+        let decoded = GetRepositoriesResponseWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, response);
+        assert_eq!(decoded.repository_count, 0);
     }
 
     #[test]

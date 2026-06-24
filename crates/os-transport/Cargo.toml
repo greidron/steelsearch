@@ -266,8 +266,8 @@ name = "cluster-reroute-reject-wire-benchmark"
 path = "benchmarks/cluster_reroute_reject_wire.rs"
 
 [[bin]]
-name = "get-repositories-reject-wire-benchmark"
-path = "benchmarks/get_repositories_reject_wire.rs"
+name = "get-repositories-wire-benchmark"
+path = "benchmarks/get_repositories_wire.rs"
 
 [[bin]]
 name = "get-mappings-reject-wire-benchmark"
