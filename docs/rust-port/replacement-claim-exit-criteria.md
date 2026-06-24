@@ -358,6 +358,8 @@ Required semantic cases:
 - `collapse_search`
 - `profile_search`
 - `rescore_search`
+- `search_coordinator_knobs_search`
+- `allow_partial_search_results_true_search`
 - `completion_suggest_search`
 - `highlight_search`
 - `terms_aggregation`

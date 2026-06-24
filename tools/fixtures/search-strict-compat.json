@@ -2560,6 +2560,52 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "search_coordinator_knobs_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search?pre_filter_shard_size=1&batched_reduce_size=2&max_concurrent_shard_requests=1",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ],
+        "size": 2
+      },
+      "extract": "search_summary",
+      "family": "lexical",
+      "description": "[lexical] search coordinator knobs search",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "allow_partial_search_results_true_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search?allow_partial_search_results=true",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ],
+        "size": 2
+      },
+      "extract": "search_summary",
+      "family": "lexical",
+      "description": "[lexical] allow partial search results true search",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "prefix_query_search",
       "area": "search",
       "method": "POST",
