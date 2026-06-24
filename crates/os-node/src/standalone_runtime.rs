@@ -9591,9 +9591,9 @@ impl SteelNode {
             .iter()
             .map(|(id, context)| {
                 serde_json::json!({
-                    "id": id,
                     "pit_id": id,
-                    "creation_time": context.creation_time_millis
+                    "creation_time": context.creation_time_millis,
+                    "keep_alive": context.keep_alive_millis
                 })
             })
             .collect::<Vec<_>>();
@@ -34884,8 +34884,10 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         let list_pits =
             node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_search/point_in_time/_all"));
         assert_eq!(list_pits.status, 200);
-        assert_eq!(list_pits.body["pits"][0]["id"], "pit-1");
-        assert_eq!(list_pits.body["pits"][1]["id"], "pit-2");
+        assert_eq!(list_pits.body["pits"][0]["pit_id"], "pit-1");
+        assert_eq!(list_pits.body["pits"][0]["keep_alive"], 60000);
+        assert_eq!(list_pits.body["pits"][1]["pit_id"], "pit-2");
+        assert_eq!(list_pits.body["pits"][1]["keep_alive"], 60000);
 
         let search_response = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/logs-session-000001/_search?scroll=1m")
@@ -34980,7 +34982,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_search/point_in_time/_all"));
         assert_eq!(list_after_single_close.status, 200);
         assert_eq!(list_after_single_close.body["pits"].as_array().map(|pits| pits.len()), Some(1));
-        assert_eq!(list_after_single_close.body["pits"][0]["id"], "pit-2");
+        assert_eq!(list_after_single_close.body["pits"][0]["pit_id"], "pit-2");
 
         let close_array_pit = node.handle_rest_request(
             RestRequest::new(RestMethod::Delete, "/_search/point_in_time")
@@ -41371,7 +41373,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 .with_header("Authorization", "Basic cmVhZGVyOnJlYWRlcg=="),
         );
         assert_eq!(reader_pit_list.status, 200);
-        assert_eq!(reader_pit_list.body["pits"][0]["id"], "pit-1");
+        assert_eq!(reader_pit_list.body["pits"][0]["pit_id"], "pit-1");
 
         unsafe {
             env::remove_var("STEELSEARCH_SECURITY_ENABLED");
