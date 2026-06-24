@@ -8896,6 +8896,18 @@ impl SteelNode {
         {
             return response;
         }
+        for field in [
+            "phase_took",
+            "verbose_pipeline",
+            "track_scores",
+            "include_named_queries_score",
+        ] {
+            if let Some(response) =
+                validate_opensearch_boolean_query_param(request.query_params.get(field))
+            {
+                return response;
+            }
+        }
         if let Some(response) = validate_opensearch_boolean_query_param(
             request.query_params.get("allow_partial_search_results"),
         ) {
@@ -39346,6 +39358,46 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             invalid_seq_no_primary_term_query_param.body["error"]["reason"],
             "Failed to parse value [maybe] as only [true] or [false] are allowed."
         );
+
+        let boolean_execution_query_params = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/logs-search-params-a/_search?phase_took=true&verbose_pipeline=false&track_scores=true&include_named_queries_score=false",
+            )
+            .with_json_body(serde_json::json!({
+                "query": { "match_all": {} },
+                "sort": [{ "rank": "asc" }],
+                "size": 1
+            })),
+        );
+        assert_eq!(boolean_execution_query_params.status, 200);
+        assert_eq!(
+            boolean_execution_query_params.body["hits"]["hits"][0]["_id"],
+            "doc-1"
+        );
+
+        for invalid_param in [
+            "phase_took",
+            "verbose_pipeline",
+            "track_scores",
+            "include_named_queries_score",
+        ] {
+            let invalid_boolean_query_param = node.handle_rest_request(
+                RestRequest::new(
+                    RestMethod::Post,
+                    &format!("/logs-search-params-a/_search?{invalid_param}=maybe"),
+                )
+                .with_json_body(serde_json::json!({
+                    "query": { "match_all": {} }
+                })),
+            );
+            assert_eq!(invalid_boolean_query_param.status, 400, "{invalid_param}");
+            assert_eq!(
+                invalid_boolean_query_param.body["error"]["reason"],
+                "Failed to parse value [maybe] as only [true] or [false] are allowed.",
+                "{invalid_param}"
+            );
+        }
 
         let invalid_version_body = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/logs-search-params-a/_search")
