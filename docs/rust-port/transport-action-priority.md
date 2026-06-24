@@ -2190,6 +2190,8 @@ The search boundary covers:
   `post_filter` hit filtering while preserving aggregation input.
 - REST search parses and validates body/query `timeout` time values before
   admitting the bounded standalone search path.
+- REST search applies bounded body/query `_source` projection and top-level
+  `fields` hit projection for supported field selectors.
 - REST search validates `search_after` scroll/from/sort-count and sort-value
   type constraints with OpenSearch-shaped shard failure errors and renders
   requested hit `sort` values for reuse by follow-up pages.

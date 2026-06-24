@@ -9285,6 +9285,7 @@ impl SteelNode {
                 );
             }
         }
+        apply_search_source_projection_to_hits(&mut paged_hits, &body);
         let mut response = serde_json::Map::new();
         if let Some(pit_id) = point_in_time_response_id {
             response.insert("pit_id".to_string(), Value::String(pit_id));
@@ -18030,6 +18031,24 @@ impl SteelNode {
             }
         }
 
+        if let Some(fetch_fields) = body.get("fields").and_then(Value::as_array) {
+            for spec in fetch_fields {
+                let field = if let Some(name) = spec.as_str() {
+                    name
+                } else if let Some(obj) = spec.as_object() {
+                    obj.get("field").and_then(Value::as_str).unwrap_or_default()
+                } else {
+                    continue;
+                };
+                if field.is_empty() {
+                    continue;
+                }
+                if let Some(value) = source.get(field) {
+                    fields.insert(field.to_string(), Value::Array(vec![value.clone()]));
+                }
+            }
+        }
+
         if fields.is_empty() {
             None
         } else {
@@ -18234,6 +18253,7 @@ fn standalone_search_body_allows_native_engine(body: &Value) -> bool {
         && ![
         "collapse",
         "explain",
+        "fields",
         "min_score",
         "post_filter",
         "profile",
@@ -18244,6 +18264,9 @@ fn standalone_search_body_allows_native_engine(body: &Value) -> bool {
         "suggest",
         "terminate_after",
         "version",
+        "_source",
+        "_source_excludes",
+        "_source_includes",
     ]
     .iter()
     .any(|key| body.get(*key).is_some())
@@ -18663,6 +18686,16 @@ fn validate_search_request_body(body: &Value, scroll: bool) -> Option<RestRespon
             return Some(response);
         }
     }
+    if let Some(fetch_fields) = body.get("fields") {
+        if let Some(response) = validate_fetch_fields_request_body(fetch_fields) {
+            return Some(response);
+        }
+    }
+    if let Some(source_filter) = body.get("_source") {
+        if let Some(response) = validate_source_filter_request_body(source_filter) {
+            return Some(response);
+        }
+    }
     if let Some(track_total_hits) = body.get("track_total_hits") {
         if !matches!(track_total_hits, Value::Bool(_))
             && track_total_hits.as_u64().is_none()
@@ -18852,6 +18885,35 @@ fn apply_search_source_query_params(
             ));
         };
         object.insert("timeout".to_string(), Value::String(raw_timeout.clone()));
+    }
+    if let Some(raw_source) = query_params.get("_source") {
+        let source_filter = match raw_source.as_str() {
+            "true" => Value::Bool(true),
+            "false" => Value::Bool(false),
+            _ => Value::String(raw_source.clone()),
+        };
+        let Some(object) = body.as_object_mut() else {
+            return Some(build_unsupported_search_response(
+                "unsupported search request body",
+            ));
+        };
+        object.insert("_source".to_string(), source_filter);
+    }
+    for (query_key, body_key) in [
+        ("_source_includes", "_source_includes"),
+        ("_source_include", "_source_includes"),
+        ("_source_excludes", "_source_excludes"),
+        ("_source_exclude", "_source_excludes"),
+    ] {
+        let Some(raw) = query_params.get(query_key) else {
+            continue;
+        };
+        let Some(object) = body.as_object_mut() else {
+            return Some(build_unsupported_search_response(
+                "unsupported search request body",
+            ));
+        };
+        object.insert(body_key.to_string(), Value::String(raw.clone()));
     }
     for field in ["version", "seq_no_primary_term", "explain"] {
         let Some(raw) = query_params.get(field) else {
@@ -19366,6 +19428,90 @@ fn validate_docvalue_fields_request_body(docvalue_fields: &Value) -> Option<Rest
         }
     }
     None
+}
+
+fn validate_fetch_fields_request_body(fetch_fields: &Value) -> Option<RestResponse> {
+    let Some(fields) = fetch_fields.as_array() else {
+        return Some(build_unsupported_search_response(
+            "unsupported search option [fields]",
+        ));
+    };
+    if fields.is_empty() {
+        return Some(build_unsupported_search_response(
+            "unsupported search option [fields]",
+        ));
+    }
+    for field in fields {
+        if let Some(name) = field.as_str() {
+            if name.is_empty() {
+                return Some(build_unsupported_search_response(
+                    "unsupported search option [fields]",
+                ));
+            }
+            continue;
+        }
+        let Some(spec) = field.as_object() else {
+            return Some(build_unsupported_search_response(
+                "unsupported search option [fields]",
+            ));
+        };
+        if spec.keys().any(|key| key != "field" && key != "format") {
+            return Some(build_unsupported_search_response(
+                "unsupported search option [fields]",
+            ));
+        }
+        if spec.get("field").and_then(Value::as_str).is_none() {
+            return Some(build_unsupported_search_response(
+                "unsupported search option [fields]",
+            ));
+        }
+    }
+    None
+}
+
+fn validate_source_filter_request_body(source_filter: &Value) -> Option<RestResponse> {
+    match source_filter {
+        Value::Bool(_) => None,
+        Value::String(value) if !value.trim().is_empty() => None,
+        Value::Array(values)
+            if !values.is_empty()
+                && values
+                    .iter()
+                    .all(|value| value.as_str().is_some_and(|field| !field.trim().is_empty())) =>
+        {
+            None
+        }
+        Value::Object(object) => {
+            if object.is_empty()
+                || object
+                    .keys()
+                    .any(|key| !matches!(key.as_str(), "includes" | "include" | "excludes" | "exclude" | "fetch"))
+            {
+                return Some(build_unsupported_search_response(
+                    "unsupported search option [_source]",
+                ));
+            }
+            if object.get("fetch").is_some_and(|value| !value.is_boolean()) {
+                return Some(build_unsupported_search_response(
+                    "unsupported search option [_source]",
+                ));
+            }
+            for key in ["includes", "include", "excludes", "exclude"] {
+                let Some(value) = object.get(key) else {
+                    continue;
+                };
+                if source_filter_selector_csv(value).is_none() {
+                    return Some(build_unsupported_search_response(
+                        "unsupported search option [_source]",
+                    ));
+                }
+            }
+            None
+        }
+        _ => Some(build_unsupported_search_response(
+            "unsupported search option [_source]",
+        )),
+    }
 }
 
 fn validate_search_after_request_body(
@@ -23314,6 +23460,92 @@ fn filter_source_fields(source: &Value, includes: &str) -> Value {
         }
     }
     Value::Object(filtered)
+}
+
+fn apply_search_source_projection_to_hits(hits: &mut [Value], body: &Value) {
+    for hit in hits {
+        let Some(hit_object) = hit.as_object_mut() else {
+            continue;
+        };
+        let Some(source) = hit_object.get("_source").cloned() else {
+            continue;
+        };
+        match search_source_projection(&source, body) {
+            Some(projected) => {
+                hit_object.insert("_source".to_string(), projected);
+            }
+            None => {
+                hit_object.remove("_source");
+            }
+        }
+    }
+}
+
+fn search_source_projection(source: &Value, body: &Value) -> Option<Value> {
+    let mut projected = match body.get("_source") {
+        Some(Value::Bool(false)) => return None,
+        Some(Value::Bool(true)) | None => source.clone(),
+        Some(Value::String(includes)) => filter_source_fields(source, includes),
+        Some(Value::Array(_)) => {
+            let includes = source_filter_selector_csv(body.get("_source")?)?;
+            filter_source_fields(source, &includes)
+        }
+        Some(Value::Object(object)) => {
+            if object.get("fetch") == Some(&Value::Bool(false)) {
+                return None;
+            }
+            let mut current = source.clone();
+            if let Some(includes) = object
+                .get("includes")
+                .or_else(|| object.get("include"))
+                .and_then(source_filter_selector_csv)
+            {
+                current = filter_source_fields(&current, &includes);
+            }
+            if let Some(excludes) = object
+                .get("excludes")
+                .or_else(|| object.get("exclude"))
+                .and_then(source_filter_selector_csv)
+            {
+                current = exclude_source_fields(&current, &excludes);
+            }
+            current
+        }
+        Some(_) => source.clone(),
+    };
+    if let Some(includes) = body
+        .get("_source_includes")
+        .or_else(|| body.get("_source_include"))
+        .and_then(source_filter_selector_csv)
+    {
+        projected = filter_source_fields(&projected, &includes);
+    }
+    if let Some(excludes) = body
+        .get("_source_excludes")
+        .or_else(|| body.get("_source_exclude"))
+        .and_then(source_filter_selector_csv)
+    {
+        projected = exclude_source_fields(&projected, &excludes);
+    }
+    Some(projected)
+}
+
+fn source_filter_selector_csv(value: &Value) -> Option<String> {
+    match value {
+        Value::String(raw) if !raw.trim().is_empty() => Some(raw.clone()),
+        Value::Array(values) if !values.is_empty() => {
+            let mut fields = Vec::new();
+            for value in values {
+                let field = value.as_str()?.trim();
+                if field.is_empty() {
+                    return None;
+                }
+                fields.push(field.to_string());
+            }
+            Some(fields.join(","))
+        }
+        _ => None,
+    }
 }
 
 fn exclude_source_fields(source: &Value, excludes: &str) -> Value {
@@ -38921,6 +39153,113 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             invalid_timeout_query_param.body["error"]["reason"],
             "failed to parse setting [timeout] with value [soon] as a time value"
+        );
+
+        let source_disabled_body = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-params-a/_search")
+                .with_json_body(serde_json::json!({
+                    "query": { "match_all": {} },
+                    "_source": false,
+                    "sort": [{ "rank": "asc" }],
+                    "size": 1
+                })),
+        );
+        assert_eq!(source_disabled_body.status, 200);
+        assert!(source_disabled_body.body["hits"]["hits"][0]["_source"].is_null());
+
+        let source_includes_body = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-params-a/_search")
+                .with_json_body(serde_json::json!({
+                    "query": { "match_all": {} },
+                    "_source": ["tenant", "rank"],
+                    "sort": [{ "rank": "asc" }],
+                    "size": 1
+                })),
+        );
+        assert_eq!(source_includes_body.status, 200);
+        assert_eq!(
+            source_includes_body.body["hits"]["hits"][0]["_source"],
+            serde_json::json!({ "tenant": "tenant-a", "rank": 1 })
+        );
+
+        let source_object_excludes_body = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-params-a/_search")
+                .with_json_body(serde_json::json!({
+                    "query": { "match_all": {} },
+                    "_source": {
+                        "includes": ["tenant", "message", "rank"],
+                        "excludes": ["message"]
+                    },
+                    "sort": [{ "rank": "asc" }],
+                    "size": 1
+                })),
+        );
+        assert_eq!(source_object_excludes_body.status, 200);
+        assert_eq!(
+            source_object_excludes_body.body["hits"]["hits"][0]["_source"],
+            serde_json::json!({ "tenant": "tenant-a", "rank": 1 })
+        );
+
+        let source_query_param_includes = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/logs-search-params-a/_search?_source_includes=tenant,rank",
+            )
+            .with_json_body(serde_json::json!({
+                "query": { "match_all": {} },
+                "sort": [{ "rank": "asc" }],
+                "size": 1
+            })),
+        );
+        assert_eq!(source_query_param_includes.status, 200);
+        assert_eq!(
+            source_query_param_includes.body["hits"]["hits"][0]["_source"],
+            serde_json::json!({ "tenant": "tenant-a", "rank": 1 })
+        );
+
+        let fields_body = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-params-a/_search")
+                .with_json_body(serde_json::json!({
+                    "query": { "match_all": {} },
+                    "fields": ["tenant", { "field": "rank" }],
+                    "sort": [{ "rank": "asc" }],
+                    "size": 1
+                })),
+        );
+        assert_eq!(fields_body.status, 200);
+        assert_eq!(
+            fields_body.body["hits"]["hits"][0]["fields"]["tenant"],
+            serde_json::json!(["tenant-a"])
+        );
+        assert_eq!(
+            fields_body.body["hits"]["hits"][0]["fields"]["rank"],
+            serde_json::json!([1])
+        );
+
+        let invalid_fields_body = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-params-a/_search")
+                .with_json_body(serde_json::json!({
+                    "query": { "match_all": {} },
+                    "fields": [{ "name": "tenant" }]
+                })),
+        );
+        assert_eq!(invalid_fields_body.status, 400);
+        assert_eq!(
+            invalid_fields_body.body["error"]["reason"],
+            "unsupported search option [fields]"
+        );
+
+        let invalid_source_body = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-params-a/_search")
+                .with_json_body(serde_json::json!({
+                    "query": { "match_all": {} },
+                    "_source": []
+                })),
+        );
+        assert_eq!(invalid_source_body.status, 400);
+        assert_eq!(
+            invalid_source_body.body["error"]["reason"],
+            "unsupported search option [_source]"
         );
 
         let min_score_filters_low_scoring_hits = node.handle_rest_request(
