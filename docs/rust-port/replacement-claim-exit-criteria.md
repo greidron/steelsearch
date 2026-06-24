@@ -372,6 +372,7 @@ Required semantic cases:
 - `post_filter_search`
 - `post_filter_preserves_aggregation_input_search`
 - `hit_metadata_projection_search`
+- `hit_metadata_projection_body_search`
 - `completion_suggest_search`
 - `phrase_suggest_search`
 - `term_suggest_search`

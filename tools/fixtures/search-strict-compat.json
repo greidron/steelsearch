@@ -3534,6 +3534,31 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "hit_metadata_projection_body_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "version": true,
+        "seq_no_primary_term": true,
+        "sort": [
+          {
+            "ts": {
+              "order": "asc"
+            }
+          }
+        ],
+        "size": 2
+      },
+      "extract": "search_hit_metadata",
+      "family": "fetch",
+      "description": "[fetch] body hit metadata projection search",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "wildcard_match_search",
       "area": "search",
       "method": "POST",
