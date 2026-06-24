@@ -18689,6 +18689,19 @@ fn apply_search_source_query_params(
         };
         object.insert("track_total_hits".to_string(), track_total_hits);
     }
+    if let Some(raw_terminate_after) = query_params.get("terminate_after") {
+        let Some(terminate_after) = parse_non_negative_search_int(raw_terminate_after) else {
+            return Some(terminate_after_query_param_parse_error(raw_terminate_after));
+        };
+        if terminate_after > 0 {
+            let Some(object) = body.as_object_mut() else {
+                return Some(build_unsupported_search_response(
+                    "unsupported search request body",
+                ));
+            };
+            object.insert("terminate_after".to_string(), Value::from(terminate_after));
+        }
+    }
     None
 }
 
@@ -18712,6 +18725,19 @@ fn track_total_hits_query_param_parse_error(value: &str) -> RestResponse {
             "error": {
                 "type": "illegal_argument_exception",
                 "reason": format!("Failed to parse value [{value}] for [track_total_hits]")
+            },
+            "status": 400
+        }),
+    )
+}
+
+fn terminate_after_query_param_parse_error(_value: &str) -> RestResponse {
+    RestResponse::json(
+        400,
+        serde_json::json!({
+            "error": {
+                "type": "illegal_argument_exception",
+                "reason": "terminateAfter must be > 0"
             },
             "status": 400
         }),
@@ -38253,6 +38279,55 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(total_hits_threshold.status, 200);
         assert_eq!(total_hits_threshold.body["hits"]["total"]["value"], 1);
         assert_eq!(total_hits_threshold.body["hits"]["total"]["relation"], "gte");
+
+        let query_param_terminate_after = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/logs-search-params-*/_search?terminate_after=1",
+            )
+            .with_json_body(serde_json::json!({
+                "query": { "match_all": {} },
+                "sort": [{ "tenant": "asc" }]
+            })),
+        );
+        assert_eq!(query_param_terminate_after.status, 200);
+        assert_eq!(query_param_terminate_after.body["terminated_early"], true);
+        assert_eq!(
+            query_param_terminate_after.body["hits"]["total"]["value"],
+            1
+        );
+
+        let zero_query_param_terminate_after_preserves_body = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/logs-search-params-*/_search?terminate_after=0",
+            )
+            .with_json_body(serde_json::json!({
+                "query": { "match_all": {} },
+                "sort": [{ "tenant": "asc" }],
+                "terminate_after": 1
+            })),
+        );
+        assert_eq!(zero_query_param_terminate_after_preserves_body.status, 200);
+        assert_eq!(
+            zero_query_param_terminate_after_preserves_body.body["terminated_early"],
+            true
+        );
+
+        let invalid_query_param_terminate_after = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/logs-search-params-*/_search?terminate_after=-1",
+            )
+            .with_json_body(serde_json::json!({
+                "query": { "match_all": {} }
+            })),
+        );
+        assert_eq!(invalid_query_param_terminate_after.status, 400);
+        assert_eq!(
+            invalid_query_param_terminate_after.body["error"]["reason"],
+            "terminateAfter must be > 0"
+        );
 
         let query_param_total_hits_threshold = node.handle_rest_request(
             RestRequest::new(

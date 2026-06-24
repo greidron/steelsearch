@@ -2181,6 +2181,8 @@ The search boundary covers:
 - REST search source parsing applies boolean and numeric `track_total_hits`
   query parameters, including omitted `hits.total` when tracking is disabled
   and `-1` in `rest_total_hits_as_int` compatibility mode.
+- REST search source parsing applies positive `terminate_after` query
+  parameters and preserves body `terminate_after` when the query value is `0`.
 
 The stream-search boundary covers:
 
