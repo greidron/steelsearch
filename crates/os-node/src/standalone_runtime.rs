@@ -19188,6 +19188,11 @@ fn validate_search_request_body(body: &Value, scroll: bool) -> Option<RestRespon
             return Some(response);
         }
     }
+    if let Some(sort) = body.get("sort") {
+        if let Some(response) = validate_search_sort_request_body(sort) {
+            return Some(response);
+        }
+    }
     if let Some(slice) = body.get("slice") {
         if let Some(response) =
             validate_slice_request_body(slice, scroll, body.get("pit").is_some())
@@ -19535,11 +19540,11 @@ fn validate_shard_doc_sort_request_body(body: &Value, scroll: bool) -> Option<Re
 }
 
 fn count_shard_doc_sort_fields(sort: Option<&Value>) -> usize {
-    let Some(sort_fields) = sort.and_then(Value::as_array) else {
+    let Some(sort_fields) = sort.and_then(search_sort_fields) else {
         return 0;
     };
     sort_fields
-        .iter()
+        .into_iter()
         .filter(|sort_field| {
             sort_field.as_str() == Some("_shard_doc")
                 || sort_field
@@ -20495,7 +20500,7 @@ fn validate_search_after_request_body(
             "`from` parameter must be set to 0 when `search_after` is used.",
         ));
     }
-    let Some(sort_fields) = sort.and_then(Value::as_array) else {
+    let Some(sort_fields) = sort.and_then(search_sort_fields) else {
         return Some(search_after_validation_error(
             "Sort must contain at least one field.",
         ));
@@ -20513,6 +20518,96 @@ fn validate_search_after_request_body(
         )));
     }
     None
+}
+
+fn validate_search_sort_request_body(sort: &Value) -> Option<RestResponse> {
+    match sort {
+        Value::String(field) => {
+            if field.is_empty() {
+                return Some(malformed_sort_response(
+                    "malformed sort format, empty sort field is not allowed",
+                ));
+            }
+            None
+        }
+        Value::Object(object) => validate_search_sort_object(object),
+        Value::Array(sort_fields) => {
+            for sort_field in sort_fields {
+                match sort_field {
+                    Value::String(field) => {
+                        if field.is_empty() {
+                            return Some(malformed_sort_response(
+                                "malformed sort format, empty sort field is not allowed",
+                            ));
+                        }
+                    }
+                    Value::Object(object) => {
+                        if let Some(response) = validate_search_sort_object(object) {
+                            return Some(response);
+                        }
+                    }
+                    _ => {
+                        return Some(malformed_sort_response(
+                            "malformed sort format, within the sort array, an object, or an actual string are allowed",
+                        ));
+                    }
+                }
+            }
+            None
+        }
+        _ => Some(malformed_sort_response(
+            "malformed sort format, either start with array, object, or an actual string",
+        )),
+    }
+}
+
+fn validate_search_sort_object(object: &serde_json::Map<String, Value>) -> Option<RestResponse> {
+    if object.is_empty() {
+        return Some(malformed_sort_response(
+            "malformed sort format, empty sort object is not allowed",
+        ));
+    }
+    for (field, options) in object {
+        if field.is_empty() {
+            return Some(malformed_sort_response(
+                "malformed sort format, empty sort field is not allowed",
+            ));
+        }
+        match options {
+            Value::String(order) if matches!(order.as_str(), "asc" | "desc") => {}
+            Value::String(_) => {
+                return Some(malformed_sort_response("No enum constant SortOrder"));
+            }
+            Value::Object(options) => {
+                if let Some(order) = options.get("order").and_then(Value::as_str) {
+                    if !matches!(order, "asc" | "desc") {
+                        return Some(malformed_sort_response("No enum constant SortOrder"));
+                    }
+                } else if options.get("order").is_some() {
+                    return Some(malformed_sort_response("No enum constant SortOrder"));
+                }
+            }
+            _ => {
+                return Some(malformed_sort_response(
+                    "malformed sort format, sort field options must be an object or order string",
+                ));
+            }
+        }
+    }
+    None
+}
+
+fn malformed_sort_response(reason: &str) -> RestResponse {
+    RestResponse::json(
+        400,
+        serde_json::json!({
+            "error": {
+                "type": "illegal_argument_exception",
+                "reason": reason
+            },
+            "status": 400
+        }),
+    )
 }
 
 fn validate_slice_request_body(
@@ -20648,9 +20743,9 @@ fn validate_search_after_sort_values_against_mappings(
     body: &Value,
     index_mappings: &std::collections::HashMap<String, Value>,
 ) -> Option<RestResponse> {
-    let sort_fields = body.get("sort").and_then(Value::as_array)?;
+    let sort_fields = body.get("sort").and_then(search_sort_fields)?;
     let search_after = body.get("search_after").and_then(Value::as_array)?;
-    for (sort_field, after_value) in sort_fields.iter().zip(search_after.iter()) {
+    for (sort_field, after_value) in sort_fields.into_iter().zip(search_after.iter()) {
         let Some(field_name) = sort_field_name(sort_field) else {
             continue;
         };
@@ -21695,15 +21790,23 @@ fn find_mapping_property_by_leaf<'a>(properties: &'a Value, field: &str) -> Opti
         .find_map(|nested_properties| find_mapping_property_by_leaf(nested_properties, field))
 }
 
+fn search_sort_fields(sort: &Value) -> Option<Vec<&Value>> {
+    match sort {
+        Value::Array(sort_fields) => Some(sort_fields.iter().collect()),
+        Value::String(_) | Value::Object(_) => Some(vec![sort]),
+        _ => None,
+    }
+}
+
 fn apply_search_sort(hits: &mut [Value], sort: &Value) {
-    let Some(sort_fields) = sort.as_array() else {
+    let Some(sort_fields) = search_sort_fields(sort) else {
         return;
     };
     if sort_fields.is_empty() {
         return;
     }
     hits.sort_by(|left, right| {
-        for field_spec in sort_fields {
+        for field_spec in sort_fields.iter().copied() {
             let Some(field_name) = sort_field_name(field_spec) else {
                 continue;
             };
@@ -21727,7 +21830,7 @@ fn apply_search_sort(hits: &mut [Value], sort: &Value) {
 }
 
 fn apply_search_after(hits: Vec<Value>, sort: &Value, search_after: &[Value]) -> Vec<Value> {
-    let Some(sort_fields) = sort.as_array() else {
+    let Some(sort_fields) = search_sort_fields(sort) else {
         return hits;
     };
     if sort_fields.is_empty() || sort_fields.len() != search_after.len() {
@@ -21735,7 +21838,7 @@ fn apply_search_after(hits: Vec<Value>, sort: &Value, search_after: &[Value]) ->
     }
     hits.into_iter()
         .filter(|hit| {
-            for (sort_field, after_value) in sort_fields.iter().zip(search_after.iter()) {
+            for (sort_field, after_value) in sort_fields.iter().copied().zip(search_after.iter()) {
                 let Some(field_name) = sort_field_name(sort_field) else {
                     continue;
                 };
@@ -21756,7 +21859,7 @@ fn apply_search_after(hits: Vec<Value>, sort: &Value, search_after: &[Value]) ->
 }
 
 fn append_search_hit_sort_values(hits: &mut [Value], sort: Option<&Value>) {
-    let Some(sort_fields) = sort.and_then(Value::as_array) else {
+    let Some(sort_fields) = sort.and_then(search_sort_fields) else {
         return;
     };
     if sort_fields.is_empty() {
@@ -21765,6 +21868,7 @@ fn append_search_hit_sort_values(hits: &mut [Value], sort: Option<&Value>) {
     for hit in hits {
         let sort_values = sort_fields
             .iter()
+            .copied()
             .filter_map(|sort_field| sort_field_name(sort_field))
             .map(|field_name| extract_sort_value(hit, field_name))
             .collect::<Vec<_>>();
@@ -21775,14 +21879,14 @@ fn append_search_hit_sort_values(hits: &mut [Value], sort: Option<&Value>) {
 }
 
 fn search_response_should_render_scores(body: &Value) -> bool {
-    let Some(sort_fields) = body.get("sort").and_then(Value::as_array) else {
+    let Some(sort_fields) = body.get("sort").and_then(search_sort_fields) else {
         return true;
     };
     if sort_fields.is_empty() || body.get("track_scores") == Some(&Value::Bool(true)) {
         return true;
     }
     sort_fields
-        .iter()
+        .into_iter()
         .filter_map(sort_field_name)
         .any(|field_name| field_name == "_score")
 }
@@ -41482,6 +41586,51 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         );
         assert!(sorted_window.body["hits"]["max_score"].is_null());
         assert!(sorted_window.body["hits"]["hits"][0]["_score"].is_null());
+
+        let scalar_sort = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-params-*/_search").with_json_body(
+                serde_json::json!({
+                    "query": { "match_all": {} },
+                    "sort": "tenant",
+                    "size": 1
+                }),
+            ),
+        );
+        assert_eq!(scalar_sort.status, 200);
+        assert_eq!(scalar_sort.body["hits"]["hits"][0]["_id"], "doc-1");
+        assert_eq!(
+            scalar_sort.body["hits"]["hits"][0]["sort"],
+            serde_json::json!(["tenant-a"])
+        );
+        assert!(scalar_sort.body["hits"]["max_score"].is_null());
+
+        let invalid_sort_order = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-params-*/_search").with_json_body(
+                serde_json::json!({
+                    "query": { "match_all": {} },
+                    "sort": [{ "tenant": "sideways" }]
+                }),
+            ),
+        );
+        assert_eq!(invalid_sort_order.status, 400);
+        assert_eq!(
+            invalid_sort_order.body["error"]["type"],
+            "illegal_argument_exception"
+        );
+
+        let invalid_sort_shape = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-params-*/_search").with_json_body(
+                serde_json::json!({
+                    "query": { "match_all": {} },
+                    "sort": [7]
+                }),
+            ),
+        );
+        assert_eq!(invalid_sort_shape.status, 400);
+        assert_eq!(
+            invalid_sort_shape.body["error"]["reason"],
+            "malformed sort format, within the sort array, an object, or an actual string are allowed"
+        );
 
         let array_indices_boost = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/logs-search-params-*/_search").with_json_body(
