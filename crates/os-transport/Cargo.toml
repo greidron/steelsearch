@@ -474,8 +474,8 @@ name = "indices-segments-wire-benchmark"
 path = "benchmarks/indices_segments_wire.rs"
 
 [[bin]]
-name = "pit-segments-reject-wire-benchmark"
-path = "benchmarks/pit_segments_reject_wire.rs"
+name = "pit-segments-wire-benchmark"
+path = "benchmarks/pit_segments_wire.rs"
 
 [[bin]]
 name = "get-all-pits-wire-benchmark"

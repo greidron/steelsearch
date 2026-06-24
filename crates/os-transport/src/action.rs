@@ -2231,8 +2231,8 @@ pub fn classify_opensearch_transport_action(
         },
         OPENSEARCH_PIT_SEGMENTS_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
-            disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "pit-segments transport execution requires PIT segment metadata response rendering",
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "pit-segments transport adapter returns an OpenSearch-shaped empty segment response for the _all request when no PIT contexts are present",
         },
         OPENSEARCH_INDICES_SHARD_STORES_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -10166,6 +10166,20 @@ pub fn read_opensearch_pit_segments_request_message(
         });
     }
     OpenSearchPitSegmentsRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_opensearch_pit_segments_response_message(
+    request_id: i64,
+    version: Version,
+    response: &OpenSearchIndicesSegmentsResponseWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    build_opensearch_indices_segments_response_message(request_id, version, response)
+}
+
+pub fn read_opensearch_pit_segments_response_message(
+    message: &TransportMessage,
+) -> Result<OpenSearchIndicesSegmentsResponseWire, TransportActionWireError> {
+    read_opensearch_indices_segments_response_message(message)
 }
 
 pub fn build_opensearch_indices_shard_stores_request_message(
@@ -22833,7 +22847,7 @@ impl Default for OpenSearchPitSegmentsRequestWire {
             parent_task_id: None,
             indices: Vec::new(),
             indices_options: OpenSearchIndicesOptionsWire::strict_expand_open_forbid_closed(),
-            pit_ids: Some(vec!["pit-context".to_string()]),
+            pit_ids: Some(vec!["_all".to_string()]),
             verbose: false,
         }
     }
@@ -22863,7 +22877,7 @@ impl OpenSearchPitSegmentsRequestWire {
         Ok(request)
     }
 
-    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+    pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
         if !self.indices.is_empty() {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "pit segments index filter",
@@ -22895,16 +22909,27 @@ impl OpenSearchPitSegmentsRequestWire {
                 reason: "OpenSearch PIT segments requests require non-empty PIT ids",
             });
         }
+        if pit_ids.len() != 1 || pit_ids[0] != "_all" {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "pit segments explicit ids",
+                reason: "explicit PIT segment ids require PIT id decoding, shard routing, and segment metadata rendering",
+            });
+        }
         if self.verbose {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "pit segments verbose",
                 reason: "verbose PIT segment output requires extended segment metadata rendering",
             });
         }
+        Ok(())
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        self.validate_supported_subset()?;
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "pit segments execution",
             reason:
-                "pit-segments transport execution requires PIT segment metadata response rendering",
+                "use validate_supported_subset for the implemented empty pit-segments _all adapter",
         })
     }
 }
@@ -35553,7 +35578,7 @@ mod tests {
         );
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_PIT_SEGMENTS_ACTION_NAME).disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_INDICES_SHARD_STORES_ACTION_NAME)
@@ -35689,6 +35714,7 @@ mod tests {
                 || spec.action_name == OPENSEARCH_GET_FIELD_MAPPINGS_ACTION_NAME
                 || spec.action_name == OPENSEARCH_CLUSTER_SEARCH_SHARDS_ACTION_NAME
                 || spec.action_name == OPENSEARCH_INDICES_SEGMENTS_ACTION_NAME
+                || spec.action_name == OPENSEARCH_PIT_SEGMENTS_ACTION_NAME
                 || spec.action_name == OPENSEARCH_INDICES_SHARD_STORES_ACTION_NAME
                 || spec.action_name == OPENSEARCH_GET_DATA_STREAM_ACTION_NAME
                 || spec.action_name == OPENSEARCH_DATA_STREAMS_STATS_ACTION_NAME
@@ -35756,7 +35782,6 @@ mod tests {
                 || spec.action_name == OPENSEARCH_CLEAR_INDICES_CACHE_ACTION_NAME
                 || spec.action_name == OPENSEARCH_FIELD_CAPABILITIES_ACTION_NAME
                 || spec.action_name == OPENSEARCH_SEGMENT_REPLICATION_STATS_ACTION_NAME
-                || spec.action_name == OPENSEARCH_PIT_SEGMENTS_ACTION_NAME
                 || spec.action_name == OPENSEARCH_CREATE_DATA_STREAM_ACTION_NAME
                 || spec.action_name == OPENSEARCH_DELETE_DATA_STREAM_ACTION_NAME
                 || spec.action_name == OPENSEARCH_RESOLVE_INDEX_ACTION_NAME
@@ -53338,13 +53363,14 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_pit_segments_request_wire_round_trips_and_rejects_execution_boundary() {
+    fn opensearch_pit_segments_request_wire_round_trips_and_validates_all_subset() {
         let request = OpenSearchPitSegmentsRequestWire::default();
         let mut output = StreamOutput::new();
         request.write(&mut output);
 
         let decoded = OpenSearchPitSegmentsRequestWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, request);
+        decoded.validate_supported_subset().unwrap();
         assert!(matches!(
             decoded.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
@@ -53403,10 +53429,22 @@ mod tests {
                 ..
             })
         ));
+
+        let explicit_id = OpenSearchPitSegmentsRequestWire {
+            pit_ids: Some(vec!["pit-context".to_string()]),
+            ..OpenSearchPitSegmentsRequestWire::default()
+        };
+        assert!(matches!(
+            explicit_id.validate_supported_subset(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "pit segments explicit ids",
+                ..
+            })
+        ));
     }
 
     #[test]
-    fn opensearch_pit_segments_transport_messages_bind_rejected_action_frame() {
+    fn opensearch_pit_segments_transport_messages_bind_action_frames() {
         let request = OpenSearchPitSegmentsRequestWire::default();
         let mut frame =
             build_opensearch_pit_segments_request_message(54, OPENSEARCH_3_7_0_TRANSPORT, &request)
@@ -53418,14 +53456,31 @@ mod tests {
             read_opensearch_pit_segments_request_message(&message).unwrap(),
             request
         );
+        read_opensearch_pit_segments_request_message(&message)
+            .unwrap()
+            .validate_supported_subset()
+            .unwrap();
+
+        let response = OpenSearchIndicesSegmentsResponseWire::empty();
+        let mut frame = build_opensearch_pit_segments_response_message(
+            54,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &response,
+        )
+        .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected PIT segments response message");
+        };
+        assert_eq!(
+            read_opensearch_pit_segments_response_message(&message).unwrap(),
+            response
+        );
         assert!(matches!(
-            read_opensearch_pit_segments_request_message(&message)
-                .unwrap()
-                .reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "pit segments execution",
+            read_opensearch_pit_segments_request_message(&message).unwrap_err(),
+            TransportActionWireError::UnexpectedMessageStatus {
+                expected: "request",
                 ..
-            })
+            }
         ));
     }
 

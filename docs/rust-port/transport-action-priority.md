@@ -177,8 +177,8 @@ The source-derived transport inventory currently has 160 rows:
 
 | Status | Count | Meaning |
 | --- | ---: | --- |
-| `implemented` | 39 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
-| `partial` | 121 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
+| `implemented` | 40 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
+| `partial` | 120 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
 | `planned` | 0 | No source-derived transport action remains unclassified. |
 
 The k-NN plugin action sweep is complete at the boundary layer. All 12
@@ -282,7 +282,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `indices:monitor/recovery` (implemented local empty-recovery subset)
 - `indices:monitor/segment_replication` (rejected fail-closed)
 - `indices:monitor/segments` (rejected fail-closed)
-- `indices:monitor/point_in_time/segments` (rejected fail-closed)
+- `indices:monitor/point_in_time/segments` (implemented `_all` empty PIT-segments subset)
 - `indices:monitor/shard_stores` (rejected fail-closed)
 - `indices:admin/data_stream/create` (rejected fail-closed)
 - `indices:admin/data_stream/delete` (rejected fail-closed)
@@ -1838,12 +1838,12 @@ The PIT-segments boundary covers:
 - OpenSearch `PitSegmentsRequest` parent task, broadcast indices array,
   `IndicesOptions.strictExpandOpenAndForbidClosed()`, nullable PIT id array,
   and `verbose` at the wire decode/build layer;
-- explicit fail-closed classification for
-  `indices:monitor/point_in_time/segments` until PIT segment metadata response
-  rendering is implemented;
+- empty `IndicesSegmentResponse` rendering for `_all` when no PIT contexts are
+  present, including daemon transport routing when the decoded request validates
+  as the supported `_all` subset;
 - explicit rejection for index filters, custom indices options, null PIT id
   arrays, empty PIT id arrays, empty PIT id entries, verbose output, and
-  PIT-segments execution.
+  explicit PIT ids.
 
 The indices-shard-stores boundary covers:
 
@@ -5112,22 +5112,25 @@ ops/s in the latest local release run, the boundary itself is lightweight; the
 first performance point to inspect before accepting execution is PIT context
 allocation, shard fanout, and create-PIT response rendering.
 
-Current PIT-segments reject wire microbenchmark:
+Current PIT-segments wire microbenchmark:
 
 ```text
-cargo run -p os-transport --release --bin pit-segments-reject-wire-benchmark
-pit_segments_reject_request_encode iterations=400000 elapsed_ms=327.741 ops_per_second=1220477.70 nanos_per_op=819.35
-pit_segments_reject_request_decode iterations=400000 elapsed_ms=307.983 ops_per_second=1298772.24 nanos_per_op=769.96
-pit_segments_reject_validation iterations=400000 elapsed_ms=312.072 ops_per_second=1281756.75 nanos_per_op=780.18
-pit_segments_reject_wire_bottleneck_ops_per_second=1220477.70
+cargo run -p os-transport --release --bin pit-segments-wire-benchmark
+pit_segments_request_encode iterations=400000 elapsed_ms=331.132 ops_per_second=1207978.30 nanos_per_op=827.83
+pit_segments_request_decode iterations=400000 elapsed_ms=291.239 ops_per_second=1373444.13 nanos_per_op=728.10
+pit_segments_request_validate iterations=400000 elapsed_ms=294.442 ops_per_second=1358503.74 nanos_per_op=736.10
+pit_segments_response_encode iterations=400000 elapsed_ms=93.057 ops_per_second=4298453.63 nanos_per_op=232.64
+pit_segments_response_decode iterations=400000 elapsed_ms=94.999 ops_per_second=4210571.57 nanos_per_op=237.50
+pit_segments_wire_bottleneck_ops_per_second=1207978.30
 ```
 
-The current PIT-segments fail-closed boundary bottleneck is request encode.
-This path carries the ActionRequest parent task, broadcast index controls,
-nullable PIT id array, and verbose flag before rejecting execution. At roughly
-1.22M ops/s in the latest local release run, the boundary itself is
-lightweight; the first performance point to inspect before accepting execution
-is PIT context lookup plus shard segment metadata response rendering.
+The current PIT-segments supported-subset boundary bottleneck is request
+encode. This path carries the ActionRequest parent task, broadcast index
+controls, nullable PIT id array, and verbose flag before accepting the empty
+`_all` response subset. At roughly 1.21M ops/s, the boundary itself is
+lightweight; response encode/decode stays above 4.2M ops/s. The first
+performance point to inspect before expanding execution is explicit PIT id
+decode, shard routing, and shard segment metadata response rendering.
 
 Current indices-stats supported-subset wire microbenchmark:
 

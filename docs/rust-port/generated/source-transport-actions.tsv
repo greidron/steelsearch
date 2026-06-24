@@ -131,7 +131,7 @@ partial	DeleteDanglingIndexAction.INSTANCE	TransportDeleteDanglingIndexAction.cl
 implemented	FindDanglingIndexAction.INSTANCE	TransportFindDanglingIndexAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	818
 partial	CreatePitAction.INSTANCE	TransportCreatePitAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	821
 implemented	DeletePitAction.INSTANCE	TransportDeletePitAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	822
-partial	PitSegmentsAction.INSTANCE	TransportPitSegmentsAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	823
+implemented	PitSegmentsAction.INSTANCE	TransportPitSegmentsAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	823
 implemented	GetAllPitsAction.INSTANCE	TransportGetAllPitsAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	824
 partial	RestoreRemoteStoreAction.INSTANCE	TransportRestoreRemoteStoreAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	827
 partial	ExtensionProxyAction.INSTANCE	ExtensionProxyTransportAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	831
