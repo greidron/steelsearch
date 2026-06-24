@@ -2179,7 +2179,7 @@
             ],
             "size": 1
           },
-          "expected_status": 200,
+          "expected_status": 400,
           "extract": "search_hits"
         }
       ],
@@ -2221,7 +2221,7 @@
             ],
             "size": 1
           },
-          "expected_status": 200,
+          "expected_status": 400,
           "extract": "search_hits"
         }
       ],

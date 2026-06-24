@@ -10046,6 +10046,13 @@ impl SteelNode {
             Ok(indices) => indices,
             Err(response) => return response,
         };
+        if resolved_indices.is_empty() {
+            *self
+                .next_pit_id
+                .lock()
+                .expect("next pit id lock poisoned") += 1;
+            return create_pit_invalid_null_id_response();
+        }
         let requested_routing = request
             .query_params
             .get("routing")
@@ -19901,37 +19908,8 @@ fn pit_search_uses_non_default_indices_options(query_params: &BTreeMap<String, S
             .is_some_and(|value| value == "false" || value == "0")
         || query_params
             .get("expand_wildcards")
-            .is_some_and(|value| !expand_wildcards_matches_search_default(value))
-        || query_params
-            .get("ignore_throttled")
-            .is_some_and(|value| value == "false" || value == "0")
-}
-
-fn expand_wildcards_matches_search_default(value: &str) -> bool {
-    let mut seen = false;
-    let mut include_open = false;
-    let mut include_closed = false;
-    let mut include_hidden = false;
-    for wildcard in value.split(',').map(str::trim).filter(|value| !value.is_empty()) {
-        seen = true;
-        match wildcard {
-            "open" => include_open = true,
-            "closed" => include_closed = true,
-            "hidden" => include_hidden = true,
-            "all" => {
-                include_open = true;
-                include_closed = true;
-                include_hidden = true;
-            }
-            "none" => {
-                include_open = false;
-                include_closed = false;
-                include_hidden = false;
-            }
-            _ => return false,
-        }
-    }
-    !seen || (include_open && !include_closed && !include_hidden)
+            .is_some_and(|value| value != "open")
+        || query_params.contains_key("ignore_throttled")
 }
 
 fn validate_opensearch_boolean_query_param(raw: Option<&String>) -> Option<RestResponse> {
@@ -20302,6 +20280,29 @@ fn search_phase_missing_pit_context_response(pit_id: &str) -> RestResponse {
                 "failed_shards": []
             },
             "status": 404
+        }),
+    )
+}
+
+fn create_pit_invalid_null_id_response() -> RestResponse {
+    RestResponse::json(
+        400,
+        serde_json::json!({
+            "error": {
+                "type": "illegal_argument_exception",
+                "reason": "invalid id: [null]",
+                "root_cause": [
+                    {
+                        "type": "illegal_argument_exception",
+                        "reason": "invalid id: [null]"
+                    }
+                ],
+                "caused_by": {
+                    "type": "null_pointer_exception",
+                    "reason": "Cannot invoke \"String.getBytes(java.nio.charset.Charset)\" because \"src\" is null"
+                }
+            },
+            "status": 400
         }),
     )
 }
@@ -38127,16 +38128,12 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             RestMethod::Post,
             "/logs-session-*/_search/point_in_time?keep_alive=1m&expand_wildcards=open,none&allow_no_indices=true",
         ));
-        assert_eq!(open_then_none_pit.status, 200);
-        assert_eq!(open_then_none_pit.body["pit_id"], "pit-4");
-        assert_eq!(open_then_none_pit.body["_shards"]["total"], 0);
-        assert_eq!(open_then_none_pit.body["_shards"]["successful"], 0);
-
-        let close_open_then_none_pit = node.handle_rest_request(
-            RestRequest::new(RestMethod::Delete, "/_search/point_in_time")
-                .with_json_body(serde_json::json!({ "pit_id": "pit-4" })),
+        assert_eq!(open_then_none_pit.status, 400);
+        assert_eq!(
+            open_then_none_pit.body["error"]["type"],
+            "illegal_argument_exception"
         );
-        assert_eq!(close_open_then_none_pit.status, 200);
+        assert_eq!(open_then_none_pit.body["error"]["reason"], "invalid id: [null]");
 
         let none_then_open_pit = node.handle_rest_request(RestRequest::new(
             RestMethod::Post,
@@ -38474,11 +38471,15 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                     "query": { "match_all": {} }
                 })),
         );
-        assert_eq!(order_sensitive_default_wildcards_pit_search.status, 200);
+        assert_eq!(order_sensitive_default_wildcards_pit_search.status, 400);
         assert_eq!(
-            order_sensitive_default_wildcards_pit_search.body["hits"]["total"]["value"],
-            2
+            order_sensitive_default_wildcards_pit_search.body["error"]["type"],
+            "action_request_validation_exception"
         );
+        assert!(order_sensitive_default_wildcards_pit_search.body["error"]["reason"]
+            .as_str()
+            .unwrap()
+            .contains("[indicesOptions] cannot be used with point in time"));
 
         let order_sensitive_non_default_wildcards_pit_search = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/_search?expand_wildcards=open,none")
@@ -38510,11 +38511,15 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                     "query": { "match_all": {} }
                 })),
         );
-        assert_eq!(default_ignore_throttled_pit_search.status, 200);
+        assert_eq!(default_ignore_throttled_pit_search.status, 400);
         assert_eq!(
-            default_ignore_throttled_pit_search.body["hits"]["total"]["value"],
-            2
+            default_ignore_throttled_pit_search.body["error"]["type"],
+            "action_request_validation_exception"
         );
+        assert!(default_ignore_throttled_pit_search.body["error"]["reason"]
+            .as_str()
+            .unwrap()
+            .contains("[indicesOptions] cannot be used with point in time"));
 
         let non_default_ignore_throttled_pit_search = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/_search?ignore_throttled=false")
@@ -38980,31 +38985,12 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             RestMethod::Post,
             "/logs-empty-pit-*/_search/point_in_time?keep_alive=1m&allow_no_indices=true",
         ));
-        assert_eq!(allow_no_indices_pit.status, 200);
-        assert_eq!(allow_no_indices_pit.body["pit_id"], "pit-11");
-        assert_eq!(allow_no_indices_pit.body["_shards"]["total"], 0);
-        assert_eq!(allow_no_indices_pit.body["_shards"]["successful"], 0);
-
-        let allow_no_indices_search = node.handle_rest_request(
-            RestRequest::new(RestMethod::Post, "/_search")
-                .with_json_body(serde_json::json!({
-                    "pit": {
-                        "id": allow_no_indices_pit.body["pit_id"].as_str().unwrap(),
-                        "keep_alive": "1m"
-                    },
-                    "query": { "match_all": {} }
-                })),
+        assert_eq!(allow_no_indices_pit.status, 400);
+        assert_eq!(
+            allow_no_indices_pit.body["error"]["type"],
+            "illegal_argument_exception"
         );
-        assert_eq!(allow_no_indices_search.status, 200);
-        assert_eq!(allow_no_indices_search.body["hits"]["total"]["value"], 0);
-
-        let close_allow_no_indices_pit = node.handle_rest_request(
-            RestRequest::new(RestMethod::Delete, "/_search/point_in_time")
-                .with_json_body(serde_json::json!({
-                    "pit_id": allow_no_indices_pit.body["pit_id"].as_str().unwrap()
-                })),
-        );
-        assert_eq!(close_allow_no_indices_pit.status, 200);
+        assert_eq!(allow_no_indices_pit.body["error"]["reason"], "invalid id: [null]");
 
         let clear_pits = node.handle_rest_request(RestRequest::new(
             RestMethod::Delete,
