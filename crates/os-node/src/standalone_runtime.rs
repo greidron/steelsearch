@@ -18800,6 +18800,28 @@ fn native_search_response_to_rest_response(
         failures: Vec::new(),
     };
     let mut response_body = response.to_opensearch_body(1);
+    if let Some(highlight) = body.get("highlight") {
+        if let Some(hits) = response_body
+            .get_mut("hits")
+            .and_then(Value::as_object_mut)
+            .and_then(|hits| hits.get_mut("hits"))
+            .and_then(Value::as_array_mut)
+        {
+            for hit in hits {
+                let Some(hit_object) = hit.as_object_mut() else {
+                    continue;
+                };
+                let Some(source) = hit_object.get("_source") else {
+                    continue;
+                };
+                if let Some(highlight_body) =
+                    build_highlight_response_body(source, &body["query"], highlight)
+                {
+                    hit_object.insert("highlight".to_string(), highlight_body);
+                }
+            }
+        }
+    }
     let track_total_hits_disabled = body.get("track_total_hits") == Some(&Value::Bool(false));
     if let Some(threshold) = body.get("track_total_hits").and_then(Value::as_u64) {
         if response.total_hits > threshold {
@@ -39351,6 +39373,14 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 201
             );
         }
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(
+                RestMethod::Post,
+                "/logs-search-features-000001/_refresh",
+            ))
+            .status,
+            200
+        );
 
         let derived_field_search = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/logs-search-features-000001/_search")
@@ -39489,12 +39519,18 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 .with_json_body(serde_json::json!({
                     "query": { "term": { "service": "checkout" } },
                     "highlight": {
+                        "pre_tags": ["<mark>"],
+                        "post_tags": ["</mark>"],
                         "fields": { "service": {} }
                     }
                 })),
         );
         assert_eq!(highlight.status, 200);
         assert!(highlight.body["hits"]["hits"].is_array());
+        assert_eq!(
+            highlight.body["hits"]["hits"][0]["highlight"]["service"],
+            serde_json::json!(["<mark>checkout</mark>"])
+        );
 
         let suggest = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/logs-search-features-000001/_search")

@@ -796,6 +796,36 @@
       "description": "[lexical] search highlight encoder semantic"
     },
     {
+      "name": "search_highlight_match_custom_tags_semantic",
+      "area": "search-semantic",
+      "method": "POST",
+      "path": "/logs-search-semantic-000001/_search",
+      "body": {
+        "query": {
+          "match": {
+            "message": "log"
+          }
+        },
+        "highlight": {
+          "pre_tags": [
+            "<mark>"
+          ],
+          "post_tags": [
+            "</mark>"
+          ],
+          "fields": {
+            "message": {}
+          }
+        }
+      },
+      "extract": "highlight_hits",
+      "family": "lexical",
+      "expect_hits": [
+        "doc-1"
+      ],
+      "description": "[lexical] search highlight match custom tags semantic"
+    },
+    {
       "name": "search_term_suggest_size_semantic",
       "area": "search-semantic",
       "method": "POST",
