@@ -18836,6 +18836,9 @@ fn validate_point_in_time_search_request(index: &str, request: &RestRequest) -> 
     {
         validation_errors.push("[ccs_minimize_roundtrips] cannot be used with point in time");
     }
+    if request.query_params.contains_key("scroll") {
+        validation_errors.push("using [point in time] is not allowed in a scroll context");
+    }
     if validation_errors.is_empty() {
         return None;
     }
@@ -35290,6 +35293,26 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             .unwrap()
             .iter()
             .all(|hit| hit["_id"] != "doc-3"));
+
+        let scrolled_pit_search = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_search?scroll=1m")
+                .with_json_body(serde_json::json!({
+                    "pit": {
+                        "id": second_open_pit.body["pit_id"].as_str().unwrap(),
+                        "keep_alive": "1m"
+                    },
+                    "query": { "match_all": {} }
+                })),
+        );
+        assert_eq!(scrolled_pit_search.status, 400);
+        assert_eq!(
+            scrolled_pit_search.body["error"]["type"],
+            "action_request_validation_exception"
+        );
+        assert!(scrolled_pit_search.body["error"]["reason"]
+            .as_str()
+            .unwrap()
+            .contains("using [point in time] is not allowed in a scroll context"));
 
         let default_indices_options_pit_search = node.handle_rest_request(
             RestRequest::new(
