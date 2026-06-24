@@ -18502,10 +18502,13 @@ impl SteelNode {
 
         if let Some(fetch_fields) = body.get("fields").and_then(Value::as_array) {
             for spec in fetch_fields {
-                let field = if let Some(name) = spec.as_str() {
-                    name
+                let (field, format) = if let Some(name) = spec.as_str() {
+                    (name, None)
                 } else if let Some(obj) = spec.as_object() {
-                    obj.get("field").and_then(Value::as_str).unwrap_or_default()
+                    (
+                        obj.get("field").and_then(Value::as_str).unwrap_or_default(),
+                        obj.get("format").and_then(Value::as_str),
+                    )
                 } else {
                     continue;
                 };
@@ -18513,7 +18516,13 @@ impl SteelNode {
                     continue;
                 }
                 if let Some(value) = extract_source_path_value(source, field) {
-                    fields.insert(field.to_string(), search_field_values(value));
+                    let field_values = properties
+                        .get(field)
+                        .and_then(Value::as_object)
+                        .filter(|_| format.is_some())
+                        .map(|mapping| Value::Array(vec![normalize_docvalue_field_value(mapping, &value, format)]))
+                        .unwrap_or_else(|| search_field_values(value));
+                    fields.insert(field.to_string(), field_values);
                 }
             }
         }

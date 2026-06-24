@@ -1465,6 +1465,35 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "fields_date_epoch_millis_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "fields": [
+          {
+            "field": "ts",
+            "format": "epoch_millis"
+          }
+        ],
+        "sort": [
+          {
+            "ts": {
+              "order": "asc"
+            }
+          }
+        ],
+        "size": 2
+      },
+      "extract": "search_fields",
+      "family": "fetch",
+      "description": "[fetch] fields date epoch millis search",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "exists_query_search",
       "area": "search",
       "method": "POST",
