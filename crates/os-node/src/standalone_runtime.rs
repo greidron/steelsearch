@@ -4635,7 +4635,7 @@ impl SteelNode {
             .trim_matches('/')
             .strip_suffix("/_search/point_in_time")
         {
-            if request.method == RestMethod::Post {
+            if request.method == RestMethod::Post && !index.is_empty() {
                 return Some(self.handle_open_point_in_time_route(index, request));
             }
         }
@@ -9625,11 +9625,18 @@ impl SteelNode {
             Ok(_) => {}
             Err(response) => return response,
         }
-        let keep_alive = request
-            .query_params
-            .get("keep_alive")
-            .map(String::as_str)
-            .unwrap_or("1m");
+        let Some(keep_alive) = request.query_params.get("keep_alive").map(String::as_str) else {
+            return RestResponse::json(
+                400,
+                serde_json::json!({
+                    "error": {
+                        "type": "action_request_validation_exception",
+                        "reason": "Validation Failed: 1: keep alive not specified;"
+                    },
+                    "status": 400
+                }),
+            );
+        };
         let Some(keep_alive_millis) = parse_time_value_millis(keep_alive) else {
             return RestResponse::json(
                 400,
@@ -34692,6 +34699,26 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 201
             );
         }
+
+        let root_open_pit = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/_search/point_in_time?keep_alive=1m",
+        ));
+        assert_eq!(root_open_pit.status, 404);
+
+        let missing_keep_alive_pit = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/logs-session-000001/_search/point_in_time",
+        ));
+        assert_eq!(missing_keep_alive_pit.status, 400);
+        assert_eq!(
+            missing_keep_alive_pit.body["error"]["type"],
+            "action_request_validation_exception"
+        );
+        assert_eq!(
+            missing_keep_alive_pit.body["error"]["reason"],
+            "Validation Failed: 1: keep alive not specified;"
+        );
 
         let open_pit = node.handle_rest_request(RestRequest::new(
             RestMethod::Post,
