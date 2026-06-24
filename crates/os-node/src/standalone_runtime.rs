@@ -9154,6 +9154,10 @@ impl SteelNode {
         {
             return response;
         }
+        if let Some(response) = validate_search_sort_modes_against_mappings(&body, &index_mappings)
+        {
+            return response;
+        }
         if let Some(response) = self.validate_knn_target_capabilities(&body["query"], &resolved_indices) {
             return response;
         }
@@ -20594,6 +20598,17 @@ fn validate_search_sort_object(object: &serde_json::Map<String, Value>) -> Optio
                         "malformed sort format, missing value must be a scalar",
                     ));
                 }
+                if let Some(mode) = options.get("mode").and_then(Value::as_str) {
+                    if !sort_mode_is_supported(mode) {
+                        return Some(malformed_sort_response(&format!(
+                            "Unknown SortMode [{mode}]"
+                        )));
+                    }
+                } else if options.get("mode").is_some() {
+                    return Some(malformed_sort_response(
+                        "malformed sort format, sort mode must be a string",
+                    ));
+                }
             }
             _ => {
                 return Some(malformed_sort_response(
@@ -20777,11 +20792,42 @@ fn validate_search_after_sort_values_against_mappings(
     None
 }
 
+fn validate_search_sort_modes_against_mappings(
+    body: &Value,
+    index_mappings: &std::collections::HashMap<String, Value>,
+) -> Option<RestResponse> {
+    let sort_fields = body.get("sort").and_then(search_sort_fields)?;
+    for sort_field in sort_fields {
+        let Some(mode) = sort_field_mode(sort_field) else {
+            continue;
+        };
+        if sort_mode_numeric_only(mode) {
+            let Some(field_name) = sort_field_name(sort_field) else {
+                continue;
+            };
+            if field_name.starts_with('_') {
+                continue;
+            }
+            let Some(field_type) = index_mappings
+                .values()
+                .find_map(|mappings| lookup_mapping_property(mappings, field_name))
+                .and_then(|mapping| mapping.get("type"))
+                .and_then(Value::as_str)
+            else {
+                continue;
+            };
+            if !sort_field_type_is_numeric(field_type) {
+                return Some(search_after_validation_error(
+                    "we only support AVG, MEDIAN and SUM on number based fields",
+                ));
+            }
+        }
+    }
+    None
+}
+
 fn search_after_value_mismatches_sort_type(value: &Value, field_type: &str) -> bool {
-    if !matches!(
-        field_type,
-        "long" | "integer" | "short" | "byte" | "double" | "float" | "half_float" | "scaled_float"
-    ) {
+    if !sort_field_type_is_numeric(field_type) {
         return false;
     }
     match value {
@@ -20789,6 +20835,13 @@ fn search_after_value_mismatches_sort_type(value: &Value, field_type: &str) -> b
         Value::String(raw) => raw.parse::<f64>().is_err(),
         _ => true,
     }
+}
+
+fn sort_field_type_is_numeric(field_type: &str) -> bool {
+    matches!(
+        field_type,
+        "long" | "integer" | "short" | "byte" | "double" | "float" | "half_float" | "scaled_float"
+    )
 }
 
 fn validate_highlight_request_body(highlight: &Value) -> Option<RestResponse> {
@@ -21951,8 +22004,8 @@ fn compare_sort_field_values(
     field_name: &str,
     descending: bool,
 ) -> std::cmp::Ordering {
-    let left_value = extract_sort_value(left, field_name);
-    let right_value = extract_sort_value(right, field_name);
+    let left_value = extract_mode_sort_value(left, sort_field, field_name, descending);
+    let right_value = extract_mode_sort_value(right, sort_field, field_name, descending);
     let left_missing = left_value.is_null();
     let right_missing = right_value.is_null();
     if left_missing || right_missing {
@@ -21990,7 +22043,7 @@ fn compare_sort_field_value_to_after(
     after_value: &Value,
     descending: bool,
 ) -> std::cmp::Ordering {
-    let sort_value = extract_sort_value(hit, field_name);
+    let sort_value = extract_mode_sort_value(hit, sort_field, field_name, descending);
     let sort_missing = sort_value.is_null();
     if let Some(marker) = sort_field_missing_marker(sort_field) {
         if sort_missing && after_value.is_null() {
@@ -22025,13 +22078,89 @@ fn compare_sort_field_value_to_after(
 }
 
 fn extract_rendered_sort_value(hit: &Value, sort_field: &Value, field_name: &str) -> Value {
-    let value = extract_sort_value(hit, field_name);
+    let value = extract_mode_sort_value(hit, sort_field, field_name, sort_field_descending(sort_field));
     if value.is_null() {
         if let Some(custom_missing) = sort_field_custom_missing_value(sort_field) {
             return custom_missing.clone();
         }
     }
     value
+}
+
+fn extract_mode_sort_value(
+    hit: &Value,
+    sort_field: &Value,
+    field_name: &str,
+    descending: bool,
+) -> Value {
+    let value = extract_sort_value(hit, field_name);
+    let Some(values) = value.as_array() else {
+        return value;
+    };
+    if values.is_empty() {
+        return Value::Null;
+    }
+    let mode = sort_field_mode(sort_field).unwrap_or(if descending { "max" } else { "min" });
+    reduce_sort_values_by_mode(values, mode).unwrap_or(Value::Null)
+}
+
+fn sort_field_mode(sort_field: &Value) -> Option<&str> {
+    sort_field
+        .as_object()
+        .and_then(|object| object.values().next())
+        .and_then(|options| options.as_object())
+        .and_then(|options| options.get("mode"))
+        .and_then(Value::as_str)
+}
+
+fn sort_mode_is_supported(mode: &str) -> bool {
+    matches!(
+        mode.to_ascii_lowercase().as_str(),
+        "min" | "max" | "sum" | "avg" | "median"
+    )
+}
+
+fn sort_mode_numeric_only(mode: &str) -> bool {
+    matches!(mode.to_ascii_lowercase().as_str(), "sum" | "avg" | "median")
+}
+
+fn reduce_sort_values_by_mode(values: &[Value], mode: &str) -> Option<Value> {
+    match mode.to_ascii_lowercase().as_str() {
+        "min" => values
+            .iter()
+            .min_by(|left, right| compare_json_scalars(left, right))
+            .cloned(),
+        "max" => values
+            .iter()
+            .max_by(|left, right| compare_json_scalars(left, right))
+            .cloned(),
+        "sum" => Some(Value::from(
+            values.iter().filter_map(Value::as_f64).sum::<f64>(),
+        )),
+        "avg" => {
+            let numbers = values.iter().filter_map(Value::as_f64).collect::<Vec<_>>();
+            if numbers.is_empty() {
+                return None;
+            }
+            Some(Value::from(numbers.iter().sum::<f64>() / numbers.len() as f64))
+        }
+        "median" => {
+            let mut numbers = values.iter().filter_map(Value::as_f64).collect::<Vec<_>>();
+            if numbers.is_empty() {
+                return None;
+            }
+            numbers.sort_by(|left, right| {
+                left.partial_cmp(right).unwrap_or(std::cmp::Ordering::Equal)
+            });
+            let middle = numbers.len() / 2;
+            if numbers.len() % 2 == 0 {
+                Some(Value::from((numbers[middle - 1] + numbers[middle]) / 2.0))
+            } else {
+                Some(Value::from(numbers[middle]))
+            }
+        }
+        _ => None,
+    }
 }
 
 fn parse_runtime_mapping_script_source(source: &str) -> Option<String> {
@@ -41812,6 +41941,183 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             invalid_missing_sort.body["error"]["reason"],
             "malformed sort format, missing value must be a scalar"
+        );
+
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(RestMethod::Put, "/logs-sort-mode-000001"))
+                .status,
+            200
+        );
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, "/logs-sort-mode-000001/_mappings")
+                    .with_json_body(serde_json::json!({
+                        "properties": {
+                            "scores": { "type": "long" },
+                            "tags": { "type": "keyword" }
+                        }
+                    })),
+            )
+            .status,
+            200
+        );
+        for (id, body) in [
+            ("doc-a", serde_json::json!({ "scores": [3, 1], "tags": ["b", "a"] })),
+            ("doc-b", serde_json::json!({ "scores": [2, 9], "tags": ["c", "d"] })),
+            ("doc-c", serde_json::json!({ "scores": [6, 4], "tags": ["e", "f"] })),
+        ] {
+            assert_eq!(
+                node.handle_rest_request(
+                    RestRequest::new(
+                        RestMethod::Put,
+                        &format!("/logs-sort-mode-000001/_doc/{id}"),
+                    )
+                    .with_json_body(body),
+                )
+                .status,
+                201
+            );
+        }
+
+        let default_min_mode_sort = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-sort-mode-000001/_search")
+                .with_json_body(serde_json::json!({
+                    "query": { "match_all": {} },
+                    "sort": [{ "scores": "asc" }],
+                    "size": 3
+                })),
+        );
+        assert_eq!(default_min_mode_sort.status, 200);
+        assert_eq!(
+            default_min_mode_sort.body["hits"]["hits"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|hit| (hit["_id"].as_str().unwrap(), hit["sort"][0].clone()))
+                .collect::<Vec<_>>(),
+            vec![
+                ("doc-a", serde_json::json!(1)),
+                ("doc-b", serde_json::json!(2)),
+                ("doc-c", serde_json::json!(4))
+            ]
+        );
+
+        let default_max_mode_desc_sort = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-sort-mode-000001/_search")
+                .with_json_body(serde_json::json!({
+                    "query": { "match_all": {} },
+                    "sort": [{ "scores": "desc" }],
+                    "size": 3
+                })),
+        );
+        assert_eq!(default_max_mode_desc_sort.status, 200);
+        assert_eq!(
+            default_max_mode_desc_sort.body["hits"]["hits"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|hit| (hit["_id"].as_str().unwrap(), hit["sort"][0].clone()))
+                .collect::<Vec<_>>(),
+            vec![
+                ("doc-b", serde_json::json!(9)),
+                ("doc-c", serde_json::json!(6)),
+                ("doc-a", serde_json::json!(3))
+            ]
+        );
+
+        let explicit_sum_mode_sort = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-sort-mode-000001/_search")
+                .with_json_body(serde_json::json!({
+                    "query": { "match_all": {} },
+                    "sort": [{ "scores": { "order": "asc", "mode": "sum" } }],
+                    "size": 3
+                })),
+        );
+        assert_eq!(explicit_sum_mode_sort.status, 200);
+        assert_eq!(
+            explicit_sum_mode_sort.body["hits"]["hits"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|hit| (hit["_id"].as_str().unwrap(), hit["sort"][0].clone()))
+                .collect::<Vec<_>>(),
+            vec![
+                ("doc-a", serde_json::json!(4.0)),
+                ("doc-c", serde_json::json!(10.0)),
+                ("doc-b", serde_json::json!(11.0))
+            ]
+        );
+
+        let explicit_avg_mode_desc_sort = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-sort-mode-000001/_search")
+                .with_json_body(serde_json::json!({
+                    "query": { "match_all": {} },
+                    "sort": [{ "scores": { "order": "desc", "mode": "avg" } }],
+                    "size": 3
+                })),
+        );
+        assert_eq!(explicit_avg_mode_desc_sort.status, 200);
+        assert_eq!(
+            explicit_avg_mode_desc_sort.body["hits"]["hits"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|hit| (hit["_id"].as_str().unwrap(), hit["sort"][0].clone()))
+                .collect::<Vec<_>>(),
+            vec![
+                ("doc-b", serde_json::json!(5.5)),
+                ("doc-c", serde_json::json!(5.0)),
+                ("doc-a", serde_json::json!(2.0))
+            ]
+        );
+
+        let keyword_max_mode_sort = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-sort-mode-000001/_search")
+                .with_json_body(serde_json::json!({
+                    "query": { "match_all": {} },
+                    "sort": [{ "tags": { "order": "asc", "mode": "max" } }],
+                    "size": 3
+                })),
+        );
+        assert_eq!(keyword_max_mode_sort.status, 200);
+        assert_eq!(
+            keyword_max_mode_sort.body["hits"]["hits"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|hit| (hit["_id"].as_str().unwrap(), hit["sort"][0].clone()))
+                .collect::<Vec<_>>(),
+            vec![
+                ("doc-a", serde_json::json!("b")),
+                ("doc-b", serde_json::json!("d")),
+                ("doc-c", serde_json::json!("f"))
+            ]
+        );
+
+        let invalid_keyword_avg_mode_sort = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-sort-mode-000001/_search")
+                .with_json_body(serde_json::json!({
+                    "query": { "match_all": {} },
+                    "sort": [{ "tags": { "order": "asc", "mode": "avg" } }]
+                })),
+        );
+        assert_eq!(invalid_keyword_avg_mode_sort.status, 400);
+        assert_eq!(
+            invalid_keyword_avg_mode_sort.body["error"]["root_cause"][0]["reason"],
+            "we only support AVG, MEDIAN and SUM on number based fields"
+        );
+
+        let invalid_sort_mode = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-sort-mode-000001/_search")
+                .with_json_body(serde_json::json!({
+                    "query": { "match_all": {} },
+                    "sort": [{ "scores": { "order": "asc", "mode": "middle" } }]
+                })),
+        );
+        assert_eq!(invalid_sort_mode.status, 400);
+        assert_eq!(
+            invalid_sort_mode.body["error"]["reason"],
+            "Unknown SortMode [middle]"
         );
 
         let sorted_window = node.handle_rest_request(
