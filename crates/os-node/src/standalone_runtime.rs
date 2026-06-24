@@ -8819,8 +8819,33 @@ impl SteelNode {
             }
         }
         if let Some(pre_filter_shard_size) = request.query_params.get("pre_filter_shard_size") {
-            if pre_filter_shard_size.parse::<u64>().is_err() {
-                return build_unsupported_search_response("unsupported pre_filter_shard_size");
+            if let Some(response) = validate_minimum_search_int_query_param(
+                "pre_filter_shard_size",
+                pre_filter_shard_size,
+                1,
+                "preFilterShardSize must be >= 1",
+            ) {
+                return response;
+            }
+        }
+        for (param, minimum, reason) in [
+            (
+                "batched_reduce_size",
+                2_i64,
+                "batchedReduceSize must be >= 2",
+            ),
+            (
+                "max_concurrent_shard_requests",
+                1_i64,
+                "maxConcurrentShardRequests must be >= 1",
+            ),
+        ] {
+            if let Some(raw) = request.query_params.get(param) {
+                if let Some(response) =
+                    validate_minimum_search_int_query_param(param, raw, minimum, reason)
+                {
+                    return response;
+                }
             }
         }
         let mut body = if request.body.is_empty() {
@@ -19091,6 +19116,39 @@ fn terminate_after_query_param_parse_error(_value: &str) -> RestResponse {
             "status": 400
         }),
     )
+}
+
+fn validate_minimum_search_int_query_param(
+    param: &str,
+    raw: &str,
+    minimum: i64,
+    lower_bound_reason: &str,
+) -> Option<RestResponse> {
+    let Ok(value) = raw.parse::<i64>() else {
+        return Some(RestResponse::json(
+            400,
+            serde_json::json!({
+                "error": {
+                    "type": "illegal_argument_exception",
+                    "reason": format!("Failed to parse value [{raw}] for [{param}] as an integer")
+                },
+                "status": 400
+            }),
+        ));
+    };
+    if value < minimum {
+        return Some(RestResponse::json(
+            400,
+            serde_json::json!({
+                "error": {
+                    "type": "illegal_argument_exception",
+                    "reason": lower_bound_reason
+                },
+                "status": 400
+            }),
+        ));
+    }
+    None
 }
 
 fn parse_rest_search_sort_values(raw: &str) -> Vec<Value> {
@@ -39400,6 +39458,65 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             invalid_timeout_query_param.body["error"]["reason"],
             "failed to parse setting [timeout] with value [soon] as a time value"
+        );
+
+        let coordinator_knobs = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/logs-search-params-a/_search?pre_filter_shard_size=1&batched_reduce_size=2&max_concurrent_shard_requests=1",
+            )
+            .with_json_body(serde_json::json!({
+                "query": { "match_all": {} },
+                "sort": [{ "rank": "asc" }],
+                "size": 1
+            })),
+        );
+        assert_eq!(coordinator_knobs.status, 200);
+        assert_eq!(coordinator_knobs.body["hits"]["hits"][0]["_id"], "doc-1");
+
+        let invalid_pre_filter_shard_size = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/logs-search-params-a/_search?pre_filter_shard_size=0",
+            )
+            .with_json_body(serde_json::json!({
+                "query": { "match_all": {} }
+            })),
+        );
+        assert_eq!(invalid_pre_filter_shard_size.status, 400);
+        assert_eq!(
+            invalid_pre_filter_shard_size.body["error"]["reason"],
+            "preFilterShardSize must be >= 1"
+        );
+
+        let invalid_batched_reduce_size = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/logs-search-params-a/_search?batched_reduce_size=1",
+            )
+            .with_json_body(serde_json::json!({
+                "query": { "match_all": {} }
+            })),
+        );
+        assert_eq!(invalid_batched_reduce_size.status, 400);
+        assert_eq!(
+            invalid_batched_reduce_size.body["error"]["reason"],
+            "batchedReduceSize must be >= 2"
+        );
+
+        let invalid_max_concurrent_shard_requests = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/logs-search-params-a/_search?max_concurrent_shard_requests=0",
+            )
+            .with_json_body(serde_json::json!({
+                "query": { "match_all": {} }
+            })),
+        );
+        assert_eq!(invalid_max_concurrent_shard_requests.status, 400);
+        assert_eq!(
+            invalid_max_concurrent_shard_requests.body["error"]["reason"],
+            "maxConcurrentShardRequests must be >= 1"
         );
 
         let body_stats_groups = node.handle_rest_request(
