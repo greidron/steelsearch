@@ -2,7 +2,7 @@ use os_core::OPENSEARCH_3_7_0_TRANSPORT;
 use os_transport::action::{
     build_opensearch_delete_pit_request_message, build_opensearch_delete_pit_response_message,
     read_opensearch_delete_pit_request_message, read_opensearch_delete_pit_response_message,
-    OpenSearchDeletePitRequestWire, OpenSearchDeletePitResponseWire,
+    OpenSearchDeletePitInfoWire, OpenSearchDeletePitRequestWire, OpenSearchDeletePitResponseWire,
 };
 use os_transport::frame::{decode_frame, DecodedFrame};
 use std::hint::black_box;
@@ -11,8 +11,14 @@ use std::time::Instant;
 const ITERATIONS: usize = 400_000;
 
 fn main() {
-    let request = OpenSearchDeletePitRequestWire::default();
-    let response = OpenSearchDeletePitResponseWire::empty();
+    let request = OpenSearchDeletePitRequestWire {
+        pit_ids: vec!["pit-context".to_string(), "pit-missing".to_string()],
+        ..OpenSearchDeletePitRequestWire::default()
+    };
+    let response = OpenSearchDeletePitResponseWire::with_results(vec![
+        OpenSearchDeletePitInfoWire::new(true, "pit-context"),
+        OpenSearchDeletePitInfoWire::new(true, "pit-missing"),
+    ]);
 
     let request_encode = measure("delete_pit_request_encode", ITERATIONS, || {
         let frame = build_opensearch_delete_pit_request_message(
@@ -43,7 +49,7 @@ fn main() {
             .expect("delete-PIT request decode");
         decoded
             .validate_supported_subset()
-            .expect("delete-PIT _all request should validate");
+            .expect("delete-PIT request ids should validate");
         black_box(decoded);
     });
 
