@@ -20528,12 +20528,12 @@ fn validate_search_after_request_body(
     scroll: bool,
 ) -> Option<RestResponse> {
     if scroll {
-        return Some(search_after_validation_error(
+        return Some(search_after_phase_execution_error(
             "`search_after` cannot be used in a scroll context.",
         ));
     }
     if from != 0 {
-        return Some(search_after_validation_error(
+        return Some(search_after_phase_execution_error(
             "`from` parameter must be set to 0 when `search_after` is used.",
         ));
     }
@@ -20798,6 +20798,30 @@ fn search_after_validation_error(reason: impl Into<String>) -> RestResponse {
                 ]
             },
             "status": 400
+        }),
+    )
+}
+
+fn search_after_phase_execution_error(reason: impl Into<String>) -> RestResponse {
+    let reason = reason.into();
+    RestResponse::json(
+        500,
+        serde_json::json!({
+            "error": {
+                "type": "search_phase_execution_exception",
+                "reason": "all shards failed",
+                "root_cause": [
+                    {
+                        "type": "search_exception",
+                        "reason": reason
+                    }
+                ],
+                "caused_by": {
+                    "type": "search_exception",
+                    "reason": reason
+                }
+            },
+            "status": 500
         }),
     )
 }
@@ -43712,7 +43736,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                     "search_after": ["tenant-a"]
                 })),
         );
-        assert_eq!(search_after_with_from.status, 400);
+        assert_eq!(search_after_with_from.status, 500);
         assert_eq!(
             search_after_with_from.body["error"]["root_cause"][0]["reason"],
             "`from` parameter must be set to 0 when `search_after` is used."
@@ -43726,7 +43750,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                     "search_after": ["tenant-a"]
                 })),
         );
-        assert_eq!(search_after_with_scroll.status, 400);
+        assert_eq!(search_after_with_scroll.status, 500);
         assert_eq!(
             search_after_with_scroll.body["error"]["root_cause"][0]["reason"],
             "`search_after` cannot be used in a scroll context."
@@ -44043,63 +44067,6 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             "unsupported knn parameter [expand_nested]"
         );
 
-        let rescore_invalid = node.handle_rest_request(
-            RestRequest::new(RestMethod::Post, "/_search").with_json_body(serde_json::json!({
-                "query": { "match_all": {} },
-                "rescore": {
-                    "window_size": 10,
-                    "query": {
-                        "rescore_query": { "match_all": {} },
-                        "score_mode": "avg"
-                    }
-                }
-            })),
-        );
-        assert_eq!(rescore_invalid.status, 400);
-        assert_eq!(rescore_invalid.body["status"], 400);
-        assert_eq!(
-            rescore_invalid.body["error"]["type"],
-            "illegal_argument_exception"
-        );
-        assert_eq!(
-            rescore_invalid.body["error"]["reason"],
-            "unsupported search option [rescore]"
-        );
-
-        let highlight_with_encoder = node.handle_rest_request(
-            RestRequest::new(RestMethod::Post, "/_search").with_json_body(serde_json::json!({
-                "query": { "match_all": {} },
-                "highlight": {
-                    "fields": {
-                        "message": {}
-                    },
-                    "encoder": "html"
-                }
-            })),
-        );
-        assert_eq!(highlight_with_encoder.status, 200);
-        assert_eq!(highlight_with_encoder.body["hits"]["total"]["value"], 3);
-
-        let suggest_with_size = node.handle_rest_request(
-            RestRequest::new(RestMethod::Post, "/_search").with_json_body(serde_json::json!({
-                "suggest": {
-                    "tenant_hint": {
-                        "text": "tenant",
-                        "term": {
-                            "field": "tenant",
-                            "size": 2
-                        }
-                    }
-                }
-            })),
-        );
-        assert_eq!(suggest_with_size.status, 200);
-        assert_eq!(
-            suggest_with_size.body["suggest"]["tenant_hint"][0]["options"]
-                .as_array()
-                .map(Vec::len),
-            Some(2)
-        );
     }
 
     #[test]

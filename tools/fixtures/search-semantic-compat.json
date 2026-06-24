@@ -194,6 +194,56 @@
       "description": "[lexical] search bool zero minimum_should_match semantic"
     },
     {
+      "name": "search_after_sorted_keyword_window_semantic",
+      "area": "search-semantic",
+      "method": "POST",
+      "path": "/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "sort": [
+          {
+            "tenant": {
+              "order": "asc"
+            }
+          }
+        ],
+        "search_after": [
+          "tenant-a"
+        ],
+        "size": 10
+      },
+      "extract": "search_hits",
+      "family": "ranking",
+      "description": "[ranking] search_after sorted keyword window semantic"
+    },
+    {
+      "name": "search_after_with_from_error",
+      "area": "search-semantic",
+      "method": "POST",
+      "path": "/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "sort": [
+          {
+            "tenant": {
+              "order": "asc"
+            }
+          }
+        ],
+        "search_after": [
+          "tenant-a"
+        ],
+        "from": 1
+      },
+      "extract": "search_error",
+      "family": "failure-path",
+      "description": "[failure-path] search_after with from error"
+    },
+    {
       "name": "count_root_term_semantic",
       "area": "search-semantic",
       "method": "POST",
