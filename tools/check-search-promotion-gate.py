@@ -65,6 +65,8 @@ def main() -> int:
             "exists_query_search",
             "prefix_query_search",
             "query_string_search",
+            "query_string_url_q_overrides_body_search",
+            "count_query_string_url_q_search",
             "regexp_query_search",
             "terms_set_query_search",
             "wildcard_query_search",

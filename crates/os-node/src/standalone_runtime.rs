@@ -8440,11 +8440,6 @@ impl SteelNode {
     }
 
     fn handle_count_route(&self, target: Option<&str>, request: &RestRequest) -> RestResponse {
-        for param in ["q", "df", "analyzer"] {
-            if request.query_params.contains_key(param) {
-                return unrecognized_count_parameter_response(&request.path, param);
-            }
-        }
         let mut payload = if request.body.is_empty() {
             Value::Object(serde_json::Map::new())
         } else {
@@ -25551,19 +25546,6 @@ fn validate_query_payload(query: Option<&Value>) -> (bool, String) {
     validate_query_payload_with_options(query, false)
 }
 
-fn unrecognized_count_parameter_response(path: &str, param: &str) -> RestResponse {
-    RestResponse::json(
-        400,
-        serde_json::json!({
-            "error": {
-                "type": "illegal_argument_exception",
-                "reason": format!("request [{path}] contains unrecognized parameter: [{param}]")
-            },
-            "status": 400
-        }),
-    )
-}
-
 fn validate_query_payload_for_validate_route(query: Option<&Value>) -> (bool, String) {
     validate_query_payload_with_options(query, true)
 }
@@ -36385,12 +36367,8 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 }),
             ),
         );
-        assert_eq!(q_count.status, 400);
-        assert_eq!(q_count.body["error"]["type"], "illegal_argument_exception");
-        assert_eq!(
-            q_count.body["error"]["reason"],
-            "request [/_count] contains unrecognized parameter: [q]"
-        );
+        assert_eq!(q_count.status, 200);
+        assert_eq!(q_count.body["count"], 1);
 
         let q_count_with_df = node.handle_rest_request(
             RestRequest::new(RestMethod::Get, "/_count?q=tenantb&df=tenant").with_json_body(
@@ -36401,11 +36379,8 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 }),
             ),
         );
-        assert_eq!(q_count_with_df.status, 400);
-        assert_eq!(
-            q_count_with_df.body["error"]["reason"],
-            "request [/_count] contains unrecognized parameter: [q]"
-        );
+        assert_eq!(q_count_with_df.status, 200);
+        assert_eq!(q_count_with_df.body["count"], 1);
 
         let unsupported_q_count_analyzer = node.handle_rest_request(
             RestRequest::new(RestMethod::Get, "/_count?q=tenanta&analyzer=standard"),
@@ -36413,7 +36388,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(unsupported_q_count_analyzer.status, 400);
         assert_eq!(
             unsupported_q_count_analyzer.body["error"]["reason"],
-            "request [/_count] contains unrecognized parameter: [q]"
+            "unsupported search option [analyzer]"
         );
 
         let empty_wildcard_count = node.handle_rest_request(
