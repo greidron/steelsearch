@@ -8869,6 +8869,11 @@ impl SteelNode {
         if let Some(response) = validate_search_request_body(&body) {
             return response;
         }
+        if let Some(response) =
+            validate_shard_doc_sort_request_body(&body, request.query_params.contains_key("scroll"))
+        {
+            return response;
+        }
         if let Some(response) = validate_opensearch_boolean_query_param(
             request.query_params.get("rest_total_hits_as_int"),
         ) {
@@ -18705,6 +18710,42 @@ fn apply_search_source_query_params(
     None
 }
 
+fn validate_shard_doc_sort_request_body(body: &Value, scroll: bool) -> Option<RestResponse> {
+    let shard_doc_count = count_shard_doc_sort_fields(body.get("sort"));
+    if shard_doc_count == 0 {
+        return None;
+    }
+    let mut validation_errors = Vec::new();
+    if scroll {
+        validation_errors.push("_shard_doc cannot be used with scroll. Use PIT + search_after instead.");
+    }
+    if body.get("pit").is_none() {
+        validation_errors.push("_shard_doc is only supported with point-in-time (PIT). Add a PIT or remove _shard_doc.");
+    }
+    if shard_doc_count > 1 {
+        validation_errors.push("duplicate _shard_doc sort detected. Specify it at most once.");
+    }
+    if validation_errors.is_empty() {
+        return None;
+    }
+    Some(action_request_validation_error(validation_errors))
+}
+
+fn count_shard_doc_sort_fields(sort: Option<&Value>) -> usize {
+    let Some(sort_fields) = sort.and_then(Value::as_array) else {
+        return 0;
+    };
+    sort_fields
+        .iter()
+        .filter(|sort_field| {
+            sort_field.as_str() == Some("_shard_doc")
+                || sort_field
+                    .as_object()
+                    .is_some_and(|object| object.contains_key("_shard_doc"))
+        })
+        .count()
+}
+
 fn parse_rest_track_total_hits(raw: &str) -> Option<Value> {
     match raw {
         "true" => Some(Value::Bool(true)),
@@ -18842,7 +18883,11 @@ fn validate_point_in_time_search_request(index: &str, request: &RestRequest) -> 
     if validation_errors.is_empty() {
         return None;
     }
-    Some(RestResponse::json(
+    Some(action_request_validation_error(validation_errors))
+}
+
+fn action_request_validation_error(validation_errors: Vec<&str>) -> RestResponse {
+    RestResponse::json(
         400,
         serde_json::json!({
             "error": {
@@ -18859,7 +18904,7 @@ fn validate_point_in_time_search_request(index: &str, request: &RestRequest) -> 
             },
             "status": 400
         }),
-    ))
+    )
 }
 
 fn pit_search_uses_explicit_indices(index: &str, request: &RestRequest) -> bool {
@@ -35293,6 +35338,58 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             .unwrap()
             .iter()
             .all(|hit| hit["_id"] != "doc-3"));
+
+        let pit_shard_doc_sort = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_search")
+                .with_json_body(serde_json::json!({
+                    "pit": {
+                        "id": second_open_pit.body["pit_id"].as_str().unwrap(),
+                        "keep_alive": "1m"
+                    },
+                    "sort": ["_shard_doc"],
+                    "query": { "match_all": {} }
+                })),
+        );
+        assert_eq!(pit_shard_doc_sort.status, 200);
+        assert_eq!(pit_shard_doc_sort.body["pit_id"], "pit-2");
+        assert_eq!(pit_shard_doc_sort.body["hits"]["total"]["value"], 2);
+
+        let duplicate_pit_shard_doc_sort = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_search?sort=_shard_doc")
+                .with_json_body(serde_json::json!({
+                    "pit": {
+                        "id": second_open_pit.body["pit_id"].as_str().unwrap(),
+                        "keep_alive": "1m"
+                    },
+                    "sort": ["_shard_doc"],
+                    "query": { "match_all": {} }
+                })),
+        );
+        assert_eq!(duplicate_pit_shard_doc_sort.status, 400);
+        assert_eq!(
+            duplicate_pit_shard_doc_sort.body["error"]["type"],
+            "action_request_validation_exception"
+        );
+        assert!(duplicate_pit_shard_doc_sort.body["error"]["reason"]
+            .as_str()
+            .unwrap()
+            .contains("duplicate _shard_doc sort detected. Specify it at most once."));
+
+        let shard_doc_without_pit = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-session-000001/_search?sort=_shard_doc")
+                .with_json_body(serde_json::json!({
+                    "query": { "match_all": {} }
+                })),
+        );
+        assert_eq!(shard_doc_without_pit.status, 400);
+        assert_eq!(
+            shard_doc_without_pit.body["error"]["type"],
+            "action_request_validation_exception"
+        );
+        assert!(shard_doc_without_pit.body["error"]["reason"]
+            .as_str()
+            .unwrap()
+            .contains("_shard_doc is only supported with point-in-time (PIT). Add a PIT or remove _shard_doc."));
 
         let scrolled_pit_search = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/_search?scroll=1m")
