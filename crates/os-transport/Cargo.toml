@@ -602,8 +602,8 @@ name = "create-pit-reject-wire-benchmark"
 path = "benchmarks/create_pit_reject_wire.rs"
 
 [[bin]]
-name = "delete-pit-reject-wire-benchmark"
-path = "benchmarks/delete_pit_reject_wire.rs"
+name = "delete-pit-wire-benchmark"
+path = "benchmarks/delete_pit_wire.rs"
 
 [[bin]]
 name = "list-tasks-wire-benchmark"

@@ -1503,6 +1503,32 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end_at_ms,
         )?;
     } else if is_request
+        && normalized_action_hint == Some("indices:data/read/point_in_time/delete")
+        && delete_pit_request_supports_empty_all_subset(&body)
+    {
+        let response = build_empty_delete_pit_response(request_id, header_version_id);
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("indices:data/read/point_in_time/delete"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request
         && normalized_action_hint == Some("indices:data/read/point_in_time/readall")
     {
         let response =
@@ -3482,6 +3508,29 @@ fn build_empty_find_dangling_index_response(
     .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
 }
 
+fn build_empty_delete_pit_response(request_id: i64, header_version_id: u32) -> Vec<u8> {
+    os_transport::action::build_opensearch_delete_pit_response_message(
+        request_id,
+        Version::from_id(header_version_id as i32),
+        &os_transport::action::OpenSearchDeletePitResponseWire::empty(),
+    )
+    .map(|frame| frame.to_vec())
+    .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
+}
+
+fn delete_pit_request_supports_empty_all_subset(body: &[u8]) -> bool {
+    decode_delete_pit_request_from_transport_body(body)
+        .and_then(|request| request.validate_supported_subset().ok())
+        .is_some()
+}
+
+fn decode_delete_pit_request_from_transport_body(
+    body: &[u8],
+) -> Option<os_transport::action::OpenSearchDeletePitRequestWire> {
+    let message = decode_transport_message_from_body(body)?;
+    os_transport::action::read_opensearch_delete_pit_request_message(&message).ok()
+}
+
 fn build_empty_get_all_pits_response(
     request_id: i64,
     header_version_id: u32,
@@ -5288,6 +5337,14 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
                 request_id,
                 header_version_id,
                 transport_identity,
+            ))
+        }
+        Some("indices:data/read/point_in_time/delete")
+            if delete_pit_request_supports_empty_all_subset(body) =>
+        {
+            Some(build_empty_delete_pit_response(
+                request_id,
+                header_version_id,
             ))
         }
         Some("indices:data/read/point_in_time/readall") => Some(build_empty_get_all_pits_response(
@@ -9846,6 +9903,53 @@ mod tests {
             response,
             os_transport::action::OpenSearchFindDanglingIndexResponseWire::empty("steelsearch-dev")
         );
+    }
+
+    #[test]
+    fn delete_pit_transport_route_builds_opensearch_shaped_empty_all_response() {
+        let request = os_transport::action::OpenSearchDeletePitRequestWire::default();
+        let frame = os_transport::action::build_opensearch_delete_pit_request_message(
+            93,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        let body = &frame[6..];
+        assert!(delete_pit_request_supports_empty_all_subset(body));
+
+        let response = build_empty_delete_pit_response(93, OPENSEARCH_3_7_0_TRANSPORT.id() as u32);
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected delete-PIT response message");
+        };
+
+        assert_eq!(message.request_id, 93);
+        assert!(!message.status.is_request());
+        let response =
+            os_transport::action::read_opensearch_delete_pit_response_message(&message).unwrap();
+        assert_eq!(
+            response,
+            os_transport::action::OpenSearchDeletePitResponseWire::empty()
+        );
+    }
+
+    #[test]
+    fn delete_pit_transport_route_rejects_explicit_id_subset() {
+        let request = os_transport::action::OpenSearchDeletePitRequestWire {
+            pit_ids: vec!["pit-context".to_string()],
+            ..os_transport::action::OpenSearchDeletePitRequestWire::default()
+        };
+        let frame = os_transport::action::build_opensearch_delete_pit_request_message(
+            94,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(!delete_pit_request_supports_empty_all_subset(&frame[6..]));
     }
 
     #[test]

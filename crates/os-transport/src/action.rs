@@ -2388,8 +2388,8 @@ pub fn classify_opensearch_transport_action(
         },
         OPENSEARCH_DELETE_PIT_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
-            disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "delete-pit transport execution requires PIT context lifecycle mapping",
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "delete-pit transport adapter returns an OpenSearch-shaped empty response for the _all request when no PIT contexts are present",
         },
         OPENSEARCH_GET_ALL_PITS_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -11958,6 +11958,35 @@ pub fn read_opensearch_delete_pit_request_message(
         });
     }
     OpenSearchDeletePitRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_opensearch_delete_pit_response_message(
+    request_id: i64,
+    version: Version,
+    response: &OpenSearchDeletePitResponseWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    response.write(&mut body)?;
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::response(),
+        version,
+        variable_header: BytesMut::new(),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_delete_pit_response_message(
+    message: &TransportMessage,
+) -> Result<OpenSearchDeletePitResponseWire, TransportActionWireError> {
+    if message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "response",
+            actual: message.status.bits(),
+        });
+    }
+    OpenSearchDeletePitResponseWire::read(message.body.clone().freeze())
 }
 
 pub fn build_opensearch_get_all_pits_request_message(
@@ -26052,7 +26081,7 @@ impl Default for OpenSearchDeletePitRequestWire {
         Self {
             parent_task_node: String::new(),
             parent_task_id: None,
-            pit_ids: vec!["pit-context".to_string()],
+            pit_ids: vec!["_all".to_string()],
         }
     }
 }
@@ -26075,7 +26104,7 @@ impl OpenSearchDeletePitRequestWire {
         Ok(request)
     }
 
-    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+    pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
         if self.pit_ids.is_empty() {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "delete pit empty ids",
@@ -26088,10 +26117,69 @@ impl OpenSearchDeletePitRequestWire {
                 reason: "OpenSearch delete-PIT requests require non-empty PIT ids",
             });
         }
+        if self.pit_ids.len() != 1 || self.pit_ids[0] != "_all" {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "delete pit explicit ids",
+                reason: "explicit delete-PIT ids require PIT id decoding, shard context lookup, and context invalidation",
+            });
+        }
+        Ok(())
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        self.validate_supported_subset()?;
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "delete pit execution",
-            reason: "delete-PIT transport execution requires PIT context lifecycle mapping",
+            reason:
+                "use validate_supported_subset for the implemented empty delete-PIT _all adapter",
         })
+    }
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct OpenSearchDeletePitResponseWire {
+    pub deleted_count: i32,
+}
+
+impl OpenSearchDeletePitResponseWire {
+    pub fn empty() -> Self {
+        Self { deleted_count: 0 }
+    }
+
+    pub fn write(&self, output: &mut StreamOutput) -> Result<(), TransportActionWireError> {
+        self.validate_supported_subset()?;
+        output.write_vint(self.deleted_count);
+        Ok(())
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let deleted_count = input.read_vint()?;
+        if deleted_count < 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "delete pit response result count",
+                reason: "DeletePitResponse result count must be non-negative",
+            });
+        }
+        if deleted_count != 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "delete pit response results",
+                reason:
+                    "DeletePitResponse PIT result entries require DeletePitInfo payload decoding",
+            });
+        }
+        require_no_trailing_bytes(&input)?;
+        Ok(Self { deleted_count })
+    }
+
+    pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
+        if self.deleted_count != 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "delete pit response results",
+                reason: "the implemented delete-PIT subset only renders an empty PIT result list",
+            });
+        }
+        Ok(())
     }
 }
 
@@ -35075,7 +35163,7 @@ mod tests {
         );
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_DELETE_PIT_ACTION_NAME).disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_GET_ALL_PITS_ACTION_NAME).disposition,
@@ -35510,6 +35598,7 @@ mod tests {
                 || spec.action_name == OPENSEARCH_LIST_DANGLING_INDICES_ACTION_NAME
                 || spec.action_name == OPENSEARCH_FIND_DANGLING_INDEX_ACTION_NAME
                 || spec.action_name == OPENSEARCH_GET_ALL_PITS_ACTION_NAME
+                || spec.action_name == OPENSEARCH_DELETE_PIT_ACTION_NAME
                 || spec.action_name == OPENSEARCH_GET_ALIASES_ACTION_NAME
                 || spec.action_name == OPENSEARCH_GET_SETTINGS_ACTION_NAME
             {
@@ -35593,7 +35682,6 @@ mod tests {
                 || spec.action_name == OPENSEARCH_CLEAR_SCROLL_ACTION_NAME
                 || spec.action_name == OPENSEARCH_EXPLAIN_ACTION_NAME
                 || spec.action_name == OPENSEARCH_CREATE_PIT_ACTION_NAME
-                || spec.action_name == OPENSEARCH_DELETE_PIT_ACTION_NAME
             {
                 assert_eq!(
                     decision.disposition,
@@ -56895,13 +56983,14 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_delete_pit_request_wire_round_trips_and_rejects_execution_boundary() {
+    fn opensearch_delete_pit_request_wire_round_trips_and_validates_all_subset() {
         let request = OpenSearchDeletePitRequestWire::default();
         let mut output = StreamOutput::new();
         request.write(&mut output);
 
         let decoded = OpenSearchDeletePitRequestWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, request);
+        decoded.validate_supported_subset().unwrap();
         assert!(matches!(
             decoded.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
@@ -56936,10 +57025,46 @@ mod tests {
                 ..
             })
         ));
+
+        let explicit_id = OpenSearchDeletePitRequestWire {
+            pit_ids: vec!["pit-context".to_string()],
+            ..OpenSearchDeletePitRequestWire::default()
+        };
+        assert!(matches!(
+            explicit_id.validate_supported_subset(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "delete pit explicit ids",
+                ..
+            })
+        ));
     }
 
     #[test]
-    fn opensearch_delete_pit_transport_messages_bind_rejected_action_frame() {
+    fn opensearch_delete_pit_response_wire_round_trips_empty_subset() {
+        let response = OpenSearchDeletePitResponseWire::empty();
+        let mut output = StreamOutput::new();
+        response.write(&mut output).unwrap();
+
+        let decoded = OpenSearchDeletePitResponseWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, response);
+        decoded.validate_supported_subset().unwrap();
+    }
+
+    #[test]
+    fn opensearch_delete_pit_response_rejects_non_empty_results() {
+        let mut output = StreamOutput::new();
+        output.write_vint(1);
+        assert!(matches!(
+            OpenSearchDeletePitResponseWire::read(output.freeze()),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "delete pit response results",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_delete_pit_transport_messages_bind_action_frames() {
         let request = OpenSearchDeletePitRequestWire::default();
         let mut frame =
             build_opensearch_delete_pit_request_message(52, OPENSEARCH_3_7_0_TRANSPORT, &request)
@@ -56951,14 +57076,28 @@ mod tests {
             read_opensearch_delete_pit_request_message(&message).unwrap(),
             request
         );
+        read_opensearch_delete_pit_request_message(&message)
+            .unwrap()
+            .validate_supported_subset()
+            .unwrap();
+
+        let response = OpenSearchDeletePitResponseWire::empty();
+        let mut frame =
+            build_opensearch_delete_pit_response_message(52, OPENSEARCH_3_7_0_TRANSPORT, &response)
+                .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected delete-PIT response message");
+        };
+        assert_eq!(
+            read_opensearch_delete_pit_response_message(&message).unwrap(),
+            response
+        );
         assert!(matches!(
-            read_opensearch_delete_pit_request_message(&message)
-                .unwrap()
-                .reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "delete pit execution",
+            read_opensearch_delete_pit_request_message(&message).unwrap_err(),
+            TransportActionWireError::UnexpectedMessageStatus {
+                expected: "request",
                 ..
-            })
+            }
         ));
     }
 

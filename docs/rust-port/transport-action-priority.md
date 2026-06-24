@@ -177,8 +177,8 @@ The source-derived transport inventory currently has 160 rows:
 
 | Status | Count | Meaning |
 | --- | ---: | --- |
-| `implemented` | 37 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
-| `partial` | 123 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
+| `implemented` | 38 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
+| `partial` | 122 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
 | `planned` | 0 | No source-derived transport action remains unclassified. |
 
 The k-NN plugin action sweep is complete at the boundary layer. All 12
@@ -311,7 +311,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `indices:data/read/scroll/clear` (rejected fail-closed)
 - `indices:data/read/explain` (rejected fail-closed)
 - `indices:data/read/point_in_time/create` (rejected fail-closed)
-- `indices:data/read/point_in_time/delete` (rejected fail-closed)
+- `indices:data/read/point_in_time/delete` (implemented `_all` empty PIT-delete subset)
 - `indices:data/read/point_in_time/readall` (implemented empty PIT-list subset)
 - `cluster:monitor/task` (implemented pending/in-flight task subset)
 - `cluster:monitor/tasks/lists` (implemented pending/in-flight task info subset)
@@ -2225,11 +2225,13 @@ The delete-PIT boundary covers:
 
 - OpenSearch `DeletePitRequest` parent task and PIT id array at the wire
   decode/build layer;
-- explicit fail-closed classification for
-  `indices:data/read/point_in_time/delete` until PIT context invalidation and
-  response rendering are mapped;
+- OpenSearch `DeletePitResponse` empty PIT result-list rendering for the `_all`
+  request when no PIT contexts are present;
+- positive transport route response generation only when the decoded request
+  validates as the `_all` subset;
 - explicit rejection for empty PIT id arrays, empty PIT id entries, and
-  delete-PIT execution.
+  explicit PIT ids until PIT id decoding, shard context lookup, and context
+  invalidation are mapped.
 
 The get-all-PITs boundary covers:
 
@@ -5054,22 +5056,23 @@ execution. At roughly 1.34M ops/s in the latest local release run, the boundary
 itself is lightweight; the first performance point to inspect before accepting
 execution is query builder decode/rewrite plus explanation tree rendering.
 
-Current delete-PIT reject wire microbenchmark:
+Current delete-PIT wire microbenchmark:
 
 ```text
-cargo run -p os-transport --release --bin delete-pit-reject-wire-benchmark
-delete_pit_reject_request_encode iterations=400000 elapsed_ms=283.001 ops_per_second=1413423.68 nanos_per_op=707.50
-delete_pit_reject_request_decode iterations=400000 elapsed_ms=291.271 ops_per_second=1373290.90 nanos_per_op=728.18
-delete_pit_reject_validation iterations=400000 elapsed_ms=268.519 ops_per_second=1489655.16 nanos_per_op=671.30
-delete_pit_reject_wire_bottleneck_ops_per_second=1373290.90
+cargo run -p os-transport --release --bin delete-pit-wire-benchmark
+delete_pit_request_encode iterations=400000 elapsed_ms=254.555 ops_per_second=1571366.88 nanos_per_op=636.39
+delete_pit_request_decode iterations=400000 elapsed_ms=250.840 ops_per_second=1594643.44 nanos_per_op=627.10
+delete_pit_request_validate iterations=400000 elapsed_ms=251.881 ops_per_second=1588050.35 nanos_per_op=629.70
+delete_pit_response_encode iterations=400000 elapsed_ms=51.725 ops_per_second=7733131.19 nanos_per_op=129.31
+delete_pit_response_decode iterations=400000 elapsed_ms=74.693 ops_per_second=5355252.24 nanos_per_op=186.73
+delete_pit_wire_bottleneck_ops_per_second=1571366.88
 ```
 
-The current delete-PIT fail-closed boundary bottleneck is request decode. This
-path carries only the ActionRequest parent task and PIT id array before
-rejecting execution. At roughly 1.37M ops/s in the latest local release run,
-the boundary itself is lightweight; the first performance point to inspect
-before accepting execution is PIT context lookup/invalidation and delete-PIT
-response rendering.
+The current delete-PIT implemented subset bottleneck is request encode. The
+empty response encode/decode path runs above 5.3M ops/s in the latest local
+release run, so response rendering is not the first bottleneck. The first
+performance point to inspect before expanding this subset is explicit PIT id
+decode plus context invalidation.
 
 Current get-all-PITs wire microbenchmark:
 
