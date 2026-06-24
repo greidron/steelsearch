@@ -2278,6 +2278,8 @@ The create-PIT boundary covers:
   error used for point-in-time requests in scroll contexts;
 - REST search validates `_shard_doc` sort usage for PIT-only admission,
   scroll rejection, and duplicate `_shard_doc` sort entries;
+- PIT searches render `_shard_doc` sort values and accept them through
+  `search_after` for stable local snapshot pagination;
 - manifest-backed create-PIT index option handling for unavailable targets,
   `allow_no_indices`, ignored aliases, alias fanout guards, open/closed
   wildcard expansion, and hidden wildcard expansion;

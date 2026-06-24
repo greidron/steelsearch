@@ -9193,6 +9193,7 @@ impl SteelNode {
             Vec::new()
         };
         let mut paged_hits: Vec<Value> = hits.iter().skip(from).take(size).cloned().collect();
+        append_search_hit_sort_values(&mut paged_hits, body.get("sort"));
         let scroll_id = request.query_params.get("scroll").map(|keep_alive| {
             self.store_scroll_context(remaining_hits.clone(), size, keep_alive)
         });
@@ -20308,6 +20309,34 @@ fn apply_search_after(hits: Vec<Value>, sort: &Value, search_after: &[Value]) ->
         .collect()
 }
 
+fn append_search_hit_sort_values(hits: &mut [Value], sort: Option<&Value>) {
+    let Some(sort_fields) = sort.and_then(Value::as_array) else {
+        return;
+    };
+    if sort_fields.is_empty() {
+        return;
+    }
+    for hit in hits {
+        let sort_values = sort_fields
+            .iter()
+            .filter_map(|sort_field| sort_field_name(sort_field))
+            .map(|field_name| extract_sort_value(hit, field_name))
+            .collect::<Vec<_>>();
+        if let Some(hit_object) = hit.as_object_mut() {
+            hit_object.insert("sort".to_string(), Value::Array(sort_values));
+        }
+    }
+}
+
+fn sort_field_name(sort_field: &Value) -> Option<&str> {
+    if let Some(field_name) = sort_field.as_str() {
+        return Some(field_name);
+    }
+    sort_field
+        .as_object()
+        .and_then(|object| object.keys().next().map(String::as_str))
+}
+
 fn parse_runtime_mapping_script_source(source: &str) -> Option<String> {
     let field_expr = source.strip_prefix("emit(doc['")?;
     let (field_name, suffix) = field_expr.split_once("'].value)")?;
@@ -20444,6 +20473,9 @@ fn apply_search_collapse(hits: Vec<Value>, collapse: &Value) -> Vec<Value> {
 fn extract_sort_value(hit: &Value, field_name: &str) -> Value {
     if field_name == "_score" {
         return hit.get("_score").cloned().unwrap_or(Value::Null);
+    }
+    if field_name == "_shard_doc" {
+        return hit.get("_seq_no").cloned().unwrap_or(Value::Null);
     }
     hit.get("_source")
         .and_then(|source| source.get(field_name))
@@ -35353,6 +35385,33 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(pit_shard_doc_sort.status, 200);
         assert_eq!(pit_shard_doc_sort.body["pit_id"], "pit-2");
         assert_eq!(pit_shard_doc_sort.body["hits"]["total"]["value"], 2);
+        assert_eq!(
+            pit_shard_doc_sort.body["hits"]["hits"][0]["sort"],
+            serde_json::json!([0])
+        );
+
+        let pit_shard_doc_second_page = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_search")
+                .with_json_body(serde_json::json!({
+                    "pit": {
+                        "id": second_open_pit.body["pit_id"].as_str().unwrap(),
+                        "keep_alive": "1m"
+                    },
+                    "size": 1,
+                    "sort": ["_shard_doc"],
+                    "search_after": pit_shard_doc_sort.body["hits"]["hits"][0]["sort"],
+                    "query": { "match_all": {} }
+                })),
+        );
+        assert_eq!(pit_shard_doc_second_page.status, 200);
+        assert_eq!(
+            pit_shard_doc_second_page.body["hits"]["hits"][0]["_id"],
+            "doc-2"
+        );
+        assert_eq!(
+            pit_shard_doc_second_page.body["hits"]["hits"][0]["sort"],
+            serde_json::json!([1])
+        );
 
         let duplicate_pit_shard_doc_sort = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/_search?sort=_shard_doc")
