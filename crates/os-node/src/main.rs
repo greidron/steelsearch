@@ -996,7 +996,7 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end_at_ms,
         )?;
     } else if is_request && normalized_action_hint == Some("cluster:admin/tasks/cancel") {
-        let response = build_empty_cancel_tasks_response(request_id, header_version_id);
+        let response = build_cancel_tasks_response(request_id, header_version_id, transport_identity);
         response_frame = summarize_transport_response_frame_for_action(
             &response,
             Some("cluster:admin/tasks/cancel[n]"),
@@ -2791,6 +2791,14 @@ fn list_task_info_wire_from_record(
     record: &ClusterManagerTaskRecord,
     transport_identity: &DevTransportIdentity,
 ) -> os_transport::action::ListTaskInfoWire {
+    list_task_info_wire_from_record_with_cancel_state(record, transport_identity, false)
+}
+
+fn list_task_info_wire_from_record_with_cancel_state(
+    record: &ClusterManagerTaskRecord,
+    transport_identity: &DevTransportIdentity,
+    cancelled: bool,
+) -> os_transport::action::ListTaskInfoWire {
     os_transport::action::ListTaskInfoWire {
         node_id: queue_task_node_id(record, transport_identity),
         task_id: record.task_id as i64,
@@ -2804,7 +2812,7 @@ fn list_task_info_wire_from_record(
         start_time_millis: 1,
         running_time_nanos: 1,
         cancellable: record.state == ClusterManagerTaskState::Queued,
-        cancelled: false,
+        cancelled,
         parent_task_node: String::new(),
         parent_task_id: None,
         headers: record.headers.clone(),
@@ -2842,14 +2850,38 @@ fn task_state_label(state: &ClusterManagerTaskState) -> &'static str {
     }
 }
 
-fn build_empty_cancel_tasks_response(request_id: i64, header_version_id: u32) -> Vec<u8> {
+fn build_cancel_tasks_response(
+    request_id: i64,
+    header_version_id: u32,
+    transport_identity: &DevTransportIdentity,
+) -> Vec<u8> {
     os_transport::action::build_cancel_tasks_response_message(
         request_id,
         Version::from_id(header_version_id as i32),
-        &os_transport::action::CancelTasksResponseWire::empty(),
+        &cancel_tasks_response_from_identity(transport_identity),
     )
     .map(|frame| frame.to_vec())
     .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
+}
+
+fn cancel_tasks_response_from_identity(
+    transport_identity: &DevTransportIdentity,
+) -> os_transport::action::CancelTasksResponseWire {
+    let Some(queue) = transport_identity.task_queue_state.as_ref() else {
+        return os_transport::action::CancelTasksResponseWire::empty();
+    };
+    os_transport::action::CancelTasksResponseWire {
+        task_failure_count: 0,
+        node_failure_count: 0,
+        tasks: queue
+            .pending
+            .iter()
+            .filter(|record| record.state == ClusterManagerTaskState::Queued)
+            .map(|record| {
+                list_task_info_wire_from_record_with_cancel_state(record, transport_identity, true)
+            })
+            .collect(),
+    }
 }
 
 fn build_recovery_translog_operations_response(
@@ -3951,7 +3983,11 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
             ))
         }
         Some("cluster:admin/tasks/cancel") => {
-            Some(build_empty_cancel_tasks_response(request_id, header_version_id))
+            Some(build_cancel_tasks_response(
+                request_id,
+                header_version_id,
+                transport_identity,
+            ))
         }
         Some("internal:cluster/request_pre_vote") => Some(build_pre_vote_response(
             request_id,
@@ -8170,9 +8206,52 @@ mod tests {
     }
 
     #[test]
-    fn cancel_tasks_transport_route_builds_opensearch_shaped_empty_response() {
-        let response =
-            build_empty_cancel_tasks_response(80, OPENSEARCH_3_7_0_TRANSPORT.id() as u32);
+    fn cancel_tasks_transport_route_builds_opensearch_shaped_response_from_queue() {
+        let transport_identity = DevTransportIdentity {
+            cluster_name: "steelsearch-dev".to_string(),
+            node_name: "steel-node".to_string(),
+            node_id: "steel-node-id".to_string(),
+            ephemeral_id: "steel-node-ephemeral".to_string(),
+            transport_address: "127.0.0.1:9300".parse().unwrap(),
+            attributes: Vec::new(),
+            roles: vec!["cluster_manager".to_string(), "data".to_string()],
+            seed_peer_identity: None,
+            seed_peer_identities: Vec::new(),
+            coordination_state: Arc::new(Mutex::new(DevTransportCoordinationState::default())),
+            remote_transport_queue_gate: Arc::new(RemoteTransportQueueGate::new(1, 1000)),
+            task_queue_state: Some(PersistedClusterManagerTaskQueueState {
+                pending: vec![ClusterManagerTaskRecord {
+                    task_id: 31,
+                    task: os_node::ClusterManagerTask {
+                        source: "reroute shards".to_string(),
+                        kind: os_node::ClusterManagerTaskKind::Reroute,
+                    },
+                    state: ClusterManagerTaskState::Queued,
+                    parent_task_id: None,
+                    headers: BTreeMap::new(),
+                    failure_reason: None,
+                }],
+                in_flight: vec![ClusterManagerTaskRecord {
+                    task_id: 32,
+                    task: os_node::ClusterManagerTask {
+                        source: "remove-node [node-b]".to_string(),
+                        kind: os_node::ClusterManagerTaskKind::RemoveNode {
+                            node_id: "node-b".to_string(),
+                        },
+                    },
+                    state: ClusterManagerTaskState::InFlight,
+                    parent_task_id: None,
+                    headers: BTreeMap::new(),
+                    failure_reason: None,
+                }],
+                ..PersistedClusterManagerTaskQueueState::default()
+            }),
+        };
+        let response = build_cancel_tasks_response(
+            80,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &transport_identity,
+        );
         let mut frame = BytesMut::from(&response[..]);
         let os_transport::frame::DecodedFrame::Message(message) =
             os_transport::frame::decode_frame(&mut frame).unwrap().unwrap()
@@ -8183,10 +8262,13 @@ mod tests {
         assert_eq!(message.request_id, 80);
         assert!(!message.status.is_request());
         let response = os_transport::action::read_cancel_tasks_response_message(&message).unwrap();
-        assert_eq!(
-            response,
-            os_transport::action::CancelTasksResponseWire::empty()
-        );
+        assert_eq!(response.tasks.len(), 1);
+        let task = &response.tasks[0];
+        assert_eq!(task.node_id, "steel-node-id");
+        assert_eq!(task.task_id, 31);
+        assert_eq!(task.action, "cluster:admin/reroute");
+        assert!(task.cancellable);
+        assert!(task.cancelled);
     }
 
     #[test]

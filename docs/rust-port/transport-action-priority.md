@@ -316,7 +316,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `cluster:monitor/task` (implemented pending/in-flight task subset)
 - `cluster:monitor/tasks/lists` (implemented pending/in-flight task info subset)
 - `cluster:monitor/task/get` (rejected fail-closed)
-- `cluster:admin/tasks/cancel` (implemented no-active-task default subset)
+- `cluster:admin/tasks/cancel` (implemented cancellable queued task info subset)
 - `indices:data/read/get`
 - `indices:data/read/mget`
 - `indices:data/write/bulk`
@@ -2300,15 +2300,15 @@ The cancel-tasks adapter covers:
 - OpenSearch `CancelTasksRequest` parent task, unset task id filter, unset
   parent task filter, no node filters, no action filters, no timeout, default
   reason `by user request`, and `wait_for_completion=false`;
-- OpenSearch `CancelTasksResponse` with no cancelled task entries, no task
-  failures, and no node failures, matching the current no-active-cancellable-task
-  transport contract;
-- daemon transport first-request and follow-up routes render the empty
-  OpenSearch-shaped response for the supported subset;
+- OpenSearch `CancelTasksResponse` with no task failures, no node failures, and
+  cancelled task info entries for tracked queued cluster-manager tasks;
+- daemon transport first-request and follow-up routes render the OpenSearch
+  shaped response from the current task queue snapshot for the supported subset;
 - explicit rejection for task id filters, parent task filters, node filters,
   action filters, timeout, custom reason, wait-for-completion, non-empty task
-  failure payloads, non-empty node failure payloads, and non-empty task info
-  payloads until runtime task cancellation lifecycle semantics are mapped.
+  failure payloads, non-empty node failure payloads, detailed task status
+  payloads, and task resource stats until broader runtime task cancellation
+  lifecycle semantics are mapped.
 
 The bulk adapter covers:
 
@@ -5139,18 +5139,17 @@ Current cancel-tasks wire microbenchmark:
 
 ```text
 cargo run -p os-transport --release --bin cancel-tasks-wire-benchmark
-cancel_tasks_request_encode ops_per_second=1327741.27 nanos_per_op=753.16
-cancel_tasks_response_encode ops_per_second=4484978.74 nanos_per_op=222.97
-cancel_tasks_request_decode ops_per_second=1463596.71 nanos_per_op=683.25
-cancel_tasks_response_decode ops_per_second=3945958.01 nanos_per_op=253.42
-cancel_tasks_wire_bottleneck_ops_per_second=1327741.27
+cancel_tasks_request_encode ops_per_second=1436563.19 nanos_per_op=696.11
+cancel_tasks_response_encode ops_per_second=995467.98 nanos_per_op=1004.55
+cancel_tasks_request_decode ops_per_second=1456663.11 nanos_per_op=686.50
+cancel_tasks_response_decode ops_per_second=1164192.91 nanos_per_op=858.96
+cancel_tasks_wire_bottleneck_ops_per_second=995467.98
 ```
 
-The current cancel-tasks wire bottleneck is request encode. Compared with
-list-tasks, the default cancel request also writes the default reason string, so
-the request body is slightly heavier. At roughly 1.27M ops/s in the latest local
-release run, this adapter is still far above the source-materializing write/read
-wire paths and does not introduce a new bottleneck.
+The current cancel-tasks wire bottleneck is non-empty response encode for a
+single cancelled queued task info entry. The latest local release run is just
+under 1.0M ops/s, so task info string encoding remains the next transport-wire
+cost to watch while broader cancellation lifecycle semantics are added.
 
 Current get-task reject wire microbenchmark:
 

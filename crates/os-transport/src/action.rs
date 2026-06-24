@@ -1754,7 +1754,7 @@ pub fn classify_opensearch_transport_action(
         CANCEL_TASKS_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Implemented,
-            reason: "cancel-tasks transport adapter is available for the no-active-task default subset",
+            reason: "cancel-tasks transport adapter is available for the tracked cancellable task info subset",
         },
         CLUSTER_UPDATE_SETTINGS_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -25135,10 +25135,7 @@ impl TaskIdWire {
     }
 
     fn write(&self, output: &mut StreamOutput) {
-        output.write_string(&self.node_id);
-        if !self.node_id.is_empty() {
-            output.write_i64(self.id.unwrap_or(-1));
-        }
+        write_task_id_fields(output, &self.node_id, self.id);
     }
 
     fn read(input: &mut StreamInput) -> Result<Self, TransportActionWireError> {
@@ -25149,6 +25146,13 @@ impl TaskIdWire {
             Some(input.read_i64()?)
         };
         Ok(Self { node_id, id })
+    }
+}
+
+fn write_task_id_fields(output: &mut StreamOutput, node_id: &str, id: Option<i64>) {
+    output.write_string(node_id);
+    if !node_id.is_empty() {
+        output.write_i64(id.unwrap_or(-1));
     }
 }
 
@@ -25287,11 +25291,7 @@ pub struct ListTaskInfoWire {
 
 impl ListTaskInfoWire {
     pub fn write(&self, output: &mut StreamOutput) {
-        TaskIdWire {
-            node_id: self.node_id.clone(),
-            id: Some(self.task_id),
-        }
-        .write(output);
+        write_task_id_fields(output, &self.node_id, Some(self.task_id));
         output.write_string(&self.task_type);
         output.write_string(&self.action);
         output.write_optional_string(self.description.as_deref());
@@ -25300,11 +25300,7 @@ impl ListTaskInfoWire {
         output.write_i64(self.running_time_nanos);
         output.write_bool(self.cancellable);
         output.write_bool(self.cancelled);
-        TaskIdWire {
-            node_id: self.parent_task_node.clone(),
-            id: self.parent_task_id,
-        }
-        .write(output);
+        write_task_id_fields(output, &self.parent_task_node, self.parent_task_id);
         output.write_string_map(&self.headers);
         output.write_bool(false);
         write_optional_i64(output, self.cancellation_start_time_millis);
@@ -54771,6 +54767,36 @@ mod tests {
     }
 
     #[test]
+    fn cancel_tasks_response_wire_round_trips_cancelled_task_info_subset() {
+        let response = CancelTasksResponseWire {
+            task_failure_count: 0,
+            node_failure_count: 0,
+            tasks: vec![ListTaskInfoWire {
+                node_id: "node-a".to_string(),
+                task_id: 7,
+                task_type: "transport".to_string(),
+                action: "cluster:admin/reroute".to_string(),
+                description: Some("reroute shards [queued]".to_string()),
+                start_time_millis: 1,
+                running_time_nanos: 1,
+                cancellable: true,
+                cancelled: true,
+                parent_task_node: String::new(),
+                parent_task_id: None,
+                headers: BTreeMap::new(),
+                cancellation_start_time_millis: None,
+            }],
+        };
+        let mut output = StreamOutput::new();
+        response.write(&mut output).unwrap();
+
+        assert_eq!(
+            CancelTasksResponseWire::read(output.freeze()).unwrap(),
+            response
+        );
+    }
+
+    #[test]
     fn cancel_tasks_transport_messages_bind_action_frames() {
         let request = CancelTasksRequestWire::default();
         let mut frame =
@@ -54783,7 +54809,25 @@ mod tests {
             request
         );
 
-        let response = CancelTasksResponseWire::empty();
+        let response = CancelTasksResponseWire {
+            task_failure_count: 0,
+            node_failure_count: 0,
+            tasks: vec![ListTaskInfoWire {
+                node_id: "node-a".to_string(),
+                task_id: 7,
+                task_type: "transport".to_string(),
+                action: "cluster:admin/reroute".to_string(),
+                description: Some("reroute shards [queued]".to_string()),
+                start_time_millis: 1,
+                running_time_nanos: 1,
+                cancellable: true,
+                cancelled: true,
+                parent_task_node: String::new(),
+                parent_task_id: None,
+                headers: BTreeMap::new(),
+                cancellation_start_time_millis: None,
+            }],
+        };
         let mut frame =
             build_cancel_tasks_response_message(20, OPENSEARCH_3_7_0_TRANSPORT, &response).unwrap();
         let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {

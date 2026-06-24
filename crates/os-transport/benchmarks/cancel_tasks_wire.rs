@@ -2,9 +2,10 @@ use os_core::OPENSEARCH_3_7_0_TRANSPORT;
 use os_transport::action::{
     build_cancel_tasks_request_message, build_cancel_tasks_response_message,
     read_cancel_tasks_request_message, read_cancel_tasks_response_message, CancelTasksRequestWire,
-    CancelTasksResponseWire,
+    CancelTasksResponseWire, ListTaskInfoWire,
 };
 use os_transport::frame::{decode_frame, DecodedFrame};
+use std::collections::BTreeMap;
 use std::hint::black_box;
 use std::time::Instant;
 
@@ -12,7 +13,25 @@ const ITERATIONS: usize = 400_000;
 
 fn main() {
     let request = CancelTasksRequestWire::default();
-    let response = CancelTasksResponseWire::empty();
+    let response = CancelTasksResponseWire {
+        task_failure_count: 0,
+        node_failure_count: 0,
+        tasks: vec![ListTaskInfoWire {
+            node_id: "node-a".to_string(),
+            task_id: 7,
+            task_type: "transport".to_string(),
+            action: "cluster:admin/reroute".to_string(),
+            description: Some("reroute shards [queued]".to_string()),
+            start_time_millis: 1,
+            running_time_nanos: 1,
+            cancellable: true,
+            cancelled: true,
+            parent_task_node: String::new(),
+            parent_task_id: None,
+            headers: BTreeMap::new(),
+            cancellation_start_time_millis: None,
+        }],
+    };
 
     let request_encode = measure("cancel_tasks_request_encode", ITERATIONS, || {
         let frame =
