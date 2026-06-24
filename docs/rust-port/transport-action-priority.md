@@ -177,8 +177,8 @@ The source-derived transport inventory currently has 160 rows:
 
 | Status | Count | Meaning |
 | --- | ---: | --- |
-| `implemented` | 29 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
-| `partial` | 131 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
+| `implemented` | 31 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
+| `partial` | 129 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
 | `planned` | 0 | No source-derived transport action remains unclassified. |
 
 The k-NN plugin action sweep is complete at the boundary layer. All 12
@@ -1850,11 +1850,12 @@ The indices-shard-stores boundary covers:
 - OpenSearch `IndicesShardStoresRequest` parent task, cluster-manager timeout,
   `local` flag, indices array, shard health status byte set, and
   `IndicesOptions.strictExpand()` at the wire decode/build layer;
-- explicit fail-closed classification for `indices:monitor/shard_stores` until
-  shard allocation/store metadata response rendering is implemented;
+- implemented classification for `indices:monitor/shard_stores` default
+  all-index, non-local, yellow/red-status request admission and empty
+  `IndicesShardStoresResponse` rendering;
 - explicit rejection for custom cluster-manager timeout, local reads, index
-  filters, custom shard health status filters, custom indices options, and
-  indices-shard-stores execution.
+  filters, custom shard health status filters, custom indices options,
+  non-empty shard store metadata, and shard-store failures.
 
 The create-data-stream boundary covers:
 
@@ -4521,23 +4522,24 @@ roughly 1.77M ops/s in the latest local release run, it is effectively the same
 weight as the recovery reject boundary and does not expose a material wire-codec
 bottleneck.
 
-Current indices-shard-stores reject wire microbenchmark:
+Current indices-shard-stores implemented-path wire microbenchmark:
 
 ```text
-cargo run -p os-transport --release --bin indices-shard-stores-reject-wire-benchmark
-indices_shard_stores_reject_request_encode iterations=400000 elapsed_ms=236.859 ops_per_second=1688769.08 nanos_per_op=592.15
-indices_shard_stores_reject_request_decode iterations=400000 elapsed_ms=252.123 ops_per_second=1586527.13 nanos_per_op=630.31
-indices_shard_stores_reject_validation iterations=400000 elapsed_ms=243.427 ops_per_second=1643206.27 nanos_per_op=608.57
-indices_shard_stores_reject_wire_bottleneck_ops_per_second=1586527.13
+cargo run -p os-transport --release --bin indices-shard-stores-wire-benchmark
+indices_shard_stores_request_encode iterations=400000 elapsed_ms=228.128 ops_per_second=1753402.11 nanos_per_op=570.32
+indices_shard_stores_request_decode iterations=400000 elapsed_ms=250.669 ops_per_second=1595731.46 nanos_per_op=626.67
+indices_shard_stores_request_validate iterations=400000 elapsed_ms=254.361 ops_per_second=1572565.29 nanos_per_op=635.90
+indices_shard_stores_response_encode iterations=400000 elapsed_ms=86.236 ops_per_second=4638431.54 nanos_per_op=215.59
+indices_shard_stores_response_decode iterations=400000 elapsed_ms=90.972 ops_per_second=4396941.31 nanos_per_op=227.43
+indices_shard_stores_wire_bottleneck_ops_per_second=1572565.29
 ```
 
-The current indices-shard-stores fail-closed boundary bottleneck is request
-decode. This path carries the ClusterManagerNodeRead envelope, empty index
-array, default yellow/red shard health status filter, and strict open/closed
-index options before rejecting at admission. At roughly 1.59M ops/s in the
-latest local release run, decode is slightly heavier than the recovery and
-indices-segments reject boundaries because it must parse timeout/local and the
-status byte set.
+The current indices-shard-stores implemented-path bottleneck is request
+validation after decode. This path carries the ClusterManagerNodeRead envelope,
+empty index array, default yellow/red shard health status filter, strict
+open/closed index options, and an empty `IndicesShardStoresResponse`. At roughly
+1.57M ops/s in the latest local release run, it does not expose a material
+response-codec bottleneck.
 
 Current create-data-stream reject wire microbenchmark:
 
@@ -6292,7 +6294,6 @@ response-shape examples.
 
 ## Tier 2: Strong Phase A Follow-Up Read/Admin Actions
 
-- `IndicesShardStoresAction.INSTANCE`
 - `GetDataStreamAction.INSTANCE`
 - `DataStreamsStatsAction.INSTANCE`
 

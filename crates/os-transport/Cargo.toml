@@ -482,8 +482,8 @@ name = "get-all-pits-reject-wire-benchmark"
 path = "benchmarks/get_all_pits_reject_wire.rs"
 
 [[bin]]
-name = "indices-shard-stores-reject-wire-benchmark"
-path = "benchmarks/indices_shard_stores_reject_wire.rs"
+name = "indices-shard-stores-wire-benchmark"
+path = "benchmarks/indices_shard_stores_wire.rs"
 
 [[bin]]
 name = "create-data-stream-reject-wire-benchmark"
