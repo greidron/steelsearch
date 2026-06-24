@@ -331,6 +331,9 @@ Required semantic cases:
 - `query_string_search`
 - `query_string_url_q_overrides_body_search`
 - `count_query_string_url_q_search`
+- `render_template_named_search`
+- `search_template_named_target_search`
+- `msearch_template_named_root_search`
 - `regexp_query_search`
 - `terms_set_query_search`
 - `wildcard_query_search`

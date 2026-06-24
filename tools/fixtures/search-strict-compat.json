@@ -508,6 +508,30 @@
       ]
     }
   ],
+  "stored_scripts": [
+    {
+      "id": "logs-compat-template",
+      "body": {
+        "script": {
+          "lang": "mustache",
+          "source": {
+            "query": {
+              "term": {
+                "service": "{{service}}"
+              }
+            },
+            "sort": [
+              {
+                "bytes": {
+                  "order": "asc"
+                }
+              }
+            ]
+          }
+        }
+      }
+    }
+  ],
   "cases": [
     {
       "name": "cat_aliases_json",
@@ -2486,6 +2510,49 @@
       "extract": "search_hits",
       "family": "lexical",
       "description": "[lexical] query string search",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "render_template_named_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/_render/template/logs-compat-template",
+      "body": {
+        "params": {
+          "service": "catalog"
+        }
+      },
+      "extract": "render_template_semantic",
+      "family": "lexical",
+      "description": "[lexical] named search template render output",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "search_template_named_target_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search/template",
+      "body": {
+        "id": "logs-compat-template",
+        "params": {
+          "service": "catalog"
+        }
+      },
+      "extract": "search_summary",
+      "family": "lexical",
+      "description": "[lexical] named search template targeted search",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "msearch_template_named_root_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/_msearch/template",
+      "raw": true,
+      "body": "{\"index\":\"logs-compat\"}\n{\"id\":\"logs-compat-template\",\"params\":{\"service\":\"catalog\"}}\n{\"index\":\"logs-compat\"}\n{\"id\":\"logs-compat-template\",\"params\":{\"service\":\"missing\"}}\n",
+      "extract": "msearch_summary",
+      "family": "lexical",
+      "description": "[lexical] named multi-search template root search",
       "strict_source_parity_required": true
     },
     {
