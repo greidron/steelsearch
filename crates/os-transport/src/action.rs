@@ -26297,14 +26297,6 @@ impl OpenSearchCreatePitRequestWire {
                 reason: "OpenSearch create-PIT keep-alive uses an unknown time unit",
             });
         }
-        if self.indices_options
-            != OpenSearchIndicesOptionsWire::strict_expand_open_forbid_closed_ignore_throttled()
-        {
-            return Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "create pit indices options",
-                reason: "custom PIT indices options require index resolution semantics",
-            });
-        }
         if self.preference.is_some() {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "create pit preference",
@@ -57634,6 +57626,12 @@ mod tests {
             ..OpenSearchCreatePitRequestWire::default()
         };
         routing.validate_supported_subset().unwrap();
+
+        let custom_indices_options = OpenSearchCreatePitRequestWire {
+            indices_options: OpenSearchIndicesOptionsWire::strict_expand_hidden(),
+            ..OpenSearchCreatePitRequestWire::default()
+        };
+        custom_indices_options.validate_supported_subset().unwrap();
 
         let partial_creation = OpenSearchCreatePitRequestWire {
             allow_partial_pit_creation: Some(true),

@@ -3691,7 +3691,9 @@ fn build_local_create_pit_response(
     let keep_alive_millis = time_value_wire_to_millis(&request.keep_alive);
     let keep_alive_millis_u64 = keep_alive_millis.max(1) as u64;
     let bindings = dev_transport_pit_bindings();
-    let resolved_indices = transport_pit_indices(bindings, &request);
+    let Some(resolved_indices) = transport_pit_indices(bindings, &request) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
     let routing_values = request
         .routing
         .as_deref()
@@ -3739,7 +3741,7 @@ fn build_local_create_pit_response(
 fn transport_pit_indices(
     bindings: &DevTransportPitBindings,
     request: &os_transport::action::OpenSearchCreatePitRequestWire,
-) -> Vec<String> {
+) -> Option<Vec<String>> {
     let selectors = if request.indices.is_empty() {
         vec!["_all".to_string()]
     } else {
@@ -3755,15 +3757,18 @@ fn transport_pit_indices(
             let wildcard_selector =
                 selector == "_all" || selector.contains('*') || selector.contains('?');
             let effective_selector = if selector == "_all" { "*" } else { selector };
+            let mut selector_matched = false;
+            let mut selector_alias_matches = 0_usize;
             for (index_name, index_body) in indices {
                 if effective_selector == index_name
                     || wildcard_match(effective_selector, index_name)
                 {
+                    selector_matched = true;
                     if transport_pit_index_matches_options(
                         index_body,
                         wildcard_selector,
                         &request.indices_options,
-                    ) {
+                    )? {
                         resolved.push(index_name.clone());
                     }
                     continue;
@@ -3775,16 +3780,39 @@ fn transport_pit_indices(
                                 .keys()
                                 .any(|alias| wildcard_match(effective_selector, alias))
                         {
+                            selector_matched = true;
+                            selector_alias_matches += 1;
                             if transport_pit_index_matches_options(
                                 index_body,
                                 wildcard_selector,
                                 &request.indices_options,
-                            ) {
+                            )? {
                                 resolved.push(index_name.clone());
                             }
                         }
                     }
                 }
+            }
+            if selector_alias_matches > 1
+                && request.indices_options.forbid_aliases_to_multiple_indices
+            {
+                return None;
+            }
+            if !selector_matched
+                && ((wildcard_selector && !request.indices_options.allow_no_indices)
+                    || (!wildcard_selector && !request.indices_options.ignore_unavailable))
+            {
+                return None;
+            }
+        }
+    } else if !request.indices.is_empty() {
+        for selector in selectors.iter().filter(|selector| !selector.is_empty()) {
+            let wildcard_selector =
+                selector == "_all" || selector.contains('*') || selector.contains('?');
+            if (wildcard_selector && !request.indices_options.allow_no_indices)
+                || (!wildcard_selector && !request.indices_options.ignore_unavailable)
+            {
+                return None;
             }
         }
     }
@@ -3799,30 +3827,37 @@ fn transport_pit_indices(
     }
     resolved.sort();
     resolved.dedup();
-    resolved
+    Some(resolved)
 }
 
 fn transport_pit_index_matches_options(
     index_body: &Value,
     wildcard_selector: bool,
     options: &os_transport::action::OpenSearchIndicesOptionsWire,
-) -> bool {
+) -> Option<bool> {
     if !wildcard_selector {
-        return true;
+        let closed = index_body["state"]
+            .as_str()
+            .is_some_and(|state| state == "close");
+        return if closed && options.forbid_closed_indices {
+            None
+        } else {
+            Some(true)
+        };
     }
     let closed = index_body["state"]
         .as_str()
         .is_some_and(|state| state == "close");
     if closed && (!options.expand_closed || options.forbid_closed_indices) {
-        return false;
+        return Some(false);
     }
     if !closed && !options.expand_open {
-        return false;
+        return Some(false);
     }
     if transport_index_metadata_is_hidden(index_body) && !options.expand_hidden {
-        return false;
+        return Some(false);
     }
-    true
+    Some(true)
 }
 
 fn transport_pit_document_snapshot(
@@ -10801,7 +10836,24 @@ mod tests {
                         }
                     },
                     "aliases": {
-                        "logs-routed": {}
+                        "logs-routed": {},
+                        "shared-routed": {}
+                    }
+                },
+                "logs-routed-hidden-000001": {
+                    "settings": {
+                        "index": {
+                            "number_of_shards": "5",
+                            "hidden": "true"
+                        }
+                    }
+                },
+                "logs-routed-closed-000001": {
+                    "state": "close",
+                    "settings": {
+                        "index": {
+                            "number_of_shards": "7"
+                        }
                     }
                 },
                 "metrics-routed-pit-000001": {
@@ -10809,6 +10861,9 @@ mod tests {
                         "index": {
                             "number_of_shards": "1"
                         }
+                    },
+                    "aliases": {
+                        "shared-routed": {}
                     }
                 }
             }
@@ -10905,6 +10960,70 @@ mod tests {
         assert!(!routed_pit_context
             .documents
             .contains_key("metrics-routed-pit-000001:doc-c:tenant-a"));
+
+        let hidden_indices = transport_pit_indices(
+            dev_transport_pit_bindings(),
+            &os_transport::action::OpenSearchCreatePitRequestWire {
+                indices: vec!["logs-routed*".to_string()],
+                indices_options:
+                    os_transport::action::OpenSearchIndicesOptionsWire::strict_expand_hidden(),
+                ..os_transport::action::OpenSearchCreatePitRequestWire::default()
+            },
+        )
+        .expect("hidden wildcard PIT index resolution should be supported");
+        assert!(hidden_indices.contains(&"logs-routed-hidden-000001".to_string()));
+
+        let open_and_closed_indices = transport_pit_indices(
+            dev_transport_pit_bindings(),
+            &os_transport::action::OpenSearchCreatePitRequestWire {
+                indices: vec!["logs-routed*".to_string()],
+                indices_options:
+                    os_transport::action::OpenSearchIndicesOptionsWire::expand_open_closed_allow_no_indices(),
+                ..os_transport::action::OpenSearchCreatePitRequestWire::default()
+            },
+        )
+        .expect("open and closed wildcard PIT index resolution should be supported");
+        assert!(open_and_closed_indices.contains(&"logs-routed-closed-000001".to_string()));
+
+        assert!(transport_pit_indices(
+            dev_transport_pit_bindings(),
+            &os_transport::action::OpenSearchCreatePitRequestWire {
+                indices: vec!["logs-routed-closed-000001".to_string()],
+                ..os_transport::action::OpenSearchCreatePitRequestWire::default()
+            },
+        )
+        .is_none());
+        assert!(transport_pit_indices(
+            dev_transport_pit_bindings(),
+            &os_transport::action::OpenSearchCreatePitRequestWire {
+                indices: vec!["missing-routed-pit".to_string()],
+                ..os_transport::action::OpenSearchCreatePitRequestWire::default()
+            },
+        )
+        .is_none());
+        assert_eq!(
+            transport_pit_indices(
+                dev_transport_pit_bindings(),
+                &os_transport::action::OpenSearchCreatePitRequestWire {
+                    indices: vec!["missing-routed-pit".to_string()],
+                    indices_options:
+                        os_transport::action::OpenSearchIndicesOptionsWire::lenient_expand_open(),
+                    ..os_transport::action::OpenSearchCreatePitRequestWire::default()
+                },
+            )
+            .expect("ignore-unavailable PIT index resolution should be supported"),
+            Vec::<String>::new()
+        );
+        assert!(transport_pit_indices(
+            dev_transport_pit_bindings(),
+            &os_transport::action::OpenSearchCreatePitRequestWire {
+                indices: vec!["shared-routed".to_string()],
+                indices_options:
+                    os_transport::action::OpenSearchIndicesOptionsWire::delete_index_default(),
+                ..os_transport::action::OpenSearchCreatePitRequestWire::default()
+            },
+        )
+        .is_none());
     }
 
     #[test]
