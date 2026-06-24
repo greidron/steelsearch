@@ -18002,8 +18002,8 @@ impl SteelNode {
                 if mapping.get("store").and_then(Value::as_bool) != Some(true) {
                     continue;
                 }
-                if let Some(value) = source.get(field) {
-                    fields.insert(field.to_string(), Value::Array(vec![value.clone()]));
+                if let Some(value) = extract_source_path_value(source, field) {
+                    fields.insert(field.to_string(), search_field_values(value));
                 }
             }
         }
@@ -18043,8 +18043,8 @@ impl SteelNode {
                 if field.is_empty() {
                     continue;
                 }
-                if let Some(value) = source.get(field) {
-                    fields.insert(field.to_string(), Value::Array(vec![value.clone()]));
+                if let Some(value) = extract_source_path_value(source, field) {
+                    fields.insert(field.to_string(), search_field_values(value));
                 }
             }
         }
@@ -23449,17 +23449,8 @@ fn infer_dynamic_mapping_for_value(value: &Value) -> Value {
 }
 
 fn filter_source_fields(source: &Value, includes: &str) -> Value {
-    let Some(object) = source.as_object() else {
-        return source.clone();
-    };
-    let selectors = includes.split(',').map(str::trim).filter(|s| !s.is_empty()).collect::<BTreeSet<_>>();
-    let mut filtered = serde_json::Map::new();
-    for (key, value) in object {
-        if selectors.contains(key.as_str()) {
-            filtered.insert(key.clone(), value.clone());
-        }
-    }
-    Value::Object(filtered)
+    let selectors = source_filter_selectors(includes);
+    source_include_value(source, "", &selectors).unwrap_or_else(|| Value::Object(serde_json::Map::new()))
 }
 
 fn apply_search_source_projection_to_hits(hits: &mut [Value], body: &Value) {
@@ -23549,21 +23540,146 @@ fn source_filter_selector_csv(value: &Value) -> Option<String> {
 }
 
 fn exclude_source_fields(source: &Value, excludes: &str) -> Value {
-    let Some(object) = source.as_object() else {
-        return source.clone();
-    };
-    let selectors = excludes
+    let selectors = source_filter_selectors(excludes);
+    source_exclude_value(source, "", &selectors).unwrap_or_else(|| Value::Object(serde_json::Map::new()))
+}
+
+fn source_filter_selectors(selectors: &str) -> Vec<String> {
+    selectors
         .split(',')
         .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .collect::<BTreeSet<_>>();
-    let mut filtered = serde_json::Map::new();
-    for (key, value) in object {
-        if !selectors.contains(key.as_str()) {
-            filtered.insert(key.clone(), value.clone());
-        }
+        .filter(|selector| !selector.is_empty())
+        .map(ToOwned::to_owned)
+        .collect()
+}
+
+fn source_selector_matches(selector: &str, path: &str) -> bool {
+    if path.is_empty() {
+        return false;
     }
-    Value::Object(filtered)
+    if wildcard_match(selector, path) {
+        return true;
+    }
+    if !selector.contains('*') {
+        return path
+            .strip_prefix(selector)
+            .is_some_and(|suffix| suffix.starts_with('.'));
+    }
+    false
+}
+
+fn source_path_selected(path: &str, selectors: &[String]) -> bool {
+    selectors
+        .iter()
+        .any(|selector| source_selector_matches(selector, path))
+}
+
+fn source_include_value(value: &Value, path: &str, selectors: &[String]) -> Option<Value> {
+    if source_path_selected(path, selectors) {
+        return Some(value.clone());
+    }
+    match value {
+        Value::Object(object) => {
+            let mut filtered = serde_json::Map::new();
+            for (key, child) in object {
+                let child_path = if path.is_empty() {
+                    key.clone()
+                } else {
+                    format!("{path}.{key}")
+                };
+                if let Some(filtered_child) = source_include_value(child, &child_path, selectors) {
+                    filtered.insert(key.clone(), filtered_child);
+                }
+            }
+            (!filtered.is_empty()).then_some(Value::Object(filtered))
+        }
+        Value::Array(items) => {
+            let filtered_items = items
+                .iter()
+                .filter_map(|item| source_include_value(item, path, selectors))
+                .collect::<Vec<_>>();
+            (!filtered_items.is_empty()).then_some(Value::Array(filtered_items))
+        }
+        _ => None,
+    }
+}
+
+fn source_exclude_value(value: &Value, path: &str, selectors: &[String]) -> Option<Value> {
+    if source_path_selected(path, selectors) {
+        return None;
+    }
+    match value {
+        Value::Object(object) => {
+            let mut filtered = serde_json::Map::new();
+            for (key, child) in object {
+                let child_path = if path.is_empty() {
+                    key.clone()
+                } else {
+                    format!("{path}.{key}")
+                };
+                if let Some(filtered_child) = source_exclude_value(child, &child_path, selectors) {
+                    filtered.insert(key.clone(), filtered_child);
+                }
+            }
+            (!filtered.is_empty()).then_some(Value::Object(filtered))
+        }
+        Value::Array(items) => {
+            let filtered_items = items
+                .iter()
+                .filter_map(|item| source_exclude_value(item, path, selectors))
+                .collect::<Vec<_>>();
+            Some(Value::Array(filtered_items))
+        }
+        _ => Some(value.clone()),
+    }
+}
+
+fn extract_source_path_value(source: &Value, field: &str) -> Option<Value> {
+    if let Some(value) = source.get(field) {
+        return Some(value.clone());
+    }
+    let path = field.split('.').collect::<Vec<_>>();
+    extract_source_path_segments(source, &path)
+}
+
+fn extract_source_path_segments(value: &Value, path: &[&str]) -> Option<Value> {
+    if path.is_empty() {
+        return Some(value.clone());
+    }
+    match value {
+        Value::Object(object) => {
+            let mut joined = path[0].to_string();
+            for next_index in 0..path.len() {
+                if next_index > 0 {
+                    joined.push('.');
+                    joined.push_str(path[next_index]);
+                }
+                if let Some(child) = object.get(&joined) {
+                    return extract_source_path_segments(child, &path[next_index + 1..]);
+                }
+            }
+            None
+        }
+        Value::Array(items) => {
+            let values = items
+                .iter()
+                .filter_map(|item| extract_source_path_segments(item, path))
+                .flat_map(|value| match value {
+                    Value::Array(values) => values,
+                    value => vec![value],
+                })
+                .collect::<Vec<_>>();
+            (!values.is_empty()).then_some(Value::Array(values))
+        }
+        _ => None,
+    }
+}
+
+fn search_field_values(value: Value) -> Value {
+    match value {
+        Value::Array(values) => Value::Array(values),
+        value => Value::Array(vec![value]),
+    }
 }
 
 fn apply_supported_update_script(source: &mut Value, script: &Value) -> Result<(), RestResponse> {
@@ -38961,7 +39077,19 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         for (path, body) in [
             (
                 "/logs-search-params-a/_doc/doc-1",
-                serde_json::json!({ "tenant": "tenant-a", "message": "alpha", "rank": 1 }),
+                serde_json::json!({
+                    "tenant": "tenant-a",
+                    "message": "alpha",
+                    "rank": 1,
+                    "profile": {
+                        "name": "Ada",
+                        "tier": "gold"
+                    },
+                    "comments": [
+                        { "author": "ann", "text": "first" },
+                        { "author": "bob", "text": "second" }
+                    ]
+                }),
             ),
             (
                 "/logs-search-params-a/_doc/doc-2",
@@ -39200,6 +39328,51 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             serde_json::json!({ "tenant": "tenant-a", "rank": 1 })
         );
 
+        let source_nested_selectors_body = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-params-a/_search")
+                .with_json_body(serde_json::json!({
+                    "query": { "match_all": {} },
+                    "_source": ["profile.name", "comments.author"],
+                    "sort": [{ "rank": "asc" }],
+                    "size": 1
+                })),
+        );
+        assert_eq!(source_nested_selectors_body.status, 200);
+        assert_eq!(
+            source_nested_selectors_body.body["hits"]["hits"][0]["_source"],
+            serde_json::json!({
+                "profile": { "name": "Ada" },
+                "comments": [
+                    { "author": "ann" },
+                    { "author": "bob" }
+                ]
+            })
+        );
+
+        let source_wildcard_excludes_body = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-params-a/_search")
+                .with_json_body(serde_json::json!({
+                    "query": { "match_all": {} },
+                    "_source": {
+                        "includes": ["profile.*", "comments.*"],
+                        "excludes": ["*.text", "profile.tier"]
+                    },
+                    "sort": [{ "rank": "asc" }],
+                    "size": 1
+                })),
+        );
+        assert_eq!(source_wildcard_excludes_body.status, 200);
+        assert_eq!(
+            source_wildcard_excludes_body.body["hits"]["hits"][0]["_source"],
+            serde_json::json!({
+                "profile": { "name": "Ada" },
+                "comments": [
+                    { "author": "ann" },
+                    { "author": "bob" }
+                ]
+            })
+        );
+
         let source_query_param_includes = node.handle_rest_request(
             RestRequest::new(
                 RestMethod::Post,
@@ -39234,6 +39407,25 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             fields_body.body["hits"]["hits"][0]["fields"]["rank"],
             serde_json::json!([1])
+        );
+
+        let nested_fields_body = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-params-a/_search")
+                .with_json_body(serde_json::json!({
+                    "query": { "match_all": {} },
+                    "fields": ["profile.name", { "field": "comments.author" }],
+                    "sort": [{ "rank": "asc" }],
+                    "size": 1
+                })),
+        );
+        assert_eq!(nested_fields_body.status, 200);
+        assert_eq!(
+            nested_fields_body.body["hits"]["hits"][0]["fields"]["profile.name"],
+            serde_json::json!(["Ada"])
+        );
+        assert_eq!(
+            nested_fields_body.body["hits"]["hits"][0]["fields"]["comments.author"],
+            serde_json::json!(["ann", "bob"])
         );
 
         let invalid_fields_body = node.handle_rest_request(
