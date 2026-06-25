@@ -24541,6 +24541,7 @@ pub struct OpenSearchSearchSourceBuilderWire {
     pub size: i32,
     pub explain: Option<bool>,
     pub fetch_source: Option<OpenSearchFetchSourceContextWire>,
+    pub index_boosts: Vec<OpenSearchIndexBoostWire>,
     pub min_score: Option<f32>,
     pub search_after: Option<Vec<Value>>,
     pub point_in_time: Option<OpenSearchPointInTimeBuilderWire>,
@@ -24569,6 +24570,7 @@ impl Default for OpenSearchSearchSourceBuilderWire {
             size: 10,
             explain: None,
             fetch_source: None,
+            index_boosts: Vec::new(),
             min_score: None,
             search_after: None,
             point_in_time: None,
@@ -24621,6 +24623,7 @@ impl OpenSearchSearchSourceBuilderWire {
         if let Some(fetch_source) = &self.fetch_source {
             fetch_source.validate_supported_subset()?;
         }
+        validate_index_boosts(&self.index_boosts)?;
         validate_search_after_values(self.search_after.as_deref())?;
         if let Some(point_in_time) = &self.point_in_time {
             point_in_time.validate_supported_subset()?;
@@ -24673,7 +24676,7 @@ fn write_search_source_builder(
     write_optional_stored_fields_context(output, source.stored_fields.as_ref()); // stored fields
     output.write_vint(source.from); // from
     output.write_bool(false); // highlight
-    output.write_vint(0); // index boosts
+    write_index_boosts(output, &source.index_boosts); // index boosts
     write_optional_float(output, source.min_score); // min score
     output.write_bool(false); // post query
     output.write_bool(false); // query
@@ -24721,7 +24724,7 @@ fn read_search_source_builder(
         });
     }
     reject_absent_optional_writeable(input, "search request source highlight")?;
-    reject_empty_vint_list(input, "search request source index boosts")?;
+    let index_boosts = read_index_boosts(input)?;
     let min_score = read_optional_float(input)?;
     if min_score.is_some_and(|min_score| !min_score.is_finite()) {
         return Err(TransportActionWireError::UnsupportedWireShape {
@@ -24787,6 +24790,7 @@ fn read_search_source_builder(
         size,
         explain,
         fetch_source,
+        index_boosts,
         min_score,
         search_after,
         point_in_time,
@@ -24947,6 +24951,53 @@ fn read_optional_fetch_source_context(
     };
     fetch_source.validate_supported_subset()?;
     Ok(Some(fetch_source))
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct OpenSearchIndexBoostWire {
+    pub index: String,
+    pub boost: f32,
+}
+
+fn write_index_boosts(output: &mut StreamOutput, values: &[OpenSearchIndexBoostWire]) {
+    output.write_vint(values.len() as i32);
+    for value in values {
+        output.write_string(&value.index);
+        output.write_f32(value.boost);
+    }
+}
+
+fn read_index_boosts(
+    input: &mut StreamInput,
+) -> Result<Vec<OpenSearchIndexBoostWire>, TransportActionWireError> {
+    let len = read_len(input)?;
+    let mut values = Vec::with_capacity(len);
+    for _ in 0..len {
+        values.push(OpenSearchIndexBoostWire {
+            index: input.read_string()?,
+            boost: input.read_f32()?,
+        });
+    }
+    validate_index_boosts(&values)?;
+    Ok(values)
+}
+
+fn validate_index_boosts(
+    values: &[OpenSearchIndexBoostWire],
+) -> Result<(), TransportActionWireError> {
+    if values.iter().any(|value| value.index.is_empty()) {
+        return Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "search request source index boosts",
+            reason: "OpenSearch SearchSourceBuilder index boosts require non-empty index names",
+        });
+    }
+    if values.iter().any(|value| !value.boost.is_finite()) {
+        return Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "search request source index boosts",
+            reason: "OpenSearch SearchSourceBuilder index boosts require finite float values",
+        });
+    }
+    Ok(())
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -60146,6 +60197,16 @@ mod tests {
                     includes: vec!["message".to_string(), "tenant".to_string()],
                     excludes: vec!["debug".to_string()],
                 }),
+                index_boosts: vec![
+                    OpenSearchIndexBoostWire {
+                        index: "logs-000001".to_string(),
+                        boost: 2.0,
+                    },
+                    OpenSearchIndexBoostWire {
+                        index: "logs-000002".to_string(),
+                        boost: 0.5,
+                    },
+                ],
                 min_score: Some(0.25),
                 search_after: Some(vec![json!(20), json!("tenant-a"), json!(true), Value::Null]),
                 point_in_time: Some(OpenSearchPointInTimeBuilderWire {
@@ -60349,6 +60410,42 @@ mod tests {
             ambiguous_fetch_source.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "search request source fetch source",
+                ..
+            })
+        ));
+
+        let invalid_index_boost_name = OpenSearchSearchRequestWire {
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                index_boosts: vec![OpenSearchIndexBoostWire {
+                    index: String::new(),
+                    boost: 1.0,
+                }],
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        assert!(matches!(
+            invalid_index_boost_name.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source index boosts",
+                ..
+            })
+        ));
+
+        let invalid_index_boost_value = OpenSearchSearchRequestWire {
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                index_boosts: vec![OpenSearchIndexBoostWire {
+                    index: "logs-000001".to_string(),
+                    boost: f32::NAN,
+                }],
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        assert!(matches!(
+            invalid_index_boost_value.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source index boosts",
                 ..
             })
         ));
