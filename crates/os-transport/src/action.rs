@@ -25998,6 +25998,7 @@ pub struct OpenSearchSearchResponseWire {
     pub collapse_values: Option<Vec<Value>>,
     pub timed_out: bool,
     pub terminated_early: Option<bool>,
+    pub processor_results: Vec<OpenSearchProcessorExecutionDetailWire>,
     pub total_shards: i32,
     pub successful_shards: i32,
     pub shard_failures: Vec<OpenSearchShardSearchFailureWire>,
@@ -26026,6 +26027,7 @@ impl OpenSearchSearchResponseWire {
             collapse_values: None,
             timed_out: false,
             terminated_early: None,
+            processor_results: Vec::new(),
             total_shards: 1,
             successful_shards: 1,
             shard_failures: Vec::new(),
@@ -26066,7 +26068,7 @@ impl OpenSearchSearchResponseWire {
             output.write_vint(0);
         }
         if version.on_or_after(Version::from_id(2_190_099)) {
-            output.write_vint(0);
+            write_processor_results(output, &self.processor_results)?;
         }
         output.write_vint(self.total_shards);
         output.write_vint(self.successful_shards);
@@ -26120,9 +26122,11 @@ impl OpenSearchSearchResponseWire {
         if version.on_or_after(Version::from_id(2_100_099)) {
             reject_empty_list_len(&mut input, "search response ext builders")?;
         }
-        if version.on_or_after(Version::from_id(2_190_099)) {
-            reject_empty_list_len(&mut input, "search response processor results")?;
-        }
+        let processor_results = if version.on_or_after(Version::from_id(2_190_099)) {
+            read_processor_results(&mut input)?
+        } else {
+            Vec::new()
+        };
         let response = Self {
             total_hits: total_hits.map(|(value, _)| value),
             total_hits_relation: total_hits.map(|(_, relation)| relation).unwrap_or(0),
@@ -26133,6 +26137,7 @@ impl OpenSearchSearchResponseWire {
             collapse_values,
             timed_out,
             terminated_early,
+            processor_results,
             total_shards: input.read_vint()?,
             successful_shards: input.read_vint()?,
             shard_failures: Vec::new(),
@@ -26222,6 +26227,9 @@ impl OpenSearchSearchResponseWire {
         for failure in &self.shard_failures {
             failure.validate_supported_subset()?;
         }
+        for processor_result in &self.processor_results {
+            processor_result.validate_supported_subset()?;
+        }
         if self.took_millis < 0 {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "search response took",
@@ -26231,6 +26239,109 @@ impl OpenSearchSearchResponseWire {
         validate_phase_took(&self.phase_took)?;
         Ok(())
     }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct OpenSearchProcessorExecutionDetailWire {
+    pub processor_name: String,
+    pub duration_millis: i64,
+    pub input_data: Value,
+    pub output_data: Value,
+    pub status: i32,
+    pub error_message: String,
+    pub tag: String,
+}
+
+impl OpenSearchProcessorExecutionDetailWire {
+    pub const SUCCESS: i32 = 0;
+    pub const FAIL: i32 = 1;
+
+    pub fn success(processor_name: impl Into<String>, duration_millis: i64) -> Self {
+        Self {
+            processor_name: processor_name.into(),
+            duration_millis,
+            input_data: Value::Null,
+            output_data: Value::Null,
+            status: Self::SUCCESS,
+            error_message: String::new(),
+            tag: String::new(),
+        }
+    }
+
+    fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
+        if self.processor_name.is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search response processor result",
+                reason: "OpenSearch processor execution detail requires a processor name",
+            });
+        }
+        if self.duration_millis < 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search response processor result",
+                reason: "OpenSearch processor execution duration cannot be negative",
+            });
+        }
+        if self.status != Self::SUCCESS && self.status != Self::FAIL {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search response processor result",
+                reason: "OpenSearch processor execution status must be SUCCESS or FAIL",
+            });
+        }
+        Ok(())
+    }
+}
+
+fn write_processor_results(
+    output: &mut StreamOutput,
+    processor_results: &[OpenSearchProcessorExecutionDetailWire],
+) -> Result<(), TransportActionWireError> {
+    output.write_vint(processor_results.len() as i32);
+    for processor_result in processor_results {
+        write_processor_result(output, processor_result)?;
+    }
+    Ok(())
+}
+
+fn read_processor_results(
+    input: &mut StreamInput,
+) -> Result<Vec<OpenSearchProcessorExecutionDetailWire>, TransportActionWireError> {
+    let len = read_len(input)?;
+    let mut processor_results = Vec::with_capacity(len);
+    for _ in 0..len {
+        processor_results.push(read_processor_result(input)?);
+    }
+    Ok(processor_results)
+}
+
+fn write_processor_result(
+    output: &mut StreamOutput,
+    processor_result: &OpenSearchProcessorExecutionDetailWire,
+) -> Result<(), TransportActionWireError> {
+    processor_result.validate_supported_subset()?;
+    output.write_string(&processor_result.processor_name);
+    output.write_i64(processor_result.duration_millis);
+    write_generic_json_value(output, &processor_result.input_data)?;
+    write_generic_json_value(output, &processor_result.output_data)?;
+    output.write_vint(processor_result.status);
+    output.write_string(&processor_result.error_message);
+    output.write_string(&processor_result.tag);
+    Ok(())
+}
+
+fn read_processor_result(
+    input: &mut StreamInput,
+) -> Result<OpenSearchProcessorExecutionDetailWire, TransportActionWireError> {
+    let processor_result = OpenSearchProcessorExecutionDetailWire {
+        processor_name: input.read_string()?,
+        duration_millis: input.read_i64()?,
+        input_data: read_generic_json_value(input, "search response processor result input")?,
+        output_data: read_generic_json_value(input, "search response processor result output")?,
+        status: input.read_vint()?,
+        error_message: input.read_string()?,
+        tag: input.read_string()?,
+    };
+    processor_result.validate_supported_subset()?;
+    Ok(processor_result)
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -59215,6 +59326,15 @@ mod tests {
             collapse_values: None,
             timed_out: true,
             terminated_early: Some(false),
+            processor_results: vec![OpenSearchProcessorExecutionDetailWire {
+                processor_name: "filter_query".to_string(),
+                duration_millis: 7,
+                input_data: json!({ "query": "before" }),
+                output_data: json!({ "query": "after" }),
+                status: OpenSearchProcessorExecutionDetailWire::SUCCESS,
+                error_message: String::new(),
+                tag: "request".to_string(),
+            }],
             total_shards: 3,
             successful_shards: 2,
             shard_failures: vec![OpenSearchShardSearchFailureWire {
@@ -59253,6 +59373,7 @@ mod tests {
         assert!(decoded.max_score.is_nan());
         assert_eq!(decoded.timed_out, response.timed_out);
         assert_eq!(decoded.terminated_early, response.terminated_early);
+        assert_eq!(decoded.processor_results, response.processor_results);
         assert_eq!(decoded.total_shards, response.total_shards);
         assert_eq!(decoded.successful_shards, response.successful_shards);
         assert_eq!(decoded.shard_failures, response.shard_failures);
@@ -59616,6 +59737,21 @@ mod tests {
             invalid_failure_count.validate_supported_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "search response shard failures",
+                ..
+            })
+        ));
+
+        let invalid_processor_result = OpenSearchSearchResponseWire {
+            processor_results: vec![OpenSearchProcessorExecutionDetailWire {
+                status: 99,
+                ..OpenSearchProcessorExecutionDetailWire::success("processor", 1)
+            }],
+            ..OpenSearchSearchResponseWire::default()
+        };
+        assert!(matches!(
+            invalid_processor_result.validate_supported_subset(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search response processor result",
                 ..
             })
         ));
