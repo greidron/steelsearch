@@ -21,13 +21,19 @@
       "family": "bool.filter",
       "policy": "accepted",
       "reason": "Boolean filter composition remains deterministic and read-only."
+    },
+    {
+      "family": "pit",
+      "policy": "accepted",
+      "reason": "PIT lifecycle transport actions have wire evidence and the forwarding profile now validates open, search, list, and close behavior."
     }
   ],
   "accepted_request_options": [
     "sort",
     "from",
     "size",
-    "track_total_hits"
+    "track_total_hits",
+    "pit"
   ],
   "rejected_query_families": [
     {
@@ -49,11 +55,6 @@
       "family": "scroll",
       "policy": "rejected",
       "reason": "Search session lifecycle requires additional forwarding contracts."
-    },
-    {
-      "family": "pit",
-      "policy": "rejected",
-      "reason": "PIT lifecycle requires additional forwarding contracts."
     },
     {
       "family": "search_after",

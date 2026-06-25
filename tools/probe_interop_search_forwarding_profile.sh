@@ -82,7 +82,32 @@ for doc in fixture["seed_docs"]:
 cases = []
 all_checks = []
 for case in fixture["cases"]:
-    status, body = request("GET", f"/{index_name}/_search", case["body"])
+    pit_id = None
+    pit_list_before_close_count = None
+    pit_close_successful = None
+    if case.get("use_pit"):
+        open_status, open_body = request(
+            "POST",
+            f"/{index_name}/_search/point_in_time?keep_alive=1m",
+        )
+        pit_id = open_body.get("pit_id") or open_body.get("id")
+        search_body = dict(case["body"])
+        search_body["pit"] = {"id": pit_id, "keep_alive": "1m"}
+        status, body = request("GET", "/_search", search_body)
+        _, list_body = request("GET", "/_search/point_in_time/_all")
+        pits = list_body.get("pits") or []
+        pit_list_before_close_count = len(pits)
+        _, close_body = request("DELETE", "/_search/point_in_time", {"pit_id": pit_id})
+        matching_close_results = [
+            item
+            for item in close_body.get("pits", [])
+            if item.get("pit_id") == pit_id
+        ]
+        pit_close_successful = bool(matching_close_results) and all(
+            item.get("successful") is True for item in matching_close_results
+        )
+    else:
+        status, body = request("GET", f"/{index_name}/_search", case["body"])
     actual_ids = [hit["_id"] for hit in body["hits"]["hits"]]
     actual_total = body["hits"]["total"]["value"]
     checks = {
@@ -90,12 +115,23 @@ for case in fixture["cases"]:
         "total": actual_total == case["expected_total"],
         "ids": actual_ids == case["expected_ids"],
     }
+    if case.get("use_pit"):
+        checks.update(
+            {
+                "pit_open": bool(pit_id) and open_status == 200,
+                "pit_list": pit_list_before_close_count is not None
+                and pit_list_before_close_count >= 1,
+                "pit_close": pit_close_successful is True,
+            }
+        )
     cases.append(
         {
             "name": case["name"],
             "checks": checks,
             "actual_total": actual_total,
             "actual_ids": actual_ids,
+            "pit_id_present": bool(pit_id) if case.get("use_pit") else None,
+            "pit_list_before_close_count": pit_list_before_close_count,
         }
     )
     all_checks.extend(checks.values())

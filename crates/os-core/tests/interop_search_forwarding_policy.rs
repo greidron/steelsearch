@@ -1,4 +1,5 @@
 use serde::Deserialize;
+use serde_json::Value;
 use std::collections::BTreeSet;
 
 #[derive(Debug, Deserialize)]
@@ -41,16 +42,34 @@ fn interop_search_forwarding_policy_fixture_stays_bounded_and_explicit() {
         assert!(rejected.insert(row.family.clone()), "duplicate rejected family {}", row.family);
     }
 
-    for required in ["match_all", "term", "range", "bool.filter"] {
+    for required in ["match_all", "term", "range", "bool.filter", "pit"] {
         assert!(accepted.contains(required), "missing accepted family {required}");
     }
-    for required in ["scroll", "pit", "knn", "hybrid", "aggregations"] {
+    for required in ["scroll", "knn", "hybrid", "aggregations"] {
         assert!(rejected.contains(required), "missing rejected family {required}");
     }
-    for required in ["sort", "from", "size", "track_total_hits"] {
+    assert!(
+        !rejected.contains("pit"),
+        "pit must not remain rejected after lifecycle forwarding profile coverage"
+    );
+    for required in ["sort", "from", "size", "track_total_hits", "pit"] {
         assert!(
             fixture.accepted_request_options.iter().any(|option| option == required),
             "missing accepted request option {required}"
         );
     }
+
+    let forwarding_fixture: Value = serde_json::from_str(include_str!(
+        "../../../tools/fixtures/interop-search-forwarding.json"
+    ))
+    .unwrap();
+    let cases = forwarding_fixture["cases"]
+        .as_array()
+        .expect("interop search forwarding cases must be an array");
+    assert!(
+        cases
+            .iter()
+            .any(|case| case["name"] == "pit_lifecycle_search" && case["use_pit"] == true),
+        "accepted pit policy requires an executable PIT lifecycle search forwarding profile case"
+    );
 }
