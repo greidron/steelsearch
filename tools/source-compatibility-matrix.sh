@@ -135,6 +135,9 @@ route_status() {
     "GET /"|"HEAD /")
       echo "implemented"
       ;;
+    "GET /_msearch/template"|"POST /_msearch/template"|"GET /{index}/_msearch/template"|"POST /{index}/_msearch/template"|"GET /_render/template"|"POST /_render/template"|"GET /_render/template/{id}"|"POST /_render/template/{id}"|"GET /_search/template"|"POST /_search/template"|"GET /{index}/_search/template"|"POST /{index}/_search/template")
+      echo "implemented"
+      ;;
     "GET /_cluster/health"|"PUT /{index}"|"GET /{index}"|"DELETE /{index}")
       echo "stubbed"
       ;;
