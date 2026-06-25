@@ -215,10 +215,10 @@ Current 0.2.4 mixed-cluster coverage evidence:
 - Current source-derived inventory is not an exhaustive OpenSearch API
   compatibility closure claim. The generated matrix currently has 754 rows:
   389 REST routes, 160 transport actions, 127 search registrations, and 78 node
-  runtime entries. Of the transport source rows, 17 are `implemented`, 143 are
+  runtime entries. Of the transport source rows, 42 are `implemented`, 118 are
   `partial`, and none remain `planned`; the partial rows still require
   owner-level server-side execution work before they can be promoted. Of the
-  REST source rows, 371 are in scope and all are matched by fixtures, but 363
+  REST source rows, 371 are in scope and all are matched by fixtures, but 352
   REST rows remain classified as `planned` in the source-derived matrix until
   each route has an owner-level implementation classification and exhaustive
   positive/negative live comparison coverage.

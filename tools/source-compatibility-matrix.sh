@@ -67,7 +67,7 @@ route_status() {
     "GET /_cluster/health"|"PUT /{index}"|"GET /{index}"|"DELETE /{index}"|"PUT /{index}/_doc/{id}"|"GET /{index}/_doc/{id}")
       echo "stubbed"
       ;;
-    "POST /{index}/_search/point_in_time"|"DELETE /_search/point_in_time"|"DELETE /_search/point_in_time/_all"|"GET /_search/point_in_time/_all"|"GET /_cat/pit_segments"|"GET /_cat/pit_segments/_all")
+    "POST /{index}/_search/point_in_time"|"DELETE /_search/point_in_time"|"DELETE /_search/point_in_time/_all"|"GET /_search/point_in_time/_all"|"GET /_cat/pit_segments"|"GET /_cat/pit_segments/_all"|"GET /_list"|"GET /_list/indices"|"GET /_list/indices/{index}"|"GET /_list/shards"|"GET /_list/shards/{index}")
       echo "implemented"
       ;;
     *)

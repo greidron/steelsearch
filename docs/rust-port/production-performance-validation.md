@@ -265,18 +265,18 @@ HTTP methods and paths, then optionally narrows the view to the fixtures from
 `ok` required suites in a unified E2E report. The current 0.2.4 audit results
 are:
 
-- source REST inventory: 389 total rows, 373 in scope, with 365 `planned`, 6
-  `stubbed`, 2 `implemented`, and 16 `out-of-scope` rows;
-- all repo compatibility fixtures touch 289 of the 373 in-scope source route
-  rows and leave 84 in-scope rows without fixture coverage;
+- source REST inventory: 389 total rows, 371 in scope, with 352 `planned`, 6
+  `stubbed`, 13 `implemented`, and 18 `out-of-scope` rows;
+- all repo compatibility fixtures touch 371 of the 371 in-scope source route
+  rows and leave 0 in-scope rows without fixture coverage;
 - the green required live audit for `search-semantic` and `vector-search`
-  touches 15 of the 373 in-scope source route rows and leaves 358 in-scope rows
+  touches 17 of the 371 in-scope source route rows and leaves 354 in-scope rows
   outside that green live subset;
 - the broader collected unified report now has failed=0 and missing=0 across
   the retained required suites, including `search-compat` and `search-strict`;
-- that broader report touches 104 of the 373 in-scope source route rows and
-  leaves 269 in-scope rows outside the current live required-suite evidence;
-- the broader report still has 19 fixture-classified known gap or skipped cases, so the stricter
+- that broader report touches 142 of the 371 in-scope source route rows and
+  leaves 229 in-scope rows outside the current live required-suite evidence;
+- the broader report still has 25 fixture-classified known gap or skipped cases, so the stricter
   no-skip release gate remains limited to `search-semantic` and
   `vector-search`.
 

@@ -339,11 +339,11 @@ planned	GET	/_ingest/pipeline/{id}/_simulate	/home/ubuntu/OpenSearch/server/src/
 planned	POST	/_ingest/pipeline/{id}/_simulate	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/ingest/RestSimulatePipelineAction.java	64
 planned	GET	/_ingest/pipeline/_simulate	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/ingest/RestSimulatePipelineAction.java	65
 planned	POST	/_ingest/pipeline/_simulate	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/ingest/RestSimulatePipelineAction.java	66
-planned	GET	/_list/indices	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/list/RestIndicesListAction.java	45
-planned	GET	/_list/indices/{index}	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/list/RestIndicesListAction.java	45
-planned	GET	/_list	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/list/RestListAction.java	45
-planned	GET	/_list/shards	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/list/RestShardsListAction.java	35
-planned	GET	/_list/shards/{index}	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/list/RestShardsListAction.java	35
+implemented	GET	/_list/indices	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/list/RestIndicesListAction.java	45
+implemented	GET	/_list/indices/{index}	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/list/RestIndicesListAction.java	45
+implemented	GET	/_list	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/list/RestListAction.java	45
+implemented	GET	/_list/shards	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/list/RestShardsListAction.java	35
+implemented	GET	/_list/shards/{index}	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/list/RestShardsListAction.java	35
 planned	DELETE	/_search/scroll	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/search/RestClearScrollAction.java	58
 planned	DELETE	/_search/scroll/{scroll_id}	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/search/RestClearScrollAction.java	58
 planned	GET	/_count	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/search/RestCountAction.java	71
