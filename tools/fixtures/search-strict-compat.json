@@ -2324,6 +2324,20 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "pit_close_unknown_field_error_search",
+      "area": "search",
+      "method": "DELETE",
+      "path": "/_search/point_in_time",
+      "body": {
+        "id": "pit-1"
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] close PIT rejects unknown body fields like OpenSearch",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "pit_close_object_id_error_search",
       "area": "search",
       "method": "DELETE",
