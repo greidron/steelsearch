@@ -24930,6 +24930,7 @@ fn validate_search_after_values(values: Option<&[Value]>) -> Result<(), Transpor
 pub enum OpenSearchQueryBuilderWire {
     Bool(OpenSearchBoolQueryBuilderWire),
     Boosting(OpenSearchBoostingQueryBuilderWire),
+    Common(OpenSearchCommonTermsQueryBuilderWire),
     ConstantScore(OpenSearchConstantScoreQueryBuilderWire),
     DisMax(OpenSearchDisMaxQueryBuilderWire),
     Exists(OpenSearchExistsQueryBuilderWire),
@@ -24957,6 +24958,20 @@ pub struct OpenSearchBoostingQueryBuilderWire {
     pub positive: Box<OpenSearchQueryBuilderWire>,
     pub negative: Box<OpenSearchQueryBuilderWire>,
     pub negative_boost: f32,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct OpenSearchCommonTermsQueryBuilderWire {
+    pub boost: f32,
+    pub query_name: Option<String>,
+    pub field_name: String,
+    pub text: Value,
+    pub high_freq_operator: OpenSearchMatchOperatorWire,
+    pub low_freq_operator: OpenSearchMatchOperatorWire,
+    pub analyzer: Option<String>,
+    pub low_freq_minimum_should_match: Option<String>,
+    pub high_freq_minimum_should_match: Option<String>,
+    pub cutoff_frequency: f32,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -25235,6 +25250,20 @@ fn write_named_query_builder(output: &mut StreamOutput, query: &OpenSearchQueryB
             write_named_query_builder(output, &query.negative);
             output.write_f32(query.negative_boost);
         }
+        OpenSearchQueryBuilderWire::Common(query) => {
+            output.write_string("common");
+            output.write_f32(query.boost);
+            output.write_optional_string(query.query_name.as_deref());
+            output.write_string(&query.field_name);
+            write_generic_json_value(output, &query.text)
+                .expect("validated common terms query text must encode as an OpenSearch generic scalar");
+            write_match_operator(output, query.high_freq_operator);
+            write_match_operator(output, query.low_freq_operator);
+            output.write_optional_string(query.analyzer.as_deref());
+            output.write_optional_string(query.low_freq_minimum_should_match.as_deref());
+            output.write_optional_string(query.high_freq_minimum_should_match.as_deref());
+            output.write_f32(query.cutoff_frequency);
+        }
         OpenSearchQueryBuilderWire::ConstantScore(query) => {
             output.write_string("constant_score");
             output.write_f32(query.boost);
@@ -25447,6 +25476,20 @@ fn read_named_query_builder(
                 positive: Box::new(read_named_query_builder(input)?),
                 negative: Box::new(read_named_query_builder(input)?),
                 negative_boost: input.read_f32()?,
+            },
+        )),
+        "common" => Ok(OpenSearchQueryBuilderWire::Common(
+            OpenSearchCommonTermsQueryBuilderWire {
+                boost: input.read_f32()?,
+                query_name: input.read_optional_string()?,
+                field_name: input.read_string()?,
+                text: read_generic_json_value(input, "search request source query")?,
+                high_freq_operator: read_match_operator(input)?,
+                low_freq_operator: read_match_operator(input)?,
+                analyzer: input.read_optional_string()?,
+                low_freq_minimum_should_match: input.read_optional_string()?,
+                high_freq_minimum_should_match: input.read_optional_string()?,
+                cutoff_frequency: input.read_f32()?,
             },
         )),
         "constant_score" => Ok(OpenSearchQueryBuilderWire::ConstantScore(
@@ -25682,7 +25725,7 @@ fn read_named_query_builder(
         )),
         _ => Err(TransportActionWireError::UnsupportedWireShape {
             shape: "search request source query",
-            reason: "only OpenSearch bool, boosting, constant_score, dis_max, exists, fuzzy, ids, match_all, match_none, match, match_bool_prefix, match_phrase, match_phrase_prefix, prefix, range, regexp, term, terms, wildcard, and wrapper QueryBuilder values are decoded by this subset",
+            reason: "only OpenSearch bool, boosting, common, constant_score, dis_max, exists, fuzzy, ids, match_all, match_none, match, match_bool_prefix, match_phrase, match_phrase_prefix, prefix, range, regexp, term, terms, wildcard, and wrapper QueryBuilder values are decoded by this subset",
         }),
     }
 }
@@ -25737,6 +25780,29 @@ fn validate_query_builder(
                 return Err(TransportActionWireError::UnsupportedWireShape {
                     shape: "search request source query",
                     reason: "OpenSearch BoostingQueryBuilder negative boost must be finite and non-negative",
+                });
+            }
+        }
+        OpenSearchQueryBuilderWire::Common(query) => {
+            validate_query_boost_and_name(query.boost, query.query_name.as_deref())?;
+            if query.field_name.is_empty() {
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "search request source query",
+                    reason: "OpenSearch CommonTermsQueryBuilder field name must be non-empty",
+                });
+            }
+            validate_match_query_value(&query.text)?;
+            validate_optional_non_empty_query_string(query.analyzer.as_deref())?;
+            validate_optional_non_empty_query_string(
+                query.low_freq_minimum_should_match.as_deref(),
+            )?;
+            validate_optional_non_empty_query_string(
+                query.high_freq_minimum_should_match.as_deref(),
+            )?;
+            if !query.cutoff_frequency.is_finite() {
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "search request source query",
+                    reason: "OpenSearch CommonTermsQueryBuilder cutoff frequency must be finite",
                 });
             }
         }
@@ -62479,6 +62545,32 @@ mod tests {
         let decoded = OpenSearchSearchRequestWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, boosting_query_request);
 
+        let common_query_request = OpenSearchSearchRequestWire {
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                query: Some(OpenSearchQueryBuilderWire::Common(
+                    OpenSearchCommonTermsQueryBuilderWire {
+                        boost: 1.0,
+                        query_name: Some("message-common".to_string()),
+                        field_name: "message".to_string(),
+                        text: json!("steel search"),
+                        high_freq_operator: OpenSearchMatchOperatorWire::Or,
+                        low_freq_operator: OpenSearchMatchOperatorWire::And,
+                        analyzer: Some("standard".to_string()),
+                        low_freq_minimum_should_match: Some("2<75%".to_string()),
+                        high_freq_minimum_should_match: Some("1".to_string()),
+                        cutoff_frequency: 0.01,
+                    },
+                )),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        let mut output = StreamOutput::new();
+        common_query_request.write(&mut output);
+
+        let decoded = OpenSearchSearchRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, common_query_request);
+
         let dis_max_query_request = OpenSearchSearchRequestWire {
             source: Some(OpenSearchSearchSourceBuilderWire {
                 query: Some(OpenSearchQueryBuilderWire::DisMax(
@@ -63133,6 +63225,62 @@ mod tests {
         };
         assert!(matches!(
             invalid_boosting_negative_boost.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source query",
+                ..
+            })
+        ));
+
+        let invalid_common_text = OpenSearchSearchRequestWire {
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                query: Some(OpenSearchQueryBuilderWire::Common(
+                    OpenSearchCommonTermsQueryBuilderWire {
+                        boost: 1.0,
+                        query_name: None,
+                        field_name: "message".to_string(),
+                        text: Value::Null,
+                        high_freq_operator: OpenSearchMatchOperatorWire::Or,
+                        low_freq_operator: OpenSearchMatchOperatorWire::Or,
+                        analyzer: None,
+                        low_freq_minimum_should_match: None,
+                        high_freq_minimum_should_match: None,
+                        cutoff_frequency: 0.01,
+                    },
+                )),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        assert!(matches!(
+            invalid_common_text.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source query",
+                ..
+            })
+        ));
+
+        let invalid_common_cutoff = OpenSearchSearchRequestWire {
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                query: Some(OpenSearchQueryBuilderWire::Common(
+                    OpenSearchCommonTermsQueryBuilderWire {
+                        boost: 1.0,
+                        query_name: None,
+                        field_name: "message".to_string(),
+                        text: json!("steel search"),
+                        high_freq_operator: OpenSearchMatchOperatorWire::Or,
+                        low_freq_operator: OpenSearchMatchOperatorWire::Or,
+                        analyzer: None,
+                        low_freq_minimum_should_match: None,
+                        high_freq_minimum_should_match: None,
+                        cutoff_frequency: f32::NAN,
+                    },
+                )),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        assert!(matches!(
+            invalid_common_cutoff.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "search request source query",
                 ..
