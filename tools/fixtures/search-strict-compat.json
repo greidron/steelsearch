@@ -2580,6 +2580,17 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "pit_open_blank_ignore_unavailable_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search/point_in_time?keep_alive=1m&ignore_unavailable=%20",
+      "body": null,
+      "extract": "pit_open",
+      "family": "lexical",
+      "description": "[lexical] open PIT treats blank ignore_unavailable like OpenSearch",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "pit_open_invalid_allow_no_indices_error_search",
       "area": "search",
       "method": "POST",
@@ -2601,6 +2612,17 @@
       "extract": "search_error_root_cause",
       "family": "lexical",
       "description": "[lexical] open PIT rejects invalid ignore_throttled like OpenSearch",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "pit_open_blank_allow_partial_creation_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search/point_in_time?keep_alive=1m&allow_partial_pit_creation=%20",
+      "body": null,
+      "extract": "pit_open",
+      "family": "lexical",
+      "description": "[lexical] open PIT treats blank allow_partial_pit_creation like OpenSearch",
       "strict_source_parity_required": true
     },
     {

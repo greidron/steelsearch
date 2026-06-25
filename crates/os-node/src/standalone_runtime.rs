@@ -556,9 +556,51 @@ fn split_path_and_query(target: &str) -> (String, BTreeMap<String, String>) {
             continue;
         }
         let (name, value) = pair.split_once('=').unwrap_or((pair, ""));
-        query_params.insert(name.to_string(), value.to_string());
+        query_params.insert(
+            percent_decode_query_component(name),
+            percent_decode_query_component(value),
+        );
     }
     (path.to_string(), query_params)
+}
+
+fn percent_decode_query_component(component: &str) -> String {
+    let bytes = component.as_bytes();
+    let mut decoded = Vec::with_capacity(bytes.len());
+    let mut index = 0;
+    while index < bytes.len() {
+        match bytes[index] {
+            b'+' => {
+                decoded.push(b' ');
+                index += 1;
+            }
+            b'%' if index + 2 < bytes.len() => {
+                let high = hex_value(bytes[index + 1]);
+                let low = hex_value(bytes[index + 2]);
+                if let (Some(high), Some(low)) = (high, low) {
+                    decoded.push((high << 4) | low);
+                    index += 3;
+                } else {
+                    decoded.push(bytes[index]);
+                    index += 1;
+                }
+            }
+            byte => {
+                decoded.push(byte);
+                index += 1;
+            }
+        }
+    }
+    String::from_utf8_lossy(&decoded).into_owned()
+}
+
+fn hex_value(byte: u8) -> Option<u8> {
+    match byte {
+        b'0'..=b'9' => Some(byte - b'0'),
+        b'a'..=b'f' => Some(byte - b'a' + 10),
+        b'A'..=b'F' => Some(byte - b'A' + 10),
+        _ => None,
+    }
 }
 
 fn find_header_end(buffer: &[u8]) -> Option<usize> {
@@ -20522,7 +20564,7 @@ fn validate_opensearch_boolean_query_param(raw: Option<&String>) -> Option<RestR
     let Some(value) = raw.map(String::as_str) else {
         return None;
     };
-    if value.is_empty() || value == "true" || value == "false" {
+    if value.trim().is_empty() || value == "true" || value == "false" {
         return None;
     }
     Some(opensearch_boolean_parse_error(value))
@@ -20711,7 +20753,7 @@ fn validate_opensearch_named_boolean_query_param(
     let Some(value) = raw.map(String::as_str) else {
         return None;
     };
-    if value.is_empty() || value == "true" || value == "false" {
+    if value.trim().is_empty() || value == "true" || value == "false" {
         return None;
     }
     Some(delete_pit_illegal_argument(format!(
@@ -39097,6 +39139,34 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         env::remove_var("STEELSEARCH_PERSIST_SHARED_RUNTIME_STATE_PER_WRITE");
         let _ = std::fs::remove_file(shared_state_path);
         let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn create_pit_treats_blank_boolean_query_params_like_opensearch() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(RestMethod::Put, "/logs-pit-blank-bool"))
+                .status,
+            200
+        );
+
+        let blank_allow_partial_pit = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/logs-pit-blank-bool/_search/point_in_time?keep_alive=1m&allow_partial_pit_creation=%20",
+        ));
+        assert_eq!(blank_allow_partial_pit.status, 200);
+        assert_eq!(blank_allow_partial_pit.body["pit_id"], "pit-1");
+
+        let blank_ignore_unavailable_pit = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/logs-pit-blank-bool/_search/point_in_time?keep_alive=1m&ignore_unavailable=%20",
+        ));
+        assert_eq!(blank_ignore_unavailable_pit.status, 200);
+        assert_eq!(blank_ignore_unavailable_pit.body["pit_id"], "pit-2");
     }
 
     #[test]
