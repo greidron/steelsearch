@@ -67,12 +67,12 @@ planned	score_function	new ScoreFunctionSpec<>( RandomScoreFunctionBuilder.NAME,
 planned	score_function	new ScoreFunctionSpec<>( FieldValueFactorFunctionBuilder.NAME, FieldValueFactorFunctionBuilder::new, FieldValueFactorFunctionBuilder::fromXContent )	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	976
 planned	score_function	ScoreFunctionSpec<?> scoreFunction	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	991
 implemented	fetch_subphase	new ExplainPhase()	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	1069
-planned	fetch_subphase	new FetchDocValuesPhase()	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	1070
-planned	fetch_subphase	new ScriptFieldsPhase()	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	1071
+implemented	fetch_subphase	new FetchDocValuesPhase()	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	1070
+implemented	fetch_subphase	new ScriptFieldsPhase()	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	1071
 implemented	fetch_subphase	new FetchSourcePhase()	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	1072
-planned	fetch_subphase	new FetchFieldsPhase()	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	1073
-planned	fetch_subphase	new FetchVersionPhase()	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	1074
-planned	fetch_subphase	new SeqNoPrimaryTermPhase()	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	1075
+implemented	fetch_subphase	new FetchFieldsPhase()	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	1073
+implemented	fetch_subphase	new FetchVersionPhase()	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	1074
+implemented	fetch_subphase	new SeqNoPrimaryTermPhase()	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	1075
 implemented	fetch_subphase	new MatchedQueriesPhase()	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	1076
 implemented	fetch_subphase	new HighlightPhase(highlighters)	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	1077
 implemented	fetch_subphase	new FetchScorePhase()	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	1078

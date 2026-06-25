@@ -273,7 +273,7 @@ search_registration_status() {
       ;;
     fetch_subphase)
       case "${text}" in
-        *ExplainPhase*|*FetchSourcePhase*|*FetchScorePhase*|*HighlightPhase*|*MatchedQueriesPhase*)
+        *ExplainPhase*|*FetchSourcePhase*|*FetchScorePhase*|*HighlightPhase*|*MatchedQueriesPhase*|*FetchDocValuesPhase*|*ScriptFieldsPhase*|*FetchFieldsPhase*|*FetchVersionPhase*|*SeqNoPrimaryTermPhase*)
           echo "implemented"
           return
           ;;
