@@ -24929,6 +24929,7 @@ fn validate_search_after_values(values: Option<&[Value]>) -> Result<(), Transpor
 #[derive(Clone, Debug, PartialEq)]
 pub enum OpenSearchQueryBuilderWire {
     Bool(OpenSearchBoolQueryBuilderWire),
+    Boosting(OpenSearchBoostingQueryBuilderWire),
     ConstantScore(OpenSearchConstantScoreQueryBuilderWire),
     Exists(OpenSearchExistsQueryBuilderWire),
     Fuzzy(OpenSearchFuzzyQueryBuilderWire),
@@ -24945,6 +24946,15 @@ pub enum OpenSearchQueryBuilderWire {
     Term(OpenSearchTermQueryBuilderWire),
     Terms(OpenSearchTermsQueryBuilderWire),
     Wildcard(OpenSearchWildcardQueryBuilderWire),
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct OpenSearchBoostingQueryBuilderWire {
+    pub boost: f32,
+    pub query_name: Option<String>,
+    pub positive: Box<OpenSearchQueryBuilderWire>,
+    pub negative: Box<OpenSearchQueryBuilderWire>,
+    pub negative_boost: f32,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -25200,6 +25210,14 @@ fn write_named_query_builder(output: &mut StreamOutput, query: &OpenSearchQueryB
             output.write_bool(query.adjust_pure_negative);
             output.write_optional_string(query.minimum_should_match.as_deref());
         }
+        OpenSearchQueryBuilderWire::Boosting(query) => {
+            output.write_string("boosting");
+            output.write_f32(query.boost);
+            output.write_optional_string(query.query_name.as_deref());
+            write_named_query_builder(output, &query.positive);
+            write_named_query_builder(output, &query.negative);
+            output.write_f32(query.negative_boost);
+        }
         OpenSearchQueryBuilderWire::ConstantScore(query) => {
             output.write_string("constant_score");
             output.write_f32(query.boost);
@@ -25392,6 +25410,15 @@ fn read_named_query_builder(
             adjust_pure_negative: input.read_bool()?,
             minimum_should_match: input.read_optional_string()?,
         })),
+        "boosting" => Ok(OpenSearchQueryBuilderWire::Boosting(
+            OpenSearchBoostingQueryBuilderWire {
+                boost: input.read_f32()?,
+                query_name: input.read_optional_string()?,
+                positive: Box::new(read_named_query_builder(input)?),
+                negative: Box::new(read_named_query_builder(input)?),
+                negative_boost: input.read_f32()?,
+            },
+        )),
         "constant_score" => Ok(OpenSearchQueryBuilderWire::ConstantScore(
             OpenSearchConstantScoreQueryBuilderWire {
                 boost: input.read_f32()?,
@@ -25610,7 +25637,7 @@ fn read_named_query_builder(
         )),
         _ => Err(TransportActionWireError::UnsupportedWireShape {
             shape: "search request source query",
-            reason: "only OpenSearch bool, constant_score, exists, fuzzy, ids, match_all, match_none, match, match_bool_prefix, match_phrase, match_phrase_prefix, prefix, range, regexp, term, terms, and wildcard QueryBuilder values are decoded by this subset",
+            reason: "only OpenSearch bool, boosting, constant_score, exists, fuzzy, ids, match_all, match_none, match, match_bool_prefix, match_phrase, match_phrase_prefix, prefix, range, regexp, term, terms, and wildcard QueryBuilder values are decoded by this subset",
         }),
     }
 }
@@ -25656,6 +25683,17 @@ fn validate_query_builder(
             validate_query_builder_list(&query.must_not)?;
             validate_query_builder_list(&query.should)?;
             validate_query_builder_list(&query.filter)?;
+        }
+        OpenSearchQueryBuilderWire::Boosting(query) => {
+            validate_query_boost_and_name(query.boost, query.query_name.as_deref())?;
+            validate_query_builder(Some(&query.positive))?;
+            validate_query_builder(Some(&query.negative))?;
+            if !query.negative_boost.is_finite() || query.negative_boost < 0.0 {
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "search request source query",
+                    reason: "OpenSearch BoostingQueryBuilder negative boost must be finite and non-negative",
+                });
+            }
         }
         OpenSearchQueryBuilderWire::ConstantScore(query) => {
             validate_query_boost_and_name(query.boost, query.query_name.as_deref())?;
@@ -62330,6 +62368,53 @@ mod tests {
         let decoded = OpenSearchSearchRequestWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, constant_score_query_request);
 
+        let boosting_query_request = OpenSearchSearchRequestWire {
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                query: Some(OpenSearchQueryBuilderWire::Boosting(
+                    OpenSearchBoostingQueryBuilderWire {
+                        boost: 1.25,
+                        query_name: Some("tenant-boosting".to_string()),
+                        positive: Box::new(OpenSearchQueryBuilderWire::Match(
+                            OpenSearchMatchQueryBuilderWire {
+                                boost: 1.0,
+                                query_name: None,
+                                field_name: "message".to_string(),
+                                value: json!("steel search"),
+                                operator: OpenSearchMatchOperatorWire::Or,
+                                prefix_length: 0,
+                                max_expansions: 50,
+                                fuzzy_transpositions: true,
+                                lenient: false,
+                                zero_terms_query: OpenSearchZeroTermsQueryWire::None,
+                                analyzer: None,
+                                minimum_should_match: None,
+                                fuzzy_rewrite: None,
+                                cutoff_frequency: None,
+                                auto_generate_synonyms_phrase_query: true,
+                            },
+                        )),
+                        negative: Box::new(OpenSearchQueryBuilderWire::Term(
+                            OpenSearchTermQueryBuilderWire {
+                                boost: 1.0,
+                                query_name: None,
+                                field_name: "deprecated".to_string(),
+                                value: json!(true),
+                                case_insensitive: false,
+                            },
+                        )),
+                        negative_boost: 0.2,
+                    },
+                )),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        let mut output = StreamOutput::new();
+        boosting_query_request.write(&mut output);
+
+        let decoded = OpenSearchSearchRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, boosting_query_request);
+
         let term_query_request = OpenSearchSearchRequestWire {
             source: Some(OpenSearchSearchSourceBuilderWire {
                 query: Some(OpenSearchQueryBuilderWire::Term(
@@ -62873,6 +62958,39 @@ mod tests {
         };
         assert!(matches!(
             invalid_constant_score_filter.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source query",
+                ..
+            })
+        ));
+
+        let invalid_boosting_negative_boost = OpenSearchSearchRequestWire {
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                query: Some(OpenSearchQueryBuilderWire::Boosting(
+                    OpenSearchBoostingQueryBuilderWire {
+                        boost: 1.0,
+                        query_name: None,
+                        positive: Box::new(OpenSearchQueryBuilderWire::MatchAll(
+                            OpenSearchMatchAllQueryBuilderWire::default(),
+                        )),
+                        negative: Box::new(OpenSearchQueryBuilderWire::Term(
+                            OpenSearchTermQueryBuilderWire {
+                                boost: 1.0,
+                                query_name: None,
+                                field_name: "deprecated".to_string(),
+                                value: json!(true),
+                                case_insensitive: false,
+                            },
+                        )),
+                        negative_boost: -0.1,
+                    },
+                )),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        assert!(matches!(
+            invalid_boosting_negative_boost.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "search request source query",
                 ..
