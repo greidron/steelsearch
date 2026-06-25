@@ -20392,12 +20392,12 @@ fn validate_pit_request_body(pit: &Value) -> Option<RestResponse> {
             opensearch_xcontent_token_name(id)
         )));
     }
-    if let Some(key) = object.keys().find(|key| *key != "id" && *key != "keep_alive") {
-        return Some(build_x_content_parse_search_response_with_root_cause(&format!(
-            "[1:51] [pit] unknown field [{key}]"
-        )));
-    }
     if !object.contains_key("id") {
+        if let Some(key) = object.keys().find(|key| *key != "keep_alive") {
+            return Some(build_x_content_parse_search_response_with_root_cause(&format!(
+                "[1:51] [pit] unknown field [{key}]"
+            )));
+        }
         return Some(build_illegal_argument_search_response_with_root_cause(
             "point int time id is not provided",
         ));
@@ -20410,6 +20410,11 @@ fn validate_pit_request_body(pit: &Value) -> Option<RestResponse> {
         return Some(build_x_content_parse_search_response_with_root_cause(&format!(
             "[1:45] [pit] keep_alive doesn't support values of type: {}",
             opensearch_xcontent_token_name(keep_alive)
+        )));
+    }
+    if let Some(key) = object.keys().find(|key| *key != "id" && *key != "keep_alive") {
+        return Some(build_x_content_parse_search_response_with_root_cause(&format!(
+            "[1:51] [pit] unknown field [{key}]"
         )));
     }
     None
@@ -40894,6 +40899,12 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         for (name, keep_alive_value, token_name) in [
             ("boolean", serde_json::json!(true), "VALUE_BOOLEAN"),
             ("null", Value::Null, "VALUE_NULL"),
+            (
+                "object",
+                serde_json::json!({ "value": "1m" }),
+                "START_OBJECT",
+            ),
+            ("array", serde_json::json!(["1m"]), "START_ARRAY"),
         ] {
             let pit_keep_alive_type_search = node.handle_rest_request(
                 RestRequest::new(RestMethod::Post, "/_search")
@@ -40917,6 +40928,27 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 "{name}"
             );
         }
+
+        let bad_keep_alive_with_unknown_pit_field_search = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_search")
+                .with_json_body(serde_json::json!({
+                    "pit": {
+                        "id": second_open_pit.body["pit_id"].as_str().unwrap(),
+                        "keep_alive": 60000,
+                        "unexpected": true
+                    },
+                    "query": { "match_all": {} }
+                })),
+        );
+        assert_eq!(bad_keep_alive_with_unknown_pit_field_search.status, 400);
+        assert_eq!(
+            bad_keep_alive_with_unknown_pit_field_search.body["error"]["type"],
+            "x_content_parse_exception"
+        );
+        assert_eq!(
+            bad_keep_alive_with_unknown_pit_field_search.body["error"]["root_cause"][0]["reason"],
+            "[1:45] [pit] keep_alive doesn't support values of type: VALUE_NUMBER"
+        );
 
         let missing_pit_id_search = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/_search")
