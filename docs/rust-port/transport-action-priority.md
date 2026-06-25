@@ -1845,6 +1845,9 @@ The PIT-segments boundary covers:
 - explicit rejection for index filters, custom indices options, empty PIT id
   arrays, empty PIT id entries, `_all` mixed with explicit ids, verbose output,
   and unknown explicit PIT ids at the local runtime boundary.
+- REST `_cat/pit_segments` prunes expired local PIT contexts before resolving
+  `_all` or explicit PIT id segment rows, matching the same reaper boundary used
+  by list/delete/search PIT routes.
 
 The indices-shard-stores boundary covers:
 

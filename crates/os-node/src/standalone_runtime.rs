@@ -18018,12 +18018,7 @@ impl SteelNode {
             return response;
         }
         let pit_ids = if include_all {
-            self.pit_contexts
-                .lock()
-                .expect("pit contexts lock poisoned")
-                .keys()
-                .cloned()
-                .collect::<Vec<_>>()
+            Vec::new()
         } else {
             let body = match pit_body_or_source_param(request) {
                 Ok(body) => body,
@@ -18039,10 +18034,16 @@ impl SteelNode {
             .into_iter()
             .filter(|pit_id| seen_pit_ids.insert(pit_id.clone()))
             .collect::<Vec<_>>();
-        let contexts = self
+        let mut contexts = self
             .pit_contexts
             .lock()
             .expect("pit contexts lock poisoned");
+        prune_expired_pit_contexts(&mut contexts, current_epoch_millis());
+        let pit_ids = if include_all {
+            contexts.keys().cloned().collect::<Vec<_>>()
+        } else {
+            pit_ids
+        };
         for pit_id in &pit_ids {
             if !pit_search_id_has_local_shape(pit_id) {
                 return delete_pit_invalid_id_response(pit_id);
@@ -32577,6 +32578,107 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             "logs-pit-segments-000001"
         );
         assert_eq!(pit_all_response.body[0]["docs.count"], "2");
+    }
+
+    #[test]
+    fn cat_pit_segments_prunes_expired_contexts_like_opensearch() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        let now_millis = current_epoch_millis();
+        let expired_pit_id = build_local_pit_id(101);
+        let active_pit_id = build_local_pit_id(102);
+        {
+            let mut contexts = node
+                .pit_contexts
+                .lock()
+                .expect("pit contexts lock poisoned");
+            contexts.insert(
+                expired_pit_id.clone(),
+                PitContext {
+                    indices: vec!["logs-expired-pit-segments".to_string()],
+                    documents: BTreeMap::new(),
+                    keep_alive_millis: 1,
+                    expires_at_millis: now_millis.saturating_sub(1),
+                    creation_time_millis: now_millis.saturating_sub(2),
+                },
+            );
+            contexts.insert(
+                active_pit_id.clone(),
+                PitContext {
+                    indices: vec!["logs-active-pit-segments".to_string()],
+                    documents: BTreeMap::new(),
+                    keep_alive_millis: 60_000,
+                    expires_at_millis: now_millis + 60_000,
+                    creation_time_millis: now_millis,
+                },
+            );
+        }
+
+        let pit_all_response = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_cat/pit_segments/_all?format=json",
+        ));
+        assert_eq!(pit_all_response.status, 200);
+        assert_eq!(
+            pit_all_response.body,
+            serde_json::json!([
+                {
+                    "index": "logs-active-pit-segments",
+                    "shard": "0",
+                    "prirep": "p",
+                    "ip": "127.0.0.1",
+                    "id": "steel-node",
+                    "segment": "_0",
+                    "generation": "0",
+                    "docs.count": "0",
+                    "docs.deleted": "0",
+                    "size": "0b",
+                    "size.memory": "0",
+                    "committed": "true",
+                    "searchable": "true",
+                    "version": "0",
+                    "compound": "false"
+                }
+            ])
+        );
+        assert!(!node
+            .pit_contexts
+            .lock()
+            .expect("pit contexts lock poisoned")
+            .contains_key(&expired_pit_id));
+
+        let expired_explicit_pit_id = build_local_pit_id(103);
+        {
+            node.pit_contexts
+                .lock()
+                .expect("pit contexts lock poisoned")
+                .insert(
+                    expired_explicit_pit_id.clone(),
+                    PitContext {
+                        indices: vec!["logs-expired-explicit-pit-segments".to_string()],
+                        documents: BTreeMap::new(),
+                        keep_alive_millis: 1,
+                        expires_at_millis: now_millis.saturating_sub(1),
+                        creation_time_millis: now_millis.saturating_sub(2),
+                    },
+                );
+        }
+        let explicit_expired_response = node.handle_rest_request(
+            RestRequest::new(RestMethod::Get, "/_cat/pit_segments?format=json")
+                .with_json_body(serde_json::json!({ "pit_id": expired_explicit_pit_id })),
+        );
+        assert_eq!(explicit_expired_response.status, 404);
+        assert_eq!(
+            explicit_expired_response.body["error"]["root_cause"][0]["type"],
+            "search_context_missing_exception"
+        );
+        assert!(!node
+            .pit_contexts
+            .lock()
+            .expect("pit contexts lock poisoned")
+            .contains_key(&build_local_pit_id(103)));
     }
 
     #[test]
