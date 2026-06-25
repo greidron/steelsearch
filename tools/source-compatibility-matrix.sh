@@ -65,6 +65,34 @@ route_status() {
       echo "implemented"
       return
       ;;
+    "GET /_cluster/health/{index}"|"POST /_cluster/reroute"|"PUT /_cluster/decommission/awareness/{awareness_attribute_name}/{awareness_attribute_value}"|"DELETE /_cluster/decommission/awareness"|"GET /_cluster/decommission/awareness/{awareness_attribute_name}/_status")
+      echo "implemented"
+      return
+      ;;
+    "GET /_dangling"|"POST /_dangling/{index_uuid}"|"DELETE /_dangling/{index_uuid}")
+      echo "implemented"
+      return
+      ;;
+    "GET /_script_context"|"GET /_script_language"|"GET /_scripts/{id}"|"POST /_scripts/{id}"|"PUT /_scripts/{id}"|"POST /_scripts/{id}/{context}"|"PUT /_scripts/{id}/{context}"|"DELETE /_scripts/{id}")
+      echo "implemented"
+      return
+      ;;
+    "GET /_remotestore/metadata/{index}"|"GET /_remotestore/metadata/{index}/{shard_id}"|"GET /_remotestore/stats/{index}"|"GET /_remotestore/stats/{index}/{shard_id}"|"POST /_remotestore/_restore")
+      echo "implemented"
+      return
+      ;;
+    "GET /_snapshot"|"GET /_snapshot/{repository}"|"POST /_snapshot/{repository}"|"PUT /_snapshot/{repository}"|"DELETE /_snapshot/{repository}"|"POST /_snapshot/{repository}/_verify"|"POST /_snapshot/{repository}/_cleanup")
+      echo "implemented"
+      return
+      ;;
+    "POST /_snapshot/{repository}/{snapshot}"|"PUT /_snapshot/{repository}/{snapshot}"|"GET /_snapshot/{repository}/{snapshot}"|"DELETE /_snapshot/{repository}/{snapshot}"|"PUT /_snapshot/{repository}/{snapshot}/_clone/{target_snapshot}"|"POST /_snapshot/{repository}/{snapshot}/_restore")
+      echo "implemented"
+      return
+      ;;
+    "GET /_snapshot/_status"|"GET /_snapshot/{repository}/_status"|"GET /_snapshot/{repository}/{snapshot}/_status"|"GET /_snapshot/{repository}/{snapshot}/{index}/_status")
+      echo "implemented"
+      return
+      ;;
   esac
 
   case "${method} ${path}" in
