@@ -134,6 +134,26 @@ fn interop_search_forwarding_policy_fixture_stays_bounded_and_explicit() {
         "../../../tools/fixtures/interop-search-forwarding.json"
     ))
     .unwrap();
+    let policy_value: Value = serde_json::from_str(include_str!(
+        "../../../tools/fixtures/interop-search-forwarding-policy.json"
+    ))
+    .unwrap();
+    let rejected_rows = policy_value["rejected_query_families"]
+        .as_array()
+        .expect("rejected query families must be an array");
+    for family in ["scroll", "knn", "hybrid"] {
+        let row = rejected_rows
+            .iter()
+            .find(|row| row["family"] == family)
+            .unwrap_or_else(|| panic!("missing rejected family {family}"));
+        let evidence = row["blocking_evidence"]
+            .as_array()
+            .unwrap_or_else(|| panic!("rejected family {family} missing blocking evidence"));
+        assert!(
+            evidence.iter().all(|item| item.as_str().map_or(false, |value| !value.is_empty())),
+            "rejected family {family} has blank blocking evidence"
+        );
+    }
     let cases = forwarding_fixture["cases"]
         .as_array()
         .expect("interop search forwarding cases must be an array");

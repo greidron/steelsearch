@@ -90,17 +90,29 @@
     {
       "family": "scroll",
       "policy": "rejected",
-      "reason": "Search session lifecycle requires additional forwarding contracts."
+      "reason": "Search session lifecycle requires additional forwarding contracts.",
+      "blocking_evidence": [
+        "tools/fixtures/interop-transport-action-inventory.json::indices:data/read/scroll disposition rejected",
+        "crates/os-transport/src/action.rs::opensearch_search_scroll_transport_messages_bind_rejected_action_frame"
+      ]
     },
     {
       "family": "knn",
       "policy": "rejected",
-      "reason": "Vector search forwarding depends on plugin-specific transport policy."
+      "reason": "Vector search forwarding remains gated until the k-NN vector suite has an external forwarding profile with deterministic hit and failure-shape evidence.",
+      "blocking_evidence": [
+        "tools/fixtures/opensearch-comparison-manifest.json::knn_vector_top_ids",
+        "tools/fixtures/comparison-harness-required-suites.json::knn-vector"
+      ]
     },
     {
       "family": "hybrid",
       "policy": "rejected",
-      "reason": "Hybrid lexical/vector forwarding depends on plugin-specific transport policy."
+      "reason": "Hybrid lexical/vector forwarding remains gated until the hybrid suite has an external forwarding profile with deterministic rank-fusion evidence.",
+      "blocking_evidence": [
+        "tools/fixtures/opensearch-comparison-manifest.json::hybrid_match_and_knn_vector",
+        "tools/fixtures/comparison-harness-required-suites.json::hybrid-search"
+      ]
     }
   ],
   "excluded_request_extensions": [
