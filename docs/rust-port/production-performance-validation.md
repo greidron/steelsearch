@@ -265,8 +265,8 @@ HTTP methods and paths, then optionally narrows the view to the fixtures from
 `ok` required suites in a unified E2E report. The current 0.2.4 audit results
 are:
 
-- source REST inventory: 389 total rows, 371 in scope, with 318 `planned`, 6
-  `stubbed`, 47 `implemented`, and 18 `out-of-scope` rows;
+- source REST inventory: 389 total rows, 371 in scope, with 283 `planned`, 6
+  `stubbed`, 82 `implemented`, and 18 `out-of-scope` rows;
 - all repo compatibility fixtures touch 371 of the 371 in-scope source route
   rows and leave 0 in-scope rows without fixture coverage;
 - the green required live audit for `search-semantic` and `vector-search`
