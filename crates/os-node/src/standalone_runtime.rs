@@ -20386,11 +20386,6 @@ fn validate_pit_request_body(pit: &Value) -> Option<RestResponse> {
             opensearch_xcontent_token_name(pit)
         )));
     };
-    if !object.contains_key("id") {
-        return Some(build_illegal_argument_search_response_with_root_cause(
-            "point int time id is not provided",
-        ));
-    }
     if let Some(id) = object.get("id").filter(|id| !id.is_string()) {
         return Some(build_x_content_parse_search_response_with_root_cause(&format!(
             "[1:16] [pit] id doesn't support values of type: {}",
@@ -20401,6 +20396,11 @@ fn validate_pit_request_body(pit: &Value) -> Option<RestResponse> {
         return Some(build_x_content_parse_search_response_with_root_cause(&format!(
             "[1:51] [pit] unknown field [{key}]"
         )));
+    }
+    if !object.contains_key("id") {
+        return Some(build_illegal_argument_search_response_with_root_cause(
+            "point int time id is not provided",
+        ));
     }
     if object
         .get("keep_alive")
@@ -40939,6 +40939,25 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             missing_pit_id_search.body["error"]["root_cause"][0]["reason"],
             "point int time id is not provided"
+        );
+
+        let unknown_pit_field_without_id_search = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_search")
+                .with_json_body(serde_json::json!({
+                    "pit": {
+                        "unexpected": true
+                    },
+                    "query": { "match_all": {} }
+                })),
+        );
+        assert_eq!(unknown_pit_field_without_id_search.status, 400);
+        assert_eq!(
+            unknown_pit_field_without_id_search.body["error"]["type"],
+            "x_content_parse_exception"
+        );
+        assert_eq!(
+            unknown_pit_field_without_id_search.body["error"]["root_cause"][0]["reason"],
+            "[1:51] [pit] unknown field [unexpected]"
         );
 
         let unknown_pit_field_search = node.handle_rest_request(

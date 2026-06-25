@@ -3623,6 +3623,25 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "pit_unknown_field_without_id_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/_search",
+      "body": {
+        "pit": {
+          "unexpected": true
+        },
+        "query": {
+          "match_all": {}
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] PIT rejects unknown fields before missing id like OpenSearch",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "pit_non_object_error_search",
       "area": "search",
       "method": "POST",
