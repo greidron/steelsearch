@@ -2227,13 +2227,11 @@ The clear-scroll boundary covers:
 
 - OpenSearch `ClearScrollRequest` parent task and scroll id array at the wire
   decode/build layer;
-- OpenSearch `ClearScrollResponse` succeeded/zero-freed rendering for the
-  `_all` request when no scroll contexts are present;
-- positive transport route response generation only when the decoded request
-  validates as the `_all` subset;
-- explicit rejection for empty scroll id arrays, empty scroll id entries, and
-  explicit scroll ids until scroll id parsing and context invalidation are
-  mapped.
+- OpenSearch `ClearScrollResponse` succeeded rendering with non-negative
+  `num_freed` counts;
+- local transport route invalidation for `_all` and explicit scroll ids through
+  the shared `SteelNode` scroll context store;
+- explicit rejection for empty scroll id arrays and empty scroll id entries.
 
 The explain boundary covers:
 
@@ -5086,7 +5084,7 @@ clear_scroll_wire_bottleneck_ops_per_second=1659933.10
 ```
 
 The current clear-scroll implemented subset bottleneck is request encode. The
-empty response encode/decode path runs above 6.9M ops/s in the latest local
+small response encode/decode path runs above 6.9M ops/s in the latest local
 release run, so response rendering is not the first bottleneck. The first
 performance point to inspect before expanding this subset is explicit scroll id
 parsing plus context invalidation.

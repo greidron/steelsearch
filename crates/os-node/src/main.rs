@@ -7,7 +7,7 @@ use os_cluster_state::{
     ShardRoutingStatePrefix,
 };
 use os_core::version::{Version, OPENSEARCH_3_7_0, OPENSEARCH_3_7_0_TRANSPORT};
-use os_node::standalone_runtime::{PitContext, StoredDocument};
+use os_node::standalone_runtime::{PitContext, ScrollContext, StoredDocument};
 use os_node::{
     apply_gateway_metadata_commit_state_to_manifest, apply_gateway_metadata_state_to_manifest,
     bind_rest_http_listener, collect_live_publication_acknowledgement_details,
@@ -46,6 +46,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 static SHUTDOWN_REQUESTED: AtomicBool = AtomicBool::new(false);
 static TRANSPORT_REQUEST_SEQUENCE: AtomicI64 = AtomicI64::new(10_000);
 static DEV_TRANSPORT_PIT_BINDINGS: OnceLock<DevTransportPitBindings> = OnceLock::new();
+static DEV_TRANSPORT_SCROLL_BINDINGS: OnceLock<DevTransportScrollBindings> = OnceLock::new();
 
 fn now_epoch_ms() -> u128 {
     SystemTime::now()
@@ -106,6 +107,11 @@ struct DevTransportPitBindings {
     metadata_manifest: Arc<Mutex<Value>>,
 }
 
+#[derive(Clone, Debug)]
+struct DevTransportScrollBindings {
+    contexts: Arc<Mutex<BTreeMap<String, ScrollContext>>>,
+}
+
 fn dev_transport_pit_bindings() -> &'static DevTransportPitBindings {
     DEV_TRANSPORT_PIT_BINDINGS.get_or_init(|| DevTransportPitBindings {
         contexts: Arc::new(Mutex::new(BTreeMap::new())),
@@ -113,6 +119,12 @@ fn dev_transport_pit_bindings() -> &'static DevTransportPitBindings {
         created_indices: Arc::new(Mutex::new(BTreeSet::new())),
         documents: Arc::new(Mutex::new(BTreeMap::new())),
         metadata_manifest: Arc::new(Mutex::new(serde_json::json!({ "indices": {} }))),
+    })
+}
+
+fn dev_transport_scroll_bindings() -> &'static DevTransportScrollBindings {
+    DEV_TRANSPORT_SCROLL_BINDINGS.get_or_init(|| DevTransportScrollBindings {
+        contexts: Arc::new(Mutex::new(BTreeMap::new())),
     })
 }
 
@@ -130,6 +142,10 @@ fn bind_dev_transport_pit_store(
         documents,
         metadata_manifest,
     });
+}
+
+fn bind_dev_transport_scroll_store(contexts: Arc<Mutex<BTreeMap<String, ScrollContext>>>) {
+    let _ = DEV_TRANSPORT_SCROLL_BINDINGS.set(DevTransportScrollBindings { contexts });
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -380,6 +396,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Arc::clone(&node.documents_state),
         Arc::clone(&node.metadata_manifest_state),
     );
+    bind_dev_transport_scroll_store(Arc::clone(&node.scroll_contexts));
     let transport_capture_path = config.data_path.join("transport-seed-capture.json");
     let transport_identity = DevTransportIdentity {
         cluster_name: config.cluster_name.clone(),
@@ -1628,9 +1645,9 @@ fn handle_transport_seed_connection<S: TransportConnection>(
         )?;
     } else if is_request
         && normalized_action_hint == Some("indices:data/read/scroll/clear")
-        && clear_scroll_request_supports_empty_all_subset(&body)
+        && clear_scroll_request_supports_local_lifecycle_subset(&body)
     {
-        let response = build_empty_clear_scroll_response(request_id, header_version_id);
+        let response = build_local_clear_scroll_response(request_id, header_version_id, &body);
         response_frame = summarize_transport_response_frame_for_action(
             &response,
             Some("indices:data/read/scroll/clear"),
@@ -4031,20 +4048,53 @@ fn decode_delete_pit_request_from_transport_body(
     os_transport::action::read_opensearch_delete_pit_request_message(&message).ok()
 }
 
-fn build_empty_clear_scroll_response(request_id: i64, header_version_id: u32) -> Vec<u8> {
+fn build_local_clear_scroll_response(
+    request_id: i64,
+    header_version_id: u32,
+    body: &[u8],
+) -> Vec<u8> {
+    let Some(request) = decode_clear_scroll_request_from_transport_body(body) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    if request.validate_supported_subset().is_err() {
+        return build_empty_transport_response(request_id, header_version_id);
+    }
     os_transport::action::build_opensearch_clear_scroll_response_message(
         request_id,
         Version::from_id(header_version_id as i32),
-        &os_transport::action::OpenSearchClearScrollResponseWire::empty_all(),
+        &clear_transport_scroll_contexts(&request.scroll_ids),
     )
     .map(|frame| frame.to_vec())
     .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
 }
 
-fn clear_scroll_request_supports_empty_all_subset(body: &[u8]) -> bool {
+fn clear_scroll_request_supports_local_lifecycle_subset(body: &[u8]) -> bool {
     decode_clear_scroll_request_from_transport_body(body)
         .and_then(|request| request.validate_supported_subset().ok())
         .is_some()
+}
+
+fn clear_transport_scroll_contexts(
+    scroll_ids: &[String],
+) -> os_transport::action::OpenSearchClearScrollResponseWire {
+    let mut contexts = dev_transport_scroll_bindings()
+        .contexts
+        .lock()
+        .expect("dev transport scroll contexts lock poisoned");
+    let freed = if scroll_ids.iter().any(|id| id == "_all") {
+        let freed = contexts.len();
+        contexts.clear();
+        freed
+    } else {
+        scroll_ids
+            .iter()
+            .filter(|scroll_id| contexts.remove(*scroll_id).is_some())
+            .count()
+    };
+    os_transport::action::OpenSearchClearScrollResponseWire {
+        succeeded: true,
+        num_freed: usize_to_i32_saturating(freed),
+    }
 }
 
 fn decode_clear_scroll_request_from_transport_body(
@@ -6009,11 +6059,12 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
             ))
         }
         Some("indices:data/read/scroll/clear")
-            if clear_scroll_request_supports_empty_all_subset(body) =>
+            if clear_scroll_request_supports_local_lifecycle_subset(body) =>
         {
-            Some(build_empty_clear_scroll_response(
+            Some(build_local_clear_scroll_response(
                 request_id,
                 header_version_id,
+                body,
             ))
         }
         Some("indices:data/read/point_in_time/readall") => Some(build_local_get_all_pits_response(
@@ -8942,6 +8993,12 @@ Environment:\n\
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::OnceLock as TestOnceLock;
+
+    fn dev_transport_scroll_test_lock() -> &'static Mutex<()> {
+        static LOCK: TestOnceLock<Mutex<()>> = TestOnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(()))
+    }
 
     fn minimal_daemon_config(data_path: PathBuf) -> DaemonConfig {
         DaemonConfig {
@@ -11081,6 +11138,14 @@ mod tests {
 
     #[test]
     fn clear_scroll_transport_route_builds_opensearch_shaped_empty_all_response() {
+        let _lock = dev_transport_scroll_test_lock()
+            .lock()
+            .expect("dev transport scroll test lock poisoned");
+        dev_transport_scroll_bindings()
+            .contexts
+            .lock()
+            .expect("dev transport scroll contexts lock poisoned")
+            .clear();
         let request = os_transport::action::OpenSearchClearScrollRequestWire::default();
         let frame = os_transport::action::build_opensearch_clear_scroll_request_message(
             95,
@@ -11089,10 +11154,13 @@ mod tests {
         )
         .unwrap();
         let body = &frame[6..];
-        assert!(clear_scroll_request_supports_empty_all_subset(body));
+        assert!(clear_scroll_request_supports_local_lifecycle_subset(body));
 
-        let response =
-            build_empty_clear_scroll_response(95, OPENSEARCH_3_7_0_TRANSPORT.id() as u32);
+        let response = build_local_clear_scroll_response(
+            95,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            body,
+        );
         let mut frame = BytesMut::from(&response[..]);
         let os_transport::frame::DecodedFrame::Message(message) =
             os_transport::frame::decode_frame(&mut frame)
@@ -11113,7 +11181,26 @@ mod tests {
     }
 
     #[test]
-    fn clear_scroll_transport_route_rejects_explicit_id_subset() {
+    fn clear_scroll_transport_route_frees_explicit_id_subset() {
+        let _lock = dev_transport_scroll_test_lock()
+            .lock()
+            .expect("dev transport scroll test lock poisoned");
+        dev_transport_scroll_bindings()
+            .contexts
+            .lock()
+            .expect("dev transport scroll contexts lock poisoned")
+            .clear();
+        dev_transport_scroll_bindings()
+            .contexts
+            .lock()
+            .expect("dev transport scroll contexts lock poisoned")
+            .insert(
+                "scroll-context".to_string(),
+                ScrollContext {
+                    remaining_hits: Vec::new(),
+                    page_size: 10,
+                },
+            );
         let request = os_transport::action::OpenSearchClearScrollRequestWire {
             scroll_ids: vec!["scroll-context".to_string()],
             ..os_transport::action::OpenSearchClearScrollRequestWire::default()
@@ -11124,7 +11211,30 @@ mod tests {
             &request,
         )
         .unwrap();
-        assert!(!clear_scroll_request_supports_empty_all_subset(&frame[6..]));
+        assert!(clear_scroll_request_supports_local_lifecycle_subset(&frame[6..]));
+
+        let response = build_local_clear_scroll_response(
+            96,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &frame[6..],
+        );
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected explicit clear-scroll response message");
+        };
+        let response =
+            os_transport::action::read_opensearch_clear_scroll_response_message(&message).unwrap();
+        assert_eq!(response.succeeded, true);
+        assert_eq!(response.num_freed, 1);
+        assert!(!dev_transport_scroll_bindings()
+            .contexts
+            .lock()
+            .expect("dev transport scroll contexts lock poisoned")
+            .contains_key("scroll-context"));
     }
 
     #[test]

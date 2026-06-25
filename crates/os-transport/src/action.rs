@@ -2374,7 +2374,7 @@ pub fn classify_opensearch_transport_action(
         OPENSEARCH_CLEAR_SCROLL_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Implemented,
-            reason: "clear-scroll transport adapter returns an OpenSearch-shaped succeeded zero-freed response for the _all request when no scroll contexts are present",
+            reason: "clear-scroll transport adapter invalidates local scroll contexts for _all and explicit scroll ids",
         },
         OPENSEARCH_EXPLAIN_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -26012,13 +26012,6 @@ impl OpenSearchClearScrollRequestWire {
                 reason: "OpenSearch clear-scroll requests require non-empty scroll ids",
             });
         }
-        if self.scroll_ids.len() != 1 || self.scroll_ids[0] != "_all" {
-            return Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "clear scroll explicit ids",
-                reason:
-                    "explicit clear-scroll ids require scroll id parsing and context invalidation",
-            });
-        }
         Ok(())
     }
 
@@ -26027,7 +26020,7 @@ impl OpenSearchClearScrollRequestWire {
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "clear scroll execution",
             reason:
-                "use validate_supported_subset for the implemented empty clear-scroll _all adapter",
+                "use validate_supported_subset for the implemented clear-scroll lifecycle adapter",
         })
     }
 }
@@ -26078,10 +26071,10 @@ impl OpenSearchClearScrollResponseWire {
                     "clear-scroll failure responses require scroll context fanout failure mapping",
             });
         }
-        if self.num_freed != 0 {
+        if self.num_freed < 0 {
             return Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "clear scroll freed contexts",
-                reason: "the implemented clear-scroll subset only renders zero freed contexts",
+                shape: "clear scroll negative freed contexts",
+                reason: "clear-scroll responses require a non-negative freed context count",
             });
         }
         Ok(())
@@ -57306,8 +57299,11 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_clear_scroll_request_wire_round_trips_and_validates_all_subset() {
-        let request = OpenSearchClearScrollRequestWire::default();
+    fn opensearch_clear_scroll_request_wire_round_trips_and_validates_id_subset() {
+        let request = OpenSearchClearScrollRequestWire {
+            scroll_ids: vec!["scroll-context".to_string(), "_all".to_string()],
+            ..OpenSearchClearScrollRequestWire::default()
+        };
         let mut output = StreamOutput::new();
         request.write(&mut output);
 
@@ -57349,22 +57345,20 @@ mod tests {
             })
         ));
 
-        let explicit_id = OpenSearchClearScrollRequestWire {
+        OpenSearchClearScrollRequestWire {
             scroll_ids: vec!["scroll-context".to_string()],
             ..OpenSearchClearScrollRequestWire::default()
-        };
-        assert!(matches!(
-            explicit_id.validate_supported_subset(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "clear scroll explicit ids",
-                ..
-            })
-        ));
+        }
+        .validate_supported_subset()
+        .unwrap();
     }
 
     #[test]
-    fn opensearch_clear_scroll_response_wire_round_trips_empty_all_subset() {
-        let response = OpenSearchClearScrollResponseWire::empty_all();
+    fn opensearch_clear_scroll_response_wire_round_trips_freed_count_subset() {
+        let response = OpenSearchClearScrollResponseWire {
+            succeeded: true,
+            num_freed: 2,
+        };
         let mut output = StreamOutput::new();
         response.write(&mut output).unwrap();
 
@@ -57374,7 +57368,7 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_clear_scroll_response_rejects_failures_or_freed_contexts() {
+    fn opensearch_clear_scroll_response_rejects_failures_or_negative_freed_contexts() {
         assert!(matches!(
             OpenSearchClearScrollResponseWire {
                 succeeded: false,
@@ -57389,11 +57383,11 @@ mod tests {
         assert!(matches!(
             OpenSearchClearScrollResponseWire {
                 succeeded: true,
-                num_freed: 1
+                num_freed: -1
             }
             .validate_supported_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "clear scroll freed contexts",
+                shape: "clear scroll negative freed contexts",
                 ..
             })
         ));
