@@ -24544,6 +24544,7 @@ pub struct OpenSearchSearchSourceBuilderWire {
     pub search_after: Option<Vec<Value>>,
     pub point_in_time: Option<OpenSearchPointInTimeBuilderWire>,
     pub slice: Option<OpenSearchSliceBuilderWire>,
+    pub collapse: Option<OpenSearchCollapseBuilderWire>,
     pub terminate_after: i32,
     pub timeout: Option<TimeValueWire>,
     pub track_scores: bool,
@@ -24566,6 +24567,7 @@ impl Default for OpenSearchSearchSourceBuilderWire {
             search_after: None,
             point_in_time: None,
             slice: None,
+            collapse: None,
             terminate_after: 0,
             timeout: None,
             track_scores: false,
@@ -24612,6 +24614,9 @@ impl OpenSearchSearchSourceBuilderWire {
         }
         if let Some(slice) = &self.slice {
             slice.validate_supported_subset()?;
+        }
+        if let Some(collapse) = &self.collapse {
+            collapse.validate_supported_subset()?;
         }
         if self
             .track_total_hits_up_to
@@ -24662,7 +24667,7 @@ fn write_search_source_builder(
     output.write_bool(source.profile); // profile
     write_optional_search_after_values(output, source.search_after.as_deref()); // search after
     write_optional_slice_builder(output, source.slice.as_ref()); // slice
-    output.write_bool(false); // collapse
+    write_optional_collapse_builder(output, source.collapse.as_ref()); // collapse
     write_optional_int(output, source.track_total_hits_up_to); // track total hits up to
     output.write_bool(false); // fetch fields
     write_optional_point_in_time_builder(output, source.point_in_time.as_ref()); // point in time
@@ -24727,7 +24732,7 @@ fn read_search_source_builder(
     let profile = input.read_bool()?;
     let search_after = read_optional_search_after_values(input)?;
     let slice = read_optional_slice_builder(input)?;
-    reject_absent_optional_writeable(input, "search request source collapse")?;
+    let collapse = read_optional_collapse_builder(input)?;
     let track_total_hits_up_to = read_optional_int(input)?;
     if track_total_hits_up_to.is_some_and(|track_total_hits| track_total_hits < -1) {
         return Err(TransportActionWireError::UnsupportedWireShape {
@@ -24757,6 +24762,7 @@ fn read_search_source_builder(
         search_after,
         point_in_time,
         slice,
+        collapse,
         terminate_after,
         timeout,
         track_scores,
@@ -24955,6 +24961,59 @@ fn read_optional_slice_builder(
     };
     slice.validate_supported_subset()?;
     Ok(Some(slice))
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchCollapseBuilderWire {
+    pub field: String,
+    pub max_concurrent_group_requests: i32,
+}
+
+impl OpenSearchCollapseBuilderWire {
+    fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
+        if self.field.is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source collapse",
+                reason: "OpenSearch CollapseBuilder field must be non-empty",
+            });
+        }
+        if self.max_concurrent_group_requests < 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source collapse",
+                reason: "OpenSearch CollapseBuilder maxConcurrentGroupRequests must be non-negative",
+            });
+        }
+        Ok(())
+    }
+}
+
+fn write_optional_collapse_builder(
+    output: &mut StreamOutput,
+    collapse: Option<&OpenSearchCollapseBuilderWire>,
+) {
+    if let Some(collapse) = collapse {
+        output.write_bool(true);
+        output.write_string(&collapse.field);
+        output.write_vint(collapse.max_concurrent_group_requests);
+        output.write_vint(0);
+    } else {
+        output.write_bool(false);
+    }
+}
+
+fn read_optional_collapse_builder(
+    input: &mut StreamInput,
+) -> Result<Option<OpenSearchCollapseBuilderWire>, TransportActionWireError> {
+    if !input.read_bool()? {
+        return Ok(None);
+    }
+    let collapse = OpenSearchCollapseBuilderWire {
+        field: input.read_string()?,
+        max_concurrent_group_requests: input.read_vint()?,
+    };
+    reject_empty_vint_list(input, "search request source collapse inner hits")?;
+    collapse.validate_supported_subset()?;
+    Ok(Some(collapse))
 }
 
 fn reject_absent_optional_writeable(
@@ -59798,6 +59857,10 @@ mod tests {
                     id: 1,
                     max: 4,
                 }),
+                collapse: Some(OpenSearchCollapseBuilderWire {
+                    field: "tenant".to_string(),
+                    max_concurrent_group_requests: 2,
+                }),
                 terminate_after: 100,
                 timeout: Some(TimeValueWire::seconds(2)),
                 track_scores: true,
@@ -59959,6 +60022,39 @@ mod tests {
             invalid_slice.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "search request source slice",
+                ..
+            })
+        ));
+
+        let invalid_collapse = OpenSearchSearchRequestWire {
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                collapse: Some(OpenSearchCollapseBuilderWire {
+                    field: String::new(),
+                    max_concurrent_group_requests: 0,
+                }),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        assert!(matches!(
+            invalid_collapse.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source collapse",
+                ..
+            })
+        ));
+
+        let mut collapse_with_inner_hits = StreamOutput::new();
+        collapse_with_inner_hits.write_bool(true);
+        collapse_with_inner_hits.write_string("tenant");
+        collapse_with_inner_hits.write_vint(0);
+        collapse_with_inner_hits.write_vint(1);
+        assert!(matches!(
+            read_optional_collapse_builder(&mut StreamInput::new(
+                collapse_with_inner_hits.freeze()
+            )),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source collapse inner hits",
                 ..
             })
         ));
