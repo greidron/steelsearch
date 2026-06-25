@@ -24546,6 +24546,7 @@ pub struct OpenSearchSearchSourceBuilderWire {
     pub slice: Option<OpenSearchSliceBuilderWire>,
     pub collapse: Option<OpenSearchCollapseBuilderWire>,
     pub stats: Option<Vec<String>>,
+    pub fetch_fields: Option<Vec<OpenSearchFieldAndFormatWire>>,
     pub terminate_after: i32,
     pub timeout: Option<TimeValueWire>,
     pub track_scores: bool,
@@ -24570,6 +24571,7 @@ impl Default for OpenSearchSearchSourceBuilderWire {
             slice: None,
             collapse: None,
             stats: None,
+            fetch_fields: None,
             terminate_after: 0,
             timeout: None,
             track_scores: false,
@@ -24621,6 +24623,10 @@ impl OpenSearchSearchSourceBuilderWire {
             collapse.validate_supported_subset()?;
         }
         validate_search_source_stats(self.stats.as_deref())?;
+        validate_field_and_format_list(
+            self.fetch_fields.as_deref(),
+            "search request source fetch fields",
+        )?;
         if self
             .track_total_hits_up_to
             .is_some_and(|track_total_hits| track_total_hits < -1)
@@ -24672,7 +24678,7 @@ fn write_search_source_builder(
     write_optional_slice_builder(output, source.slice.as_ref()); // slice
     write_optional_collapse_builder(output, source.collapse.as_ref()); // collapse
     write_optional_int(output, source.track_total_hits_up_to); // track total hits up to
-    output.write_bool(false); // fetch fields
+    write_optional_field_and_format_list(output, source.fetch_fields.as_deref()); // fetch fields
     write_optional_point_in_time_builder(output, source.point_in_time.as_ref()); // point in time
     output.write_bool(false); // search pipeline source, OpenSearch 2.8+
     write_optional_bool(output, source.include_named_queries_score); // include named queries score, OpenSearch 2.13+
@@ -24744,7 +24750,8 @@ fn read_search_source_builder(
             reason: "OpenSearch SearchSourceBuilder track_total_hits must be positive or -1",
         });
     }
-    reject_absent_bool_list(input, "search request source fetch fields")?;
+    let fetch_fields =
+        read_optional_field_and_format_list(input, "search request source fetch fields")?;
     let point_in_time = read_optional_point_in_time_builder(input)?;
     reject_absent_bool_map(input, "search request source search pipeline source")?;
     let include_named_queries_score = read_optional_bool(input)?;
@@ -24768,6 +24775,7 @@ fn read_search_source_builder(
         slice,
         collapse,
         stats,
+        fetch_fields,
         terminate_after,
         timeout,
         track_scores,
@@ -25048,6 +25056,63 @@ fn validate_search_source_stats(values: Option<&[String]>) -> Result<(), Transpo
         return Err(TransportActionWireError::UnsupportedWireShape {
             shape: "search request source stats",
             reason: "OpenSearch SearchSourceBuilder stats group names must be non-empty",
+        });
+    }
+    Ok(())
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchFieldAndFormatWire {
+    pub field: String,
+    pub format: Option<String>,
+}
+
+fn write_optional_field_and_format_list(
+    output: &mut StreamOutput,
+    values: Option<&[OpenSearchFieldAndFormatWire]>,
+) {
+    if let Some(values) = values {
+        output.write_bool(true);
+        output.write_vint(values.len() as i32);
+        for value in values {
+            output.write_string(&value.field);
+            output.write_optional_string(value.format.as_deref());
+        }
+    } else {
+        output.write_bool(false);
+    }
+}
+
+fn read_optional_field_and_format_list(
+    input: &mut StreamInput,
+    shape: &'static str,
+) -> Result<Option<Vec<OpenSearchFieldAndFormatWire>>, TransportActionWireError> {
+    if !input.read_bool()? {
+        return Ok(None);
+    }
+    let len = read_len(input)?;
+    let mut values = Vec::with_capacity(len);
+    for _ in 0..len {
+        values.push(OpenSearchFieldAndFormatWire {
+            field: input.read_string()?,
+            format: input.read_optional_string()?,
+        });
+    }
+    validate_field_and_format_list(Some(&values), shape)?;
+    Ok(Some(values))
+}
+
+fn validate_field_and_format_list(
+    values: Option<&[OpenSearchFieldAndFormatWire]>,
+    shape: &'static str,
+) -> Result<(), TransportActionWireError> {
+    let Some(values) = values else {
+        return Ok(());
+    };
+    if values.iter().any(|value| value.field.is_empty()) {
+        return Err(TransportActionWireError::UnsupportedWireShape {
+            shape,
+            reason: "OpenSearch FieldAndFormat field names must be non-empty",
         });
     }
     Ok(())
@@ -59899,6 +59964,16 @@ mod tests {
                     max_concurrent_group_requests: 2,
                 }),
                 stats: Some(vec!["tenant-stats".to_string(), "latency".to_string()]),
+                fetch_fields: Some(vec![
+                    OpenSearchFieldAndFormatWire {
+                        field: "status".to_string(),
+                        format: None,
+                    },
+                    OpenSearchFieldAndFormatWire {
+                        field: "@timestamp".to_string(),
+                        format: Some("strict_date_optional_time".to_string()),
+                    },
+                ]),
                 terminate_after: 100,
                 timeout: Some(TimeValueWire::seconds(2)),
                 track_scores: true,
@@ -60108,6 +60183,24 @@ mod tests {
             invalid_stats.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "search request source stats",
+                ..
+            })
+        ));
+
+        let invalid_fetch_fields = OpenSearchSearchRequestWire {
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                fetch_fields: Some(vec![OpenSearchFieldAndFormatWire {
+                    field: String::new(),
+                    format: None,
+                }]),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        assert!(matches!(
+            invalid_fetch_fields.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source fetch fields",
                 ..
             })
         ));
