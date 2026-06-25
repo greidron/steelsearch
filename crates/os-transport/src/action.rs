@@ -24935,6 +24935,7 @@ pub enum OpenSearchQueryBuilderWire {
     MatchAll(OpenSearchMatchAllQueryBuilderWire),
     Match(OpenSearchMatchQueryBuilderWire),
     MatchPhrase(OpenSearchMatchPhraseQueryBuilderWire),
+    MatchPhrasePrefix(OpenSearchMatchPhrasePrefixQueryBuilderWire),
     Prefix(OpenSearchPrefixQueryBuilderWire),
     Range(OpenSearchRangeQueryBuilderWire),
     Regexp(OpenSearchRegexpQueryBuilderWire),
@@ -25045,6 +25046,18 @@ pub struct OpenSearchMatchPhraseQueryBuilderWire {
     pub slop: i32,
     pub zero_terms_query: OpenSearchZeroTermsQueryWire,
     pub analyzer: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct OpenSearchMatchPhrasePrefixQueryBuilderWire {
+    pub boost: f32,
+    pub query_name: Option<String>,
+    pub field_name: String,
+    pub value: Value,
+    pub slop: i32,
+    pub max_expansions: i32,
+    pub analyzer: Option<String>,
+    pub zero_terms_query: OpenSearchZeroTermsQueryWire,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -25206,6 +25219,18 @@ fn write_named_query_builder(output: &mut StreamOutput, query: &OpenSearchQueryB
             output.write_vint(query.slop);
             write_zero_terms_query(output, query.zero_terms_query);
             output.write_optional_string(query.analyzer.as_deref());
+        }
+        OpenSearchQueryBuilderWire::MatchPhrasePrefix(query) => {
+            output.write_string("match_phrase_prefix");
+            output.write_f32(query.boost);
+            output.write_optional_string(query.query_name.as_deref());
+            output.write_string(&query.field_name);
+            write_generic_json_value(output, &query.value)
+                .expect("validated match_phrase_prefix query value must encode as an OpenSearch generic scalar");
+            output.write_vint(query.slop);
+            output.write_vint(query.max_expansions);
+            output.write_optional_string(query.analyzer.as_deref());
+            write_zero_terms_query(output, query.zero_terms_query);
         }
         OpenSearchQueryBuilderWire::Prefix(query) => {
             output.write_string("prefix");
@@ -25375,6 +25400,18 @@ fn read_named_query_builder(
                 analyzer: input.read_optional_string()?,
             },
         )),
+        "match_phrase_prefix" => Ok(OpenSearchQueryBuilderWire::MatchPhrasePrefix(
+            OpenSearchMatchPhrasePrefixQueryBuilderWire {
+                boost: input.read_f32()?,
+                query_name: input.read_optional_string()?,
+                field_name: input.read_string()?,
+                value: read_generic_json_value(input, "search request source query")?,
+                slop: input.read_vint()?,
+                max_expansions: input.read_vint()?,
+                analyzer: input.read_optional_string()?,
+                zero_terms_query: read_zero_terms_query(input)?,
+            },
+        )),
         "prefix" => Ok(OpenSearchQueryBuilderWire::Prefix(
             OpenSearchPrefixQueryBuilderWire {
                 boost: input.read_f32()?,
@@ -25476,7 +25513,7 @@ fn read_named_query_builder(
         )),
         _ => Err(TransportActionWireError::UnsupportedWireShape {
             shape: "search request source query",
-            reason: "only OpenSearch bool, exists, fuzzy, ids, match_all, match, match_phrase, prefix, range, regexp, term, terms, and wildcard QueryBuilder values are decoded by this subset",
+            reason: "only OpenSearch bool, exists, fuzzy, ids, match_all, match, match_phrase, match_phrase_prefix, prefix, range, regexp, term, terms, and wildcard QueryBuilder values are decoded by this subset",
         }),
     }
 }
@@ -25626,6 +25663,35 @@ fn validate_query_builder(
                 return Err(TransportActionWireError::UnsupportedWireShape {
                     shape: "search request source query",
                     reason: "OpenSearch MatchPhraseQueryBuilder zero terms query must be NONE or ALL",
+                });
+            }
+            validate_optional_non_empty_query_string(query.analyzer.as_deref())?;
+        }
+        OpenSearchQueryBuilderWire::MatchPhrasePrefix(query) => {
+            validate_query_boost_and_name(query.boost, query.query_name.as_deref())?;
+            if query.field_name.is_empty() {
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "search request source query",
+                    reason: "OpenSearch MatchPhrasePrefixQueryBuilder field name must be non-empty",
+                });
+            }
+            validate_match_query_value(&query.value)?;
+            if query.slop < 0 {
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "search request source query",
+                    reason: "OpenSearch MatchPhrasePrefixQueryBuilder slop must be non-negative",
+                });
+            }
+            if query.max_expansions < 0 {
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "search request source query",
+                    reason: "OpenSearch MatchPhrasePrefixQueryBuilder max expansions must be non-negative",
+                });
+            }
+            if query.zero_terms_query == OpenSearchZeroTermsQueryWire::Null {
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "search request source query",
+                    reason: "OpenSearch MatchPhrasePrefixQueryBuilder zero terms query must be NONE or ALL",
                 });
             }
             validate_optional_non_empty_query_string(query.analyzer.as_deref())?;
@@ -62274,6 +62340,30 @@ mod tests {
         let decoded = OpenSearchSearchRequestWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, match_phrase_query_request);
 
+        let match_phrase_prefix_query_request = OpenSearchSearchRequestWire {
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                query: Some(OpenSearchQueryBuilderWire::MatchPhrasePrefix(
+                    OpenSearchMatchPhrasePrefixQueryBuilderWire {
+                        boost: 1.0,
+                        query_name: Some("message-phrase-prefix".to_string()),
+                        field_name: "message".to_string(),
+                        value: json!("steel sea"),
+                        slop: 1,
+                        max_expansions: 50,
+                        analyzer: Some("standard".to_string()),
+                        zero_terms_query: OpenSearchZeroTermsQueryWire::All,
+                    },
+                )),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        let mut output = StreamOutput::new();
+        match_phrase_prefix_query_request.write(&mut output);
+
+        let decoded = OpenSearchSearchRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, match_phrase_prefix_query_request);
+
         let match_query_request = OpenSearchSearchRequestWire {
             source: Some(OpenSearchSearchSourceBuilderWire {
                 query: Some(OpenSearchQueryBuilderWire::Match(
@@ -62985,6 +63075,58 @@ mod tests {
         };
         assert!(matches!(
             invalid_match_phrase_zero_terms.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source query",
+                ..
+            })
+        ));
+
+        let invalid_match_phrase_prefix_expansions = OpenSearchSearchRequestWire {
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                query: Some(OpenSearchQueryBuilderWire::MatchPhrasePrefix(
+                    OpenSearchMatchPhrasePrefixQueryBuilderWire {
+                        boost: 1.0,
+                        query_name: None,
+                        field_name: "message".to_string(),
+                        value: json!("steel sea"),
+                        slop: 0,
+                        max_expansions: -1,
+                        analyzer: None,
+                        zero_terms_query: OpenSearchZeroTermsQueryWire::None,
+                    },
+                )),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        assert!(matches!(
+            invalid_match_phrase_prefix_expansions.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source query",
+                ..
+            })
+        ));
+
+        let invalid_match_phrase_prefix_zero_terms = OpenSearchSearchRequestWire {
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                query: Some(OpenSearchQueryBuilderWire::MatchPhrasePrefix(
+                    OpenSearchMatchPhrasePrefixQueryBuilderWire {
+                        boost: 1.0,
+                        query_name: None,
+                        field_name: "message".to_string(),
+                        value: json!("steel sea"),
+                        slop: 0,
+                        max_expansions: 50,
+                        analyzer: None,
+                        zero_terms_query: OpenSearchZeroTermsQueryWire::Null,
+                    },
+                )),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        assert!(matches!(
+            invalid_match_phrase_prefix_zero_terms.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "search request source query",
                 ..
