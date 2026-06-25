@@ -117,6 +117,28 @@
       "reason": "Steelsearch semantic hardening fixture for missing dest validation."
     },
     {
+      "name": "reindex_script_transform_unsupported_error",
+      "area": "document-write",
+      "method": "POST",
+      "path": "/_reindex",
+      "body": {
+        "source": {
+          "index": "logs-write-source-a"
+        },
+        "dest": {
+          "index": "logs-write-dest"
+        },
+        "script": {
+          "source": "ctx._source.message = 'scripted reindex'"
+        }
+      },
+      "extract": "document_write_error",
+      "comparison": "steelsearch_only",
+      "expected_steelsearch_status": 400,
+      "skip_scope": "reindex-script-transform-unimplemented",
+      "reason": "Steelsearch fail-closed fixture until reindex script transform parity is implemented."
+    },
+    {
       "name": "create_conflict_error",
       "area": "document-write",
       "method": "PUT",

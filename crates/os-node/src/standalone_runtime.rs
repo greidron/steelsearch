@@ -12683,6 +12683,9 @@ impl SteelNode {
                 }),
             );
         };
+        if body.get("script").is_some() {
+            return action_request_validation_error(vec!["unsupported reindex option [script]"]);
+        }
         if let Some(response) =
             validate_opensearch_boolean_query_param(request.query_params.get("require_alias"))
         {
@@ -40402,6 +40405,25 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             missing_dest.body["error"]["reason"],
             "reindex dest.index is required"
+        );
+
+        let unsupported_script = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_reindex").with_json_body(serde_json::json!({
+                "source": { "index": "logs-reindex-source-a" },
+                "dest": { "index": "logs-reindex-dest" },
+                "script": {
+                    "source": "ctx._source.message = 'scripted reindex'"
+                }
+            })),
+        );
+        assert_eq!(unsupported_script.status, 400);
+        assert_eq!(
+            unsupported_script.body["error"]["type"],
+            "action_request_validation_exception"
+        );
+        assert_eq!(
+            unsupported_script.body["error"]["reason"],
+            "Validation Failed: 1: unsupported reindex option [script];"
         );
 
         let wildcard_reindex = node.handle_rest_request(
