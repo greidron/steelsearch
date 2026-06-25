@@ -763,7 +763,7 @@ pub const OPENSEARCH_PRIORITY_TRANSPORT_ACTIONS: &[OpenSearchPriorityTransportAc
         request_wire_type: "CreatePitRequest",
         response_wire_type: "CreatePitResponse",
         adapter_stage: "search-pit",
-        next_step: "map PIT creation onto Rust search context lifecycle",
+        next_step: "expand local PIT lifecycle adapter toward distributed shard fanout and failure aggregation",
     },
     OpenSearchPriorityTransportActionSpec {
         action_name: OPENSEARCH_DELETE_PIT_ACTION_NAME,
@@ -772,7 +772,7 @@ pub const OPENSEARCH_PRIORITY_TRANSPORT_ACTIONS: &[OpenSearchPriorityTransportAc
         request_wire_type: "DeletePitRequest",
         response_wire_type: "DeletePitResponse",
         adapter_stage: "search-pit",
-        next_step: "map PIT id invalidation onto Rust search context lifecycle",
+        next_step: "expand local PIT invalidation adapter toward distributed node fanout",
     },
     OpenSearchPriorityTransportActionSpec {
         action_name: OPENSEARCH_GET_ALL_PITS_ACTION_NAME,
@@ -781,7 +781,7 @@ pub const OPENSEARCH_PRIORITY_TRANSPORT_ACTIONS: &[OpenSearchPriorityTransportAc
         request_wire_type: "GetAllPitNodesRequest",
         response_wire_type: "GetAllPitNodesResponse",
         adapter_stage: "search-pit",
-        next_step: "map PIT listing onto Rust search context lifecycle and node fanout response rendering",
+        next_step: "expand local PIT listing adapter toward distributed node fanout and failure aggregation",
     },
     OpenSearchPriorityTransportActionSpec {
         action_name: OPENSEARCH_GET_MAPPINGS_ACTION_NAME,
@@ -32596,7 +32596,7 @@ impl OpenSearchDeletePitRequestWire {
         self.validate_supported_subset()?;
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "delete pit execution",
-            reason: "delete-PIT transport execution requires runtime PIT context invalidation",
+            reason: "use validate_supported_subset for the implemented local PIT invalidation adapter",
         })
     }
 }
@@ -32765,7 +32765,7 @@ impl OpenSearchGetAllPitsRequestWire {
         self.validate_supported_subset()?;
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "get all pits execution",
-            reason: "get-all-PITs transport execution requires runtime PIT listing fanout",
+            reason: "use validate_supported_subset for the implemented local PIT listing adapter",
         })
     }
 }
