@@ -39975,6 +39975,20 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             "pit_id element should only contain pit_id"
         );
 
+        let array_null_close_pit = node.handle_rest_request(
+            RestRequest::new(RestMethod::Delete, "/_search/point_in_time")
+                .with_json_body(serde_json::json!({ "pit_id": ["pit-1", Value::Null] })),
+        );
+        assert_eq!(array_null_close_pit.status, 400);
+        assert_eq!(
+            array_null_close_pit.body["error"]["type"],
+            "illegal_argument_exception"
+        );
+        assert_eq!(
+            array_null_close_pit.body["error"]["root_cause"][0]["reason"],
+            "pit_id array element should only contain pit_id"
+        );
+
         let close_single_pit = node.handle_rest_request(
             RestRequest::new(RestMethod::Delete, "/_search/point_in_time")
                 .with_json_body(serde_json::json!({ "pit_id": "pit-1" })),
