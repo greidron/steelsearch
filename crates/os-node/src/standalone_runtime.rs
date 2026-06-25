@@ -7442,6 +7442,9 @@ impl SteelNode {
                 format!("repository [{repository}] is read-only"),
             );
         }
+        if self.load_snapshot_record(repository, snapshot).is_some() {
+            return build_duplicate_snapshot_name_response(repository, snapshot);
+        }
         let _thread_pool = match self.enter_runtime_thread_pool("snapshot", 1000) {
             Ok(execution) => execution,
             Err(response) => return response,
@@ -25636,6 +25639,29 @@ fn build_missing_snapshot_response(repository: &str, snapshot: &str) -> RestResp
                 "reason": format!("[{repository}:{snapshot}] missing"),
             },
             "status": 404
+        }),
+    )
+}
+
+fn build_duplicate_snapshot_name_response(repository: &str, snapshot: &str) -> RestResponse {
+    RestResponse::json(
+        400,
+        serde_json::json!({
+            "error": {
+                "type": "invalid_snapshot_name_exception",
+                "reason": format!(
+                    "[{repository}:{snapshot}] Invalid snapshot name [{snapshot}], snapshot with the same name already exists"
+                ),
+                "root_cause": [
+                    {
+                        "type": "invalid_snapshot_name_exception",
+                        "reason": format!(
+                            "[{repository}:{snapshot}] Invalid snapshot name [{snapshot}], snapshot with the same name already exists"
+                        ),
+                    }
+                ]
+            },
+            "status": 400
         }),
     )
 }
@@ -54098,6 +54124,71 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         ));
         assert_eq!(missing.status, 404);
         assert_eq!(missing.body["error"]["type"], "snapshot_missing_exception");
+    }
+
+    #[test]
+    fn snapshot_create_rejects_duplicate_name_like_opensearch() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        let repository = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/_snapshot/repo-duplicate-create").with_json_body(
+                serde_json::json!({
+                    "type": "fs",
+                    "settings": {
+                        "location": "target/test-snapshots/repo-duplicate-create"
+                    }
+                }),
+            ),
+        );
+        assert_eq!(repository.status, 200);
+
+        let first = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/_snapshot/repo-duplicate-create/snap-one")
+                .with_json_body(serde_json::json!({
+                    "indices": "logs-a",
+                    "metadata": {
+                        "owner": "first"
+                    }
+                })),
+        );
+        assert_eq!(first.status, 200);
+
+        let duplicate = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/_snapshot/repo-duplicate-create/snap-one")
+                .with_json_body(serde_json::json!({
+                    "indices": "logs-b",
+                    "metadata": {
+                        "owner": "second"
+                    }
+                })),
+        );
+        assert_eq!(duplicate.status, 400);
+        assert_eq!(
+            duplicate.body["error"]["type"],
+            "invalid_snapshot_name_exception"
+        );
+        assert!(
+            duplicate.body["error"]["reason"]
+                .as_str()
+                .expect("duplicate snapshot reason")
+                .contains("snapshot with the same name already exists")
+        );
+
+        let readback = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_snapshot/repo-duplicate-create/snap-one",
+        ));
+        assert_eq!(readback.status, 200);
+        assert_eq!(
+            readback.body["snapshots"][0]["indices"],
+            serde_json::json!(["logs-a"])
+        );
+        assert_eq!(
+            readback.body["snapshots"][0]["metadata"]["owner"],
+            "first"
+        );
     }
 
     #[test]

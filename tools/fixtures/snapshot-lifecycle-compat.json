@@ -194,6 +194,26 @@
       }
     },
     {
+      "name": "create_snapshot_duplicate_name_failure",
+      "method": "PUT",
+      "path": "/_snapshot/repo-compat/snapshot-compat",
+      "body": {
+        "indices": "logs-compat",
+        "include_global_state": false
+      },
+      "compare": {
+        "expected_status": 400,
+        "body_paths_present": [
+          "error.type",
+          "status"
+        ],
+        "body_paths_equal": [
+          "error.type",
+          "status"
+        ]
+      }
+    },
+    {
       "name": "get_snapshot_happy_path",
       "method": "GET",
       "path": "/_snapshot/repo-compat/snapshot-compat",
