@@ -24935,6 +24935,7 @@ pub enum OpenSearchQueryBuilderWire {
     ConstantScore(OpenSearchConstantScoreQueryBuilderWire),
     DisMax(OpenSearchDisMaxQueryBuilderWire),
     Exists(OpenSearchExistsQueryBuilderWire),
+    FieldMaskingSpan(OpenSearchFieldMaskingSpanQueryBuilderWire),
     FunctionScore(OpenSearchFunctionScoreQueryBuilderWire),
     Fuzzy(OpenSearchFuzzyQueryBuilderWire),
     GeoDistance(OpenSearchGeoDistanceQueryBuilderWire),
@@ -25146,6 +25147,14 @@ pub struct OpenSearchDisMaxQueryBuilderWire {
     pub query_name: Option<String>,
     pub queries: Vec<OpenSearchQueryBuilderWire>,
     pub tie_breaker: f32,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct OpenSearchFieldMaskingSpanQueryBuilderWire {
+    pub boost: f32,
+    pub query_name: Option<String>,
+    pub query: Box<OpenSearchQueryBuilderWire>,
+    pub field_name: String,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -25577,6 +25586,13 @@ fn write_named_query_builder(output: &mut StreamOutput, query: &OpenSearchQueryB
             output.write_optional_string(query.query_name.as_deref());
             output.write_string(&query.field_name);
         }
+        OpenSearchQueryBuilderWire::FieldMaskingSpan(query) => {
+            output.write_string("field_masking_span");
+            output.write_f32(query.boost);
+            output.write_optional_string(query.query_name.as_deref());
+            write_named_query_builder(output, &query.query);
+            output.write_string(&query.field_name);
+        }
         OpenSearchQueryBuilderWire::FunctionScore(query) => {
             output.write_string("function_score");
             output.write_f32(query.boost);
@@ -26006,6 +26022,14 @@ fn read_named_query_builder(
             OpenSearchExistsQueryBuilderWire {
                 boost: input.read_f32()?,
                 query_name: input.read_optional_string()?,
+                field_name: input.read_string()?,
+            },
+        )),
+        "field_masking_span" => Ok(OpenSearchQueryBuilderWire::FieldMaskingSpan(
+            OpenSearchFieldMaskingSpanQueryBuilderWire {
+                boost: input.read_f32()?,
+                query_name: input.read_optional_string()?,
+                query: Box::new(read_named_query_builder(input)?),
                 field_name: input.read_string()?,
             },
         )),
@@ -26460,7 +26484,7 @@ fn read_named_query_builder(
         )),
         _ => Err(TransportActionWireError::UnsupportedWireShape {
             shape: "search request source query",
-            reason: "only OpenSearch bool, boosting, common, combined_fields, constant_score, dis_max, exists, function_score, fuzzy, geo_distance, ids, match_all, match_none, match, match_bool_prefix, match_phrase, match_phrase_prefix, multi_match, nested, prefix, query_string, range, regexp, script_score, simple_query_string, span_multi, span_near, span_or, span_term, term, terms, terms_set, wildcard, and wrapper QueryBuilder values are decoded by this subset",
+            reason: "only OpenSearch bool, boosting, common, combined_fields, constant_score, dis_max, exists, field_masking_span, function_score, fuzzy, geo_distance, ids, match_all, match_none, match, match_bool_prefix, match_phrase, match_phrase_prefix, multi_match, nested, prefix, query_string, range, regexp, script_score, simple_query_string, span_multi, span_near, span_or, span_term, term, terms, terms_set, wildcard, and wrapper QueryBuilder values are decoded by this subset",
         }),
     }
 }
@@ -26684,6 +26708,22 @@ fn validate_query_builder(
                     reason: "OpenSearch ExistsQueryBuilder field name must be non-empty",
                 });
             }
+        }
+        OpenSearchQueryBuilderWire::FieldMaskingSpan(query) => {
+            validate_query_boost_and_name(query.boost, query.query_name.as_deref())?;
+            if query.field_name.is_empty() {
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "search request source query",
+                    reason: "OpenSearch FieldMaskingSpanQueryBuilder field name must be non-empty",
+                });
+            }
+            if !matches!(query.query.as_ref(), OpenSearchQueryBuilderWire::SpanTerm(_)) {
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "search request source query field_masking_span query",
+                    reason: "OpenSearch FieldMaskingSpanQueryBuilder query must be span_term in this execution subset",
+                });
+            }
+            validate_query_builder(Some(query.query.as_ref()))?;
         }
         OpenSearchQueryBuilderWire::FunctionScore(query) => {
             validate_query_boost_and_name(query.boost, query.query_name.as_deref())?;
@@ -64364,6 +64404,33 @@ mod tests {
         let decoded = OpenSearchSearchRequestWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, span_multi_query_request);
 
+        let field_masking_span_query_request = OpenSearchSearchRequestWire {
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                query: Some(OpenSearchQueryBuilderWire::FieldMaskingSpan(
+                    OpenSearchFieldMaskingSpanQueryBuilderWire {
+                        boost: 1.0,
+                        query_name: Some("masked-body".to_string()),
+                        query: Box::new(OpenSearchQueryBuilderWire::SpanTerm(
+                            OpenSearchSpanTermQueryBuilderWire {
+                                boost: 1.0,
+                                query_name: None,
+                                field_name: "body".to_string(),
+                                value: json!("ready"),
+                            },
+                        )),
+                        field_name: "body".to_string(),
+                    },
+                )),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        let mut output = StreamOutput::new();
+        field_masking_span_query_request.write(&mut output);
+
+        let decoded = OpenSearchSearchRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, field_masking_span_query_request);
+
         let exists_query_request = OpenSearchSearchRequestWire {
             source: Some(OpenSearchSearchSourceBuilderWire {
                 query: Some(OpenSearchQueryBuilderWire::Exists(
@@ -66353,6 +66420,43 @@ mod tests {
             invalid_span_multi_inner.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "search request source query span_multi match",
+                ..
+            })
+        ));
+
+        let invalid_field_masking_span_inner = OpenSearchSearchRequestWire {
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                query: Some(OpenSearchQueryBuilderWire::FieldMaskingSpan(
+                    OpenSearchFieldMaskingSpanQueryBuilderWire {
+                        boost: 1.0,
+                        query_name: None,
+                        query: Box::new(OpenSearchQueryBuilderWire::SpanMulti(
+                            OpenSearchSpanMultiTermQueryBuilderWire {
+                                boost: 1.0,
+                                query_name: None,
+                                query: Box::new(OpenSearchQueryBuilderWire::Prefix(
+                                    OpenSearchPrefixQueryBuilderWire {
+                                        boost: 1.0,
+                                        query_name: None,
+                                        field_name: "body".to_string(),
+                                        value: "read".to_string(),
+                                        rewrite: None,
+                                        case_insensitive: false,
+                                    },
+                                )),
+                            },
+                        )),
+                        field_name: "body".to_string(),
+                    },
+                )),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        assert!(matches!(
+            invalid_field_masking_span_inner.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source query field_masking_span query",
                 ..
             })
         ));
