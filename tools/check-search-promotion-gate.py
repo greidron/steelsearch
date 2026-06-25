@@ -95,6 +95,8 @@ def main() -> int:
             "scroll_initial_search",
             "scroll_follow_up_search",
             "search_after_search",
+            "sorted_paginated_search_window",
+            "query_param_paginated_search_window",
             "track_total_hits_threshold_search",
             "track_total_hits_true_search",
             "track_total_hits_query_param_threshold_overrides_body_search",

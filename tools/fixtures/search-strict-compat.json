@@ -4004,6 +4004,30 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "query_param_paginated_search_window",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search?from=2&size=1",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "sort": [
+          {
+            "ts": {
+              "order": "asc"
+            }
+          }
+        ],
+        "from": 0,
+        "size": 3
+      },
+      "extract": "search_hits",
+      "family": "ranking",
+      "description": "[ranking] query-param paginated search window overrides body",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "track_total_hits_threshold_search",
       "area": "search",
       "method": "POST",
