@@ -11365,6 +11365,35 @@ mod tests {
             .contains_key("scroll-context"));
     }
 
+    fn test_discovery_node_wire() -> os_transport::action::OpenSearchDiscoveryNodeWire {
+        os_transport::action::OpenSearchDiscoveryNodeWire {
+            name: "steel-node".to_string(),
+            id: "steel-node-id".to_string(),
+            ephemeral_id: "steel-node-ephemeral".to_string(),
+            host_name: "127.0.0.1".to_string(),
+            host_address: "127.0.0.1".to_string(),
+            transport_address: os_transport::action::OpenSearchTransportAddressWire {
+                ip: "127.0.0.1".parse().unwrap(),
+                host: "127.0.0.1".to_string(),
+                port: 9300,
+            },
+            attributes: BTreeMap::new(),
+            roles: vec![
+                os_transport::action::OpenSearchDiscoveryNodeRoleWire {
+                    name: "cluster_manager".to_string(),
+                    abbreviation: "m".to_string(),
+                    can_contain_data: false,
+                },
+                os_transport::action::OpenSearchDiscoveryNodeRoleWire {
+                    name: "data".to_string(),
+                    abbreviation: "d".to_string(),
+                    can_contain_data: true,
+                },
+            ],
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        }
+    }
+
     #[test]
     fn get_all_pits_transport_route_admits_only_local_lifecycle_subset() {
         let default_request = os_transport::action::OpenSearchGetAllPitsRequestWire::default();
@@ -11393,12 +11422,27 @@ mod tests {
             &node_filtered_frame[6..]
         ));
 
+        let concrete_node_request = os_transport::action::OpenSearchGetAllPitsRequestWire {
+            concrete_nodes: Some(vec![test_discovery_node_wire()]),
+            ..os_transport::action::OpenSearchGetAllPitsRequestWire::default()
+        };
+        let concrete_node_frame =
+            os_transport::action::build_opensearch_get_all_pits_request_message(
+                95,
+                OPENSEARCH_3_7_0_TRANSPORT,
+                &concrete_node_request,
+            )
+            .unwrap();
+        assert!(!get_all_pits_request_supports_local_lifecycle_subset(
+            &concrete_node_frame[6..]
+        ));
+
         let timeout_request = os_transport::action::OpenSearchGetAllPitsRequestWire {
             timeout: Some(os_transport::action::TimeValueWire::seconds(30)),
             ..os_transport::action::OpenSearchGetAllPitsRequestWire::default()
         };
         let timeout_frame = os_transport::action::build_opensearch_get_all_pits_request_message(
-            95,
+            96,
             OPENSEARCH_3_7_0_TRANSPORT,
             &timeout_request,
         )

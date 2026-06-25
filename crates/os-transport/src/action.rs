@@ -32639,6 +32639,7 @@ pub struct OpenSearchGetAllPitsRequestWire {
     pub parent_task_node: String,
     pub parent_task_id: Option<i64>,
     pub node_ids: Option<Vec<String>>,
+    pub concrete_nodes: Option<Vec<OpenSearchDiscoveryNodeWire>>,
     pub timeout: Option<TimeValueWire>,
 }
 
@@ -32648,6 +32649,7 @@ impl Default for OpenSearchGetAllPitsRequestWire {
             parent_task_node: String::new(),
             parent_task_id: None,
             node_ids: None,
+            concrete_nodes: None,
             timeout: None,
         }
     }
@@ -32657,7 +32659,7 @@ impl OpenSearchGetAllPitsRequestWire {
     pub fn write(&self, output: &mut StreamOutput) {
         write_parent_task_id(output, &self.parent_task_node, self.parent_task_id);
         write_nullable_string_array(output, self.node_ids.as_deref());
-        output.write_bool(false);
+        write_optional_discovery_node_array(output, self.concrete_nodes.as_deref());
         write_optional_time_value(output, self.timeout.as_ref());
     }
 
@@ -32665,18 +32667,12 @@ impl OpenSearchGetAllPitsRequestWire {
         let mut input = StreamInput::new(bytes);
         let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
         let node_ids = read_nullable_string_array(&mut input)?;
-        let concrete_nodes_present = input.read_bool()?;
-        if concrete_nodes_present {
-            return Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "get all pits concrete nodes",
-                reason:
-                    "get-all-PITs concrete DiscoveryNode payloads are not decoded by this adapter",
-            });
-        }
+        let concrete_nodes = read_optional_discovery_node_array(&mut input)?;
         let request = Self {
             parent_task_node,
             parent_task_id,
             node_ids,
+            concrete_nodes,
             timeout: read_optional_time_value(&mut input)?,
         };
         require_no_trailing_bytes(&input)?;
@@ -32684,6 +32680,11 @@ impl OpenSearchGetAllPitsRequestWire {
     }
 
     pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
+        if let Some(concrete_nodes) = &self.concrete_nodes {
+            for node in concrete_nodes {
+                node.validate_supported_subset()?;
+            }
+        }
         if let Some(timeout) = &self.timeout {
             if timeout.duration < -1 {
                 return Err(TransportActionWireError::UnsupportedWireShape {
@@ -32711,6 +32712,12 @@ impl OpenSearchGetAllPitsRequestWire {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "get all pits node filter",
                 reason: "node-scoped PIT listing requires runtime node fanout semantics",
+            });
+        }
+        if self.concrete_nodes.is_some() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get all pits concrete nodes",
+                reason: "concrete-node PIT listing requires runtime node fanout semantics",
             });
         }
         if self.timeout.is_some() {
@@ -40408,6 +40415,35 @@ fn read_optional_string_array(
     } else {
         Ok(None)
     }
+}
+
+fn write_optional_discovery_node_array(
+    output: &mut StreamOutput,
+    values: Option<&[OpenSearchDiscoveryNodeWire]>,
+) {
+    if let Some(values) = values {
+        output.write_bool(true);
+        output.write_vint(values.len() as i32);
+        for value in values {
+            value.write(output);
+        }
+    } else {
+        output.write_bool(false);
+    }
+}
+
+fn read_optional_discovery_node_array(
+    input: &mut StreamInput,
+) -> Result<Option<Vec<OpenSearchDiscoveryNodeWire>>, TransportActionWireError> {
+    if !input.read_bool()? {
+        return Ok(None);
+    }
+    let len = read_len(input)?;
+    let mut values = Vec::with_capacity(len);
+    for _ in 0..len {
+        values.push(OpenSearchDiscoveryNodeWire::read(input)?);
+    }
+    Ok(Some(values))
 }
 
 fn write_vint_array(output: &mut StreamOutput, values: &[i32]) {
@@ -68971,12 +69007,17 @@ mod tests {
             })
         ));
 
-        let mut concrete_nodes = StreamOutput::new();
-        write_parent_task_id(&mut concrete_nodes, "", None);
-        write_nullable_string_array(&mut concrete_nodes, None);
-        concrete_nodes.write_bool(true);
+        let concrete_node = OpenSearchGetAllPitsRequestWire {
+            concrete_nodes: Some(vec![test_discovery_node_wire()]),
+            ..OpenSearchGetAllPitsRequestWire::default()
+        };
+        let mut output = StreamOutput::new();
+        concrete_node.write(&mut output);
+        let decoded = OpenSearchGetAllPitsRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, concrete_node);
+        decoded.validate_supported_subset().unwrap();
         assert!(matches!(
-            OpenSearchGetAllPitsRequestWire::read(concrete_nodes.freeze()),
+            decoded.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "get all pits concrete nodes",
                 ..

@@ -2264,7 +2264,7 @@ The delete-PIT boundary covers:
 The get-all-PITs boundary covers:
 
 - OpenSearch `GetAllPitNodesRequest` parent task, nullable node ids, concrete
-  node payload presence, and optional timeout at the wire decode/build layer;
+  `DiscoveryNode` payloads, and optional timeout at the wire decode/build layer;
 - OpenSearch `GetAllPitNodesResponse` `BaseNodesResponse` rendering with
   cluster name, node responses, `DiscoveryNode` metadata, `ListPitInfo`
   entries encoded as `pit_id`, `creation_time`, and `keep_alive`, plus
@@ -2272,12 +2272,11 @@ The get-all-PITs boundary covers:
 - request validation for the default all-nodes request and response
   build/decode support for non-empty PIT info node lists;
 - shared `SteelNode` PIT context listing for the local-node transport subset;
-- node-id filters and timeout values decode as valid OpenSearch
-  `BaseNodesRequest` fields, but are excluded from the local lifecycle route
-  until multi-node fanout semantics are implemented;
+- node-id filters, concrete-node payloads, and timeout values decode as valid
+  OpenSearch `BaseNodesRequest` fields, but are excluded from the local
+  lifecycle route until multi-node fanout semantics are implemented;
 - raw `ListPitInfo` values decode without local id/range validation like the
-  OpenSearch wire object;
-- explicit rejection for concrete node payloads.
+  OpenSearch wire object.
 
 The create-PIT boundary covers:
 
