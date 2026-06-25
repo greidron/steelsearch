@@ -26037,7 +26037,7 @@ impl OpenSearchSearchResponseWire {
         output.write_f32(self.max_score);
         output.write_vint(self.hits.len() as i32);
         for hit in &self.hits {
-            hit.write(output, version)?;
+            hit.write_at_depth(output, version, 0)?;
         }
         output.write_bool(false);
         output.write_optional_string(None);
@@ -26083,7 +26083,9 @@ impl OpenSearchSearchResponseWire {
         let hit_count = read_len(&mut input)?;
         let mut hits = Vec::with_capacity(hit_count);
         for _ in 0..hit_count {
-            hits.push(OpenSearchSearchHitWire::read(&mut input, version)?);
+            hits.push(OpenSearchSearchHitWire::read_at_depth(
+                &mut input, version, 0,
+            )?);
         }
         reject_optional_array_present(&mut input, "search response sort fields")?;
         if input.read_optional_string()?.is_some() {
@@ -26310,6 +26312,121 @@ fn read_optional_search_nested_identity(
 }
 
 #[derive(Clone, Debug, PartialEq)]
+pub struct OpenSearchSearchHitsWire {
+    pub total_hits: Option<i64>,
+    pub total_hits_relation: i32,
+    pub max_score: f32,
+    pub hits: Vec<OpenSearchSearchHitWire>,
+}
+
+impl OpenSearchSearchHitsWire {
+    pub fn write(
+        &self,
+        output: &mut StreamOutput,
+        version: Version,
+    ) -> Result<(), TransportActionWireError> {
+        self.write_at_depth(output, version, 0)
+    }
+
+    fn write_at_depth(
+        &self,
+        output: &mut StreamOutput,
+        version: Version,
+        depth: usize,
+    ) -> Result<(), TransportActionWireError> {
+        self.validate_at_depth(depth)?;
+        output.write_bool(self.total_hits.is_some());
+        if let Some(total_hits) = self.total_hits {
+            output.write_vlong(total_hits);
+            output.write_vint(self.total_hits_relation);
+        }
+        output.write_f32(self.max_score);
+        output.write_vint(self.hits.len() as i32);
+        for hit in &self.hits {
+            hit.write_at_depth(output, version, depth)?;
+        }
+        output.write_bool(false);
+        output.write_optional_string(None);
+        output.write_bool(false);
+        Ok(())
+    }
+
+    pub fn read(
+        input: &mut StreamInput,
+        version: Version,
+    ) -> Result<Self, TransportActionWireError> {
+        Self::read_at_depth(input, version, 0)
+    }
+
+    fn read_at_depth(
+        input: &mut StreamInput,
+        version: Version,
+        depth: usize,
+    ) -> Result<Self, TransportActionWireError> {
+        let total_hits = if input.read_bool()? {
+            let value = input.read_vlong()?;
+            let relation = input.read_vint()?;
+            Some((value, relation))
+        } else {
+            None
+        };
+        let max_score = input.read_f32()?;
+        let hit_count = read_len(input)?;
+        let mut hits = Vec::with_capacity(hit_count);
+        for _ in 0..hit_count {
+            hits.push(OpenSearchSearchHitWire::read_at_depth(
+                input, version, depth,
+            )?);
+        }
+        reject_optional_array_present(input, "search inner hits sort fields")?;
+        if input.read_optional_string()?.is_some() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search inner hits collapse field",
+                reason: "inner SearchHits collapse field is not decoded by this subset",
+            });
+        }
+        reject_optional_array_present(input, "search inner hits collapse values")?;
+        let hits = Self {
+            total_hits: total_hits.map(|(value, _)| value),
+            total_hits_relation: total_hits.map(|(_, relation)| relation).unwrap_or(0),
+            max_score,
+            hits,
+        };
+        hits.validate_at_depth(depth)?;
+        Ok(hits)
+    }
+
+    pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
+        self.validate_at_depth(0)
+    }
+
+    fn validate_at_depth(&self, depth: usize) -> Result<(), TransportActionWireError> {
+        if self.total_hits.is_some_and(|total_hits| total_hits < 0) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search inner hits total",
+                reason: "OpenSearch inner SearchHits total cannot be negative",
+            });
+        }
+        if self.total_hits_relation != 0 && self.total_hits_relation != 1 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search inner hits total relation",
+                reason: "OpenSearch TotalHits relation must be equal-to or greater-than-or-equal-to",
+            });
+        }
+        if self.total_hits.is_none() && self.total_hits_relation != 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search inner hits total relation",
+                reason: "OpenSearch inner SearchHits without total hits cannot carry a relation",
+            });
+        }
+        for hit in &self.hits {
+            hit.validate_at_depth(depth)?;
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub struct OpenSearchSearchHitWire {
     pub id: Option<String>,
     pub score: f32,
@@ -26325,9 +26442,12 @@ pub struct OpenSearchSearchHitWire {
     pub sort_values: Vec<Value>,
     pub matched_queries: BTreeMap<String, f32>,
     pub shard_target: Option<OpenSearchSearchShardTargetWire>,
+    pub inner_hits: BTreeMap<String, OpenSearchSearchHitsWire>,
 }
 
 impl OpenSearchSearchHitWire {
+    const MAX_INNER_HITS_DEPTH: usize = 8;
+
     pub fn from_engine_hit(hit: SearchHit) -> Self {
         let shard_target = OpenSearchSearchShardTargetWire::from_hit_index(&hit.index);
         Self {
@@ -26345,15 +26465,25 @@ impl OpenSearchSearchHitWire {
             sort_values: normalized_sort_values(hit.sort),
             matched_queries: BTreeMap::new(),
             shard_target,
+            inner_hits: BTreeMap::new(),
         }
     }
 
     pub fn write(
         &self,
         output: &mut StreamOutput,
-        _version: Version,
+        version: Version,
     ) -> Result<(), TransportActionWireError> {
-        self.validate_supported_subset()?;
+        self.write_at_depth(output, version, 0)
+    }
+
+    fn write_at_depth(
+        &self,
+        output: &mut StreamOutput,
+        version: Version,
+        depth: usize,
+    ) -> Result<(), TransportActionWireError> {
+        self.validate_at_depth(depth)?;
         output.write_f32(self.score);
         write_optional_text_string(output, self.id.as_deref())?;
         write_optional_search_nested_identity(output, self.nested_identity.as_ref(), 0)?;
@@ -26378,14 +26508,28 @@ impl OpenSearchSearchHitWire {
         write_search_sort_values(output, &self.sort_values)?;
         write_matched_queries(output, &self.matched_queries)?;
         write_optional_search_shard_target(output, self.shard_target.as_ref())?;
-        output.write_vint(0);
+        write_inner_hits(output, &self.inner_hits, version, depth + 1)?;
         Ok(())
     }
 
     pub fn read(
         input: &mut StreamInput,
-        _version: Version,
+        version: Version,
     ) -> Result<Self, TransportActionWireError> {
+        Self::read_at_depth(input, version, 0)
+    }
+
+    fn read_at_depth(
+        input: &mut StreamInput,
+        version: Version,
+        depth: usize,
+    ) -> Result<Self, TransportActionWireError> {
+        if depth > Self::MAX_INNER_HITS_DEPTH {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search hit inner hits",
+                reason: "OpenSearch inner hits depth exceeds the supported recursion limit",
+            });
+        }
         let score = input.read_f32()?;
         let id = read_optional_text_string(input)?;
         let nested_identity = read_optional_search_nested_identity(input, 0)?;
@@ -26404,6 +26548,7 @@ impl OpenSearchSearchHitWire {
             sort_values: Vec::new(),
             matched_queries: BTreeMap::new(),
             shard_target: None,
+            inner_hits: BTreeMap::new(),
         };
         let explanation = if input.read_bool()? {
             Some(read_search_explanation(input, "search hit explanation")?)
@@ -26439,12 +26584,23 @@ impl OpenSearchSearchHitWire {
             shard_target,
             ..hit
         };
-        reject_empty_list_len(input, "search hit inner hits")?;
-        hit.validate_supported_subset()?;
+        let inner_hits = read_inner_hits(input, version, depth + 1)?;
+        let hit = Self { inner_hits, ..hit };
+        hit.validate_at_depth(depth)?;
         Ok(hit)
     }
 
     pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
+        self.validate_at_depth(0)
+    }
+
+    fn validate_at_depth(&self, depth: usize) -> Result<(), TransportActionWireError> {
+        if depth > Self::MAX_INNER_HITS_DEPTH {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search hit inner hits",
+                reason: "OpenSearch inner hits depth exceeds the supported recursion limit",
+            });
+        }
         if self.id.as_ref().is_some_and(|id| id.is_empty()) {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "search hit id",
@@ -26475,8 +26631,46 @@ impl OpenSearchSearchHitWire {
         if let Some(nested_identity) = &self.nested_identity {
             nested_identity.validate_supported_subset()?;
         }
+        if self.inner_hits.keys().any(|name| name.is_empty()) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search hit inner hits",
+                reason: "OpenSearch inner hits names must be non-empty",
+            });
+        }
+        for inner_hits in self.inner_hits.values() {
+            inner_hits.validate_at_depth(depth + 1)?;
+        }
         Ok(())
     }
+}
+
+fn write_inner_hits(
+    output: &mut StreamOutput,
+    inner_hits: &BTreeMap<String, OpenSearchSearchHitsWire>,
+    version: Version,
+    depth: usize,
+) -> Result<(), TransportActionWireError> {
+    output.write_vint(inner_hits.len() as i32);
+    for (name, hits) in inner_hits {
+        output.write_string(name);
+        hits.write_at_depth(output, version, depth)?;
+    }
+    Ok(())
+}
+
+fn read_inner_hits(
+    input: &mut StreamInput,
+    version: Version,
+    depth: usize,
+) -> Result<BTreeMap<String, OpenSearchSearchHitsWire>, TransportActionWireError> {
+    let len = read_len(input)?;
+    let mut inner_hits = BTreeMap::new();
+    for _ in 0..len {
+        let name = input.read_string()?;
+        let hits = OpenSearchSearchHitsWire::read_at_depth(input, version, depth)?;
+        inner_hits.insert(name, hits);
+    }
+    Ok(inner_hits)
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -58680,6 +58874,35 @@ mod tests {
                     shard_id: 0,
                     cluster_alias: None,
                 }),
+                inner_hits: BTreeMap::from([(
+                    "comments".to_string(),
+                    OpenSearchSearchHitsWire {
+                        total_hits: Some(1),
+                        total_hits_relation: 0,
+                        max_score: 0.5,
+                        hits: vec![OpenSearchSearchHitWire {
+                            id: Some("doc-1-comment-1".to_string()),
+                            score: 0.5,
+                            nested_identity: Some(OpenSearchSearchNestedIdentityWire {
+                                field: Some("comments".to_string()),
+                                offset: 1,
+                                child: None,
+                            }),
+                            version: -1,
+                            seq_no: OPENSEARCH_UNASSIGNED_SEQ_NO,
+                            primary_term: 0,
+                            source: Some(json!({ "author": "ann" })),
+                            explanation: None,
+                            fields: BTreeMap::new(),
+                            meta_fields: BTreeMap::new(),
+                            highlight_fields: BTreeMap::new(),
+                            sort_values: Vec::new(),
+                            matched_queries: BTreeMap::new(),
+                            shard_target: None,
+                            inner_hits: BTreeMap::new(),
+                        }],
+                    },
+                )]),
             }],
             ..OpenSearchSearchResponseWire::default()
         };
@@ -58757,36 +58980,64 @@ mod tests {
                 cluster_alias: None,
             })
         );
+        let comments_inner_hits = decoded.hits[0]
+            .inner_hits
+            .get("comments")
+            .expect("comments inner hits should round-trip");
+        assert_eq!(comments_inner_hits.total_hits, Some(1));
+        assert_eq!(comments_inner_hits.max_score, 0.5);
+        assert_eq!(comments_inner_hits.hits.len(), 1);
+        assert_eq!(
+            comments_inner_hits.hits[0].id.as_deref(),
+            Some("doc-1-comment-1")
+        );
+        assert_eq!(
+            comments_inner_hits.hits[0].nested_identity,
+            Some(OpenSearchSearchNestedIdentityWire {
+                field: Some("comments".to_string()),
+                offset: 1,
+                child: None,
+            })
+        );
     }
 
     #[test]
     fn opensearch_search_response_rejects_unsupported_hit_sections_or_invalid_counts() {
-        let mut hit_with_inner_hits = StreamOutput::new();
-        hit_with_inner_hits.write_bool(true);
-        hit_with_inner_hits.write_vlong(1);
-        hit_with_inner_hits.write_vint(0);
-        hit_with_inner_hits.write_f32(1.0);
-        hit_with_inner_hits.write_vint(1);
-        hit_with_inner_hits.write_f32(1.0);
-        write_optional_text_string(&mut hit_with_inner_hits, Some("doc-1")).unwrap();
-        hit_with_inner_hits.write_bool(false);
-        hit_with_inner_hits.write_i64(1);
-        hit_with_inner_hits.write_zlong(0);
-        hit_with_inner_hits.write_vlong(1);
-        write_json_bytes_reference(&mut hit_with_inner_hits, &json!({ "message": "hello" }))
+        let mut hit_with_invalid_inner_hits = StreamOutput::new();
+        hit_with_invalid_inner_hits.write_bool(true);
+        hit_with_invalid_inner_hits.write_vlong(1);
+        hit_with_invalid_inner_hits.write_vint(0);
+        hit_with_invalid_inner_hits.write_f32(1.0);
+        hit_with_invalid_inner_hits.write_vint(1);
+        hit_with_invalid_inner_hits.write_f32(1.0);
+        write_optional_text_string(&mut hit_with_invalid_inner_hits, Some("doc-1")).unwrap();
+        hit_with_invalid_inner_hits.write_bool(false);
+        hit_with_invalid_inner_hits.write_i64(1);
+        hit_with_invalid_inner_hits.write_zlong(0);
+        hit_with_invalid_inner_hits.write_vlong(1);
+        write_json_bytes_reference(&mut hit_with_invalid_inner_hits, &json!({ "message": "hello" }))
             .unwrap();
-        hit_with_inner_hits.write_bool(false);
-        hit_with_inner_hits.write_vint(0);
-        hit_with_inner_hits.write_vint(0);
-        hit_with_inner_hits.write_vint(0);
-        write_search_sort_values(&mut hit_with_inner_hits, &[]).unwrap();
-        write_search_sort_values(&mut hit_with_inner_hits, &[]).unwrap();
-        hit_with_inner_hits.write_vint(0);
-        hit_with_inner_hits.write_bool(false);
-        hit_with_inner_hits.write_vint(1);
+        hit_with_invalid_inner_hits.write_bool(false);
+        hit_with_invalid_inner_hits.write_vint(0);
+        hit_with_invalid_inner_hits.write_vint(0);
+        hit_with_invalid_inner_hits.write_vint(0);
+        write_search_sort_values(&mut hit_with_invalid_inner_hits, &[]).unwrap();
+        write_search_sort_values(&mut hit_with_invalid_inner_hits, &[]).unwrap();
+        hit_with_invalid_inner_hits.write_vint(0);
+        hit_with_invalid_inner_hits.write_bool(false);
+        hit_with_invalid_inner_hits.write_vint(1);
+        hit_with_invalid_inner_hits.write_string("");
+        hit_with_invalid_inner_hits.write_bool(true);
+        hit_with_invalid_inner_hits.write_vlong(0);
+        hit_with_invalid_inner_hits.write_vint(0);
+        hit_with_invalid_inner_hits.write_f32(f32::NAN);
+        hit_with_invalid_inner_hits.write_vint(0);
+        hit_with_invalid_inner_hits.write_bool(false);
+        hit_with_invalid_inner_hits.write_optional_string(None);
+        hit_with_invalid_inner_hits.write_bool(false);
         assert!(matches!(
             OpenSearchSearchResponseWire::read(
-                hit_with_inner_hits.freeze(),
+                hit_with_invalid_inner_hits.freeze(),
                 OPENSEARCH_3_7_0_TRANSPORT
             ),
             Err(TransportActionWireError::UnsupportedWireShape {
@@ -58823,6 +59074,7 @@ mod tests {
             sort_values: Vec::new(),
             matched_queries: BTreeMap::new(),
             shard_target: None,
+            inner_hits: BTreeMap::new(),
         };
         assert!(matches!(
             invalid_hit.validate_supported_subset(),
@@ -58847,6 +59099,7 @@ mod tests {
             sort_values: vec![json!({ "unsupported": true })],
             matched_queries: BTreeMap::new(),
             shard_target: None,
+            inner_hits: BTreeMap::new(),
         };
         let mut output = StreamOutput::new();
         assert!(matches!(
