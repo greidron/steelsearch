@@ -24936,6 +24936,7 @@ pub enum OpenSearchQueryBuilderWire {
     DisMax(OpenSearchDisMaxQueryBuilderWire),
     Exists(OpenSearchExistsQueryBuilderWire),
     Fuzzy(OpenSearchFuzzyQueryBuilderWire),
+    GeoDistance(OpenSearchGeoDistanceQueryBuilderWire),
     Ids(OpenSearchIdsQueryBuilderWire),
     MatchAll(OpenSearchMatchAllQueryBuilderWire),
     Match(OpenSearchMatchQueryBuilderWire),
@@ -25175,6 +25176,37 @@ pub struct OpenSearchFuzzyQueryBuilderWire {
     pub max_expansions: i32,
     pub transpositions: bool,
     pub rewrite: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct OpenSearchGeoDistanceQueryBuilderWire {
+    pub boost: f32,
+    pub query_name: Option<String>,
+    pub field_name: String,
+    pub distance_meters: f64,
+    pub validation_method: OpenSearchGeoValidationMethodWire,
+    pub center: OpenSearchGeoPointWire,
+    pub geo_distance: OpenSearchGeoDistanceWire,
+    pub ignore_unmapped: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct OpenSearchGeoPointWire {
+    pub lat: f64,
+    pub lon: f64,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum OpenSearchGeoValidationMethodWire {
+    Coerce,
+    IgnoreMalformed,
+    Strict,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum OpenSearchGeoDistanceWire {
+    Plane,
+    Arc,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -25451,6 +25483,17 @@ fn write_named_query_builder(output: &mut StreamOutput, query: &OpenSearchQueryB
             output.write_vint(query.max_expansions);
             output.write_bool(query.transpositions);
             output.write_optional_string(query.rewrite.as_deref());
+        }
+        OpenSearchQueryBuilderWire::GeoDistance(query) => {
+            output.write_string("geo_distance");
+            output.write_f32(query.boost);
+            output.write_optional_string(query.query_name.as_deref());
+            output.write_string(&query.field_name);
+            output.write_f64(query.distance_meters);
+            write_geo_validation_method(output, query.validation_method);
+            write_geo_point(output, query.center);
+            write_geo_distance(output, query.geo_distance);
+            output.write_bool(query.ignore_unmapped);
         }
         OpenSearchQueryBuilderWire::Ids(query) => {
             output.write_string("ids");
@@ -25806,6 +25849,18 @@ fn read_named_query_builder(
                 rewrite: input.read_optional_string()?,
             },
         )),
+        "geo_distance" => Ok(OpenSearchQueryBuilderWire::GeoDistance(
+            OpenSearchGeoDistanceQueryBuilderWire {
+                boost: input.read_f32()?,
+                query_name: input.read_optional_string()?,
+                field_name: input.read_string()?,
+                distance_meters: input.read_f64()?,
+                validation_method: read_geo_validation_method(input)?,
+                center: read_geo_point(input)?,
+                geo_distance: read_geo_distance(input)?,
+                ignore_unmapped: input.read_bool()?,
+            },
+        )),
         "ids" => Ok(OpenSearchQueryBuilderWire::Ids(
             OpenSearchIdsQueryBuilderWire {
                 boost: input.read_f32()?,
@@ -26141,7 +26196,7 @@ fn read_named_query_builder(
         )),
         _ => Err(TransportActionWireError::UnsupportedWireShape {
             shape: "search request source query",
-            reason: "only OpenSearch bool, boosting, common, combined_fields, constant_score, dis_max, exists, fuzzy, ids, match_all, match_none, match, match_bool_prefix, match_phrase, match_phrase_prefix, multi_match, nested, prefix, query_string, range, regexp, simple_query_string, term, terms, wildcard, and wrapper QueryBuilder values are decoded by this subset",
+            reason: "only OpenSearch bool, boosting, common, combined_fields, constant_score, dis_max, exists, fuzzy, geo_distance, ids, match_all, match_none, match, match_bool_prefix, match_phrase, match_phrase_prefix, multi_match, nested, prefix, query_string, range, regexp, simple_query_string, term, terms, wildcard, and wrapper QueryBuilder values are decoded by this subset",
         }),
     }
 }
@@ -26298,6 +26353,36 @@ fn validate_query_builder(
                 });
             }
             validate_optional_non_empty_query_string(query.rewrite.as_deref())?;
+        }
+        OpenSearchQueryBuilderWire::GeoDistance(query) => {
+            validate_query_boost_and_name(query.boost, query.query_name.as_deref())?;
+            if query.field_name.is_empty() {
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "search request source query",
+                    reason: "OpenSearch GeoDistanceQueryBuilder field name must be non-empty",
+                });
+            }
+            if !query.distance_meters.is_finite() || query.distance_meters < 0.0 {
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "search request source query",
+                    reason: "OpenSearch GeoDistanceQueryBuilder distance must be finite and non-negative",
+                });
+            }
+            if !query.center.lat.is_finite() || !query.center.lon.is_finite() {
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "search request source query",
+                    reason: "OpenSearch GeoDistanceQueryBuilder center point must contain finite coordinates",
+                });
+            }
+            if query.validation_method == OpenSearchGeoValidationMethodWire::Strict
+                && !((-90.0..=90.0).contains(&query.center.lat)
+                    && (-180.0..=180.0).contains(&query.center.lon))
+            {
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "search request source query",
+                    reason: "OpenSearch GeoDistanceQueryBuilder strict center point must be in latitude/longitude bounds",
+                });
+            }
         }
         OpenSearchQueryBuilderWire::Ids(query) => {
             validate_query_boost_and_name(query.boost, query.query_name.as_deref())?;
@@ -26867,6 +26952,63 @@ fn read_nested_score_mode(
             reason: "OpenSearch NestedQueryBuilder score mode ordinal is unknown",
         }),
     }
+}
+
+fn write_geo_validation_method(
+    output: &mut StreamOutput,
+    method: OpenSearchGeoValidationMethodWire,
+) {
+    output.write_vint(match method {
+        OpenSearchGeoValidationMethodWire::Coerce => 0,
+        OpenSearchGeoValidationMethodWire::IgnoreMalformed => 1,
+        OpenSearchGeoValidationMethodWire::Strict => 2,
+    });
+}
+
+fn read_geo_validation_method(
+    input: &mut StreamInput,
+) -> Result<OpenSearchGeoValidationMethodWire, TransportActionWireError> {
+    match input.read_vint()? {
+        0 => Ok(OpenSearchGeoValidationMethodWire::Coerce),
+        1 => Ok(OpenSearchGeoValidationMethodWire::IgnoreMalformed),
+        2 => Ok(OpenSearchGeoValidationMethodWire::Strict),
+        _ => Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "search request source query",
+            reason: "OpenSearch GeoValidationMethod ordinal must be COERCE(0), IGNORE_MALFORMED(1), or STRICT(2)",
+        }),
+    }
+}
+
+fn write_geo_distance(output: &mut StreamOutput, distance: OpenSearchGeoDistanceWire) {
+    output.write_vint(match distance {
+        OpenSearchGeoDistanceWire::Plane => 0,
+        OpenSearchGeoDistanceWire::Arc => 1,
+    });
+}
+
+fn read_geo_distance(
+    input: &mut StreamInput,
+) -> Result<OpenSearchGeoDistanceWire, TransportActionWireError> {
+    match input.read_vint()? {
+        0 => Ok(OpenSearchGeoDistanceWire::Plane),
+        1 => Ok(OpenSearchGeoDistanceWire::Arc),
+        _ => Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "search request source query",
+            reason: "OpenSearch GeoDistance ordinal must be PLANE(0) or ARC(1)",
+        }),
+    }
+}
+
+fn write_geo_point(output: &mut StreamOutput, point: OpenSearchGeoPointWire) {
+    output.write_f64(point.lat);
+    output.write_f64(point.lon);
+}
+
+fn read_geo_point(input: &mut StreamInput) -> Result<OpenSearchGeoPointWire, TransportActionWireError> {
+    Ok(OpenSearchGeoPointWire {
+        lat: input.read_f64()?,
+        lon: input.read_f64()?,
+    })
 }
 
 fn write_zero_terms_query(output: &mut StreamOutput, value: OpenSearchZeroTermsQueryWire) {
@@ -63574,6 +63716,33 @@ mod tests {
         let decoded = OpenSearchSearchRequestWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, nested_query_request);
 
+        let geo_distance_query_request = OpenSearchSearchRequestWire {
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                query: Some(OpenSearchQueryBuilderWire::GeoDistance(
+                    OpenSearchGeoDistanceQueryBuilderWire {
+                        boost: 1.0,
+                        query_name: Some("near-office".to_string()),
+                        field_name: "location".to_string(),
+                        distance_meters: 1_500.0,
+                        validation_method: OpenSearchGeoValidationMethodWire::Strict,
+                        center: OpenSearchGeoPointWire {
+                            lat: 37.7749,
+                            lon: -122.4194,
+                        },
+                        geo_distance: OpenSearchGeoDistanceWire::Arc,
+                        ignore_unmapped: false,
+                    },
+                )),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        let mut output = StreamOutput::new();
+        geo_distance_query_request.write(&mut output);
+
+        let decoded = OpenSearchSearchRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, geo_distance_query_request);
+
         let prefix_query_request = OpenSearchSearchRequestWire {
             source: Some(OpenSearchSearchSourceBuilderWire {
                 query: Some(OpenSearchQueryBuilderWire::Prefix(
@@ -65024,6 +65193,32 @@ mod tests {
             })
         ));
 
+        let invalid_geo_distance = OpenSearchSearchRequestWire {
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                query: Some(OpenSearchQueryBuilderWire::GeoDistance(
+                    OpenSearchGeoDistanceQueryBuilderWire {
+                        boost: 1.0,
+                        query_name: None,
+                        field_name: "location".to_string(),
+                        distance_meters: f64::NAN,
+                        validation_method: OpenSearchGeoValidationMethodWire::Strict,
+                        center: OpenSearchGeoPointWire { lat: 0.0, lon: 0.0 },
+                        geo_distance: OpenSearchGeoDistanceWire::Arc,
+                        ignore_unmapped: false,
+                    },
+                )),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        assert!(matches!(
+            invalid_geo_distance.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source query",
+                ..
+            })
+        ));
+
         let mut multi_match_with_unknown_type = StreamOutput::new();
         multi_match_with_unknown_type.write_bool(true);
         multi_match_with_unknown_type.write_string("multi_match");
@@ -65090,6 +65285,53 @@ mod tests {
         assert!(matches!(
             read_optional_query_builder(&mut StreamInput::new(
                 nested_with_unknown_score_mode.freeze()
+            )),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source query",
+                ..
+            })
+        ));
+
+        let mut geo_distance_with_unknown_validation_method = StreamOutput::new();
+        geo_distance_with_unknown_validation_method.write_bool(true);
+        geo_distance_with_unknown_validation_method.write_string("geo_distance");
+        geo_distance_with_unknown_validation_method.write_f32(1.0);
+        geo_distance_with_unknown_validation_method.write_optional_string(None);
+        geo_distance_with_unknown_validation_method.write_string("location");
+        geo_distance_with_unknown_validation_method.write_f64(1_500.0);
+        geo_distance_with_unknown_validation_method.write_vint(99);
+        assert!(matches!(
+            read_optional_query_builder(&mut StreamInput::new(
+                geo_distance_with_unknown_validation_method.freeze()
+            )),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source query",
+                ..
+            })
+        ));
+
+        let mut geo_distance_with_unknown_distance_type = StreamOutput::new();
+        geo_distance_with_unknown_distance_type.write_bool(true);
+        geo_distance_with_unknown_distance_type.write_string("geo_distance");
+        geo_distance_with_unknown_distance_type.write_f32(1.0);
+        geo_distance_with_unknown_distance_type.write_optional_string(None);
+        geo_distance_with_unknown_distance_type.write_string("location");
+        geo_distance_with_unknown_distance_type.write_f64(1_500.0);
+        write_geo_validation_method(
+            &mut geo_distance_with_unknown_distance_type,
+            OpenSearchGeoValidationMethodWire::Strict,
+        );
+        write_geo_point(
+            &mut geo_distance_with_unknown_distance_type,
+            OpenSearchGeoPointWire {
+                lat: 37.7749,
+                lon: -122.4194,
+            },
+        );
+        geo_distance_with_unknown_distance_type.write_vint(99);
+        assert!(matches!(
+            read_optional_query_builder(&mut StreamInput::new(
+                geo_distance_with_unknown_distance_type.freeze()
             )),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "search request source query",
