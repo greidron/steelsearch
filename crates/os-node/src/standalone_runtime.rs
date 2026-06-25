@@ -15631,15 +15631,17 @@ impl SteelNode {
             routing,
             refreshed: forced_refresh,
         };
-        let response = serde_json::json!({
+        let mut response = serde_json::json!({
             "_index": self.write_response_index(index, &resolved_index),
             "_id": id,
             "_version": record.version,
             "result": if doc_existed { "updated" } else { "created" },
             "_seq_no": record.seq_no,
             "_primary_term": record.primary_term,
-            "forced_refresh": forced_refresh,
         });
+        if forced_refresh {
+            response["forced_refresh"] = Value::Bool(true);
+        }
         docs.insert(key, record);
         drop(docs);
         drop(next_seq_no);
@@ -15742,15 +15744,17 @@ impl SteelNode {
             routing,
             refreshed: forced_refresh,
         };
-        let response = serde_json::json!({
+        let mut response = serde_json::json!({
             "_index": self.write_response_index(index, &resolved_index),
             "_id": id,
             "_version": 1,
             "result": "created",
             "_seq_no": record.seq_no,
             "_primary_term": record.primary_term,
-            "forced_refresh": forced_refresh,
         });
+        if forced_refresh {
+            response["forced_refresh"] = Value::Bool(true);
+        }
         docs.insert(key, record);
         drop(docs);
         drop(next_seq_no);

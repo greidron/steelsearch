@@ -354,6 +354,64 @@
       "extract": "single_doc_write_result"
     },
     {
+      "name": "single_doc_put_repeat_create",
+      "area": "document-write",
+      "method": "PUT",
+      "path": "/logs-write-lifecycle-doc/_doc/doc-put-repeat",
+      "body": {
+        "message": "put repeat initial",
+        "tenant": "tenant-put-repeat"
+      },
+      "extract": "single_doc_write_result"
+    },
+    {
+      "name": "single_doc_put_repeat_overwrite",
+      "area": "document-write",
+      "method": "PUT",
+      "path": "/logs-write-lifecycle-doc/_doc/doc-put-repeat",
+      "body": {
+        "message": "put repeat overwritten",
+        "tenant": "tenant-put-repeat"
+      },
+      "extract": "single_doc_write_result"
+    },
+    {
+      "name": "single_doc_put_repeat_readback",
+      "area": "document-write",
+      "method": "GET",
+      "path": "/logs-write-lifecycle-doc/_doc/doc-put-repeat",
+      "extract": "get_document"
+    },
+    {
+      "name": "single_doc_post_repeat_create",
+      "area": "document-write",
+      "method": "POST",
+      "path": "/logs-write-lifecycle-doc/_doc/doc-post-repeat",
+      "body": {
+        "message": "post repeat initial",
+        "tenant": "tenant-post-repeat"
+      },
+      "extract": "single_doc_write_result"
+    },
+    {
+      "name": "single_doc_post_repeat_overwrite",
+      "area": "document-write",
+      "method": "POST",
+      "path": "/logs-write-lifecycle-doc/_doc/doc-post-repeat",
+      "body": {
+        "message": "post repeat overwritten",
+        "tenant": "tenant-post-repeat"
+      },
+      "extract": "single_doc_write_result"
+    },
+    {
+      "name": "single_doc_post_repeat_readback",
+      "area": "document-write",
+      "method": "GET",
+      "path": "/logs-write-lifecycle-doc/_doc/doc-post-repeat",
+      "extract": "get_document"
+    },
+    {
       "name": "single_doc_put_lifecycle_get",
       "area": "document-write",
       "method": "GET",
