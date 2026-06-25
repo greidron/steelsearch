@@ -381,6 +381,29 @@
       }
     },
     {
+      "name": "update_single_doc_doc_as_upsert_with_occ_rejected",
+      "method": "POST",
+      "path": "/single-doc-compat-000001/_update/doc-doc-as-upsert-occ?routing=tenant-a&if_seq_no=0&if_primary_term=1",
+      "body": {
+        "doc": {
+          "message": "doc-as-upsert-with-occ"
+        },
+        "doc_as_upsert": true
+      },
+      "compare": {
+        "expected_status": 400,
+        "body_paths_present": [
+          "error.type",
+          "error.reason",
+          "status"
+        ],
+        "body_paths_equal": [
+          "error.type",
+          "status"
+        ]
+      }
+    },
+    {
       "name": "update_single_doc_doc_patch_success",
       "method": "POST",
       "path": "/single-doc-compat-000001/_update/doc-1?routing=tenant-a",
