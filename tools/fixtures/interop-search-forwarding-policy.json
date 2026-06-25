@@ -26,6 +26,11 @@
       "family": "pit",
       "policy": "accepted",
       "reason": "PIT lifecycle transport actions have wire evidence and the forwarding profile now validates open, search, list, and close behavior."
+    },
+    {
+      "family": "search_after",
+      "policy": "accepted",
+      "reason": "Stateless cursor pagination is validated by the forwarding profile with explicit sort values and deterministic hit order."
     }
   ],
   "accepted_request_options": [
@@ -33,7 +38,8 @@
     "from",
     "size",
     "track_total_hits",
-    "pit"
+    "pit",
+    "search_after"
   ],
   "rejected_query_families": [
     {
@@ -55,11 +61,6 @@
       "family": "scroll",
       "policy": "rejected",
       "reason": "Search session lifecycle requires additional forwarding contracts."
-    },
-    {
-      "family": "search_after",
-      "policy": "rejected",
-      "reason": "Cursor-style result continuation is deferred until session forwarding exists."
     },
     {
       "family": "rescore",

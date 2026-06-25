@@ -42,7 +42,7 @@ fn interop_search_forwarding_policy_fixture_stays_bounded_and_explicit() {
         assert!(rejected.insert(row.family.clone()), "duplicate rejected family {}", row.family);
     }
 
-    for required in ["match_all", "term", "range", "bool.filter", "pit"] {
+    for required in ["match_all", "term", "range", "bool.filter", "pit", "search_after"] {
         assert!(accepted.contains(required), "missing accepted family {required}");
     }
     for required in ["scroll", "knn", "hybrid", "aggregations"] {
@@ -52,7 +52,11 @@ fn interop_search_forwarding_policy_fixture_stays_bounded_and_explicit() {
         !rejected.contains("pit"),
         "pit must not remain rejected after lifecycle forwarding profile coverage"
     );
-    for required in ["sort", "from", "size", "track_total_hits", "pit"] {
+    assert!(
+        !rejected.contains("search_after"),
+        "search_after must not remain rejected after forwarding profile coverage"
+    );
+    for required in ["sort", "from", "size", "track_total_hits", "pit", "search_after"] {
         assert!(
             fixture.accepted_request_options.iter().any(|option| option == required),
             "missing accepted request option {required}"
@@ -71,5 +75,12 @@ fn interop_search_forwarding_policy_fixture_stays_bounded_and_explicit() {
             .iter()
             .any(|case| case["name"] == "pit_lifecycle_search" && case["use_pit"] == true),
         "accepted pit policy requires an executable PIT lifecycle search forwarding profile case"
+    );
+    assert!(
+        cases.iter().any(|case| {
+            case["name"] == "search_after_search"
+                && case["body"]["search_after"].as_array().is_some()
+        }),
+        "accepted search_after policy requires an executable search_after forwarding profile case"
     );
 }
