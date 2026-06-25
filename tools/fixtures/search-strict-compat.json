@@ -4061,6 +4061,63 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "collapse_with_search_after_same_sort_field_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "sort": [
+          {
+            "service": {
+              "order": "asc"
+            }
+          }
+        ],
+        "collapse": {
+          "field": "service"
+        },
+        "search_after": [
+          "catalog"
+        ]
+      },
+      "extract": "search_hits",
+      "family": "ranking",
+      "description": "[ranking] collapse with search_after is allowed when sort field matches collapse field",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "collapse_with_search_after_different_sort_field_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "sort": [
+          {
+            "ts": {
+              "order": "asc"
+            }
+          }
+        ],
+        "collapse": {
+          "field": "service"
+        },
+        "search_after": [
+          "2026-04-22T00:00:00Z"
+        ]
+      },
+      "expected_status": 500,
+      "extract": "search_error_root_cause",
+      "family": "ranking",
+      "description": "[ranking] collapse with search_after requires matching sort and collapse fields",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "collapse_with_scroll_error_search",
       "area": "search",
       "method": "POST",
