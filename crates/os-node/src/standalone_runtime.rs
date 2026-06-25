@@ -40288,6 +40288,21 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         let second_open_pit_id = local_pit_id(&second_open_pit.body["pit_id"]);
         assert_ne!(open_pit_id, second_open_pit_id);
 
+        let all_target_open_pit = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/_all/_search/point_in_time?keep_alive=1m",
+        ));
+        assert_eq!(all_target_open_pit.status, 200);
+        let all_target_open_pit_id = local_pit_id(&all_target_open_pit.body["pit_id"]);
+        assert_ne!(open_pit_id, all_target_open_pit_id);
+        assert_eq!(all_target_open_pit.body["_shards"]["total"], 1);
+        assert_eq!(all_target_open_pit.body["_shards"]["successful"], 1);
+        let close_all_target_pit = node.handle_rest_request(
+            RestRequest::new(RestMethod::Delete, "/_search/point_in_time")
+                .with_json_body(serde_json::json!({ "pit_id": all_target_open_pit_id })),
+        );
+        assert_eq!(close_all_target_pit.status, 200);
+
         let ignore_missing_open_pit = node.handle_rest_request(RestRequest::new(
             RestMethod::Post,
             "/logs-session-000001,missing-session-000001/_search/point_in_time?keep_alive=1m&ignore_unavailable=true",

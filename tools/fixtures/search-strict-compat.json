@@ -2735,6 +2735,17 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "pit_open_all_target_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/_all/_search/point_in_time?keep_alive=1m",
+      "body": null,
+      "extract": "pit_open",
+      "family": "lexical",
+      "description": "[lexical] pit open supports _all target like OpenSearch",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "pit_open_encoded_hyphen_index_search",
       "area": "search",
       "method": "POST",
