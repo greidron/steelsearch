@@ -26001,6 +26001,7 @@ pub struct OpenSearchSearchResponseWire {
     pub skipped_shards: i32,
     pub scroll_id: Option<String>,
     pub took_millis: i64,
+    pub phase_took: BTreeMap<String, i64>,
     pub point_in_time_id: Option<String>,
 }
 
@@ -26025,6 +26026,7 @@ impl OpenSearchSearchResponseWire {
             skipped_shards: 0,
             scroll_id: None,
             took_millis: 0,
+            phase_took: BTreeMap::new(),
             point_in_time_id: None,
         }
     }
@@ -26069,7 +26071,7 @@ impl OpenSearchSearchResponseWire {
         output.write_optional_string(self.scroll_id.as_deref());
         output.write_vlong(self.took_millis);
         if version.on_or_after(Version::from_id(2_120_099)) {
-            output.write_bool(false);
+            write_optional_phase_took(output, &self.phase_took)?;
         }
         output.write_vint(self.skipped_shards);
         output.write_optional_string(self.point_in_time_id.as_deref());
@@ -26140,6 +26142,7 @@ impl OpenSearchSearchResponseWire {
             skipped_shards: 0,
             scroll_id: None,
             took_millis: 0,
+            phase_took: BTreeMap::new(),
             point_in_time_id: None,
         };
         reject_empty_list_len(&mut input, "search response shard failures")?;
@@ -26158,7 +26161,7 @@ impl OpenSearchSearchResponseWire {
             ..response
         };
         if version.on_or_after(Version::from_id(2_120_099)) {
-            reject_optional_writeable_present(&mut input, "search response phase took")?;
+            response.phase_took = read_optional_phase_took(&mut input)?;
         }
         response.skipped_shards = input.read_vint()?;
         response.point_in_time_id = input.read_optional_string()?;
@@ -26216,8 +26219,60 @@ impl OpenSearchSearchResponseWire {
                 reason: "OpenSearch SearchResponse took millis cannot be negative",
             });
         }
+        validate_phase_took(&self.phase_took)?;
         Ok(())
     }
+}
+
+fn write_optional_phase_took(
+    output: &mut StreamOutput,
+    phase_took: &BTreeMap<String, i64>,
+) -> Result<(), TransportActionWireError> {
+    validate_phase_took(phase_took)?;
+    if phase_took.is_empty() {
+        output.write_bool(false);
+        return Ok(());
+    }
+    output.write_bool(true);
+    output.write_vint(phase_took.len() as i32);
+    for (name, took_millis) in phase_took {
+        output.write_string(name);
+        output.write_i64(*took_millis);
+    }
+    Ok(())
+}
+
+fn read_optional_phase_took(
+    input: &mut StreamInput,
+) -> Result<BTreeMap<String, i64>, TransportActionWireError> {
+    if !input.read_bool()? {
+        return Ok(BTreeMap::new());
+    }
+    let len = read_len(input)?;
+    let mut phase_took = BTreeMap::new();
+    for _ in 0..len {
+        phase_took.insert(input.read_string()?, input.read_i64()?);
+    }
+    validate_phase_took(&phase_took)?;
+    Ok(phase_took)
+}
+
+fn validate_phase_took(
+    phase_took: &BTreeMap<String, i64>,
+) -> Result<(), TransportActionWireError> {
+    if phase_took.keys().any(|name| name.is_empty()) {
+        return Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "search response phase took",
+            reason: "OpenSearch phase took names must be non-empty",
+        });
+    }
+    if phase_took.values().any(|took_millis| *took_millis < 0) {
+        return Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "search response phase took",
+            reason: "OpenSearch phase took millis cannot be negative",
+        });
+    }
+    Ok(())
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -59059,6 +59114,10 @@ mod tests {
             skipped_shards: 0,
             scroll_id: Some("scroll-context".to_string()),
             took_millis: 12,
+            phase_took: BTreeMap::from([
+                ("query".to_string(), 4),
+                ("fetch".to_string(), 2),
+            ]),
             point_in_time_id: Some("pit-context".to_string()),
         };
         let mut output = StreamOutput::new();
@@ -59075,6 +59134,7 @@ mod tests {
         assert_eq!(decoded.skipped_shards, response.skipped_shards);
         assert_eq!(decoded.scroll_id, response.scroll_id);
         assert_eq!(decoded.took_millis, response.took_millis);
+        assert_eq!(decoded.phase_took, response.phase_took);
         assert_eq!(decoded.point_in_time_id, response.point_in_time_id);
         decoded.validate_supported_subset().unwrap();
     }
@@ -59403,6 +59463,18 @@ mod tests {
             invalid_sort_field.validate_supported_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "search response sort fields",
+                ..
+            })
+        ));
+
+        let invalid_phase_took = OpenSearchSearchResponseWire {
+            phase_took: BTreeMap::from([("query".to_string(), -1)]),
+            ..OpenSearchSearchResponseWire::default()
+        };
+        assert!(matches!(
+            invalid_phase_took.validate_supported_subset(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search response phase took",
                 ..
             })
         ));
