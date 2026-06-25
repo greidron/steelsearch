@@ -90,11 +90,12 @@
     {
       "family": "scroll",
       "policy": "rejected",
-      "reason": "Search-scroll forwarding remains gated on non-empty OpenSearch SearchResponse hit rendering and scroll-id execution mapping.",
+      "reason": "Search-scroll forwarding remains gated on SearchHit optional section rendering and scroll-id execution mapping.",
       "blocking_evidence": [
         "tools/fixtures/interop-transport-action-inventory.json::indices:data/read/scroll disposition rejected",
         "/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/search/SearchResponse.java::writeTo",
         "crates/os-transport/src/action.rs::opensearch_search_response_wire_round_trips_empty_hits_subset",
+        "crates/os-transport/src/action.rs::opensearch_search_response_wire_round_trips_basic_hit_subset",
         "crates/os-transport/src/action.rs::opensearch_search_scroll_transport_messages_bind_rejected_action_frame"
       ]
     },

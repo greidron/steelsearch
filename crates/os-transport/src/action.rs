@@ -2369,7 +2369,7 @@ pub fn classify_opensearch_transport_action(
         OPENSEARCH_SEARCH_SCROLL_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "search-scroll transport execution remains gated on non-empty OpenSearch SearchResponse hit rendering and scroll-id execution mapping",
+            reason: "search-scroll transport execution remains gated on SearchHit optional section rendering and scroll-id execution mapping",
         },
         OPENSEARCH_CLEAR_SCROLL_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -25992,6 +25992,7 @@ pub struct OpenSearchSearchResponseWire {
     pub total_hits: Option<i64>,
     pub total_hits_relation: i32,
     pub max_score: f32,
+    pub hits: Vec<OpenSearchSearchHitWire>,
     pub total_shards: i32,
     pub successful_shards: i32,
     pub skipped_shards: i32,
@@ -26012,6 +26013,7 @@ impl OpenSearchSearchResponseWire {
             total_hits: Some(total_hits),
             total_hits_relation: 0,
             max_score: f32::NAN,
+            hits: Vec::new(),
             total_shards: 1,
             successful_shards: 1,
             skipped_shards: 0,
@@ -26033,7 +26035,10 @@ impl OpenSearchSearchResponseWire {
             output.write_vint(self.total_hits_relation);
         }
         output.write_f32(self.max_score);
-        output.write_vint(0);
+        output.write_vint(self.hits.len() as i32);
+        for hit in &self.hits {
+            hit.write(output, version)?;
+        }
         output.write_bool(false);
         output.write_optional_string(None);
         output.write_bool(false);
@@ -26075,12 +26080,10 @@ impl OpenSearchSearchResponseWire {
             None
         };
         let max_score = input.read_f32()?;
-        let hit_count = input.read_vint()?;
-        if hit_count != 0 {
-            return Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "search response hits",
-                reason: "only empty OpenSearch SearchHits responses are decoded",
-            });
+        let hit_count = read_len(&mut input)?;
+        let mut hits = Vec::with_capacity(hit_count);
+        for _ in 0..hit_count {
+            hits.push(OpenSearchSearchHitWire::read(&mut input, version)?);
         }
         reject_optional_array_present(&mut input, "search response sort fields")?;
         if input.read_optional_string()?.is_some() {
@@ -26124,6 +26127,7 @@ impl OpenSearchSearchResponseWire {
             total_hits: total_hits.map(|(value, _)| value),
             total_hits_relation: total_hits.map(|(_, relation)| relation).unwrap_or(0),
             max_score,
+            hits,
             total_shards: input.read_vint()?,
             successful_shards: input.read_vint()?,
             skipped_shards: 0,
@@ -26175,6 +26179,9 @@ impl OpenSearchSearchResponseWire {
                 reason: "total hits relation is only meaningful when total hits are present",
             });
         }
+        for hit in &self.hits {
+            hit.validate_supported_subset()?;
+        }
         if self.total_shards < 0 || self.successful_shards < 0 || self.skipped_shards < 0 {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "search response shard counts",
@@ -26191,6 +26198,108 @@ impl OpenSearchSearchResponseWire {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "search response took",
                 reason: "OpenSearch SearchResponse took millis cannot be negative",
+            });
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct OpenSearchSearchHitWire {
+    pub id: Option<String>,
+    pub score: f32,
+    pub version: i64,
+    pub seq_no: i64,
+    pub primary_term: i64,
+    pub source: Option<Value>,
+}
+
+impl OpenSearchSearchHitWire {
+    pub fn from_engine_hit(hit: SearchHit) -> Self {
+        Self {
+            id: Some(hit.metadata.id),
+            score: hit.score,
+            version: hit.metadata.version as i64,
+            seq_no: hit.metadata.seq_no,
+            primary_term: hit.metadata.primary_term as i64,
+            source: Some(hit.source),
+        }
+    }
+
+    pub fn write(
+        &self,
+        output: &mut StreamOutput,
+        _version: Version,
+    ) -> Result<(), TransportActionWireError> {
+        self.validate_supported_subset()?;
+        output.write_f32(self.score);
+        write_optional_text_string(output, self.id.as_deref())?;
+        output.write_bool(false);
+        output.write_i64(self.version);
+        output.write_zlong(self.seq_no);
+        output.write_vlong(self.primary_term);
+        if let Some(source) = &self.source {
+            write_json_bytes_reference(output, source)?;
+        } else {
+            output.write_bytes_reference(&[]);
+        }
+        output.write_bool(false);
+        output.write_vint(0);
+        output.write_vint(0);
+        output.write_vint(0);
+        output.write_vint(0);
+        output.write_vint(0);
+        output.write_vint(0);
+        output.write_bool(false);
+        output.write_vint(0);
+        Ok(())
+    }
+
+    pub fn read(
+        input: &mut StreamInput,
+        _version: Version,
+    ) -> Result<Self, TransportActionWireError> {
+        let score = input.read_f32()?;
+        let id = read_optional_text_string(input)?;
+        reject_optional_writeable_present(input, "search hit nested identity")?;
+        let hit = Self {
+            id,
+            score,
+            version: input.read_i64()?,
+            seq_no: read_zlong(input)?,
+            primary_term: input.read_vlong()?,
+            source: read_optional_json_bytes_reference(input)?,
+        };
+        reject_bool_present(input, "search hit explanation")?;
+        reject_empty_list_len(input, "search hit document fields")?;
+        reject_empty_list_len(input, "search hit metadata fields")?;
+        reject_empty_list_len(input, "search hit highlight fields")?;
+        reject_empty_list_len(input, "search hit formatted sort values")?;
+        reject_empty_list_len(input, "search hit raw sort values")?;
+        reject_empty_list_len(input, "search hit matched queries")?;
+        reject_optional_writeable_present(input, "search hit shard target")?;
+        reject_empty_list_len(input, "search hit inner hits")?;
+        hit.validate_supported_subset()?;
+        Ok(hit)
+    }
+
+    pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
+        if self.id.as_ref().is_some_and(|id| id.is_empty()) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search hit id",
+                reason: "OpenSearch search hit ids must be non-empty when present",
+            });
+        }
+        if self.version < -1 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search hit version",
+                reason: "OpenSearch search hit version cannot be less than -1",
+            });
+        }
+        if self.seq_no < OPENSEARCH_UNASSIGNED_SEQ_NO {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search hit seq no",
+                reason: "OpenSearch search hit seq_no cannot be less than the unassigned sentinel",
             });
         }
         Ok(())
@@ -33647,6 +33756,74 @@ fn read_optional_bool(input: &mut StreamInput) -> Result<Option<bool>, Transport
             reason: "optional boolean must use the OpenSearch 0/1/2 wire encoding",
         }),
     }
+}
+
+fn write_optional_text_string(
+    output: &mut StreamOutput,
+    value: Option<&str>,
+) -> Result<(), TransportActionWireError> {
+    if let Some(value) = value {
+        let bytes = value.as_bytes();
+        let len = i32::try_from(bytes.len()).map_err(|_| {
+            TransportActionWireError::UnsupportedWireShape {
+                shape: "optional text",
+                reason: "OpenSearch Text byte length does not fit the int wire shape",
+            }
+        })?;
+        output.write_i32(len);
+        output.write_raw_bytes(bytes);
+    } else {
+        output.write_i32(-1);
+    }
+    Ok(())
+}
+
+fn read_optional_text_string(
+    input: &mut StreamInput,
+) -> Result<Option<String>, TransportActionWireError> {
+    let len = input.read_i32()?;
+    if len == -1 {
+        return Ok(None);
+    }
+    if len < 0 {
+        return Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "optional text",
+            reason: "OpenSearch optional Text length cannot be negative except -1",
+        });
+    }
+    let bytes = input.read_bytes(len as usize)?;
+    let value = std::str::from_utf8(&bytes).map_err(|_| {
+        TransportActionWireError::UnsupportedWireShape {
+            shape: "optional text",
+            reason: "only UTF-8 OpenSearch Text values are decoded by this subset",
+        }
+    })?;
+    Ok(Some(value.to_string()))
+}
+
+fn read_optional_json_bytes_reference(
+    input: &mut StreamInput,
+) -> Result<Option<Value>, TransportActionWireError> {
+    let value = input.read_bytes_reference()?;
+    if value.is_empty() {
+        return Ok(None);
+    }
+    serde_json::from_slice(&value)
+        .map(Some)
+        .map_err(TransportActionWireError::JsonDecode)
+}
+
+fn reject_bool_present(
+    input: &mut StreamInput,
+    shape: &'static str,
+) -> Result<(), TransportActionWireError> {
+    if input.read_bool()? {
+        return Err(TransportActionWireError::UnsupportedWireShape {
+            shape,
+            reason: "only absent boolean-gated OpenSearch sections are decoded by this subset",
+        });
+    }
+    Ok(())
 }
 
 fn reject_optional_array_present(
@@ -57577,6 +57754,7 @@ mod tests {
             total_hits: Some(7),
             total_hits_relation: 0,
             max_score: f32::NAN,
+            hits: Vec::new(),
             total_shards: 3,
             successful_shards: 3,
             skipped_shards: 0,
@@ -57603,20 +57781,60 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_search_response_rejects_non_empty_hits_or_optional_sections() {
-        let mut non_empty_hits = StreamOutput::new();
-        non_empty_hits.write_bool(true);
-        non_empty_hits.write_vlong(1);
-        non_empty_hits.write_vint(0);
-        non_empty_hits.write_f32(1.0);
-        non_empty_hits.write_vint(1);
+    fn opensearch_search_response_wire_round_trips_basic_hit_subset() {
+        let response = OpenSearchSearchResponseWire {
+            total_hits: Some(1),
+            max_score: 1.0,
+            hits: vec![OpenSearchSearchHitWire {
+                id: Some("doc-1".to_string()),
+                score: 1.0,
+                version: 7,
+                seq_no: 3,
+                primary_term: 2,
+                source: Some(json!({ "message": "hello" })),
+            }],
+            ..OpenSearchSearchResponseWire::default()
+        };
+        let mut output = StreamOutput::new();
+        response.write(&mut output, OPENSEARCH_3_7_0_TRANSPORT).unwrap();
+
+        let decoded =
+            OpenSearchSearchResponseWire::read(output.freeze(), OPENSEARCH_3_7_0_TRANSPORT)
+                .unwrap();
+        assert_eq!(decoded.total_hits, Some(1));
+        assert_eq!(decoded.hits.len(), 1);
+        assert_eq!(decoded.hits[0].id.as_deref(), Some("doc-1"));
+        assert_eq!(decoded.hits[0].source, Some(json!({ "message": "hello" })));
+        assert_eq!(decoded.hits[0].version, 7);
+        assert_eq!(decoded.hits[0].seq_no, 3);
+        assert_eq!(decoded.hits[0].primary_term, 2);
+    }
+
+    #[test]
+    fn opensearch_search_response_rejects_unsupported_hit_sections_or_invalid_counts() {
+        let mut hit_with_document_fields = StreamOutput::new();
+        hit_with_document_fields.write_bool(true);
+        hit_with_document_fields.write_vlong(1);
+        hit_with_document_fields.write_vint(0);
+        hit_with_document_fields.write_f32(1.0);
+        hit_with_document_fields.write_vint(1);
+        hit_with_document_fields.write_f32(1.0);
+        write_optional_text_string(&mut hit_with_document_fields, Some("doc-1")).unwrap();
+        hit_with_document_fields.write_bool(false);
+        hit_with_document_fields.write_i64(1);
+        hit_with_document_fields.write_zlong(0);
+        hit_with_document_fields.write_vlong(1);
+        write_json_bytes_reference(&mut hit_with_document_fields, &json!({ "message": "hello" }))
+            .unwrap();
+        hit_with_document_fields.write_bool(false);
+        hit_with_document_fields.write_vint(1);
         assert!(matches!(
             OpenSearchSearchResponseWire::read(
-                non_empty_hits.freeze(),
+                hit_with_document_fields.freeze(),
                 OPENSEARCH_3_7_0_TRANSPORT
             ),
             Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "search response hits",
+                shape: "search hit document fields",
                 ..
             })
         ));
@@ -57630,6 +57848,22 @@ mod tests {
             invalid_counts.validate_supported_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "search response shard counts",
+                ..
+            })
+        ));
+
+        let invalid_hit = OpenSearchSearchHitWire {
+            id: Some(String::new()),
+            score: 1.0,
+            version: 1,
+            seq_no: 0,
+            primary_term: 1,
+            source: Some(json!({})),
+        };
+        assert!(matches!(
+            invalid_hit.validate_supported_subset(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search hit id",
                 ..
             })
         ));

@@ -166,6 +166,12 @@ fn interop_search_forwarding_policy_fixture_stays_bounded_and_explicit() {
                 })),
                 "scroll rejection must name the implemented empty SearchResponse wire subset"
             );
+            assert!(
+                evidence.iter().any(|item| item.as_str().map_or(false, |value| {
+                    value.contains("opensearch_search_response_wire_round_trips_basic_hit_subset")
+                })),
+                "scroll rejection must name the implemented basic SearchHit wire subset"
+            );
         }
     }
     let cases = forwarding_fixture["cases"]

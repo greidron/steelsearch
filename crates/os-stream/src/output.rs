@@ -40,6 +40,10 @@ impl StreamOutput {
         self.bytes.put_slice(value);
     }
 
+    pub fn write_raw_bytes(&mut self, value: &[u8]) {
+        self.bytes.put_slice(value);
+    }
+
     pub fn write_vint(&mut self, value: i32) {
         let mut value = value as u32;
         while (value & !0x7f) != 0 {
@@ -139,6 +143,8 @@ mod tests {
         output.write_i64(456);
         output.write_f32(1.5);
         output.write_f64(2.5);
+        output.write_i32(3);
+        output.write_raw_bytes(b"raw");
         output.write_vint(789);
         output.write_vint(-1);
         output.write_string("steelsearch 검색");
@@ -148,6 +154,8 @@ mod tests {
         assert_eq!(input.read_i64().unwrap(), 456);
         assert_eq!(input.read_f32().unwrap(), 1.5);
         assert_eq!(input.read_f64().unwrap(), 2.5);
+        assert_eq!(input.read_i32().unwrap(), 3);
+        assert_eq!(input.read_bytes(3).unwrap().as_ref(), b"raw");
         assert_eq!(input.read_vint().unwrap(), 789);
         assert_eq!(input.read_vint().unwrap(), -1);
         assert_eq!(input.read_string().unwrap(), "steelsearch 검색");
