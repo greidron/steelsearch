@@ -9084,6 +9084,9 @@ impl SteelNode {
         if let Some(response) = apply_search_source_query_params(&mut body, &request.query_params) {
             return response;
         }
+        if let Some(response) = normalize_search_source_boolean_body_options(&mut body) {
+            return response;
+        }
         if let Some(response) =
             validate_opensearch_boolean_query_param(request.query_params.get("request_cache"))
         {
@@ -19369,7 +19372,15 @@ fn validate_search_request_body(body: &Value, scroll: bool) -> Option<RestRespon
             return Some(response);
         }
     }
-    for option in ["version", "seq_no_primary_term", "explain", "profile", "track_scores"] {
+    for option in [
+        "version",
+        "seq_no_primary_term",
+        "explain",
+        "profile",
+        "track_scores",
+        "include_named_queries_score",
+        "verbose_pipeline",
+    ] {
         if body.get(option).is_some_and(|value| !value.is_boolean()) {
             return Some(build_unsupported_search_response(&format!(
                 "unsupported search option [{option}]"
@@ -19695,6 +19706,56 @@ fn apply_search_source_query_params(
         }
     }
     None
+}
+
+fn normalize_search_source_boolean_body_options(body: &mut Value) -> Option<RestResponse> {
+    let object = body.as_object_mut()?;
+    for field in [
+        "version",
+        "seq_no_primary_term",
+        "explain",
+        "profile",
+        "track_scores",
+        "include_named_queries_score",
+        "verbose_pipeline",
+    ] {
+        let Some(value) = object.get(field).cloned() else {
+            continue;
+        };
+        match parse_opensearch_boolean_body_value(&value) {
+            Ok(Some(parsed)) => {
+                object.insert(field.to_string(), Value::Bool(parsed));
+            }
+            Ok(None) => {}
+            Err(response) => return Some(response),
+        }
+    }
+    if let Some(value) = object.get("track_total_hits").cloned() {
+        if let Some(parsed) = parse_opensearch_track_total_hits_body_value(&value) {
+            object.insert("track_total_hits".to_string(), parsed);
+        }
+    }
+    None
+}
+
+fn parse_opensearch_boolean_body_value(value: &Value) -> Result<Option<bool>, RestResponse> {
+    match value {
+        Value::Bool(value) => Ok(Some(*value)),
+        Value::String(value) if value == "true" => Ok(Some(true)),
+        Value::String(value) if value == "false" => Ok(Some(false)),
+        Value::String(value) => Err(opensearch_boolean_parse_error(value)),
+        _ => Ok(None),
+    }
+}
+
+fn parse_opensearch_track_total_hits_body_value(value: &Value) -> Option<Value> {
+    match value {
+        Value::Bool(value) => Some(Value::Bool(*value)),
+        Value::String(value) if value == "true" => Some(Value::Bool(true)),
+        Value::String(value) if value == "false" => Some(Value::Bool(false)),
+        Value::String(value) => value.parse::<i64>().ok().map(Value::from),
+        _ => None,
+    }
 }
 
 fn split_rest_csv_values(raw: &str) -> Vec<String> {
@@ -20272,7 +20333,11 @@ fn validate_opensearch_boolean_query_param(raw: Option<&String>) -> Option<RestR
     if value.is_empty() || value == "true" || value == "false" {
         return None;
     }
-    Some(RestResponse::json(
+    Some(opensearch_boolean_parse_error(value))
+}
+
+fn opensearch_boolean_parse_error(value: &str) -> RestResponse {
+    RestResponse::json(
         400,
         serde_json::json!({
             "error": {
@@ -20283,7 +20348,7 @@ fn validate_opensearch_boolean_query_param(raw: Option<&String>) -> Option<RestR
             },
             "status": 400
         }),
-    ))
+    )
 }
 
 fn parse_routing_values(routing: &str) -> Vec<String> {
@@ -43649,7 +43714,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             RestRequest::new(RestMethod::Post, "/logs-search-params-a/_search")
                 .with_json_body(serde_json::json!({
                     "query": { "match_all": {} },
-                    "version": "true"
+                    "version": 1
                 })),
         );
         assert_eq!(invalid_version_body.status, 400);
@@ -43662,7 +43727,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             RestRequest::new(RestMethod::Post, "/logs-search-params-a/_search")
                 .with_json_body(serde_json::json!({
                     "query": { "match_all": {} },
-                    "track_scores": "true"
+                    "track_scores": 1
                 })),
         );
         assert_eq!(invalid_track_scores_body.status, 400);
@@ -43718,7 +43783,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             RestRequest::new(RestMethod::Post, "/logs-search-params-a/_search")
                 .with_json_body(serde_json::json!({
                     "query": { "match_all": {} },
-                    "profile": "true"
+                    "profile": 1
                 })),
         );
         assert_eq!(invalid_profile_body.status, 400);

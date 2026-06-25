@@ -3776,6 +3776,31 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "search_boolean_string_body_options",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "track_scores": "true",
+        "include_named_queries_score": "false",
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ],
+        "size": 2
+      },
+      "extract": "search_score_rendering",
+      "family": "lexical",
+      "description": "[lexical] string boolean body options search",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "terminate_after_search",
       "area": "search",
       "method": "POST",
@@ -4353,6 +4378,22 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "profile_string_boolean_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "profile": "true"
+      },
+      "extract": "search_profile",
+      "family": "ranking",
+      "description": "[ranking] profile string boolean search",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "profile_disabled_search",
       "area": "search",
       "method": "POST",
@@ -4737,6 +4778,30 @@
       "extract": "search_summary",
       "family": "ranking",
       "description": "[ranking] track total hits threshold search",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "track_total_hits_string_threshold_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "track_total_hits": "1",
+        "sort": [
+          {
+            "ts": {
+              "order": "asc"
+            }
+          }
+        ],
+        "size": 2
+      },
+      "extract": "search_summary",
+      "family": "ranking",
+      "description": "[ranking] string numeric track_total_hits threshold search",
       "strict_source_parity_required": true
     },
     {
