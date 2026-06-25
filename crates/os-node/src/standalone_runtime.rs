@@ -25689,6 +25689,31 @@ fn build_search_aggregations(
             result.insert(name.clone(), Value::Object(global_value));
             continue;
         }
+        if let Some(sampler) = aggregation_object.get("sampler").and_then(Value::as_object) {
+            let shard_size = sampler
+                .get("shard_size")
+                .and_then(Value::as_u64)
+                .unwrap_or(100) as usize;
+            let sampled_hits = hits
+                .iter()
+                .take(shard_size)
+                .cloned()
+                .collect::<Vec<_>>();
+            let mut sampled_value = serde_json::Map::new();
+            sampled_value.insert("doc_count".to_string(), Value::from(sampled_hits.len() as u64));
+            let nested_aggs = aggregation_object
+                .get("aggs")
+                .or_else(|| aggregation_object.get("aggregations"));
+            if let Some(nested) = build_search_aggregations(nested_aggs, &sampled_hits, global_hits)? {
+                if let Some(nested_object) = nested.as_object() {
+                    for (nested_name, nested_value) in nested_object {
+                        sampled_value.insert(nested_name.clone(), nested_value.clone());
+                    }
+                }
+            }
+            result.insert(name.clone(), Value::Object(sampled_value));
+            continue;
+        }
         if let Some(terms) = aggregation_object.get("terms").and_then(Value::as_object) {
             let field = terms.get("field").and_then(Value::as_str).unwrap_or_default();
             let mut counts = std::collections::BTreeMap::new();
@@ -42793,6 +42818,36 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             global.body["aggregations"]["all_docs"]["by_service"]["buckets"][1],
             serde_json::json!({ "key": "catalog", "doc_count": 1 })
+        );
+
+        let sampler = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-aggs-000001/_search")
+                .with_json_body(serde_json::json!({
+                    "size": 0,
+                    "aggs": {
+                        "sampled": {
+                            "sampler": {
+                                "shard_size": 2
+                            },
+                            "aggs": {
+                                "sampled_services": {
+                                    "terms": { "field": "service" }
+                                }
+                            }
+                        }
+                    }
+                })),
+        );
+        assert_eq!(sampler.status, 200);
+        assert_eq!(sampler.body["aggregations"]["sampled"]["doc_count"], 2);
+        assert_eq!(
+            sampler.body["aggregations"]["sampled"]["sampled_services"]["buckets"],
+            serde_json::json!([
+                {
+                    "key": "checkout",
+                    "doc_count": 2
+                }
+            ])
         );
 
         let rare_terms = node.handle_rest_request(
