@@ -93,6 +93,42 @@ route_status() {
       echo "implemented"
       return
       ;;
+    "GET /_analyze"|"POST /_analyze"|"GET /{index}/_analyze"|"POST /{index}/_analyze")
+      echo "implemented"
+      return
+      ;;
+    "POST /_cache/clear"|"POST /{index}/_cache/clear"|"POST /_close"|"POST /{index}/_close"|"GET /_flush"|"POST /_flush"|"GET /{index}/_flush"|"POST /{index}/_flush"|"POST /_forcemerge"|"POST /{index}/_forcemerge")
+      echo "implemented"
+      return
+      ;;
+    "GET /_shard_stores"|"GET /{index}/_shard_stores"|"GET /_stats"|"GET /_stats/{metric}"|"GET /{index}/_stats"|"GET /{index}/_stats/{metric}")
+      echo "implemented"
+      return
+      ;;
+    "PUT /_data_stream/{name}"|"DELETE /_data_stream/{name}"|"GET /_data_stream"|"GET /_data_stream/{name}"|"GET /_data_stream/_stats"|"GET /_data_stream/{name}/_stats")
+      echo "implemented"
+      return
+      ;;
+    "GET /_component_template"|"GET /_component_template/{name}"|"HEAD /_component_template/{name}"|"POST /_component_template/{name}"|"PUT /_component_template/{name}"|"DELETE /_component_template/{name}")
+      echo "implemented"
+      return
+      ;;
+    "GET /_index_template"|"GET /_index_template/{name}"|"HEAD /_index_template/{name}"|"POST /_index_template/{name}"|"PUT /_index_template/{name}"|"DELETE /_index_template/{name}"|"POST /_index_template/_simulate_index/{name}"|"POST /_index_template/_simulate"|"POST /_index_template/_simulate/{name}")
+      echo "implemented"
+      return
+      ;;
+    "GET /_template"|"GET /_template/{name}"|"HEAD /_template/{name}"|"POST /_template/{name}"|"PUT /_template/{name}"|"DELETE /_template/{name}")
+      echo "implemented"
+      return
+      ;;
+    "GET /_cat/aliases"|"GET /_cat/aliases/{alias}"|"GET /_cat/allocation"|"GET /_cat/allocation/{nodes}"|"GET /_cat/count"|"GET /_cat/count/{index}"|"GET /_cat/fielddata"|"GET /_cat/fielddata/{fields}"|"GET /_cat/health"|"GET /_cat/indices"|"GET /_cat/indices/{index}")
+      echo "implemented"
+      return
+      ;;
+    "GET /_cat/plugins"|"GET /_cat/recovery"|"GET /_cat/recovery/{index}"|"GET /_cat/segments"|"GET /_cat/segments/{index}"|"GET /_cat/shards"|"GET /_cat/shards/{index}"|"GET /_cat/tasks"|"GET /_cat/templates"|"GET /_cat/templates/{name}")
+      echo "implemented"
+      return
+      ;;
   esac
 
   case "${method} ${path}" in
