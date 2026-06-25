@@ -699,6 +699,7 @@ pub fn parse_query(value: &Value) -> QueryDslResult<Query> {
         "script_score" => parse_script_score(body),
         "script" => parse_script(body),
         "intervals" => parse_intervals(body),
+        "template" => parse_template(body),
         "knn" => parse_knn(body),
         "bool" => parse_bool(body),
         _ => Err(QueryDslError::UnsupportedClause {
@@ -3149,6 +3150,14 @@ fn parse_intervals(body: &Value) -> QueryDslResult<Query> {
     })
 }
 
+fn parse_template(body: &Value) -> QueryDslResult<Query> {
+    let object = body.as_object().ok_or(QueryDslError::ExpectedObject)?;
+    if object.is_empty() {
+        return Err(QueryDslError::ExpectedSingleClause);
+    }
+    parse_query(&Value::Object(object.clone()))
+}
+
 fn intervals_spec_is_supported(spec: &Value) -> bool {
     let Some(object) = spec.as_object() else {
         return false;
@@ -4599,6 +4608,28 @@ mod tests {
                         ]
                     }
                 }),
+            }
+        );
+    }
+
+    #[test]
+    fn parses_template_queries_as_rewritten_inner_query() {
+        let query = parse_query(&serde_json::json!({
+            "template": {
+                "term": {
+                    "message": {
+                        "value": "foo"
+                    }
+                }
+            }
+        }))
+        .unwrap();
+
+        assert_eq!(
+            query,
+            Query::Term {
+                field: "message".to_string(),
+                value: serde_json::json!("foo"),
             }
         );
     }

@@ -33,6 +33,7 @@ class SourceSearchRegistrationsTests(unittest.TestCase):
             ("query", "ScriptQueryBuilder.NAME"),
             ("query", "ScriptScoreQueryBuilder.NAME"),
             ("query", "IntervalQueryBuilder.NAME"),
+            ("query", "TemplateQueryBuilder.NAME"),
             ("aggregation", "AggregationSpec(TermsAggregationBuilder.NAME,"),
             ("aggregation", "AdjacencyMatrixAggregationBuilder.NAME"),
             ("aggregation", "AggregationSpec( DateHistogramAggregationBuilder.NAME,"),
