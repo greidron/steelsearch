@@ -24553,6 +24553,7 @@ pub struct OpenSearchSearchSourceBuilderWire {
     pub stored_fields: Option<OpenSearchStoredFieldsContextWire>,
     pub search_pipeline_source: Option<Value>,
     pub derived_fields_object: Option<Value>,
+    pub derived_fields: Option<Vec<OpenSearchDerivedFieldWire>>,
     pub terminate_after: i32,
     pub timeout: Option<TimeValueWire>,
     pub track_scores: bool,
@@ -24584,6 +24585,7 @@ impl Default for OpenSearchSearchSourceBuilderWire {
             stored_fields: None,
             search_pipeline_source: None,
             derived_fields_object: None,
+            derived_fields: None,
             terminate_after: 0,
             timeout: None,
             track_scores: false,
@@ -24658,6 +24660,7 @@ impl OpenSearchSearchSourceBuilderWire {
             self.derived_fields_object.as_ref(),
             "search request source derived fields object",
         )?;
+        validate_derived_fields(self.derived_fields.as_deref())?;
         if self
             .track_total_hits_up_to
             .is_some_and(|track_total_hits| track_total_hits < -1)
@@ -24716,7 +24719,8 @@ fn write_search_source_builder(
     write_optional_bool(output, source.include_named_queries_score); // include named queries score, OpenSearch 2.13+
     write_optional_generic_map(output, source.derived_fields_object.as_ref())
         .expect("validated derived fields object must encode as a generic map"); // derived fields object, OpenSearch 2.14+
-    output.write_bool(false); // derived fields, OpenSearch 2.14+
+    write_optional_derived_fields(output, source.derived_fields.as_deref())
+        .expect("validated derived fields must encode as OpenSearch DerivedField values"); // derived fields, OpenSearch 2.14+
     output.write_optional_string(source.search_pipeline.as_deref()); // search pipeline, OpenSearch 2.18+
     output.write_bool(source.verbose_pipeline); // verbose pipeline, OpenSearch 2.19+
 }
@@ -24792,7 +24796,7 @@ fn read_search_source_builder(
     let include_named_queries_score = read_optional_bool(input)?;
     let derived_fields_object =
         read_optional_generic_map(input, "search request source derived fields object")?;
-    reject_absent_bool_list(input, "search request source derived fields")?;
+    let derived_fields = read_optional_derived_fields(input)?;
     let search_pipeline = input.read_optional_string()?;
     if search_pipeline.as_deref().is_some_and(str::is_empty) {
         return Err(TransportActionWireError::UnsupportedWireShape {
@@ -24818,6 +24822,7 @@ fn read_search_source_builder(
         stored_fields,
         search_pipeline_source,
         derived_fields_object,
+        derived_fields,
         terminate_after,
         timeout,
         track_scores,
@@ -25418,6 +25423,187 @@ fn validate_optional_generic_map(
             shape,
             reason: "OpenSearch SearchSourceBuilder generic map fields must be JSON objects",
         });
+    }
+    Ok(())
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct OpenSearchDerivedFieldWire {
+    pub name: String,
+    pub field_type: String,
+    pub script: OpenSearchInlineScriptWire,
+    pub properties: Option<Value>,
+    pub prefilter_field: Option<String>,
+    pub format: Option<String>,
+    pub ignore_malformed: Option<bool>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct OpenSearchInlineScriptWire {
+    pub lang: Option<String>,
+    pub source: String,
+    pub options: Value,
+    pub params: Value,
+}
+
+fn write_optional_derived_fields(
+    output: &mut StreamOutput,
+    values: Option<&[OpenSearchDerivedFieldWire]>,
+) -> Result<(), TransportActionWireError> {
+    if let Some(values) = values {
+        validate_derived_fields(Some(values))?;
+        output.write_bool(true);
+        output.write_vint(values.len() as i32);
+        for value in values {
+            output.write_string(&value.name);
+            output.write_string(&value.field_type);
+            write_inline_script(output, &value.script)?;
+            write_optional_generic_map(output, value.properties.as_ref())?;
+            output.write_optional_string(value.prefilter_field.as_deref());
+            output.write_optional_string(value.format.as_deref());
+            write_optional_bool(output, value.ignore_malformed);
+        }
+    } else {
+        output.write_bool(false);
+    }
+    Ok(())
+}
+
+fn read_optional_derived_fields(
+    input: &mut StreamInput,
+) -> Result<Option<Vec<OpenSearchDerivedFieldWire>>, TransportActionWireError> {
+    if !input.read_bool()? {
+        return Ok(None);
+    }
+    let len = read_len(input)?;
+    let mut values = Vec::with_capacity(len);
+    for _ in 0..len {
+        values.push(OpenSearchDerivedFieldWire {
+            name: input.read_string()?,
+            field_type: input.read_string()?,
+            script: read_inline_script(input)?,
+            properties: read_optional_generic_map(
+                input,
+                "search request source derived fields properties",
+            )?,
+            prefilter_field: input.read_optional_string()?,
+            format: input.read_optional_string()?,
+            ignore_malformed: read_optional_bool(input)?,
+        });
+    }
+    validate_derived_fields(Some(&values))?;
+    Ok(Some(values))
+}
+
+fn write_inline_script(
+    output: &mut StreamOutput,
+    script: &OpenSearchInlineScriptWire,
+) -> Result<(), TransportActionWireError> {
+    validate_inline_script(script)?;
+    output.write_vint(0);
+    output.write_optional_string(script.lang.as_deref());
+    output.write_string(&script.source);
+    write_generic_json_value(output, &script.options)?;
+    write_generic_json_value(output, &script.params)?;
+    Ok(())
+}
+
+fn read_inline_script(
+    input: &mut StreamInput,
+) -> Result<OpenSearchInlineScriptWire, TransportActionWireError> {
+    let script_type = input.read_vint()?;
+    if script_type != 0 {
+        return Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "search request source derived fields script",
+            reason: "only inline derived-field scripts are decoded by this subset",
+        });
+    }
+    let script = OpenSearchInlineScriptWire {
+        lang: input.read_optional_string()?,
+        source: input.read_string()?,
+        options: read_generic_json_value(
+            input,
+            "search request source derived fields script options",
+        )?,
+        params: read_generic_json_value(
+            input,
+            "search request source derived fields script params",
+        )?,
+    };
+    validate_inline_script(&script)?;
+    Ok(script)
+}
+
+fn validate_derived_fields(
+    values: Option<&[OpenSearchDerivedFieldWire]>,
+) -> Result<(), TransportActionWireError> {
+    let Some(values) = values else {
+        return Ok(());
+    };
+    for value in values {
+        if value.name.is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source derived fields",
+                reason: "OpenSearch DerivedField name must be non-empty",
+            });
+        }
+        if value.field_type.is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source derived fields",
+                reason: "OpenSearch DerivedField type must be non-empty",
+            });
+        }
+        validate_inline_script(&value.script)?;
+        validate_optional_generic_map(
+            value.properties.as_ref(),
+            "search request source derived fields properties",
+        )?;
+        if value.prefilter_field.as_deref().is_some_and(str::is_empty) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source derived fields",
+                reason: "OpenSearch DerivedField prefilter_field must be non-empty when present",
+            });
+        }
+        if value.format.as_deref().is_some_and(str::is_empty) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source derived fields",
+                reason: "OpenSearch DerivedField format must be non-empty when present",
+            });
+        }
+    }
+    Ok(())
+}
+
+fn validate_inline_script(
+    script: &OpenSearchInlineScriptWire,
+) -> Result<(), TransportActionWireError> {
+    if script.lang.as_deref().is_some_and(str::is_empty) {
+        return Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "search request source derived fields script",
+            reason: "OpenSearch inline Script lang must be non-empty when present",
+        });
+    }
+    if script.source.is_empty() {
+        return Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "search request source derived fields script",
+            reason: "OpenSearch inline Script source must be non-empty",
+        });
+    }
+    validate_optional_generic_map(
+        Some(&script.options),
+        "search request source derived fields script options",
+    )?;
+    validate_optional_generic_map(
+        Some(&script.params),
+        "search request source derived fields script params",
+    )?;
+    if let Some(options) = script.options.as_object() {
+        if options.values().any(|value| !value.is_string()) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source derived fields script options",
+                reason: "OpenSearch inline Script options must be string values",
+            });
+        }
     }
     Ok(())
 }
@@ -60314,6 +60500,20 @@ mod tests {
                         }
                     }
                 })),
+                derived_fields: Some(vec![OpenSearchDerivedFieldWire {
+                    name: "derived_latency".to_string(),
+                    field_type: "long".to_string(),
+                    script: OpenSearchInlineScriptWire {
+                        lang: Some("painless".to_string()),
+                        source: "emit(params._source['latency'])".to_string(),
+                        options: json!({}),
+                        params: json!({ "scale": 1 }),
+                    },
+                    properties: Some(json!({ "raw": "keyword" })),
+                    prefilter_field: Some("latency".to_string()),
+                    format: Some("strict_date_optional_time".to_string()),
+                    ignore_malformed: Some(false),
+                }]),
                 terminate_after: 100,
                 timeout: Some(TimeValueWire::seconds(2)),
                 track_scores: true,
@@ -60679,6 +60879,62 @@ mod tests {
             invalid_derived_fields_object.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "search request source derived fields object",
+                ..
+            })
+        ));
+
+        let invalid_derived_field_name = OpenSearchSearchRequestWire {
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                derived_fields: Some(vec![OpenSearchDerivedFieldWire {
+                    name: String::new(),
+                    field_type: "keyword".to_string(),
+                    script: OpenSearchInlineScriptWire {
+                        lang: Some("painless".to_string()),
+                        source: "emit('value')".to_string(),
+                        options: json!({}),
+                        params: json!({}),
+                    },
+                    properties: None,
+                    prefilter_field: None,
+                    format: None,
+                    ignore_malformed: None,
+                }]),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        assert!(matches!(
+            invalid_derived_field_name.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source derived fields",
+                ..
+            })
+        ));
+
+        let invalid_derived_script_options = OpenSearchSearchRequestWire {
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                derived_fields: Some(vec![OpenSearchDerivedFieldWire {
+                    name: "derived_status".to_string(),
+                    field_type: "keyword".to_string(),
+                    script: OpenSearchInlineScriptWire {
+                        lang: Some("painless".to_string()),
+                        source: "emit('value')".to_string(),
+                        options: json!({ "content_type": 7 }),
+                        params: json!({}),
+                    },
+                    properties: None,
+                    prefilter_field: None,
+                    format: None,
+                    ignore_malformed: None,
+                }]),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        assert!(matches!(
+            invalid_derived_script_options.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source derived fields script options",
                 ..
             })
         ));
