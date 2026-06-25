@@ -3397,6 +3397,23 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "scroll_rejects_size_zero_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search?scroll=1m",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "size": 0
+      },
+      "expected_status": 400,
+      "extract": "search_error",
+      "family": "lexical",
+      "description": "[lexical] scroll rejects zero size",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "simple_query_string_search",
       "area": "search",
       "method": "POST",
