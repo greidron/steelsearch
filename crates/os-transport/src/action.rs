@@ -24551,6 +24551,8 @@ pub struct OpenSearchSearchSourceBuilderWire {
     pub doc_value_fields: Option<Vec<OpenSearchFieldAndFormatWire>>,
     pub fetch_fields: Option<Vec<OpenSearchFieldAndFormatWire>>,
     pub stored_fields: Option<OpenSearchStoredFieldsContextWire>,
+    pub search_pipeline_source: Option<Value>,
+    pub derived_fields_object: Option<Value>,
     pub terminate_after: i32,
     pub timeout: Option<TimeValueWire>,
     pub track_scores: bool,
@@ -24580,6 +24582,8 @@ impl Default for OpenSearchSearchSourceBuilderWire {
             doc_value_fields: None,
             fetch_fields: None,
             stored_fields: None,
+            search_pipeline_source: None,
+            derived_fields_object: None,
             terminate_after: 0,
             timeout: None,
             track_scores: false,
@@ -24646,6 +24650,14 @@ impl OpenSearchSearchSourceBuilderWire {
         if let Some(stored_fields) = &self.stored_fields {
             stored_fields.validate_supported_subset()?;
         }
+        validate_optional_generic_map(
+            self.search_pipeline_source.as_ref(),
+            "search request source search pipeline source",
+        )?;
+        validate_optional_generic_map(
+            self.derived_fields_object.as_ref(),
+            "search request source derived fields object",
+        )?;
         if self
             .track_total_hits_up_to
             .is_some_and(|track_total_hits| track_total_hits < -1)
@@ -24699,9 +24711,11 @@ fn write_search_source_builder(
     write_optional_int(output, source.track_total_hits_up_to); // track total hits up to
     write_optional_field_and_format_list(output, source.fetch_fields.as_deref()); // fetch fields
     write_optional_point_in_time_builder(output, source.point_in_time.as_ref()); // point in time
-    output.write_bool(false); // search pipeline source, OpenSearch 2.8+
+    write_optional_generic_map(output, source.search_pipeline_source.as_ref())
+        .expect("validated search pipeline source must encode as a generic map"); // search pipeline source, OpenSearch 2.8+
     write_optional_bool(output, source.include_named_queries_score); // include named queries score, OpenSearch 2.13+
-    output.write_bool(false); // derived fields object, OpenSearch 2.14+
+    write_optional_generic_map(output, source.derived_fields_object.as_ref())
+        .expect("validated derived fields object must encode as a generic map"); // derived fields object, OpenSearch 2.14+
     output.write_bool(false); // derived fields, OpenSearch 2.14+
     output.write_optional_string(source.search_pipeline.as_deref()); // search pipeline, OpenSearch 2.18+
     output.write_bool(source.verbose_pipeline); // verbose pipeline, OpenSearch 2.19+
@@ -24773,9 +24787,11 @@ fn read_search_source_builder(
     let fetch_fields =
         read_optional_field_and_format_list(input, "search request source fetch fields")?;
     let point_in_time = read_optional_point_in_time_builder(input)?;
-    reject_absent_bool_map(input, "search request source search pipeline source")?;
+    let search_pipeline_source =
+        read_optional_generic_map(input, "search request source search pipeline source")?;
     let include_named_queries_score = read_optional_bool(input)?;
-    reject_absent_bool_map(input, "search request source derived fields object")?;
+    let derived_fields_object =
+        read_optional_generic_map(input, "search request source derived fields object")?;
     reject_absent_bool_list(input, "search request source derived fields")?;
     let search_pipeline = input.read_optional_string()?;
     if search_pipeline.as_deref().is_some_and(str::is_empty) {
@@ -24800,6 +24816,8 @@ fn read_search_source_builder(
         doc_value_fields,
         fetch_fields,
         stored_fields,
+        search_pipeline_source,
+        derived_fields_object,
         terminate_after,
         timeout,
         track_scores,
@@ -25362,6 +25380,48 @@ fn read_generic_string_array(
         .collect()
 }
 
+fn write_optional_generic_map(
+    output: &mut StreamOutput,
+    value: Option<&Value>,
+) -> Result<(), TransportActionWireError> {
+    if let Some(value) = value {
+        validate_optional_generic_map(Some(value), "generic map")?;
+        output.write_bool(true);
+        write_generic_json_value(output, value)?;
+    } else {
+        output.write_bool(false);
+    }
+    Ok(())
+}
+
+fn read_optional_generic_map(
+    input: &mut StreamInput,
+    shape: &'static str,
+) -> Result<Option<Value>, TransportActionWireError> {
+    if !input.read_bool()? {
+        return Ok(None);
+    }
+    let value = read_generic_json_value(input, shape)?;
+    validate_optional_generic_map(Some(&value), shape)?;
+    Ok(Some(value))
+}
+
+fn validate_optional_generic_map(
+    value: Option<&Value>,
+    shape: &'static str,
+) -> Result<(), TransportActionWireError> {
+    let Some(value) = value else {
+        return Ok(());
+    };
+    if !value.is_object() {
+        return Err(TransportActionWireError::UnsupportedWireShape {
+            shape,
+            reason: "OpenSearch SearchSourceBuilder generic map fields must be JSON objects",
+        });
+    }
+    Ok(())
+}
+
 fn reject_absent_optional_writeable(
     input: &mut StreamInput,
     shape: &'static str,
@@ -25383,19 +25443,6 @@ fn reject_absent_bool_list(
         return Err(TransportActionWireError::UnsupportedWireShape {
             shape,
             reason: "only absent optional lists are decoded in the empty SearchSourceBuilder subset",
-        });
-    }
-    Ok(())
-}
-
-fn reject_absent_bool_map(
-    input: &mut StreamInput,
-    shape: &'static str,
-) -> Result<(), TransportActionWireError> {
-    if input.read_bool()? {
-        return Err(TransportActionWireError::UnsupportedWireShape {
-            shape,
-            reason: "only absent optional maps are decoded in the empty SearchSourceBuilder subset",
         });
     }
     Ok(())
@@ -60250,6 +60297,23 @@ mod tests {
                         "stored_rank".to_string(),
                     ]),
                 }),
+                search_pipeline_source: Some(json!({
+                    "request_processors": [
+                        {
+                            "filter_query": {
+                                "tag": "tenant-filter"
+                            }
+                        }
+                    ]
+                })),
+                derived_fields_object: Some(json!({
+                    "derived_status": {
+                        "type": "keyword",
+                        "script": {
+                            "source": "emit(params._source['status'])"
+                        }
+                    }
+                })),
                 terminate_after: 100,
                 timeout: Some(TimeValueWire::seconds(2)),
                 track_scores: true,
@@ -60585,6 +60649,36 @@ mod tests {
             invalid_stored_fields.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "search request source stored fields",
+                ..
+            })
+        ));
+
+        let invalid_search_pipeline_source = OpenSearchSearchRequestWire {
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                search_pipeline_source: Some(json!("not-a-map")),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        assert!(matches!(
+            invalid_search_pipeline_source.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source search pipeline source",
+                ..
+            })
+        ));
+
+        let invalid_derived_fields_object = OpenSearchSearchRequestWire {
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                derived_fields_object: Some(json!(["not-a-map"])),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        assert!(matches!(
+            invalid_derived_fields_object.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source derived fields object",
                 ..
             })
         ));
