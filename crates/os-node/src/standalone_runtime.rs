@@ -20581,6 +20581,9 @@ fn parse_pit_ids_with_messages(
             if id.is_number() {
                 return Err(delete_pit_invalid_id_response(&id.to_string()));
             }
+            if id.is_boolean() {
+                return Err(delete_pit_invalid_boolean_id_response(&id.to_string()));
+            }
             let Some(id) = pit_id_value_as_text(id) else {
                 return Err(delete_pit_illegal_argument(array_error));
             };
@@ -20589,6 +20592,8 @@ fn parse_pit_ids_with_messages(
         ids
     } else if pit_id.is_number() {
         return Err(delete_pit_invalid_id_response(&pit_id.to_string()));
+    } else if pit_id.is_boolean() {
+        return Err(delete_pit_invalid_boolean_id_response(&pit_id.to_string()));
     } else if let Some(id) = pit_id_value_as_text(pit_id) {
         vec![id]
     } else {
@@ -20658,6 +20663,30 @@ fn delete_pit_invalid_id_response(id: &str) -> RestResponse {
                 "caused_by": {
                     "type": "illegal_argument_exception",
                     "reason": "Input byte[] should at least have 2 bytes for base64 bytes"
+                }
+            },
+            "status": 400
+        }),
+    )
+}
+
+fn delete_pit_invalid_boolean_id_response(id: &str) -> RestResponse {
+    let reason = format!("invalid id: [{id}]");
+    RestResponse::json(
+        400,
+        serde_json::json!({
+            "error": {
+                "type": "illegal_argument_exception",
+                "reason": reason,
+                "root_cause": [
+                    {
+                        "type": "illegal_argument_exception",
+                        "reason": reason
+                    }
+                ],
+                "caused_by": {
+                    "type": "e_o_f_exception",
+                    "reason": Value::Null
                 }
             },
             "status": 400
@@ -39923,6 +39952,17 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             numeric_close_pit.body["error"]["root_cause"][0]["reason"],
             "invalid id: [7]"
+        );
+
+        let boolean_close_pit = node.handle_rest_request(
+            RestRequest::new(RestMethod::Delete, "/_search/point_in_time")
+                .with_json_body(serde_json::json!({ "pit_id": true })),
+        );
+        assert_eq!(boolean_close_pit.status, 400);
+        assert_eq!(boolean_close_pit.body["error"]["type"], "illegal_argument_exception");
+        assert_eq!(
+            boolean_close_pit.body["error"]["root_cause"][0]["reason"],
+            "invalid id: [true]"
         );
 
         let close_single_pit = node.handle_rest_request(

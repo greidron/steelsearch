@@ -2387,6 +2387,20 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "pit_close_boolean_id_search",
+      "area": "search",
+      "method": "DELETE",
+      "path": "/_search/point_in_time",
+      "body": {
+        "pit_id": true
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] close PIT rejects boolean pit_id like OpenSearch",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "pit_open_search",
       "area": "search",
       "method": "POST",
