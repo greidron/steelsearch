@@ -9185,12 +9185,26 @@ impl SteelNode {
                         Some(millis)
                     }
                     None => {
+                        let reason = "[1:198] [pit] failed to parse field [keep_alive]";
+                        let caused_by_reason = format!(
+                            "failed to parse setting [keep_alive] with value [{keep_alive}] as a time value: unit is missing or unrecognized"
+                        );
                         return RestResponse::json(
                             400,
                             serde_json::json!({
                                 "error": {
-                                    "type": "illegal_argument_exception",
-                                    "reason": format!("failed to parse setting [keep_alive] with value [{keep_alive}] as a time value")
+                                    "type": "x_content_parse_exception",
+                                    "reason": reason,
+                                    "root_cause": [
+                                        {
+                                            "type": "x_content_parse_exception",
+                                            "reason": reason
+                                        }
+                                    ],
+                                    "caused_by": {
+                                        "type": "illegal_argument_exception",
+                                        "reason": caused_by_reason
+                                    }
                                 },
                                 "status": 400
                             }),
@@ -39546,7 +39560,15 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(invalid_pit_keep_alive.status, 400);
         assert_eq!(
             invalid_pit_keep_alive.body["error"]["type"],
-            "illegal_argument_exception"
+            "x_content_parse_exception"
+        );
+        assert_eq!(
+            invalid_pit_keep_alive.body["error"]["root_cause"][0]["reason"],
+            "[1:198] [pit] failed to parse field [keep_alive]"
+        );
+        assert_eq!(
+            invalid_pit_keep_alive.body["error"]["caused_by"]["reason"],
+            "failed to parse setting [keep_alive] with value [not-a-duration] as a time value: unit is missing or unrecognized"
         );
 
         let too_large_pit_keep_alive = node.handle_rest_request(
