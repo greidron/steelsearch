@@ -24947,6 +24947,7 @@ pub enum OpenSearchQueryBuilderWire {
     Term(OpenSearchTermQueryBuilderWire),
     Terms(OpenSearchTermsQueryBuilderWire),
     Wildcard(OpenSearchWildcardQueryBuilderWire),
+    Wrapper(OpenSearchWrapperQueryBuilderWire),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -24971,6 +24972,13 @@ pub struct OpenSearchDisMaxQueryBuilderWire {
     pub query_name: Option<String>,
     pub queries: Vec<OpenSearchQueryBuilderWire>,
     pub tie_breaker: f32,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct OpenSearchWrapperQueryBuilderWire {
+    pub boost: f32,
+    pub query_name: Option<String>,
+    pub source: Bytes,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -25397,6 +25405,12 @@ fn write_named_query_builder(output: &mut StreamOutput, query: &OpenSearchQueryB
             output.write_optional_string(query.rewrite.as_deref());
             output.write_bool(query.case_insensitive);
         }
+        OpenSearchQueryBuilderWire::Wrapper(query) => {
+            output.write_string("wrapper");
+            output.write_f32(query.boost);
+            output.write_optional_string(query.query_name.as_deref());
+            output.write_bytes_reference(&query.source);
+        }
     }
 }
 
@@ -25659,9 +25673,16 @@ fn read_named_query_builder(
                 case_insensitive: input.read_bool()?,
             },
         )),
+        "wrapper" => Ok(OpenSearchQueryBuilderWire::Wrapper(
+            OpenSearchWrapperQueryBuilderWire {
+                boost: input.read_f32()?,
+                query_name: input.read_optional_string()?,
+                source: input.read_bytes_reference()?,
+            },
+        )),
         _ => Err(TransportActionWireError::UnsupportedWireShape {
             shape: "search request source query",
-            reason: "only OpenSearch bool, boosting, constant_score, dis_max, exists, fuzzy, ids, match_all, match_none, match, match_bool_prefix, match_phrase, match_phrase_prefix, prefix, range, regexp, term, terms, and wildcard QueryBuilder values are decoded by this subset",
+            reason: "only OpenSearch bool, boosting, constant_score, dis_max, exists, fuzzy, ids, match_all, match_none, match, match_bool_prefix, match_phrase, match_phrase_prefix, prefix, range, regexp, term, terms, wildcard, and wrapper QueryBuilder values are decoded by this subset",
         }),
     }
 }
@@ -25975,6 +25996,15 @@ fn validate_query_builder(
                 });
             }
             validate_optional_non_empty_query_string(query.rewrite.as_deref())?;
+        }
+        OpenSearchQueryBuilderWire::Wrapper(query) => {
+            validate_query_boost_and_name(query.boost, query.query_name.as_deref())?;
+            if query.source.is_empty() {
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "search request source query",
+                    reason: "OpenSearch WrapperQueryBuilder source must be non-empty",
+                });
+            }
         }
     }
     Ok(())
@@ -62508,6 +62538,25 @@ mod tests {
         let decoded = OpenSearchSearchRequestWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, dis_max_query_request);
 
+        let wrapper_query_request = OpenSearchSearchRequestWire {
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                query: Some(OpenSearchQueryBuilderWire::Wrapper(
+                    OpenSearchWrapperQueryBuilderWire {
+                        boost: 1.0,
+                        query_name: Some("wrapped-term".to_string()),
+                        source: Bytes::from_static(br#"{"term":{"tenant":"tenant-a"}}"#),
+                    },
+                )),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        let mut output = StreamOutput::new();
+        wrapper_query_request.write(&mut output);
+
+        let decoded = OpenSearchSearchRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, wrapper_query_request);
+
         let term_query_request = OpenSearchSearchRequestWire {
             source: Some(OpenSearchSearchSourceBuilderWire {
                 query: Some(OpenSearchQueryBuilderWire::Term(
@@ -63108,6 +63157,27 @@ mod tests {
         };
         assert!(matches!(
             invalid_dis_max_tie_breaker.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source query",
+                ..
+            })
+        ));
+
+        let invalid_wrapper_source = OpenSearchSearchRequestWire {
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                query: Some(OpenSearchQueryBuilderWire::Wrapper(
+                    OpenSearchWrapperQueryBuilderWire {
+                        boost: 1.0,
+                        query_name: None,
+                        source: Bytes::new(),
+                    },
+                )),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        assert!(matches!(
+            invalid_wrapper_source.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "search request source query",
                 ..
