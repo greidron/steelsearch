@@ -24945,6 +24945,7 @@ pub enum OpenSearchQueryBuilderWire {
     MatchPhrasePrefix(OpenSearchMatchPhrasePrefixQueryBuilderWire),
     MultiMatch(OpenSearchMultiMatchQueryBuilderWire),
     Prefix(OpenSearchPrefixQueryBuilderWire),
+    QueryString(OpenSearchQueryStringQueryBuilderWire),
     Range(OpenSearchRangeQueryBuilderWire),
     Regexp(OpenSearchRegexpQueryBuilderWire),
     Term(OpenSearchTermQueryBuilderWire),
@@ -25017,6 +25018,43 @@ pub struct OpenSearchMultiMatchQueryBuilderWire {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct OpenSearchMultiMatchFieldBoostWire {
+    pub field_name: String,
+    pub boost: f32,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct OpenSearchQueryStringQueryBuilderWire {
+    pub boost: f32,
+    pub query_name: Option<String>,
+    pub query_string: String,
+    pub default_field: Option<String>,
+    pub fields: Vec<OpenSearchQueryStringFieldBoostWire>,
+    pub default_operator: OpenSearchMatchOperatorWire,
+    pub analyzer: Option<String>,
+    pub quote_analyzer: Option<String>,
+    pub quote_field_suffix: Option<String>,
+    pub allow_leading_wildcard: Option<bool>,
+    pub analyze_wildcard: Option<bool>,
+    pub enable_position_increments: bool,
+    pub fuzziness: OpenSearchFuzzinessWire,
+    pub fuzzy_prefix_length: i32,
+    pub fuzzy_max_expansions: i32,
+    pub fuzzy_rewrite: Option<String>,
+    pub phrase_slop: i32,
+    pub query_type: OpenSearchMultiMatchTypeWire,
+    pub tie_breaker: Option<f32>,
+    pub rewrite: Option<String>,
+    pub minimum_should_match: Option<String>,
+    pub lenient: Option<bool>,
+    pub time_zone: Option<String>,
+    pub escape: bool,
+    pub max_determinized_states: i32,
+    pub auto_generate_synonyms_phrase_query: bool,
+    pub fuzzy_transpositions: bool,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct OpenSearchQueryStringFieldBoostWire {
     pub field_name: String,
     pub boost: f32,
 }
@@ -25480,6 +25518,42 @@ fn write_named_query_builder(output: &mut StreamOutput, query: &OpenSearchQueryB
             output.write_optional_string(query.rewrite.as_deref());
             output.write_bool(query.case_insensitive);
         }
+        OpenSearchQueryBuilderWire::QueryString(query) => {
+            output.write_string("query_string");
+            output.write_f32(query.boost);
+            output.write_optional_string(query.query_name.as_deref());
+            output.write_string(&query.query_string);
+            output.write_optional_string(query.default_field.as_deref());
+            output.write_vint(query.fields.len() as i32);
+            let mut fields = query.fields.iter().collect::<Vec<_>>();
+            fields.sort_by(|left, right| left.field_name.cmp(&right.field_name));
+            for field in fields {
+                output.write_string(&field.field_name);
+                output.write_f32(field.boost);
+            }
+            write_match_operator(output, query.default_operator);
+            output.write_optional_string(query.analyzer.as_deref());
+            output.write_optional_string(query.quote_analyzer.as_deref());
+            output.write_optional_string(query.quote_field_suffix.as_deref());
+            write_optional_bool(output, query.allow_leading_wildcard);
+            write_optional_bool(output, query.analyze_wildcard);
+            output.write_bool(query.enable_position_increments);
+            write_fuzziness(output, &query.fuzziness);
+            output.write_vint(query.fuzzy_prefix_length);
+            output.write_vint(query.fuzzy_max_expansions);
+            output.write_optional_string(query.fuzzy_rewrite.as_deref());
+            output.write_vint(query.phrase_slop);
+            write_multi_match_type(output, query.query_type);
+            write_optional_float(output, query.tie_breaker);
+            output.write_optional_string(query.rewrite.as_deref());
+            output.write_optional_string(query.minimum_should_match.as_deref());
+            write_optional_bool(output, query.lenient);
+            output.write_optional_string(query.time_zone.as_deref());
+            output.write_bool(query.escape);
+            output.write_vint(query.max_determinized_states);
+            output.write_bool(query.auto_generate_synonyms_phrase_query);
+            output.write_bool(query.fuzzy_transpositions);
+        }
         OpenSearchQueryBuilderWire::Range(query) => {
             output.write_string("range");
             output.write_f32(query.boost);
@@ -25786,6 +25860,51 @@ fn read_named_query_builder(
                 case_insensitive: input.read_bool()?,
             },
         )),
+        "query_string" => {
+            let boost = input.read_f32()?;
+            let query_name = input.read_optional_string()?;
+            let query_string = input.read_string()?;
+            let default_field = input.read_optional_string()?;
+            let len = read_len(input)?;
+            let mut fields = Vec::with_capacity(len);
+            for _ in 0..len {
+                fields.push(OpenSearchQueryStringFieldBoostWire {
+                    field_name: input.read_string()?,
+                    boost: input.read_f32()?,
+                });
+            }
+            Ok(OpenSearchQueryBuilderWire::QueryString(
+                OpenSearchQueryStringQueryBuilderWire {
+                    boost,
+                    query_name,
+                    query_string,
+                    default_field,
+                    fields,
+                    default_operator: read_match_operator(input)?,
+                    analyzer: input.read_optional_string()?,
+                    quote_analyzer: input.read_optional_string()?,
+                    quote_field_suffix: input.read_optional_string()?,
+                    allow_leading_wildcard: read_optional_bool(input)?,
+                    analyze_wildcard: read_optional_bool(input)?,
+                    enable_position_increments: input.read_bool()?,
+                    fuzziness: read_fuzziness(input)?,
+                    fuzzy_prefix_length: input.read_vint()?,
+                    fuzzy_max_expansions: input.read_vint()?,
+                    fuzzy_rewrite: input.read_optional_string()?,
+                    phrase_slop: input.read_vint()?,
+                    query_type: read_multi_match_type(input)?,
+                    tie_breaker: read_optional_float(input)?,
+                    rewrite: input.read_optional_string()?,
+                    minimum_should_match: input.read_optional_string()?,
+                    lenient: read_optional_bool(input)?,
+                    time_zone: input.read_optional_string()?,
+                    escape: input.read_bool()?,
+                    max_determinized_states: input.read_vint()?,
+                    auto_generate_synonyms_phrase_query: input.read_bool()?,
+                    fuzzy_transpositions: input.read_bool()?,
+                },
+            ))
+        }
         "range" => {
             let boost = input.read_f32()?;
             let query_name = input.read_optional_string()?;
@@ -25884,7 +26003,7 @@ fn read_named_query_builder(
         )),
         _ => Err(TransportActionWireError::UnsupportedWireShape {
             shape: "search request source query",
-            reason: "only OpenSearch bool, boosting, common, combined_fields, constant_score, dis_max, exists, fuzzy, ids, match_all, match_none, match, match_bool_prefix, match_phrase, match_phrase_prefix, multi_match, prefix, range, regexp, term, terms, wildcard, and wrapper QueryBuilder values are decoded by this subset",
+            reason: "only OpenSearch bool, boosting, common, combined_fields, constant_score, dis_max, exists, fuzzy, ids, match_all, match_none, match, match_bool_prefix, match_phrase, match_phrase_prefix, multi_match, prefix, query_string, range, regexp, term, terms, wildcard, and wrapper QueryBuilder values are decoded by this subset",
         }),
     }
 }
@@ -26245,6 +26364,68 @@ fn validate_query_builder(
                 });
             }
             validate_optional_non_empty_query_string(query.rewrite.as_deref())?;
+        }
+        OpenSearchQueryBuilderWire::QueryString(query) => {
+            validate_query_boost_and_name(query.boost, query.query_name.as_deref())?;
+            if query.query_string.is_empty() {
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "search request source query",
+                    reason: "OpenSearch QueryStringQueryBuilder query string must be non-empty in this subset",
+                });
+            }
+            validate_optional_non_empty_query_string(query.default_field.as_deref())?;
+            for field in &query.fields {
+                if field.field_name.is_empty() {
+                    return Err(TransportActionWireError::UnsupportedWireShape {
+                        shape: "search request source query",
+                        reason: "OpenSearch QueryStringQueryBuilder field name must be non-empty",
+                    });
+                }
+                if !field.boost.is_finite() || field.boost < 0.0 {
+                    return Err(TransportActionWireError::UnsupportedWireShape {
+                        shape: "search request source query",
+                        reason: "OpenSearch QueryStringQueryBuilder field boost must be finite and non-negative",
+                    });
+                }
+            }
+            validate_optional_non_empty_query_string(query.analyzer.as_deref())?;
+            validate_optional_non_empty_query_string(query.quote_analyzer.as_deref())?;
+            validate_optional_non_empty_query_string(query.quote_field_suffix.as_deref())?;
+            validate_fuzziness(&query.fuzziness)?;
+            if query.fuzzy_prefix_length < 0 {
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "search request source query",
+                    reason: "OpenSearch QueryStringQueryBuilder fuzzy prefix length must be non-negative",
+                });
+            }
+            if query.fuzzy_max_expansions <= 0 {
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "search request source query",
+                    reason: "OpenSearch QueryStringQueryBuilder fuzzy max expansions must be positive",
+                });
+            }
+            validate_optional_non_empty_query_string(query.fuzzy_rewrite.as_deref())?;
+            if query.phrase_slop < 0 {
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "search request source query",
+                    reason: "OpenSearch QueryStringQueryBuilder phrase slop must be non-negative",
+                });
+            }
+            if query.tie_breaker.is_some_and(|value| !value.is_finite()) {
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "search request source query",
+                    reason: "OpenSearch QueryStringQueryBuilder tie breaker must be finite when present",
+                });
+            }
+            validate_optional_non_empty_query_string(query.rewrite.as_deref())?;
+            validate_optional_non_empty_query_string(query.minimum_should_match.as_deref())?;
+            validate_optional_non_empty_query_string(query.time_zone.as_deref())?;
+            if query.max_determinized_states < 0 {
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "search request source query",
+                    reason: "OpenSearch QueryStringQueryBuilder max determinized states must be non-negative",
+                });
+            }
         }
         OpenSearchQueryBuilderWire::Range(query) => {
             validate_query_boost_and_name(query.boost, query.query_name.as_deref())?;
@@ -63041,6 +63222,61 @@ mod tests {
         let decoded = OpenSearchSearchRequestWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, ids_query_request);
 
+        let query_string_request = OpenSearchSearchRequestWire {
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                query: Some(OpenSearchQueryBuilderWire::QueryString(
+                    OpenSearchQueryStringQueryBuilderWire {
+                        boost: 1.0,
+                        query_name: Some("query-string".to_string()),
+                        query_string: "status:ok AND tenant:alpha".to_string(),
+                        default_field: Some("message".to_string()),
+                        fields: vec![
+                            OpenSearchQueryStringFieldBoostWire {
+                                field_name: "body".to_string(),
+                                boost: 1.0,
+                            },
+                            OpenSearchQueryStringFieldBoostWire {
+                                field_name: "title".to_string(),
+                                boost: 2.0,
+                            },
+                        ],
+                        default_operator: OpenSearchMatchOperatorWire::And,
+                        analyzer: Some("standard".to_string()),
+                        quote_analyzer: Some("standard".to_string()),
+                        quote_field_suffix: Some(".quote".to_string()),
+                        allow_leading_wildcard: Some(false),
+                        analyze_wildcard: Some(true),
+                        enable_position_increments: true,
+                        fuzziness: OpenSearchFuzzinessWire {
+                            value: "AUTO".to_string(),
+                            custom_auto: None,
+                        },
+                        fuzzy_prefix_length: 1,
+                        fuzzy_max_expansions: 50,
+                        fuzzy_rewrite: Some("constant_score".to_string()),
+                        phrase_slop: 2,
+                        query_type: OpenSearchMultiMatchTypeWire::BestFields,
+                        tie_breaker: Some(0.1),
+                        rewrite: Some("constant_score".to_string()),
+                        minimum_should_match: Some("2<75%".to_string()),
+                        lenient: Some(false),
+                        time_zone: Some("UTC".to_string()),
+                        escape: false,
+                        max_determinized_states: 10_000,
+                        auto_generate_synonyms_phrase_query: true,
+                        fuzzy_transpositions: true,
+                    },
+                )),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        let mut output = StreamOutput::new();
+        query_string_request.write(&mut output);
+
+        let decoded = OpenSearchSearchRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, query_string_request);
+
         let prefix_query_request = OpenSearchSearchRequestWire {
             source: Some(OpenSearchSearchSourceBuilderWire {
                 query: Some(OpenSearchQueryBuilderWire::Prefix(
@@ -64374,6 +64610,57 @@ mod tests {
             })
         ));
 
+        let invalid_query_string_field_boost = OpenSearchSearchRequestWire {
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                query: Some(OpenSearchQueryBuilderWire::QueryString(
+                    OpenSearchQueryStringQueryBuilderWire {
+                        boost: 1.0,
+                        query_name: None,
+                        query_string: "status:ok".to_string(),
+                        default_field: None,
+                        fields: vec![OpenSearchQueryStringFieldBoostWire {
+                            field_name: "title".to_string(),
+                            boost: -1.0,
+                        }],
+                        default_operator: OpenSearchMatchOperatorWire::Or,
+                        analyzer: None,
+                        quote_analyzer: None,
+                        quote_field_suffix: None,
+                        allow_leading_wildcard: None,
+                        analyze_wildcard: None,
+                        enable_position_increments: true,
+                        fuzziness: OpenSearchFuzzinessWire {
+                            value: "AUTO".to_string(),
+                            custom_auto: None,
+                        },
+                        fuzzy_prefix_length: 1,
+                        fuzzy_max_expansions: 50,
+                        fuzzy_rewrite: None,
+                        phrase_slop: 0,
+                        query_type: OpenSearchMultiMatchTypeWire::BestFields,
+                        tie_breaker: None,
+                        rewrite: None,
+                        minimum_should_match: None,
+                        lenient: None,
+                        time_zone: None,
+                        escape: false,
+                        max_determinized_states: 10_000,
+                        auto_generate_synonyms_phrase_query: true,
+                        fuzzy_transpositions: true,
+                    },
+                )),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        assert!(matches!(
+            invalid_query_string_field_boost.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source query",
+                ..
+            })
+        ));
+
         let mut multi_match_with_unknown_type = StreamOutput::new();
         multi_match_with_unknown_type.write_bool(true);
         multi_match_with_unknown_type.write_string("multi_match");
@@ -64386,6 +64673,43 @@ mod tests {
         assert!(matches!(
             read_optional_query_builder(&mut StreamInput::new(
                 multi_match_with_unknown_type.freeze()
+            )),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source query",
+                ..
+            })
+        ));
+
+        let mut query_string_with_unknown_type = StreamOutput::new();
+        query_string_with_unknown_type.write_bool(true);
+        query_string_with_unknown_type.write_string("query_string");
+        query_string_with_unknown_type.write_f32(1.0);
+        query_string_with_unknown_type.write_optional_string(None);
+        query_string_with_unknown_type.write_string("status:ok");
+        query_string_with_unknown_type.write_optional_string(None);
+        query_string_with_unknown_type.write_vint(0);
+        write_match_operator(&mut query_string_with_unknown_type, OpenSearchMatchOperatorWire::Or);
+        query_string_with_unknown_type.write_optional_string(None);
+        query_string_with_unknown_type.write_optional_string(None);
+        query_string_with_unknown_type.write_optional_string(None);
+        write_optional_bool(&mut query_string_with_unknown_type, None);
+        write_optional_bool(&mut query_string_with_unknown_type, None);
+        query_string_with_unknown_type.write_bool(true);
+        write_fuzziness(
+            &mut query_string_with_unknown_type,
+            &OpenSearchFuzzinessWire {
+                value: "AUTO".to_string(),
+                custom_auto: None,
+            },
+        );
+        query_string_with_unknown_type.write_vint(1);
+        query_string_with_unknown_type.write_vint(50);
+        query_string_with_unknown_type.write_optional_string(None);
+        query_string_with_unknown_type.write_vint(0);
+        query_string_with_unknown_type.write_vint(99);
+        assert!(matches!(
+            read_optional_query_builder(&mut StreamInput::new(
+                query_string_with_unknown_type.freeze()
             )),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "search request source query",
