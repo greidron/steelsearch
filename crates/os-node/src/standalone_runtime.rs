@@ -20940,6 +20940,7 @@ fn validate_slice_request_body(
     scroll: bool,
     point_in_time: bool,
 ) -> Option<RestResponse> {
+    const DEFAULT_MAX_SLICES_PER_SCROLL_OR_PIT: i64 = 1024;
     let Some(object) = slice.as_object() else {
         return Some(build_unsupported_search_response(
             "unsupported search option [slice]",
@@ -20982,6 +20983,21 @@ fn validate_slice_request_body(
         return Some(search_after_phase_execution_error(
             "`slice` cannot be used outside of a scroll context or PIT context",
         ));
+    }
+    if max > DEFAULT_MAX_SLICES_PER_SCROLL_OR_PIT {
+        let setting = if point_in_time {
+            "index.max_slices_per_pit"
+        } else {
+            "index.max_slices_per_scroll"
+        };
+        let reason = format!(
+            "The number of slices [{max}] is too large. It must be less than [{DEFAULT_MAX_SLICES_PER_SCROLL_OR_PIT}]. This limit can be set by changing the [{setting}] index level setting."
+        );
+        return if point_in_time {
+            Some(search_phase_rejected_execution_error(reason))
+        } else {
+            Some(search_after_validation_error(reason))
+        };
     }
     None
 }
@@ -21090,6 +21106,30 @@ fn search_after_phase_execution_error(reason: impl Into<String>) -> RestResponse
                 }
             },
             "status": 500
+        }),
+    )
+}
+
+fn search_phase_rejected_execution_error(reason: impl Into<String>) -> RestResponse {
+    let reason = reason.into();
+    RestResponse::json(
+        429,
+        serde_json::json!({
+            "error": {
+                "type": "search_phase_execution_exception",
+                "reason": "all shards failed",
+                "root_cause": [
+                    {
+                        "type": "rejected_execution_exception",
+                        "reason": reason
+                    }
+                ],
+                "caused_by": {
+                    "type": "rejected_execution_exception",
+                    "reason": reason
+                }
+            },
+            "status": 429
         }),
     )
 }
@@ -43275,6 +43315,23 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             "[1:56] [slice] failed to parse field [max]"
         );
 
+        let oversized_scroll_slice = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-params-a/_search?scroll=1m")
+                .with_json_body(serde_json::json!({
+                    "query": { "match_all": {} },
+                    "slice": { "id": 0, "max": 1025 }
+                })),
+        );
+        assert_eq!(oversized_scroll_slice.status, 400);
+        assert_eq!(
+            oversized_scroll_slice.body["error"]["root_cause"][0]["type"],
+            "illegal_argument_exception"
+        );
+        assert_eq!(
+            oversized_scroll_slice.body["error"]["root_cause"][0]["reason"],
+            "The number of slices [1025] is too large. It must be less than [1024]. This limit can be set by changing the [index.max_slices_per_scroll] index level setting."
+        );
+
         let open_search_params_pit = node.handle_rest_request(RestRequest::new(
             RestMethod::Post,
             "/logs-search-params-a/_search/point_in_time?keep_alive=1m",
@@ -43293,6 +43350,24 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(sliced_pit.status, 200);
         assert_eq!(sliced_pit.body["hits"]["total"]["value"], 1);
         assert_eq!(sliced_pit.body["hits"]["hits"][0]["_id"], "doc-2");
+
+        let oversized_pit_slice = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_search")
+                .with_json_body(serde_json::json!({
+                    "pit": { "id": search_params_pit_id, "keep_alive": "1m" },
+                    "query": { "match_all": {} },
+                    "slice": { "id": 0, "max": 1025 }
+                })),
+        );
+        assert_eq!(oversized_pit_slice.status, 429);
+        assert_eq!(
+            oversized_pit_slice.body["error"]["root_cause"][0]["type"],
+            "rejected_execution_exception"
+        );
+        assert_eq!(
+            oversized_pit_slice.body["error"]["root_cause"][0]["reason"],
+            "The number of slices [1025] is too large. It must be less than [1024]. This limit can be set by changing the [index.max_slices_per_pit] index level setting."
+        );
 
         let query_string_query_param_overrides_body = node.handle_rest_request(
             RestRequest::new(
