@@ -4051,6 +4051,70 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "root_search_put_method_error_search",
+      "area": "search",
+      "method": "PUT",
+      "path": "/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        }
+      },
+      "expected_status": 405,
+      "extract": "method_not_allowed_error",
+      "family": "lexical",
+      "description": "[lexical] root search path rejects PUT with OpenSearch method error",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "root_search_patch_method_error_search",
+      "area": "search",
+      "method": "PATCH",
+      "path": "/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        }
+      },
+      "expected_status": 405,
+      "extract": "method_not_allowed_error",
+      "family": "lexical",
+      "description": "[lexical] root search path rejects PATCH with OpenSearch method error",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "index_search_put_method_error_search",
+      "area": "search",
+      "method": "PUT",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        }
+      },
+      "expected_status": 405,
+      "extract": "method_not_allowed_error",
+      "family": "lexical",
+      "description": "[lexical] index search path rejects PUT with OpenSearch method error",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "index_search_patch_method_error_search",
+      "area": "search",
+      "method": "PATCH",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        }
+      },
+      "expected_status": 405,
+      "extract": "method_not_allowed_error",
+      "family": "lexical",
+      "description": "[lexical] index search path rejects PATCH with OpenSearch method error",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "scroll_put_method_error_search",
       "area": "search",
       "method": "PUT",

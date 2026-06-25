@@ -4718,6 +4718,13 @@ impl SteelNode {
             if request.method == RestMethod::Get || request.method == RestMethod::Post {
                 return Some(self.handle_index_search_route(index, request));
             }
+            if !index.is_empty() {
+                return Some(method_not_allowed_response(
+                    request.method,
+                    request.path.as_str(),
+                    "GET, POST",
+                ));
+            }
         }
         if let Some(index) = request
             .path
@@ -4728,8 +4735,15 @@ impl SteelNode {
                 return Some(self.handle_open_point_in_time_route(index, request));
             }
         }
-        if request.path == "/_search" && (request.method == RestMethod::Get || request.method == RestMethod::Post) {
-            return Some(self.handle_index_search_route("_all", request));
+        if request.path == "/_search" {
+            return match request.method {
+                RestMethod::Get | RestMethod::Post => Some(self.handle_index_search_route("_all", request)),
+                _ => Some(method_not_allowed_response(
+                    request.method,
+                    request.path.as_str(),
+                    "GET, POST",
+                )),
+            };
         }
         if request.path == "/_mget" && (request.method == RestMethod::Get || request.method == RestMethod::Post) {
             if let Err(response) =
@@ -39432,6 +39446,50 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 201
             );
         }
+
+        let put_root_search = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/_search")
+                .with_json_body(serde_json::json!({ "query": { "match_all": {} } })),
+        );
+        assert_eq!(put_root_search.status, 405);
+        assert_eq!(put_root_search.headers.get("allow").map(String::as_str), Some("GET,POST"));
+        assert_eq!(
+            put_root_search.body["error"],
+            "Incorrect HTTP method for uri [/_search] and method [PUT], allowed: [GET, POST]"
+        );
+
+        let patch_root_search = node.handle_rest_request(
+            RestRequest::new(RestMethod::Patch, "/_search")
+                .with_json_body(serde_json::json!({ "query": { "match_all": {} } })),
+        );
+        assert_eq!(patch_root_search.status, 405);
+        assert_eq!(patch_root_search.headers.get("allow").map(String::as_str), Some("GET,POST"));
+        assert_eq!(
+            patch_root_search.body["error"],
+            "Incorrect HTTP method for uri [/_search] and method [PATCH], allowed: [GET, POST]"
+        );
+
+        let put_index_search = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/logs-session-000001/_search")
+                .with_json_body(serde_json::json!({ "query": { "match_all": {} } })),
+        );
+        assert_eq!(put_index_search.status, 405);
+        assert_eq!(put_index_search.headers.get("allow").map(String::as_str), Some("GET,POST"));
+        assert_eq!(
+            put_index_search.body["error"],
+            "Incorrect HTTP method for uri [/logs-session-000001/_search] and method [PUT], allowed: [GET, POST]"
+        );
+
+        let patch_index_search = node.handle_rest_request(
+            RestRequest::new(RestMethod::Patch, "/logs-session-000001/_search")
+                .with_json_body(serde_json::json!({ "query": { "match_all": {} } })),
+        );
+        assert_eq!(patch_index_search.status, 405);
+        assert_eq!(patch_index_search.headers.get("allow").map(String::as_str), Some("GET,POST"));
+        assert_eq!(
+            patch_index_search.body["error"],
+            "Incorrect HTTP method for uri [/logs-session-000001/_search] and method [PATCH], allowed: [GET, POST]"
+        );
 
         let root_open_pit = node.handle_rest_request(RestRequest::new(
             RestMethod::Post,
