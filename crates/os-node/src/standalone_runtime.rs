@@ -26066,6 +26066,72 @@ fn build_search_aggregations(
             result.insert(name.clone(), serde_json::json!({ "buckets": buckets }));
             continue;
         }
+        if let Some(geo_distance) = aggregation_object.get("geo_distance").and_then(Value::as_object) {
+            let field = geo_distance
+                .get("field")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            let Some(origin) = geo_distance
+                .get("origin")
+                .or_else(|| geo_distance.get("center"))
+                .or_else(|| geo_distance.get("point"))
+                .and_then(parse_geo_point_value)
+            else {
+                return Err(build_unsupported_search_response(
+                    "unsupported aggregation option [geo_distance.origin]",
+                ));
+            };
+            let unit_multiplier = geo_distance
+                .get("unit")
+                .and_then(Value::as_str)
+                .and_then(geo_distance_unit_meters)
+                .unwrap_or(1.0);
+            let ranges = geo_distance
+                .get("ranges")
+                .and_then(Value::as_array)
+                .cloned()
+                .unwrap_or_default();
+            let mut buckets = Vec::new();
+            for bucket in ranges {
+                let Some(bucket_object) = bucket.as_object() else {
+                    continue;
+                };
+                let from = bucket_object.get("from").and_then(Value::as_f64);
+                let to = bucket_object.get("to").and_then(Value::as_f64);
+                let from_meters = from.unwrap_or(0.0) * unit_multiplier;
+                let to_meters = to.unwrap_or(f64::INFINITY) * unit_multiplier;
+                let key = bucket_object
+                    .get("key")
+                    .cloned()
+                    .unwrap_or_else(|| Value::String(default_geo_distance_range_bucket_key(from, to)));
+                let doc_count = hits
+                    .iter()
+                    .filter(|hit| {
+                        let Some(point) = hit
+                            .get("_source")
+                            .and_then(|source| lookup_query_field_value(source, field))
+                            .and_then(parse_geo_point_value)
+                        else {
+                            return false;
+                        };
+                        let distance = haversine_distance_meters(point, origin);
+                        distance >= from_meters && distance < to_meters
+                    })
+                    .count() as u64;
+                let mut rendered = serde_json::Map::new();
+                rendered.insert("key".to_string(), key);
+                rendered.insert("doc_count".to_string(), Value::from(doc_count));
+                if let Some(from) = from {
+                    rendered.insert("from".to_string(), Value::from(from));
+                }
+                if let Some(to) = to {
+                    rendered.insert("to".to_string(), Value::from(to));
+                }
+                buckets.push(Value::Object(rendered));
+            }
+            result.insert(name.clone(), serde_json::json!({ "buckets": buckets }));
+            continue;
+        }
         if let Some(date_range) = aggregation_object.get("date_range").and_then(Value::as_object) {
             let field = date_range.get("field").and_then(Value::as_str).unwrap_or_default();
             let ranges = date_range
@@ -26355,6 +26421,24 @@ fn default_ip_range_bucket_key(from: Option<&str>, to: Option<&str>) -> String {
         (Some(from), None) => format!("{from}-*"),
         (None, Some(to)) => format!("*-{to}"),
         (None, None) => "*".to_string(),
+    }
+}
+
+fn default_geo_distance_range_bucket_key(from: Option<f64>, to: Option<f64>) -> String {
+    match (from, to) {
+        (Some(from), Some(to)) => format!("{from}-{to}"),
+        (Some(from), None) => format!("{from}-*"),
+        (None, Some(to)) => format!("*-{to}"),
+        (None, None) => "*-*".to_string(),
+    }
+}
+
+fn geo_distance_unit_meters(unit: &str) -> Option<f64> {
+    match unit.to_ascii_lowercase().as_str() {
+        "m" | "meter" | "meters" => Some(1.0),
+        "km" | "kilometer" | "kilometers" => Some(1000.0),
+        "mi" | "mile" | "miles" => Some(1609.344),
+        _ => None,
     }
 }
 
@@ -42838,6 +42922,51 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 "key": "catalog-subnet",
                 "from": "10.0.1.0",
                 "to": "10.0.2.0",
+                "doc_count": 1
+            })
+        );
+
+        let geo_distance = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-aggs-000001/_search")
+                .with_json_body(serde_json::json!({
+                    "size": 0,
+                    "aggs": {
+                        "by_distance": {
+                            "geo_distance": {
+                                "field": "location",
+                                "origin": { "lat": 37.7749, "lon": -122.4194 },
+                                "unit": "km",
+                                "ranges": [
+                                    {
+                                        "key": "bay-area",
+                                        "to": 50.0
+                                    },
+                                    {
+                                        "key": "california",
+                                        "from": 50.0,
+                                        "to": 600.0
+                                    }
+                                ]
+                            }
+                        }
+                    }
+                })),
+        );
+        assert_eq!(geo_distance.status, 200);
+        assert_eq!(
+            geo_distance.body["aggregations"]["by_distance"]["buckets"][0],
+            serde_json::json!({
+                "key": "bay-area",
+                "to": 50.0,
+                "doc_count": 2
+            })
+        );
+        assert_eq!(
+            geo_distance.body["aggregations"]["by_distance"]["buckets"][1],
+            serde_json::json!({
+                "key": "california",
+                "from": 50.0,
+                "to": 600.0,
                 "doc_count": 1
             })
         );
