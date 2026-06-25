@@ -618,6 +618,27 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "cat_pit_segments_missing_body_error",
+      "area": "cat",
+      "method": "GET",
+      "path": "/_cat/pit_segments",
+      "extract": "search_error",
+      "family": "admin-cat",
+      "description": "[admin-cat] cat pit segments requires explicit pit ids",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "cat_pit_segments_all_text",
+      "area": "cat",
+      "method": "GET",
+      "path": "/_cat/pit_segments/_all?v=true",
+      "accept": "text/plain",
+      "extract": "cat_pit_segments",
+      "family": "admin-cat",
+      "description": "[admin-cat] cat pit segments all text",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "cat_nodeattrs_json",
       "area": "cat",
       "method": "GET",
