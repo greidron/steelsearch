@@ -24539,11 +24539,24 @@ impl OpenSearchSearchRequestWire {
 pub struct OpenSearchSearchSourceBuilderWire {
     pub from: i32,
     pub size: i32,
+    pub terminate_after: i32,
+    pub timeout: Option<TimeValueWire>,
+    pub track_scores: bool,
+    pub version: Option<bool>,
+    pub seq_no_and_primary_term: Option<bool>,
 }
 
 impl Default for OpenSearchSearchSourceBuilderWire {
     fn default() -> Self {
-        Self { from: 0, size: 10 }
+        Self {
+            from: 0,
+            size: 10,
+            terminate_after: 0,
+            timeout: None,
+            track_scores: false,
+            version: None,
+            seq_no_and_primary_term: None,
+        }
     }
 }
 
@@ -24559,6 +24572,12 @@ impl OpenSearchSearchSourceBuilderWire {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "search request source size",
                 reason: "OpenSearch SearchSourceBuilder size must be non-negative",
+            });
+        }
+        if self.terminate_after < 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source terminate after",
+                reason: "OpenSearch SearchSourceBuilder terminate_after must be non-negative",
             });
         }
         Ok(())
@@ -24586,11 +24605,11 @@ fn write_search_source_builder(
     output.write_bool(false); // sorts
     output.write_bool(false); // stats
     output.write_bool(false); // suggest
-    output.write_vint(0); // terminate after
-    write_optional_time_value(output, None); // timeout
-    output.write_bool(false); // track scores
-    write_optional_bool(output, None); // version
-    write_optional_bool(output, None); // seq no and primary term
+    output.write_vint(source.terminate_after); // terminate after
+    write_optional_time_value(output, source.timeout.as_ref()); // timeout
+    output.write_bool(source.track_scores); // track scores
+    write_optional_bool(output, source.version); // version
+    write_optional_bool(output, source.seq_no_and_primary_term); // seq no and primary term
     output.write_vint(0); // ext builders
     output.write_bool(false); // profile
     output.write_bool(false); // search after
@@ -24640,21 +24659,16 @@ fn read_search_source_builder(
     reject_absent_bool_list(input, "search request source stats")?;
     reject_absent_optional_writeable(input, "search request source suggest")?;
     let terminate_after = input.read_vint()?;
-    if terminate_after != 0 {
+    if terminate_after < 0 {
         return Err(TransportActionWireError::UnsupportedWireShape {
             shape: "search request source terminate after",
-            reason: "only default empty SearchSourceBuilder terminate_after=0 is decoded",
+            reason: "OpenSearch SearchSourceBuilder terminate_after must be non-negative",
         });
     }
-    reject_absent_optional_time_value(input, "search request source timeout")?;
-    if input.read_bool()? {
-        return Err(TransportActionWireError::UnsupportedWireShape {
-            shape: "search request source track scores",
-            reason: "only default empty SearchSourceBuilder track_scores=false is decoded",
-        });
-    }
-    reject_optional_bool_is_none(input, "search request source version")?;
-    reject_optional_bool_is_none(input, "search request source seq no and primary term")?;
+    let timeout = read_optional_time_value(input)?;
+    let track_scores = input.read_bool()?;
+    let version = read_optional_bool(input)?;
+    let seq_no_and_primary_term = read_optional_bool(input)?;
     reject_empty_vint_list(input, "search request source ext builders")?;
     if input.read_bool()? {
         return Err(TransportActionWireError::UnsupportedWireShape {
@@ -24684,7 +24698,15 @@ fn read_search_source_builder(
             reason: "only default SearchSourceBuilder verbose pipeline=false is decoded",
         });
     }
-    let source = OpenSearchSearchSourceBuilderWire { from, size };
+    let source = OpenSearchSearchSourceBuilderWire {
+        from,
+        size,
+        terminate_after,
+        timeout,
+        track_scores,
+        version,
+        seq_no_and_primary_term,
+    };
     source.validate_supported_subset()?;
     Ok(source)
 }
@@ -24778,20 +24800,6 @@ fn reject_absent_optional_int(
         return Err(TransportActionWireError::UnsupportedWireShape {
             shape,
             reason: "only absent optional ints are decoded in the empty SearchSourceBuilder subset",
-        });
-    }
-    Ok(())
-}
-
-fn reject_absent_optional_time_value(
-    input: &mut StreamInput,
-    shape: &'static str,
-) -> Result<(), TransportActionWireError> {
-    if input.read_bool()? {
-        let _ = TimeValueWire::read(input)?;
-        return Err(TransportActionWireError::UnsupportedWireShape {
-            shape,
-            reason: "only absent optional time values are decoded in the empty SearchSourceBuilder subset",
         });
     }
     Ok(())
@@ -59536,7 +59544,15 @@ mod tests {
         ));
 
         let source_request = OpenSearchSearchRequestWire {
-            source: Some(OpenSearchSearchSourceBuilderWire { from: 3, size: 25 }),
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                from: 3,
+                size: 25,
+                terminate_after: 100,
+                timeout: Some(TimeValueWire::seconds(2)),
+                track_scores: true,
+                version: Some(true),
+                seq_no_and_primary_term: Some(false),
+            }),
             ..OpenSearchSearchRequestWire::default()
         };
         let mut output = StreamOutput::new();
@@ -59575,6 +59591,21 @@ mod tests {
             routing.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "search request routing",
+                ..
+            })
+        ));
+
+        let invalid_terminate_after = OpenSearchSearchRequestWire {
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                terminate_after: -1,
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        assert!(matches!(
+            invalid_terminate_after.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source terminate after",
                 ..
             })
         ));
