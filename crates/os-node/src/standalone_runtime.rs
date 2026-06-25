@@ -17121,6 +17121,11 @@ impl SteelNode {
                 Err(response) => return response,
             }
         };
+        let mut seen_pit_ids = BTreeSet::new();
+        let pit_ids = pit_ids
+            .into_iter()
+            .filter(|pit_id| seen_pit_ids.insert(pit_id.clone()))
+            .collect::<Vec<_>>();
         let contexts = self
             .pit_contexts
             .lock()
@@ -29433,6 +29438,22 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             "logs-pit-segments-000001"
         );
         assert_eq!(pit_source_json_response.body[0]["docs.count"], "2");
+
+        let mut duplicate_pit_ids_request = RestRequest::new(RestMethod::Get, "/_cat/pit_segments")
+            .with_json_body(serde_json::json!({ "pit_id": [pit_id, pit_id] }));
+        duplicate_pit_ids_request
+            .query_params
+            .insert("format".to_string(), "json".to_string());
+        let duplicate_pit_ids_response = node.handle_rest_request(duplicate_pit_ids_request);
+        assert_eq!(duplicate_pit_ids_response.status, 200);
+        assert_eq!(
+            duplicate_pit_ids_response
+                .body
+                .as_array()
+                .expect("cat pit segments duplicate response")
+                .len(),
+            1
+        );
 
         let object_pit_segments_id = node.handle_rest_request(
             RestRequest::new(RestMethod::Get, "/_cat/pit_segments")
