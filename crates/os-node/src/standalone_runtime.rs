@@ -13255,6 +13255,7 @@ impl SteelNode {
     fn nodes_stats_body(&self) -> Value {
         let view = self.cluster_view.clone().unwrap_or_default();
         let mut nodes = serde_json::Map::new();
+        let local_search_open_contexts = self.search_open_context_count_for_stats();
         let local_search_cache_telemetry = self
             .native_engine
             .search_cache_telemetry_snapshot()
@@ -13296,6 +13297,13 @@ impl SteelNode {
                         },
                         "store": {
                             "size_in_bytes": 0
+                        },
+                        "search": {
+                            "open_contexts": if node.node_id == view.local_node_id {
+                                local_search_open_contexts
+                            } else {
+                                0
+                            }
                         }
                     },
                     "process": {
@@ -13349,6 +13357,24 @@ impl SteelNode {
             );
         }
         serde_json::json!({ "nodes": nodes })
+    }
+
+    fn search_open_context_count_for_stats(&self) -> u64 {
+        let now_millis = current_epoch_millis();
+        let pit_count = {
+            let mut contexts = self
+                .pit_contexts
+                .lock()
+                .expect("pit contexts lock poisoned");
+            prune_expired_pit_contexts(&mut contexts, now_millis);
+            contexts.len()
+        };
+        let scroll_count = self
+            .scroll_contexts
+            .lock()
+            .expect("scroll contexts lock poisoned")
+            .len();
+        pit_count.saturating_add(scroll_count) as u64
     }
 
     fn nodes_usage_body(&self) -> Value {
@@ -33598,6 +33624,44 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             }],
             coordination: None,
         });
+        let now_millis = current_epoch_millis();
+        let expired_pit_id = build_local_pit_id(201);
+        {
+            let mut pit_contexts = node
+                .pit_contexts
+                .lock()
+                .expect("pit contexts lock poisoned");
+            pit_contexts.insert(
+                expired_pit_id.clone(),
+                PitContext {
+                    indices: vec!["logs-node-stats-expired-pit".to_string()],
+                    documents: BTreeMap::new(),
+                    keep_alive_millis: 1,
+                    expires_at_millis: now_millis.saturating_sub(1),
+                    creation_time_millis: now_millis.saturating_sub(2),
+                },
+            );
+            pit_contexts.insert(
+                build_local_pit_id(202),
+                PitContext {
+                    indices: vec!["logs-node-stats-active-pit".to_string()],
+                    documents: BTreeMap::new(),
+                    keep_alive_millis: 60_000,
+                    expires_at_millis: now_millis + 60_000,
+                    creation_time_millis: now_millis,
+                },
+            );
+        }
+        node.scroll_contexts
+            .lock()
+            .expect("scroll contexts lock poisoned")
+            .insert(
+                "scroll-node-stats".to_string(),
+                ScrollContext {
+                    remaining_hits: Vec::new(),
+                    page_size: 10,
+                },
+            );
 
         for path in [
             "/_nodes/stats/indices",
@@ -33623,6 +33687,10 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             );
             assert!(
                 first_node["indices"]["store"]["size_in_bytes"].is_number(),
+                "path {path}"
+            );
+            assert_eq!(
+                first_node["indices"]["search"]["open_contexts"], 2,
                 "path {path}"
             );
             assert!(
@@ -33661,6 +33729,11 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 "path {path}"
             );
         }
+        assert!(!node
+            .pit_contexts
+            .lock()
+            .expect("pit contexts lock poisoned")
+            .contains_key(&expired_pit_id));
     }
 
     #[test]

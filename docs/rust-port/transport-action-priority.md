@@ -1848,6 +1848,9 @@ The PIT-segments boundary covers:
 - REST `_cat/pit_segments` prunes expired local PIT contexts before resolving
   `_all` or explicit PIT id segment rows, matching the same reaper boundary used
   by list/delete/search PIT routes.
+- REST `_nodes/stats` exposes local search session resource accounting through
+  `indices.search.open_contexts`, counting active PIT plus scroll contexts after
+  pruning expired PIT entries.
 
 The indices-shard-stores boundary covers:
 
