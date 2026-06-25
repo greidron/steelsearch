@@ -24935,6 +24935,7 @@ pub enum OpenSearchQueryBuilderWire {
     Match(OpenSearchMatchQueryBuilderWire),
     Prefix(OpenSearchPrefixQueryBuilderWire),
     Range(OpenSearchRangeQueryBuilderWire),
+    Regexp(OpenSearchRegexpQueryBuilderWire),
     Term(OpenSearchTermQueryBuilderWire),
     Terms(OpenSearchTermsQueryBuilderWire),
     Wildcard(OpenSearchWildcardQueryBuilderWire),
@@ -25024,6 +25025,18 @@ pub struct OpenSearchWildcardQueryBuilderWire {
     pub query_name: Option<String>,
     pub field_name: String,
     pub value: String,
+    pub rewrite: Option<String>,
+    pub case_insensitive: bool,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct OpenSearchRegexpQueryBuilderWire {
+    pub boost: f32,
+    pub query_name: Option<String>,
+    pub field_name: String,
+    pub value: String,
+    pub syntax_flags_value: i32,
+    pub max_determinized_states: i32,
     pub rewrite: Option<String>,
     pub case_insensitive: bool,
 }
@@ -25155,6 +25168,17 @@ fn write_named_query_builder(output: &mut StreamOutput, query: &OpenSearchQueryB
             output.write_bool(false); // time zone
             output.write_optional_string(query.format.as_deref());
             output.write_optional_string(query.relation.map(shape_relation_name));
+        }
+        OpenSearchQueryBuilderWire::Regexp(query) => {
+            output.write_string("regexp");
+            output.write_f32(query.boost);
+            output.write_optional_string(query.query_name.as_deref());
+            output.write_string(&query.field_name);
+            output.write_string(&query.value);
+            output.write_vint(query.syntax_flags_value);
+            output.write_vint(query.max_determinized_states);
+            output.write_optional_string(query.rewrite.as_deref());
+            output.write_bool(query.case_insensitive);
         }
         OpenSearchQueryBuilderWire::Term(query) => {
             output.write_string("term");
@@ -25309,6 +25333,18 @@ fn read_named_query_builder(
                 relation,
             }))
         }
+        "regexp" => Ok(OpenSearchQueryBuilderWire::Regexp(
+            OpenSearchRegexpQueryBuilderWire {
+                boost: input.read_f32()?,
+                query_name: input.read_optional_string()?,
+                field_name: input.read_string()?,
+                value: input.read_string()?,
+                syntax_flags_value: input.read_vint()?,
+                max_determinized_states: input.read_vint()?,
+                rewrite: input.read_optional_string()?,
+                case_insensitive: input.read_bool()?,
+            },
+        )),
         "term" => Ok(OpenSearchQueryBuilderWire::Term(OpenSearchTermQueryBuilderWire {
             boost: input.read_f32()?,
             query_name: input.read_optional_string()?,
@@ -25354,7 +25390,7 @@ fn read_named_query_builder(
         )),
         _ => Err(TransportActionWireError::UnsupportedWireShape {
             shape: "search request source query",
-            reason: "only OpenSearch bool, exists, ids, match_all, match, prefix, range, term, terms, and wildcard QueryBuilder values are decoded by this subset",
+            reason: "only OpenSearch bool, exists, ids, match_all, match, prefix, range, regexp, term, terms, and wildcard QueryBuilder values are decoded by this subset",
         }),
     }
 }
@@ -25482,6 +25518,28 @@ fn validate_query_builder(
             validate_range_bound_value(&query.from)?;
             validate_range_bound_value(&query.to)?;
             validate_optional_non_empty_query_string(query.format.as_deref())?;
+        }
+        OpenSearchQueryBuilderWire::Regexp(query) => {
+            validate_query_boost_and_name(query.boost, query.query_name.as_deref())?;
+            if query.field_name.is_empty() {
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "search request source query",
+                    reason: "OpenSearch RegexpQueryBuilder field name must be non-empty",
+                });
+            }
+            if query.syntax_flags_value < 0 {
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "search request source query",
+                    reason: "OpenSearch RegexpQueryBuilder flags value must be non-negative",
+                });
+            }
+            if query.max_determinized_states < 0 {
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "search request source query",
+                    reason: "OpenSearch RegexpQueryBuilder max determinized states must be non-negative",
+                });
+            }
+            validate_optional_non_empty_query_string(query.rewrite.as_deref())?;
         }
         OpenSearchQueryBuilderWire::Term(query) => {
             validate_query_boost_and_name(query.boost, query.query_name.as_deref())?;
@@ -61953,6 +62011,30 @@ mod tests {
         let decoded = OpenSearchSearchRequestWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, wildcard_query_request);
 
+        let regexp_query_request = OpenSearchSearchRequestWire {
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                query: Some(OpenSearchQueryBuilderWire::Regexp(
+                    OpenSearchRegexpQueryBuilderWire {
+                        boost: 1.0,
+                        query_name: Some("tenant-regexp".to_string()),
+                        field_name: "tenant".to_string(),
+                        value: "tenant-[ab]+".to_string(),
+                        syntax_flags_value: 65_535,
+                        max_determinized_states: 10_000,
+                        rewrite: Some("constant_score".to_string()),
+                        case_insensitive: true,
+                    },
+                )),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        let mut output = StreamOutput::new();
+        regexp_query_request.write(&mut output);
+
+        let decoded = OpenSearchSearchRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, regexp_query_request);
+
         let match_query_request = OpenSearchSearchRequestWire {
             source: Some(OpenSearchSearchSourceBuilderWire {
                 query: Some(OpenSearchQueryBuilderWire::Match(
@@ -62194,7 +62276,7 @@ mod tests {
 
         let mut unsupported_query = StreamOutput::new();
         unsupported_query.write_bool(true);
-        unsupported_query.write_string("regexp");
+        unsupported_query.write_string("script");
         assert!(matches!(
             read_optional_query_builder(&mut StreamInput::new(unsupported_query.freeze())),
             Err(TransportActionWireError::UnsupportedWireShape {
@@ -62505,6 +62587,58 @@ mod tests {
             })
         ));
 
+        let invalid_regexp_flags = OpenSearchSearchRequestWire {
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                query: Some(OpenSearchQueryBuilderWire::Regexp(
+                    OpenSearchRegexpQueryBuilderWire {
+                        boost: 1.0,
+                        query_name: None,
+                        field_name: "tenant".to_string(),
+                        value: "tenant-[ab]+".to_string(),
+                        syntax_flags_value: -1,
+                        max_determinized_states: 10_000,
+                        rewrite: None,
+                        case_insensitive: false,
+                    },
+                )),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        assert!(matches!(
+            invalid_regexp_flags.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source query",
+                ..
+            })
+        ));
+
+        let invalid_regexp_rewrite = OpenSearchSearchRequestWire {
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                query: Some(OpenSearchQueryBuilderWire::Regexp(
+                    OpenSearchRegexpQueryBuilderWire {
+                        boost: 1.0,
+                        query_name: None,
+                        field_name: "tenant".to_string(),
+                        value: "tenant-[ab]+".to_string(),
+                        syntax_flags_value: 65_535,
+                        max_determinized_states: 10_000,
+                        rewrite: Some(String::new()),
+                        case_insensitive: false,
+                    },
+                )),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        assert!(matches!(
+            invalid_regexp_rewrite.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source query",
+                ..
+            })
+        ));
+
         let mut terms_with_lookup = StreamOutput::new();
         terms_with_lookup.write_bool(true);
         terms_with_lookup.write_string("terms");
@@ -62635,7 +62769,7 @@ mod tests {
         bool_with_unsupported_child.write_f32(1.0);
         bool_with_unsupported_child.write_optional_string(None);
         bool_with_unsupported_child.write_vint(1);
-        bool_with_unsupported_child.write_string("regexp");
+        bool_with_unsupported_child.write_string("script");
         bool_with_unsupported_child.write_vint(0);
         bool_with_unsupported_child.write_vint(0);
         bool_with_unsupported_child.write_vint(0);
