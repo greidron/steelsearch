@@ -26205,9 +26205,115 @@ impl OpenSearchSearchResponseWire {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+pub struct OpenSearchSearchNestedIdentityWire {
+    pub field: Option<String>,
+    pub offset: i32,
+    pub child: Option<Box<OpenSearchSearchNestedIdentityWire>>,
+}
+
+impl OpenSearchSearchNestedIdentityWire {
+    const MAX_DEPTH: usize = 32;
+
+    pub fn write(&self, output: &mut StreamOutput) -> Result<(), TransportActionWireError> {
+        self.write_at_depth(output, 0)
+    }
+
+    fn write_at_depth(
+        &self,
+        output: &mut StreamOutput,
+        depth: usize,
+    ) -> Result<(), TransportActionWireError> {
+        self.validate_at_depth(depth)?;
+        write_optional_text_string(output, self.field.as_deref())?;
+        output.write_i32(self.offset);
+        write_optional_search_nested_identity(output, self.child.as_deref(), depth + 1)
+    }
+
+    pub fn read(input: &mut StreamInput) -> Result<Self, TransportActionWireError> {
+        Self::read_at_depth(input, 0)
+    }
+
+    fn read_at_depth(
+        input: &mut StreamInput,
+        depth: usize,
+    ) -> Result<Self, TransportActionWireError> {
+        if depth >= Self::MAX_DEPTH {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search hit nested identity",
+                reason: "OpenSearch nested identity depth exceeds the supported recursion limit",
+            });
+        }
+        let nested_identity = Self {
+            field: read_optional_text_string(input)?,
+            offset: input.read_i32()?,
+            child: read_optional_search_nested_identity(input, depth + 1)?.map(Box::new),
+        };
+        nested_identity.validate_at_depth(depth)?;
+        Ok(nested_identity)
+    }
+
+    pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
+        self.validate_at_depth(0)
+    }
+
+    fn validate_at_depth(&self, depth: usize) -> Result<(), TransportActionWireError> {
+        if depth >= Self::MAX_DEPTH {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search hit nested identity",
+                reason: "OpenSearch nested identity depth exceeds the supported recursion limit",
+            });
+        }
+        if self.field.as_ref().is_some_and(|field| field.is_empty()) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search hit nested identity",
+                reason: "OpenSearch nested identity field must be non-empty when present",
+            });
+        }
+        if self.offset < -1 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search hit nested identity",
+                reason: "OpenSearch nested identity offset cannot be less than -1",
+            });
+        }
+        if let Some(child) = &self.child {
+            child.validate_at_depth(depth + 1)?;
+        }
+        Ok(())
+    }
+}
+
+fn write_optional_search_nested_identity(
+    output: &mut StreamOutput,
+    nested_identity: Option<&OpenSearchSearchNestedIdentityWire>,
+    depth: usize,
+) -> Result<(), TransportActionWireError> {
+    if let Some(nested_identity) = nested_identity {
+        output.write_bool(true);
+        nested_identity.write_at_depth(output, depth)?;
+    } else {
+        output.write_bool(false);
+    }
+    Ok(())
+}
+
+fn read_optional_search_nested_identity(
+    input: &mut StreamInput,
+    depth: usize,
+) -> Result<Option<OpenSearchSearchNestedIdentityWire>, TransportActionWireError> {
+    if input.read_bool()? {
+        Ok(Some(OpenSearchSearchNestedIdentityWire::read_at_depth(
+            input, depth,
+        )?))
+    } else {
+        Ok(None)
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub struct OpenSearchSearchHitWire {
     pub id: Option<String>,
     pub score: f32,
+    pub nested_identity: Option<OpenSearchSearchNestedIdentityWire>,
     pub version: i64,
     pub seq_no: i64,
     pub primary_term: i64,
@@ -26227,6 +26333,7 @@ impl OpenSearchSearchHitWire {
         Self {
             id: Some(hit.metadata.id),
             score: hit.score,
+            nested_identity: None,
             version: hit.metadata.version as i64,
             seq_no: hit.metadata.seq_no,
             primary_term: hit.metadata.primary_term as i64,
@@ -26249,7 +26356,7 @@ impl OpenSearchSearchHitWire {
         self.validate_supported_subset()?;
         output.write_f32(self.score);
         write_optional_text_string(output, self.id.as_deref())?;
-        output.write_bool(false);
+        write_optional_search_nested_identity(output, self.nested_identity.as_ref(), 0)?;
         output.write_i64(self.version);
         output.write_zlong(self.seq_no);
         output.write_vlong(self.primary_term);
@@ -26281,10 +26388,11 @@ impl OpenSearchSearchHitWire {
     ) -> Result<Self, TransportActionWireError> {
         let score = input.read_f32()?;
         let id = read_optional_text_string(input)?;
-        reject_optional_writeable_present(input, "search hit nested identity")?;
+        let nested_identity = read_optional_search_nested_identity(input, 0)?;
         let hit = Self {
             id,
             score,
+            nested_identity,
             version: input.read_i64()?,
             seq_no: read_zlong(input)?,
             primary_term: input.read_vlong()?,
@@ -26363,6 +26471,9 @@ impl OpenSearchSearchHitWire {
         }
         if let Some(shard_target) = &self.shard_target {
             shard_target.validate_supported_subset()?;
+        }
+        if let Some(nested_identity) = &self.nested_identity {
+            nested_identity.validate_supported_subset()?;
         }
         Ok(())
     }
@@ -58510,6 +58621,15 @@ mod tests {
             hits: vec![OpenSearchSearchHitWire {
                 id: Some("doc-1".to_string()),
                 score: 1.0,
+                nested_identity: Some(OpenSearchSearchNestedIdentityWire {
+                    field: Some("comments".to_string()),
+                    offset: 1,
+                    child: Some(Box::new(OpenSearchSearchNestedIdentityWire {
+                        field: Some("replies".to_string()),
+                        offset: 0,
+                        child: None,
+                    })),
+                }),
                 version: 7,
                 seq_no: 3,
                 primary_term: 2,
@@ -58573,6 +58693,18 @@ mod tests {
         assert_eq!(decoded.hits.len(), 1);
         assert_eq!(decoded.hits[0].id.as_deref(), Some("doc-1"));
         assert_eq!(decoded.hits[0].source, Some(json!({ "message": "hello" })));
+        assert_eq!(
+            decoded.hits[0].nested_identity,
+            Some(OpenSearchSearchNestedIdentityWire {
+                field: Some("comments".to_string()),
+                offset: 1,
+                child: Some(Box::new(OpenSearchSearchNestedIdentityWire {
+                    field: Some("replies".to_string()),
+                    offset: 0,
+                    child: None,
+                })),
+            })
+        );
         assert_eq!(decoded.hits[0].version, 7);
         assert_eq!(decoded.hits[0].seq_no, 3);
         assert_eq!(decoded.hits[0].primary_term, 2);
@@ -58679,6 +58811,7 @@ mod tests {
         let invalid_hit = OpenSearchSearchHitWire {
             id: Some(String::new()),
             score: 1.0,
+            nested_identity: None,
             version: 1,
             seq_no: 0,
             primary_term: 1,
@@ -58702,6 +58835,7 @@ mod tests {
         let unsupported_sort = OpenSearchSearchHitWire {
             id: Some("doc-1".to_string()),
             score: 1.0,
+            nested_identity: None,
             version: 1,
             seq_no: 0,
             primary_term: 1,
