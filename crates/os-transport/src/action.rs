@@ -24544,7 +24544,7 @@ pub struct OpenSearchSearchSourceBuilderWire {
     pub index_boosts: Vec<OpenSearchIndexBoostWire>,
     pub min_score: Option<f32>,
     pub search_after: Option<Vec<Value>>,
-    pub sorts: Option<Vec<OpenSearchFieldSortBuilderWire>>,
+    pub sorts: Option<Vec<OpenSearchSortBuilderWire>>,
     pub point_in_time: Option<OpenSearchPointInTimeBuilderWire>,
     pub slice: Option<OpenSearchSliceBuilderWire>,
     pub collapse: Option<OpenSearchCollapseBuilderWire>,
@@ -24635,7 +24635,7 @@ impl OpenSearchSearchSourceBuilderWire {
         }
         validate_index_boosts(&self.index_boosts)?;
         validate_search_after_values(self.search_after.as_deref())?;
-        validate_field_sort_builders(self.sorts.as_deref())?;
+        validate_sort_builders(self.sorts.as_deref())?;
         if let Some(point_in_time) = &self.point_in_time {
             point_in_time.validate_supported_subset()?;
         }
@@ -24923,6 +24923,12 @@ fn validate_search_after_values(values: Option<&[Value]>) -> Result<(), Transpor
 }
 
 #[derive(Clone, Debug, PartialEq)]
+pub enum OpenSearchSortBuilderWire {
+    Field(OpenSearchFieldSortBuilderWire),
+    Score(OpenSearchScoreSortBuilderWire),
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub struct OpenSearchFieldSortBuilderWire {
     pub field_name: String,
     pub nested_path: Option<String>,
@@ -24931,6 +24937,11 @@ pub struct OpenSearchFieldSortBuilderWire {
     pub sort_mode: Option<OpenSearchSortModeWire>,
     pub unmapped_type: Option<String>,
     pub numeric_type: Option<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchScoreSortBuilderWire {
+    pub order: OpenSearchSortOrderWire,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -24950,22 +24961,30 @@ pub enum OpenSearchSortModeWire {
 
 fn write_optional_field_sort_builders(
     output: &mut StreamOutput,
-    values: Option<&[OpenSearchFieldSortBuilderWire]>,
+    values: Option<&[OpenSearchSortBuilderWire]>,
 ) -> Result<(), TransportActionWireError> {
     if let Some(values) = values {
         output.write_bool(true);
         output.write_vint(values.len() as i32);
         for value in values {
-            output.write_string("field_sort");
-            output.write_string(&value.field_name);
-            output.write_bool(false); // nested filter
-            output.write_optional_string(value.nested_path.as_deref());
-            write_generic_json_value(output, &value.missing)?;
-            write_optional_sort_order(output, value.order);
-            write_optional_sort_mode(output, value.sort_mode);
-            output.write_optional_string(value.unmapped_type.as_deref());
-            output.write_bool(false); // nested sort
-            output.write_optional_string(value.numeric_type.as_deref());
+            match value {
+                OpenSearchSortBuilderWire::Field(value) => {
+                    output.write_string("field_sort");
+                    output.write_string(&value.field_name);
+                    output.write_bool(false); // nested filter
+                    output.write_optional_string(value.nested_path.as_deref());
+                    write_generic_json_value(output, &value.missing)?;
+                    write_optional_sort_order(output, value.order);
+                    write_optional_sort_mode(output, value.sort_mode);
+                    output.write_optional_string(value.unmapped_type.as_deref());
+                    output.write_bool(false); // nested sort
+                    output.write_optional_string(value.numeric_type.as_deref());
+                }
+                OpenSearchSortBuilderWire::Score(value) => {
+                    output.write_string("_score");
+                    write_sort_order(output, value.order);
+                }
+            }
         }
     } else {
         output.write_bool(false);
@@ -24975,7 +24994,7 @@ fn write_optional_field_sort_builders(
 
 fn read_optional_field_sort_builders(
     input: &mut StreamInput,
-) -> Result<Option<Vec<OpenSearchFieldSortBuilderWire>>, TransportActionWireError> {
+) -> Result<Option<Vec<OpenSearchSortBuilderWire>>, TransportActionWireError> {
     if !input.read_bool()? {
         return Ok(None);
     }
@@ -24983,52 +25002,78 @@ fn read_optional_field_sort_builders(
     let mut values = Vec::with_capacity(len);
     for _ in 0..len {
         let name = input.read_string()?;
-        if name != "field_sort" {
-            return Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "search request source sorts",
-                reason: "only OpenSearch field_sort SortBuilder values are decoded by this subset",
-            });
+        match name.as_str() {
+            "field_sort" => {
+                let field_name = input.read_string()?;
+                if input.read_bool()? {
+                    return Err(TransportActionWireError::UnsupportedWireShape {
+                        shape: "search request source sort nested filter",
+                        reason: "FieldSortBuilder nested filter requires QueryBuilder named-writeable registry support",
+                    });
+                }
+                let nested_path = input.read_optional_string()?;
+                let missing = read_generic_json_value(input, "search request source sorts")?;
+                let order = read_optional_sort_order(input)?;
+                let sort_mode = read_optional_sort_mode(input)?;
+                let unmapped_type = input.read_optional_string()?;
+                if input.read_bool()? {
+                    return Err(TransportActionWireError::UnsupportedWireShape {
+                        shape: "search request source sort nested sort",
+                        reason: "FieldSortBuilder nested sort requires NestedSortBuilder mapping support",
+                    });
+                }
+                let numeric_type = input.read_optional_string()?;
+                values.push(OpenSearchSortBuilderWire::Field(OpenSearchFieldSortBuilderWire {
+                    field_name,
+                    nested_path,
+                    missing,
+                    order,
+                    sort_mode,
+                    unmapped_type,
+                    numeric_type,
+                }));
+            }
+            "_score" => {
+                values.push(OpenSearchSortBuilderWire::Score(
+                    OpenSearchScoreSortBuilderWire {
+                        order: read_sort_order(input)?,
+                    },
+                ));
+            }
+            _ => {
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "search request source sorts",
+                    reason: "only OpenSearch field_sort and _score SortBuilder values are decoded by this subset",
+                });
+            }
         }
-        let field_name = input.read_string()?;
-        if input.read_bool()? {
-            return Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "search request source sort nested filter",
-                reason: "FieldSortBuilder nested filter requires QueryBuilder named-writeable registry support",
-            });
-        }
-        let nested_path = input.read_optional_string()?;
-        let missing = read_generic_json_value(input, "search request source sorts")?;
-        let order = read_optional_sort_order(input)?;
-        let sort_mode = read_optional_sort_mode(input)?;
-        let unmapped_type = input.read_optional_string()?;
-        if input.read_bool()? {
-            return Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "search request source sort nested sort",
-                reason: "FieldSortBuilder nested sort requires NestedSortBuilder mapping support",
-            });
-        }
-        let numeric_type = input.read_optional_string()?;
-        values.push(OpenSearchFieldSortBuilderWire {
-            field_name,
-            nested_path,
-            missing,
-            order,
-            sort_mode,
-            unmapped_type,
-            numeric_type,
-        });
     }
-    validate_field_sort_builders(Some(&values))?;
+    validate_sort_builders(Some(&values))?;
     Ok(Some(values))
+}
+
+fn write_sort_order(output: &mut StreamOutput, value: OpenSearchSortOrderWire) {
+    output.write_vint(match value {
+        OpenSearchSortOrderWire::Asc => 0,
+        OpenSearchSortOrderWire::Desc => 1,
+    });
+}
+
+fn read_sort_order(input: &mut StreamInput) -> Result<OpenSearchSortOrderWire, TransportActionWireError> {
+    match input.read_vint()? {
+        0 => Ok(OpenSearchSortOrderWire::Asc),
+        1 => Ok(OpenSearchSortOrderWire::Desc),
+        _ => Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "search request source sort order",
+            reason: "OpenSearch SortOrder ordinal must be ASC(0) or DESC(1)",
+        }),
+    }
 }
 
 fn write_optional_sort_order(output: &mut StreamOutput, value: Option<OpenSearchSortOrderWire>) {
     if let Some(value) = value {
         output.write_bool(true);
-        output.write_vint(match value {
-            OpenSearchSortOrderWire::Asc => 0,
-            OpenSearchSortOrderWire::Desc => 1,
-        });
+        write_sort_order(output, value);
     } else {
         output.write_bool(false);
     }
@@ -25040,14 +25085,7 @@ fn read_optional_sort_order(
     if !input.read_bool()? {
         return Ok(None);
     }
-    match input.read_vint()? {
-        0 => Ok(Some(OpenSearchSortOrderWire::Asc)),
-        1 => Ok(Some(OpenSearchSortOrderWire::Desc)),
-        _ => Err(TransportActionWireError::UnsupportedWireShape {
-            shape: "search request source sort order",
-            reason: "OpenSearch SortOrder ordinal must be ASC(0) or DESC(1)",
-        }),
-    }
+    read_sort_order(input).map(Some)
 }
 
 fn write_optional_sort_mode(output: &mut StreamOutput, value: Option<OpenSearchSortModeWire>) {
@@ -25084,9 +25122,7 @@ fn read_optional_sort_mode(
     }
 }
 
-fn validate_field_sort_builders(
-    values: Option<&[OpenSearchFieldSortBuilderWire]>,
-) -> Result<(), TransportActionWireError> {
+fn validate_sort_builders(values: Option<&[OpenSearchSortBuilderWire]>) -> Result<(), TransportActionWireError> {
     let Some(values) = values else {
         return Ok(());
     };
@@ -25097,6 +25133,9 @@ fn validate_field_sort_builders(
         });
     }
     for value in values {
+        let OpenSearchSortBuilderWire::Field(value) = value else {
+            continue;
+        };
         if value.field_name.is_empty() {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "search request source sorts",
@@ -60746,7 +60785,10 @@ mod tests {
                 min_score: Some(0.25),
                 search_after: Some(vec![json!(20), json!("tenant-a"), json!(true), Value::Null]),
                 sorts: Some(vec![
-                    OpenSearchFieldSortBuilderWire {
+                    OpenSearchSortBuilderWire::Score(OpenSearchScoreSortBuilderWire {
+                        order: OpenSearchSortOrderWire::Desc,
+                    }),
+                    OpenSearchSortBuilderWire::Field(OpenSearchFieldSortBuilderWire {
                         field_name: "@timestamp".to_string(),
                         nested_path: None,
                         missing: json!("_last"),
@@ -60754,8 +60796,8 @@ mod tests {
                         sort_mode: Some(OpenSearchSortModeWire::Max),
                         unmapped_type: Some("date".to_string()),
                         numeric_type: Some("date_nanos".to_string()),
-                    },
-                    OpenSearchFieldSortBuilderWire {
+                    }),
+                    OpenSearchSortBuilderWire::Field(OpenSearchFieldSortBuilderWire {
                         field_name: "rank".to_string(),
                         nested_path: Some("events".to_string()),
                         missing: Value::Null,
@@ -60763,7 +60805,7 @@ mod tests {
                         sort_mode: Some(OpenSearchSortModeWire::Min),
                         unmapped_type: None,
                         numeric_type: None,
-                    },
+                    }),
                 ]),
                 point_in_time: Some(OpenSearchPointInTimeBuilderWire {
                     id: "pit-context-a".to_string(),
@@ -60994,7 +61036,7 @@ mod tests {
 
         let empty_sort_field = OpenSearchSearchRequestWire {
             source: Some(OpenSearchSearchSourceBuilderWire {
-                sorts: Some(vec![OpenSearchFieldSortBuilderWire {
+                sorts: Some(vec![OpenSearchSortBuilderWire::Field(OpenSearchFieldSortBuilderWire {
                     field_name: String::new(),
                     nested_path: None,
                     missing: Value::Null,
@@ -61002,7 +61044,7 @@ mod tests {
                     sort_mode: None,
                     unmapped_type: None,
                     numeric_type: None,
-                }]),
+                })]),
                 ..OpenSearchSearchSourceBuilderWire::default()
             }),
             ..OpenSearchSearchRequestWire::default()
@@ -61017,7 +61059,7 @@ mod tests {
 
         let object_sort_missing = OpenSearchSearchRequestWire {
             source: Some(OpenSearchSearchSourceBuilderWire {
-                sorts: Some(vec![OpenSearchFieldSortBuilderWire {
+                sorts: Some(vec![OpenSearchSortBuilderWire::Field(OpenSearchFieldSortBuilderWire {
                     field_name: "rank".to_string(),
                     nested_path: None,
                     missing: json!({ "unsupported": true }),
@@ -61025,7 +61067,7 @@ mod tests {
                     sort_mode: None,
                     unmapped_type: None,
                     numeric_type: None,
-                }]),
+                })]),
                 ..OpenSearchSearchSourceBuilderWire::default()
             }),
             ..OpenSearchSearchRequestWire::default()
