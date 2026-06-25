@@ -20582,19 +20582,25 @@ fn parse_pit_ids_with_messages(
                 return Err(delete_pit_invalid_id_response(&id.to_string()));
             }
             if id.is_boolean() {
-                return Err(delete_pit_invalid_boolean_id_response(&id.to_string()));
+                return Err(delete_pit_invalid_eof_id_response(&id.to_string()));
             }
             let Some(id) = pit_id_value_as_text(id) else {
                 return Err(delete_pit_illegal_argument(array_error));
             };
+            if id.is_empty() {
+                return Err(delete_pit_invalid_eof_id_response(&id));
+            }
             ids.push(id);
         }
         ids
     } else if pit_id.is_number() {
         return Err(delete_pit_invalid_id_response(&pit_id.to_string()));
     } else if pit_id.is_boolean() {
-        return Err(delete_pit_invalid_boolean_id_response(&pit_id.to_string()));
+        return Err(delete_pit_invalid_eof_id_response(&pit_id.to_string()));
     } else if let Some(id) = pit_id_value_as_text(pit_id) {
+        if id.is_empty() {
+            return Err(delete_pit_invalid_eof_id_response(&id));
+        }
         vec![id]
     } else {
         return Err(delete_pit_illegal_argument(scalar_error));
@@ -20669,7 +20675,7 @@ fn delete_pit_invalid_id_response(id: &str) -> RestResponse {
     )
 }
 
-fn delete_pit_invalid_boolean_id_response(id: &str) -> RestResponse {
+fn delete_pit_invalid_eof_id_response(id: &str) -> RestResponse {
     let reason = format!("invalid id: [{id}]");
     RestResponse::json(
         400,
@@ -39987,6 +39993,17 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             array_null_close_pit.body["error"]["root_cause"][0]["reason"],
             "pit_id array element should only contain pit_id"
+        );
+
+        let empty_close_pit = node.handle_rest_request(
+            RestRequest::new(RestMethod::Delete, "/_search/point_in_time")
+                .with_json_body(serde_json::json!({ "pit_id": "" })),
+        );
+        assert_eq!(empty_close_pit.status, 400);
+        assert_eq!(empty_close_pit.body["error"]["type"], "illegal_argument_exception");
+        assert_eq!(
+            empty_close_pit.body["error"]["root_cause"][0]["reason"],
+            "invalid id: []"
         );
 
         let close_single_pit = node.handle_rest_request(
