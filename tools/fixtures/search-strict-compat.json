@@ -3849,6 +3849,47 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "indices_boost_array_empty_object_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "indices_boost": [
+          {}
+        ]
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] array indices_boost rejects empty object like OpenSearch",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "indices_boost_array_multi_field_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "indices_boost": [
+          {
+            "logs-compat": 2.0,
+            "logs-compat-read": 1.0
+          }
+        ]
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] array indices_boost rejects multiple fields per object like OpenSearch",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "terminate_after_search",
       "area": "search",
       "method": "POST",
