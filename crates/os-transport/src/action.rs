@@ -24548,6 +24548,7 @@ pub struct OpenSearchSearchSourceBuilderWire {
     pub stats: Option<Vec<String>>,
     pub doc_value_fields: Option<Vec<OpenSearchFieldAndFormatWire>>,
     pub fetch_fields: Option<Vec<OpenSearchFieldAndFormatWire>>,
+    pub stored_fields: Option<OpenSearchStoredFieldsContextWire>,
     pub terminate_after: i32,
     pub timeout: Option<TimeValueWire>,
     pub track_scores: bool,
@@ -24574,6 +24575,7 @@ impl Default for OpenSearchSearchSourceBuilderWire {
             stats: None,
             doc_value_fields: None,
             fetch_fields: None,
+            stored_fields: None,
             terminate_after: 0,
             timeout: None,
             track_scores: false,
@@ -24633,6 +24635,9 @@ impl OpenSearchSearchSourceBuilderWire {
             self.fetch_fields.as_deref(),
             "search request source fetch fields",
         )?;
+        if let Some(stored_fields) = &self.stored_fields {
+            stored_fields.validate_supported_subset()?;
+        }
         if self
             .track_total_hits_up_to
             .is_some_and(|track_total_hits| track_total_hits < -1)
@@ -24660,7 +24665,7 @@ fn write_search_source_builder(
     write_optional_bool(output, source.explain); // explain
     output.write_bool(false); // fetch source context
     write_optional_field_and_format_list(output, source.doc_value_fields.as_deref()); // doc value fields
-    output.write_bool(false); // stored fields
+    write_optional_stored_fields_context(output, source.stored_fields.as_ref()); // stored fields
     output.write_vint(source.from); // from
     output.write_bool(false); // highlight
     output.write_vint(0); // index boosts
@@ -24702,7 +24707,7 @@ fn read_search_source_builder(
     reject_absent_optional_writeable(input, "search request source fetch source")?;
     let doc_value_fields =
         read_optional_field_and_format_list(input, "search request source doc value fields")?;
-    reject_absent_optional_writeable(input, "search request source stored fields")?;
+    let stored_fields = read_optional_stored_fields_context(input)?;
     let from = input.read_vint()?;
     if from < 0 {
         return Err(TransportActionWireError::UnsupportedWireShape {
@@ -24784,6 +24789,7 @@ fn read_search_source_builder(
         stats,
         doc_value_fields,
         fetch_fields,
+        stored_fields,
         terminate_after,
         timeout,
         track_scores,
@@ -25124,6 +25130,115 @@ fn validate_field_and_format_list(
         });
     }
     Ok(())
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchStoredFieldsContextWire {
+    pub fetch_fields: bool,
+    pub field_names: Option<Vec<String>>,
+}
+
+impl OpenSearchStoredFieldsContextWire {
+    fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
+        if !self.fetch_fields {
+            if self.field_names.is_some() {
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "search request source stored fields",
+                    reason: "OpenSearch StoredFieldsContext _none_ cannot carry field names",
+                });
+            }
+            return Ok(());
+        }
+        let Some(field_names) = &self.field_names else {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source stored fields",
+                reason: "OpenSearch StoredFieldsContext fetch=true requires field names",
+            });
+        };
+        if field_names.iter().any(|field| field.is_empty()) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source stored fields",
+                reason: "OpenSearch StoredFieldsContext field names must be non-empty",
+            });
+        }
+        if field_names.iter().any(|field| field == "_none_") {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source stored fields",
+                reason: "OpenSearch StoredFieldsContext cannot combine _none_ with field names",
+            });
+        }
+        Ok(())
+    }
+}
+
+fn write_optional_stored_fields_context(
+    output: &mut StreamOutput,
+    stored_fields: Option<&OpenSearchStoredFieldsContextWire>,
+) {
+    if let Some(stored_fields) = stored_fields {
+        output.write_bool(true);
+        output.write_bool(stored_fields.fetch_fields);
+        if stored_fields.fetch_fields {
+            let values = stored_fields
+                .field_names
+                .as_deref()
+                .unwrap_or(&[])
+                .iter()
+                .cloned()
+                .map(Value::String)
+                .collect::<Vec<_>>();
+            write_generic_json_value(output, &Value::Array(values))
+                .expect("validated stored fields must encode as a generic string list");
+        }
+    } else {
+        output.write_bool(false);
+    }
+}
+
+fn read_optional_stored_fields_context(
+    input: &mut StreamInput,
+) -> Result<Option<OpenSearchStoredFieldsContextWire>, TransportActionWireError> {
+    if !input.read_bool()? {
+        return Ok(None);
+    }
+    let fetch_fields = input.read_bool()?;
+    let field_names = if fetch_fields {
+        Some(read_generic_string_array(
+            input,
+            "search request source stored fields",
+        )?)
+    } else {
+        None
+    };
+    let stored_fields = OpenSearchStoredFieldsContextWire {
+        fetch_fields,
+        field_names,
+    };
+    stored_fields.validate_supported_subset()?;
+    Ok(Some(stored_fields))
+}
+
+fn read_generic_string_array(
+    input: &mut StreamInput,
+    shape: &'static str,
+) -> Result<Vec<String>, TransportActionWireError> {
+    let value = read_generic_json_value(input, shape)?;
+    let Value::Array(values) = value else {
+        return Err(TransportActionWireError::UnsupportedWireShape {
+            shape,
+            reason: "OpenSearch generic value must be a string list for this subset",
+        });
+    };
+    values
+        .into_iter()
+        .map(|value| match value {
+            Value::String(value) => Ok(value),
+            _ => Err(TransportActionWireError::UnsupportedWireShape {
+                shape,
+                reason: "OpenSearch generic list entries must be strings for this subset",
+            }),
+        })
+        .collect()
 }
 
 fn reject_absent_optional_writeable(
@@ -59992,6 +60107,13 @@ mod tests {
                         format: Some("strict_date_optional_time".to_string()),
                     },
                 ]),
+                stored_fields: Some(OpenSearchStoredFieldsContextWire {
+                    fetch_fields: true,
+                    field_names: Some(vec![
+                        "stored_status".to_string(),
+                        "stored_rank".to_string(),
+                    ]),
+                }),
                 terminate_after: 100,
                 timeout: Some(TimeValueWire::seconds(2)),
                 track_scores: true,
@@ -60240,6 +60362,41 @@ mod tests {
                 ..
             })
         ));
+
+        let invalid_stored_fields = OpenSearchSearchRequestWire {
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                stored_fields: Some(OpenSearchStoredFieldsContextWire {
+                    fetch_fields: true,
+                    field_names: Some(vec!["_none_".to_string()]),
+                }),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        assert!(matches!(
+            invalid_stored_fields.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source stored fields",
+                ..
+            })
+        ));
+
+        let stored_fields_none = OpenSearchSearchRequestWire {
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                stored_fields: Some(OpenSearchStoredFieldsContextWire {
+                    fetch_fields: false,
+                    field_names: None,
+                }),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        let mut output = StreamOutput::new();
+        stored_fields_none.write(&mut output);
+        assert_eq!(
+            OpenSearchSearchRequestWire::read(output.freeze()).unwrap(),
+            stored_fields_none
+        );
 
         let source_present = search_request_body_with_present_query();
         assert!(matches!(
