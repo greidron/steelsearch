@@ -4131,7 +4131,7 @@ fn build_local_delete_pit_response(
     let Some(request) = decode_delete_pit_request_from_transport_body(body) else {
         return build_empty_transport_response(request_id, header_version_id);
     };
-    if request.validate_supported_subset().is_err() {
+    if !delete_pit_request_matches_local_lifecycle_subset(&request) {
         return build_empty_transport_response(request_id, header_version_id);
     }
     let response = delete_transport_pit_contexts(&request.pit_ids);
@@ -4146,8 +4146,15 @@ fn build_local_delete_pit_response(
 
 fn delete_pit_request_supports_local_lifecycle_subset(body: &[u8]) -> bool {
     decode_delete_pit_request_from_transport_body(body)
-        .and_then(|request| request.validate_supported_subset().ok())
-        .is_some()
+        .as_ref()
+        .is_some_and(delete_pit_request_matches_local_lifecycle_subset)
+}
+
+fn delete_pit_request_matches_local_lifecycle_subset(
+    request: &os_transport::action::OpenSearchDeletePitRequestWire,
+) -> bool {
+    request.validate_supported_subset().is_ok()
+        && !request.pit_ids.iter().any(|pit_id| pit_id.is_empty())
 }
 
 fn decode_delete_pit_request_from_transport_body(
@@ -11783,6 +11790,47 @@ mod tests {
         assert_eq!(response.results.len(), 1);
         assert_eq!(response.results[0].pit_id, "pit-context");
         assert!(response.results[0].successful);
+    }
+
+    #[test]
+    fn delete_pit_transport_route_rejects_empty_id_entries() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        dev_transport_pit_bindings()
+            .contexts
+            .lock()
+            .expect("dev transport PIT contexts lock poisoned")
+            .clear();
+        let request = os_transport::action::OpenSearchDeletePitRequestWire {
+            pit_ids: vec!["".to_string()],
+            ..os_transport::action::OpenSearchDeletePitRequestWire::default()
+        };
+        let frame = os_transport::action::build_opensearch_delete_pit_request_message(
+            198,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(!delete_pit_request_supports_local_lifecycle_subset(
+            &frame[6..]
+        ));
+
+        let response = build_local_delete_pit_response(
+            198,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &frame[6..],
+        );
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected delete-PIT fallback response message");
+        };
+        assert_eq!(message.request_id, 198);
+        assert!(message.body.is_empty());
     }
 
     #[test]

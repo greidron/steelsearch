@@ -2259,8 +2259,8 @@ The delete-PIT boundary covers:
   removed PIT contexts still render successful `DeletePitInfo` entries;
 - `_all` delete prunes expired local PIT contexts before rendering active
   deletion results;
-- explicit rejection for empty PIT id arrays, while wire-level empty PIT id
-  entries decode like OpenSearch and remain a runtime/REST invalid-id concern.
+- explicit local lifecycle rejection for empty PIT id arrays and empty PIT id
+  entries, while wire-level empty PIT id entries still decode like OpenSearch.
 
 The get-all-PITs boundary covers:
 
