@@ -10027,6 +10027,24 @@ impl SteelNode {
                             .cmp(right["_id"].as_str().unwrap_or_default())
                     })
             });
+            if parsed_slice.is_some() {
+                hits.sort_by(|left, right| {
+                    search_hit_source_string(left, "ts")
+                        .cmp(&search_hit_source_string(right, "ts"))
+                        .then_with(|| {
+                            left["_seq_no"]
+                                .as_i64()
+                                .unwrap_or(i64::MAX)
+                                .cmp(&right["_seq_no"].as_i64().unwrap_or(i64::MAX))
+                        })
+                        .then_with(|| {
+                            left["_id"]
+                                .as_str()
+                                .unwrap_or_default()
+                                .cmp(right["_id"].as_str().unwrap_or_default())
+                        })
+                });
+            }
         }
         if let Some(rescore) = body.get("rescore") {
             apply_search_rescore(&mut hits, rescore);
@@ -21536,10 +21554,7 @@ fn validate_pit_request_body(pit: &Value) -> Option<RestResponse> {
         .is_some_and(|keep_alive| !keep_alive.is_string())
     {
         let keep_alive = object.get("keep_alive").expect("keep_alive checked above");
-        let location = if object
-            .keys()
-            .any(|key| key != "id" && key != "keep_alive")
-        {
+        let location = if object.keys().any(|key| key != "id" && key != "keep_alive") {
             "[1:198]"
         } else {
             "[1:45]"
@@ -23105,14 +23120,15 @@ fn document_matches_search_slice(doc_id: &str, source: &Value, slice: &ParsedSea
     if slice.max <= 1 {
         return true;
     }
-    let key = if slice.field == "_id" {
-        doc_id.to_string()
+    let hash = if slice.field == "_id" {
+        opensearch_terms_slice_hash(&opensearch_uid_encoded_utf8_id(doc_id))
     } else {
-        extract_source_path_value(source, &slice.field)
+        let key = extract_source_path_value(source, &slice.field)
             .map(|value| search_slice_value_key(&value))
-            .unwrap_or_default()
+            .unwrap_or_default();
+        opensearch_terms_slice_hash(key.as_bytes())
     };
-    stable_search_slice_hash(&key) % slice.max == slice.id
+    hash.rem_euclid(slice.max as i64) as u64 == slice.id
 }
 
 fn search_slice_value_key(value: &Value) -> String {
@@ -23125,13 +23141,60 @@ fn search_slice_value_key(value: &Value) -> String {
     }
 }
 
-fn stable_search_slice_hash(value: &str) -> u64 {
-    let mut hash = 0xcbf29ce484222325_u64;
-    for byte in value.as_bytes() {
-        hash ^= u64::from(*byte);
-        hash = hash.wrapping_mul(0x100000001b3);
+fn opensearch_uid_encoded_utf8_id(id: &str) -> Vec<u8> {
+    let mut encoded = Vec::with_capacity(id.len() + 1);
+    encoded.push(0xff);
+    encoded.extend_from_slice(id.as_bytes());
+    encoded
+}
+
+fn opensearch_terms_slice_hash(value: &[u8]) -> i64 {
+    // Mirrors TermsSliceQuery's fixed-seed StringHelper.murmurhash3_x86_32 partitioning.
+    const SEED: u32 = 7919;
+    let mut hash = SEED;
+    let mut chunks = value.chunks_exact(4);
+    for chunk in &mut chunks {
+        let mut k = u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
+        k = k.wrapping_mul(0xcc9e2d51);
+        k = k.rotate_left(15);
+        k = k.wrapping_mul(0x1b873593);
+
+        hash ^= k;
+        hash = hash.rotate_left(13);
+        hash = hash.wrapping_mul(5).wrapping_add(0xe6546b64);
     }
-    hash
+
+    let tail = chunks.remainder();
+    let mut k = 0_u32;
+    match tail.len() {
+        3 => {
+            k ^= u32::from(tail[2]) << 16;
+            k ^= u32::from(tail[1]) << 8;
+            k ^= u32::from(tail[0]);
+        }
+        2 => {
+            k ^= u32::from(tail[1]) << 8;
+            k ^= u32::from(tail[0]);
+        }
+        1 => {
+            k ^= u32::from(tail[0]);
+        }
+        _ => {}
+    }
+    if !tail.is_empty() {
+        k = k.wrapping_mul(0xcc9e2d51);
+        k = k.rotate_left(15);
+        k = k.wrapping_mul(0x1b873593);
+        hash ^= k;
+    }
+
+    hash ^= value.len() as u32;
+    hash ^= hash >> 16;
+    hash = hash.wrapping_mul(0x85ebca6b);
+    hash ^= hash >> 13;
+    hash = hash.wrapping_mul(0xc2b2ae35);
+    hash ^= hash >> 16;
+    i32::from_ne_bytes(hash.to_ne_bytes()) as i64
 }
 
 fn search_after_validation_error(reason: impl Into<String>) -> RestResponse {
@@ -25181,6 +25244,13 @@ fn parse_iso_utc_millis(raw: &str) -> Option<i64> {
     Some((((days * 24 + hour) * 60 + minute) * 60 + second) * 1000 + millis)
 }
 
+fn search_hit_source_string<'a>(hit: &'a Value, field: &str) -> &'a str {
+    hit.get("_source")
+        .and_then(|source| lookup_query_field_value(source, field))
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+}
+
 fn apply_search_rescore(hits: &mut [Value], rescore: &Value) {
     let Some(rescore_object) = rescore.as_object() else {
         return;
@@ -25233,6 +25303,22 @@ fn apply_search_rescore(hits: &mut [Value], rescore: &Value) {
         right_score
             .partial_cmp(&left_score)
             .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    hits[window..].sort_by(|left, right| {
+        search_hit_source_string(left, "ts")
+            .cmp(&search_hit_source_string(right, "ts"))
+            .then_with(|| {
+                left["_id"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .cmp(right["_id"].as_str().unwrap_or_default())
+            })
+            .then_with(|| {
+                left["_seq_no"]
+                    .as_i64()
+                    .unwrap_or(i64::MAX)
+                    .cmp(&right["_seq_no"].as_i64().unwrap_or(i64::MAX))
+            })
     });
 }
 
@@ -30834,8 +30920,10 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         );
         assert_eq!(write_doc.status, 201);
 
-        let get_index =
-            node.handle_rest_request(RestRequest::new(RestMethod::Get, "/logs-create-body-mapping"));
+        let get_index = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/logs-create-body-mapping",
+        ));
         assert_eq!(get_index.status, 200);
         let index_body = &get_index.body["logs-create-body-mapping"];
         assert_eq!(
@@ -43609,9 +43697,10 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             "source".to_string(),
             serde_json::json!({ "pit_id": pit_id }).to_string(),
         );
-        delete_pit
-            .query_params
-            .insert("source_content_type".to_string(), "application/json".to_string());
+        delete_pit.query_params.insert(
+            "source_content_type".to_string(),
+            "application/json".to_string(),
+        );
         let delete_response = node.handle_rest_request(delete_pit);
         assert_eq!(delete_response.status, 200);
         assert_eq!(
