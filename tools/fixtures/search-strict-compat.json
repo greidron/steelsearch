@@ -4285,6 +4285,33 @@
         "query": {
           "match_all": {}
         },
+        "rescore": {
+          "window_size": 2,
+          "query": {
+            "rescore_query": {
+              "match": {
+                "message": "timeout"
+              }
+            },
+            "query_weight": 1.0,
+            "rescore_query_weight": 10.0
+          }
+        }
+      },
+      "extract": "search_hits",
+      "family": "ranking",
+      "description": "[ranking] rescore search",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "rescore_with_sort_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
         "sort": [
           {
             "ts": {
@@ -4305,9 +4332,36 @@
           }
         }
       },
-      "extract": "search_hits",
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
       "family": "ranking",
-      "description": "[ranking] rescore search",
+      "description": "[ranking] rescore rejects explicit sort",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "rescore_window_too_large_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "rescore": {
+          "window_size": 10001,
+          "query": {
+            "rescore_query": {
+              "match": {
+                "message": "timeout"
+              }
+            }
+          }
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "ranking",
+      "description": "[ranking] rescore window is bounded by index.max_rescore_window",
       "strict_source_parity_required": true
     },
     {

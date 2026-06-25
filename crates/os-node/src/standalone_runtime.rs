@@ -9454,12 +9454,6 @@ impl SteelNode {
                 right_score
                     .partial_cmp(&left_score)
                     .unwrap_or(std::cmp::Ordering::Equal)
-                    .then_with(|| {
-                        left["_seq_no"]
-                            .as_i64()
-                            .unwrap_or_default()
-                            .cmp(&right["_seq_no"].as_i64().unwrap_or_default())
-                    })
             });
         }
         if let Some(rescore) = body.get("rescore") {
@@ -20285,6 +20279,7 @@ fn delete_pit_validation_error(reason: &str) -> RestResponse {
 }
 
 fn validate_rescore_request_body(rescore: &Value) -> Option<RestResponse> {
+    const DEFAULT_MAX_RESCORE_WINDOW: u64 = 10_000;
     let Some(object) = rescore.as_object() else {
         return Some(build_unsupported_search_response(
             "unsupported search option [rescore]",
@@ -20299,6 +20294,13 @@ fn validate_rescore_request_body(rescore: &Value) -> Option<RestResponse> {
         return Some(build_unsupported_search_response(
             "unsupported search option [rescore]",
         ));
+    }
+    if let Some(window_size) = object.get("window_size").and_then(Value::as_u64) {
+        if window_size > DEFAULT_MAX_RESCORE_WINDOW {
+            return Some(search_after_validation_error(format!(
+                "Rescore window [{window_size}] is too large. It must be less than [{DEFAULT_MAX_RESCORE_WINDOW}]. This prevents allocating massive heaps for storing the results to be rescored. This limit can be set by changing the [index.max_rescore_window] index level setting."
+            )));
+        }
     }
     if let Some(query) = object.get("query").and_then(Value::as_object) {
         if query
@@ -39962,6 +39964,30 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         );
         assert_eq!(sorted_rescore.status, 400);
         assert_eq!(sorted_rescore.body["status"], 400);
+        assert_eq!(
+            sorted_rescore.body["error"]["root_cause"][0]["reason"],
+            "Cannot use [sort] option in conjunction with [rescore]."
+        );
+
+        let oversized_rescore = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-rescore-000001/_search")
+                .with_json_body(serde_json::json!({
+                    "query": { "match_all": {} },
+                    "rescore": {
+                        "window_size": 10001,
+                        "query": {
+                            "rescore_query": {
+                                "match": { "message": "timeout" }
+                            }
+                        }
+                    }
+                })),
+        );
+        assert_eq!(oversized_rescore.status, 400);
+        assert_eq!(
+            oversized_rescore.body["error"]["root_cause"][0]["reason"],
+            "Rescore window [10001] is too large. It must be less than [10000]. This prevents allocating massive heaps for storing the results to be rescored. This limit can be set by changing the [index.max_rescore_window] index level setting."
+        );
     }
 
     #[test]
