@@ -25996,8 +25996,10 @@ pub struct OpenSearchSearchResponseWire {
     pub sort_fields: Option<Vec<OpenSearchSortFieldWire>>,
     pub collapse_field: Option<String>,
     pub collapse_values: Option<Vec<Value>>,
+    pub suggest_empty: bool,
     pub timed_out: bool,
     pub terminated_early: Option<bool>,
+    pub profile_results_empty: bool,
     pub processor_results: Vec<OpenSearchProcessorExecutionDetailWire>,
     pub total_shards: i32,
     pub successful_shards: i32,
@@ -26025,8 +26027,10 @@ impl OpenSearchSearchResponseWire {
             sort_fields: None,
             collapse_field: None,
             collapse_values: None,
+            suggest_empty: false,
             timed_out: false,
             terminated_early: None,
+            profile_results_empty: false,
             processor_results: Vec::new(),
             total_shards: 1,
             successful_shards: 1,
@@ -26059,10 +26063,10 @@ impl OpenSearchSearchResponseWire {
         output.write_optional_string(self.collapse_field.as_deref());
         write_optional_search_sort_values(output, self.collapse_values.as_deref())?;
         output.write_bool(false);
-        output.write_bool(false);
+        write_optional_empty_suggest(output, self.suggest_empty);
         output.write_bool(self.timed_out);
         write_optional_bool(output, self.terminated_early);
-        output.write_bool(false);
+        write_optional_empty_profile_results(output, self.profile_results_empty);
         output.write_vint(1);
         if version.on_or_after(Version::from_id(2_100_099)) {
             output.write_vint(0);
@@ -26108,10 +26112,10 @@ impl OpenSearchSearchResponseWire {
         let collapse_values =
             read_optional_search_sort_values(&mut input, "search response collapse values")?;
         reject_optional_writeable_present(&mut input, "search response aggregations")?;
-        reject_optional_writeable_present(&mut input, "search response suggest")?;
+        let suggest_empty = read_optional_empty_suggest(&mut input)?;
         let timed_out = input.read_bool()?;
         let terminated_early = read_optional_bool(&mut input)?;
-        reject_optional_writeable_present(&mut input, "search response profile results")?;
+        let profile_results_empty = read_optional_empty_profile_results(&mut input)?;
         let num_reduce_phases = input.read_vint()?;
         if num_reduce_phases != 1 {
             return Err(TransportActionWireError::UnsupportedWireShape {
@@ -26135,8 +26139,10 @@ impl OpenSearchSearchResponseWire {
             sort_fields,
             collapse_field,
             collapse_values,
+            suggest_empty,
             timed_out,
             terminated_early,
+            profile_results_empty,
             processor_results,
             total_shards: input.read_vint()?,
             successful_shards: input.read_vint()?,
@@ -26342,6 +26348,50 @@ fn read_processor_result(
     };
     processor_result.validate_supported_subset()?;
     Ok(processor_result)
+}
+
+fn write_optional_empty_suggest(output: &mut StreamOutput, present: bool) {
+    output.write_bool(present);
+    if present {
+        output.write_vint(0);
+    }
+}
+
+fn read_optional_empty_suggest(input: &mut StreamInput) -> Result<bool, TransportActionWireError> {
+    if !input.read_bool()? {
+        return Ok(false);
+    }
+    let len = input.read_vint()?;
+    if len != 0 {
+        return Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "search response suggest",
+            reason: "only empty OpenSearch suggest containers are decoded by this subset",
+        });
+    }
+    Ok(true)
+}
+
+fn write_optional_empty_profile_results(output: &mut StreamOutput, present: bool) {
+    output.write_bool(present);
+    if present {
+        output.write_i32(0);
+    }
+}
+
+fn read_optional_empty_profile_results(
+    input: &mut StreamInput,
+) -> Result<bool, TransportActionWireError> {
+    if !input.read_bool()? {
+        return Ok(false);
+    }
+    let len = input.read_i32()?;
+    if len != 0 {
+        return Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "search response profile results",
+            reason: "only empty OpenSearch profile result maps are decoded by this subset",
+        });
+    }
+    Ok(true)
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -59324,8 +59374,10 @@ mod tests {
             sort_fields: None,
             collapse_field: None,
             collapse_values: None,
+            suggest_empty: true,
             timed_out: true,
             terminated_early: Some(false),
+            profile_results_empty: true,
             processor_results: vec![OpenSearchProcessorExecutionDetailWire {
                 processor_name: "filter_query".to_string(),
                 duration_millis: 7,
@@ -59371,8 +59423,10 @@ mod tests {
         assert_eq!(decoded.total_hits, response.total_hits);
         assert_eq!(decoded.total_hits_relation, response.total_hits_relation);
         assert!(decoded.max_score.is_nan());
+        assert!(decoded.suggest_empty);
         assert_eq!(decoded.timed_out, response.timed_out);
         assert_eq!(decoded.terminated_early, response.terminated_early);
+        assert!(decoded.profile_results_empty);
         assert_eq!(decoded.processor_results, response.processor_results);
         assert_eq!(decoded.total_shards, response.total_shards);
         assert_eq!(decoded.successful_shards, response.successful_shards);
@@ -59667,6 +59721,55 @@ mod tests {
             ),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "search hit inner hits",
+                ..
+            })
+        ));
+
+        let mut non_empty_suggest = StreamOutput::new();
+        non_empty_suggest.write_bool(true);
+        non_empty_suggest.write_vlong(0);
+        non_empty_suggest.write_vint(0);
+        non_empty_suggest.write_f32(f32::NAN);
+        non_empty_suggest.write_vint(0);
+        write_optional_sort_fields(&mut non_empty_suggest, None).unwrap();
+        non_empty_suggest.write_optional_string(None);
+        write_optional_search_sort_values(&mut non_empty_suggest, None).unwrap();
+        non_empty_suggest.write_bool(false);
+        non_empty_suggest.write_bool(true);
+        non_empty_suggest.write_vint(1);
+        assert!(matches!(
+            OpenSearchSearchResponseWire::read(
+                non_empty_suggest.freeze(),
+                OPENSEARCH_3_7_0_TRANSPORT
+            ),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search response suggest",
+                ..
+            })
+        ));
+
+        let mut non_empty_profile_results = StreamOutput::new();
+        non_empty_profile_results.write_bool(true);
+        non_empty_profile_results.write_vlong(0);
+        non_empty_profile_results.write_vint(0);
+        non_empty_profile_results.write_f32(f32::NAN);
+        non_empty_profile_results.write_vint(0);
+        write_optional_sort_fields(&mut non_empty_profile_results, None).unwrap();
+        non_empty_profile_results.write_optional_string(None);
+        write_optional_search_sort_values(&mut non_empty_profile_results, None).unwrap();
+        non_empty_profile_results.write_bool(false);
+        non_empty_profile_results.write_bool(false);
+        non_empty_profile_results.write_bool(false);
+        write_optional_bool(&mut non_empty_profile_results, None);
+        non_empty_profile_results.write_bool(true);
+        non_empty_profile_results.write_i32(1);
+        assert!(matches!(
+            OpenSearchSearchResponseWire::read(
+                non_empty_profile_results.freeze(),
+                OPENSEARCH_3_7_0_TRANSPORT
+            ),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search response profile results",
                 ..
             })
         ));
