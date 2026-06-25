@@ -21845,7 +21845,7 @@ fn validate_slice_request_body(
             "field name is null or empty",
         ));
     }
-    let Some(id) = object.get("id").and_then(Value::as_i64) else {
+    let Some(id) = object.get("id").and_then(parse_opensearch_int_value) else {
         return Some(build_unsupported_search_response(
             "unsupported search option [slice]",
         ));
@@ -21856,7 +21856,7 @@ fn validate_slice_request_body(
             "id must be greater than or equal to 0",
         ));
     }
-    let Some(max) = object.get("max").and_then(Value::as_i64) else {
+    let Some(max) = object.get("max").and_then(parse_opensearch_int_value) else {
         return Some(build_unsupported_search_response(
             "unsupported search option [slice]",
         ));
@@ -21913,6 +21913,17 @@ fn slice_x_content_parse_error_with_cause(field: &str, cause: &str) -> RestRespo
     )
 }
 
+fn parse_opensearch_int_value(value: &Value) -> Option<i64> {
+    if let Some(value) = value.as_i64() {
+        return Some(value);
+    }
+    let parsed = value.as_str()?.parse::<f64>().ok()?;
+    if !parsed.is_finite() || parsed < i32::MIN as f64 || parsed > i32::MAX as f64 {
+        return None;
+    }
+    Some(parsed as i64)
+}
+
 fn parse_search_slice(slice: Option<&Value>) -> Option<ParsedSearchSlice> {
     let object = slice?.as_object()?;
     let field = object
@@ -21920,8 +21931,14 @@ fn parse_search_slice(slice: Option<&Value>) -> Option<ParsedSearchSlice> {
         .and_then(Value::as_str)
         .unwrap_or("_id")
         .to_string();
-    let id = object.get("id").and_then(Value::as_u64)?;
-    let max = object.get("max").and_then(Value::as_u64)?;
+    let id = object
+        .get("id")
+        .and_then(parse_opensearch_int_value)
+        .and_then(|value| u64::try_from(value).ok())?;
+    let max = object
+        .get("max")
+        .and_then(parse_opensearch_int_value)
+        .and_then(|value| u64::try_from(value).ok())?;
     Some(ParsedSearchSlice { field, id, max })
 }
 
@@ -45594,6 +45611,20 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 "{name}"
             );
         }
+
+        let string_int_scroll_slice = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-params-a/_search?scroll=1m")
+                .with_json_body(serde_json::json!({
+                    "query": { "match_all": {} },
+                    "slice": { "id": "0", "max": "2" }
+                })),
+        );
+        assert_eq!(string_int_scroll_slice.status, 200);
+        assert_eq!(string_int_scroll_slice.body["hits"]["total"]["value"], 1);
+        assert_eq!(
+            string_int_scroll_slice.body["hits"]["hits"].as_array().map(Vec::len),
+            Some(1)
+        );
 
         let oversized_scroll_slice = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/logs-search-params-a/_search?scroll=1m")

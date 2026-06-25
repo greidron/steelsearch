@@ -5912,6 +5912,26 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "slice_string_int_values_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search?scroll=1m",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "slice": {
+          "id": "0",
+          "max": "2"
+        }
+      },
+      "expected_status": 200,
+      "extract": "search_hits",
+      "family": "ranking",
+      "description": "[ranking] slice id and max string integers are coerced like OpenSearch",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "sorted_paginated_search_window",
       "area": "search",
       "method": "POST",
