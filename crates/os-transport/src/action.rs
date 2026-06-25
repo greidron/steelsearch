@@ -26216,10 +26216,12 @@ pub struct OpenSearchSearchHitWire {
     pub highlight_fields: BTreeMap<String, Option<Vec<String>>>,
     pub sort_values: Vec<Value>,
     pub matched_queries: BTreeMap<String, f32>,
+    pub shard_target: Option<OpenSearchSearchShardTargetWire>,
 }
 
 impl OpenSearchSearchHitWire {
     pub fn from_engine_hit(hit: SearchHit) -> Self {
+        let shard_target = OpenSearchSearchShardTargetWire::from_hit_index(&hit.index);
         Self {
             id: Some(hit.metadata.id),
             score: hit.score,
@@ -26231,6 +26233,7 @@ impl OpenSearchSearchHitWire {
             highlight_fields: normalized_highlight_fields(hit.highlight),
             sort_values: normalized_sort_values(hit.sort),
             matched_queries: BTreeMap::new(),
+            shard_target,
         }
     }
 
@@ -26258,7 +26261,7 @@ impl OpenSearchSearchHitWire {
         write_search_sort_values(output, &self.sort_values)?;
         write_search_sort_values(output, &self.sort_values)?;
         write_matched_queries(output, &self.matched_queries)?;
-        output.write_bool(false);
+        write_optional_search_shard_target(output, self.shard_target.as_ref())?;
         output.write_vint(0);
         Ok(())
     }
@@ -26281,6 +26284,7 @@ impl OpenSearchSearchHitWire {
             highlight_fields: BTreeMap::new(),
             sort_values: Vec::new(),
             matched_queries: BTreeMap::new(),
+            shard_target: None,
         };
         reject_bool_present(input, "search hit explanation")?;
         let fields = read_document_field_map(input, "search hit document fields")?;
@@ -26305,7 +26309,11 @@ impl OpenSearchSearchHitWire {
             matched_queries,
             ..hit
         };
-        reject_optional_writeable_present(input, "search hit shard target")?;
+        let shard_target = read_optional_search_shard_target(input, "search hit shard target")?;
+        let hit = Self {
+            shard_target,
+            ..hit
+        };
         reject_empty_list_len(input, "search hit inner hits")?;
         hit.validate_supported_subset()?;
         Ok(hit)
@@ -26334,6 +26342,52 @@ impl OpenSearchSearchHitWire {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "search hit highlight fields",
                 reason: "OpenSearch highlight field names must be non-empty",
+            });
+        }
+        if let Some(shard_target) = &self.shard_target {
+            shard_target.validate_supported_subset()?;
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchSearchShardTargetWire {
+    pub node_id: Option<String>,
+    pub index: String,
+    pub index_uuid: String,
+    pub shard_id: i32,
+    pub cluster_alias: Option<String>,
+}
+
+impl OpenSearchSearchShardTargetWire {
+    pub fn from_hit_index(index: &str) -> Option<Self> {
+        (!index.is_empty()).then(|| Self {
+            node_id: None,
+            index: index.to_string(),
+            index_uuid: "_na_".to_string(),
+            shard_id: 0,
+            cluster_alias: None,
+        })
+    }
+
+    pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
+        if self.index.is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search hit shard target",
+                reason: "OpenSearch SearchShardTarget index name must be non-empty",
+            });
+        }
+        if self.index_uuid.is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search hit shard target",
+                reason: "OpenSearch SearchShardTarget index UUID must be non-empty",
+            });
+        }
+        if self.shard_id < 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search hit shard target",
+                reason: "OpenSearch SearchShardTarget shard id must be non-negative",
             });
         }
         Ok(())
@@ -34217,6 +34271,71 @@ fn read_matched_queries(
         queries.insert(name, score);
     }
     Ok(queries)
+}
+
+fn write_optional_search_shard_target(
+    output: &mut StreamOutput,
+    target: Option<&OpenSearchSearchShardTargetWire>,
+) -> Result<(), TransportActionWireError> {
+    if let Some(target) = target {
+        target.validate_supported_subset()?;
+        output.write_bool(true);
+        write_search_shard_target(output, target)?;
+    } else {
+        output.write_bool(false);
+    }
+    Ok(())
+}
+
+fn read_optional_search_shard_target(
+    input: &mut StreamInput,
+    shape: &'static str,
+) -> Result<Option<OpenSearchSearchShardTargetWire>, TransportActionWireError> {
+    if !input.read_bool()? {
+        return Ok(None);
+    }
+    let target = read_search_shard_target(input, shape)?;
+    target.validate_supported_subset()?;
+    Ok(Some(target))
+}
+
+fn write_search_shard_target(
+    output: &mut StreamOutput,
+    target: &OpenSearchSearchShardTargetWire,
+) -> Result<(), TransportActionWireError> {
+    if let Some(node_id) = target.node_id.as_deref() {
+        output.write_bool(true);
+        write_text_string(output, node_id)?;
+    } else {
+        output.write_bool(false);
+    }
+    output.write_string(&target.index);
+    output.write_string(&target.index_uuid);
+    output.write_vint(target.shard_id);
+    output.write_optional_string(target.cluster_alias.as_deref());
+    Ok(())
+}
+
+fn read_search_shard_target(
+    input: &mut StreamInput,
+    shape: &'static str,
+) -> Result<OpenSearchSearchShardTargetWire, TransportActionWireError> {
+    let node_id = if input.read_bool()? {
+        Some(read_text_string(input, shape)?)
+    } else {
+        None
+    };
+    let index = input.read_string()?;
+    let index_uuid = input.read_string()?;
+    let shard_id = input.read_vint()?;
+    let cluster_alias = input.read_optional_string()?;
+    Ok(OpenSearchSearchShardTargetWire {
+        node_id,
+        index,
+        index_uuid,
+        shard_id,
+        cluster_alias,
+    })
 }
 
 fn write_search_sort_value(
@@ -58295,6 +58414,13 @@ mod tests {
                     ("named-a".to_string(), 0.75),
                     ("named-b".to_string(), 1.25),
                 ]),
+                shard_target: Some(OpenSearchSearchShardTargetWire {
+                    node_id: Some("node-a".to_string()),
+                    index: "logs-000001".to_string(),
+                    index_uuid: "_na_".to_string(),
+                    shard_id: 0,
+                    cluster_alias: None,
+                }),
             }],
             ..OpenSearchSearchResponseWire::default()
         };
@@ -58330,6 +58456,16 @@ mod tests {
         );
         assert_eq!(decoded.hits[0].matched_queries.get("named-a"), Some(&0.75));
         assert_eq!(decoded.hits[0].matched_queries.get("named-b"), Some(&1.25));
+        assert_eq!(
+            decoded.hits[0].shard_target,
+            Some(OpenSearchSearchShardTargetWire {
+                node_id: Some("node-a".to_string()),
+                index: "logs-000001".to_string(),
+                index_uuid: "_na_".to_string(),
+                shard_id: 0,
+                cluster_alias: None,
+            })
+        );
     }
 
     #[test]
@@ -58386,6 +58522,7 @@ mod tests {
             highlight_fields: BTreeMap::new(),
             sort_values: Vec::new(),
             matched_queries: BTreeMap::new(),
+            shard_target: None,
         };
         assert!(matches!(
             invalid_hit.validate_supported_subset(),
@@ -58406,6 +58543,7 @@ mod tests {
             highlight_fields: BTreeMap::new(),
             sort_values: vec![json!({ "unsupported": true })],
             matched_queries: BTreeMap::new(),
+            shard_target: None,
         };
         let mut output = StreamOutput::new();
         assert!(matches!(
