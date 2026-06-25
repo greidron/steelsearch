@@ -4055,9 +4055,10 @@ fn decode_clear_scroll_request_from_transport_body(
 }
 
 fn pit_segments_request_supports_local_subset(body: &[u8]) -> bool {
-    decode_pit_segments_request_from_transport_body(body)
-        .and_then(|request| request.validate_supported_subset().ok())
-        .is_some()
+    let Some(request) = decode_pit_segments_request_from_transport_body(body) else {
+        return false;
+    };
+    request.validate_supported_subset().is_ok() && transport_pit_segment_ids_exist(&request)
 }
 
 fn build_local_pit_segments_node_response(
@@ -11169,6 +11170,77 @@ mod tests {
             response,
             os_transport::action::OpenSearchGetAllPitsResponseWire::empty("steelsearch-dev")
         );
+    }
+
+    #[test]
+    fn expired_transport_pits_are_pruned_before_list_and_segments_admission() {
+        let pit_id = "pit-expired-context";
+        let now = now_epoch_ms();
+        dev_transport_pit_bindings()
+            .contexts
+            .lock()
+            .expect("dev transport PIT contexts lock poisoned")
+            .insert(
+                pit_id.to_string(),
+                PitContext {
+                    indices: vec!["logs-expired-pit-000001".to_string()],
+                    documents: BTreeMap::new(),
+                    keep_alive_millis: 1,
+                    expires_at_millis: now.saturating_sub(1),
+                    creation_time_millis: now.saturating_sub(10),
+                },
+            );
+        let transport_identity = DevTransportIdentity {
+            cluster_name: "steelsearch-dev".to_string(),
+            node_name: "steel-node".to_string(),
+            node_id: "steel-node-id".to_string(),
+            ephemeral_id: "steel-node-ephemeral".to_string(),
+            transport_address: "127.0.0.1:9300".parse().unwrap(),
+            attributes: Vec::new(),
+            roles: vec!["cluster_manager".to_string(), "data".to_string()],
+            seed_peer_identity: None,
+            seed_peer_identities: Vec::new(),
+            coordination_state: Arc::new(Mutex::new(DevTransportCoordinationState::default())),
+            remote_transport_queue_gate: Arc::new(RemoteTransportQueueGate::new(1, 1000)),
+            task_queue_state: None,
+        };
+
+        let list_response = build_local_get_all_pits_response(
+            100,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &transport_identity,
+        );
+        let mut frame = BytesMut::from(&list_response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected get-all-PITs response message");
+        };
+        let list_response =
+            os_transport::action::read_opensearch_get_all_pits_response_message(&message).unwrap();
+        assert_eq!(
+            list_response,
+            os_transport::action::OpenSearchGetAllPitsResponseWire::empty("steelsearch-dev")
+        );
+        assert!(!dev_transport_pit_bindings()
+            .contexts
+            .lock()
+            .expect("dev transport PIT contexts lock poisoned")
+            .contains_key(pit_id));
+
+        let request = os_transport::action::OpenSearchPitSegmentsRequestWire {
+            pit_ids: Some(vec![pit_id.to_string()]),
+            ..os_transport::action::OpenSearchPitSegmentsRequestWire::default()
+        };
+        let frame = os_transport::action::build_opensearch_pit_segments_request_message(
+            101,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(!pit_segments_request_supports_local_subset(&frame[6..]));
     }
 
     #[test]
