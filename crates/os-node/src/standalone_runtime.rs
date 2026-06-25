@@ -20018,7 +20018,7 @@ fn parse_opensearch_track_total_hits_body_value(value: &Value) -> Option<Value> 
         Value::Bool(value) => Some(Value::Bool(*value)),
         Value::String(value) if value == "true" => Some(Value::Bool(true)),
         Value::String(value) if value == "false" => Some(Value::Bool(false)),
-        Value::String(value) => value.parse::<i64>().ok().map(Value::from),
+        Value::String(_) => parse_opensearch_int_body_value(value),
         _ => None,
     }
 }
@@ -46781,6 +46781,24 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(total_hits_threshold.status, 200);
         assert_eq!(total_hits_threshold.body["hits"]["total"]["value"], 1);
         assert_eq!(total_hits_threshold.body["hits"]["total"]["relation"], "gte");
+
+        let total_hits_fractional_string_threshold = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_search").with_json_body(serde_json::json!({
+                "query": { "match_all": {} },
+                "sort": [{ "tenant": "asc" }],
+                "size": 1,
+                "track_total_hits": "1.9"
+            })),
+        );
+        assert_eq!(total_hits_fractional_string_threshold.status, 200);
+        assert_eq!(
+            total_hits_fractional_string_threshold.body["hits"]["total"]["value"],
+            1
+        );
+        assert_eq!(
+            total_hits_fractional_string_threshold.body["hits"]["total"]["relation"],
+            "gte"
+        );
 
         let query_param_terminate_after = node.handle_rest_request(
             RestRequest::new(

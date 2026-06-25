@@ -6088,6 +6088,30 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "track_total_hits_fractional_string_threshold_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "track_total_hits": "1.9",
+        "sort": [
+          {
+            "ts": {
+              "order": "asc"
+            }
+          }
+        ],
+        "size": 2
+      },
+      "extract": "search_summary",
+      "family": "ranking",
+      "description": "[ranking] fractional string track_total_hits threshold coerces like OpenSearch",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "track_total_hits_disabled_numeric_search",
       "area": "search",
       "method": "POST",
