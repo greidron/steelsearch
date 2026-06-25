@@ -11695,7 +11695,10 @@ mod tests {
             remote_transport_queue_gate: Arc::new(RemoteTransportQueueGate::new(1, 1000)),
             task_queue_state: None,
         };
-        let request = os_transport::action::OpenSearchPitSegmentsRequestWire::default();
+        let request = os_transport::action::OpenSearchPitSegmentsRequestWire {
+            pit_ids: Some(vec!["_all".to_string()]),
+            ..os_transport::action::OpenSearchPitSegmentsRequestWire::default()
+        };
         let frame = os_transport::action::build_opensearch_pit_segments_request_message(
             97,
             OPENSEARCH_3_7_0_TRANSPORT,

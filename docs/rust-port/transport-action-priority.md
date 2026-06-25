@@ -1837,10 +1837,10 @@ The PIT-segments boundary covers:
 - OpenSearch `PitSegmentsRequest` parent task, broadcast indices array,
   `IndicesOptions.strictExpandOpenAndForbidClosed()`, nullable PIT id array,
   and `verbose` at the wire decode/build layer;
-- empty `IndicesSegmentResponse` rendering for `_all` and explicit PIT ids that
-  resolve through the shared `SteelNode` PIT context store, including daemon
-  transport routing when the decoded request validates as the supported local
-  subset;
+- empty `IndicesSegmentResponse` rendering for explicit `_all` and explicit PIT
+  ids that resolve through the shared `SteelNode` PIT context store, including
+  daemon transport routing when the decoded request validates as the supported
+  local subset;
 - explicit rejection for index filters, custom indices options, null PIT id
   arrays, empty PIT id arrays, empty PIT id entries, verbose output, and
   unknown explicit PIT ids at the local runtime boundary.

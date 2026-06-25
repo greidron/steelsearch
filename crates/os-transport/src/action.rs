@@ -23014,7 +23014,7 @@ impl Default for OpenSearchPitSegmentsRequestWire {
             parent_task_id: None,
             indices: Vec::new(),
             indices_options: OpenSearchIndicesOptionsWire::strict_expand_open_forbid_closed(),
-            pit_ids: Some(vec!["_all".to_string()]),
+            pit_ids: Some(Vec::new()),
             verbose: false,
         }
     }
@@ -60717,18 +60717,17 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_pit_segments_request_wire_round_trips_and_validates_all_subset() {
+    fn opensearch_pit_segments_request_wire_round_trips_default_empty_ids() {
         let request = OpenSearchPitSegmentsRequestWire::default();
         let mut output = StreamOutput::new();
         request.write(&mut output);
 
         let decoded = OpenSearchPitSegmentsRequestWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, request);
-        decoded.validate_supported_subset().unwrap();
         assert!(matches!(
-            decoded.reject_unsupported_execution(),
+            decoded.validate_supported_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "pit segments execution",
+                shape: "pit segments empty ids",
                 ..
             })
         ));
@@ -60773,6 +60772,7 @@ mod tests {
         ));
 
         let verbose = OpenSearchPitSegmentsRequestWire {
+            pit_ids: Some(vec!["_all".to_string()]),
             verbose: true,
             ..OpenSearchPitSegmentsRequestWire::default()
         };
@@ -60793,7 +60793,10 @@ mod tests {
 
     #[test]
     fn opensearch_pit_segments_transport_messages_bind_action_frames() {
-        let request = OpenSearchPitSegmentsRequestWire::default();
+        let request = OpenSearchPitSegmentsRequestWire {
+            pit_ids: Some(vec!["_all".to_string()]),
+            ..OpenSearchPitSegmentsRequestWire::default()
+        };
         let mut frame =
             build_opensearch_pit_segments_request_message(54, OPENSEARCH_3_7_0_TRANSPORT, &request)
                 .unwrap();
