@@ -548,7 +548,7 @@ fn parse_rest_method(value: &str) -> RestMethod {
 
 fn split_path_and_query(target: &str) -> (String, BTreeMap<String, String>) {
     let Some((path, query)) = target.split_once('?') else {
-        return (target.to_string(), BTreeMap::new());
+        return (percent_decode_path_component(target), BTreeMap::new());
     };
     let mut query_params = BTreeMap::new();
     for pair in query.split('&') {
@@ -561,16 +561,24 @@ fn split_path_and_query(target: &str) -> (String, BTreeMap<String, String>) {
             percent_decode_query_component(value),
         );
     }
-    (path.to_string(), query_params)
+    (percent_decode_path_component(path), query_params)
+}
+
+fn percent_decode_path_component(component: &str) -> String {
+    percent_decode_component(component, false)
 }
 
 fn percent_decode_query_component(component: &str) -> String {
+    percent_decode_component(component, true)
+}
+
+fn percent_decode_component(component: &str, plus_as_space: bool) -> String {
     let bytes = component.as_bytes();
     let mut decoded = Vec::with_capacity(bytes.len());
     let mut index = 0;
     while index < bytes.len() {
         match bytes[index] {
-            b'+' => {
+            b'+' if plus_as_space => {
                 decoded.push(b' ');
                 index += 1;
             }
@@ -18485,16 +18493,7 @@ impl SteelNode {
             matched.sort();
             matched.dedup();
             if matched.is_empty() && !(ignore_unavailable || allow_no_indices) {
-                return Err(RestResponse::json(
-                    404,
-                    serde_json::json!({
-                        "error": {
-                            "type": "index_not_found_exception",
-                            "reason": format!("no such index [{selector}]")
-                        },
-                        "status": 404
-                    }),
-                ));
+                return Err(index_not_found_response(selector));
             }
             resolved.extend(matched);
         }
@@ -18504,16 +18503,7 @@ impl SteelNode {
             if allow_no_indices {
                 return Ok(resolved);
             }
-            return Err(RestResponse::json(
-                404,
-                serde_json::json!({
-                    "error": {
-                        "type": "index_not_found_exception",
-                        "reason": format!("no such index [{target}]")
-                    },
-                    "status": 404
-                }),
-            ));
+            return Err(index_not_found_response(target));
         }
         Ok(resolved)
     }
@@ -20543,6 +20533,34 @@ fn doc_write_occ_query_params_error(request: &RestRequest) -> RestResponse {
 
 fn require_alias_not_alias_reason(target: &str) -> String {
     format!("[require_alias] request flag is [true] and [{target}] is not an alias")
+}
+
+fn index_not_found_response(index: &str) -> RestResponse {
+    let reason = format!("no such index [{index}]");
+    RestResponse::json(
+        404,
+        serde_json::json!({
+            "error": {
+                "type": "index_not_found_exception",
+                "reason": reason,
+                "index": index,
+                "index_uuid": "_na_",
+                "resource.id": index,
+                "resource.type": "index_or_alias",
+                "root_cause": [
+                    {
+                        "type": "index_not_found_exception",
+                        "reason": reason,
+                        "index": index,
+                        "index_uuid": "_na_",
+                        "resource.id": index,
+                        "resource.type": "index_or_alias"
+                    }
+                ]
+            },
+            "status": 404
+        }),
+    )
 }
 
 fn pit_search_uses_explicit_indices(index: &str, request: &RestRequest) -> bool {
@@ -39139,6 +39157,27 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         env::remove_var("STEELSEARCH_PERSIST_SHARED_RUNTIME_STATE_PER_WRITE");
         let _ = std::fs::remove_file(shared_state_path);
         let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn split_path_and_query_decodes_path_and_query_like_http_layer() {
+        let (path, query_params) =
+            split_path_and_query("/logs%2Dcompat/_search?pretty=true&space=%20&plus=a+b");
+        assert_eq!(path, "/logs-compat/_search");
+        assert_eq!(query_params.get("pretty").map(String::as_str), Some("true"));
+        assert_eq!(query_params.get("space").map(String::as_str), Some(" "));
+        assert_eq!(query_params.get("plus").map(String::as_str), Some("a b"));
+
+        let (slash_path, slash_query_params) =
+            split_path_and_query("/logs%2Fcompat/_search?name%2Dkey=value%2Dpart");
+        assert_eq!(slash_path, "/logs/compat/_search");
+        assert_eq!(
+            slash_query_params.get("name-key").map(String::as_str),
+            Some("value-part")
+        );
+
+        let (plus_path, _) = split_path_and_query("/logs+compat/_search");
+        assert_eq!(plus_path, "/logs+compat/_search");
     }
 
     #[test]

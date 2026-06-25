@@ -1651,6 +1651,38 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "encoded_hyphen_index_path_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs%2Dcompat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "size": 0
+      },
+      "extract": "search_total",
+      "family": "lexical",
+      "description": "[lexical] search decodes encoded hyphen in index path like OpenSearch",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "encoded_slash_index_path_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs%2Fcompat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        }
+      },
+      "expected_status": 404,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] search decodes encoded slash in index path errors like OpenSearch",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "explain_search",
       "area": "search",
       "method": "POST",
@@ -2553,6 +2585,17 @@
       "extract": "pit_open",
       "family": "lexical",
       "description": "[lexical] pit open with preference search",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "pit_open_encoded_hyphen_index_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs%2Dcompat/_search/point_in_time?keep_alive=1m",
+      "body": null,
+      "extract": "pit_open",
+      "family": "lexical",
+      "description": "[lexical] open PIT decodes encoded hyphen in index path like OpenSearch",
       "strict_source_parity_required": true
     },
     {
