@@ -4052,7 +4052,17 @@ impl SteelNode {
             return Some(self.handle_cat_thread_pool_route(request, None));
         }
         if let Some(patterns) = request.path.strip_prefix("/_cat/thread_pool/") {
-            return Some(self.handle_cat_thread_pool_route(request, Some(patterns)));
+            return match request.method {
+                RestMethod::Get => Some(self.handle_cat_thread_pool_route(request, Some(patterns))),
+                _ => {
+                    let uri = request_uri_with_query(request);
+                    Some(method_not_allowed_response(
+                        request.method,
+                        uri.as_str(),
+                        "GET",
+                    ))
+                }
+            };
         }
         if request.method == RestMethod::Get
             && request
@@ -33437,6 +33447,23 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert!(thread_pool_text.contains("node_name name active queue rejected"));
         assert!(thread_pool_text.contains("search"));
         assert!(!thread_pool_text.contains("write"));
+
+        let post_thread_pool_target = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/_cat/thread_pool/search?v=true",
+        ));
+        assert_eq!(post_thread_pool_target.status, 405);
+        assert_eq!(
+            post_thread_pool_target
+                .headers
+                .get("allow")
+                .map(String::as_str),
+            Some("GET")
+        );
+        assert_eq!(
+            post_thread_pool_target.body["error"],
+            "Incorrect HTTP method for uri [/_cat/thread_pool/search?v=true] and method [POST], allowed: [GET]"
+        );
     }
 
     #[test]
