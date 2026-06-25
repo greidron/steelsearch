@@ -451,6 +451,13 @@
       "extract": "error_response"
     },
     {
+      "name": "cat_pit_segments_invalid_source_pit_id_error",
+      "area": "operational",
+      "method": "GET",
+      "path": "/_cat/pit_segments?source=%7B%22pit_id%22%3A%22pit-missing%22%7D&source_content_type=json",
+      "extract": "error_response"
+    },
+    {
       "name": "cat_pit_segments_all_lonely_source_content_type_error",
       "area": "operational",
       "method": "GET",

@@ -17130,6 +17130,14 @@ impl SteelNode {
             .pit_contexts
             .lock()
             .expect("pit contexts lock poisoned");
+        for pit_id in &pit_ids {
+            if !pit_search_id_has_local_shape(pit_id) {
+                return delete_pit_invalid_id_response(pit_id);
+            }
+            if !contexts.contains_key(pit_id) {
+                return search_phase_missing_pit_context_response(pit_id);
+            }
+        }
         let mut rows = Vec::new();
         for pit_id in pit_ids {
             let Some(context) = contexts.get(&pit_id) else {
@@ -29380,6 +29388,33 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             pit_all_source.body["error"]["root_cause"][0]["reason"],
             "request [/_cat/pit_segments/_all] contains unrecognized parameters: [source], [source_content_type]"
+        );
+
+        let mut invalid_pit_id_request = RestRequest::new(RestMethod::Get, "/_cat/pit_segments")
+            .with_json_body(serde_json::json!({ "pit_id": "pit-missing" }));
+        invalid_pit_id_request
+            .query_params
+            .insert("format".to_string(), "json".to_string());
+        let invalid_pit_id_response = node.handle_rest_request(invalid_pit_id_request);
+        assert_eq!(invalid_pit_id_response.status, 400);
+        assert_eq!(
+            invalid_pit_id_response.body["error"]["reason"],
+            "invalid id: [pit-missing]"
+        );
+
+        let missing_local_pit_id = build_local_pit_id(999);
+        let mut missing_local_pit_id_request =
+            RestRequest::new(RestMethod::Get, "/_cat/pit_segments")
+                .with_json_body(serde_json::json!({ "pit_id": missing_local_pit_id }));
+        missing_local_pit_id_request
+            .query_params
+            .insert("format".to_string(), "json".to_string());
+        let missing_local_pit_id_response =
+            node.handle_rest_request(missing_local_pit_id_request);
+        assert_eq!(missing_local_pit_id_response.status, 404);
+        assert_eq!(
+            missing_local_pit_id_response.body["error"]["root_cause"][0]["type"],
+            "search_context_missing_exception"
         );
 
         assert_eq!(
