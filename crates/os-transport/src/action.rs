@@ -24944,6 +24944,7 @@ pub enum OpenSearchQueryBuilderWire {
     MatchPhrase(OpenSearchMatchPhraseQueryBuilderWire),
     MatchPhrasePrefix(OpenSearchMatchPhrasePrefixQueryBuilderWire),
     MultiMatch(OpenSearchMultiMatchQueryBuilderWire),
+    Nested(OpenSearchNestedQueryBuilderWire),
     Prefix(OpenSearchPrefixQueryBuilderWire),
     QueryString(OpenSearchQueryStringQueryBuilderWire),
     Range(OpenSearchRangeQueryBuilderWire),
@@ -25021,6 +25022,25 @@ pub struct OpenSearchMultiMatchQueryBuilderWire {
 pub struct OpenSearchMultiMatchFieldBoostWire {
     pub field_name: String,
     pub boost: f32,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct OpenSearchNestedQueryBuilderWire {
+    pub boost: f32,
+    pub query_name: Option<String>,
+    pub path: String,
+    pub score_mode: OpenSearchNestedScoreModeWire,
+    pub query: Box<OpenSearchQueryBuilderWire>,
+    pub ignore_unmapped: bool,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum OpenSearchNestedScoreModeWire {
+    None,
+    Avg,
+    Max,
+    Total,
+    Min,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -25536,6 +25556,16 @@ fn write_named_query_builder(output: &mut StreamOutput, query: &OpenSearchQueryB
             output.write_bool(query.auto_generate_synonyms_phrase_query);
             output.write_bool(query.fuzzy_transpositions);
         }
+        OpenSearchQueryBuilderWire::Nested(query) => {
+            output.write_string("nested");
+            output.write_f32(query.boost);
+            output.write_optional_string(query.query_name.as_deref());
+            output.write_string(&query.path);
+            write_nested_score_mode(output, query.score_mode);
+            write_named_query_builder(output, &query.query);
+            output.write_bool(false); // inner hit builder
+            output.write_bool(query.ignore_unmapped);
+        }
         OpenSearchQueryBuilderWire::Prefix(query) => {
             output.write_string("prefix");
             output.write_f32(query.boost);
@@ -25902,6 +25932,29 @@ fn read_named_query_builder(
                 },
             ))
         }
+        "nested" => {
+            let boost = input.read_f32()?;
+            let query_name = input.read_optional_string()?;
+            let path = input.read_string()?;
+            let score_mode = read_nested_score_mode(input)?;
+            let query = Box::new(read_named_query_builder(input)?);
+            if input.read_bool()? {
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "search request source query nested inner hits",
+                    reason: "NestedQueryBuilder inner hits require inner-hit fetch rendering support",
+                });
+            }
+            Ok(OpenSearchQueryBuilderWire::Nested(
+                OpenSearchNestedQueryBuilderWire {
+                    boost,
+                    query_name,
+                    path,
+                    score_mode,
+                    query,
+                    ignore_unmapped: input.read_bool()?,
+                },
+            ))
+        }
         "prefix" => Ok(OpenSearchQueryBuilderWire::Prefix(
             OpenSearchPrefixQueryBuilderWire {
                 boost: input.read_f32()?,
@@ -26088,7 +26141,7 @@ fn read_named_query_builder(
         )),
         _ => Err(TransportActionWireError::UnsupportedWireShape {
             shape: "search request source query",
-            reason: "only OpenSearch bool, boosting, common, combined_fields, constant_score, dis_max, exists, fuzzy, ids, match_all, match_none, match, match_bool_prefix, match_phrase, match_phrase_prefix, multi_match, prefix, query_string, range, regexp, simple_query_string, term, terms, wildcard, and wrapper QueryBuilder values are decoded by this subset",
+            reason: "only OpenSearch bool, boosting, common, combined_fields, constant_score, dis_max, exists, fuzzy, ids, match_all, match_none, match, match_bool_prefix, match_phrase, match_phrase_prefix, multi_match, nested, prefix, query_string, range, regexp, simple_query_string, term, terms, wildcard, and wrapper QueryBuilder values are decoded by this subset",
         }),
     }
 }
@@ -26440,6 +26493,16 @@ fn validate_query_builder(
                 });
             }
         }
+        OpenSearchQueryBuilderWire::Nested(query) => {
+            validate_query_boost_and_name(query.boost, query.query_name.as_deref())?;
+            if query.path.is_empty() {
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "search request source query",
+                    reason: "OpenSearch NestedQueryBuilder path must be non-empty",
+                });
+            }
+            validate_query_builder(Some(query.query.as_ref()))?;
+        }
         OpenSearchQueryBuilderWire::Prefix(query) => {
             validate_query_boost_and_name(query.boost, query.query_name.as_deref())?;
             if query.field_name.is_empty() {
@@ -26776,6 +26839,32 @@ fn read_multi_match_type(
         _ => Err(TransportActionWireError::UnsupportedWireShape {
             shape: "search request source query",
             reason: "OpenSearch MultiMatchQueryBuilder type ordinal must be in the known 0..=5 range",
+        }),
+    }
+}
+
+fn write_nested_score_mode(output: &mut StreamOutput, mode: OpenSearchNestedScoreModeWire) {
+    output.write_vint(match mode {
+        OpenSearchNestedScoreModeWire::None => 0,
+        OpenSearchNestedScoreModeWire::Avg => 1,
+        OpenSearchNestedScoreModeWire::Max => 2,
+        OpenSearchNestedScoreModeWire::Total => 3,
+        OpenSearchNestedScoreModeWire::Min => 4,
+    });
+}
+
+fn read_nested_score_mode(
+    input: &mut StreamInput,
+) -> Result<OpenSearchNestedScoreModeWire, TransportActionWireError> {
+    match input.read_vint()? {
+        0 => Ok(OpenSearchNestedScoreModeWire::None),
+        1 => Ok(OpenSearchNestedScoreModeWire::Avg),
+        2 => Ok(OpenSearchNestedScoreModeWire::Max),
+        3 => Ok(OpenSearchNestedScoreModeWire::Total),
+        4 => Ok(OpenSearchNestedScoreModeWire::Min),
+        _ => Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "search request source query",
+            reason: "OpenSearch NestedQueryBuilder score mode ordinal is unknown",
         }),
     }
 }
@@ -63455,6 +63544,36 @@ mod tests {
         let decoded = OpenSearchSearchRequestWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, simple_query_string_request);
 
+        let nested_query_request = OpenSearchSearchRequestWire {
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                query: Some(OpenSearchQueryBuilderWire::Nested(
+                    OpenSearchNestedQueryBuilderWire {
+                        boost: 1.0,
+                        query_name: Some("nested-comment".to_string()),
+                        path: "comments".to_string(),
+                        score_mode: OpenSearchNestedScoreModeWire::Max,
+                        query: Box::new(OpenSearchQueryBuilderWire::Term(
+                            OpenSearchTermQueryBuilderWire {
+                                boost: 1.0,
+                                query_name: None,
+                                field_name: "comments.author".to_string(),
+                                value: json!("ann"),
+                                case_insensitive: false,
+                            },
+                        )),
+                        ignore_unmapped: false,
+                    },
+                )),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        let mut output = StreamOutput::new();
+        nested_query_request.write(&mut output);
+
+        let decoded = OpenSearchSearchRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, nested_query_request);
+
         let prefix_query_request = OpenSearchSearchRequestWire {
             source: Some(OpenSearchSearchSourceBuilderWire {
                 query: Some(OpenSearchQueryBuilderWire::Prefix(
@@ -64876,6 +64995,35 @@ mod tests {
             })
         ));
 
+        let invalid_nested_path = OpenSearchSearchRequestWire {
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                query: Some(OpenSearchQueryBuilderWire::Nested(
+                    OpenSearchNestedQueryBuilderWire {
+                        boost: 1.0,
+                        query_name: None,
+                        path: String::new(),
+                        score_mode: OpenSearchNestedScoreModeWire::Avg,
+                        query: Box::new(OpenSearchQueryBuilderWire::MatchAll(
+                            OpenSearchMatchAllQueryBuilderWire {
+                                boost: 1.0,
+                                query_name: None,
+                            },
+                        )),
+                        ignore_unmapped: false,
+                    },
+                )),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        assert!(matches!(
+            invalid_nested_path.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source query",
+                ..
+            })
+        ));
+
         let mut multi_match_with_unknown_type = StreamOutput::new();
         multi_match_with_unknown_type.write_bool(true);
         multi_match_with_unknown_type.write_string("multi_match");
@@ -64925,6 +65073,23 @@ mod tests {
         assert!(matches!(
             read_optional_query_builder(&mut StreamInput::new(
                 query_string_with_unknown_type.freeze()
+            )),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source query",
+                ..
+            })
+        ));
+
+        let mut nested_with_unknown_score_mode = StreamOutput::new();
+        nested_with_unknown_score_mode.write_bool(true);
+        nested_with_unknown_score_mode.write_string("nested");
+        nested_with_unknown_score_mode.write_f32(1.0);
+        nested_with_unknown_score_mode.write_optional_string(None);
+        nested_with_unknown_score_mode.write_string("comments");
+        nested_with_unknown_score_mode.write_vint(99);
+        assert!(matches!(
+            read_optional_query_builder(&mut StreamInput::new(
+                nested_with_unknown_score_mode.freeze()
             )),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "search request source query",
