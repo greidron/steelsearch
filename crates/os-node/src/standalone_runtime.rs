@@ -10316,6 +10316,21 @@ impl SteelNode {
             Ok(indices) => indices,
             Err(response) => return response,
         };
+        if let Some(closed_index) = resolved_indices
+            .iter()
+            .find(|index_name| self.index_is_closed(index_name))
+        {
+            return RestResponse::json(
+                400,
+                serde_json::json!({
+                    "error": {
+                        "type": "index_closed_exception",
+                        "reason": format!("closed index [{closed_index}]")
+                    },
+                    "status": 400
+                }),
+            );
+        }
         if resolved_indices.is_empty() {
             *self
                 .next_pit_id
@@ -39410,6 +39425,49 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         ));
         assert_eq!(listed_pits.status, 200);
         assert_eq!(listed_pits.body["pits"][0]["keep_alive"], 60000);
+    }
+
+    #[test]
+    fn create_pit_on_closed_index_fails_without_allocating_context() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(RestMethod::Put, "/logs-pit-closed-000001"))
+                .status,
+            200
+        );
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(
+                RestMethod::Post,
+                "/logs-pit-closed-000001/_close",
+            ))
+            .status,
+            200
+        );
+
+        let closed_pit = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/logs-pit-closed-000001/_search/point_in_time?keep_alive=1m",
+        ));
+        assert_eq!(closed_pit.status, 400);
+        assert_eq!(
+            closed_pit.body["error"]["type"],
+            "index_closed_exception"
+        );
+        assert_eq!(
+            closed_pit.body["error"]["reason"],
+            "closed index [logs-pit-closed-000001]"
+        );
+
+        let listed_pits = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_search/point_in_time/_all",
+        ));
+        assert_eq!(listed_pits.status, 200);
+        assert_eq!(listed_pits.body, serde_json::json!({ "pits": [] }));
     }
 
     #[test]
