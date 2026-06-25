@@ -20630,12 +20630,19 @@ fn delete_pit_illegal_argument(reason: impl Into<String>) -> RestResponse {
 }
 
 fn delete_pit_validation_error(reason: &str) -> RestResponse {
+    let reason = format!("Validation Failed: 1: {reason};");
     RestResponse::json(
         400,
         serde_json::json!({
             "error": {
                 "type": "action_request_validation_exception",
-                "reason": format!("Validation Failed: 1: {reason};")
+                "reason": reason,
+                "root_cause": [
+                    {
+                        "type": "action_request_validation_exception",
+                        "reason": reason
+                    }
+                ]
             },
             "status": 400
         }),
@@ -39821,6 +39828,10 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             close_missing_body_pit.body["error"]["type"],
             "action_request_validation_exception"
+        );
+        assert_eq!(
+            close_missing_body_pit.body["error"]["root_cause"][0]["reason"],
+            "Validation Failed: 1: no pit ids specified;"
         );
 
         let malformed_close_pit = node.handle_rest_request(
