@@ -4714,6 +4714,30 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "search_after_non_array_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "sort": [
+          {
+            "ts": {
+              "order": "asc"
+            }
+          }
+        ],
+        "search_after": "2026-04-22T00:00:00Z"
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "ranking",
+      "description": "[ranking] non-array search_after is rejected like OpenSearch",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "search_after_with_from_error_search",
       "area": "search",
       "method": "POST",

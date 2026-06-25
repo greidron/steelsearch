@@ -21091,9 +21091,10 @@ fn validate_search_after_request_body(
         ));
     };
     let Some(after_values) = search_after.as_array() else {
-        return Some(build_unsupported_search_response(
-            "unsupported search option [search_after]",
-        ));
+        return Some(build_parsing_search_response_with_root_cause(&format!(
+            "Unknown key for a {} in [search_after].",
+            opensearch_xcontent_token_name(search_after)
+        )));
     };
     if after_values.is_empty() {
         return Some(build_illegal_argument_search_response_with_root_cause(
@@ -44614,6 +44615,24 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             empty_search_after.body["error"]["root_cause"][0]["reason"],
             "Values must contains at least one value."
+        );
+
+        let non_array_search_after = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-params-*/_search")
+                .with_json_body(serde_json::json!({
+                    "query": { "match_all": {} },
+                    "sort": [{ "tenant": "asc" }],
+                    "search_after": "tenant-a"
+                })),
+        );
+        assert_eq!(non_array_search_after.status, 400);
+        assert_eq!(
+            non_array_search_after.body["error"]["type"],
+            "parsing_exception"
+        );
+        assert_eq!(
+            non_array_search_after.body["error"]["root_cause"][0]["reason"],
+            "Unknown key for a VALUE_STRING in [search_after]."
         );
 
         let search_after_with_from = node.handle_rest_request(
