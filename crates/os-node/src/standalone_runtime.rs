@@ -19267,6 +19267,9 @@ fn value_contains_key(value: &Value, key: &str) -> bool {
 }
 
 fn validate_search_request_body(body: &Value, scroll: bool) -> Option<RestResponse> {
+    if let Some(response) = validate_search_window_bounds(body) {
+        return Some(response);
+    }
     if let Some(response) = validate_search_result_window(body, scroll) {
         return Some(response);
     }
@@ -19439,6 +19442,28 @@ fn validate_search_request_body(body: &Value, scroll: bool) -> Option<RestRespon
         }
     }
     validate_search_query_body(&body["query"])
+}
+
+fn validate_search_window_bounds(body: &Value) -> Option<RestResponse> {
+    if let Some(from) = body
+        .get("from")
+        .and_then(Value::as_i64)
+        .filter(|from| *from < 0)
+    {
+        return Some(build_unsupported_search_response(&format!(
+            "[from] parameter cannot be negative, found [{from}]"
+        )));
+    }
+    if let Some(size) = body
+        .get("size")
+        .and_then(Value::as_i64)
+        .filter(|size| *size < 0)
+    {
+        return Some(build_unsupported_search_response(&format!(
+            "[size] parameter cannot be negative, found [{size}]"
+        )));
+    }
+    None
 }
 
 fn validate_search_result_window(body: &Value, scroll: bool) -> Option<RestResponse> {

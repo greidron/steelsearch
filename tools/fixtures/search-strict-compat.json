@@ -4682,6 +4682,40 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "negative_from_body_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "from": -1
+      },
+      "expected_status": 400,
+      "extract": "search_error",
+      "family": "ranking",
+      "description": "[ranking] body from cannot be negative",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "negative_size_body_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "size": -1
+      },
+      "expected_status": 400,
+      "extract": "search_error",
+      "family": "ranking",
+      "description": "[ranking] body size cannot be negative",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "track_total_hits_threshold_search",
       "area": "search",
       "method": "POST",
