@@ -41387,6 +41387,81 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
     }
 
     #[test]
+    fn point_in_time_searches_allow_concurrent_keep_alive_extensions_like_opensearch() {
+        let node = std::sync::Arc::new(SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        }));
+
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(RestMethod::Put, "/logs-pit-concurrent"))
+                .status,
+            200
+        );
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, "/logs-pit-concurrent/_doc/doc-1")
+                    .with_json_body(serde_json::json!({ "message": "value" })),
+            )
+            .status,
+            201
+        );
+
+        let open_pit = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/logs-pit-concurrent/_search/point_in_time?keep_alive=1m",
+        ));
+        assert_eq!(open_pit.status, 200);
+        let pit_id = open_pit.body["pit_id"].as_str().unwrap().to_string();
+
+        let workers = 5;
+        let barrier = std::sync::Arc::new(std::sync::Barrier::new(workers));
+        let mut handles = Vec::new();
+        for _ in 0..workers {
+            let node = node.clone();
+            let pit_id = pit_id.clone();
+            let barrier = barrier.clone();
+            handles.push(std::thread::spawn(move || {
+                barrier.wait();
+                for _ in 0..25 {
+                    let search = node.handle_rest_request(
+                        RestRequest::new(RestMethod::Post, "/_search")
+                            .with_json_body(serde_json::json!({
+                                "pit": {
+                                    "id": pit_id,
+                                    "keep_alive": "1d"
+                                },
+                                "size": 2,
+                                "query": { "match_all": {} }
+                            })),
+                    );
+                    assert_eq!(search.status, 200);
+                    assert_eq!(search.body["hits"]["total"]["value"], 1);
+                    assert_eq!(search.body["pit_id"], pit_id);
+                }
+            }));
+        }
+        for handle in handles {
+            handle.join().expect("PIT search worker panicked");
+        }
+
+        let list_pits =
+            node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_search/point_in_time/_all"));
+        assert_eq!(list_pits.status, 200);
+        assert_eq!(list_pits.body["pits"].as_array().unwrap().len(), 1);
+        assert_eq!(list_pits.body["pits"][0]["pit_id"], pit_id);
+        assert_eq!(
+            list_pits.body["pits"][0]["keep_alive"],
+            DEFAULT_MAX_PIT_KEEP_ALIVE_MILLIS
+        );
+
+        let delete_all_pits = node
+            .handle_rest_request(RestRequest::new(RestMethod::Delete, "/_search/point_in_time/_all"));
+        assert_eq!(delete_all_pits.status, 200);
+        assert_eq!(delete_all_pits.body["pits"].as_array().unwrap().len(), 1);
+    }
+
+    #[test]
     fn point_in_time_short_keep_alive_uses_reaper_grace_like_opensearch() {
         assert_eq!(
             pit_expires_at_millis(1_000, 1),
