@@ -413,6 +413,22 @@
       }
     },
     {
+      "name": "cleanup_snapshot_repository_repeated_idempotent",
+      "method": "POST",
+      "path": "/_snapshot/repo-compat/_cleanup",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "results.deleted_bytes",
+          "results.deleted_blobs"
+        ],
+        "body_paths_equal": [
+          "results.deleted_bytes",
+          "results.deleted_blobs"
+        ]
+      }
+    },
+    {
       "name": "cleanup_missing_snapshot_repository_failure",
       "method": "POST",
       "path": "/_snapshot/repo-missing/_cleanup",
@@ -443,6 +459,54 @@
           "status"
         ],
         "body_paths_equal": [
+          "status"
+        ]
+      }
+    },
+    {
+      "name": "create_snapshot_for_repeated_delete",
+      "method": "PUT",
+      "path": "/_snapshot/repo-compat/snapshot-delete-repeat",
+      "body": {
+        "indices": "logs-compat",
+        "include_global_state": false
+      },
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "accepted"
+        ],
+        "body_paths_equal": [
+          "accepted"
+        ]
+      }
+    },
+    {
+      "name": "delete_snapshot_repeated_first_delete",
+      "method": "DELETE",
+      "path": "/_snapshot/repo-compat/snapshot-delete-repeat",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "acknowledged"
+        ],
+        "body_paths_equal": [
+          "acknowledged"
+        ]
+      }
+    },
+    {
+      "name": "delete_snapshot_repeated_second_missing",
+      "method": "DELETE",
+      "path": "/_snapshot/repo-compat/snapshot-delete-repeat",
+      "compare": {
+        "expected_status": 404,
+        "body_paths_present": [
+          "error.type",
+          "status"
+        ],
+        "body_paths_equal": [
+          "error.type",
           "status"
         ]
       }
