@@ -2333,8 +2333,9 @@ The create-PIT boundary covers:
   wildcard expansion, and hidden wildcard expansion;
 - create-PIT `preference` and `allow_partial_pit_creation` wire/runtime
   admission for the local all-success shard subset;
-- explicit runtime rejection for non-positive keep-alive values and wire
-  rejection for unknown keep-alive units.
+- REST and local transport create-PIT normalize non-positive keep-alive values
+  to the OpenSearch-compatible 30s local keep-alive value, while wire decoding
+  still rejects unknown keep-alive units.
 
 The indices-stats boundary covers:
 
