@@ -21840,7 +21840,10 @@ fn validate_slice_request_body(
         .get("field")
         .is_some_and(|field| !field.as_str().is_some_and(|value| !value.is_empty()))
     {
-        return Some(slice_illegal_argument("field name is null or empty"));
+        return Some(slice_x_content_parse_error_with_cause(
+            "field",
+            "field name is null or empty",
+        ));
     }
     let Some(id) = object.get("id").and_then(Value::as_i64) else {
         return Some(build_unsupported_search_response(
@@ -21848,7 +21851,10 @@ fn validate_slice_request_body(
         ));
     };
     if id < 0 {
-        return Some(slice_illegal_argument("id must be greater than or equal to 0"));
+        return Some(slice_x_content_parse_error_with_cause(
+            "id",
+            "id must be greater than or equal to 0",
+        ));
     }
     let Some(max) = object.get("max").and_then(Value::as_i64) else {
         return Some(build_unsupported_search_response(
@@ -21856,7 +21862,10 @@ fn validate_slice_request_body(
         ));
     };
     if max <= 1 {
-        return Some(slice_illegal_argument("max must be greater than 1"));
+        return Some(slice_x_content_parse_error_with_cause(
+            "max",
+            "max must be greater than 1",
+        ));
     }
     if id >= max {
         return Some(slice_x_content_parse_error_with_cause(
@@ -21887,12 +21896,6 @@ fn validate_slice_request_body(
     None
 }
 
-fn slice_x_content_parse_error(field: &str) -> RestResponse {
-    build_x_content_parse_search_response(&format!(
-        "[1:56] [slice] failed to parse field [{field}]"
-    ))
-}
-
 fn slice_x_content_parse_error_with_cause(field: &str, cause: &str) -> RestResponse {
     RestResponse::json(
         400,
@@ -21904,19 +21907,6 @@ fn slice_x_content_parse_error_with_cause(field: &str, cause: &str) -> RestRespo
                     "type": "illegal_argument_exception",
                     "reason": cause
                 }
-            },
-            "status": 400
-        }),
-    )
-}
-
-fn slice_illegal_argument(reason: &str) -> RestResponse {
-    RestResponse::json(
-        400,
-        serde_json::json!({
-            "error": {
-                "type": "illegal_argument_exception",
-                "reason": reason
             },
             "status": 400
         }),
@@ -45559,6 +45549,51 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             invalid_slice_body.body["error"]["caused_by"]["reason"],
             "max must be greater than id"
         );
+
+        for (name, slice, field, cause) in [
+            (
+                "empty-field",
+                serde_json::json!({ "field": "", "id": 0, "max": 2 }),
+                "field",
+                "field name is null or empty",
+            ),
+            (
+                "negative-id",
+                serde_json::json!({ "id": -1, "max": 2 }),
+                "id",
+                "id must be greater than or equal to 0",
+            ),
+            (
+                "max-too-small",
+                serde_json::json!({ "id": 0, "max": 1 }),
+                "max",
+                "max must be greater than 1",
+            ),
+        ] {
+            let invalid_slice = node.handle_rest_request(
+                RestRequest::new(RestMethod::Post, "/logs-search-params-a/_search?scroll=1m")
+                    .with_json_body(serde_json::json!({
+                        "query": { "match_all": {} },
+                        "slice": slice
+                    })),
+            );
+            assert_eq!(invalid_slice.status, 400, "{name}");
+            assert_eq!(
+                invalid_slice.body["error"]["type"],
+                "x_content_parse_exception",
+                "{name}"
+            );
+            assert_eq!(
+                invalid_slice.body["error"]["reason"],
+                format!("[1:56] [slice] failed to parse field [{field}]"),
+                "{name}"
+            );
+            assert_eq!(
+                invalid_slice.body["error"]["caused_by"]["reason"],
+                cause,
+                "{name}"
+            );
+        }
 
         let oversized_scroll_slice = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/logs-search-params-a/_search?scroll=1m")
