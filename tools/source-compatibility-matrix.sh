@@ -61,6 +61,13 @@ route_status() {
   fi
 
   case "${method} ${path}" in
+    "GET /_cluster/allocation/explain"|"POST /_cluster/allocation/explain"|"GET /_cluster/pending_tasks"|"GET /_cluster/stats"|"GET /_cluster/stats/nodes/{nodeId}"|"GET /_cluster/stats/{metric}/nodes/{nodeId}"|"GET /_cluster/stats/{metric}/{index_metric}/nodes/{nodeId}"|"GET /_tasks"|"GET /_tasks/{task_id}"|"POST /_tasks/_cancel"|"POST /_tasks/{task_id}/_cancel"|"GET /_remote/info"|"GET /_cat/nodes"|"GET /_cat/pending_tasks"|"GET /_cat/thread_pool"|"GET /_cat/thread_pool/{thread_pool_patterns}")
+      echo "implemented"
+      return
+      ;;
+  esac
+
+  case "${method} ${path}" in
     "GET /"|"HEAD /")
       echo "implemented"
       ;;
