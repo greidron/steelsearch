@@ -36691,6 +36691,35 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
     }
 
     #[test]
+    fn head_index_route_serves_bodyless_exact_wildcard_and_missing_existence() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(RestMethod::Put, "/logs-head-index-000001"))
+                .status,
+            200
+        );
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(RestMethod::Put, "/logs-head-index-000002"))
+                .status,
+            200
+        );
+
+        for (path, expected_status) in [
+            ("/logs-head-index-000001", 200),
+            ("/logs-head-index-*", 200),
+            ("/missing-head-index-000001", 404),
+        ] {
+            let response = node.handle_rest_request(RestRequest::new(RestMethod::Head, path));
+            assert_eq!(response.status, expected_status, "path {path}");
+            assert!(response.body.is_null(), "path {path}");
+        }
+    }
+
+    #[test]
     fn delete_by_query_route_surfaces_matched_unmatched_and_repeated_delete_semantics() {
         let node = SteelNode::new(NodeInfo {
             name: "steel-node".to_string(),
