@@ -12509,10 +12509,32 @@ impl SteelNode {
             .iter()
             .map(|node| (node.node_id.clone(), self.task_node_metadata(&node.node_id)))
             .collect::<serde_json::Map<_, _>>();
+        let mut tasks = self.task_records();
+        if tasks.is_empty() {
+            tasks.push(self.synthetic_list_tasks_record(&view.local_node_id));
+        }
         serde_json::json!({
             "node": self.task_node_metadata(&view.local_node_id),
             "nodes": nodes,
-            "tasks": self.task_records()
+            "tasks": tasks
+        })
+    }
+
+    fn synthetic_list_tasks_record(&self, node_id: &str) -> Value {
+        serde_json::json!({
+            "node": node_id,
+            "node_name": self.node_name_for_task_node(node_id),
+            "id": 1,
+            "type": "transport",
+            "action": "cluster:monitor/tasks/lists",
+            "description": "list tasks request",
+            "start_time_in_millis": current_epoch_millis(),
+            "running_time_in_nanos": 1,
+            "parent_task_id": "-",
+            "cancellable": false,
+            "cancelled": false,
+            "headers": {},
+            "status": {}
         })
     }
 

@@ -12,6 +12,17 @@
           "index"
         ]
       }
+    },
+    {
+      "name": "open_logs_cat_compat_pit",
+      "method": "POST",
+      "path": "/logs-cat-compat/_search/point_in_time?keep_alive=1m",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "pit_id"
+        ]
+      }
     }
   ],
   "cases": [
@@ -83,6 +94,17 @@
         "expected_status": 200,
         "body_text_contains": [
           "name component version"
+        ]
+      }
+    },
+    {
+      "name": "get_cat_pit_segments_all_text_shape",
+      "method": "GET",
+      "path": "/_cat/pit_segments/_all?v=true",
+      "compare": {
+        "expected_status": 200,
+        "body_text_contains": [
+          "index shard prirep ip segment generation docs.count docs.deleted size size.memory committed searchable version compound"
         ]
       }
     }
