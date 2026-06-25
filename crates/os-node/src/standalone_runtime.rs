@@ -25714,6 +25714,63 @@ fn build_search_aggregations(
             result.insert(name.clone(), Value::Object(sampled_value));
             continue;
         }
+        if let Some(diversified_sampler) = aggregation_object
+            .get("diversified_sampler")
+            .and_then(Value::as_object)
+        {
+            let field = diversified_sampler
+                .get("field")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            if field.is_empty() {
+                return Err(build_unsupported_search_response(
+                    "unsupported aggregation option [diversified_sampler.field]",
+                ));
+            }
+            let shard_size = diversified_sampler
+                .get("shard_size")
+                .and_then(Value::as_u64)
+                .unwrap_or(100) as usize;
+            let max_docs_per_value = diversified_sampler
+                .get("max_docs_per_value")
+                .and_then(Value::as_u64)
+                .unwrap_or(1);
+            let mut value_counts = std::collections::BTreeMap::<String, u64>::new();
+            let mut sampled_hits = Vec::new();
+            for hit in hits {
+                if sampled_hits.len() >= shard_size {
+                    break;
+                }
+                let Some(value) = hit
+                    .get("_source")
+                    .and_then(|source| lookup_query_field_value(source, field))
+                    .filter(|value| !value.is_null())
+                else {
+                    continue;
+                };
+                let value_key = aggregation_bucket_sort_key(value);
+                let current_count = value_counts.get(&value_key).copied().unwrap_or(0);
+                if current_count >= max_docs_per_value {
+                    continue;
+                }
+                value_counts.insert(value_key, current_count + 1);
+                sampled_hits.push(hit.clone());
+            }
+            let mut sampled_value = serde_json::Map::new();
+            sampled_value.insert("doc_count".to_string(), Value::from(sampled_hits.len() as u64));
+            let nested_aggs = aggregation_object
+                .get("aggs")
+                .or_else(|| aggregation_object.get("aggregations"));
+            if let Some(nested) = build_search_aggregations(nested_aggs, &sampled_hits, global_hits)? {
+                if let Some(nested_object) = nested.as_object() {
+                    for (nested_name, nested_value) in nested_object {
+                        sampled_value.insert(nested_name.clone(), nested_value.clone());
+                    }
+                }
+            }
+            result.insert(name.clone(), Value::Object(sampled_value));
+            continue;
+        }
         if let Some(terms) = aggregation_object.get("terms").and_then(Value::as_object) {
             let field = terms.get("field").and_then(Value::as_str).unwrap_or_default();
             let mut counts = std::collections::BTreeMap::new();
@@ -42842,6 +42899,41 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(sampler.body["aggregations"]["sampled"]["doc_count"], 2);
         assert_eq!(
             sampler.body["aggregations"]["sampled"]["sampled_services"]["buckets"],
+            serde_json::json!([
+                {
+                    "key": "checkout",
+                    "doc_count": 2
+                }
+            ])
+        );
+
+        let diversified_sampler = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-aggs-000001/_search")
+                .with_json_body(serde_json::json!({
+                    "size": 0,
+                    "aggs": {
+                        "diversified": {
+                            "diversified_sampler": {
+                                "field": "level",
+                                "shard_size": 3,
+                                "max_docs_per_value": 1
+                            },
+                            "aggs": {
+                                "sampled_services": {
+                                    "terms": { "field": "service" }
+                                }
+                            }
+                        }
+                    }
+                })),
+        );
+        assert_eq!(diversified_sampler.status, 200);
+        assert_eq!(
+            diversified_sampler.body["aggregations"]["diversified"]["doc_count"],
+            2
+        );
+        assert_eq!(
+            diversified_sampler.body["aggregations"]["diversified"]["sampled_services"]["buckets"],
             serde_json::json!([
                 {
                     "key": "checkout",
