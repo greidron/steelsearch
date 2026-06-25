@@ -4061,6 +4061,54 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "collapse_with_scroll_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search?scroll=1m",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "collapse": {
+          "field": "service"
+        }
+      },
+      "expected_status": 500,
+      "extract": "search_error_root_cause",
+      "family": "ranking",
+      "description": "[ranking] collapse with scroll is rejected",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "collapse_with_rescore_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "collapse": {
+          "field": "service"
+        },
+        "rescore": {
+          "window_size": 2,
+          "query": {
+            "rescore_query": {
+              "match": {
+                "message": "timeout"
+              }
+            }
+          }
+        }
+      },
+      "expected_status": 500,
+      "extract": "search_error_root_cause",
+      "family": "ranking",
+      "description": "[ranking] collapse with rescore is rejected",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "match_query_scoring_order_total_hits",
       "area": "search",
       "method": "POST",
@@ -4238,6 +4286,46 @@
       "extract": "search_error_root_cause",
       "family": "ranking",
       "description": "[ranking] search_after with scroll is rejected",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "slice_without_scroll_or_pit_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "slice": {
+          "id": 0,
+          "max": 2
+        }
+      },
+      "expected_status": 500,
+      "extract": "search_error_root_cause",
+      "family": "ranking",
+      "description": "[ranking] slice without scroll or PIT is rejected",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "slice_invalid_id_max_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search?scroll=1m",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "slice": {
+          "id": 2,
+          "max": 2
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error",
+      "family": "ranking",
+      "description": "[ranking] slice id must be less than max",
       "strict_source_parity_required": true
     },
     {

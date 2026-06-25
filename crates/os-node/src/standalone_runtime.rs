@@ -20974,14 +20974,20 @@ fn validate_slice_request_body(
         return Some(slice_illegal_argument("max must be greater than 1"));
     }
     if id >= max {
-        return Some(slice_illegal_argument("max must be greater than id"));
+        return Some(slice_x_content_parse_error("max"));
     }
     if !scroll && !point_in_time {
-        return Some(search_phase_illegal_argument(
+        return Some(search_after_phase_execution_error(
             "`slice` cannot be used outside of a scroll context or PIT context",
         ));
     }
     None
+}
+
+fn slice_x_content_parse_error(field: &str) -> RestResponse {
+    build_x_content_parse_search_response(&format!(
+        "[1:56] [slice] failed to parse field [{field}]"
+    ))
 }
 
 fn slice_illegal_argument(reason: &str) -> RestResponse {
@@ -43216,7 +43222,11 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                     "slice": { "id": 0, "max": 2 }
                 })),
         );
-        assert_eq!(sliced_without_scroll_or_pit.status, 400);
+        assert_eq!(sliced_without_scroll_or_pit.status, 500);
+        assert_eq!(
+            sliced_without_scroll_or_pit.body["error"]["root_cause"][0]["type"],
+            "search_exception"
+        );
         assert_eq!(
             sliced_without_scroll_or_pit.body["error"]["root_cause"][0]["reason"],
             "`slice` cannot be used outside of a scroll context or PIT context"
@@ -43231,8 +43241,12 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         );
         assert_eq!(invalid_slice_body.status, 400);
         assert_eq!(
+            invalid_slice_body.body["error"]["type"],
+            "x_content_parse_exception"
+        );
+        assert_eq!(
             invalid_slice_body.body["error"]["reason"],
-            "max must be greater than id"
+            "[1:56] [slice] failed to parse field [max]"
         );
 
         let open_search_params_pit = node.handle_rest_request(RestRequest::new(
