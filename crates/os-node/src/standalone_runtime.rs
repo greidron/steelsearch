@@ -10161,12 +10161,21 @@ impl SteelNode {
             );
         };
         let Some(keep_alive_millis) = parse_time_value_millis(keep_alive) else {
+            let reason = format!(
+                "failed to parse setting [keep_alive] with value [{keep_alive}] as a time value: unit is missing or unrecognized"
+            );
             return RestResponse::json(
                 400,
                 serde_json::json!({
                     "error": {
                         "type": "illegal_argument_exception",
-                        "reason": format!("failed to parse setting [keep_alive] with value [{keep_alive}] as a time value")
+                        "reason": reason,
+                        "root_cause": [
+                            {
+                                "type": "illegal_argument_exception",
+                                "reason": reason
+                            }
+                        ]
                     },
                     "status": 400
                 }),
@@ -38940,6 +38949,20 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             missing_keep_alive_pit.body["error"]["root_cause"][0]["reason"],
             "Validation Failed: 1: keep alive not specified;"
+        );
+
+        let invalid_open_pit_keep_alive = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/logs-session-000001/_search/point_in_time?keep_alive=not-a-duration",
+        ));
+        assert_eq!(invalid_open_pit_keep_alive.status, 400);
+        assert_eq!(
+            invalid_open_pit_keep_alive.body["error"]["type"],
+            "illegal_argument_exception"
+        );
+        assert_eq!(
+            invalid_open_pit_keep_alive.body["error"]["root_cause"][0]["reason"],
+            "failed to parse setting [keep_alive] with value [not-a-duration] as a time value: unit is missing or unrecognized"
         );
 
         let invalid_allow_partial_pit = node.handle_rest_request(RestRequest::new(
