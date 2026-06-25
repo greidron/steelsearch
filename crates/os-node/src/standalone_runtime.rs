@@ -2446,6 +2446,7 @@ pub struct PitContext {
 }
 
 const DEFAULT_MAX_PIT_KEEP_ALIVE_MILLIS: u64 = 86_400_000;
+const DEFAULT_PIT_NON_POSITIVE_KEEP_ALIVE_MILLIS: u64 = 30_000;
 const DEFAULT_PIT_EXPIRY_REAPER_GRACE_MILLIS: u64 = 60_000;
 
 #[derive(Clone, Debug)]
@@ -9235,13 +9236,11 @@ impl SteelNode {
                         if let Some(response) = validate_pit_keep_alive_limit(millis) {
                             return response;
                         }
-                        Some(millis)
+                        Some(normalize_pit_keep_alive_millis(millis))
                     }
                     None => {
                         let reason = "[1:198] [pit] failed to parse field [keep_alive]";
-                        let caused_by_reason = format!(
-                            "failed to parse setting [keep_alive] with value [{keep_alive}] as a time value: unit is missing or unrecognized"
-                        );
+                        let caused_by_reason = keep_alive_parse_error_reason(keep_alive);
                         return RestResponse::json(
                             400,
                             serde_json::json!({
@@ -10239,10 +10238,8 @@ impl SteelNode {
                 }),
             );
         };
-        let Some(keep_alive_millis) = parse_time_value_millis(keep_alive) else {
-            let reason = format!(
-                "failed to parse setting [keep_alive] with value [{keep_alive}] as a time value: unit is missing or unrecognized"
-            );
+        let Some(parsed_keep_alive_millis) = parse_time_value_millis(keep_alive) else {
+            let reason = keep_alive_parse_error_reason(keep_alive);
             return RestResponse::json(
                 400,
                 serde_json::json!({
@@ -10260,9 +10257,10 @@ impl SteelNode {
                 }),
             );
         };
-        if let Some(response) = validate_pit_keep_alive_limit(keep_alive_millis) {
+        if let Some(response) = validate_pit_keep_alive_limit(parsed_keep_alive_millis) {
             return response;
         }
+        let keep_alive_millis = normalize_pit_keep_alive_millis(parsed_keep_alive_millis);
         let ignore_unavailable = query_param_is_true(request.query_params.get("ignore_unavailable"));
         let allow_no_indices = query_param_is_true(request.query_params.get("allow_no_indices"));
         let expand_wildcards = request
@@ -22706,14 +22704,35 @@ fn parse_time_value_millis(value: &str) -> Option<u64> {
     let (number, multiplier) = units
         .iter()
         .find_map(|(suffix, multiplier)| trimmed.strip_suffix(suffix).map(|number| (number, *multiplier)))?;
-    let amount = number.parse::<u64>().ok()?;
-    if amount == 0 {
-        return None;
+    let amount = number.parse::<i128>().ok()?;
+    if amount <= 0 {
+        return Some(0);
     }
     if multiplier == 0 {
         return Some(1);
     }
-    amount.checked_mul(multiplier)
+    u64::try_from(amount)
+        .ok()
+        .and_then(|amount| amount.checked_mul(multiplier))
+}
+
+fn keep_alive_parse_error_reason(value: &str) -> String {
+    if time_value_has_fractional_number(value) {
+        format!("failed to parse [{value}], fractional time values are not supported")
+    } else {
+        format!(
+            "failed to parse setting [keep_alive] with value [{value}] as a time value: unit is missing or unrecognized"
+        )
+    }
+}
+
+fn time_value_has_fractional_number(value: &str) -> bool {
+    let trimmed = value.trim();
+    let units = ["micros", "nanos", "ms", "s", "m", "h", "d"];
+    units
+        .iter()
+        .find_map(|suffix| trimmed.strip_suffix(suffix))
+        .is_some_and(|number| number.contains('.'))
 }
 
 fn validate_pit_keep_alive_limit(keep_alive_millis: u64) -> Option<RestResponse> {
@@ -22734,6 +22753,14 @@ fn validate_pit_keep_alive_limit(keep_alive_millis: u64) -> Option<RestResponse>
             "status": 400
         }),
     ))
+}
+
+fn normalize_pit_keep_alive_millis(keep_alive_millis: u64) -> u64 {
+    if keep_alive_millis == 0 {
+        DEFAULT_PIT_NON_POSITIVE_KEEP_ALIVE_MILLIS
+    } else {
+        keep_alive_millis
+    }
 }
 
 fn pit_expires_at_millis(now_millis: u128, keep_alive_millis: u64) -> u128 {
@@ -39206,6 +39233,58 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         ));
         assert_eq!(blank_ignore_unavailable_pit.status, 200);
         assert_eq!(blank_ignore_unavailable_pit.body["pit_id"], "pit-2");
+    }
+
+    #[test]
+    fn create_pit_parses_zero_negative_and_fractional_keep_alive_like_opensearch() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(RestMethod::Put, "/logs-pit-keep-alive"))
+                .status,
+            200
+        );
+
+        let zero_keep_alive_pit = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/logs-pit-keep-alive/_search/point_in_time?keep_alive=0ms",
+        ));
+        assert_eq!(zero_keep_alive_pit.status, 200);
+        assert_eq!(zero_keep_alive_pit.body["pit_id"], "pit-1");
+        assert_eq!(zero_keep_alive_pit.body["_shards"]["successful"], 1);
+
+        let negative_keep_alive_pit = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/logs-pit-keep-alive/_search/point_in_time?keep_alive=-1ms",
+        ));
+        assert_eq!(negative_keep_alive_pit.status, 200);
+        assert_eq!(negative_keep_alive_pit.body["pit_id"], "pit-2");
+        assert_eq!(negative_keep_alive_pit.body["_shards"]["successful"], 1);
+
+        let listed_pits = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_search/point_in_time/_all",
+        ));
+        assert_eq!(listed_pits.status, 200);
+        assert_eq!(listed_pits.body["pits"][0]["keep_alive"], 30000);
+        assert_eq!(listed_pits.body["pits"][1]["keep_alive"], 30000);
+
+        let fractional_keep_alive_pit = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/logs-pit-keep-alive/_search/point_in_time?keep_alive=1.5s",
+        ));
+        assert_eq!(fractional_keep_alive_pit.status, 400);
+        assert_eq!(
+            fractional_keep_alive_pit.body["error"]["type"],
+            "illegal_argument_exception"
+        );
+        assert_eq!(
+            fractional_keep_alive_pit.body["error"]["root_cause"][0]["reason"],
+            "failed to parse [1.5s], fractional time values are not supported"
+        );
     }
 
     #[test]

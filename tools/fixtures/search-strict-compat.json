@@ -2577,6 +2577,40 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "pit_open_zero_keep_alive_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search/point_in_time?keep_alive=0ms",
+      "body": null,
+      "extract": "pit_open",
+      "family": "lexical",
+      "description": "[lexical] create PIT accepts zero keep_alive like OpenSearch",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "pit_open_negative_keep_alive_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search/point_in_time?keep_alive=-1ms",
+      "body": null,
+      "extract": "pit_open",
+      "family": "lexical",
+      "description": "[lexical] create PIT accepts negative keep_alive like OpenSearch",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "pit_open_fractional_keep_alive_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search/point_in_time?keep_alive=1.5s",
+      "body": null,
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] create PIT reports fractional keep_alive parse errors like OpenSearch",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "pit_open_with_preference_search",
       "area": "search",
       "method": "POST",
