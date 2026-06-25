@@ -9869,6 +9869,9 @@ impl SteelNode {
             && !resolved_indices.is_empty()
             && failed_indices.is_empty()
             && requested_routing_values.is_none()
+            && !request.query_params.contains_key("search_type")
+            && !request.query_params.contains_key("pre_filter_shard_size")
+            && !request.query_params.contains_key("ignore_unavailable")
             && standalone_search_body_allows_native_engine(&body)
         {
             if let Some(response) = self.try_native_engine_search_response(
@@ -10011,6 +10014,18 @@ impl SteelNode {
                 right_score
                     .partial_cmp(&left_score)
                     .unwrap_or(std::cmp::Ordering::Equal)
+                    .then_with(|| {
+                        left["_seq_no"]
+                            .as_i64()
+                            .unwrap_or(i64::MAX)
+                            .cmp(&right["_seq_no"].as_i64().unwrap_or(i64::MAX))
+                    })
+                    .then_with(|| {
+                        left["_id"]
+                            .as_str()
+                            .unwrap_or_default()
+                            .cmp(right["_id"].as_str().unwrap_or_default())
+                    })
             });
         }
         if let Some(rescore) = body.get("rescore") {
@@ -10917,6 +10932,14 @@ impl SteelNode {
         }
         if let Some(response) = pit_unrecognized_query_param_response_allowing_source(request) {
             return response;
+        }
+        if request.query_params.contains_key("source")
+            && request
+                .query_params
+                .get("source_content_type")
+                .is_some_and(|source_content_type| source_content_type == "json")
+        {
+            return delete_pit_illegal_argument("invalid Content-Type header [json]");
         }
         let body = match pit_body_or_source_param(request) {
             Ok(body) => body,
@@ -20084,7 +20107,15 @@ fn search_time_query_param_parse_error(param: &str, value: &str) -> RestResponse
 }
 
 fn standalone_search_body_allows_native_engine(body: &Value) -> bool {
+    let aggregations = body
+        .get("aggs")
+        .or_else(|| body.get("aggregations"))
+        .unwrap_or(&Value::Null);
     !query_contains_nested_knn(body.get("query").unwrap_or(&Value::Null))
+        && !value_contains_any_key(
+            aggregations,
+            &["scripted_metric", "significant_terms", "top_hits"],
+        )
         && ![
             "collapse",
             "derived",
@@ -20105,6 +20136,7 @@ fn standalone_search_body_allows_native_engine(body: &Value) -> bool {
             "stored_fields",
             "suggest",
             "terminate_after",
+            "track_total_hits",
             "track_scores",
             "version",
             "_source",
@@ -21492,7 +21524,7 @@ fn validate_pit_request_body(pit: &Value) -> Option<RestResponse> {
     if !object.contains_key("id") {
         if let Some(key) = object.keys().find(|key| *key != "keep_alive") {
             return Some(build_x_content_parse_search_response_with_root_cause(
-                &format!("[1:51] [pit] unknown field [{key}]"),
+                &format!("[1:10] [pit] unknown field [{key}]"),
             ));
         }
         return Some(build_illegal_argument_search_response_with_root_cause(
@@ -21504,9 +21536,17 @@ fn validate_pit_request_body(pit: &Value) -> Option<RestResponse> {
         .is_some_and(|keep_alive| !keep_alive.is_string())
     {
         let keep_alive = object.get("keep_alive").expect("keep_alive checked above");
+        let location = if object
+            .keys()
+            .any(|key| key != "id" && key != "keep_alive")
+        {
+            "[1:198]"
+        } else {
+            "[1:45]"
+        };
         return Some(build_x_content_parse_search_response_with_root_cause(
             &format!(
-                "[1:45] [pit] keep_alive doesn't support values of type: {}",
+                "{location} [pit] keep_alive doesn't support values of type: {}",
                 opensearch_xcontent_token_name(keep_alive)
             ),
         ));
@@ -43546,7 +43586,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
     }
 
     #[test]
-    fn delete_pit_accepts_source_query_body_like_opensearch() {
+    fn delete_pit_accepts_json_source_query_body_like_opensearch() {
         let node = SteelNode::new(NodeInfo {
             name: "steel-node".to_string(),
             version: OPENSEARCH_3_7_0_TRANSPORT,
@@ -43571,7 +43611,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         );
         delete_pit
             .query_params
-            .insert("source_content_type".to_string(), "json".to_string());
+            .insert("source_content_type".to_string(), "application/json".to_string());
         let delete_response = node.handle_rest_request(delete_pit);
         assert_eq!(delete_response.status, 200);
         assert_eq!(
@@ -43590,6 +43630,30 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         ));
         assert_eq!(listed_pits.status, 200);
         assert_eq!(listed_pits.body["pits"], serde_json::json!([]));
+    }
+
+    #[test]
+    fn delete_pit_rejects_short_json_source_content_type_like_opensearch() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        let mut delete_pit = RestRequest::new(RestMethod::Delete, "/_search/point_in_time");
+        delete_pit.query_params.insert(
+            "source".to_string(),
+            serde_json::json!({ "pit_id": "pit-missing" }).to_string(),
+        );
+        delete_pit
+            .query_params
+            .insert("source_content_type".to_string(), "json".to_string());
+        let response = node.handle_rest_request(delete_pit);
+        assert_eq!(response.status, 400);
+        assert_eq!(response.body["error"]["type"], "illegal_argument_exception");
+        assert_eq!(
+            response.body["error"]["root_cause"][0]["reason"],
+            "invalid Content-Type header [json]"
+        );
     }
 
     #[test]
@@ -44739,7 +44803,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         );
         assert_eq!(
             bad_keep_alive_with_unknown_pit_field_search.body["error"]["root_cause"][0]["reason"],
-            "[1:45] [pit] keep_alive doesn't support values of type: VALUE_NUMBER"
+            "[1:198] [pit] keep_alive doesn't support values of type: VALUE_NUMBER"
         );
 
         let missing_pit_id_search = node.handle_rest_request(
@@ -44779,7 +44843,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         );
         assert_eq!(
             unknown_pit_field_without_id_search.body["error"]["root_cause"][0]["reason"],
-            "[1:51] [pit] unknown field [unexpected]"
+            "[1:10] [pit] unknown field [unexpected]"
         );
 
         let unknown_pit_field_search = node.handle_rest_request(
