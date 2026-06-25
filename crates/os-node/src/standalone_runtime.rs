@@ -11659,6 +11659,9 @@ impl SteelNode {
     }
 
     fn handle_tasks_list_route(&self, request: &RestRequest) -> RestResponse {
+        if let Some(group_by) = invalid_tasks_group_by(request.query_params.get("group_by")) {
+            return invalid_tasks_group_by_response(group_by);
+        }
         let body = self.tasks_body();
         let response = match request.query_params.get("group_by").map(String::as_str) {
             Some("nodes") | None => tasks_route_registration::invoke_tasks_list_live_route(&body),
@@ -11666,12 +11669,15 @@ impl SteelNode {
                 tasks_route_registration::invoke_tasks_list_by_parent_live_route(&body)
             }
             Some("none") => tasks_route_registration::invoke_tasks_list_flat_live_route(&body),
-            Some(group_by) => return invalid_tasks_group_by_response(group_by),
+            Some(_) => unreachable!("invalid task group_by is rejected before response shaping"),
         };
         RestResponse::json(200, response)
     }
 
     fn handle_tasks_cancel_route(&self, request: &RestRequest) -> RestResponse {
+        if let Some(group_by) = invalid_tasks_group_by(request.query_params.get("group_by")) {
+            return invalid_tasks_group_by_response(group_by);
+        }
         if let Some(parent_task_id) = request.query_params.get("parent_task_id") {
             let tasks = self.tasks_matching_parent_task_id(parent_task_id);
             if tasks.is_empty() {
@@ -20036,6 +20042,13 @@ fn invalid_tasks_group_by_response(group_by: &str) -> RestResponse {
             "status": 400
         }),
     )
+}
+
+fn invalid_tasks_group_by(group_by: Option<&String>) -> Option<&str> {
+    match group_by.map(String::as_str) {
+        Some("nodes") | Some("parents") | Some("none") | None => None,
+        Some(group_by) => Some(group_by),
+    }
 }
 
 fn validate_doc_write_occ_query_params(request: &RestRequest) -> Option<(Option<i64>, Option<i64>)> {
@@ -30848,6 +30861,26 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         let response = node.handle_rest_request(RestRequest::new(
             RestMethod::Get,
             "/_tasks?group_by=bogus",
+        ));
+
+        assert_eq!(response.status, 400);
+        assert_eq!(response.body["error"]["type"], "illegal_argument_exception");
+        assert_eq!(
+            response.body["error"]["reason"],
+            "[group_by] must be one of [nodes], [parents] or [none] but was [bogus]"
+        );
+    }
+
+    #[test]
+    fn tasks_cancel_rejects_invalid_group_by_like_opensearch() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        let response = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/_tasks/_cancel?task_id=node-a:999&group_by=bogus",
         ));
 
         assert_eq!(response.status, 400);

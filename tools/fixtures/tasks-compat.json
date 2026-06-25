@@ -74,6 +74,19 @@
         ],
         "body_paths_equal": []
       }
+    },
+    {
+      "name": "reject_tasks_cancel_invalid_group_by",
+      "method": "POST",
+      "path": "/_tasks/_cancel?task_id=node-a:999&group_by=bogus",
+      "compare": {
+        "expected_status": 400,
+        "body_paths_present": [
+          "error.type",
+          "error.reason",
+          "status"
+        ]
+      }
     }
   ]
 }
