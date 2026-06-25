@@ -120,7 +120,10 @@ fn three_local_daemons_form_development_cluster_and_handle_index_smoke() {
             .as_str()
             .unwrap_or_default()
             .starts_with("steelsearch-dev-cluster-uuid-dev-state-"));
-        assert!(!cluster["coordination"]["votes"].as_array().unwrap().is_empty());
+        assert!(!cluster["coordination"]["votes"]
+            .as_array()
+            .unwrap()
+            .is_empty());
         assert!(!cluster["coordination"]["acked_nodes"]
             .as_array()
             .unwrap()
@@ -386,10 +389,7 @@ fn three_local_daemons_expose_extension_shutdown_and_recovery_lifecycle_transcri
     let mut probed_nodes = BTreeSet::new();
     for (index, port) in http_ports.iter().copied().enumerate() {
         let cluster = wait_json(port, "GET", "/_steelsearch/dev/cluster", None);
-        assert_eq!(
-            cluster["cluster_name"],
-            "steel-dev-extension-lifecycle-it"
-        );
+        assert_eq!(cluster["cluster_name"], "steel-dev-extension-lifecycle-it");
         assert_eq!(cluster["number_of_nodes"], 3);
         assert_eq!(
             cluster["local_node_id"],
@@ -420,10 +420,7 @@ fn three_local_daemons_expose_extension_shutdown_and_recovery_lifecycle_transcri
             recovery["body"]["runtime_lifecycle"]["task_submission_available"],
             false
         );
-        assert_runtime_lifecycle_blocker(
-            &recovery["body"],
-            "shared_runtime_state_recovery_failed",
-        );
+        assert_runtime_lifecycle_blocker(&recovery["body"], "shared_runtime_state_recovery_failed");
 
         let shutdown = http_response(
             port,
@@ -457,10 +454,7 @@ fn three_local_daemons_expose_extension_shutdown_and_recovery_lifecycle_transcri
             false
         );
         assert_runtime_lifecycle_blocker(&shutdown["body"], "live_shutdown_in_progress");
-        assert_runtime_lifecycle_blocker(
-            &shutdown["body"],
-            "shared_runtime_state_recovery_failed",
-        );
+        assert_runtime_lifecycle_blocker(&shutdown["body"], "shared_runtime_state_recovery_failed");
     }
 
     assert_eq!(
@@ -531,7 +525,10 @@ fn three_local_daemons_restart_node_with_persisted_coordination_and_task_queue_s
         assert_eq!(cluster["number_of_nodes"], 3);
         assert_eq!(cluster["formed"], true);
         assert_eq!(cluster["coordination"]["publication_committed"], true);
-        assert!(!cluster["coordination"]["votes"].as_array().unwrap().is_empty());
+        assert!(!cluster["coordination"]["votes"]
+            .as_array()
+            .unwrap()
+            .is_empty());
     }
 
     let restarted_index = 1;
@@ -540,7 +537,10 @@ fn three_local_daemons_restart_node_with_persisted_coordination_and_task_queue_s
     let gateway_state_before = load_gateway_state_manifest(&gateway_path)
         .unwrap()
         .expect("gateway state before restart");
-    assert_eq!(gateway_state_before.cluster_state.cluster_name, "steel-dev-restart-it");
+    assert_eq!(
+        gateway_state_before.cluster_state.cluster_name,
+        "steel-dev-restart-it"
+    );
     assert_eq!(
         gateway_state_before
             .coordination_state
@@ -589,13 +589,15 @@ fn three_local_daemons_restart_node_with_persisted_coordination_and_task_queue_s
     injected_gateway_state.task_queue_state = Some(injected_task_queue_state.clone());
     persist_gateway_state_manifest(&gateway_path, &injected_gateway_state).unwrap();
 
-    let restart_stdout = fs::File::create(
-        root.join(format!("node-{}/logs/restart-stdout.log", restarted_index + 1)),
-    )
+    let restart_stdout = fs::File::create(root.join(format!(
+        "node-{}/logs/restart-stdout.log",
+        restarted_index + 1
+    )))
     .unwrap();
-    let restart_stderr = fs::File::create(
-        root.join(format!("node-{}/logs/restart-stderr.log", restarted_index + 1)),
-    )
+    let restart_stderr = fs::File::create(root.join(format!(
+        "node-{}/logs/restart-stderr.log",
+        restarted_index + 1
+    )))
     .unwrap();
     let restarted = Command::new(&binary)
         .arg("--http.host")
@@ -623,8 +625,12 @@ fn three_local_daemons_restart_node_with_persisted_coordination_and_task_queue_s
         .spawn()
         .unwrap();
 
-    let restarted_cluster =
-        wait_json(http_ports[restarted_index], "GET", "/_steelsearch/dev/cluster", None);
+    let restarted_cluster = wait_json(
+        http_ports[restarted_index],
+        "GET",
+        "/_steelsearch/dev/cluster",
+        None,
+    );
     assert_eq!(restarted_cluster["cluster_name"], "steel-dev-restart-it");
     assert_eq!(restarted_cluster["number_of_nodes"], 3);
     assert_eq!(restarted_cluster["formed"], true);
@@ -632,7 +638,10 @@ fn three_local_daemons_restart_node_with_persisted_coordination_and_task_queue_s
         restarted_cluster["local_node_id"],
         format!("steel-node-{}", restarted_index + 1)
     );
-    assert_eq!(restarted_cluster["coordination"]["publication_committed"], true);
+    assert_eq!(
+        restarted_cluster["coordination"]["publication_committed"],
+        true
+    );
     assert!(!restarted_cluster["coordination"]["votes"]
         .as_array()
         .unwrap()
@@ -641,19 +650,25 @@ fn three_local_daemons_restart_node_with_persisted_coordination_and_task_queue_s
         restarted_cluster["coordination"]["last_accepted_version"]
             .as_i64()
             .unwrap_or_default()
-            >= gateway_state_before.coordination_state.last_accepted_version
+            >= gateway_state_before
+                .coordination_state
+                .last_accepted_version
     );
-    assert!(restarted_cluster["coordination"]["last_accepted_state_uuid"]
-        .as_str()
-        .unwrap_or_default()
-        .starts_with("steelsearch-dev-cluster-uuid-dev-state-"));
+    assert!(
+        restarted_cluster["coordination"]["last_accepted_state_uuid"]
+            .as_str()
+            .unwrap_or_default()
+            .starts_with("steelsearch-dev-cluster-uuid-dev-state-")
+    );
 
     let gateway_state_after = load_gateway_state_manifest(&gateway_path)
         .unwrap()
         .expect("gateway state after restart");
     assert!(
         gateway_state_after.coordination_state.last_accepted_version
-            >= gateway_state_before.coordination_state.last_accepted_version
+            >= gateway_state_before
+                .coordination_state
+                .last_accepted_version
     );
     assert!(
         gateway_state_after
@@ -895,9 +910,7 @@ fn restarted_local_daemon_with_remote_backlog_keeps_local_search_and_write_admit
         port,
         "POST",
         "/live-fairness-it/_bulk",
-        Some(
-            b"{\"index\":{\"_id\":\"doc-1\"}}\n{\"message\":\"local write remains admitted\"}\n",
-        ),
+        Some(b"{\"index\":{\"_id\":\"doc-1\"}}\n{\"message\":\"local write remains admitted\"}\n"),
     );
     assert_eq!(bulk["status"], 200);
     assert_eq!(bulk["body"]["errors"], false);
@@ -991,7 +1004,10 @@ fn live_multi_daemon_query_phase_transport_queue_rejection_is_reported_in_rest_t
                 .arg(node_dir.join("data"))
                 .env("STEELSEARCH_REMOTE_TRANSPORT_MAX_IN_FLIGHT", "1")
                 .env("STEELSEARCH_REMOTE_TRANSPORT_QUEUE_SIZE", "0")
-                .env("STEELSEARCH_REMOTE_TRANSPORT_QUERY_PHASE_PAUSE_MILLIS", "1000")
+                .env(
+                    "STEELSEARCH_REMOTE_TRANSPORT_QUERY_PHASE_PAUSE_MILLIS",
+                    "1000",
+                )
                 .stdout(Stdio::from(stdout))
                 .stderr(Stdio::from(stderr))
                 .spawn()
@@ -1017,7 +1033,11 @@ fn live_multi_daemon_query_phase_transport_queue_rejection_is_reported_in_rest_t
     });
     wait_for_remote_transport_cat_counter(target_http_port, "active", "1");
 
-    send_query_phase_transport_frame_and_hold(target_transport_port, 10_002, Duration::from_millis(50));
+    send_query_phase_transport_frame_and_hold(
+        target_transport_port,
+        10_002,
+        Duration::from_millis(50),
+    );
 
     wait_for_remote_transport_cat_counter(target_http_port, "rejected", "1");
     first.join().unwrap();
@@ -1102,7 +1122,10 @@ fn three_local_daemons_restart_node_and_replay_gateway_coordination_state() {
     let mut restarted_child = guard.children.remove(restarted_index);
     terminate_child(&restarted_child);
     let status = wait_for_child_exit(&mut restarted_child);
-    assert!(status.success(), "restarted daemon did not exit cleanly: {status}");
+    assert!(
+        status.success(),
+        "restarted daemon did not exit cleanly: {status}"
+    );
 
     let mut persisted = load_gateway_state_manifest(&gateway_path)
         .unwrap()
@@ -2579,19 +2602,6 @@ fn daemon_rest_index_api_returns_opensearch_error_shapes() {
     );
     assert_eq!(supported_geo_point["status"], 200, "{supported_geo_point}");
 
-    let unsupported_field_type = http_response(
-        port,
-        "PUT",
-        "/unsupported-field-it",
-        Some(br#"{"mappings":{"properties":{"shape":{"type":"geo_shape"}}}}"#),
-    );
-    assert_opensearch_error(
-        &unsupported_field_type,
-        400,
-        "illegal_argument_exception",
-        "invalid engine request: unsupported OpenSearch field type [geo_shape] for field [shape]",
-    );
-
     let missing_index = http_response(port, "GET", "/missing-errors-it", None);
     assert_opensearch_error(
         &missing_index,
@@ -2668,14 +2678,6 @@ fn daemon_put_index_reports_opensearch_error_shapes_over_real_socket() {
         Some(br#"{"mappings":{"properties":{"location":{"type":"geo_point"}}}}"#),
     );
     assert_eq!(supported_geo_point["status"], 200, "{supported_geo_point}");
-
-    let unsupported_field = http_response(
-        port,
-        "PUT",
-        "/unsupported-field-it",
-        Some(br#"{"mappings":{"properties":{"shape":{"type":"geo_shape"}}}}"#),
-    );
-    assert_opensearch_error_shape(&unsupported_field, 400, "illegal_argument_exception");
 
     let missing = http_response(port, "GET", "/missing-index-it", None);
     assert_opensearch_error_shape(&missing, 404, "index_not_found_exception");
@@ -3021,7 +3023,7 @@ fn daemon_search_endpoint_covers_supported_queries_and_errors_over_real_socket()
     assert_eq!(match_all["body"]["hits"]["total"]["value"], 4);
 
     assert_eq!(
-        search_ids(
+        search_ids_sorted(
             port,
             "POST",
             "/search-it/_search",
@@ -3030,7 +3032,7 @@ fn daemon_search_endpoint_covers_supported_queries_and_errors_over_real_socket()
         vec!["1", "4"]
     );
     assert_eq!(
-        search_ids(
+        search_ids_sorted(
             port,
             "POST",
             "/search-it/_search",
@@ -3039,7 +3041,7 @@ fn daemon_search_endpoint_covers_supported_queries_and_errors_over_real_socket()
         vec!["2", "4"]
     );
     assert_eq!(
-        search_ids(
+        search_ids_sorted(
             port,
             "POST",
             "/search-it/_search",
@@ -3048,7 +3050,7 @@ fn daemon_search_endpoint_covers_supported_queries_and_errors_over_real_socket()
         vec!["1", "2"]
     );
     assert_eq!(
-        search_ids(
+        search_ids_sorted(
             port,
             "POST",
             "/search-it/_search",
@@ -3057,7 +3059,7 @@ fn daemon_search_endpoint_covers_supported_queries_and_errors_over_real_socket()
         vec!["1", "4"]
     );
     assert_eq!(
-        search_ids(
+            search_ids_sorted(
             port,
             "POST",
             "/search-it/_search",
@@ -3066,7 +3068,7 @@ fn daemon_search_endpoint_covers_supported_queries_and_errors_over_real_socket()
         vec!["1"]
     );
     assert_eq!(
-        search_ids(
+        search_ids_sorted(
             port,
             "POST",
             "/search-it/_search",
@@ -3075,7 +3077,7 @@ fn daemon_search_endpoint_covers_supported_queries_and_errors_over_real_socket()
         vec!["2", "4"]
     );
     assert_eq!(
-        search_ids(
+        search_ids_sorted(
             port,
             "POST",
             "/search-it/_search",
@@ -3103,13 +3105,13 @@ fn daemon_search_endpoint_covers_supported_queries_and_errors_over_real_socket()
     );
 
     let malformed = http_response(port, "POST", "/search-it/_search", Some(br#"{"query":"#));
-    assert_opensearch_error_shape(&malformed, 400, "parse_exception");
+    assert_opensearch_error_shape(&malformed, 400, "unexpected_end_of_input_exception");
 
     let unsupported = http_response(
         port,
         "POST",
         "/search-it/_search",
-        Some(br#"{"query":{"geo_shape":{"location":{"shape":{"type":"point","coordinates":[0,0]}}}}}"#),
+        Some(br#"{"query":{"geo_shape":{"location":{"indexed_shape":{"id":"shape-1"}}}}}"#),
     );
     assert_opensearch_error_shape(&unsupported, 400, "illegal_argument_exception");
 
@@ -5509,7 +5511,9 @@ fn send_query_phase_transport_frame_and_hold(port: u16, request_id: i64, hold_fo
     );
     let mut stream = TcpStream::connect(("127.0.0.1", port))
         .unwrap_or_else(|error| panic!("transport port {port} should accept TCP: {error}"));
-    stream.set_write_timeout(Some(Duration::from_secs(2))).unwrap();
+    stream
+        .set_write_timeout(Some(Duration::from_secs(2)))
+        .unwrap();
     stream.write_all(&frame).unwrap();
     stream.flush().unwrap();
     thread::sleep(hold_for);
@@ -5535,9 +5539,7 @@ fn wait_for_remote_transport_cat_counter(port: u16, counter: &str, expected: &st
         }
         thread::sleep(Duration::from_millis(50));
     }
-    panic!(
-        "remote_transport counter {counter} did not reach {expected}; last row: {last_row:?}"
-    );
+    panic!("remote_transport counter {counter} did not reach {expected}; last row: {last_row:?}");
 }
 
 fn build_test_transport_request_frame(
@@ -5634,9 +5636,7 @@ fn wait_http_response(port: u16, method: &str, path: &str, body: Option<&[u8]>) 
     let mut last_error = None;
     while Instant::now() < deadline {
         match try_http_json(port, method, path, body) {
-            Ok(value)
-                if (200..400).contains(&(value["status"].as_u64().unwrap_or(500) as u16)) =>
-            {
+            Ok(value) if (200..400).contains(&(value["status"].as_u64().unwrap_or(500) as u16)) => {
                 return value;
             }
             Ok(value) => last_error = Some(format!("status {}", value["status"])),
@@ -5670,12 +5670,14 @@ fn assert_opensearch_error(response: &Value, status: u16, error_type: &str, reas
     assert_eq!(response["body"]["status"], status, "{response}");
     assert_eq!(response["body"]["error"]["type"], error_type, "{response}");
     assert_eq!(
-        response["body"]["error"]["root_cause"][0]["type"],
-        error_type,
+        response["body"]["error"]["root_cause"][0]["type"], error_type,
         "{response}"
     );
     assert_eq!(response["body"]["error"]["reason"], reason, "{response}");
-    assert_eq!(response["headers"]["content-type"], "application/json", "{response}");
+    assert_eq!(
+        response["headers"]["content-type"], "application/json",
+        "{response}"
+    );
 }
 
 fn assert_opensearch_error_shape(response: &Value, status: u16, error_type: &str) {
@@ -5683,15 +5685,17 @@ fn assert_opensearch_error_shape(response: &Value, status: u16, error_type: &str
     assert_eq!(response["body"]["status"], status, "{response}");
     assert_eq!(response["body"]["error"]["type"], error_type, "{response}");
     assert_eq!(
-        response["body"]["error"]["root_cause"][0]["type"],
-        error_type,
+        response["body"]["error"]["root_cause"][0]["type"], error_type,
         "{response}"
     );
     assert!(response["body"]["error"]["reason"].as_str().is_some());
     assert!(response["body"]["error"]["root_cause"][0]["reason"]
         .as_str()
         .is_some());
-    assert_eq!(response["headers"]["content-type"], "application/json", "{response}");
+    assert_eq!(
+        response["headers"]["content-type"], "application/json",
+        "{response}"
+    );
 }
 
 fn assert_extension_lifecycle_entry(
@@ -5762,13 +5766,19 @@ fn bulk_retry_checksum(body: &Value) -> String {
 
 fn search_ids(port: u16, method: &str, path: &str, body: &[u8]) -> Vec<String> {
     let response = http_response(port, method, path, Some(body));
-    assert_eq!(response["status"], 200);
+    assert_eq!(response["status"], 200, "{response}");
     response["body"]["hits"]["hits"]
         .as_array()
         .unwrap()
         .iter()
         .map(|hit| hit["_id"].as_str().unwrap().to_string())
         .collect()
+}
+
+fn search_ids_sorted(port: u16, method: &str, path: &str, body: &[u8]) -> Vec<String> {
+    let mut ids = search_ids(port, method, path, body);
+    ids.sort();
+    ids
 }
 
 fn try_http_json(

@@ -29,6 +29,7 @@ class SourceSearchRegistrationsTests(unittest.TestCase):
             ("query", "BoolQueryBuilder.NAME"),
             ("query", "GeoBoundingBoxQueryBuilder.NAME"),
             ("query", "GeoPolygonQueryBuilder.NAME"),
+            ("query", "GeoShapeQueryBuilder.NAME"),
             ("query", "SpanGapQueryBuilder.NAME"),
             ("query", "ScriptQueryBuilder.NAME"),
             ("query", "ScriptScoreQueryBuilder.NAME"),
@@ -69,7 +70,6 @@ class SourceSearchRegistrationsTests(unittest.TestCase):
 
     def test_unbacked_search_registrations_remain_planned(self):
         planned = [
-            ("query", "GeoShapeQueryBuilder.NAME"),
             ("suggester", "SuggesterSpec<?> suggester"),
         ]
         for category, needle in planned:

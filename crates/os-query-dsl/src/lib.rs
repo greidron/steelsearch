@@ -107,6 +107,7 @@ pub enum Query {
     GeoDistance(GeoDistanceQuery),
     GeoBoundingBox(GeoBoundingBoxQuery),
     GeoPolygon(GeoPolygonQuery),
+    GeoShape(GeoShapeQuery),
     Exists {
         field: String,
     },
@@ -231,6 +232,14 @@ pub struct GeoBoundingBoxQuery {
 pub struct GeoPolygonQuery {
     pub field: String,
     pub points: Vec<GeoPoint>,
+    pub ignore_unmapped: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct GeoShapeQuery {
+    pub field: String,
+    pub shape: Value,
+    pub relation: String,
     pub ignore_unmapped: bool,
 }
 
@@ -681,6 +690,7 @@ pub fn parse_query(value: &Value) -> QueryDslResult<Query> {
         "geo_distance" => parse_geo_distance(body),
         "geo_bounding_box" => parse_geo_bounding_box(body),
         "geo_polygon" => parse_geo_polygon(body),
+        "geo_shape" => parse_geo_shape(body),
         "exists" => parse_exists(body),
         "distance_feature" => parse_distance_feature(body),
         "rank_feature" => parse_rank_feature(body),
@@ -753,7 +763,9 @@ fn parse_aggregation(value: &Value) -> QueryDslResult<Aggregation> {
         "weighted_avg" => parse_metric_aggregation(MetricAggregationKind::WeightedAvg, kind, body),
         "boxplot" => parse_metric_aggregation(MetricAggregationKind::Boxplot, kind, body),
         "stats" => parse_metric_aggregation(MetricAggregationKind::Stats, kind, body),
-        "extended_stats" => parse_metric_aggregation(MetricAggregationKind::ExtendedStats, kind, body),
+        "extended_stats" => {
+            parse_metric_aggregation(MetricAggregationKind::ExtendedStats, kind, body)
+        }
         "percentiles" => parse_metric_aggregation(MetricAggregationKind::Percentiles, kind, body),
         "percentile_ranks" => {
             parse_metric_aggregation(MetricAggregationKind::PercentileRanks, kind, body)
@@ -790,9 +802,7 @@ fn parse_aggregation(value: &Value) -> QueryDslResult<Aggregation> {
         "moving_median" => {
             parse_pipeline_aggregation(PipelineAggregationKind::MovingMedian, kind, body)
         }
-        "moving_mad" => {
-            parse_pipeline_aggregation(PipelineAggregationKind::MovingMad, kind, body)
-        }
+        "moving_mad" => parse_pipeline_aggregation(PipelineAggregationKind::MovingMad, kind, body),
         "moving_stddev" => {
             parse_pipeline_aggregation(PipelineAggregationKind::MovingStddev, kind, body)
         }
@@ -820,21 +830,19 @@ fn parse_aggregation(value: &Value) -> QueryDslResult<Aggregation> {
         "serial_diff" => {
             parse_pipeline_aggregation(PipelineAggregationKind::SerialDiff, kind, body)
         }
-        "derivative" => {
-            parse_pipeline_aggregation(PipelineAggregationKind::Derivative, kind, body)
+        "derivative" => parse_pipeline_aggregation(PipelineAggregationKind::Derivative, kind, body),
+        "stats_bucket" => {
+            parse_pipeline_aggregation(PipelineAggregationKind::StatsBucket, kind, body)
         }
-        "stats_bucket" => parse_pipeline_aggregation(PipelineAggregationKind::StatsBucket, kind, body),
         "extended_stats_bucket" => {
             parse_pipeline_aggregation(PipelineAggregationKind::ExtendedStatsBucket, kind, body)
         }
         "percentiles_bucket" => {
             parse_pipeline_aggregation(PipelineAggregationKind::PercentilesBucket, kind, body)
         }
-        "percentile_ranks_bucket" => parse_pipeline_aggregation(
-            PipelineAggregationKind::PercentileRanksBucket,
-            kind,
-            body,
-        ),
+        "percentile_ranks_bucket" => {
+            parse_pipeline_aggregation(PipelineAggregationKind::PercentileRanksBucket, kind, body)
+        }
         "scripted_metric" => parse_scripted_metric_aggregation(body),
         "plugin" => parse_plugin_aggregation(body),
         _ => Err(QueryDslError::UnsupportedClause {
@@ -981,7 +989,10 @@ fn parse_histogram_aggregation(body: &Value) -> QueryDslResult<Aggregation> {
             }
         }
     }
-    Ok(Aggregation::Histogram(HistogramAggregation { field, interval }))
+    Ok(Aggregation::Histogram(HistogramAggregation {
+        field,
+        interval,
+    }))
 }
 
 fn parse_significant_terms_aggregation(body: &Value) -> QueryDslResult<Aggregation> {
@@ -1048,10 +1059,12 @@ fn parse_metric_aggregation(
 }
 
 fn parse_numeric_array(value: &Value) -> QueryDslResult<Vec<f64>> {
-    let array = value.as_array().ok_or_else(|| QueryDslError::ExpectedArray {
-        clause: "percentile_ranks".to_string(),
-        field: "values".to_string(),
-    })?;
+    let array = value
+        .as_array()
+        .ok_or_else(|| QueryDslError::ExpectedArray {
+            clause: "percentile_ranks".to_string(),
+            field: "values".to_string(),
+        })?;
     array
         .iter()
         .map(|value| {
@@ -1221,13 +1234,14 @@ fn parse_bucket_selector_aggregation(body: &Value) -> QueryDslResult<Aggregation
         .and_then(Value::as_str)
         .unwrap_or("gte")
         .to_string();
-    let value = object
-        .get("value")
-        .and_then(Value::as_f64)
-        .ok_or_else(|| QueryDslError::MissingField {
-            clause: "bucket_selector".to_string(),
-            field: "value".to_string(),
-        })?;
+    let value =
+        object
+            .get("value")
+            .and_then(Value::as_f64)
+            .ok_or_else(|| QueryDslError::MissingField {
+                clause: "bucket_selector".to_string(),
+                field: "value".to_string(),
+            })?;
 
     for option in object.keys() {
         if option != "aggregation" && option != "path" && option != "op" && option != "value" {
@@ -1266,7 +1280,9 @@ fn parse_bucket_count_aggregation(body: &Value) -> QueryDslResult<Aggregation> {
         }
     }
 
-    Ok(Aggregation::BucketCount(BucketCountAggregation { aggregation }))
+    Ok(Aggregation::BucketCount(BucketCountAggregation {
+        aggregation,
+    }))
 }
 
 fn parse_normalize_aggregation(body: &Value) -> QueryDslResult<Aggregation> {
@@ -1294,7 +1310,10 @@ fn parse_normalize_aggregation(body: &Value) -> QueryDslResult<Aggregation> {
         }
     }
 
-    Ok(Aggregation::Normalize(NormalizeAggregation { aggregation, path }))
+    Ok(Aggregation::Normalize(NormalizeAggregation {
+        aggregation,
+        path,
+    }))
 }
 
 fn parse_pipeline_aggregation(
@@ -1319,18 +1338,14 @@ fn parse_pipeline_aggregation(
         .get("lag")
         .and_then(Value::as_u64)
         .map(|value| value as usize);
-    let percents = object.get("percents").and_then(Value::as_array).map(|values| {
-        values
-            .iter()
-            .filter_map(Value::as_f64)
-            .collect::<Vec<_>>()
-    });
-    let values = object.get("values").and_then(Value::as_array).map(|values| {
-        values
-            .iter()
-            .filter_map(Value::as_f64)
-            .collect::<Vec<_>>()
-    });
+    let percents = object
+        .get("percents")
+        .and_then(Value::as_array)
+        .map(|values| values.iter().filter_map(Value::as_f64).collect::<Vec<_>>());
+    let values = object
+        .get("values")
+        .and_then(Value::as_array)
+        .map(|values| values.iter().filter_map(Value::as_f64).collect::<Vec<_>>());
 
     for option in object.keys() {
         if option != "buckets_path"
@@ -1943,13 +1958,14 @@ fn parse_span_first(body: &Value) -> QueryDslResult<Query> {
             field: "match".to_string(),
         })
         .and_then(parse_query)?;
-    let end = object
-        .get("end")
-        .and_then(Value::as_u64)
-        .ok_or_else(|| QueryDslError::MissingField {
-            clause: "span_first".to_string(),
-            field: "end".to_string(),
-        })? as usize;
+    let end =
+        object
+            .get("end")
+            .and_then(Value::as_u64)
+            .ok_or_else(|| QueryDslError::MissingField {
+                clause: "span_first".to_string(),
+                field: "end".to_string(),
+            })? as usize;
 
     for option in object.keys() {
         if option != "match" && option != "end" {
@@ -1978,13 +1994,14 @@ fn parse_span_near(body: &Value) -> QueryDslResult<Query> {
         .iter()
         .map(parse_query)
         .collect::<QueryDslResult<Vec<_>>>()?;
-    let slop = object
-        .get("slop")
-        .and_then(Value::as_u64)
-        .ok_or_else(|| QueryDslError::MissingField {
-            clause: "span_near".to_string(),
-            field: "slop".to_string(),
-        })? as usize;
+    let slop =
+        object
+            .get("slop")
+            .and_then(Value::as_u64)
+            .ok_or_else(|| QueryDslError::MissingField {
+                clause: "span_near".to_string(),
+                field: "slop".to_string(),
+            })? as usize;
     let in_order = object
         .get("in_order")
         .and_then(Value::as_bool)
@@ -2168,7 +2185,9 @@ fn parse_terms_set(body: &Value) -> QueryDslResult<Query> {
     }
 
     let (field, field_body) = object.iter().next().expect("checked len");
-    let field_object = field_body.as_object().ok_or(QueryDslError::ExpectedObject)?;
+    let field_object = field_body
+        .as_object()
+        .ok_or(QueryDslError::ExpectedObject)?;
     let values = field_object
         .get("terms")
         .and_then(Value::as_array)
@@ -2446,7 +2465,8 @@ fn parse_simple_query_string(body: &Value) -> QueryDslResult<Query> {
     let fields = object
         .get("fields")
         .map(|value| {
-            value.as_array()
+            value
+                .as_array()
                 .ok_or(QueryDslError::ExpectedObject)?
                 .iter()
                 .map(|value| {
@@ -2484,7 +2504,8 @@ fn parse_query_string(body: &Value) -> QueryDslResult<Query> {
     let fields = object
         .get("fields")
         .map(|value| {
-            value.as_array()
+            value
+                .as_array()
                 .ok_or(QueryDslError::ExpectedObject)?
                 .iter()
                 .map(|value| {
@@ -2746,13 +2767,14 @@ fn parse_fuzzy(body: &Value) -> QueryDslResult<Query> {
 
 fn parse_wrapper(body: &Value) -> QueryDslResult<Query> {
     let object = body.as_object().ok_or(QueryDslError::ExpectedObject)?;
-    let encoded_query = object
-        .get("query")
-        .and_then(Value::as_str)
-        .ok_or_else(|| QueryDslError::MissingField {
-            clause: "wrapper".to_string(),
-            field: "query".to_string(),
-        })?;
+    let encoded_query =
+        object
+            .get("query")
+            .and_then(Value::as_str)
+            .ok_or_else(|| QueryDslError::MissingField {
+                clause: "wrapper".to_string(),
+                field: "query".to_string(),
+            })?;
 
     for option in object.keys() {
         if option != "query" {
@@ -2775,13 +2797,12 @@ fn parse_wrapper(body: &Value) -> QueryDslResult<Query> {
         field: "query".to_string(),
         reason: format!("decoded wrapper payload is not utf-8: {error}"),
     })?;
-    let decoded_value = serde_json::from_str::<Value>(&decoded).map_err(|error| {
-        QueryDslError::InvalidValue {
+    let decoded_value =
+        serde_json::from_str::<Value>(&decoded).map_err(|error| QueryDslError::InvalidValue {
             clause: "wrapper".to_string(),
             field: "query".to_string(),
             reason: format!("decoded wrapper payload is not valid json: {error}"),
-        }
-    })?;
+        })?;
 
     Ok(Query::Wrapper {
         query: Box::new(parse_query(&decoded_value)?),
@@ -2879,14 +2900,13 @@ fn parse_more_like_this(body: &Value) -> QueryDslResult<Query> {
                 })?
                 .iter()
                 .map(|value| {
-                    value
-                        .as_str()
-                        .map(ToOwned::to_owned)
-                        .ok_or_else(|| QueryDslError::InvalidValue {
+                    value.as_str().map(ToOwned::to_owned).ok_or_else(|| {
+                        QueryDslError::InvalidValue {
                             clause: "more_like_this".to_string(),
                             field: "fields".to_string(),
                             reason: "must contain only strings".to_string(),
-                        })
+                        }
+                    })
                 })
                 .collect::<QueryDslResult<Vec<_>>>()
         })
@@ -3284,12 +3304,13 @@ fn parse_range(body: &Value) -> QueryDslResult<Query> {
 
 fn parse_geo_distance(body: &Value) -> QueryDslResult<Query> {
     let object = body.as_object().ok_or(QueryDslError::ExpectedObject)?;
-    let distance_meters = parse_geo_distance_distance(
-        object.get("distance").ok_or_else(|| QueryDslError::MissingField {
-            clause: "geo_distance".to_string(),
-            field: "distance".to_string(),
-        })?,
-    )?;
+    let distance_meters =
+        parse_geo_distance_distance(object.get("distance").ok_or_else(|| {
+            QueryDslError::MissingField {
+                clause: "geo_distance".to_string(),
+                field: "distance".to_string(),
+            }
+        })?)?;
     let ignore_unmapped = object
         .get("ignore_unmapped")
         .and_then(Value::as_bool)
@@ -3343,7 +3364,9 @@ fn parse_geo_bounding_box(body: &Value) -> QueryDslResult<Query> {
             field => {
                 let box_object = value.as_object().ok_or(QueryDslError::ExpectedObject)?;
                 top_left = box_object.get("top_left").and_then(parse_geo_point_object);
-                bottom_right = box_object.get("bottom_right").and_then(parse_geo_point_object);
+                bottom_right = box_object
+                    .get("bottom_right")
+                    .and_then(parse_geo_point_object);
                 field_name = Some(field.to_string());
             }
         }
@@ -3429,6 +3452,139 @@ fn parse_geo_polygon(body: &Value) -> QueryDslResult<Query> {
     }))
 }
 
+fn parse_geo_shape(body: &Value) -> QueryDslResult<Query> {
+    let object = body.as_object().ok_or(QueryDslError::ExpectedObject)?;
+    let ignore_unmapped = object
+        .get("ignore_unmapped")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let mut field_name = None;
+    let mut shape = None;
+    let mut relation = "intersects".to_string();
+    for (option, value) in object {
+        match option.as_str() {
+            "ignore_unmapped" | "_name" | "boost" => {}
+            field => {
+                let shape_object = value.as_object().ok_or(QueryDslError::ExpectedObject)?;
+                for key in shape_object.keys() {
+                    if !matches!(key.as_str(), "shape" | "relation" | "strategy") {
+                        return Err(QueryDslError::UnsupportedOption {
+                            clause: "geo_shape".to_string(),
+                            option: key.clone(),
+                        });
+                    }
+                }
+                let parsed_shape =
+                    shape_object
+                        .get("shape")
+                        .ok_or_else(|| QueryDslError::MissingField {
+                            clause: "geo_shape".to_string(),
+                            field: "shape".to_string(),
+                        })?;
+                validate_geo_shape(parsed_shape)?;
+                if let Some(parsed_relation) = shape_object.get("relation").and_then(Value::as_str)
+                {
+                    let normalized = parsed_relation.to_ascii_lowercase();
+                    if !matches!(normalized.as_str(), "intersects" | "within" | "contains") {
+                        return Err(QueryDslError::UnsupportedOption {
+                            clause: "geo_shape".to_string(),
+                            option: "relation".to_string(),
+                        });
+                    }
+                    relation = normalized;
+                }
+                field_name = Some(field.to_string());
+                shape = Some(parsed_shape.clone());
+            }
+        }
+    }
+    let field = field_name.ok_or_else(|| QueryDslError::ExpectedSingleField {
+        clause: "geo_shape".to_string(),
+    })?;
+    let shape = shape.ok_or_else(|| QueryDslError::MissingField {
+        clause: "geo_shape".to_string(),
+        field: "shape".to_string(),
+    })?;
+    Ok(Query::GeoShape(GeoShapeQuery {
+        field,
+        shape,
+        relation,
+        ignore_unmapped,
+    }))
+}
+
+fn validate_geo_shape(shape: &Value) -> QueryDslResult<()> {
+    if geo_shape_point(shape).is_some()
+        || geo_shape_envelope(shape).is_some()
+        || geo_shape_polygon(shape).is_some()
+    {
+        Ok(())
+    } else {
+        Err(QueryDslError::InvalidValue {
+            clause: "geo_shape".to_string(),
+            field: "shape".to_string(),
+            reason: "unsupported geo shape".to_string(),
+        })
+    }
+}
+
+fn geo_shape_type(shape: &Value) -> Option<String> {
+    shape
+        .as_object()?
+        .get("type")?
+        .as_str()
+        .map(|value| value.to_ascii_lowercase())
+}
+
+fn geo_shape_point(shape: &Value) -> Option<GeoPoint> {
+    if geo_shape_type(shape)?.as_str() != "point" {
+        return None;
+    }
+    let coordinates = shape.as_object()?.get("coordinates")?.as_array()?;
+    if coordinates.len() != 2 {
+        return None;
+    }
+    Some(GeoPoint {
+        lon: coordinates[0].as_f64()?,
+        lat: coordinates[1].as_f64()?,
+    })
+}
+
+fn geo_shape_envelope(shape: &Value) -> Option<(GeoPoint, GeoPoint)> {
+    if geo_shape_type(shape)?.as_str() != "envelope" {
+        return None;
+    }
+    let coordinates = shape.as_object()?.get("coordinates")?.as_array()?;
+    if coordinates.len() != 2 {
+        return None;
+    }
+    let top_left = parse_geo_point(&coordinates[0])?;
+    let bottom_right = parse_geo_point(&coordinates[1])?;
+    Some((top_left, bottom_right))
+}
+
+fn geo_shape_polygon(shape: &Value) -> Option<Vec<GeoPoint>> {
+    if geo_shape_type(shape)?.as_str() != "polygon" {
+        return None;
+    }
+    let rings = shape.as_object()?.get("coordinates")?.as_array()?;
+    let first_ring = rings.first()?.as_array()?;
+    let mut points = first_ring
+        .iter()
+        .map(parse_geo_point)
+        .collect::<Option<Vec<_>>>()?;
+    let already_closed = points.first() == points.last();
+    if points.len() < 3 || (already_closed && points.len() < 4) {
+        return None;
+    }
+    if !already_closed {
+        if let Some(first) = points.first().cloned() {
+            points.push(first);
+        }
+    }
+    Some(points)
+}
+
 fn parse_geo_point(value: &Value) -> Option<GeoPoint> {
     if let Some(object) = value.as_object() {
         return Some(GeoPoint {
@@ -3460,29 +3616,32 @@ fn parse_geo_distance_distance(value: &Value) -> QueryDslResult<f64> {
         }),
         Value::String(text) => {
             let lower = text.trim().to_ascii_lowercase();
-            let parse_prefixed =
-                |suffix: &str, multiplier: f64| -> Option<QueryDslResult<f64>> {
-                    lower.strip_suffix(suffix).map(|prefix| {
-                        prefix.trim().parse::<f64>().map(|value| value * multiplier).map_err(|_| {
-                            QueryDslError::InvalidValue {
-                                clause: "geo_distance".to_string(),
-                                field: "distance".to_string(),
-                                reason: format!("unsupported distance literal [{text}]"),
-                            }
+            let parse_prefixed = |suffix: &str, multiplier: f64| -> Option<QueryDslResult<f64>> {
+                lower.strip_suffix(suffix).map(|prefix| {
+                    prefix
+                        .trim()
+                        .parse::<f64>()
+                        .map(|value| value * multiplier)
+                        .map_err(|_| QueryDslError::InvalidValue {
+                            clause: "geo_distance".to_string(),
+                            field: "distance".to_string(),
+                            reason: format!("unsupported distance literal [{text}]"),
                         })
-                    })
-                };
+                })
+            };
             if let Some(result) = parse_prefixed("km", 1000.0) {
                 return result;
             }
             if let Some(result) = parse_prefixed("m", 1.0) {
                 return result;
             }
-            lower.parse::<f64>().map_err(|_| QueryDslError::InvalidValue {
-                clause: "geo_distance".to_string(),
-                field: "distance".to_string(),
-                reason: format!("unsupported distance literal [{text}]"),
-            })
+            lower
+                .parse::<f64>()
+                .map_err(|_| QueryDslError::InvalidValue {
+                    clause: "geo_distance".to_string(),
+                    field: "distance".to_string(),
+                    reason: format!("unsupported distance literal [{text}]"),
+                })
         }
         _ => Err(QueryDslError::InvalidValue {
             clause: "geo_distance".to_string(),
@@ -4771,10 +4930,22 @@ mod tests {
             Query::GeoPolygon(GeoPolygonQuery {
                 field: "location".to_string(),
                 points: vec![
-                    GeoPoint { lat: 38.0, lon: -123.0 },
-                    GeoPoint { lat: 38.0, lon: -122.0 },
-                    GeoPoint { lat: 37.0, lon: -122.0 },
-                    GeoPoint { lat: 38.0, lon: -123.0 },
+                    GeoPoint {
+                        lat: 38.0,
+                        lon: -123.0
+                    },
+                    GeoPoint {
+                        lat: 38.0,
+                        lon: -122.0
+                    },
+                    GeoPoint {
+                        lat: 37.0,
+                        lon: -122.0
+                    },
+                    GeoPoint {
+                        lat: 38.0,
+                        lon: -123.0
+                    },
                 ],
                 ignore_unmapped: true,
             })
@@ -4929,9 +5100,21 @@ mod tests {
             Some(&Aggregation::Range(RangeAggregation {
                 field: "latency".to_string(),
                 ranges: vec![
-                    RangeBucket { key: None, from: None, to: Some(100.0) },
-                    RangeBucket { key: None, from: Some(100.0), to: Some(200.0) },
-                    RangeBucket { key: Some("slow".to_string()), from: Some(200.0), to: None },
+                    RangeBucket {
+                        key: None,
+                        from: None,
+                        to: Some(100.0)
+                    },
+                    RangeBucket {
+                        key: None,
+                        from: Some(100.0),
+                        to: Some(200.0)
+                    },
+                    RangeBucket {
+                        key: Some("slow".to_string()),
+                        from: Some(200.0),
+                        to: None
+                    },
                 ],
             }))
         );
@@ -6653,14 +6836,66 @@ mod tests {
     #[test]
     fn rejects_unsupported_query_clause() {
         let error = parse_query(&serde_json::json!({
-            "geo_shape": {}
+            "percolate": {}
         }))
         .unwrap_err();
 
         assert_eq!(
             error,
             QueryDslError::UnsupportedClause {
-                clause: "geo_shape".to_string()
+                clause: "percolate".to_string()
+            }
+        );
+    }
+
+    #[test]
+    fn parses_geo_shape_point_queries() {
+        let query = parse_query(&serde_json::json!({
+            "geo_shape": {
+                "shape": {
+                    "shape": {
+                        "type": "point",
+                        "coordinates": [10.0, 20.0]
+                    },
+                    "relation": "intersects"
+                },
+                "ignore_unmapped": true
+            }
+        }))
+        .unwrap();
+
+        assert_eq!(
+            query,
+            Query::GeoShape(GeoShapeQuery {
+                field: "shape".to_string(),
+                shape: serde_json::json!({
+                    "type": "point",
+                    "coordinates": [10.0, 20.0]
+                }),
+                relation: "intersects".to_string(),
+                ignore_unmapped: true
+            })
+        );
+    }
+
+    #[test]
+    fn rejects_geo_shape_indexed_shape_subset() {
+        let error = parse_query(&serde_json::json!({
+            "geo_shape": {
+                "shape": {
+                    "indexed_shape": {
+                        "id": "shape-1"
+                    }
+                }
+            }
+        }))
+        .unwrap_err();
+
+        assert_eq!(
+            error,
+            QueryDslError::UnsupportedOption {
+                clause: "geo_shape".to_string(),
+                option: "indexed_shape".to_string()
             }
         );
     }

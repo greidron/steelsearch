@@ -124,5 +124,5 @@ implemented	query	new QuerySpec<>(IntervalQueryBuilder.NAME, IntervalQueryBuilde
 implemented	query	new QuerySpec<>(DistanceFeatureQueryBuilder.NAME, DistanceFeatureQueryBuilder::new, DistanceFeatureQueryBuilder::fromXContent)	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	1180
 implemented	query	new QuerySpec<>(MatchBoolPrefixQueryBuilder.NAME, MatchBoolPrefixQueryBuilder::new, MatchBoolPrefixQueryBuilder::fromXContent)	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	1183
 implemented	query	new QuerySpec<>(TemplateQueryBuilder.NAME, TemplateQueryBuilder::new, TemplateQueryBuilder::fromXContent)	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	1186
-planned	query	new QuerySpec<>(GeoShapeQueryBuilder.NAME, GeoShapeQueryBuilder::new, GeoShapeQueryBuilder::fromXContent)	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	1188
+implemented	query	new QuerySpec<>(GeoShapeQueryBuilder.NAME, GeoShapeQueryBuilder::new, GeoShapeQueryBuilder::fromXContent)	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	1188
 planned	query	QuerySpec<?> spec	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	1255
