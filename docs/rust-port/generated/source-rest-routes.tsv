@@ -48,21 +48,21 @@ implemented	GET	/{index}/_field_caps	/home/ubuntu/OpenSearch/server/src/main/jav
 implemented	POST	/{index}/_field_caps	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/RestFieldCapabilitiesAction.java	64
 implemented	GET	/	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/RestMainAction.java	63
 implemented	HEAD	/	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/RestMainAction.java	63
-planned	POST	/_cluster/voting_config_exclusions	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestAddVotingConfigExclusionAction.java	75
+implemented	POST	/_cluster/voting_config_exclusions	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestAddVotingConfigExclusionAction.java	75
 implemented	POST	/_tasks/_cancel	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestCancelTasksAction.java	71
 implemented	POST	/_tasks/{task_id}/_cancel	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestCancelTasksAction.java	71
 implemented	POST	/_snapshot/{repository}/_cleanup	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestCleanupRepositoryAction.java	60
-planned	DELETE	/_cluster/voting_config_exclusions	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestClearVotingConfigExclusionsAction.java	57
+implemented	DELETE	/_cluster/voting_config_exclusions	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestClearVotingConfigExclusionsAction.java	57
 implemented	PUT	/_snapshot/{repository}/{snapshot}/_clone/{target_snapshot}	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestCloneSnapshotAction.java	62
 implemented	GET	/_cluster/allocation/explain	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestClusterAllocationExplainAction.java	65
 implemented	POST	/_cluster/allocation/explain	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestClusterAllocationExplainAction.java	65
-planned	DELETE	/_cluster/routing/awareness/weights	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestClusterDeleteWeightedRoutingAction.java	41
-planned	DELETE	/_cluster/routing/awareness/{attribute}/weights	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestClusterDeleteWeightedRoutingAction.java	42
+implemented	DELETE	/_cluster/routing/awareness/weights	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestClusterDeleteWeightedRoutingAction.java	41
+implemented	DELETE	/_cluster/routing/awareness/{attribute}/weights	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestClusterDeleteWeightedRoutingAction.java	42
 implemented	GET	/_cluster/settings	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestClusterGetSettingsAction.java	82
-planned	GET	/_cluster/routing/awareness/{attribute}/weights	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestClusterGetWeightedRoutingAction.java	38
-stubbed	GET	/_cluster/health	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestClusterHealthAction.java	69
+implemented	GET	/_cluster/routing/awareness/{attribute}/weights	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestClusterGetWeightedRoutingAction.java	38
+implemented	GET	/_cluster/health	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestClusterHealthAction.java	69
 implemented	GET	/_cluster/health/{index}	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestClusterHealthAction.java	69
-planned	PUT	/_cluster/routing/awareness/{attribute}/weights	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestClusterPutWeightedRoutingAction.java	38
+implemented	PUT	/_cluster/routing/awareness/{attribute}/weights	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestClusterPutWeightedRoutingAction.java	38
 implemented	POST	/_cluster/reroute	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestClusterRerouteAction.java	95
 implemented	GET	/_search_shards	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestClusterSearchShardsAction.java	64
 implemented	POST	/_search_shards	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestClusterSearchShardsAction.java	65
@@ -151,14 +151,14 @@ implemented	POST	/{index}/_cache/clear	/home/ubuntu/OpenSearch/server/src/main/j
 implemented	POST	/_close	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestCloseIndexAction.java	63
 implemented	POST	/{index}/_close	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestCloseIndexAction.java	63
 implemented	PUT	/_data_stream/{name}	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestCreateDataStreamAction.java	58
-stubbed	PUT	/{index}	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestCreateIndexAction.java	66
+implemented	PUT	/{index}	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestCreateIndexAction.java	66
 implemented	GET	/_data_stream/_stats	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestDataStreamsStatsAction.java	61
 implemented	GET	/_data_stream/{name}/_stats	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestDataStreamsStatsAction.java	62
 implemented	DELETE	/_component_template/{name}	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestDeleteComponentTemplateAction.java	59
 implemented	DELETE	/_index_template/{name}	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestDeleteComposableIndexTemplateAction.java	59
 implemented	DELETE	/_data_stream/{name}	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestDeleteDataStreamAction.java	59
 out-of-scope	DELETE	/	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestDeleteIndexAction.java	62
-stubbed	DELETE	/{index}	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestDeleteIndexAction.java	62
+implemented	DELETE	/{index}	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestDeleteIndexAction.java	62
 implemented	DELETE	/_template/{name}	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestDeleteIndexTemplateAction.java	58
 implemented	GET	/_flush	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestFlushAction.java	62
 implemented	POST	/_flush	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestFlushAction.java	63
@@ -187,7 +187,7 @@ implemented	GET	/{index}/_mapping/field/{fields}	/home/ubuntu/OpenSearch/server/
 implemented	GET	/_template	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestGetIndexTemplateAction.java	69
 implemented	GET	/_template/{name}	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestGetIndexTemplateAction.java	69
 implemented	HEAD	/_template/{name}	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestGetIndexTemplateAction.java	69
-stubbed	GET	/{index}	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestGetIndicesAction.java	65
+implemented	GET	/{index}	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestGetIndicesAction.java	65
 implemented	HEAD	/{index}	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestGetIndicesAction.java	65
 implemented	GET	/{index}/ingestion/_state	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestGetIngestionStateAction.java	40
 implemented	GET	/_mapping	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestGetMappingAction.java	85
@@ -372,10 +372,10 @@ implemented	GET	/_search/scroll	/home/ubuntu/OpenSearch/server/src/main/java/org
 implemented	POST	/_search/scroll	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/search/RestSearchScrollAction.java	71
 implemented	GET	/_search/scroll/{scroll_id}	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/search/RestSearchScrollAction.java	72
 implemented	POST	/_search/scroll/{scroll_id}	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/search/RestSearchScrollAction.java	73
-planned	POST	"/{index}/_tier/" + targetTier	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/storage/action/tiering/RestBaseTierAction.java	39
-planned	POST	/_tier/_cancel/{index}	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/storage/action/tiering/RestCancelTierAction.java	39
-planned	GET	/{index}/_tier	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/storage/action/tiering/status/rest/RestGetTieringStatusAction.java	37
-planned	GET	/_tier/all	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/storage/action/tiering/status/rest/RestListTieringStatusAction.java	39
+implemented	POST	"/{index}/_tier/" + targetTier	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/storage/action/tiering/RestBaseTierAction.java	39
+implemented	POST	/_tier/_cancel/{index}	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/storage/action/tiering/RestCancelTierAction.java	39
+implemented	GET	/{index}/_tier	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/storage/action/tiering/status/rest/RestGetTieringStatusAction.java	37
+implemented	GET	/_tier/all	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/storage/action/tiering/status/rest/RestListTieringStatusAction.java	39
 implemented	POST	String.format(Locale.ROOT, "%s/%s/{%s}", KNNPlugin.KNN_BASE_URI, CLEAR_CACHE, INDEX)	/home/ubuntu/k-NN/src/main/java/org/opensearch/knn/plugin/rest/RestClearCacheHandler.java	58
 implemented	DELETE	String.format(Locale.ROOT, "%s/%s/{%s}", KNNPlugin.KNN_BASE_URI, MODELS, MODEL_ID)	/home/ubuntu/k-NN/src/main/java/org/opensearch/knn/plugin/rest/RestDeleteModelHandler.java	47
 implemented	GET	String.format(Locale.ROOT, "%s/%s/{%s}", KNNPlugin.KNN_BASE_URI, MODELS, MODEL_ID)	/home/ubuntu/k-NN/src/main/java/org/opensearch/knn/plugin/rest/RestGetModelHandler.java	46

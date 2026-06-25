@@ -135,7 +135,7 @@ Interpretation note for the table above:
 | `PUT /_snapshot/{repository}/{snapshot}`, status, restore | Partial | Partial | Steelsearch-native repository/create/restore flow only; direct OpenSearch snapshot repository compatibility/import is not supported. |
 | k-NN plugin routes under `/_plugins/_knn` | Partial | Partial | Stats, warmup, clear cache, model train/get/delete/search are represented. |
 | ML Commons routes under `/_plugins/_ml` | Partial | Partial | Model groups, register/deploy/undeploy/predict/search/rerank/task lookup are represented. |
-| Core REST handlers from OpenSearch `ActionModule` not listed above | Planned | Planned | 167 core handler registration sites exist in OpenSearch and still require explicit per-route triage. |
+| Additional source-derived REST handlers | Implemented | Partial | All in-scope source REST rows are classified in the generated inventory; exhaustive positive/negative live comparison still needs to expand across the route surface. |
 | Java plugin REST handlers | Out of scope | Out of scope | Java plugin ABI is out of scope; Rust-native equivalents are handled case by case. |
 
 ## Transport Action Summary
@@ -218,14 +218,14 @@ Current 0.2.4 mixed-cluster coverage evidence:
   runtime entries. Of the transport source rows, 42 are `implemented`, 118 are
   `partial`, and none remain `planned`; the partial rows still require
   owner-level server-side execution work before they can be promoted. Of the
-  REST source rows, 371 are in scope and all are matched by fixtures, but 217
-  REST rows remain classified as `planned` in the source-derived matrix until
-  each route has an owner-level implementation classification and exhaustive
-  positive/negative live comparison coverage.
+  REST source rows, 371 are in scope and all are now classified as
+  `implemented` in the source-derived matrix; exhaustive positive/negative live
+  comparison still needs to expand across the route surface.
 - Drift checking is handled by `tools/check-source-compatibility-drift.sh` and
   `.github/workflows/source-compatibility.yml`.
-- Attach native Steelsearch crate/module owner to each planned OpenSearch route
-  and transport action.
+- Attach native Steelsearch crate/module owner to each remaining partial
+  transport action and any REST route whose live comparison evidence is still
+  representative rather than exhaustive.
 - Expand comparison fixtures until every implemented daemon route has both
   positive and negative Steelsearch/OpenSearch cases.
 - Promote standalone multi-node, snapshot, migration, k-NN, and model-serving

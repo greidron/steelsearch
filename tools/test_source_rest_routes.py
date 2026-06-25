@@ -38,6 +38,20 @@ class SourceRestRoutesTests(unittest.TestCase):
             ("GET", "/_flush/synced"),
             ("POST", "/_upgrade"),
             ("GET", "/_cat/snapshots/{repository}"),
+            ("GET", "/_cluster/health"),
+            ("PUT", "/{index}"),
+            ("GET", "/{index}"),
+            ("DELETE", "/{index}"),
+            ("POST", "/_cluster/voting_config_exclusions"),
+            ("DELETE", "/_cluster/voting_config_exclusions"),
+            ("DELETE", "/_cluster/routing/awareness/weights"),
+            ("GET", "/_cluster/routing/awareness/{attribute}/weights"),
+            ("PUT", "/_cluster/routing/awareness/{attribute}/weights"),
+            ("DELETE", "/_cluster/routing/awareness/{attribute}/weights"),
+            ("POST", "/{index}/_tier/ + targetTier"),
+            ("POST", "/_tier/_cancel/{index}"),
+            ("GET", "/{index}/_tier"),
+            ("GET", "/_tier/all"),
         ]
         for method, path in promoted_routes:
             self.assertEqual(statuses[(method, path)], "implemented", f"{method} {path}")
