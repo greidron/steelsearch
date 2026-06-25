@@ -24543,6 +24543,7 @@ pub struct OpenSearchSearchSourceBuilderWire {
     pub min_score: Option<f32>,
     pub search_after: Option<Vec<Value>>,
     pub point_in_time: Option<OpenSearchPointInTimeBuilderWire>,
+    pub slice: Option<OpenSearchSliceBuilderWire>,
     pub terminate_after: i32,
     pub timeout: Option<TimeValueWire>,
     pub track_scores: bool,
@@ -24564,6 +24565,7 @@ impl Default for OpenSearchSearchSourceBuilderWire {
             min_score: None,
             search_after: None,
             point_in_time: None,
+            slice: None,
             terminate_after: 0,
             timeout: None,
             track_scores: false,
@@ -24607,6 +24609,9 @@ impl OpenSearchSearchSourceBuilderWire {
         validate_search_after_values(self.search_after.as_deref())?;
         if let Some(point_in_time) = &self.point_in_time {
             point_in_time.validate_supported_subset()?;
+        }
+        if let Some(slice) = &self.slice {
+            slice.validate_supported_subset()?;
         }
         if self
             .track_total_hits_up_to
@@ -24656,7 +24661,7 @@ fn write_search_source_builder(
     output.write_vint(0); // ext builders
     output.write_bool(source.profile); // profile
     write_optional_search_after_values(output, source.search_after.as_deref()); // search after
-    output.write_bool(false); // slice
+    write_optional_slice_builder(output, source.slice.as_ref()); // slice
     output.write_bool(false); // collapse
     write_optional_int(output, source.track_total_hits_up_to); // track total hits up to
     output.write_bool(false); // fetch fields
@@ -24721,7 +24726,7 @@ fn read_search_source_builder(
     reject_empty_vint_list(input, "search request source ext builders")?;
     let profile = input.read_bool()?;
     let search_after = read_optional_search_after_values(input)?;
-    reject_absent_optional_writeable(input, "search request source slice")?;
+    let slice = read_optional_slice_builder(input)?;
     reject_absent_optional_writeable(input, "search request source collapse")?;
     let track_total_hits_up_to = read_optional_int(input)?;
     if track_total_hits_up_to.is_some_and(|track_total_hits| track_total_hits < -1) {
@@ -24751,6 +24756,7 @@ fn read_search_source_builder(
         min_score,
         search_after,
         point_in_time,
+        slice,
         terminate_after,
         timeout,
         track_scores,
@@ -24883,6 +24889,72 @@ fn read_optional_point_in_time_builder(
     };
     point_in_time.validate_supported_subset()?;
     Ok(Some(point_in_time))
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchSliceBuilderWire {
+    pub field: String,
+    pub id: i32,
+    pub max: i32,
+}
+
+impl OpenSearchSliceBuilderWire {
+    fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
+        if self.field.is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source slice",
+                reason: "OpenSearch SliceBuilder field must be non-empty",
+            });
+        }
+        if self.id < 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source slice",
+                reason: "OpenSearch SliceBuilder id must be greater than or equal to 0",
+            });
+        }
+        if self.max <= 1 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source slice",
+                reason: "OpenSearch SliceBuilder max must be greater than 1",
+            });
+        }
+        if self.id >= self.max {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source slice",
+                reason: "OpenSearch SliceBuilder max must be greater than id",
+            });
+        }
+        Ok(())
+    }
+}
+
+fn write_optional_slice_builder(
+    output: &mut StreamOutput,
+    slice: Option<&OpenSearchSliceBuilderWire>,
+) {
+    if let Some(slice) = slice {
+        output.write_bool(true);
+        output.write_string(&slice.field);
+        output.write_vint(slice.id);
+        output.write_vint(slice.max);
+    } else {
+        output.write_bool(false);
+    }
+}
+
+fn read_optional_slice_builder(
+    input: &mut StreamInput,
+) -> Result<Option<OpenSearchSliceBuilderWire>, TransportActionWireError> {
+    if !input.read_bool()? {
+        return Ok(None);
+    }
+    let slice = OpenSearchSliceBuilderWire {
+        field: input.read_string()?,
+        id: input.read_vint()?,
+        max: input.read_vint()?,
+    };
+    slice.validate_supported_subset()?;
+    Ok(Some(slice))
 }
 
 fn reject_absent_optional_writeable(
@@ -59721,6 +59793,11 @@ mod tests {
                     id: "pit-context-a".to_string(),
                     keep_alive: Some(TimeValueWire::minutes(1)),
                 }),
+                slice: Some(OpenSearchSliceBuilderWire {
+                    field: "_id".to_string(),
+                    id: 1,
+                    max: 4,
+                }),
                 terminate_after: 100,
                 timeout: Some(TimeValueWire::seconds(2)),
                 track_scores: true,
@@ -59863,6 +59940,25 @@ mod tests {
             empty_pit_id.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "search request source point in time",
+                ..
+            })
+        ));
+
+        let invalid_slice = OpenSearchSearchRequestWire {
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                slice: Some(OpenSearchSliceBuilderWire {
+                    field: "_id".to_string(),
+                    id: 2,
+                    max: 2,
+                }),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        assert!(matches!(
+            invalid_slice.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source slice",
                 ..
             })
         ));
