@@ -24540,6 +24540,7 @@ pub struct OpenSearchSearchSourceBuilderWire {
     pub from: i32,
     pub size: i32,
     pub explain: Option<bool>,
+    pub fetch_source: Option<OpenSearchFetchSourceContextWire>,
     pub min_score: Option<f32>,
     pub search_after: Option<Vec<Value>>,
     pub point_in_time: Option<OpenSearchPointInTimeBuilderWire>,
@@ -24567,6 +24568,7 @@ impl Default for OpenSearchSearchSourceBuilderWire {
             from: 0,
             size: 10,
             explain: None,
+            fetch_source: None,
             min_score: None,
             search_after: None,
             point_in_time: None,
@@ -24616,6 +24618,9 @@ impl OpenSearchSearchSourceBuilderWire {
                 reason: "OpenSearch SearchSourceBuilder min_score must be finite when present",
             });
         }
+        if let Some(fetch_source) = &self.fetch_source {
+            fetch_source.validate_supported_subset()?;
+        }
         validate_search_after_values(self.search_after.as_deref())?;
         if let Some(point_in_time) = &self.point_in_time {
             point_in_time.validate_supported_subset()?;
@@ -24663,7 +24668,7 @@ fn write_search_source_builder(
 ) {
     output.write_bool(false); // aggregations
     write_optional_bool(output, source.explain); // explain
-    output.write_bool(false); // fetch source context
+    write_optional_fetch_source_context(output, source.fetch_source.as_ref()); // fetch source context
     write_optional_field_and_format_list(output, source.doc_value_fields.as_deref()); // doc value fields
     write_optional_stored_fields_context(output, source.stored_fields.as_ref()); // stored fields
     output.write_vint(source.from); // from
@@ -24704,7 +24709,7 @@ fn read_search_source_builder(
 ) -> Result<OpenSearchSearchSourceBuilderWire, TransportActionWireError> {
     reject_absent_optional_writeable(input, "search request source aggregations")?;
     let explain = read_optional_bool(input)?;
-    reject_absent_optional_writeable(input, "search request source fetch source")?;
+    let fetch_source = read_optional_fetch_source_context(input)?;
     let doc_value_fields =
         read_optional_field_and_format_list(input, "search request source doc value fields")?;
     let stored_fields = read_optional_stored_fields_context(input)?;
@@ -24781,6 +24786,7 @@ fn read_search_source_builder(
         from,
         size,
         explain,
+        fetch_source,
         min_score,
         search_after,
         point_in_time,
@@ -24877,6 +24883,70 @@ fn validate_search_after_values(values: Option<&[Value]>) -> Result<(), Transpor
         }
     }
     Ok(())
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchFetchSourceContextWire {
+    pub fetch_source: bool,
+    pub includes: Vec<String>,
+    pub excludes: Vec<String>,
+}
+
+impl OpenSearchFetchSourceContextWire {
+    fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
+        if self.includes.iter().any(|field| field.is_empty()) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source fetch source",
+                reason: "OpenSearch FetchSourceContext includes must be non-empty",
+            });
+        }
+        if self.excludes.iter().any(|field| field.is_empty()) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source fetch source",
+                reason: "OpenSearch FetchSourceContext excludes must be non-empty",
+            });
+        }
+        if self
+            .excludes
+            .iter()
+            .any(|exclude| self.includes.contains(exclude))
+        {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source fetch source",
+                reason: "OpenSearch FetchSourceContext cannot include and exclude the same field",
+            });
+        }
+        Ok(())
+    }
+}
+
+fn write_optional_fetch_source_context(
+    output: &mut StreamOutput,
+    fetch_source: Option<&OpenSearchFetchSourceContextWire>,
+) {
+    if let Some(fetch_source) = fetch_source {
+        output.write_bool(true);
+        output.write_bool(fetch_source.fetch_source);
+        output.write_string_array(&fetch_source.includes);
+        output.write_string_array(&fetch_source.excludes);
+    } else {
+        output.write_bool(false);
+    }
+}
+
+fn read_optional_fetch_source_context(
+    input: &mut StreamInput,
+) -> Result<Option<OpenSearchFetchSourceContextWire>, TransportActionWireError> {
+    if !input.read_bool()? {
+        return Ok(None);
+    }
+    let fetch_source = OpenSearchFetchSourceContextWire {
+        fetch_source: input.read_bool()?,
+        includes: input.read_string_array()?,
+        excludes: input.read_string_array()?,
+    };
+    fetch_source.validate_supported_subset()?;
+    Ok(Some(fetch_source))
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -60071,6 +60141,11 @@ mod tests {
                 from: 3,
                 size: 25,
                 explain: Some(true),
+                fetch_source: Some(OpenSearchFetchSourceContextWire {
+                    fetch_source: true,
+                    includes: vec!["message".to_string(), "tenant".to_string()],
+                    excludes: vec!["debug".to_string()],
+                }),
                 min_score: Some(0.25),
                 search_after: Some(vec![json!(20), json!("tenant-a"), json!(true), Value::Null]),
                 point_in_time: Some(OpenSearchPointInTimeBuilderWire {
@@ -60139,6 +60214,23 @@ mod tests {
                 ..
             })
         ));
+
+        let source_disabled_request = OpenSearchSearchRequestWire {
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                fetch_source: Some(OpenSearchFetchSourceContextWire {
+                    fetch_source: false,
+                    includes: Vec::new(),
+                    excludes: Vec::new(),
+                }),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        let mut output = StreamOutput::new();
+        source_disabled_request.write(&mut output);
+
+        let decoded = OpenSearchSearchRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, source_disabled_request);
     }
 
     #[test]
@@ -60238,6 +60330,25 @@ mod tests {
             object_search_after.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "search request source search after",
+                ..
+            })
+        ));
+
+        let ambiguous_fetch_source = OpenSearchSearchRequestWire {
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                fetch_source: Some(OpenSearchFetchSourceContextWire {
+                    fetch_source: true,
+                    includes: vec!["message".to_string()],
+                    excludes: vec!["message".to_string()],
+                }),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        assert!(matches!(
+            ambiguous_fetch_source.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source fetch source",
                 ..
             })
         ));
