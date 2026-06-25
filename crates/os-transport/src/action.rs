@@ -16731,7 +16731,7 @@ impl RemoveModelFromCacheResponseWire {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct SearchModelRequestWire {
     pub search: OpenSearchSearchRequestWire,
 }
@@ -24285,7 +24285,7 @@ impl OpenSearchListViewNamesResponseWire {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct OpenSearchSearchRequestWire {
     pub parent_task_node: String,
     pub parent_task_id: Option<i64>,
@@ -24535,16 +24535,19 @@ impl OpenSearchSearchRequestWire {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct OpenSearchSearchSourceBuilderWire {
     pub from: i32,
     pub size: i32,
+    pub explain: Option<bool>,
+    pub min_score: Option<f32>,
     pub terminate_after: i32,
     pub timeout: Option<TimeValueWire>,
     pub track_scores: bool,
     pub version: Option<bool>,
     pub seq_no_and_primary_term: Option<bool>,
     pub track_total_hits_up_to: Option<i32>,
+    pub profile: bool,
     pub include_named_queries_score: Option<bool>,
     pub search_pipeline: Option<String>,
     pub verbose_pipeline: bool,
@@ -24555,12 +24558,15 @@ impl Default for OpenSearchSearchSourceBuilderWire {
         Self {
             from: 0,
             size: 10,
+            explain: None,
+            min_score: None,
             terminate_after: 0,
             timeout: None,
             track_scores: false,
             version: None,
             seq_no_and_primary_term: None,
             track_total_hits_up_to: None,
+            profile: false,
             include_named_queries_score: None,
             search_pipeline: None,
             verbose_pipeline: false,
@@ -24588,6 +24594,12 @@ impl OpenSearchSearchSourceBuilderWire {
                 reason: "OpenSearch SearchSourceBuilder terminate_after must be non-negative",
             });
         }
+        if self.min_score.is_some_and(|min_score| !min_score.is_finite()) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source min score",
+                reason: "OpenSearch SearchSourceBuilder min_score must be finite when present",
+            });
+        }
         if self
             .track_total_hits_up_to
             .is_some_and(|track_total_hits| track_total_hits < -1)
@@ -24612,14 +24624,14 @@ fn write_search_source_builder(
     source: &OpenSearchSearchSourceBuilderWire,
 ) {
     output.write_bool(false); // aggregations
-    write_optional_bool(output, None); // explain
+    write_optional_bool(output, source.explain); // explain
     output.write_bool(false); // fetch source context
     output.write_bool(false); // doc value fields
     output.write_bool(false); // stored fields
     output.write_vint(source.from); // from
     output.write_bool(false); // highlight
     output.write_vint(0); // index boosts
-    output.write_bool(false); // min score
+    write_optional_float(output, source.min_score); // min score
     output.write_bool(false); // post query
     output.write_bool(false); // query
     output.write_bool(false); // rescore builders
@@ -24634,7 +24646,7 @@ fn write_search_source_builder(
     write_optional_bool(output, source.version); // version
     write_optional_bool(output, source.seq_no_and_primary_term); // seq no and primary term
     output.write_vint(0); // ext builders
-    output.write_bool(false); // profile
+    output.write_bool(source.profile); // profile
     output.write_bool(false); // search after
     output.write_bool(false); // slice
     output.write_bool(false); // collapse
@@ -24653,7 +24665,7 @@ fn read_search_source_builder(
     input: &mut StreamInput,
 ) -> Result<OpenSearchSearchSourceBuilderWire, TransportActionWireError> {
     reject_absent_optional_writeable(input, "search request source aggregations")?;
-    reject_optional_bool_is_none(input, "search request source explain")?;
+    let explain = read_optional_bool(input)?;
     reject_absent_optional_writeable(input, "search request source fetch source")?;
     reject_absent_bool_list(input, "search request source doc value fields")?;
     reject_absent_optional_writeable(input, "search request source stored fields")?;
@@ -24666,7 +24678,13 @@ fn read_search_source_builder(
     }
     reject_absent_optional_writeable(input, "search request source highlight")?;
     reject_empty_vint_list(input, "search request source index boosts")?;
-    reject_absent_optional_float(input, "search request source min score")?;
+    let min_score = read_optional_float(input)?;
+    if min_score.is_some_and(|min_score| !min_score.is_finite()) {
+        return Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "search request source min score",
+            reason: "OpenSearch SearchSourceBuilder min_score must be finite when present",
+        });
+    }
     reject_absent_optional_writeable(input, "search request source post query")?;
     reject_absent_optional_writeable(input, "search request source query")?;
     reject_absent_bool_list(input, "search request source rescore builders")?;
@@ -24693,12 +24711,7 @@ fn read_search_source_builder(
     let version = read_optional_bool(input)?;
     let seq_no_and_primary_term = read_optional_bool(input)?;
     reject_empty_vint_list(input, "search request source ext builders")?;
-    if input.read_bool()? {
-        return Err(TransportActionWireError::UnsupportedWireShape {
-            shape: "search request source profile",
-            reason: "only default empty SearchSourceBuilder profile=false is decoded",
-        });
-    }
+    let profile = input.read_bool()?;
     reject_absent_optional_writeable(input, "search request source search after")?;
     reject_absent_optional_writeable(input, "search request source slice")?;
     reject_absent_optional_writeable(input, "search request source collapse")?;
@@ -24726,12 +24739,15 @@ fn read_search_source_builder(
     let source = OpenSearchSearchSourceBuilderWire {
         from,
         size,
+        explain,
+        min_score,
         terminate_after,
         timeout,
         track_scores,
         version,
         seq_no_and_primary_term,
         track_total_hits_up_to,
+        profile,
         include_named_queries_score,
         search_pipeline,
         verbose_pipeline,
@@ -24793,34 +24809,7 @@ fn reject_empty_vint_list(
     Ok(())
 }
 
-fn reject_optional_bool_is_none(
-    input: &mut StreamInput,
-    shape: &'static str,
-) -> Result<(), TransportActionWireError> {
-    if read_optional_bool(input)?.is_some() {
-        return Err(TransportActionWireError::UnsupportedWireShape {
-            shape,
-            reason: "only absent optional booleans are decoded in the empty SearchSourceBuilder subset",
-        });
-    }
-    Ok(())
-}
-
-fn reject_absent_optional_float(
-    input: &mut StreamInput,
-    shape: &'static str,
-) -> Result<(), TransportActionWireError> {
-    if input.read_bool()? {
-        let _ = input.read_f32()?;
-        return Err(TransportActionWireError::UnsupportedWireShape {
-            shape,
-            reason: "only absent optional floats are decoded in the empty SearchSourceBuilder subset",
-        });
-    }
-    Ok(())
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct OpenSearchSearchViewRequestWire {
     pub search: OpenSearchSearchRequestWire,
     pub view: String,
@@ -26155,7 +26144,7 @@ impl OpenSearchPersistentTaskResponseWire {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct OpenSearchMultiSearchRequestWire {
     pub parent_task_node: String,
     pub parent_task_id: Option<i64>,
@@ -35210,6 +35199,23 @@ fn write_optional_int(output: &mut StreamOutput, value: Option<i32>) {
 fn read_optional_int(input: &mut StreamInput) -> Result<Option<i32>, TransportActionWireError> {
     if input.read_bool()? {
         Ok(Some(input.read_i32()?))
+    } else {
+        Ok(None)
+    }
+}
+
+fn write_optional_float(output: &mut StreamOutput, value: Option<f32>) {
+    if let Some(value) = value {
+        output.write_bool(true);
+        output.write_f32(value);
+    } else {
+        output.write_bool(false);
+    }
+}
+
+fn read_optional_float(input: &mut StreamInput) -> Result<Option<f32>, TransportActionWireError> {
+    if input.read_bool()? {
+        Ok(Some(input.read_f32()?))
     } else {
         Ok(None)
     }
@@ -59579,12 +59585,15 @@ mod tests {
             source: Some(OpenSearchSearchSourceBuilderWire {
                 from: 3,
                 size: 25,
+                explain: Some(true),
+                min_score: Some(0.25),
                 terminate_after: 100,
                 timeout: Some(TimeValueWire::seconds(2)),
                 track_scores: true,
                 version: Some(true),
                 seq_no_and_primary_term: Some(false),
                 track_total_hits_up_to: Some(-1),
+                profile: true,
                 include_named_queries_score: Some(true),
                 search_pipeline: Some("pipeline-a".to_string()),
                 verbose_pipeline: true,
@@ -59657,6 +59666,21 @@ mod tests {
             invalid_track_total_hits.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "search request source track total hits",
+                ..
+            })
+        ));
+
+        let invalid_min_score = OpenSearchSearchRequestWire {
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                min_score: Some(f32::NAN),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        assert!(matches!(
+            invalid_min_score.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source min score",
                 ..
             })
         ));
