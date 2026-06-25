@@ -17101,6 +17101,9 @@ impl SteelNode {
     }
 
     fn handle_cat_pit_segments_route(&self, request: &RestRequest, include_all: bool) -> RestResponse {
+        if let Some(response) = cat_pit_segments_unrecognized_query_param_response(request) {
+            return response;
+        }
         let pit_ids = if include_all {
             self.pit_contexts
                 .lock()
@@ -20937,6 +20940,25 @@ fn pit_body_or_source_param(request: &RestRequest) -> Result<Value, RestResponse
     }
     serde_json::from_str::<Value>(source)
         .map_err(|_| delete_pit_illegal_argument("Failed to parse request body"))
+}
+
+fn cat_pit_segments_unrecognized_query_param_response(
+    request: &RestRequest,
+) -> Option<RestResponse> {
+    const ALLOWED_RESPONSE_PARAMS: &[&str] = &[
+        "bytes", "format", "h", "pri", "s", "size", "time", "timeout", "ts", "v",
+    ];
+    let keys = request
+        .query_params
+        .keys()
+        .filter(|key| {
+            !ALLOWED_RESPONSE_PARAMS.contains(&key.as_str())
+                && key.as_str() != "source"
+                && !(key.as_str() == "source_content_type"
+                    && request.query_params.contains_key("source"))
+        })
+        .collect::<Vec<_>>();
+    unrecognized_query_param_response_for_keys(request, &keys)
 }
 
 fn create_pit_unrecognized_query_param_response(request: &RestRequest) -> Option<RestResponse> {
@@ -29321,6 +29343,26 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             pit_json_response.body["error"]["type"],
             "action_request_validation_exception"
+        );
+
+        let pit_lonely_source_type = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_cat/pit_segments?source_content_type=json",
+        ));
+        assert_eq!(pit_lonely_source_type.status, 400);
+        assert_eq!(
+            pit_lonely_source_type.body["error"]["root_cause"][0]["reason"],
+            "request [/_cat/pit_segments] contains unrecognized parameter: [source_content_type]"
+        );
+
+        let pit_all_lonely_source_type = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_cat/pit_segments/_all?source_content_type=json",
+        ));
+        assert_eq!(pit_all_lonely_source_type.status, 400);
+        assert_eq!(
+            pit_all_lonely_source_type.body["error"]["root_cause"][0]["reason"],
+            "request [/_cat/pit_segments/_all] contains unrecognized parameter: [source_content_type]"
         );
 
         assert_eq!(

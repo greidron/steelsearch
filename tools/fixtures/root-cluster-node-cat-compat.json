@@ -444,6 +444,20 @@
       "extract": "error_response"
     },
     {
+      "name": "cat_pit_segments_lonely_source_content_type_error",
+      "area": "operational",
+      "method": "GET",
+      "path": "/_cat/pit_segments?source_content_type=json",
+      "extract": "error_response"
+    },
+    {
+      "name": "cat_pit_segments_all_lonely_source_content_type_error",
+      "area": "operational",
+      "method": "GET",
+      "path": "/_cat/pit_segments/_all?source_content_type=json",
+      "extract": "error_response"
+    },
+    {
       "name": "cat_pit_segments_all_text",
       "area": "operational",
       "method": "GET",
