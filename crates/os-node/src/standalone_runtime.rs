@@ -30729,6 +30729,106 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
     }
 
     #[test]
+    fn create_index_preserves_explicit_mappings_after_document_writes() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        let create_index = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/logs-create-body-mapping").with_json_body(
+                serde_json::json!({
+                    "settings": {
+                        "index": {
+                            "number_of_shards": 1,
+                            "number_of_replicas": 0
+                        }
+                    },
+                    "mappings": {
+                        "properties": {
+                            "service": {
+                                "type": "keyword",
+                                "store": true
+                            },
+                            "service_suggest": {
+                                "type": "completion"
+                            },
+                            "ts": {
+                                "type": "date"
+                            },
+                            "events": {
+                                "type": "nested",
+                                "properties": {
+                                    "kind": {
+                                        "type": "keyword"
+                                    }
+                                }
+                            },
+                            "location": {
+                                "type": "geo_point"
+                            }
+                        }
+                    }
+                }),
+            ),
+        );
+        assert_eq!(create_index.status, 200);
+
+        let write_doc = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/logs-create-body-mapping/_doc/doc-1")
+                .with_json_body(serde_json::json!({
+                    "service": "checkout",
+                    "service_suggest": "checkout",
+                    "ts": "2026-04-22T00:00:00Z",
+                    "events": [
+                        {
+                            "kind": "payment"
+                        }
+                    ],
+                    "location": {
+                        "lat": 37.78,
+                        "lon": -122.41
+                    },
+                    "@timestamp": "2026-04-22T00:00:00Z"
+                })),
+        );
+        assert_eq!(write_doc.status, 201);
+
+        let get_index =
+            node.handle_rest_request(RestRequest::new(RestMethod::Get, "/logs-create-body-mapping"));
+        assert_eq!(get_index.status, 200);
+        let index_body = &get_index.body["logs-create-body-mapping"];
+        assert_eq!(
+            index_body["settings"]["index"]["number_of_replicas"],
+            Value::String("0".to_string())
+        );
+        assert_eq!(
+            index_body["mappings"]["properties"]["service"]["type"],
+            Value::String("keyword".to_string())
+        );
+        assert_eq!(
+            index_body["mappings"]["properties"]["service"]["store"],
+            Value::Bool(true)
+        );
+        assert_eq!(
+            index_body["mappings"]["properties"]["service_suggest"]["type"],
+            Value::String("completion".to_string())
+        );
+        assert_eq!(
+            index_body["mappings"]["properties"]["ts"]["type"],
+            Value::String("date".to_string())
+        );
+        assert_eq!(
+            index_body["mappings"]["properties"]["events"]["type"],
+            Value::String("nested".to_string())
+        );
+        assert_eq!(
+            index_body["mappings"]["properties"]["location"]["type"],
+            Value::String("geo_point".to_string())
+        );
+    }
+
+    #[test]
     fn legacy_template_named_routes_support_get_head_put_post_and_delete() {
         let node = SteelNode::new(NodeInfo {
             name: "steel-node".to_string(),
