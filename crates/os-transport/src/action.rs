@@ -24933,6 +24933,7 @@ pub enum OpenSearchQueryBuilderWire {
     Ids(OpenSearchIdsQueryBuilderWire),
     MatchAll(OpenSearchMatchAllQueryBuilderWire),
     Match(OpenSearchMatchQueryBuilderWire),
+    Prefix(OpenSearchPrefixQueryBuilderWire),
     Range(OpenSearchRangeQueryBuilderWire),
     Term(OpenSearchTermQueryBuilderWire),
     Terms(OpenSearchTermsQueryBuilderWire),
@@ -25004,6 +25005,16 @@ pub struct OpenSearchMatchQueryBuilderWire {
     pub fuzzy_rewrite: Option<String>,
     pub cutoff_frequency: Option<f32>,
     pub auto_generate_synonyms_phrase_query: bool,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct OpenSearchPrefixQueryBuilderWire {
+    pub boost: f32,
+    pub query_name: Option<String>,
+    pub field_name: String,
+    pub value: String,
+    pub rewrite: Option<String>,
+    pub case_insensitive: bool,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -25109,6 +25120,15 @@ fn write_named_query_builder(output: &mut StreamOutput, query: &OpenSearchQueryB
             output.write_bool(false); // fuzziness
             write_optional_float(output, query.cutoff_frequency);
             output.write_bool(query.auto_generate_synonyms_phrase_query);
+        }
+        OpenSearchQueryBuilderWire::Prefix(query) => {
+            output.write_string("prefix");
+            output.write_f32(query.boost);
+            output.write_optional_string(query.query_name.as_deref());
+            output.write_string(&query.field_name);
+            output.write_string(&query.value);
+            output.write_optional_string(query.rewrite.as_deref());
+            output.write_bool(query.case_insensitive);
         }
         OpenSearchQueryBuilderWire::Range(query) => {
             output.write_string("range");
@@ -25225,6 +25245,16 @@ fn read_named_query_builder(
                 auto_generate_synonyms_phrase_query: input.read_bool()?,
             }))
         }
+        "prefix" => Ok(OpenSearchQueryBuilderWire::Prefix(
+            OpenSearchPrefixQueryBuilderWire {
+                boost: input.read_f32()?,
+                query_name: input.read_optional_string()?,
+                field_name: input.read_string()?,
+                value: input.read_string()?,
+                rewrite: input.read_optional_string()?,
+                case_insensitive: input.read_bool()?,
+            },
+        )),
         "range" => {
             let boost = input.read_f32()?;
             let query_name = input.read_optional_string()?;
@@ -25294,7 +25324,7 @@ fn read_named_query_builder(
         }
         _ => Err(TransportActionWireError::UnsupportedWireShape {
             shape: "search request source query",
-            reason: "only OpenSearch bool, exists, ids, match_all, match, range, term, and terms QueryBuilder values are decoded by this subset",
+            reason: "only OpenSearch bool, exists, ids, match_all, match, prefix, range, term, and terms QueryBuilder values are decoded by this subset",
         }),
     }
 }
@@ -25400,6 +25430,16 @@ fn validate_query_builder(
                     reason: "OpenSearch MatchQueryBuilder cutoff frequency must be finite when present",
                 });
             }
+        }
+        OpenSearchQueryBuilderWire::Prefix(query) => {
+            validate_query_boost_and_name(query.boost, query.query_name.as_deref())?;
+            if query.field_name.is_empty() {
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "search request source query",
+                    reason: "OpenSearch PrefixQueryBuilder field name must be non-empty",
+                });
+            }
+            validate_optional_non_empty_query_string(query.rewrite.as_deref())?;
         }
         OpenSearchQueryBuilderWire::Range(query) => {
             validate_query_boost_and_name(query.boost, query.query_name.as_deref())?;
@@ -61829,6 +61869,28 @@ mod tests {
         let decoded = OpenSearchSearchRequestWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, ids_query_request);
 
+        let prefix_query_request = OpenSearchSearchRequestWire {
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                query: Some(OpenSearchQueryBuilderWire::Prefix(
+                    OpenSearchPrefixQueryBuilderWire {
+                        boost: 1.0,
+                        query_name: Some("tenant-prefix".to_string()),
+                        field_name: "tenant".to_string(),
+                        value: "tenant-".to_string(),
+                        rewrite: Some("constant_score".to_string()),
+                        case_insensitive: true,
+                    },
+                )),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        let mut output = StreamOutput::new();
+        prefix_query_request.write(&mut output);
+
+        let decoded = OpenSearchSearchRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, prefix_query_request);
+
         let match_query_request = OpenSearchSearchRequestWire {
             source: Some(OpenSearchSearchSourceBuilderWire {
                 query: Some(OpenSearchQueryBuilderWire::Match(
@@ -62279,6 +62341,54 @@ mod tests {
         };
         assert!(matches!(
             invalid_ids_query_name.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source query",
+                ..
+            })
+        ));
+
+        let invalid_prefix_field = OpenSearchSearchRequestWire {
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                query: Some(OpenSearchQueryBuilderWire::Prefix(
+                    OpenSearchPrefixQueryBuilderWire {
+                        boost: 1.0,
+                        query_name: None,
+                        field_name: String::new(),
+                        value: "tenant-".to_string(),
+                        rewrite: None,
+                        case_insensitive: false,
+                    },
+                )),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        assert!(matches!(
+            invalid_prefix_field.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source query",
+                ..
+            })
+        ));
+
+        let invalid_prefix_rewrite = OpenSearchSearchRequestWire {
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                query: Some(OpenSearchQueryBuilderWire::Prefix(
+                    OpenSearchPrefixQueryBuilderWire {
+                        boost: 1.0,
+                        query_name: None,
+                        field_name: "tenant".to_string(),
+                        value: "tenant-".to_string(),
+                        rewrite: Some(String::new()),
+                        case_insensitive: false,
+                    },
+                )),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        assert!(matches!(
+            invalid_prefix_rewrite.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "search request source query",
                 ..
