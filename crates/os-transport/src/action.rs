@@ -25996,6 +25996,8 @@ pub struct OpenSearchSearchResponseWire {
     pub sort_fields: Option<Vec<OpenSearchSortFieldWire>>,
     pub collapse_field: Option<String>,
     pub collapse_values: Option<Vec<Value>>,
+    pub timed_out: bool,
+    pub terminated_early: Option<bool>,
     pub total_shards: i32,
     pub successful_shards: i32,
     pub shard_failures: Vec<OpenSearchShardSearchFailureWire>,
@@ -26022,6 +26024,8 @@ impl OpenSearchSearchResponseWire {
             sort_fields: None,
             collapse_field: None,
             collapse_values: None,
+            timed_out: false,
+            terminated_early: None,
             total_shards: 1,
             successful_shards: 1,
             shard_failures: Vec::new(),
@@ -26054,8 +26058,8 @@ impl OpenSearchSearchResponseWire {
         write_optional_search_sort_values(output, self.collapse_values.as_deref())?;
         output.write_bool(false);
         output.write_bool(false);
-        output.write_bool(false);
-        write_optional_bool(output, None);
+        output.write_bool(self.timed_out);
+        write_optional_bool(output, self.terminated_early);
         output.write_bool(false);
         output.write_vint(1);
         if version.on_or_after(Version::from_id(2_100_099)) {
@@ -26104,19 +26108,7 @@ impl OpenSearchSearchResponseWire {
         reject_optional_writeable_present(&mut input, "search response aggregations")?;
         reject_optional_writeable_present(&mut input, "search response suggest")?;
         let timed_out = input.read_bool()?;
-        if timed_out {
-            return Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "search response timeout",
-                reason: "timed-out SearchResponse wire rendering is not supported by this subset",
-            });
-        }
         let terminated_early = read_optional_bool(&mut input)?;
-        if terminated_early.is_some() {
-            return Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "search response terminated early",
-                reason: "terminated-early SearchResponse wire rendering is not supported by this subset",
-            });
-        }
         reject_optional_writeable_present(&mut input, "search response profile results")?;
         let num_reduce_phases = input.read_vint()?;
         if num_reduce_phases != 1 {
@@ -26139,6 +26131,8 @@ impl OpenSearchSearchResponseWire {
             sort_fields,
             collapse_field,
             collapse_values,
+            timed_out,
+            terminated_early,
             total_shards: input.read_vint()?,
             successful_shards: input.read_vint()?,
             shard_failures: Vec::new(),
@@ -59219,6 +59213,8 @@ mod tests {
             sort_fields: None,
             collapse_field: None,
             collapse_values: None,
+            timed_out: true,
+            terminated_early: Some(false),
             total_shards: 3,
             successful_shards: 2,
             shard_failures: vec![OpenSearchShardSearchFailureWire {
@@ -59255,6 +59251,8 @@ mod tests {
         assert_eq!(decoded.total_hits, response.total_hits);
         assert_eq!(decoded.total_hits_relation, response.total_hits_relation);
         assert!(decoded.max_score.is_nan());
+        assert_eq!(decoded.timed_out, response.timed_out);
+        assert_eq!(decoded.terminated_early, response.terminated_early);
         assert_eq!(decoded.total_shards, response.total_shards);
         assert_eq!(decoded.successful_shards, response.successful_shards);
         assert_eq!(decoded.shard_failures, response.shard_failures);
