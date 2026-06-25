@@ -271,6 +271,14 @@ search_registration_status() {
           ;;
       esac
       ;;
+    suggester)
+      case "${text}" in
+        *TermSuggestionBuilder.SUGGESTION_NAME*|*PhraseSuggestionBuilder.SUGGESTION_NAME*|*CompletionSuggestionBuilder.SUGGESTION_NAME*)
+          echo "implemented"
+          return
+          ;;
+      esac
+      ;;
     fetch_subphase)
       case "${text}" in
         *ExplainPhase*|*FetchSourcePhase*|*FetchScorePhase*|*HighlightPhase*|*MatchedQueriesPhase*|*FetchDocValuesPhase*|*ScriptFieldsPhase*|*FetchFieldsPhase*|*FetchVersionPhase*|*SeqNoPrimaryTermPhase*)

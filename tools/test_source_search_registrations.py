@@ -32,6 +32,9 @@ class SourceSearchRegistrationsTests(unittest.TestCase):
             ("aggregation", "AggregationSpec( DateHistogramAggregationBuilder.NAME,"),
             ("aggregation", "TopHitsAggregationBuilder.NAME"),
             ("pipeline_aggregation", "BucketSortPipelineAggregationBuilder.NAME"),
+            ("suggester", "TermSuggestionBuilder.SUGGESTION_NAME"),
+            ("suggester", "PhraseSuggestionBuilder.SUGGESTION_NAME"),
+            ("suggester", "CompletionSuggestionBuilder.SUGGESTION_NAME"),
             ("fetch_subphase", "FetchDocValuesPhase"),
             ("fetch_subphase", "ScriptFieldsPhase"),
             ("fetch_subphase", "FetchFieldsPhase"),
@@ -51,7 +54,7 @@ class SourceSearchRegistrationsTests(unittest.TestCase):
             ("query", "GeoShapeQueryBuilder.NAME"),
             ("aggregation", "RareTermsAggregationBuilder.NAME"),
             ("aggregation", "GlobalAggregationBuilder.NAME"),
-            ("suggester", "TermSuggestionBuilder.SUGGESTION_NAME"),
+            ("suggester", "SuggesterSpec<?> suggester"),
         ]
         for category, needle in planned:
             self.assertEqual(
