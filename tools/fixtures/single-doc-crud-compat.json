@@ -315,6 +315,50 @@
       }
     },
     {
+      "name": "update_single_doc_version_parameter_rejected",
+      "method": "POST",
+      "path": "/single-doc-compat-000001/_update/doc-1?routing=tenant-a&version=1",
+      "body": {
+        "doc": {
+          "message": "version-param-rejected"
+        }
+      },
+      "compare": {
+        "expected_status": 400,
+        "body_paths_present": [
+          "error.type",
+          "error.reason",
+          "status"
+        ],
+        "body_paths_equal": [
+          "error.type",
+          "status"
+        ]
+      }
+    },
+    {
+      "name": "update_single_doc_upsert_with_occ_rejected",
+      "method": "POST",
+      "path": "/single-doc-compat-000001/_update/doc-occ-upsert?routing=tenant-a&if_seq_no=0&if_primary_term=1",
+      "body": {
+        "upsert": {
+          "message": "upsert-with-occ"
+        }
+      },
+      "compare": {
+        "expected_status": 400,
+        "body_paths_present": [
+          "error.type",
+          "error.reason",
+          "status"
+        ],
+        "body_paths_equal": [
+          "error.type",
+          "status"
+        ]
+      }
+    },
+    {
       "name": "update_single_doc_doc_patch_success",
       "method": "POST",
       "path": "/single-doc-compat-000001/_update/doc-1?routing=tenant-a",
