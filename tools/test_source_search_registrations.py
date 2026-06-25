@@ -36,6 +36,7 @@ class SourceSearchRegistrationsTests(unittest.TestCase):
             ("aggregation", "GeoDistanceAggregationBuilder.NAME"),
             ("aggregation", "IpRangeAggregationBuilder.NAME"),
             ("aggregation", "MultiTermsAggregationBuilder.NAME"),
+            ("aggregation", "AggregationSpec(NestedAggregationBuilder.NAME"),
             ("aggregation", "RareTermsAggregationBuilder.NAME"),
             ("aggregation", "SamplerAggregationBuilder.NAME"),
             ("aggregation", "GlobalAggregationBuilder.NAME"),

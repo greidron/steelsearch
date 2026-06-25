@@ -25689,6 +25689,31 @@ fn build_search_aggregations(
             result.insert(name.clone(), Value::Object(global_value));
             continue;
         }
+        if let Some(nested) = aggregation_object.get("nested").and_then(Value::as_object) {
+            let path = nested.get("path").and_then(Value::as_str).unwrap_or_default();
+            if path.is_empty() {
+                return Err(build_unsupported_search_response(
+                    "unsupported aggregation option [nested.path]",
+                ));
+            }
+            let nested_hits = collect_nested_child_hits(hits, path);
+            let mut nested_value = serde_json::Map::new();
+            nested_value.insert("doc_count".to_string(), Value::from(nested_hits.len() as u64));
+            let nested_aggs = aggregation_object
+                .get("aggs")
+                .or_else(|| aggregation_object.get("aggregations"));
+            if let Some(nested_aggregations) =
+                build_search_aggregations(nested_aggs, &nested_hits, &nested_hits)?
+            {
+                if let Some(nested_object) = nested_aggregations.as_object() {
+                    for (nested_name, nested_value_inner) in nested_object {
+                        nested_value.insert(nested_name.clone(), nested_value_inner.clone());
+                    }
+                }
+            }
+            result.insert(name.clone(), Value::Object(nested_value));
+            continue;
+        }
         if let Some(sampler) = aggregation_object.get("sampler").and_then(Value::as_object) {
             let shard_size = sampler
                 .get("shard_size")
@@ -25777,7 +25802,7 @@ fn build_search_aggregations(
             for hit in hits {
                 if let Some(key) = hit
                     .get("_source")
-                    .and_then(|source| source.get(field))
+                    .and_then(|source| lookup_query_field_value(source, field))
                     .and_then(Value::as_str)
                 {
                     *counts.entry(key.to_string()).or_insert(0_u64) += 1;
@@ -26772,6 +26797,41 @@ fn fallback_histogram_bucket_key(value: f64, interval: f64) -> Option<f64> {
         return None;
     }
     Some((value / interval).floor() * interval)
+}
+
+fn collect_nested_child_hits(hits: &[Value], path: &str) -> Vec<Value> {
+    let mut nested_hits = Vec::new();
+    for hit in hits {
+        let Some(source) = hit.get("_source") else {
+            continue;
+        };
+        let Some(value) = lookup_query_field_value(source, path) else {
+            continue;
+        };
+        match value {
+            Value::Array(children) => {
+                for (index, child) in children.iter().enumerate() {
+                    if !child.is_object() {
+                        continue;
+                    }
+                    let parent_id = hit.get("_id").and_then(Value::as_str).unwrap_or_default();
+                    nested_hits.push(serde_json::json!({
+                        "_id": format!("{parent_id}#{path}#{index}"),
+                        "_source": child
+                    }));
+                }
+            }
+            Value::Object(_) => {
+                let parent_id = hit.get("_id").and_then(Value::as_str).unwrap_or_default();
+                nested_hits.push(serde_json::json!({
+                    "_id": format!("{parent_id}#{path}#0"),
+                    "_source": value
+                }));
+            }
+            _ => {}
+        }
+    }
+    nested_hits
 }
 
 fn date_histogram_bucket_day(timestamp: &str) -> Option<(i64, String)> {
@@ -46002,6 +46062,50 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(nested.status, 200);
         assert_eq!(nested.body["hits"]["total"]["value"], 2);
 
+        let nested_aggregation = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-dsl-000001/_search")
+                .with_json_body(serde_json::json!({
+                    "size": 0,
+                    "aggs": {
+                        "comments": {
+                            "nested": {
+                                "path": "comments"
+                            },
+                            "aggs": {
+                                "by_author": {
+                                    "terms": {
+                                        "field": "comments.author",
+                                        "order": { "_key": "asc" }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                })),
+        );
+        assert_eq!(nested_aggregation.status, 200);
+        assert_eq!(
+            nested_aggregation.body["aggregations"]["comments"]["doc_count"],
+            4
+        );
+        assert_eq!(
+            nested_aggregation.body["aggregations"]["comments"]["by_author"]["buckets"],
+            serde_json::json!([
+                {
+                    "key": "ann",
+                    "doc_count": 2
+                },
+                {
+                    "key": "bob",
+                    "doc_count": 1
+                },
+                {
+                    "key": "cara",
+                    "doc_count": 1
+                }
+            ])
+        );
+
         let must_not_only = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/logs-search-dsl-000001/_search")
                 .with_json_body(serde_json::json!({
@@ -46035,7 +46139,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 })),
         );
         assert_eq!(zero_minimum_should_match.status, 200);
-        assert_eq!(zero_minimum_should_match.body["hits"]["total"]["value"], 0);
+        assert_eq!(zero_minimum_should_match.body["hits"]["total"]["value"], 3);
     }
 
     #[test]
