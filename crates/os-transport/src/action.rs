@@ -24929,6 +24929,7 @@ fn validate_search_after_values(values: Option<&[Value]>) -> Result<(), Transpor
 #[derive(Clone, Debug, PartialEq)]
 pub enum OpenSearchQueryBuilderWire {
     Bool(OpenSearchBoolQueryBuilderWire),
+    ConstantScore(OpenSearchConstantScoreQueryBuilderWire),
     Exists(OpenSearchExistsQueryBuilderWire),
     Fuzzy(OpenSearchFuzzyQueryBuilderWire),
     Ids(OpenSearchIdsQueryBuilderWire),
@@ -24944,6 +24945,13 @@ pub enum OpenSearchQueryBuilderWire {
     Term(OpenSearchTermQueryBuilderWire),
     Terms(OpenSearchTermsQueryBuilderWire),
     Wildcard(OpenSearchWildcardQueryBuilderWire),
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct OpenSearchConstantScoreQueryBuilderWire {
+    pub boost: f32,
+    pub query_name: Option<String>,
+    pub filter: Box<OpenSearchQueryBuilderWire>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -25192,6 +25200,12 @@ fn write_named_query_builder(output: &mut StreamOutput, query: &OpenSearchQueryB
             output.write_bool(query.adjust_pure_negative);
             output.write_optional_string(query.minimum_should_match.as_deref());
         }
+        OpenSearchQueryBuilderWire::ConstantScore(query) => {
+            output.write_string("constant_score");
+            output.write_f32(query.boost);
+            output.write_optional_string(query.query_name.as_deref());
+            write_named_query_builder(output, &query.filter);
+        }
         OpenSearchQueryBuilderWire::Exists(query) => {
             output.write_string("exists");
             output.write_f32(query.boost);
@@ -25378,6 +25392,13 @@ fn read_named_query_builder(
             adjust_pure_negative: input.read_bool()?,
             minimum_should_match: input.read_optional_string()?,
         })),
+        "constant_score" => Ok(OpenSearchQueryBuilderWire::ConstantScore(
+            OpenSearchConstantScoreQueryBuilderWire {
+                boost: input.read_f32()?,
+                query_name: input.read_optional_string()?,
+                filter: Box::new(read_named_query_builder(input)?),
+            },
+        )),
         "exists" => Ok(OpenSearchQueryBuilderWire::Exists(
             OpenSearchExistsQueryBuilderWire {
                 boost: input.read_f32()?,
@@ -25589,7 +25610,7 @@ fn read_named_query_builder(
         )),
         _ => Err(TransportActionWireError::UnsupportedWireShape {
             shape: "search request source query",
-            reason: "only OpenSearch bool, exists, fuzzy, ids, match_all, match_none, match, match_bool_prefix, match_phrase, match_phrase_prefix, prefix, range, regexp, term, terms, and wildcard QueryBuilder values are decoded by this subset",
+            reason: "only OpenSearch bool, constant_score, exists, fuzzy, ids, match_all, match_none, match, match_bool_prefix, match_phrase, match_phrase_prefix, prefix, range, regexp, term, terms, and wildcard QueryBuilder values are decoded by this subset",
         }),
     }
 }
@@ -25635,6 +25656,10 @@ fn validate_query_builder(
             validate_query_builder_list(&query.must_not)?;
             validate_query_builder_list(&query.should)?;
             validate_query_builder_list(&query.filter)?;
+        }
+        OpenSearchQueryBuilderWire::ConstantScore(query) => {
+            validate_query_boost_and_name(query.boost, query.query_name.as_deref())?;
+            validate_query_builder(Some(&query.filter))?;
         }
         OpenSearchQueryBuilderWire::Exists(query) => {
             validate_query_boost_and_name(query.boost, query.query_name.as_deref())?;
@@ -62278,6 +62303,33 @@ mod tests {
         let decoded = OpenSearchSearchRequestWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, match_none_query_request);
 
+        let constant_score_query_request = OpenSearchSearchRequestWire {
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                query: Some(OpenSearchQueryBuilderWire::ConstantScore(
+                    OpenSearchConstantScoreQueryBuilderWire {
+                        boost: 2.0,
+                        query_name: Some("tenant-constant".to_string()),
+                        filter: Box::new(OpenSearchQueryBuilderWire::Term(
+                            OpenSearchTermQueryBuilderWire {
+                                boost: 1.0,
+                                query_name: None,
+                                field_name: "tenant".to_string(),
+                                value: json!("tenant-a"),
+                                case_insensitive: false,
+                            },
+                        )),
+                    },
+                )),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        let mut output = StreamOutput::new();
+        constant_score_query_request.write(&mut output);
+
+        let decoded = OpenSearchSearchRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, constant_score_query_request);
+
         let term_query_request = OpenSearchSearchRequestWire {
             source: Some(OpenSearchSearchSourceBuilderWire {
                 query: Some(OpenSearchQueryBuilderWire::Term(
@@ -62792,6 +62844,35 @@ mod tests {
         };
         assert!(matches!(
             invalid_match_none_name.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source query",
+                ..
+            })
+        ));
+
+        let invalid_constant_score_filter = OpenSearchSearchRequestWire {
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                query: Some(OpenSearchQueryBuilderWire::ConstantScore(
+                    OpenSearchConstantScoreQueryBuilderWire {
+                        boost: 1.0,
+                        query_name: None,
+                        filter: Box::new(OpenSearchQueryBuilderWire::Term(
+                            OpenSearchTermQueryBuilderWire {
+                                boost: 1.0,
+                                query_name: None,
+                                field_name: String::new(),
+                                value: json!("tenant-a"),
+                                case_insensitive: false,
+                            },
+                        )),
+                    },
+                )),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        assert!(matches!(
+            invalid_constant_score_filter.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "search request source query",
                 ..
