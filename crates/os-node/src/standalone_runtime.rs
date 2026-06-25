@@ -9306,6 +9306,22 @@ impl SteelNode {
             };
             match self.resolve_pit_context(pit_id, keep_alive_millis) {
                 Ok(context) => {
+                    if let Some(missing_index) = context
+                        .indices
+                        .iter()
+                        .find(|index_name| !self.index_or_alias_exists(index_name))
+                    {
+                        self.remove_pit_context(pit_id);
+                        return index_not_found_response(missing_index);
+                    }
+                    if context
+                        .indices
+                        .iter()
+                        .any(|index_name| self.index_is_closed(index_name))
+                    {
+                        self.remove_pit_context(pit_id);
+                        return search_phase_missing_pit_context_response(pit_id);
+                    }
                     point_in_time_response_id = Some(pit_id.to_string());
                     Some(context)
                 }
@@ -10416,6 +10432,13 @@ impl SteelNode {
             context.expires_at_millis = pit_expires_at_millis(now_millis, keep_alive_millis);
         }
         Ok(context.clone())
+    }
+
+    fn remove_pit_context(&self, pit_id: &str) {
+        self.pit_contexts
+            .lock()
+            .expect("pit contexts lock poisoned")
+            .remove(pit_id);
     }
 
     fn handle_close_point_in_time_route(&self, request: &RestRequest) -> RestResponse {
@@ -39468,6 +39491,107 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         ));
         assert_eq!(listed_pits.status, 200);
         assert_eq!(listed_pits.body, serde_json::json!({ "pits": [] }));
+    }
+
+    #[test]
+    fn pit_search_after_index_delete_or_close_clears_context_like_opensearch() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(RestMethod::Put, "/logs-pit-deleted-000001"))
+                .status,
+            200
+        );
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, "/logs-pit-deleted-000001/_doc/doc-1")
+                    .with_json_body(serde_json::json!({ "message": "before-delete" })),
+            )
+            .status,
+            201
+        );
+        let deleted_pit = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/logs-pit-deleted-000001/_search/point_in_time?keep_alive=1m",
+        ));
+        assert_eq!(deleted_pit.status, 200);
+        let deleted_pit_id = deleted_pit.body["pit_id"].as_str().unwrap();
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(RestMethod::Delete, "/logs-pit-deleted-000001"))
+                .status,
+            200
+        );
+
+        let deleted_pit_search = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_search")
+                .with_json_body(serde_json::json!({
+                    "pit": { "id": deleted_pit_id, "keep_alive": "1m" },
+                    "query": { "match_all": {} }
+                })),
+        );
+        assert_eq!(deleted_pit_search.status, 404);
+        assert_eq!(
+            deleted_pit_search.body["error"]["type"],
+            "index_not_found_exception"
+        );
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_search/point_in_time/_all"))
+                .body,
+            serde_json::json!({ "pits": [] })
+        );
+
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(RestMethod::Put, "/logs-pit-closed-search-000001"))
+                .status,
+            200
+        );
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, "/logs-pit-closed-search-000001/_doc/doc-1")
+                    .with_json_body(serde_json::json!({ "message": "before-close" })),
+            )
+            .status,
+            201
+        );
+        let closed_pit = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/logs-pit-closed-search-000001/_search/point_in_time?keep_alive=1m",
+        ));
+        assert_eq!(closed_pit.status, 200);
+        let closed_pit_id = closed_pit.body["pit_id"].as_str().unwrap();
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(
+                RestMethod::Post,
+                "/logs-pit-closed-search-000001/_close",
+            ))
+            .status,
+            200
+        );
+
+        let closed_pit_search = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_search")
+                .with_json_body(serde_json::json!({
+                    "pit": { "id": closed_pit_id, "keep_alive": "1m" },
+                    "query": { "match_all": {} }
+                })),
+        );
+        assert_eq!(closed_pit_search.status, 404);
+        assert_eq!(
+            closed_pit_search.body["error"]["type"],
+            "search_phase_execution_exception"
+        );
+        assert_eq!(
+            closed_pit_search.body["error"]["root_cause"][0]["type"],
+            "search_context_missing_exception"
+        );
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_search/point_in_time/_all"))
+                .body,
+            serde_json::json!({ "pits": [] })
+        );
     }
 
     #[test]

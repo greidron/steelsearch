@@ -2296,6 +2296,9 @@ The create-PIT boundary covers:
   `search_after` bounds for stable local snapshot pagination;
 - PIT searches apply field-sort `search_after` against the stored PIT snapshot,
   preserving divergence from live searches after later writes;
+- PIT searches invalidate the local PIT context when its backing index has been
+  deleted or closed, matching OpenSearch deleted-index and missing-context
+  failure semantics;
 - manifest-backed create-PIT index option handling for unavailable targets,
   `allow_no_indices`, ignored aliases, alias fanout guards, open/closed
   wildcard expansion, and hidden wildcard expansion;
