@@ -213,8 +213,8 @@ rest_route	planned	PUT	/{index}/_alias		/home/ubuntu/OpenSearch/server/src/main/
 rest_route	planned	PUT	/{index}/_aliases		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestIndexPutAliasAction.java	75
 rest_route	planned	PUT	/_alias		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestIndexPutAliasAction.java	76
 rest_route	planned	POST	/_aliases		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestIndicesAliasesAction.java	65
-rest_route	planned	GET	/_segments		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestIndicesSegmentsAction.java	59
-rest_route	planned	GET	/{index}/_segments		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestIndicesSegmentsAction.java	59
+rest_route	implemented	GET	/_segments		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestIndicesSegmentsAction.java	59
+rest_route	implemented	GET	/{index}/_segments		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestIndicesSegmentsAction.java	59
 rest_route	planned	GET	/_shard_stores		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestIndicesShardStoresAction.java	65
 rest_route	planned	GET	/{index}/_shard_stores		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestIndicesShardStoresAction.java	65
 rest_route	planned	GET	/_stats		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestIndicesStatsAction.java	70
@@ -234,8 +234,8 @@ rest_route	planned	POST	/{index}/_mapping		/home/ubuntu/OpenSearch/server/src/ma
 rest_route	planned	PUT	/{index}/_mapping		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestPutMappingAction.java	70
 rest_route	planned	POST	/{index}/_mappings		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestPutMappingAction.java	71
 rest_route	planned	PUT	/{index}/_mappings		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestPutMappingAction.java	72
-rest_route	planned	GET	/_recovery		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestRecoveryAction.java	59
-rest_route	planned	GET	/{index}/_recovery		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestRecoveryAction.java	59
+rest_route	implemented	GET	/_recovery		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestRecoveryAction.java	59
+rest_route	implemented	GET	/{index}/_recovery		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestRecoveryAction.java	59
 rest_route	implemented	GET	/_refresh		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestRefreshAction.java	64
 rest_route	implemented	POST	/_refresh		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestRefreshAction.java	65
 rest_route	implemented	GET	/{index}/_refresh		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestRefreshAction.java	66

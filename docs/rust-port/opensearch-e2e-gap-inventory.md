@@ -46,7 +46,7 @@ Current status:
 | Live required OpenSearch E2E suites | `failed=0`, `missing=0`, `known_gap_or_skipped=25` across `226` canonical and `146` strict equal cases | Covered cases pass, but skipped/deferred cases remain. |
 | REST source inventory fixture coverage | `371/371` in-scope source routes matched by fixtures | Fixture inventory is closed, but this is not the same as positive/negative live comparison for every route. |
 | REST live-required source-route mapping | `142/371` in-scope source routes matched by live-required fixture routes | Live-required coverage is representative, not exhaustive. |
-| REST source statuses | `implemented=25`, `stubbed=6`, `planned=340`, `out-of-scope=18` | Most source-derived rows still need owner-level implementation classification. |
+| REST source statuses | `implemented=29`, `stubbed=6`, `planned=336`, `out-of-scope=18` | Most source-derived rows still need owner-level implementation classification. |
 | Transport source inventory | `160` transport actions: `42 implemented`, `118 partial`, `0 planned` | Implemented adapters have positive wire/route evidence; partial rows have explicit fail-closed boundaries and still need per-action execution semantics plus live comparison evidence. |
 
 Conclusion: the current E2E evidence proves there are no failures in the
