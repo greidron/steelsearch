@@ -3963,11 +3963,31 @@ impl SteelNode {
                 return Some(self.handle_segments_route(Some(target)));
             }
         }
-        if request.method == RestMethod::Get && request.path == "/_cat/pit_segments" {
-            return Some(self.handle_cat_pit_segments_route(request, false));
+        if request.path == "/_cat/pit_segments" {
+            return match request.method {
+                RestMethod::Get => Some(self.handle_cat_pit_segments_route(request, false)),
+                _ => {
+                    let uri = request_uri_with_query(request);
+                    Some(method_not_allowed_response(
+                        request.method,
+                        uri.as_str(),
+                        "GET",
+                    ))
+                }
+            };
         }
-        if request.method == RestMethod::Get && request.path == "/_cat/pit_segments/_all" {
-            return Some(self.handle_cat_pit_segments_route(request, true));
+        if request.path == "/_cat/pit_segments/_all" {
+            return match request.method {
+                RestMethod::Get => Some(self.handle_cat_pit_segments_route(request, true)),
+                _ => {
+                    let uri = request_uri_with_query(request);
+                    Some(method_not_allowed_response(
+                        request.method,
+                        uri.as_str(),
+                        "GET",
+                    ))
+                }
+            };
         }
         if request.method == RestMethod::Get && request.path == "/_cat/recovery" {
             return Some(self.handle_cat_recovery_route(request, None));
@@ -32800,6 +32820,20 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             pit_json_response.body["error"]["type"],
             "action_request_validation_exception"
+        );
+
+        let post_pit_all = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/_cat/pit_segments/_all?v=true",
+        ));
+        assert_eq!(post_pit_all.status, 405);
+        assert_eq!(
+            post_pit_all.headers.get("allow").map(String::as_str),
+            Some("GET")
+        );
+        assert_eq!(
+            post_pit_all.body["error"],
+            "Incorrect HTTP method for uri [/_cat/pit_segments/_all?v=true] and method [POST], allowed: [GET]"
         );
 
         let pit_lonely_source_type = node.handle_rest_request(RestRequest::new(
