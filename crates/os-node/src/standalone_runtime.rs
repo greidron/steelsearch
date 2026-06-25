@@ -21859,7 +21859,10 @@ fn validate_slice_request_body(
         return Some(slice_illegal_argument("max must be greater than 1"));
     }
     if id >= max {
-        return Some(slice_x_content_parse_error("max"));
+        return Some(slice_x_content_parse_error_with_cause(
+            "max",
+            "max must be greater than id",
+        ));
     }
     if !scroll && !point_in_time {
         return Some(search_after_phase_execution_error(
@@ -21888,6 +21891,23 @@ fn slice_x_content_parse_error(field: &str) -> RestResponse {
     build_x_content_parse_search_response(&format!(
         "[1:56] [slice] failed to parse field [{field}]"
     ))
+}
+
+fn slice_x_content_parse_error_with_cause(field: &str, cause: &str) -> RestResponse {
+    RestResponse::json(
+        400,
+        serde_json::json!({
+            "error": {
+                "type": "x_content_parse_exception",
+                "reason": format!("[1:56] [slice] failed to parse field [{field}]"),
+                "caused_by": {
+                    "type": "illegal_argument_exception",
+                    "reason": cause
+                }
+            },
+            "status": 400
+        }),
+    )
 }
 
 fn slice_illegal_argument(reason: &str) -> RestResponse {
@@ -45534,6 +45554,10 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             invalid_slice_body.body["error"]["reason"],
             "[1:56] [slice] failed to parse field [max]"
+        );
+        assert_eq!(
+            invalid_slice_body.body["error"]["caused_by"]["reason"],
+            "max must be greater than id"
         );
 
         let oversized_scroll_slice = node.handle_rest_request(
