@@ -24931,6 +24931,7 @@ pub enum OpenSearchQueryBuilderWire {
     Bool(OpenSearchBoolQueryBuilderWire),
     MatchAll(OpenSearchMatchAllQueryBuilderWire),
     Match(OpenSearchMatchQueryBuilderWire),
+    Range(OpenSearchRangeQueryBuilderWire),
     Term(OpenSearchTermQueryBuilderWire),
 }
 
@@ -24980,6 +24981,19 @@ pub struct OpenSearchMatchQueryBuilderWire {
     pub auto_generate_synonyms_phrase_query: bool,
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub struct OpenSearchRangeQueryBuilderWire {
+    pub boost: f32,
+    pub query_name: Option<String>,
+    pub field_name: String,
+    pub from: Value,
+    pub to: Value,
+    pub include_lower: bool,
+    pub include_upper: bool,
+    pub format: Option<String>,
+    pub relation: Option<OpenSearchShapeRelationWire>,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum OpenSearchMatchOperatorWire {
     Or,
@@ -24991,6 +25005,13 @@ pub enum OpenSearchZeroTermsQueryWire {
     None,
     All,
     Null,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum OpenSearchShapeRelationWire {
+    Intersects,
+    Contains,
+    Within,
 }
 
 impl Default for OpenSearchMatchAllQueryBuilderWire {
@@ -25051,6 +25072,21 @@ fn write_named_query_builder(output: &mut StreamOutput, query: &OpenSearchQueryB
             output.write_bool(false); // fuzziness
             write_optional_float(output, query.cutoff_frequency);
             output.write_bool(query.auto_generate_synonyms_phrase_query);
+        }
+        OpenSearchQueryBuilderWire::Range(query) => {
+            output.write_string("range");
+            output.write_f32(query.boost);
+            output.write_optional_string(query.query_name.as_deref());
+            output.write_string(&query.field_name);
+            write_range_bound_value(output, &query.from)
+                .expect("validated range lower bound must encode as an OpenSearch generic value");
+            write_range_bound_value(output, &query.to)
+                .expect("validated range upper bound must encode as an OpenSearch generic value");
+            output.write_bool(query.include_lower);
+            output.write_bool(query.include_upper);
+            output.write_bool(false); // time zone
+            output.write_optional_string(query.format.as_deref());
+            output.write_optional_string(query.relation.map(shape_relation_name));
         }
         OpenSearchQueryBuilderWire::Term(query) => {
             output.write_string("term");
@@ -25128,6 +25164,40 @@ fn read_named_query_builder(
                 auto_generate_synonyms_phrase_query: input.read_bool()?,
             }))
         }
+        "range" => {
+            let boost = input.read_f32()?;
+            let query_name = input.read_optional_string()?;
+            let field_name = input.read_string()?;
+            let from = read_range_bound_value(input)?;
+            let to = read_range_bound_value(input)?;
+            let include_lower = input.read_bool()?;
+            let include_upper = input.read_bool()?;
+            reject_absent_optional_writeable(input, "search request source query range time zone")?;
+            let format = input.read_optional_string()?;
+            let relation = match input.read_optional_string()?.as_deref() {
+                None => None,
+                Some("intersects") => Some(OpenSearchShapeRelationWire::Intersects),
+                Some("contains") => Some(OpenSearchShapeRelationWire::Contains),
+                Some("within") => Some(OpenSearchShapeRelationWire::Within),
+                Some(_) => {
+                    return Err(TransportActionWireError::UnsupportedWireShape {
+                        shape: "search request source query",
+                        reason: "OpenSearch RangeQueryBuilder relation must be intersects, contains, or within",
+                    });
+                }
+            };
+            Ok(OpenSearchQueryBuilderWire::Range(OpenSearchRangeQueryBuilderWire {
+                boost,
+                query_name,
+                field_name,
+                from,
+                to,
+                include_lower,
+                include_upper,
+                format,
+                relation,
+            }))
+        }
         "term" => Ok(OpenSearchQueryBuilderWire::Term(OpenSearchTermQueryBuilderWire {
             boost: input.read_f32()?,
             query_name: input.read_optional_string()?,
@@ -25137,7 +25207,7 @@ fn read_named_query_builder(
         })),
         _ => Err(TransportActionWireError::UnsupportedWireShape {
             shape: "search request source query",
-            reason: "only OpenSearch bool, match_all, match, and term QueryBuilder values are decoded by this subset",
+            reason: "only OpenSearch bool, match_all, match, range, and term QueryBuilder values are decoded by this subset",
         }),
     }
 }
@@ -25231,6 +25301,18 @@ fn validate_query_builder(
                     reason: "OpenSearch MatchQueryBuilder cutoff frequency must be finite when present",
                 });
             }
+        }
+        OpenSearchQueryBuilderWire::Range(query) => {
+            validate_query_boost_and_name(query.boost, query.query_name.as_deref())?;
+            if query.field_name.is_empty() {
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "search request source query",
+                    reason: "OpenSearch RangeQueryBuilder field name must be non-empty",
+                });
+            }
+            validate_range_bound_value(&query.from)?;
+            validate_range_bound_value(&query.to)?;
+            validate_optional_non_empty_query_string(query.format.as_deref())?;
         }
         OpenSearchQueryBuilderWire::Term(query) => {
             validate_query_boost_and_name(query.boost, query.query_name.as_deref())?;
@@ -25347,6 +25429,47 @@ fn validate_term_query_value(value: &Value) -> Result<(), TransportActionWireErr
     }
 }
 
+fn shape_relation_name(value: OpenSearchShapeRelationWire) -> &'static str {
+    match value {
+        OpenSearchShapeRelationWire::Intersects => "intersects",
+        OpenSearchShapeRelationWire::Contains => "contains",
+        OpenSearchShapeRelationWire::Within => "within",
+    }
+}
+
+fn validate_range_bound_value(value: &Value) -> Result<(), TransportActionWireError> {
+    match value {
+        Value::Null | Value::String(_) | Value::Bool(_) | Value::Number(_) => Ok(()),
+        Value::Array(_) | Value::Object(_) => Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "search request source query",
+            reason: "OpenSearch RangeQueryBuilder bounds must be scalar or null",
+        }),
+    }
+}
+
+fn write_range_bound_value(
+    output: &mut StreamOutput,
+    value: &Value,
+) -> Result<(), TransportActionWireError> {
+    validate_range_bound_value(value)?;
+    match value {
+        Value::String(value) => {
+            output.write_byte(21);
+            output.write_vint(value.len() as i32);
+            for byte in value.as_bytes() {
+                output.write_byte(*byte);
+            }
+            Ok(())
+        }
+        Value::Null | Value::Bool(_) | Value::Number(_) => write_generic_json_value(output, value),
+        Value::Array(_) | Value::Object(_) => unreachable!("validated above"),
+    }
+}
+
+fn read_range_bound_value(input: &mut StreamInput) -> Result<Value, TransportActionWireError> {
+    read_scalar_or_null_query_value(input, "OpenSearch RangeQueryBuilder bounds must be scalar or null")
+}
+
 fn write_term_query_value(
     output: &mut StreamOutput,
     value: &Value,
@@ -25367,7 +25490,25 @@ fn write_term_query_value(
 }
 
 fn read_term_query_value(input: &mut StreamInput) -> Result<Value, TransportActionWireError> {
+    let value = read_scalar_or_null_query_value(
+        input,
+        "OpenSearch TermQueryBuilder value must be scalar in this subset",
+    )?;
+    if value.is_null() {
+        return Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "search request source query",
+            reason: "OpenSearch TermQueryBuilder value cannot be null",
+        });
+    }
+    Ok(value)
+}
+
+fn read_scalar_or_null_query_value(
+    input: &mut StreamInput,
+    unsupported_reason: &'static str,
+) -> Result<Value, TransportActionWireError> {
     match input.read_byte()? {
+        255 => Ok(Value::Null),
         21 => {
             let len = read_len(input)?;
             let bytes = input.read_bytes(len)?;
@@ -25397,7 +25538,7 @@ fn read_term_query_value(input: &mut StreamInput) -> Result<Value, TransportActi
         5 => Ok(Value::Bool(input.read_bool()?)),
         _ => Err(TransportActionWireError::UnsupportedWireShape {
             shape: "search request source query",
-            reason: "OpenSearch TermQueryBuilder value must be scalar in this subset",
+            reason: unsupported_reason,
         }),
     }
 }
@@ -61492,6 +61633,31 @@ mod tests {
         let decoded = OpenSearchSearchRequestWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, match_query_request);
 
+        let range_query_request = OpenSearchSearchRequestWire {
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                query: Some(OpenSearchQueryBuilderWire::Range(
+                    OpenSearchRangeQueryBuilderWire {
+                        boost: 1.0,
+                        query_name: Some("rank-window".to_string()),
+                        field_name: "rank".to_string(),
+                        from: json!(10),
+                        to: json!(50),
+                        include_lower: true,
+                        include_upper: false,
+                        format: None,
+                        relation: Some(OpenSearchShapeRelationWire::Intersects),
+                    },
+                )),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        let mut output = StreamOutput::new();
+        range_query_request.write(&mut output);
+
+        let decoded = OpenSearchSearchRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, range_query_request);
+
         let bool_query_request = OpenSearchSearchRequestWire {
             source: Some(OpenSearchSearchSourceBuilderWire {
                 query: Some(OpenSearchQueryBuilderWire::Bool(
@@ -61529,15 +61695,26 @@ mod tests {
                         should: vec![OpenSearchQueryBuilderWire::MatchAll(
                             OpenSearchMatchAllQueryBuilderWire::default(),
                         )],
-                        filter: vec![OpenSearchQueryBuilderWire::Term(
-                            OpenSearchTermQueryBuilderWire {
+                        filter: vec![
+                            OpenSearchQueryBuilderWire::Term(OpenSearchTermQueryBuilderWire {
                                 boost: 1.0,
                                 query_name: None,
                                 field_name: "tenant".to_string(),
                                 value: json!("tenant-a"),
                                 case_insensitive: false,
-                            },
-                        )],
+                            }),
+                            OpenSearchQueryBuilderWire::Range(OpenSearchRangeQueryBuilderWire {
+                                boost: 1.0,
+                                query_name: None,
+                                field_name: "@timestamp".to_string(),
+                                from: json!("2026-01-01T00:00:00Z"),
+                                to: Value::Null,
+                                include_lower: true,
+                                include_upper: true,
+                                format: Some("strict_date_optional_time".to_string()),
+                                relation: None,
+                            }),
+                        ],
                         adjust_pure_negative: true,
                         minimum_should_match: Some("1".to_string()),
                     },
@@ -61666,11 +61843,85 @@ mod tests {
 
         let mut unsupported_query = StreamOutput::new();
         unsupported_query.write_bool(true);
-        unsupported_query.write_string("range");
+        unsupported_query.write_string("wildcard");
         assert!(matches!(
             read_optional_query_builder(&mut StreamInput::new(unsupported_query.freeze())),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "search request source query",
+                ..
+            })
+        ));
+
+        let invalid_range_field = OpenSearchSearchRequestWire {
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                query: Some(OpenSearchQueryBuilderWire::Range(
+                    OpenSearchRangeQueryBuilderWire {
+                        boost: 1.0,
+                        query_name: None,
+                        field_name: String::new(),
+                        from: json!(10),
+                        to: json!(20),
+                        include_lower: true,
+                        include_upper: true,
+                        format: None,
+                        relation: None,
+                    },
+                )),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        assert!(matches!(
+            invalid_range_field.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source query",
+                ..
+            })
+        ));
+
+        let invalid_range_bound = OpenSearchSearchRequestWire {
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                query: Some(OpenSearchQueryBuilderWire::Range(
+                    OpenSearchRangeQueryBuilderWire {
+                        boost: 1.0,
+                        query_name: None,
+                        field_name: "rank".to_string(),
+                        from: json!({ "unsupported": true }),
+                        to: json!(20),
+                        include_lower: true,
+                        include_upper: true,
+                        format: None,
+                        relation: None,
+                    },
+                )),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        assert!(matches!(
+            invalid_range_bound.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source query",
+                ..
+            })
+        ));
+
+        let mut range_with_time_zone = StreamOutput::new();
+        range_with_time_zone.write_bool(true);
+        range_with_time_zone.write_string("range");
+        range_with_time_zone.write_f32(1.0);
+        range_with_time_zone.write_optional_string(None);
+        range_with_time_zone.write_string("@timestamp");
+        write_range_bound_value(&mut range_with_time_zone, &json!("2026-01-01T00:00:00Z"))
+            .unwrap();
+        write_range_bound_value(&mut range_with_time_zone, &Value::Null).unwrap();
+        range_with_time_zone.write_bool(true);
+        range_with_time_zone.write_bool(true);
+        range_with_time_zone.write_bool(true);
+        assert!(matches!(
+            read_optional_query_builder(&mut StreamInput::new(range_with_time_zone.freeze())),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source query range time zone",
                 ..
             })
         ));
@@ -61819,7 +62070,7 @@ mod tests {
         bool_with_unsupported_child.write_f32(1.0);
         bool_with_unsupported_child.write_optional_string(None);
         bool_with_unsupported_child.write_vint(1);
-        bool_with_unsupported_child.write_string("range");
+        bool_with_unsupported_child.write_string("wildcard");
         bool_with_unsupported_child.write_vint(0);
         bool_with_unsupported_child.write_vint(0);
         bool_with_unsupported_child.write_vint(0);
