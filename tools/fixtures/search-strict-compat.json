@@ -3392,12 +3392,43 @@
           "extract": "status_only"
         },
         {
+          "name": "index-doc-3-after-pit",
+          "method": "PUT",
+          "path": "/logs-pit-snapshot-compat/_doc/doc-3",
+          "body": {
+            "rank": 30,
+            "status": "post-pit"
+          },
+          "expected_status": 201,
+          "extract": "status_only"
+        },
+        {
           "name": "refresh-after-mutation",
           "method": "POST",
           "path": "/logs-pit-snapshot-compat/_refresh",
           "body": {},
           "expected_status": 200,
           "extract": "status_only"
+        },
+        {
+          "name": "live-search-after-mutation",
+          "method": "POST",
+          "path": "/logs-pit-snapshot-compat/_search",
+          "body": {
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "rank": {
+                  "order": "asc"
+                }
+              }
+            ],
+            "size": 10
+          },
+          "expected_status": 200,
+          "extract": "search_hits"
         },
         {
           "name": "pit-search",
