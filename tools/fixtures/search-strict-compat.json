@@ -3511,6 +3511,68 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "stored_fields_none_with_source_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "stored_fields": [
+          "_none_"
+        ],
+        "_source": true
+      },
+      "expected_status": 500,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] stored_fields _none_ rejects explicit source fetch",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "stored_fields_none_with_fields_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "stored_fields": [
+          "_none_"
+        ],
+        "fields": [
+          "service"
+        ]
+      },
+      "expected_status": 500,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] stored_fields _none_ rejects fields fetch",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "stored_fields_none_combined_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "stored_fields": [
+          "_none_",
+          "service"
+        ]
+      },
+      "expected_status": 400,
+      "extract": "search_error",
+      "family": "lexical",
+      "description": "[lexical] stored_fields _none_ cannot be combined with other fields",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "term_query_total_hits_exactness",
       "area": "search",
       "method": "POST",

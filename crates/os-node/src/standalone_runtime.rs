@@ -20482,12 +20482,12 @@ fn validate_stored_fields_fetch_interactions(body: &Value) -> Option<RestRespons
         return None;
     }
     if body.get("fields").is_some() {
-        return Some(search_phase_illegal_argument(
+        return Some(search_after_phase_execution_error(
             "[stored_fields] cannot be disabled when using the [fields] option",
         ));
     }
     if source_fetch_explicitly_requested(body) {
-        return Some(search_phase_illegal_argument(
+        return Some(search_after_phase_execution_error(
             "[stored_fields] cannot be disabled if [_source] is requested",
         ));
     }
@@ -20501,29 +20501,6 @@ fn stored_fields_illegal_argument(reason: &str) -> RestResponse {
             "error": {
                 "type": "illegal_argument_exception",
                 "reason": reason
-            },
-            "status": 400
-        }),
-    )
-}
-
-fn search_phase_illegal_argument(reason: &str) -> RestResponse {
-    RestResponse::json(
-        400,
-        serde_json::json!({
-            "error": {
-                "type": "search_phase_execution_exception",
-                "reason": "all shards failed",
-                "root_cause": [
-                    {
-                        "type": "illegal_argument_exception",
-                        "reason": reason
-                    }
-                ],
-                "caused_by": {
-                    "type": "illegal_argument_exception",
-                    "reason": reason
-                }
             },
             "status": 400
         }),
@@ -43942,7 +43919,11 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 "query": { "match_all": {} }
             })),
         );
-        assert_eq!(stored_fields_none_source_query_param.status, 400);
+        assert_eq!(stored_fields_none_source_query_param.status, 500);
+        assert_eq!(
+            stored_fields_none_source_query_param.body["error"]["root_cause"][0]["type"],
+            "search_exception"
+        );
         assert_eq!(
             stored_fields_none_source_query_param.body["error"]["root_cause"][0]["reason"],
             "[stored_fields] cannot be disabled if [_source] is requested"
@@ -44010,7 +43991,11 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                     "_source": true
                 })),
         );
-        assert_eq!(stored_fields_none_with_source.status, 400);
+        assert_eq!(stored_fields_none_with_source.status, 500);
+        assert_eq!(
+            stored_fields_none_with_source.body["error"]["root_cause"][0]["type"],
+            "search_exception"
+        );
         assert_eq!(
             stored_fields_none_with_source.body["error"]["root_cause"][0]["reason"],
             "[stored_fields] cannot be disabled if [_source] is requested"
@@ -44024,7 +44009,11 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                     "fields": ["tenant"]
                 })),
         );
-        assert_eq!(stored_fields_none_with_fields.status, 400);
+        assert_eq!(stored_fields_none_with_fields.status, 500);
+        assert_eq!(
+            stored_fields_none_with_fields.body["error"]["root_cause"][0]["type"],
+            "search_exception"
+        );
         assert_eq!(
             stored_fields_none_with_fields.body["error"]["root_cause"][0]["reason"],
             "[stored_fields] cannot be disabled when using the [fields] option"
