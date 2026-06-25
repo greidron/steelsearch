@@ -245,6 +245,40 @@
       }
     },
     {
+      "name": "delete_single_doc_seq_no_without_primary_term_rejected",
+      "method": "DELETE",
+      "path": "/single-doc-compat-000001/_doc/doc-delete-cas?routing=tenant-a&if_seq_no=0",
+      "compare": {
+        "expected_status": 400,
+        "body_paths_present": [
+          "error.type",
+          "error.reason",
+          "status"
+        ],
+        "body_paths_equal": [
+          "error.type",
+          "status"
+        ]
+      }
+    },
+    {
+      "name": "delete_single_doc_primary_term_without_seq_no_rejected",
+      "method": "DELETE",
+      "path": "/single-doc-compat-000001/_doc/doc-delete-cas?routing=tenant-a&if_primary_term=1",
+      "compare": {
+        "expected_status": 400,
+        "body_paths_present": [
+          "error.type",
+          "error.reason",
+          "status"
+        ],
+        "body_paths_equal": [
+          "error.type",
+          "status"
+        ]
+      }
+    },
+    {
       "name": "put_single_doc_optimistic_concurrency_success",
       "method": "PUT",
       "path": "/single-doc-compat-000001/_doc/doc-1?if_seq_no=0&if_primary_term=1&routing=tenant-a",
