@@ -59,6 +59,7 @@ pub enum RestMethod {
     Head,
     Put,
     Post,
+    Patch,
     Delete,
 }
 
@@ -69,6 +70,7 @@ impl RestMethod {
             Self::Head => "HEAD",
             Self::Put => "PUT",
             Self::Post => "POST",
+            Self::Patch => "PATCH",
             Self::Delete => "DELETE",
         }
     }

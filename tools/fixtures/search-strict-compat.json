@@ -2396,7 +2396,7 @@
       "path": "/_search/point_in_time/_all",
       "body": null,
       "expected_status": 405,
-      "extract": "search_error",
+      "extract": "method_not_allowed_error",
       "family": "lexical",
       "description": "[lexical] PIT _all path rejects PUT with OpenSearch method error",
       "strict_source_parity_required": true
@@ -4048,6 +4048,47 @@
       "extract": "search_hits",
       "family": "lexical",
       "description": "[lexical] script score search",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "scroll_put_method_error_search",
+      "area": "search",
+      "method": "PUT",
+      "path": "/_search/scroll",
+      "body": {
+        "scroll_id": "missing",
+        "scroll": "1m"
+      },
+      "expected_status": 405,
+      "extract": "method_not_allowed_error",
+      "family": "lexical",
+      "description": "[lexical] scroll path rejects PUT with OpenSearch method error",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "scroll_patch_method_error_search",
+      "area": "search",
+      "method": "PATCH",
+      "path": "/_search/scroll",
+      "body": {
+        "scroll_id": "missing"
+      },
+      "expected_status": 405,
+      "extract": "method_not_allowed_error",
+      "family": "lexical",
+      "description": "[lexical] scroll path rejects PATCH with OpenSearch method error",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "scroll_id_put_method_error_search",
+      "area": "search",
+      "method": "PUT",
+      "path": "/_search/scroll/missing-scroll-id",
+      "body": null,
+      "expected_status": 405,
+      "extract": "method_not_allowed_error",
+      "family": "lexical",
+      "description": "[lexical] scroll id path rejects PUT with OpenSearch method error",
       "strict_source_parity_required": true
     },
     {

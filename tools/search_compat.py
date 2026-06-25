@@ -12,6 +12,7 @@ import argparse
 import base64
 import json
 import os
+import re
 import sys
 import time
 import urllib.error
@@ -1583,6 +1584,28 @@ def extract(kind: str, response: dict[str, Any]) -> Any:
             "status": response["status"],
             "error_type": error_type,
             "reason": reason,
+        }
+    if kind == "method_not_allowed_error":
+        error = body.get("error") or {}
+        reason = error.get("reason") if isinstance(error, dict) else error
+        reason = reason if isinstance(reason, str) else ""
+        match = re.fullmatch(
+            r"Incorrect HTTP method for uri \[(?P<uri>.*)\] and method \[(?P<method>.*)\], allowed: \[(?P<allowed>.*)\]",
+            reason,
+        )
+        allowed = []
+        if match:
+            allowed = sorted(
+                item.strip()
+                for item in match.group("allowed").split(",")
+                if item.strip()
+            )
+        return {
+            "status": response["status"],
+            "error_type": error.get("type") if isinstance(error, dict) else None,
+            "uri": match.group("uri") if match else None,
+            "method": match.group("method") if match else None,
+            "allowed": allowed,
         }
     if kind == "search_error_root_cause":
         error = body.get("error") or {}

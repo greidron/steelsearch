@@ -402,6 +402,7 @@ fn actix_request_to_rest_request(request: &HttpRequest, body: web::Bytes) -> Res
         actix_web::http::Method::HEAD => RestMethod::Head,
         actix_web::http::Method::PUT => RestMethod::Put,
         actix_web::http::Method::POST => RestMethod::Post,
+        actix_web::http::Method::PATCH => RestMethod::Patch,
         actix_web::http::Method::DELETE => RestMethod::Delete,
         _ => RestMethod::Get,
     };
@@ -541,6 +542,7 @@ fn parse_rest_method(value: &str) -> RestMethod {
         "HEAD" => RestMethod::Head,
         "PUT" => RestMethod::Put,
         "POST" => RestMethod::Post,
+        "PATCH" => RestMethod::Patch,
         "DELETE" => RestMethod::Delete,
         _ => RestMethod::Get,
     }
@@ -3549,7 +3551,11 @@ impl SteelNode {
                 RestMethod::Get => Some(self.handle_search_scroll_route(request)),
                 RestMethod::Post => Some(self.handle_search_scroll_route(request)),
                 RestMethod::Delete => Some(self.handle_clear_scroll_route(request)),
-                _ => None,
+                _ => Some(method_not_allowed_response(
+                    request.method,
+                    request.path.as_str(),
+                    "POST, DELETE, GET",
+                )),
             };
         }
         if let Some(scroll_id) = request
@@ -3561,7 +3567,11 @@ impl SteelNode {
             return match request.method {
                 RestMethod::Get | RestMethod::Post => Some(self.handle_search_scroll_with_id_route(scroll_id, request)),
                 RestMethod::Delete => Some(self.handle_clear_scroll_ids_route(vec![scroll_id.to_string()], request)),
-                _ => None,
+                _ => Some(method_not_allowed_response(
+                    request.method,
+                    request.path.as_str(),
+                    "POST, DELETE, GET",
+                )),
             };
         }
         if request.path == "/_search/point_in_time" {
@@ -3581,7 +3591,7 @@ impl SteelNode {
                 _ => Some(method_not_allowed_response(
                     request.method,
                     request.path.as_str(),
-                    "DELETE, GET",
+                    "GET, DELETE",
                 )),
             };
         }
@@ -20822,6 +20832,7 @@ fn unrecognized_query_param_response_for_keys(
 }
 
 fn method_not_allowed_response(method: RestMethod, path: &str, allowed: &str) -> RestResponse {
+    let allow_header = allowed.replace(", ", ",");
     RestResponse::json(
         405,
         serde_json::json!({
@@ -20834,7 +20845,7 @@ fn method_not_allowed_response(method: RestMethod, path: &str, allowed: &str) ->
             "status": 405
         }),
     )
-    .with_header("allow", allowed)
+    .with_header("allow", allow_header)
 }
 
 fn unsupported_pit_id_version_response() -> RestResponse {
@@ -40569,10 +40580,43 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             "/_search/point_in_time/_all",
         ));
         assert_eq!(put_all_path.status, 405);
-        assert_eq!(put_all_path.headers.get("allow").map(String::as_str), Some("DELETE, GET"));
+        assert_eq!(put_all_path.headers.get("allow").map(String::as_str), Some("GET,DELETE"));
         assert_eq!(
             put_all_path.body["error"],
-            "Incorrect HTTP method for uri [/_search/point_in_time/_all] and method [PUT], allowed: [DELETE, GET]"
+            "Incorrect HTTP method for uri [/_search/point_in_time/_all] and method [PUT], allowed: [GET, DELETE]"
+        );
+
+        let put_scroll_path = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/_search/scroll")
+                .with_json_body(serde_json::json!({ "scroll_id": "missing", "scroll": "1m" })),
+        );
+        assert_eq!(put_scroll_path.status, 405);
+        assert_eq!(put_scroll_path.headers.get("allow").map(String::as_str), Some("POST,DELETE,GET"));
+        assert_eq!(
+            put_scroll_path.body["error"],
+            "Incorrect HTTP method for uri [/_search/scroll] and method [PUT], allowed: [POST, DELETE, GET]"
+        );
+
+        let patch_scroll_path = node.handle_rest_request(
+            RestRequest::new(RestMethod::Patch, "/_search/scroll")
+                .with_json_body(serde_json::json!({ "scroll_id": "missing" })),
+        );
+        assert_eq!(patch_scroll_path.status, 405);
+        assert_eq!(patch_scroll_path.headers.get("allow").map(String::as_str), Some("POST,DELETE,GET"));
+        assert_eq!(
+            patch_scroll_path.body["error"],
+            "Incorrect HTTP method for uri [/_search/scroll] and method [PATCH], allowed: [POST, DELETE, GET]"
+        );
+
+        let put_scroll_id_path = node.handle_rest_request(RestRequest::new(
+            RestMethod::Put,
+            "/_search/scroll/missing-scroll-id",
+        ));
+        assert_eq!(put_scroll_id_path.status, 405);
+        assert_eq!(put_scroll_id_path.headers.get("allow").map(String::as_str), Some("POST,DELETE,GET"));
+        assert_eq!(
+            put_scroll_id_path.body["error"],
+            "Incorrect HTTP method for uri [/_search/scroll/missing-scroll-id] and method [PUT], allowed: [POST, DELETE, GET]"
         );
 
         let duplicate_missing_close_pit = node.handle_rest_request(
