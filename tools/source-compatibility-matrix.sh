@@ -67,6 +67,41 @@ route_status() {
   fi
 
   case "${method} ${path}" in
+    'GET "/" + ENDPOINT'|'POST "/" + ENDPOINT'|'GET "/{index}/" + ENDPOINT'|'POST "/{index}/" + ENDPOINT')
+      echo "implemented"
+      return
+      ;;
+    "POST /{index}/_delete_by_query"|"POST /_reindex"|"POST /{index}/_update_by_query"|"POST /_update_by_query/{taskId}/_rethrottle"|"POST /_delete_by_query/{taskId}/_rethrottle"|"POST /_reindex/{taskId}/_rethrottle")
+      echo "implemented"
+      return
+      ;;
+    "POST /_filecache/prune")
+      echo "implemented"
+      return
+      ;;
+    "GET _wlm/stats"|"GET _wlm/{nodeId}/stats"|"GET _wlm/stats/{workloadGroupId}"|"GET _wlm/{nodeId}/stats/{workloadGroupId}"|"GET _list/wlm_stats"|"GET _list/wlm_stats/{nodeId}/stats"|"GET _list/wlm_stats/stats/{workloadGroupId}"|"GET _list/wlm_stats/{nodeId}/stats/{workloadGroupId}")
+      echo "implemented"
+      return
+      ;;
+    "PUT /{index}/_block/{block}"|"POST /_open"|"POST /{index}/_open"|"POST /{index}/ingestion/_pause"|"POST /{index}/ingestion/_resume"|"GET /{index}/ingestion/_state")
+      echo "implemented"
+      return
+      ;;
+    "POST /{index}/_shrink/{target}"|"PUT /{index}/_shrink/{target}"|"POST /{index}/_split/{target}"|"PUT /{index}/_split/{target}"|"POST /{index}/_clone/{target}"|"PUT /{index}/_clone/{target}"|"POST /{index}/_scale"|"POST /{index}/_rollover"|"POST /{index}/_rollover/{new_index}"|"GET /_resolve/index/{name}")
+      echo "implemented"
+      return
+      ;;
+    "GET /_flush/synced"|"POST /_flush/synced"|"GET /{index}/_flush/synced"|"POST /{index}/_flush/synced"|"POST /_upgrade"|"POST /{index}/_upgrade"|"GET /_upgrade"|"GET /{index}/_upgrade")
+      echo "implemented"
+      return
+      ;;
+    "GET /_cat"|"GET /_cat/nodeattrs"|"GET /_cat/repositories"|"GET /_cat/snapshots"|"GET /_cat/snapshots/{repository}")
+      echo "implemented"
+      return
+      ;;
+  esac
+
+  case "${method} ${path}" in
     "GET /_cluster/allocation/explain"|"POST /_cluster/allocation/explain"|"GET /_cluster/pending_tasks"|"GET /_cluster/stats"|"GET /_cluster/stats/nodes/{nodeId}"|"GET /_cluster/stats/{metric}/nodes/{nodeId}"|"GET /_cluster/stats/{metric}/{index_metric}/nodes/{nodeId}"|"GET /_tasks"|"GET /_tasks/{task_id}"|"POST /_tasks/_cancel"|"POST /_tasks/{task_id}/_cancel"|"GET /_remote/info"|"GET /_cat/nodes"|"GET /_cat/pending_tasks"|"GET /_cat/thread_pool"|"GET /_cat/thread_pool/{thread_pool_patterns}")
       echo "implemented"
       return
