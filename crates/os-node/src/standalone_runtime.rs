@@ -10099,6 +10099,9 @@ impl SteelNode {
             Ok(_) => {}
             Err(response) => return response,
         }
+        if let Some(response) = pit_unrecognized_query_param_response(request) {
+            return response;
+        }
         let now_millis = current_epoch_millis();
         let mut contexts = self
             .pit_contexts
@@ -10123,7 +10126,7 @@ impl SteelNode {
             Ok(_) => {}
             Err(response) => return response,
         }
-        if let Some(response) = delete_pit_unrecognized_query_param_response(request) {
+        if let Some(response) = pit_unrecognized_query_param_response(request) {
             return response;
         }
         self.clear_all_point_in_time_contexts()
@@ -10312,7 +10315,7 @@ impl SteelNode {
             Ok(_) => {}
             Err(response) => return response,
         }
-        if let Some(response) = delete_pit_unrecognized_query_param_response(request) {
+        if let Some(response) = pit_unrecognized_query_param_response(request) {
             return response;
         }
         let body = serde_json::from_slice::<Value>(&request.body).unwrap_or(Value::Null);
@@ -20657,7 +20660,7 @@ fn delete_pit_illegal_argument(reason: impl Into<String>) -> RestResponse {
     )
 }
 
-fn delete_pit_unrecognized_query_param_response(request: &RestRequest) -> Option<RestResponse> {
+fn pit_unrecognized_query_param_response(request: &RestRequest) -> Option<RestResponse> {
     let key = request.query_params.keys().next()?;
     Some(delete_pit_illegal_argument(format!(
         "request [{}] contains unrecognized parameter: [{key}]",
@@ -40063,6 +40066,22 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         );
         assert_eq!(
             query_param_clear_all_pit.body["error"]["root_cause"][0]["reason"],
+            "request [/_search/point_in_time/_all] contains unrecognized parameter: [pit_id]"
+        );
+
+        let mut query_param_list_pit =
+            RestRequest::new(RestMethod::Get, "/_search/point_in_time/_all");
+        query_param_list_pit
+            .query_params
+            .insert("pit_id".to_string(), "QUERY_STRING".to_string());
+        let query_param_list_pit = node.handle_rest_request(query_param_list_pit);
+        assert_eq!(query_param_list_pit.status, 400);
+        assert_eq!(
+            query_param_list_pit.body["error"]["type"],
+            "illegal_argument_exception"
+        );
+        assert_eq!(
+            query_param_list_pit.body["error"]["root_cause"][0]["reason"],
             "request [/_search/point_in_time/_all] contains unrecognized parameter: [pit_id]"
         );
 
