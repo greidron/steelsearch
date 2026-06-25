@@ -26001,6 +26001,7 @@ pub struct OpenSearchSearchResponseWire {
     pub timed_out: bool,
     pub terminated_early: Option<bool>,
     pub profile_results_empty: bool,
+    pub search_ext_builders: Vec<OpenSearchGenericSearchExtBuilderWire>,
     pub processor_results: Vec<OpenSearchProcessorExecutionDetailWire>,
     pub total_shards: i32,
     pub successful_shards: i32,
@@ -26033,6 +26034,7 @@ impl OpenSearchSearchResponseWire {
             timed_out: false,
             terminated_early: None,
             profile_results_empty: false,
+            search_ext_builders: Vec::new(),
             processor_results: Vec::new(),
             total_shards: 1,
             successful_shards: 1,
@@ -26071,7 +26073,7 @@ impl OpenSearchSearchResponseWire {
         write_optional_empty_profile_results(output, self.profile_results_empty);
         output.write_vint(1);
         if version.on_or_after(Version::from_id(2_100_099)) {
-            output.write_vint(0);
+            write_search_ext_builders(output, &self.search_ext_builders)?;
         }
         if version.on_or_after(Version::from_id(2_190_099)) {
             write_processor_results(output, &self.processor_results)?;
@@ -26125,9 +26127,11 @@ impl OpenSearchSearchResponseWire {
                 reason: "only the single reduce phase response subset is decoded",
             });
         }
-        if version.on_or_after(Version::from_id(2_100_099)) {
-            reject_empty_list_len(&mut input, "search response ext builders")?;
-        }
+        let search_ext_builders = if version.on_or_after(Version::from_id(2_100_099)) {
+            read_search_ext_builders(&mut input)?
+        } else {
+            Vec::new()
+        };
         let processor_results = if version.on_or_after(Version::from_id(2_190_099)) {
             read_processor_results(&mut input)?
         } else {
@@ -26146,6 +26150,7 @@ impl OpenSearchSearchResponseWire {
             timed_out,
             terminated_early,
             profile_results_empty,
+            search_ext_builders,
             processor_results,
             total_shards: input.read_vint()?,
             successful_shards: input.read_vint()?,
@@ -26235,6 +26240,9 @@ impl OpenSearchSearchResponseWire {
         }
         for failure in &self.shard_failures {
             failure.validate_supported_subset()?;
+        }
+        for ext_builder in &self.search_ext_builders {
+            ext_builder.validate_supported_subset()?;
         }
         for processor_result in &self.processor_results {
             processor_result.validate_supported_subset()?;
@@ -26418,6 +26426,151 @@ fn read_optional_empty_profile_results(
         });
     }
     Ok(true)
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct OpenSearchGenericSearchExtBuilderWire {
+    pub value: Value,
+}
+
+impl OpenSearchGenericSearchExtBuilderWire {
+    const WRITEABLE_NAME: &'static str = "generic_ext";
+    const SIMPLE: i32 = 0;
+    const MAP: i32 = 1;
+    const LIST: i32 = 2;
+
+    pub fn new(value: Value) -> Self {
+        Self { value }
+    }
+
+    fn value_type(&self) -> i32 {
+        match &self.value {
+            Value::Object(_) => Self::MAP,
+            Value::Array(_) => Self::LIST,
+            _ => Self::SIMPLE,
+        }
+    }
+
+    fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
+        validate_generic_search_ext_value(&self.value)
+    }
+}
+
+fn write_search_ext_builders(
+    output: &mut StreamOutput,
+    ext_builders: &[OpenSearchGenericSearchExtBuilderWire],
+) -> Result<(), TransportActionWireError> {
+    output.write_vint(ext_builders.len() as i32);
+    for ext_builder in ext_builders {
+        ext_builder.validate_supported_subset()?;
+        output.write_string(OpenSearchGenericSearchExtBuilderWire::WRITEABLE_NAME);
+        output.write_i32(ext_builder.value_type());
+        match &ext_builder.value {
+            Value::Object(_) => write_generic_json_value(output, &ext_builder.value)?,
+            Value::Array(values) => {
+                output.write_vint(values.len() as i32);
+                for value in values {
+                    write_generic_json_value(output, value)?;
+                }
+            }
+            value => write_generic_json_value(output, value)?,
+        }
+    }
+    Ok(())
+}
+
+fn read_search_ext_builders(
+    input: &mut StreamInput,
+) -> Result<Vec<OpenSearchGenericSearchExtBuilderWire>, TransportActionWireError> {
+    let len = read_len(input)?;
+    let mut ext_builders = Vec::with_capacity(len);
+    for _ in 0..len {
+        let name = input.read_string()?;
+        if name != OpenSearchGenericSearchExtBuilderWire::WRITEABLE_NAME {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search response ext builders",
+                reason: "only OpenSearch generic_ext search ext builders are decoded by this subset",
+            });
+        }
+        let value_type = input.read_i32()?;
+        let value = match value_type {
+            OpenSearchGenericSearchExtBuilderWire::SIMPLE => {
+                let value = read_generic_json_value(input, "search response generic ext builder")?;
+                if value.is_array() || value.is_object() {
+                    return Err(TransportActionWireError::UnsupportedWireShape {
+                        shape: "search response ext builders",
+                        reason: "OpenSearch generic_ext SIMPLE values cannot be maps or lists",
+                    });
+                }
+                value
+            }
+            OpenSearchGenericSearchExtBuilderWire::MAP => {
+                let value = read_generic_json_value(input, "search response generic ext builder")?;
+                if !value.is_object() {
+                    return Err(TransportActionWireError::UnsupportedWireShape {
+                        shape: "search response ext builders",
+                        reason: "OpenSearch generic_ext MAP payload must decode as an object",
+                    });
+                }
+                value
+            }
+            OpenSearchGenericSearchExtBuilderWire::LIST => {
+                let list_len = read_len(input)?;
+                let mut values = Vec::with_capacity(list_len);
+                for _ in 0..list_len {
+                    values.push(read_generic_json_value(
+                        input,
+                        "search response generic ext builder",
+                    )?);
+                }
+                Value::Array(values)
+            }
+            _ => {
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "search response ext builders",
+                    reason: "OpenSearch generic_ext value type must be SIMPLE, MAP, or LIST",
+                });
+            }
+        };
+        let ext_builder = OpenSearchGenericSearchExtBuilderWire { value };
+        ext_builder.validate_supported_subset()?;
+        ext_builders.push(ext_builder);
+    }
+    Ok(ext_builders)
+}
+
+fn validate_generic_search_ext_value(value: &Value) -> Result<(), TransportActionWireError> {
+    match value {
+        Value::Null | Value::String(_) | Value::Bool(_) => Ok(()),
+        Value::Number(value) => {
+            if value.as_i64().is_some() || value.as_u64().is_some() || value.as_f64().is_some() {
+                Ok(())
+            } else {
+                Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "search response ext builders",
+                    reason: "OpenSearch generic_ext JSON number cannot be encoded",
+                })
+            }
+        }
+        Value::Array(values) => {
+            for value in values {
+                validate_generic_search_ext_value(value)?;
+            }
+            Ok(())
+        }
+        Value::Object(values) => {
+            if values.keys().any(|key| key.is_empty()) {
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "search response ext builders",
+                    reason: "OpenSearch generic_ext object keys must be non-empty",
+                });
+            }
+            for value in values.values() {
+                validate_generic_search_ext_value(value)?;
+            }
+            Ok(())
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -35479,20 +35632,6 @@ fn read_search_sort_value(
             reason: "OpenSearch sort value type is not decoded by this subset",
         }),
     }
-}
-
-fn reject_empty_list_len(
-    input: &mut StreamInput,
-    shape: &'static str,
-) -> Result<(), TransportActionWireError> {
-    let len = input.read_vint()?;
-    if len != 0 {
-        return Err(TransportActionWireError::UnsupportedWireShape {
-            shape,
-            reason: "only empty OpenSearch lists are decoded by this subset",
-        });
-    }
-    Ok(())
 }
 
 fn build_extension_transport_message_bytes(action: &str, request_bytes: &[u8]) -> Bytes {
@@ -59392,6 +59531,15 @@ mod tests {
             timed_out: true,
             terminated_early: Some(false),
             profile_results_empty: true,
+            search_ext_builders: vec![
+                OpenSearchGenericSearchExtBuilderWire::new(json!("simple")),
+                OpenSearchGenericSearchExtBuilderWire::new(json!({
+                    "tenant": "a",
+                    "enabled": true,
+                    "rank": 7
+                })),
+                OpenSearchGenericSearchExtBuilderWire::new(json!(["first", 2, false, null])),
+            ],
             processor_results: vec![OpenSearchProcessorExecutionDetailWire {
                 processor_name: "filter_query".to_string(),
                 duration_millis: 7,
@@ -59442,6 +59590,7 @@ mod tests {
         assert_eq!(decoded.timed_out, response.timed_out);
         assert_eq!(decoded.terminated_early, response.terminated_early);
         assert!(decoded.profile_results_empty);
+        assert_eq!(decoded.search_ext_builders, response.search_ext_builders);
         assert_eq!(decoded.processor_results, response.processor_results);
         assert_eq!(decoded.total_shards, response.total_shards);
         assert_eq!(decoded.successful_shards, response.successful_shards);
@@ -59807,6 +59956,34 @@ mod tests {
             ),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "search response profile results",
+                ..
+            })
+        ));
+
+        let mut unsupported_ext_builder = StreamOutput::new();
+        unsupported_ext_builder.write_bool(true);
+        unsupported_ext_builder.write_vlong(0);
+        unsupported_ext_builder.write_vint(0);
+        unsupported_ext_builder.write_f32(f32::NAN);
+        unsupported_ext_builder.write_vint(0);
+        write_optional_sort_fields(&mut unsupported_ext_builder, None).unwrap();
+        unsupported_ext_builder.write_optional_string(None);
+        write_optional_search_sort_values(&mut unsupported_ext_builder, None).unwrap();
+        write_optional_empty_aggregations(&mut unsupported_ext_builder, false);
+        write_optional_empty_suggest(&mut unsupported_ext_builder, false);
+        unsupported_ext_builder.write_bool(false);
+        write_optional_bool(&mut unsupported_ext_builder, None);
+        write_optional_empty_profile_results(&mut unsupported_ext_builder, false);
+        unsupported_ext_builder.write_vint(1);
+        unsupported_ext_builder.write_vint(1);
+        unsupported_ext_builder.write_string("custom_ext");
+        assert!(matches!(
+            OpenSearchSearchResponseWire::read(
+                unsupported_ext_builder.freeze(),
+                OPENSEARCH_3_7_0_TRANSPORT
+            ),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search response ext builders",
                 ..
             })
         ));
