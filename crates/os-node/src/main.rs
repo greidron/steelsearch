@@ -4204,8 +4204,8 @@ fn delete_transport_pit_contexts(
     let results = ids
         .into_iter()
         .map(|id| {
-            let existed = contexts.remove(&id).is_some();
-            os_transport::action::OpenSearchDeletePitInfoWire::new(existed, id)
+            let _ = contexts.remove(&id);
+            os_transport::action::OpenSearchDeletePitInfoWire::new(true, id)
         })
         .collect();
     os_transport::action::OpenSearchDeletePitResponseWire::with_results(results)
@@ -11207,6 +11207,11 @@ mod tests {
 
     #[test]
     fn delete_pit_transport_route_accepts_explicit_id_subset() {
+        dev_transport_pit_bindings()
+            .contexts
+            .lock()
+            .expect("dev transport PIT contexts lock poisoned")
+            .clear();
         let request = os_transport::action::OpenSearchDeletePitRequestWire {
             pit_ids: vec!["pit-context".to_string()],
             ..os_transport::action::OpenSearchDeletePitRequestWire::default()
@@ -11220,6 +11225,25 @@ mod tests {
         assert!(delete_pit_request_supports_local_lifecycle_subset(
             &frame[6..]
         ));
+
+        let response = build_local_delete_pit_response(
+            94,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &frame[6..],
+        );
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected explicit delete-PIT response message");
+        };
+        let response =
+            os_transport::action::read_opensearch_delete_pit_response_message(&message).unwrap();
+        assert_eq!(response.results.len(), 1);
+        assert_eq!(response.results[0].pit_id, "pit-context");
+        assert!(response.results[0].successful);
     }
 
     #[test]

@@ -2254,6 +2254,8 @@ The delete-PIT boundary covers:
 - request validation for decoded non-empty PIT id arrays and response
   build/decode support for non-empty `DeletePitInfo` result lists;
 - shared `SteelNode` PIT context invalidation for explicit PIT ids and `_all`;
+- OpenSearch-compatible explicit-id delete idempotence where missing or already
+  removed PIT contexts still render successful `DeletePitInfo` entries;
 - explicit rejection for empty PIT id arrays and empty PIT id entries.
 
 The get-all-PITs boundary covers:
