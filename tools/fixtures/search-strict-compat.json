@@ -3801,6 +3801,33 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "indices_boost_object_numeric_string_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "indices_boost": {
+          "logs-compat": "2.0"
+        },
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ],
+        "track_scores": true,
+        "size": 2
+      },
+      "extract": "search_score_rendering",
+      "family": "lexical",
+      "description": "[lexical] deprecated object indices_boost numeric string coerces like OpenSearch",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "terminate_after_search",
       "area": "search",
       "method": "POST",

@@ -19723,6 +19723,9 @@ fn normalize_search_source_scalar_body_options(body: &mut Value) -> Option<RestR
             object.insert("min_score".to_string(), parsed);
         }
     }
+    if let Some(indices_boost) = object.get_mut("indices_boost") {
+        normalize_opensearch_indices_boost_object_body_values(indices_boost);
+    }
     for field in [
         "version",
         "seq_no_primary_term",
@@ -19794,6 +19797,17 @@ fn parse_opensearch_float_body_value(value: &Value) -> Option<Value> {
         return None;
     }
     serde_json::Number::from_f64(parsed).map(Value::Number)
+}
+
+fn normalize_opensearch_indices_boost_object_body_values(indices_boost: &mut Value) {
+    let Value::Object(boosts) = indices_boost else {
+        return;
+    };
+    for boost in boosts.values_mut() {
+        if let Some(parsed) = parse_opensearch_float_body_value(boost) {
+            *boost = parsed;
+        }
+    }
 }
 
 fn split_rest_csv_values(raw: &str) -> Vec<String> {
@@ -43464,6 +43478,26 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         );
         assert_eq!(
             object_indices_boost.body["hits"]["hits"][0]["_score"].as_f64(),
+            Some(2.0)
+        );
+
+        let object_string_indices_boost = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-params-*/_search").with_json_body(
+                serde_json::json!({
+                    "query": { "match_all": {} },
+                    "indices_boost": {
+                        "logs-search-params-b": "2.0"
+                    }
+                }),
+            ),
+        );
+        assert_eq!(object_string_indices_boost.status, 200);
+        assert_eq!(
+            object_string_indices_boost.body["hits"]["hits"][0]["_id"],
+            "doc-3"
+        );
+        assert_eq!(
+            object_string_indices_boost.body["hits"]["hits"][0]["_score"].as_f64(),
             Some(2.0)
         );
 
