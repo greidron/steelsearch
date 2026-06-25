@@ -3094,6 +3094,28 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "pit_array_id_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/_search",
+      "body": {
+        "pit": {
+          "id": [
+            "pit-missing"
+          ],
+          "keep_alive": "1m"
+        },
+        "query": {
+          "match_all": {}
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] PIT rejects array id values like OpenSearch",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "pit_numeric_keep_alive_error_search",
       "area": "search",
       "method": "POST",
