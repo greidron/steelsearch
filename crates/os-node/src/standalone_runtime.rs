@@ -18745,6 +18745,25 @@ fn build_unsupported_search_response(reason: &str) -> RestResponse {
     )
 }
 
+fn build_illegal_argument_search_response_with_root_cause(reason: &str) -> RestResponse {
+    RestResponse::json(
+        400,
+        serde_json::json!({
+            "error": {
+                "type": "illegal_argument_exception",
+                "reason": reason,
+                "root_cause": [
+                    {
+                        "type": "illegal_argument_exception",
+                        "reason": reason
+                    }
+                ]
+            },
+            "status": 400
+        }),
+    )
+}
+
 fn build_resource_not_found_search_response(reason: &str) -> RestResponse {
     RestResponse::json(
         404,
@@ -21076,6 +21095,11 @@ fn validate_search_after_request_body(
             "unsupported search option [search_after]",
         ));
     };
+    if after_values.is_empty() {
+        return Some(build_illegal_argument_search_response_with_root_cause(
+            "Values must contains at least one value.",
+        ));
+    }
     if sort_fields.len() != after_values.len() {
         return Some(search_after_validation_error(format!(
             "search_after has {} value(s) but sort has {}.",
@@ -44572,6 +44596,24 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             search_after_without_sort.body["error"]["root_cause"][0]["reason"],
             "Sort must contain at least one field."
+        );
+
+        let empty_search_after = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-params-*/_search")
+                .with_json_body(serde_json::json!({
+                    "query": { "match_all": {} },
+                    "sort": [{ "tenant": "asc" }],
+                    "search_after": []
+                })),
+        );
+        assert_eq!(empty_search_after.status, 400);
+        assert_eq!(
+            empty_search_after.body["error"]["type"],
+            "illegal_argument_exception"
+        );
+        assert_eq!(
+            empty_search_after.body["error"]["root_cause"][0]["reason"],
+            "Values must contains at least one value."
         );
 
         let search_after_with_from = node.handle_rest_request(

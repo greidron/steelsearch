@@ -4690,6 +4690,30 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "search_after_empty_array_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "sort": [
+          {
+            "ts": {
+              "order": "asc"
+            }
+          }
+        ],
+        "search_after": []
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "ranking",
+      "description": "[ranking] empty search_after array is rejected like OpenSearch",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "search_after_with_from_error_search",
       "area": "search",
       "method": "POST",
