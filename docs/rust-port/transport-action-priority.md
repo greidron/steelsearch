@@ -2297,6 +2297,10 @@ The create-PIT boundary covers:
   PIT context store, including the resolved index set, document snapshot,
   primary-shard count, keep-alive expiry bookkeeping, and read-all/delete
   visibility through the same lifecycle state;
+- REST and local transport create-PIT responses now return unpadded base64url
+  opaque PIT ids instead of the earlier `pit-N` debug-shaped ids, while storing
+  and resolving the same opaque id through list, search, delete, and segments
+  lifecycle paths;
 - REST create-PIT and PIT-search keep-alive extension reject values above the
   OpenSearch default `point_in_time.max_keep_alive` of `24h`;
 - REST create-PIT rejects local open PIT context creation beyond the OpenSearch
@@ -2316,8 +2320,9 @@ The create-PIT boundary covers:
 - PIT searches invalidate the local PIT context when its backing index has been
   deleted or closed, matching OpenSearch deleted-index and missing-context
   failure semantics;
-- PIT searches reject malformed local PIT ids with the OpenSearch `invalid id`
-  error while preserving missing-context handling for well-formed local ids;
+- PIT searches reject malformed local opaque PIT ids with the OpenSearch
+  `invalid id` error while preserving missing-context handling for well-formed
+  local ids;
 - manifest-backed create-PIT index option handling for unavailable targets,
   `allow_no_indices`, ignored aliases, alias fanout guards, open/closed
   wildcard expansion, and hidden wildcard expansion;

@@ -7,7 +7,7 @@ use os_cluster_state::{
     ShardRoutingStatePrefix,
 };
 use os_core::version::{Version, OPENSEARCH_3_7_0, OPENSEARCH_3_7_0_TRANSPORT};
-use os_node::standalone_runtime::{PitContext, ScrollContext, StoredDocument};
+use os_node::standalone_runtime::{build_local_pit_id, PitContext, ScrollContext, StoredDocument};
 use os_node::{
     apply_gateway_metadata_commit_state_to_manifest, apply_gateway_metadata_state_to_manifest,
     bind_rest_http_listener, collect_live_publication_acknowledgement_details,
@@ -3732,7 +3732,7 @@ fn build_local_create_pit_response(
             .lock()
             .expect("dev transport next PIT id lock poisoned");
         *next_id += 1;
-        let pit_id = format!("pit-{}", *next_id);
+        let pit_id = build_local_pit_id(*next_id);
         bindings
             .contexts
             .lock()
@@ -9041,6 +9041,11 @@ mod tests {
         LOCK.get_or_init(|| Mutex::new(()))
     }
 
+    fn dev_transport_pit_test_lock() -> &'static Mutex<()> {
+        static LOCK: TestOnceLock<Mutex<()>> = TestOnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(()))
+    }
+
     fn minimal_daemon_config(data_path: PathBuf) -> DaemonConfig {
         DaemonConfig {
             host: "127.0.0.1".parse().unwrap(),
@@ -10742,6 +10747,9 @@ mod tests {
 
     #[test]
     fn create_list_and_delete_pit_transport_routes_share_local_lifecycle_state() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
         dev_transport_pit_bindings()
             .contexts
             .lock()
@@ -10842,13 +10850,14 @@ mod tests {
         };
         let create_response =
             os_transport::action::read_opensearch_create_pit_response_message(&message).unwrap();
-        assert_eq!(create_response.pit_id, "pit-1");
+        let pit_id = create_response.pit_id.clone();
+        assert!(!pit_id.starts_with("pit-"));
         assert_eq!(create_response.total_shards, 2);
         assert!(dev_transport_pit_bindings()
             .contexts
             .lock()
             .expect("dev transport PIT contexts lock poisoned")
-            .contains_key("pit-1"));
+            .contains_key(&pit_id));
         dev_transport_pit_bindings()
             .documents
             .lock()
@@ -10868,7 +10877,7 @@ mod tests {
             .contexts
             .lock()
             .expect("dev transport PIT contexts lock poisoned")
-            .get("pit-1")
+            .get(&pit_id)
             .cloned()
             .expect("pit context should be allocated");
         assert_eq!(pit_context.indices, vec!["logs-pit-000001".to_string()]);
@@ -10892,7 +10901,7 @@ mod tests {
             os_transport::action::read_opensearch_get_all_pits_response_message(&message).unwrap();
         assert_eq!(list_response.nodes.len(), 1);
         assert_eq!(list_response.nodes[0].pit_infos.len(), 1);
-        assert_eq!(list_response.nodes[0].pit_infos[0].pit_id, "pit-1");
+        assert_eq!(list_response.nodes[0].pit_infos[0].pit_id, pit_id);
 
         let request = os_transport::action::OpenSearchDeletePitRequestWire::default();
         let frame = os_transport::action::build_opensearch_delete_pit_request_message(
@@ -10920,7 +10929,7 @@ mod tests {
         let response =
             os_transport::action::read_opensearch_delete_pit_response_message(&message).unwrap();
         assert_eq!(response.results.len(), 1);
-        assert_eq!(response.results[0].pit_id, "pit-1");
+        assert_eq!(response.results[0].pit_id, pit_id);
         assert!(response.results[0].successful);
 
         let list_response = build_local_get_all_pits_response(
@@ -11072,13 +11081,15 @@ mod tests {
         };
         let routed_create_response =
             os_transport::action::read_opensearch_create_pit_response_message(&message).unwrap();
-        assert_eq!(routed_create_response.pit_id, "pit-2");
+        let routed_pit_id = routed_create_response.pit_id.clone();
+        assert!(!routed_pit_id.starts_with("pit-"));
+        assert_ne!(routed_pit_id, pit_id);
         assert_eq!(routed_create_response.total_shards, 3);
         let routed_pit_context = dev_transport_pit_bindings()
             .contexts
             .lock()
             .expect("dev transport PIT contexts lock poisoned")
-            .get("pit-2")
+            .get(&routed_pit_id)
             .cloned()
             .expect("routed pit context should be allocated");
         assert_eq!(
@@ -11162,6 +11173,9 @@ mod tests {
 
     #[test]
     fn create_pit_transport_route_applies_minimum_expiry_grace_for_short_keep_alive() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
         dev_transport_pit_bindings()
             .contexts
             .lock()
@@ -11222,13 +11236,14 @@ mod tests {
         };
         let create_response =
             os_transport::action::read_opensearch_create_pit_response_message(&message).unwrap();
-        assert_eq!(create_response.pit_id, "pit-1");
+        let pit_id = create_response.pit_id.clone();
+        assert!(!pit_id.starts_with("pit-"));
 
         let context = dev_transport_pit_bindings()
             .contexts
             .lock()
             .expect("dev transport PIT contexts lock poisoned")
-            .get("pit-1")
+            .get(&pit_id)
             .cloned()
             .expect("short PIT context should be allocated");
         assert_eq!(context.keep_alive_millis, 1);
@@ -11240,6 +11255,9 @@ mod tests {
 
     #[test]
     fn delete_pit_transport_route_accepts_explicit_id_subset() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
         dev_transport_pit_bindings()
             .contexts
             .lock()
@@ -11411,6 +11429,9 @@ mod tests {
 
     #[test]
     fn get_all_pits_transport_route_admits_only_local_lifecycle_subset() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
         let transport_identity = DevTransportIdentity {
             cluster_name: "steelsearch-dev".to_string(),
             node_name: "steel-node".to_string(),
@@ -11523,6 +11544,9 @@ mod tests {
 
     #[test]
     fn get_all_pits_transport_route_builds_opensearch_shaped_empty_response() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
         let transport_identity = DevTransportIdentity {
             cluster_name: "steelsearch-dev".to_string(),
             node_name: "steel-node".to_string(),
@@ -11568,13 +11592,18 @@ mod tests {
 
     #[test]
     fn expired_transport_pits_are_pruned_before_list_and_segments_admission() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
         let pit_id = "pit-expired-context";
         let now = now_epoch_ms();
-        dev_transport_pit_bindings()
-            .contexts
-            .lock()
-            .expect("dev transport PIT contexts lock poisoned")
-            .insert(
+        {
+            let mut contexts = dev_transport_pit_bindings()
+                .contexts
+                .lock()
+                .expect("dev transport PIT contexts lock poisoned");
+            contexts.clear();
+            contexts.insert(
                 pit_id.to_string(),
                 PitContext {
                     indices: vec!["logs-expired-pit-000001".to_string()],
@@ -11584,6 +11613,7 @@ mod tests {
                     creation_time_millis: now.saturating_sub(10),
                 },
             );
+        }
         let transport_identity = DevTransportIdentity {
             cluster_name: "steelsearch-dev".to_string(),
             node_name: "steel-node".to_string(),
@@ -11679,6 +11709,14 @@ mod tests {
 
     #[test]
     fn pit_segments_transport_route_builds_opensearch_shaped_empty_all_node_response() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        dev_transport_pit_bindings()
+            .contexts
+            .lock()
+            .expect("dev transport PIT contexts lock poisoned")
+            .clear();
         let transport_identity = DevTransportIdentity {
             cluster_name: "steelsearch-dev".to_string(),
             node_name: "steel-node".to_string(),
@@ -11732,12 +11770,17 @@ mod tests {
 
     #[test]
     fn pit_segments_transport_route_accepts_existing_explicit_id_subset() {
-        let pit_id = "pit-segments-explicit-context";
-        dev_transport_pit_bindings()
-            .contexts
+        let _lock = dev_transport_pit_test_lock()
             .lock()
-            .expect("dev transport PIT contexts lock poisoned")
-            .insert(
+            .expect("dev transport PIT test lock poisoned");
+        let pit_id = "pit-segments-explicit-context";
+        {
+            let mut contexts = dev_transport_pit_bindings()
+                .contexts
+                .lock()
+                .expect("dev transport PIT contexts lock poisoned");
+            contexts.clear();
+            contexts.insert(
                 pit_id.to_string(),
                 PitContext {
                     indices: vec!["logs-pit-segments-000001".to_string()],
@@ -11747,6 +11790,7 @@ mod tests {
                     creation_time_millis: now_epoch_ms(),
                 },
             );
+        }
         let transport_identity = DevTransportIdentity {
             cluster_name: "steelsearch-dev".to_string(),
             node_name: "steel-node".to_string(),

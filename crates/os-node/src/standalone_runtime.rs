@@ -10393,7 +10393,7 @@ impl SteelNode {
             .lock()
             .expect("next pit id lock poisoned");
         *next_id += 1;
-        let pit_id = format!("pit-{}", *next_id);
+        let pit_id = build_local_pit_id(*next_id);
         pit_contexts.insert(
             pit_id.clone(),
             PitContext {
@@ -20505,7 +20505,75 @@ fn validate_point_in_time_search_request(index: &str, request: &RestRequest) -> 
 }
 
 fn pit_search_id_has_local_shape(pit_id: &str) -> bool {
-    pit_id.strip_prefix("pit-").is_some_and(|suffix| !suffix.is_empty())
+    let Some(decoded) = decode_base64_url_no_pad(pit_id) else {
+        return false;
+    };
+    let Ok(decoded) = String::from_utf8(decoded) else {
+        return false;
+    };
+    decoded
+        .strip_prefix(LOCAL_PIT_ID_PREFIX)
+        .is_some_and(|suffix| !suffix.is_empty() && suffix.parse::<u64>().is_ok())
+}
+
+const LOCAL_PIT_ID_PREFIX: &str = "steelsearch-pit:v1:";
+
+pub fn build_local_pit_id(sequence: u64) -> String {
+    encode_base64_url_no_pad(format!("{LOCAL_PIT_ID_PREFIX}{sequence}").as_bytes())
+}
+
+fn encode_base64_url_no_pad(bytes: &[u8]) -> String {
+    const TABLE: &[u8; 64] =
+        b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+    let mut encoded = String::with_capacity((bytes.len() * 4).div_ceil(3));
+    for chunk in bytes.chunks(3) {
+        let first = chunk[0];
+        let second = chunk.get(1).copied().unwrap_or(0);
+        let third = chunk.get(2).copied().unwrap_or(0);
+        let block = ((first as u32) << 16) | ((second as u32) << 8) | third as u32;
+        encoded.push(TABLE[((block >> 18) & 0x3f) as usize] as char);
+        encoded.push(TABLE[((block >> 12) & 0x3f) as usize] as char);
+        if chunk.len() > 1 {
+            encoded.push(TABLE[((block >> 6) & 0x3f) as usize] as char);
+        }
+        if chunk.len() > 2 {
+            encoded.push(TABLE[(block & 0x3f) as usize] as char);
+        }
+    }
+    encoded
+}
+
+fn decode_base64_url_no_pad(value: &str) -> Option<Vec<u8>> {
+    if value.is_empty() || value.len() % 4 == 1 || value.as_bytes().contains(&b'=') {
+        return None;
+    }
+    fn sextet(byte: u8) -> Option<u8> {
+        match byte {
+            b'A'..=b'Z' => Some(byte - b'A'),
+            b'a'..=b'z' => Some(byte - b'a' + 26),
+            b'0'..=b'9' => Some(byte - b'0' + 52),
+            b'-' => Some(62),
+            b'_' => Some(63),
+            _ => None,
+        }
+    }
+
+    let mut output = Vec::with_capacity(value.len() * 3 / 4);
+    let mut buffer = 0u32;
+    let mut bit_count = 0u8;
+    for byte in value.bytes() {
+        buffer = (buffer << 6) | u32::from(sextet(byte)?);
+        bit_count += 6;
+        while bit_count >= 8 {
+            bit_count -= 8;
+            output.push(((buffer >> bit_count) & 0xff) as u8);
+            buffer &= (1 << bit_count) - 1;
+        }
+    }
+    if bit_count > 0 && buffer != 0 {
+        return None;
+    }
+    Some(output)
 }
 
 fn action_request_validation_error(validation_errors: Vec<&str>) -> RestResponse {
@@ -27021,6 +27089,21 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             .get_or_init(|| Mutex::new(()))
             .lock()
             .expect("security env lock poisoned")
+    }
+
+    fn local_pit_id(value: &Value) -> String {
+        let pit_id = value.as_str().expect("PIT id should be a string");
+        assert!(
+            pit_search_id_has_local_shape(pit_id),
+            "PIT id should be an OpenSearch-shaped opaque id: {pit_id}"
+        );
+        assert!(
+            pit_id
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_'),
+            "PIT id should use unpadded base64url characters: {pit_id}"
+        );
+        pit_id.to_string()
     }
 
     #[test]
@@ -39363,14 +39446,16 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             "/logs-pit-blank-bool/_search/point_in_time?keep_alive=1m&allow_partial_pit_creation=%20",
         ));
         assert_eq!(blank_allow_partial_pit.status, 200);
-        assert_eq!(blank_allow_partial_pit.body["pit_id"], "pit-1");
+        let blank_allow_partial_pit_id = local_pit_id(&blank_allow_partial_pit.body["pit_id"]);
 
         let blank_ignore_unavailable_pit = node.handle_rest_request(RestRequest::new(
             RestMethod::Post,
             "/logs-pit-blank-bool/_search/point_in_time?keep_alive=1m&ignore_unavailable=%20",
         ));
         assert_eq!(blank_ignore_unavailable_pit.status, 200);
-        assert_eq!(blank_ignore_unavailable_pit.body["pit_id"], "pit-2");
+        let blank_ignore_unavailable_pit_id =
+            local_pit_id(&blank_ignore_unavailable_pit.body["pit_id"]);
+        assert_ne!(blank_allow_partial_pit_id, blank_ignore_unavailable_pit_id);
     }
 
     #[test]
@@ -39391,7 +39476,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             "/logs-pit-keep-alive/_search/point_in_time?keep_alive=0ms",
         ));
         assert_eq!(zero_keep_alive_pit.status, 200);
-        assert_eq!(zero_keep_alive_pit.body["pit_id"], "pit-1");
+        let zero_keep_alive_pit_id = local_pit_id(&zero_keep_alive_pit.body["pit_id"]);
         assert_eq!(zero_keep_alive_pit.body["_shards"]["successful"], 1);
 
         let negative_keep_alive_pit = node.handle_rest_request(RestRequest::new(
@@ -39399,7 +39484,8 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             "/logs-pit-keep-alive/_search/point_in_time?keep_alive=-1ms",
         ));
         assert_eq!(negative_keep_alive_pit.status, 200);
-        assert_eq!(negative_keep_alive_pit.body["pit_id"], "pit-2");
+        let negative_keep_alive_pit_id = local_pit_id(&negative_keep_alive_pit.body["pit_id"]);
+        assert_ne!(zero_keep_alive_pit_id, negative_keep_alive_pit_id);
         assert_eq!(negative_keep_alive_pit.body["_shards"]["successful"], 1);
 
         let listed_pits = node.handle_rest_request(RestRequest::new(
@@ -39444,7 +39530,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 "/logs-pit-max-open/_search/point_in_time?keep_alive=1d",
             ));
             assert_eq!(open_pit.status, 200, "{index}");
-            assert_eq!(open_pit.body["pit_id"], format!("pit-{index}"), "{index}");
+            local_pit_id(&open_pit.body["pit_id"]);
         }
 
         let too_many_pits = node.handle_rest_request(RestRequest::new(
@@ -39948,7 +40034,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             "/logs-session-000001/_search/point_in_time?keep_alive=1m&allow_partial_pit_creation",
         ));
         assert_eq!(open_pit.status, 200);
-        assert_eq!(open_pit.body["pit_id"], "pit-1");
+        let open_pit_id = local_pit_id(&open_pit.body["pit_id"]);
         assert_eq!(open_pit.body["_shards"]["total"], 1);
         assert_eq!(open_pit.body["_shards"]["successful"], 1);
 
@@ -39957,20 +40043,21 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             "/logs-session-000001/_search/point_in_time?keep_alive=1m",
         ));
         assert_eq!(second_open_pit.status, 200);
-        assert_eq!(second_open_pit.body["pit_id"], "pit-2");
+        let second_open_pit_id = local_pit_id(&second_open_pit.body["pit_id"]);
+        assert_ne!(open_pit_id, second_open_pit_id);
 
         let ignore_missing_open_pit = node.handle_rest_request(RestRequest::new(
             RestMethod::Post,
             "/logs-session-000001,missing-session-000001/_search/point_in_time?keep_alive=1m&ignore_unavailable=true",
         ));
         assert_eq!(ignore_missing_open_pit.status, 200);
-        assert_eq!(ignore_missing_open_pit.body["pit_id"], "pit-3");
+        let ignore_missing_open_pit_id = local_pit_id(&ignore_missing_open_pit.body["pit_id"]);
         assert_eq!(ignore_missing_open_pit.body["_shards"]["total"], 1);
         assert_eq!(ignore_missing_open_pit.body["_shards"]["successful"], 1);
 
         let close_ignore_missing_pit = node.handle_rest_request(
             RestRequest::new(RestMethod::Delete, "/_search/point_in_time")
-                .with_json_body(serde_json::json!({ "pit_id": "pit-3" })),
+                .with_json_body(serde_json::json!({ "pit_id": ignore_missing_open_pit_id })),
         );
         assert_eq!(close_ignore_missing_pit.status, 200);
 
@@ -39990,13 +40077,13 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             "/logs-session-*/_search/point_in_time?keep_alive=1m&expand_wildcards=none,open",
         ));
         assert_eq!(none_then_open_pit.status, 200);
-        assert_eq!(none_then_open_pit.body["pit_id"], "pit-5");
+        let none_then_open_pit_id = local_pit_id(&none_then_open_pit.body["pit_id"]);
         assert_eq!(none_then_open_pit.body["_shards"]["total"], 1);
         assert_eq!(none_then_open_pit.body["_shards"]["successful"], 1);
 
         let close_none_then_open_pit = node.handle_rest_request(
             RestRequest::new(RestMethod::Delete, "/_search/point_in_time")
-                .with_json_body(serde_json::json!({ "pit_id": "pit-5" })),
+                .with_json_body(serde_json::json!({ "pit_id": none_then_open_pit_id })),
         );
         assert_eq!(close_none_then_open_pit.status, 200);
 
@@ -40005,13 +40092,13 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             "/logs-session-000001/_search/point_in_time?keep_alive=1m&allow_partial_pit_creation=false",
         ));
         assert_eq!(strict_partial_open_pit.status, 200);
-        assert_eq!(strict_partial_open_pit.body["pit_id"], "pit-6");
+        let strict_partial_open_pit_id = local_pit_id(&strict_partial_open_pit.body["pit_id"]);
         assert_eq!(strict_partial_open_pit.body["_shards"]["total"], 1);
         assert_eq!(strict_partial_open_pit.body["_shards"]["successful"], 1);
 
         let close_strict_partial_pit = node.handle_rest_request(
             RestRequest::new(RestMethod::Delete, "/_search/point_in_time")
-                .with_json_body(serde_json::json!({ "pit_id": "pit-6" })),
+                .with_json_body(serde_json::json!({ "pit_id": strict_partial_open_pit_id })),
         );
         assert_eq!(close_strict_partial_pit.status, 200);
 
@@ -40020,7 +40107,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             "/logs-session-000001/_search/point_in_time?keep_alive=1m&preference=_local",
         ));
         assert_eq!(preferred_open_pit.status, 200);
-        assert_eq!(preferred_open_pit.body["pit_id"], "pit-7");
+        let preferred_open_pit_id = local_pit_id(&preferred_open_pit.body["pit_id"]);
         assert_eq!(preferred_open_pit.body["_shards"]["total"], 1);
 
         let preferred_pit_search = node.handle_rest_request(
@@ -40034,12 +40121,12 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 })),
         );
         assert_eq!(preferred_pit_search.status, 200);
-        assert_eq!(preferred_pit_search.body["pit_id"], "pit-7");
+        assert_eq!(preferred_pit_search.body["pit_id"], preferred_open_pit_id);
         assert_eq!(preferred_pit_search.body["hits"]["total"]["value"], 2);
 
         let close_preferred_pit = node.handle_rest_request(
             RestRequest::new(RestMethod::Delete, "/_search/point_in_time")
-                .with_json_body(serde_json::json!({ "pit_id": "pit-7" })),
+                .with_json_body(serde_json::json!({ "pit_id": preferred_open_pit_id })),
         );
         assert_eq!(close_preferred_pit.status, 200);
 
@@ -40073,7 +40160,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 })),
         );
         assert_eq!(pit_search.status, 200);
-        assert_eq!(pit_search.body["pit_id"], "pit-2");
+        assert_eq!(pit_search.body["pit_id"], second_open_pit_id);
         assert_eq!(pit_search.body["hits"]["total"]["value"], 2);
         assert!(pit_search.body["hits"]["hits"]
             .as_array()
@@ -40135,7 +40222,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 })),
         );
         assert_eq!(pit_shard_doc_sort.status, 200);
-        assert_eq!(pit_shard_doc_sort.body["pit_id"], "pit-2");
+        assert_eq!(pit_shard_doc_sort.body["pit_id"], second_open_pit_id);
         assert_eq!(pit_shard_doc_sort.body["hits"]["total"]["value"], 2);
         assert_eq!(
             pit_shard_doc_sort.body["hits"]["hits"][0]["sort"],
@@ -40735,9 +40822,9 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         let list_pits =
             node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_search/point_in_time/_all"));
         assert_eq!(list_pits.status, 200);
-        assert_eq!(list_pits.body["pits"][0]["pit_id"], "pit-1");
+        assert_eq!(list_pits.body["pits"][0]["pit_id"], open_pit_id);
         assert_eq!(list_pits.body["pits"][0]["keep_alive"], 60000);
-        assert_eq!(list_pits.body["pits"][1]["pit_id"], "pit-2");
+        assert_eq!(list_pits.body["pits"][1]["pit_id"], second_open_pit_id);
         assert_eq!(list_pits.body["pits"][1]["keep_alive"], 60000);
 
         let search_response = node.handle_rest_request(
@@ -41102,26 +41189,29 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
 
         let close_single_pit = node.handle_rest_request(
             RestRequest::new(RestMethod::Delete, "/_search/point_in_time")
-                .with_json_body(serde_json::json!({ "pit_id": "pit-1" })),
+                .with_json_body(serde_json::json!({ "pit_id": open_pit_id.clone() })),
         );
         assert_eq!(close_single_pit.status, 200);
         assert_eq!(close_single_pit.body["pits"][0]["successful"], true);
-        assert_eq!(close_single_pit.body["pits"][0]["pit_id"], "pit-1");
+        assert_eq!(close_single_pit.body["pits"][0]["pit_id"], open_pit_id);
 
         let list_after_single_close =
             node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_search/point_in_time/_all"));
         assert_eq!(list_after_single_close.status, 200);
         assert_eq!(list_after_single_close.body["pits"].as_array().map(|pits| pits.len()), Some(1));
-        assert_eq!(list_after_single_close.body["pits"][0]["pit_id"], "pit-2");
+        assert_eq!(
+            list_after_single_close.body["pits"][0]["pit_id"],
+            second_open_pit_id
+        );
 
         let close_array_pit = node.handle_rest_request(
             RestRequest::new(RestMethod::Delete, "/_search/point_in_time")
-                .with_json_body(serde_json::json!({ "pit_id": ["pit-2", "pit-missing"] })),
+                .with_json_body(serde_json::json!({ "pit_id": [second_open_pit_id.clone(), "pit-missing"] })),
         );
         assert_eq!(close_array_pit.status, 200);
         assert_eq!(close_array_pit.body["pits"].as_array().map(|pits| pits.len()), Some(2));
         assert_eq!(close_array_pit.body["pits"][0]["successful"], true);
-        assert_eq!(close_array_pit.body["pits"][0]["pit_id"], "pit-2");
+        assert_eq!(close_array_pit.body["pits"][0]["pit_id"], second_open_pit_id);
         assert_eq!(close_array_pit.body["pits"][1]["successful"], true);
         assert_eq!(close_array_pit.body["pits"][1]["pit_id"], "pit-missing");
 
@@ -41135,13 +41225,13 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             "/logs-session-000001/_search/point_in_time?keep_alive=1m",
         ));
         assert_eq!(all_body_first_pit.status, 200);
-        assert_eq!(all_body_first_pit.body["pit_id"], "pit-8");
+        local_pit_id(&all_body_first_pit.body["pit_id"]);
         let all_body_second_pit = node.handle_rest_request(RestRequest::new(
             RestMethod::Post,
             "/logs-session-000001/_search/point_in_time?keep_alive=1m",
         ));
         assert_eq!(all_body_second_pit.status, 200);
-        assert_eq!(all_body_second_pit.body["pit_id"], "pit-9");
+        local_pit_id(&all_body_second_pit.body["pit_id"]);
         let close_all_body_pit = node.handle_rest_request(
             RestRequest::new(RestMethod::Delete, "/_search/point_in_time")
                 .with_json_body(serde_json::json!({ "pit_id": "_all" })),
@@ -41188,7 +41278,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             "/logs-routed-pit-000001/_search/point_in_time?keep_alive=1m&routing=tenant-a",
         ));
         assert_eq!(routed_pit.status, 200);
-        assert_eq!(routed_pit.body["pit_id"], "pit-10");
+        let routed_pit_id = local_pit_id(&routed_pit.body["pit_id"]);
 
         let routed_live_search = node.handle_rest_request(
             RestRequest::new(
@@ -41207,7 +41297,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             RestRequest::new(RestMethod::Post, "/_search")
                 .with_json_body(serde_json::json!({
                     "pit": {
-                        "id": routed_pit.body["pit_id"].as_str().unwrap(),
+                        "id": routed_pit_id.clone(),
                         "keep_alive": "1m"
                     },
                     "query": { "match_all": {} }
@@ -41227,7 +41317,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         let close_routed_pit = node.handle_rest_request(
             RestRequest::new(RestMethod::Delete, "/_search/point_in_time")
                 .with_json_body(serde_json::json!({
-                    "pit_id": routed_pit.body["pit_id"].as_str().unwrap()
+                    "pit_id": routed_pit_id
                 })),
         );
         assert_eq!(close_routed_pit.status, 200);
@@ -50413,7 +50503,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             .with_header("Authorization", "Basic cmVhZGVyOnJlYWRlcg=="),
         );
         assert_eq!(open_pit.status, 200);
-        assert_eq!(open_pit.body["pit_id"], "pit-1");
+        let open_pit_id = local_pit_id(&open_pit.body["pit_id"]);
 
         let writer_pit = node.handle_rest_request(
             RestRequest::new(
@@ -50454,7 +50544,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 .with_header("Authorization", "Basic cmVhZGVyOnJlYWRlcg=="),
         );
         assert_eq!(reader_pit_list.status, 200);
-        assert_eq!(reader_pit_list.body["pits"][0]["pit_id"], "pit-1");
+        assert_eq!(reader_pit_list.body["pits"][0]["pit_id"], open_pit_id);
 
         unsafe {
             env::remove_var("STEELSEARCH_SECURITY_ENABLED");
