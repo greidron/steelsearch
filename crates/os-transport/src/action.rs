@@ -25993,6 +25993,8 @@ pub struct OpenSearchSearchResponseWire {
     pub total_hits_relation: i32,
     pub max_score: f32,
     pub hits: Vec<OpenSearchSearchHitWire>,
+    pub collapse_field: Option<String>,
+    pub collapse_values: Option<Vec<Value>>,
     pub total_shards: i32,
     pub successful_shards: i32,
     pub skipped_shards: i32,
@@ -26014,6 +26016,8 @@ impl OpenSearchSearchResponseWire {
             total_hits_relation: 0,
             max_score: f32::NAN,
             hits: Vec::new(),
+            collapse_field: None,
+            collapse_values: None,
             total_shards: 1,
             successful_shards: 1,
             skipped_shards: 0,
@@ -26040,8 +26044,8 @@ impl OpenSearchSearchResponseWire {
             hit.write_at_depth(output, version, 0)?;
         }
         output.write_bool(false);
-        output.write_optional_string(None);
-        output.write_bool(false);
+        output.write_optional_string(self.collapse_field.as_deref());
+        write_optional_search_sort_values(output, self.collapse_values.as_deref())?;
         output.write_bool(false);
         output.write_bool(false);
         output.write_bool(false);
@@ -26088,13 +26092,9 @@ impl OpenSearchSearchResponseWire {
             )?);
         }
         reject_optional_array_present(&mut input, "search response sort fields")?;
-        if input.read_optional_string()?.is_some() {
-            return Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "search response collapse field",
-                reason: "search response collapse field is not decoded by this subset",
-            });
-        }
-        reject_optional_array_present(&mut input, "search response collapse values")?;
+        let collapse_field = input.read_optional_string()?;
+        let collapse_values =
+            read_optional_search_sort_values(&mut input, "search response collapse values")?;
         reject_optional_writeable_present(&mut input, "search response aggregations")?;
         reject_optional_writeable_present(&mut input, "search response suggest")?;
         let timed_out = input.read_bool()?;
@@ -26130,6 +26130,8 @@ impl OpenSearchSearchResponseWire {
             total_hits_relation: total_hits.map(|(_, relation)| relation).unwrap_or(0),
             max_score,
             hits,
+            collapse_field,
+            collapse_values,
             total_shards: input.read_vint()?,
             successful_shards: input.read_vint()?,
             skipped_shards: 0,
@@ -26184,6 +26186,11 @@ impl OpenSearchSearchResponseWire {
         for hit in &self.hits {
             hit.validate_supported_subset()?;
         }
+        validate_search_hits_collapse_tail(
+            self.collapse_field.as_deref(),
+            self.collapse_values.as_deref(),
+            "search response collapse",
+        )?;
         if self.total_shards < 0 || self.successful_shards < 0 || self.skipped_shards < 0 {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "search response shard counts",
@@ -26317,6 +26324,8 @@ pub struct OpenSearchSearchHitsWire {
     pub total_hits_relation: i32,
     pub max_score: f32,
     pub hits: Vec<OpenSearchSearchHitWire>,
+    pub collapse_field: Option<String>,
+    pub collapse_values: Option<Vec<Value>>,
 }
 
 impl OpenSearchSearchHitsWire {
@@ -26346,8 +26355,8 @@ impl OpenSearchSearchHitsWire {
             hit.write_at_depth(output, version, depth)?;
         }
         output.write_bool(false);
-        output.write_optional_string(None);
-        output.write_bool(false);
+        output.write_optional_string(self.collapse_field.as_deref());
+        write_optional_search_sort_values(output, self.collapse_values.as_deref())?;
         Ok(())
     }
 
@@ -26379,18 +26388,16 @@ impl OpenSearchSearchHitsWire {
             )?);
         }
         reject_optional_array_present(input, "search inner hits sort fields")?;
-        if input.read_optional_string()?.is_some() {
-            return Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "search inner hits collapse field",
-                reason: "inner SearchHits collapse field is not decoded by this subset",
-            });
-        }
-        reject_optional_array_present(input, "search inner hits collapse values")?;
+        let collapse_field = input.read_optional_string()?;
+        let collapse_values =
+            read_optional_search_sort_values(input, "search inner hits collapse values")?;
         let hits = Self {
             total_hits: total_hits.map(|(value, _)| value),
             total_hits_relation: total_hits.map(|(_, relation)| relation).unwrap_or(0),
             max_score,
             hits,
+            collapse_field,
+            collapse_values,
         };
         hits.validate_at_depth(depth)?;
         Ok(hits)
@@ -26422,6 +26429,11 @@ impl OpenSearchSearchHitsWire {
         for hit in &self.hits {
             hit.validate_at_depth(depth)?;
         }
+        validate_search_hits_collapse_tail(
+            self.collapse_field.as_deref(),
+            self.collapse_values.as_deref(),
+            "search inner hits collapse",
+        )?;
         Ok(())
     }
 }
@@ -34668,6 +34680,50 @@ fn read_search_sort_values(
         values.push(read_search_sort_value(input, shape)?);
     }
     Ok(values)
+}
+
+fn write_optional_search_sort_values(
+    output: &mut StreamOutput,
+    values: Option<&[Value]>,
+) -> Result<(), TransportActionWireError> {
+    if let Some(values) = values {
+        output.write_bool(true);
+        write_search_sort_values(output, values)?;
+    } else {
+        output.write_bool(false);
+    }
+    Ok(())
+}
+
+fn read_optional_search_sort_values(
+    input: &mut StreamInput,
+    shape: &'static str,
+) -> Result<Option<Vec<Value>>, TransportActionWireError> {
+    if input.read_bool()? {
+        Ok(Some(read_search_sort_values(input, shape)?))
+    } else {
+        Ok(None)
+    }
+}
+
+fn validate_search_hits_collapse_tail(
+    collapse_field: Option<&str>,
+    collapse_values: Option<&[Value]>,
+    shape: &'static str,
+) -> Result<(), TransportActionWireError> {
+    if collapse_field.is_some_and(str::is_empty) {
+        return Err(TransportActionWireError::UnsupportedWireShape {
+            shape,
+            reason: "OpenSearch SearchHits collapse field must be non-empty when present",
+        });
+    }
+    if collapse_values.is_some() && collapse_field.is_none() {
+        return Err(TransportActionWireError::UnsupportedWireShape {
+            shape,
+            reason: "OpenSearch SearchHits collapse values require a collapse field",
+        });
+    }
+    Ok(())
 }
 
 fn write_matched_queries(
@@ -58782,6 +58838,8 @@ mod tests {
             total_hits_relation: 0,
             max_score: f32::NAN,
             hits: Vec::new(),
+            collapse_field: None,
+            collapse_values: None,
             total_shards: 3,
             successful_shards: 3,
             skipped_shards: 0,
@@ -58812,6 +58870,8 @@ mod tests {
         let response = OpenSearchSearchResponseWire {
             total_hits: Some(1),
             max_score: 1.0,
+            collapse_field: Some("tenant".to_string()),
+            collapse_values: Some(vec![json!("tenant-a")]),
             hits: vec![OpenSearchSearchHitWire {
                 id: Some("doc-1".to_string()),
                 score: 1.0,
@@ -58880,6 +58940,8 @@ mod tests {
                         total_hits: Some(1),
                         total_hits_relation: 0,
                         max_score: 0.5,
+                        collapse_field: Some("comments.author".to_string()),
+                        collapse_values: Some(vec![json!("ann")]),
                         hits: vec![OpenSearchSearchHitWire {
                             id: Some("doc-1-comment-1".to_string()),
                             score: 0.5,
@@ -58913,6 +58975,8 @@ mod tests {
             OpenSearchSearchResponseWire::read(output.freeze(), OPENSEARCH_3_7_0_TRANSPORT)
                 .unwrap();
         assert_eq!(decoded.total_hits, Some(1));
+        assert_eq!(decoded.collapse_field.as_deref(), Some("tenant"));
+        assert_eq!(decoded.collapse_values, Some(vec![json!("tenant-a")]));
         assert_eq!(decoded.hits.len(), 1);
         assert_eq!(decoded.hits[0].id.as_deref(), Some("doc-1"));
         assert_eq!(decoded.hits[0].source, Some(json!({ "message": "hello" })));
@@ -58986,6 +59050,11 @@ mod tests {
             .expect("comments inner hits should round-trip");
         assert_eq!(comments_inner_hits.total_hits, Some(1));
         assert_eq!(comments_inner_hits.max_score, 0.5);
+        assert_eq!(
+            comments_inner_hits.collapse_field.as_deref(),
+            Some("comments.author")
+        );
+        assert_eq!(comments_inner_hits.collapse_values, Some(vec![json!("ann")]));
         assert_eq!(comments_inner_hits.hits.len(), 1);
         assert_eq!(
             comments_inner_hits.hits[0].id.as_deref(),
@@ -59055,6 +59124,18 @@ mod tests {
             invalid_counts.validate_supported_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "search response shard counts",
+                ..
+            })
+        ));
+
+        let invalid_collapse = OpenSearchSearchResponseWire {
+            collapse_values: Some(vec![json!("tenant-a")]),
+            ..OpenSearchSearchResponseWire::default()
+        };
+        assert!(matches!(
+            invalid_collapse.validate_supported_subset(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search response collapse",
                 ..
             })
         ));
