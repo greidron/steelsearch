@@ -2687,6 +2687,18 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "pit_open_wrong_method_error_search",
+      "area": "search",
+      "method": "GET",
+      "path": "/logs-compat/_search/point_in_time?keep_alive=1m",
+      "body": null,
+      "expected_status": 405,
+      "extract": "method_not_allowed_error",
+      "family": "lexical",
+      "description": "[lexical] create PIT only accepts POST like OpenSearch",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "pit_open_missing_keep_alive_error_search",
       "area": "search",
       "method": "POST",

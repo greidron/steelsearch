@@ -4938,6 +4938,14 @@ impl SteelNode {
             if request.method == RestMethod::Post && !index.is_empty() {
                 return Some(self.handle_open_point_in_time_route(index, request));
             }
+            if !index.is_empty() {
+                let uri = request_uri_with_query(request);
+                return Some(method_not_allowed_response(
+                    request.method,
+                    uri.as_str(),
+                    "POST",
+                ));
+            }
         }
         if request.path == "/_search" {
             return match request.method {
@@ -22231,6 +22239,19 @@ fn method_not_allowed_response(method: RestMethod, path: &str, allowed: &str) ->
         }),
     )
     .with_header("allow", allow_header)
+}
+
+fn request_uri_with_query(request: &RestRequest) -> String {
+    if request.query_params.is_empty() {
+        return request.path.clone();
+    }
+    let query = request
+        .query_params
+        .iter()
+        .map(|(key, value)| format!("{key}={value}"))
+        .collect::<Vec<_>>()
+        .join("&");
+    format!("{}?{}", request.path, query)
 }
 
 fn unsupported_pit_id_version_response() -> RestResponse {
@@ -44152,6 +44173,34 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             root_open_pit.body["error"],
             "Incorrect HTTP method for uri [/_search/point_in_time] and method [POST], allowed: [DELETE]"
+        );
+
+        let get_index_open_pit = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/logs-session-000001/_search/point_in_time?keep_alive=1m",
+        ));
+        assert_eq!(get_index_open_pit.status, 405);
+        assert_eq!(
+            get_index_open_pit.headers.get("allow").map(String::as_str),
+            Some("POST")
+        );
+        assert_eq!(
+            get_index_open_pit.body["error"],
+            "Incorrect HTTP method for uri [/logs-session-000001/_search/point_in_time?keep_alive=1m] and method [GET], allowed: [POST]"
+        );
+
+        let put_index_open_pit = node.handle_rest_request(RestRequest::new(
+            RestMethod::Put,
+            "/logs-session-000001/_search/point_in_time?keep_alive=1m",
+        ));
+        assert_eq!(put_index_open_pit.status, 405);
+        assert_eq!(
+            put_index_open_pit.headers.get("allow").map(String::as_str),
+            Some("POST")
+        );
+        assert_eq!(
+            put_index_open_pit.body["error"],
+            "Incorrect HTTP method for uri [/logs-session-000001/_search/point_in_time?keep_alive=1m] and method [PUT], allowed: [POST]"
         );
 
         let missing_keep_alive_pit = node.handle_rest_request(RestRequest::new(
