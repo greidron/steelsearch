@@ -32684,6 +32684,25 @@ impl OpenSearchGetAllPitsRequestWire {
     }
 
     pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
+        if let Some(timeout) = &self.timeout {
+            if timeout.duration < -1 {
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "get all pits timeout",
+                    reason: "OpenSearch TimeValue rejects durations below -1",
+                });
+            }
+            if timeout.time_unit_ordinal > 6 {
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "get all pits timeout unit",
+                    reason: "OpenSearch get-all-PITs timeout uses an unknown time unit",
+                });
+            }
+        }
+        Ok(())
+    }
+
+    pub fn supports_local_lifecycle_subset(&self) -> Result<(), TransportActionWireError> {
+        self.validate_supported_subset()?;
         if self
             .node_ids
             .as_ref()
@@ -32704,10 +32723,10 @@ impl OpenSearchGetAllPitsRequestWire {
     }
 
     pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
-        self.validate_supported_subset()?;
+        self.supports_local_lifecycle_subset()?;
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "get all pits execution",
-            reason: "use validate_supported_subset for the implemented local PIT listing adapter",
+            reason: "use supports_local_lifecycle_subset for the implemented local PIT listing adapter",
         })
     }
 }
@@ -68900,6 +68919,7 @@ mod tests {
             node_ids: Some(vec!["node-a".to_string()]),
             ..OpenSearchGetAllPitsRequestWire::default()
         };
+        node_filter.validate_supported_subset().unwrap();
         assert!(matches!(
             node_filter.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
@@ -68912,10 +68932,41 @@ mod tests {
             timeout: Some(TimeValueWire::seconds(30)),
             ..OpenSearchGetAllPitsRequestWire::default()
         };
+        timeout.validate_supported_subset().unwrap();
         assert!(matches!(
             timeout.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "get all pits timeout",
+                ..
+            })
+        ));
+
+        let invalid_timeout = OpenSearchGetAllPitsRequestWire {
+            timeout: Some(TimeValueWire {
+                duration: -2,
+                time_unit_ordinal: TIME_UNIT_MILLISECONDS,
+            }),
+            ..OpenSearchGetAllPitsRequestWire::default()
+        };
+        assert!(matches!(
+            invalid_timeout.validate_supported_subset(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get all pits timeout",
+                ..
+            })
+        ));
+
+        let unknown_timeout_unit = OpenSearchGetAllPitsRequestWire {
+            timeout: Some(TimeValueWire {
+                duration: 1,
+                time_unit_ordinal: 7,
+            }),
+            ..OpenSearchGetAllPitsRequestWire::default()
+        };
+        assert!(matches!(
+            unknown_timeout_unit.validate_supported_subset(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get all pits timeout unit",
                 ..
             })
         ));

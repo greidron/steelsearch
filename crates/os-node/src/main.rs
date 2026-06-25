@@ -1676,6 +1676,7 @@ fn handle_transport_seed_connection<S: TransportConnection>(
         )?;
     } else if is_request
         && normalized_action_hint == Some("indices:data/read/point_in_time/readall")
+        && get_all_pits_request_supports_local_lifecycle_subset(&body)
     {
         let response =
             build_local_get_all_pits_response(request_id, header_version_id, transport_identity);
@@ -4082,6 +4083,12 @@ fn clear_scroll_request_supports_local_lifecycle_subset(body: &[u8]) -> bool {
         .is_some()
 }
 
+fn get_all_pits_request_supports_local_lifecycle_subset(body: &[u8]) -> bool {
+    decode_get_all_pits_request_from_transport_body(body)
+        .and_then(|request| request.supports_local_lifecycle_subset().ok())
+        .is_some()
+}
+
 fn clear_transport_scroll_contexts(
     scroll_ids: &[String],
 ) -> os_transport::action::OpenSearchClearScrollResponseWire {
@@ -4110,6 +4117,13 @@ fn decode_clear_scroll_request_from_transport_body(
 ) -> Option<os_transport::action::OpenSearchClearScrollRequestWire> {
     let message = decode_transport_message_from_body(body)?;
     os_transport::action::read_opensearch_clear_scroll_request_message(&message).ok()
+}
+
+fn decode_get_all_pits_request_from_transport_body(
+    body: &[u8],
+) -> Option<os_transport::action::OpenSearchGetAllPitsRequestWire> {
+    let message = decode_transport_message_from_body(body)?;
+    os_transport::action::read_opensearch_get_all_pits_request_message(&message).ok()
 }
 
 fn pit_segments_request_supports_local_subset(body: &[u8]) -> bool {
@@ -6075,11 +6089,15 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
                 body,
             ))
         }
-        Some("indices:data/read/point_in_time/readall") => Some(build_local_get_all_pits_response(
-            request_id,
-            header_version_id,
-            transport_identity,
-        )),
+        Some("indices:data/read/point_in_time/readall")
+            if get_all_pits_request_supports_local_lifecycle_subset(body) =>
+        {
+            Some(build_local_get_all_pits_response(
+                request_id,
+                header_version_id,
+                transport_identity,
+            ))
+        }
         Some("cluster:monitor/nodes/hot_threads") => Some(build_nodes_hot_threads_response(
             request_id,
             header_version_id,
@@ -11345,6 +11363,49 @@ mod tests {
             .lock()
             .expect("dev transport scroll contexts lock poisoned")
             .contains_key("scroll-context"));
+    }
+
+    #[test]
+    fn get_all_pits_transport_route_admits_only_local_lifecycle_subset() {
+        let default_request = os_transport::action::OpenSearchGetAllPitsRequestWire::default();
+        let default_frame = os_transport::action::build_opensearch_get_all_pits_request_message(
+            93,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &default_request,
+        )
+        .unwrap();
+        assert!(get_all_pits_request_supports_local_lifecycle_subset(
+            &default_frame[6..]
+        ));
+
+        let node_filtered_request = os_transport::action::OpenSearchGetAllPitsRequestWire {
+            node_ids: Some(vec!["node-b".to_string()]),
+            ..os_transport::action::OpenSearchGetAllPitsRequestWire::default()
+        };
+        let node_filtered_frame =
+            os_transport::action::build_opensearch_get_all_pits_request_message(
+                94,
+                OPENSEARCH_3_7_0_TRANSPORT,
+                &node_filtered_request,
+            )
+            .unwrap();
+        assert!(!get_all_pits_request_supports_local_lifecycle_subset(
+            &node_filtered_frame[6..]
+        ));
+
+        let timeout_request = os_transport::action::OpenSearchGetAllPitsRequestWire {
+            timeout: Some(os_transport::action::TimeValueWire::seconds(30)),
+            ..os_transport::action::OpenSearchGetAllPitsRequestWire::default()
+        };
+        let timeout_frame = os_transport::action::build_opensearch_get_all_pits_request_message(
+            95,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &timeout_request,
+        )
+        .unwrap();
+        assert!(!get_all_pits_request_supports_local_lifecycle_subset(
+            &timeout_frame[6..]
+        ));
     }
 
     #[test]
