@@ -10384,12 +10384,17 @@ impl SteelNode {
         if ids.len() == 1 && ids.first().is_some_and(|id| id == "_all") {
             return self.clear_all_point_in_time_contexts();
         }
+        if ids.iter().any(|id| id == "_all") {
+            return unsupported_pit_id_version_response();
+        }
         let mut contexts = self
             .pit_contexts
             .lock()
             .expect("pit contexts lock poisoned");
+        let mut seen_ids = BTreeSet::new();
         let pits = ids
             .into_iter()
+            .filter(|id| seen_ids.insert(id.clone()))
             .map(|id| {
                 contexts.remove(&id);
                 serde_json::json!({
@@ -20803,6 +20808,26 @@ fn unrecognized_query_param_response_for_keys(
             )))
         }
     }
+}
+
+fn unsupported_pit_id_version_response() -> RestResponse {
+    let reason = "Unsupported version [ES 1.66.1]";
+    RestResponse::json(
+        500,
+        serde_json::json!({
+            "error": {
+                "type": "unsupported_version_exception",
+                "reason": reason,
+                "root_cause": [
+                    {
+                        "type": "unsupported_version_exception",
+                        "reason": reason
+                    }
+                ]
+            },
+            "status": 500
+        }),
+    )
 }
 
 fn delete_pit_invalid_id_response(id: &str) -> RestResponse {
@@ -40484,6 +40509,31 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             query_param_list_pit.body["error"]["root_cause"][0]["reason"],
             "request [/_search/point_in_time/_all] contains unrecognized parameter: [pit_id]"
+        );
+
+        let duplicate_missing_close_pit = node.handle_rest_request(
+            RestRequest::new(RestMethod::Delete, "/_search/point_in_time")
+                .with_json_body(serde_json::json!({ "pit_id": ["pit-missing", "pit-missing"] })),
+        );
+        assert_eq!(duplicate_missing_close_pit.status, 200);
+        assert_eq!(
+            duplicate_missing_close_pit.body["pits"].as_array().map(|pits| pits.len()),
+            Some(1)
+        );
+        assert_eq!(duplicate_missing_close_pit.body["pits"][0]["pit_id"], "pit-missing");
+
+        let mixed_all_close_pit = node.handle_rest_request(
+            RestRequest::new(RestMethod::Delete, "/_search/point_in_time")
+                .with_json_body(serde_json::json!({ "pit_id": ["_all", "pit-missing"] })),
+        );
+        assert_eq!(mixed_all_close_pit.status, 500);
+        assert_eq!(
+            mixed_all_close_pit.body["error"]["type"],
+            "unsupported_version_exception"
+        );
+        assert_eq!(
+            mixed_all_close_pit.body["error"]["root_cause"][0]["reason"],
+            "Unsupported version [ES 1.66.1]"
         );
 
         let close_single_pit = node.handle_rest_request(
