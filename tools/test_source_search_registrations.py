@@ -27,6 +27,7 @@ class SourceSearchRegistrationsTests(unittest.TestCase):
         promoted = [
             ("query", "QuerySpec<>(MatchQueryBuilder.NAME,"),
             ("query", "BoolQueryBuilder.NAME"),
+            ("query", "GeoBoundingBoxQueryBuilder.NAME"),
             ("query", "ScriptScoreQueryBuilder.NAME"),
             ("aggregation", "AggregationSpec(TermsAggregationBuilder.NAME,"),
             ("aggregation", "AdjacencyMatrixAggregationBuilder.NAME"),

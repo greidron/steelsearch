@@ -9429,7 +9429,7 @@ impl SteelNode {
         if let Some(response) = self.validate_knn_target_capabilities(&body["query"], &resolved_indices) {
             return response;
         }
-        let failed_indices = if let Some(field) = extract_geo_distance_field(&body["query"]) {
+        let failed_indices = if let Some(field) = extract_geo_query_field(&body["query"]) {
             let manifest = self
                 .metadata_manifest_state
                 .lock()
@@ -22370,6 +22370,7 @@ fn validate_search_query_body(query: &Value) -> Option<RestResponse> {
         | "terms_set"
         | "nested"
         | "geo_distance"
+        | "geo_bounding_box"
         | "function_score"
         | "script_score"
         | "span_term"
@@ -22768,6 +22769,44 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
         if field.is_empty() || parse_geo_point_value(point).is_none() {
             return Some(build_unsupported_search_response(
                 "unsupported geo_distance query shape",
+            ));
+        }
+    }
+    if let Some(spec) = query.get("geo_bounding_box").and_then(Value::as_object) {
+        if spec.keys().filter(|key| {
+            !matches!(
+                key.as_str(),
+                "ignore_unmapped" | "validation_method" | "type" | "_name" | "boost"
+            )
+        }).count() != 1
+        {
+            return Some(build_unsupported_search_response(
+                "unsupported geo_bounding_box query shape",
+            ));
+        }
+        let Some((field, box_spec)) = spec.iter().find(|(key, _)| {
+            !matches!(
+                key.as_str(),
+                "ignore_unmapped" | "validation_method" | "type" | "_name" | "boost"
+            )
+        }) else {
+            return Some(build_unsupported_search_response(
+                "unsupported geo_bounding_box query shape",
+            ));
+        };
+        let Some(box_object) = box_spec.as_object() else {
+            return Some(build_unsupported_search_response(
+                "unsupported geo_bounding_box query shape",
+            ));
+        };
+        let valid_box = box_object
+            .get("top_left")
+            .and_then(parse_geo_point_value)
+            .zip(box_object.get("bottom_right").and_then(parse_geo_point_value))
+            .is_some();
+        if field.is_empty() || !valid_box {
+            return Some(build_unsupported_search_response(
+                "unsupported geo_bounding_box query shape",
             ));
         }
     }
@@ -23837,12 +23876,29 @@ fn parse_search_timeout_millis(timeout: &str) -> Option<u64> {
     None
 }
 
-fn extract_geo_distance_field(query: &Value) -> Option<String> {
-    query.get("geo_distance")
+fn extract_geo_query_field(query: &Value) -> Option<String> {
+    if let Some(field) = query
+        .get("geo_distance")
         .and_then(Value::as_object)
         .and_then(|spec| {
             spec.iter()
                 .find(|(key, _)| key.as_str() != "distance")
+                .map(|(key, _)| key.clone())
+        })
+    {
+        return Some(field);
+    }
+    query
+        .get("geo_bounding_box")
+        .and_then(Value::as_object)
+        .and_then(|spec| {
+            spec.iter()
+                .find(|(key, _)| {
+                    !matches!(
+                        key.as_str(),
+                        "ignore_unmapped" | "validation_method" | "type" | "_name" | "boost"
+                    )
+                })
                 .map(|(key, _)| key.clone())
         })
 }
@@ -24354,6 +24410,22 @@ fn evaluate_search_query_source_with_mappings(
         let query_point = parse_geo_point_value(point)?;
         let distance_meters = haversine_distance_meters(candidate_point, query_point);
         let matched = distance_meters <= max_distance_meters;
+        return Some((matched, if matched { 1.0 } else { 0.0 }));
+    }
+    if let Some(geo_bounding_box_query) = query.get("geo_bounding_box").and_then(Value::as_object) {
+        let (field, box_spec) = geo_bounding_box_query.iter().find(|(key, _)| {
+            !matches!(
+                key.as_str(),
+                "ignore_unmapped" | "validation_method" | "type" | "_name" | "boost"
+            )
+        })?;
+        let box_object = box_spec.as_object()?;
+        let top_left = box_object.get("top_left").and_then(parse_geo_point_value)?;
+        let bottom_right = box_object
+            .get("bottom_right")
+            .and_then(parse_geo_point_value)?;
+        let candidate_point = lookup_query_field_value(source, field).and_then(parse_geo_point_value)?;
+        let matched = geo_point_in_bounding_box(candidate_point, top_left, bottom_right);
         return Some((matched, if matched { 1.0 } else { 0.0 }));
     }
     if let Some(bool_query) = query.get("bool").and_then(Value::as_object) {
@@ -25275,6 +25347,37 @@ fn parse_geo_point_value(value: &Value) -> Option<(f64, f64)> {
         object.get("lat")?.as_f64()?,
         object.get("lon")?.as_f64()?,
     ))
+}
+
+fn geo_point_in_bounding_box(
+    point: (f64, f64),
+    top_left: (f64, f64),
+    bottom_right: (f64, f64),
+) -> bool {
+    let lat_min = bottom_right.0.min(top_left.0);
+    let lat_max = bottom_right.0.max(top_left.0);
+    if point.0 < lat_min || point.0 > lat_max {
+        return false;
+    }
+    let lon = normalize_geo_lon_f64(point.1);
+    let left = normalize_geo_lon_f64(top_left.1);
+    let right = normalize_geo_lon_f64(bottom_right.1);
+    if left <= right {
+        lon >= left && lon <= right
+    } else {
+        lon >= left || lon <= right
+    }
+}
+
+fn normalize_geo_lon_f64(lon: f64) -> f64 {
+    let mut normalized = lon;
+    while normalized < -180.0 {
+        normalized += 360.0;
+    }
+    while normalized > 180.0 {
+        normalized -= 360.0;
+    }
+    normalized
 }
 
 fn haversine_distance_meters(left: (f64, f64), right: (f64, f64)) -> f64 {
@@ -44021,6 +44124,64 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         );
         assert_eq!(response.body["hits"]["total"]["value"], 1);
         assert_eq!(response.body["hits"]["hits"][0]["_id"], "doc-1");
+
+        let bounding_box_response = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-geo-good-000001/_search")
+                .with_json_body(serde_json::json!({
+                    "query": {
+                        "geo_bounding_box": {
+                            "location": {
+                                "top_left": {
+                                    "lat": 38.0,
+                                    "lon": -123.0
+                                },
+                                "bottom_right": {
+                                    "lat": 37.0,
+                                    "lon": -122.0
+                                }
+                            }
+                        }
+                    }
+                })),
+        );
+        assert_eq!(bounding_box_response.status, 200);
+        assert_eq!(bounding_box_response.body["hits"]["total"]["value"], 1);
+        assert_eq!(bounding_box_response.body["hits"]["hits"][0]["_id"], "doc-1");
+
+        let bounding_box_partial_response = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/logs-geo-good-000001,logs-geo-bad-000001/_search",
+            )
+            .with_json_body(serde_json::json!({
+                "query": {
+                    "geo_bounding_box": {
+                        "location": {
+                            "top_left": {
+                                "lat": 38.0,
+                                "lon": -123.0
+                            },
+                            "bottom_right": {
+                                "lat": 37.0,
+                                "lon": -122.0
+                            }
+                        }
+                    }
+                }
+            })),
+        );
+        assert_eq!(bounding_box_partial_response.status, 200);
+        assert_eq!(bounding_box_partial_response.body["_shards"]["total"], 2);
+        assert_eq!(bounding_box_partial_response.body["_shards"]["successful"], 1);
+        assert_eq!(bounding_box_partial_response.body["_shards"]["failed"], 1);
+        assert_eq!(
+            bounding_box_partial_response.body["_shards"]["failures"][0]["index"],
+            "logs-geo-bad-000001"
+        );
+        assert_eq!(
+            bounding_box_partial_response.body["hits"]["total"]["value"],
+            1
+        );
 
         let disallow_partial_response = node.handle_rest_request(
             RestRequest::new(

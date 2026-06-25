@@ -2733,6 +2733,7 @@ fn build_tantivy_query(
         }
         Query::Range { field, bounds } => build_tantivy_range_query(search_state, field, bounds),
         Query::GeoDistance(geo_query) => build_tantivy_geo_distance_query(search_state, geo_query),
+        Query::GeoBoundingBox(geo_query) => build_tantivy_geo_bounding_box_query(search_state, geo_query),
         Query::Ids { values } => {
             let mut clauses = Vec::new();
             for value in values {
@@ -3047,6 +3048,60 @@ fn build_tantivy_geo_distance_query(
                 Box::new(RangeQuery::new_f64_bounds(
                     lon_field_name,
                     Bound::Included(lon_min),
+                    Bound::Included(180.0),
+                )) as Box<dyn TantivyQueryTrait>,
+            ),
+        ])) as Box<dyn TantivyQueryTrait>
+    };
+
+    Ok(Some(Box::new(BooleanQuery::new(vec![
+        (Occur::Must, lat_range),
+        (Occur::Must, lon_query),
+    ]))))
+}
+
+fn build_tantivy_geo_bounding_box_query(
+    search_state: &TantivySearchState,
+    geo_query: &os_query_dsl::GeoBoundingBoxQuery,
+) -> EngineResult<Option<Box<dyn TantivyQueryTrait>>> {
+    let lat_field_name = geo_lat_tantivy_field_name(&geo_query.field);
+    let lon_field_name = geo_lon_tantivy_field_name(&geo_query.field);
+    if !search_state.fields.contains_key(&lat_field_name)
+        || !search_state.fields.contains_key(&lon_field_name)
+    {
+        return Ok(Some(Box::new(EmptyQuery)));
+    }
+
+    let lat_min = geo_query.bottom.min(geo_query.top);
+    let lat_max = geo_query.bottom.max(geo_query.top);
+    let lon_left = normalize_geo_lon(geo_query.left);
+    let lon_right = normalize_geo_lon(geo_query.right);
+    let lat_range = Box::new(RangeQuery::new_f64_bounds(
+        lat_field_name,
+        Bound::Included(lat_min),
+        Bound::Included(lat_max),
+    )) as Box<dyn TantivyQueryTrait>;
+    let lon_query = if lon_left <= lon_right {
+        Box::new(RangeQuery::new_f64_bounds(
+            lon_field_name,
+            Bound::Included(lon_left),
+            Bound::Included(lon_right),
+        )) as Box<dyn TantivyQueryTrait>
+    } else {
+        Box::new(BooleanQuery::new(vec![
+            (
+                Occur::Should,
+                Box::new(RangeQuery::new_f64_bounds(
+                    lon_field_name.clone(),
+                    Bound::Included(-180.0),
+                    Bound::Included(lon_right),
+                )) as Box<dyn TantivyQueryTrait>,
+            ),
+            (
+                Occur::Should,
+                Box::new(RangeQuery::new_f64_bounds(
+                    lon_field_name,
+                    Bound::Included(lon_left),
                     Bound::Included(180.0),
                 )) as Box<dyn TantivyQueryTrait>,
             ),

@@ -101,6 +101,7 @@ pub enum Query {
         bounds: RangeBounds,
     },
     GeoDistance(GeoDistanceQuery),
+    GeoBoundingBox(GeoBoundingBoxQuery),
     Exists {
         field: String,
     },
@@ -201,6 +202,16 @@ pub struct GeoDistanceQuery {
     pub distance_meters: f64,
     pub lat: f64,
     pub lon: f64,
+    pub ignore_unmapped: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct GeoBoundingBoxQuery {
+    pub field: String,
+    pub top: f64,
+    pub left: f64,
+    pub bottom: f64,
+    pub right: f64,
     pub ignore_unmapped: bool,
 }
 
@@ -642,6 +653,7 @@ pub fn parse_query(value: &Value) -> QueryDslResult<Query> {
         "more_like_this" => parse_more_like_this(body),
         "range" => parse_range(body),
         "geo_distance" => parse_geo_distance(body),
+        "geo_bounding_box" => parse_geo_bounding_box(body),
         "exists" => parse_exists(body),
         "distance_feature" => parse_distance_feature(body),
         "rank_feature" => parse_rank_feature(body),
@@ -3160,6 +3172,52 @@ fn parse_geo_distance(body: &Value) -> QueryDslResult<Query> {
     }))
 }
 
+fn parse_geo_bounding_box(body: &Value) -> QueryDslResult<Query> {
+    let object = body.as_object().ok_or(QueryDslError::ExpectedObject)?;
+    let ignore_unmapped = object
+        .get("ignore_unmapped")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let mut field_name = None;
+    let mut top_left = None;
+    let mut bottom_right = None;
+    for (option, value) in object {
+        match option.as_str() {
+            "ignore_unmapped" | "validation_method" | "type" | "_name" | "boost" => {}
+            field => {
+                let box_object = value.as_object().ok_or(QueryDslError::ExpectedObject)?;
+                top_left = box_object.get("top_left").and_then(parse_geo_point_object);
+                bottom_right = box_object.get("bottom_right").and_then(parse_geo_point_object);
+                field_name = Some(field.to_string());
+            }
+        }
+    }
+    let field = field_name.ok_or_else(|| QueryDslError::ExpectedSingleField {
+        clause: "geo_bounding_box".to_string(),
+    })?;
+    let (top, left) = top_left.ok_or_else(|| QueryDslError::MissingField {
+        clause: "geo_bounding_box".to_string(),
+        field: "top_left".to_string(),
+    })?;
+    let (bottom, right) = bottom_right.ok_or_else(|| QueryDslError::MissingField {
+        clause: "geo_bounding_box".to_string(),
+        field: "bottom_right".to_string(),
+    })?;
+    Ok(Query::GeoBoundingBox(GeoBoundingBoxQuery {
+        field,
+        top,
+        left,
+        bottom,
+        right,
+        ignore_unmapped,
+    }))
+}
+
+fn parse_geo_point_object(value: &Value) -> Option<(f64, f64)> {
+    let point = value.as_object()?;
+    Some((point.get("lat")?.as_f64()?, point.get("lon")?.as_f64()?))
+}
+
 fn parse_geo_distance_distance(value: &Value) -> QueryDslResult<f64> {
     match value {
         Value::Number(number) => number.as_f64().ok_or_else(|| QueryDslError::InvalidValue {
@@ -4295,6 +4353,32 @@ mod tests {
                 distance_meters: 2000.0,
                 lat: 37.0,
                 lon: -122.0,
+                ignore_unmapped: true,
+            })
+        );
+    }
+
+    #[test]
+    fn parses_geo_bounding_box_query() {
+        let query = parse_query(&serde_json::json!({
+            "geo_bounding_box": {
+                "location": {
+                    "top_left": { "lat": 38.5, "lon": -122.5 },
+                    "bottom_right": { "lat": 37.0, "lon": -121.0 }
+                },
+                "ignore_unmapped": true
+            }
+        }))
+        .unwrap();
+
+        assert_eq!(
+            query,
+            Query::GeoBoundingBox(GeoBoundingBoxQuery {
+                field: "location".to_string(),
+                top: 38.5,
+                left: -122.5,
+                bottom: 37.0,
+                right: -121.0,
                 ignore_unmapped: true,
             })
         );
