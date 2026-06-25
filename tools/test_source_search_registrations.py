@@ -30,6 +30,7 @@ class SourceSearchRegistrationsTests(unittest.TestCase):
             ("query", "ScriptScoreQueryBuilder.NAME"),
             ("aggregation", "AggregationSpec(TermsAggregationBuilder.NAME,"),
             ("aggregation", "AggregationSpec( DateHistogramAggregationBuilder.NAME,"),
+            ("aggregation", "GlobalAggregationBuilder.NAME"),
             ("aggregation", "TopHitsAggregationBuilder.NAME"),
             ("pipeline_aggregation", "BucketSortPipelineAggregationBuilder.NAME"),
             ("suggester", "TermSuggestionBuilder.SUGGESTION_NAME"),
@@ -53,7 +54,6 @@ class SourceSearchRegistrationsTests(unittest.TestCase):
         planned = [
             ("query", "GeoShapeQueryBuilder.NAME"),
             ("aggregation", "RareTermsAggregationBuilder.NAME"),
-            ("aggregation", "GlobalAggregationBuilder.NAME"),
             ("suggester", "SuggesterSpec<?> suggester"),
         ]
         for category, needle in planned:
