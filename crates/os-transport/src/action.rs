@@ -24543,6 +24543,7 @@ pub struct OpenSearchSearchSourceBuilderWire {
     pub fetch_source: Option<OpenSearchFetchSourceContextWire>,
     pub index_boosts: Vec<OpenSearchIndexBoostWire>,
     pub min_score: Option<f32>,
+    pub query: Option<OpenSearchQueryBuilderWire>,
     pub search_after: Option<Vec<Value>>,
     pub sorts: Option<Vec<OpenSearchSortBuilderWire>>,
     pub point_in_time: Option<OpenSearchPointInTimeBuilderWire>,
@@ -24577,6 +24578,7 @@ impl Default for OpenSearchSearchSourceBuilderWire {
             fetch_source: None,
             index_boosts: Vec::new(),
             min_score: None,
+            query: None,
             search_after: None,
             sorts: None,
             point_in_time: None,
@@ -24634,6 +24636,7 @@ impl OpenSearchSearchSourceBuilderWire {
             fetch_source.validate_supported_subset()?;
         }
         validate_index_boosts(&self.index_boosts)?;
+        validate_query_builder(self.query.as_ref())?;
         validate_search_after_values(self.search_after.as_deref())?;
         validate_sort_builders(self.sorts.as_deref())?;
         if let Some(point_in_time) = &self.point_in_time {
@@ -24700,7 +24703,7 @@ fn write_search_source_builder(
     write_index_boosts(output, &source.index_boosts); // index boosts
     write_optional_float(output, source.min_score); // min score
     output.write_bool(false); // post query
-    output.write_bool(false); // query
+    write_optional_query_builder(output, source.query.as_ref()); // query
     output.write_bool(false); // rescore builders
     write_optional_script_fields(output, source.script_fields.as_deref())
         .expect("validated script fields must encode as OpenSearch ScriptField values"); // script fields
@@ -24759,7 +24762,7 @@ fn read_search_source_builder(
         });
     }
     reject_absent_optional_writeable(input, "search request source post query")?;
-    reject_absent_optional_writeable(input, "search request source query")?;
+    let query = read_optional_query_builder(input)?;
     reject_absent_bool_list(input, "search request source rescore builders")?;
     let script_fields = read_optional_script_fields(input)?;
     let size = input.read_vint()?;
@@ -24820,6 +24823,7 @@ fn read_search_source_builder(
         fetch_source,
         index_boosts,
         min_score,
+        query,
         search_after,
         sorts,
         point_in_time,
@@ -24915,6 +24919,92 @@ fn validate_search_after_values(values: Option<&[Value]>) -> Result<(), Transpor
                 return Err(TransportActionWireError::UnsupportedWireShape {
                     shape: "search request source search after",
                     reason: "OpenSearch SearchAfterBuilder sort values must be scalar or null",
+                });
+            }
+        }
+    }
+    Ok(())
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum OpenSearchQueryBuilderWire {
+    MatchAll(OpenSearchMatchAllQueryBuilderWire),
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct OpenSearchMatchAllQueryBuilderWire {
+    pub boost: f32,
+    pub query_name: Option<String>,
+}
+
+impl Default for OpenSearchMatchAllQueryBuilderWire {
+    fn default() -> Self {
+        Self {
+            boost: 1.0,
+            query_name: None,
+        }
+    }
+}
+
+fn write_optional_query_builder(
+    output: &mut StreamOutput,
+    query: Option<&OpenSearchQueryBuilderWire>,
+) {
+    if let Some(query) = query {
+        output.write_bool(true);
+        match query {
+            OpenSearchQueryBuilderWire::MatchAll(query) => {
+                output.write_string("match_all");
+                output.write_f32(query.boost);
+                output.write_optional_string(query.query_name.as_deref());
+            }
+        }
+    } else {
+        output.write_bool(false);
+    }
+}
+
+fn read_optional_query_builder(
+    input: &mut StreamInput,
+) -> Result<Option<OpenSearchQueryBuilderWire>, TransportActionWireError> {
+    if !input.read_bool()? {
+        return Ok(None);
+    }
+    let name = input.read_string()?;
+    let query = match name.as_str() {
+        "match_all" => OpenSearchQueryBuilderWire::MatchAll(OpenSearchMatchAllQueryBuilderWire {
+            boost: input.read_f32()?,
+            query_name: input.read_optional_string()?,
+        }),
+        _ => {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source query",
+                reason: "only OpenSearch match_all QueryBuilder values are decoded by this subset",
+            });
+        }
+    };
+    validate_query_builder(Some(&query))?;
+    Ok(Some(query))
+}
+
+fn validate_query_builder(
+    query: Option<&OpenSearchQueryBuilderWire>,
+) -> Result<(), TransportActionWireError> {
+    let Some(query) = query else {
+        return Ok(());
+    };
+    match query {
+        OpenSearchQueryBuilderWire::MatchAll(query) => {
+            if !query.boost.is_finite() || query.boost < 0.0 {
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "search request source query",
+                    reason: "OpenSearch MatchAllQueryBuilder boost must be finite and non-negative",
+                });
+            }
+            if query.query_name.as_deref().is_some_and(str::is_empty) {
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "search request source query",
+                    reason: "OpenSearch MatchAllQueryBuilder query name must be non-empty when present",
                 });
             }
         }
@@ -60802,6 +60892,12 @@ mod tests {
                     },
                 ],
                 min_score: Some(0.25),
+                query: Some(OpenSearchQueryBuilderWire::MatchAll(
+                    OpenSearchMatchAllQueryBuilderWire {
+                        boost: 1.5,
+                        query_name: Some("all-docs".to_string()),
+                    },
+                )),
                 search_after: Some(vec![json!(20), json!("tenant-a"), json!(true), Value::Null]),
                 sorts: Some(vec![
                     OpenSearchSortBuilderWire::Score(OpenSearchScoreSortBuilderWire {
@@ -61022,6 +61118,57 @@ mod tests {
             invalid_min_score.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "search request source min score",
+                ..
+            })
+        ));
+
+        let invalid_match_all_boost = OpenSearchSearchRequestWire {
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                query: Some(OpenSearchQueryBuilderWire::MatchAll(
+                    OpenSearchMatchAllQueryBuilderWire {
+                        boost: -1.0,
+                        query_name: None,
+                    },
+                )),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        assert!(matches!(
+            invalid_match_all_boost.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source query",
+                ..
+            })
+        ));
+
+        let invalid_match_all_name = OpenSearchSearchRequestWire {
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                query: Some(OpenSearchQueryBuilderWire::MatchAll(
+                    OpenSearchMatchAllQueryBuilderWire {
+                        boost: 1.0,
+                        query_name: Some(String::new()),
+                    },
+                )),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        assert!(matches!(
+            invalid_match_all_name.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source query",
+                ..
+            })
+        ));
+
+        let mut unsupported_query = StreamOutput::new();
+        unsupported_query.write_bool(true);
+        unsupported_query.write_string("term");
+        assert!(matches!(
+            read_optional_query_builder(&mut StreamInput::new(unsupported_query.freeze())),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source query",
                 ..
             })
         ));
@@ -63136,7 +63283,7 @@ mod tests {
         output.write_bool(false);
         output.write_bool(false);
         output.write_bool(true);
-        output.write_string("match_all");
+        output.write_string("term");
         output.write_bool(false);
         output.write_bool(false);
         output.write_vint(10);
