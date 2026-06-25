@@ -63,6 +63,19 @@
       }
     },
     {
+      "name": "reject_tasks_list_invalid_detailed_boolean",
+      "method": "GET",
+      "path": "/_tasks?detailed=maybe",
+      "compare": {
+        "expected_status": 400,
+        "body_paths_present": [
+          "error.type",
+          "error.reason",
+          "status"
+        ]
+      }
+    },
+    {
       "name": "reject_unknown_task_cancel_shape",
       "method": "POST",
       "path": "/_tasks/_cancel?task_id=node-a:999",
@@ -79,6 +92,19 @@
       "name": "reject_tasks_cancel_invalid_group_by",
       "method": "POST",
       "path": "/_tasks/_cancel?task_id=node-a:999&group_by=bogus",
+      "compare": {
+        "expected_status": 400,
+        "body_paths_present": [
+          "error.type",
+          "error.reason",
+          "status"
+        ]
+      }
+    },
+    {
+      "name": "reject_tasks_cancel_invalid_wait_for_completion_boolean",
+      "method": "POST",
+      "path": "/_tasks/_cancel?wait_for_completion=maybe",
       "compare": {
         "expected_status": 400,
         "body_paths_present": [

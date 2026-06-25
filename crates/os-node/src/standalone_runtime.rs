@@ -11662,6 +11662,11 @@ impl SteelNode {
         if let Some(group_by) = invalid_tasks_group_by(request.query_params.get("group_by")) {
             return invalid_tasks_group_by_response(group_by);
         }
+        if let Some(response) =
+            validate_tasks_boolean_query_params(request, &["detailed", "wait_for_completion"])
+        {
+            return response;
+        }
         let body = self.tasks_body();
         let response = match request.query_params.get("group_by").map(String::as_str) {
             Some("nodes") | None => tasks_route_registration::invoke_tasks_list_live_route(&body),
@@ -11677,6 +11682,11 @@ impl SteelNode {
     fn handle_tasks_cancel_route(&self, request: &RestRequest) -> RestResponse {
         if let Some(group_by) = invalid_tasks_group_by(request.query_params.get("group_by")) {
             return invalid_tasks_group_by_response(group_by);
+        }
+        if let Some(response) =
+            validate_tasks_boolean_query_params(request, &["wait_for_completion"])
+        {
+            return response;
         }
         if let Some(parent_task_id) = request.query_params.get("parent_task_id") {
             let tasks = self.tasks_matching_parent_task_id(parent_task_id);
@@ -20049,6 +20059,17 @@ fn invalid_tasks_group_by(group_by: Option<&String>) -> Option<&str> {
         Some("nodes") | Some("parents") | Some("none") | None => None,
         Some(group_by) => Some(group_by),
     }
+}
+
+fn validate_tasks_boolean_query_params(request: &RestRequest, fields: &[&str]) -> Option<RestResponse> {
+    for field in fields {
+        if let Some(response) =
+            validate_opensearch_boolean_query_param(request.query_params.get(*field))
+        {
+            return Some(response);
+        }
+    }
+    None
 }
 
 fn validate_doc_write_occ_query_params(request: &RestRequest) -> Option<(Option<i64>, Option<i64>)> {
@@ -30889,6 +30910,28 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             response.body["error"]["reason"],
             "[group_by] must be one of [nodes], [parents] or [none] but was [bogus]"
         );
+    }
+
+    #[test]
+    fn tasks_routes_reject_invalid_boolean_query_params_like_opensearch() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        for (method, path) in [
+            (RestMethod::Get, "/_tasks?detailed=maybe"),
+            (RestMethod::Post, "/_tasks/_cancel?wait_for_completion=maybe"),
+        ] {
+            let response = node.handle_rest_request(RestRequest::new(method, path));
+            assert_eq!(response.status, 400, "{path}");
+            assert_eq!(response.body["error"]["type"], "illegal_argument_exception");
+            assert_eq!(
+                response.body["error"]["reason"],
+                "Failed to parse value [maybe] as only [true] or [false] are allowed.",
+                "{path}"
+            );
+        }
     }
 
     #[test]
