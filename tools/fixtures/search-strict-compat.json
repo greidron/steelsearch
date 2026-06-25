@@ -2604,6 +2604,30 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "pit_open_invalid_expand_wildcards_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search/point_in_time?keep_alive=1m&expand_wildcards=bogus",
+      "body": null,
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] open PIT rejects invalid expand_wildcards like OpenSearch",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "pit_open_empty_expand_wildcards_token_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search/point_in_time?keep_alive=1m&expand_wildcards=open,,closed",
+      "body": null,
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] open PIT rejects empty expand_wildcards tokens like OpenSearch",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "pit_open_ignore_unavailable_multi_target_search",
       "area": "search",
       "method": "POST",

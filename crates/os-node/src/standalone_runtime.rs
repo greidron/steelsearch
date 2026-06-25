@@ -25872,10 +25872,12 @@ fn extract_alias_names_from_body(body: &Value) -> Vec<String> {
 }
 
 fn parse_index_expand_wildcards(expand_wildcards: &str) -> Result<(bool, bool, bool), RestResponse> {
+    if expand_wildcards.is_empty() {
+        return Ok((true, false, false));
+    }
     let tokens = expand_wildcards
         .split(',')
         .map(str::trim)
-        .filter(|token| !token.is_empty())
         .collect::<Vec<_>>();
     if tokens.is_empty() {
         return Ok((true, false, false));
@@ -25908,7 +25910,7 @@ fn parse_index_expand_wildcards(expand_wildcards: &str) -> Result<(bool, bool, b
             _ => {
                 return Err(RestResponse::opensearch_error_kind(
                     os_rest::RestErrorKind::IllegalArgument,
-                    format!("unsupported expand_wildcards value [{expand_wildcards}]"),
+                    format!("No valid expand wildcard value [{token}]"),
                 ));
             }
         }
@@ -39224,6 +39226,31 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             assert_eq!(
                 invalid_indices_option.body["error"]["root_cause"][0]["reason"],
                 format!("Could not convert [{field}] to boolean")
+            );
+        }
+
+        for (path, reason) in [
+            (
+                "/logs-session-000001/_search/point_in_time?keep_alive=1m&expand_wildcards=bogus",
+                "No valid expand wildcard value [bogus]",
+            ),
+            (
+                "/logs-session-000001/_search/point_in_time?keep_alive=1m&expand_wildcards=open,,closed",
+                "No valid expand wildcard value []",
+            ),
+        ] {
+            let invalid_expand_wildcards = node.handle_rest_request(RestRequest::new(
+                RestMethod::Post,
+                path,
+            ));
+            assert_eq!(invalid_expand_wildcards.status, 400);
+            assert_eq!(
+                invalid_expand_wildcards.body["error"]["type"],
+                "illegal_argument_exception"
+            );
+            assert_eq!(
+                invalid_expand_wildcards.body["error"]["root_cause"][0]["reason"],
+                reason
             );
         }
 
