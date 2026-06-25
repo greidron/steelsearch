@@ -26212,6 +26212,7 @@ pub struct OpenSearchSearchHitWire {
     pub seq_no: i64,
     pub primary_term: i64,
     pub source: Option<Value>,
+    pub fields: BTreeMap<String, Vec<Value>>,
     pub sort_values: Vec<Value>,
 }
 
@@ -26224,6 +26225,7 @@ impl OpenSearchSearchHitWire {
             seq_no: hit.metadata.seq_no,
             primary_term: hit.metadata.primary_term as i64,
             source: Some(hit.source),
+            fields: normalized_document_fields(hit.fields),
             sort_values: normalized_sort_values(hit.sort),
         }
     }
@@ -26246,7 +26248,7 @@ impl OpenSearchSearchHitWire {
             output.write_bytes_reference(&[]);
         }
         output.write_bool(false);
-        output.write_vint(0);
+        write_document_field_map(output, &self.fields)?;
         output.write_vint(0);
         output.write_vint(0);
         write_search_sort_values(output, &self.sort_values)?;
@@ -26271,10 +26273,11 @@ impl OpenSearchSearchHitWire {
             seq_no: read_zlong(input)?,
             primary_term: input.read_vlong()?,
             source: read_optional_json_bytes_reference(input)?,
+            fields: BTreeMap::new(),
             sort_values: Vec::new(),
         };
         reject_bool_present(input, "search hit explanation")?;
-        reject_empty_list_len(input, "search hit document fields")?;
+        let fields = read_document_field_map(input, "search hit document fields")?;
         reject_empty_list_len(input, "search hit metadata fields")?;
         reject_empty_list_len(input, "search hit highlight fields")?;
         let formatted_sort_values = read_search_sort_values(input, "search hit formatted sort values")?;
@@ -26286,6 +26289,7 @@ impl OpenSearchSearchHitWire {
             });
         }
         let hit = Self {
+            fields,
             sort_values: formatted_sort_values,
             ..hit
         };
@@ -33831,6 +33835,183 @@ fn normalized_sort_values(sort: Option<Value>) -> Vec<Value> {
         Some(Value::Array(values)) => values,
         Some(value) => vec![value],
         None => Vec::new(),
+    }
+}
+
+fn normalized_document_fields(fields: Option<Value>) -> BTreeMap<String, Vec<Value>> {
+    let mut normalized = BTreeMap::new();
+    let Some(Value::Object(fields)) = fields else {
+        return normalized;
+    };
+    for (name, value) in fields {
+        let values = match value {
+            Value::Array(values) => values,
+            value => vec![value],
+        };
+        normalized.insert(name, values);
+    }
+    normalized
+}
+
+fn write_document_field_map(
+    output: &mut StreamOutput,
+    fields: &BTreeMap<String, Vec<Value>>,
+) -> Result<(), TransportActionWireError> {
+    output.write_vint(fields.len() as i32);
+    for (name, values) in fields {
+        output.write_string(name);
+        write_document_field(output, name, values)?;
+    }
+    Ok(())
+}
+
+fn read_document_field_map(
+    input: &mut StreamInput,
+    shape: &'static str,
+) -> Result<BTreeMap<String, Vec<Value>>, TransportActionWireError> {
+    let len = read_len(input)?;
+    let mut fields = BTreeMap::new();
+    for _ in 0..len {
+        let key = input.read_string()?;
+        let (name, values) = read_document_field(input, shape)?;
+        if key != name {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape,
+                reason: "OpenSearch DocumentField map key must match the embedded field name",
+            });
+        }
+        fields.insert(name, values);
+    }
+    Ok(fields)
+}
+
+fn write_document_field(
+    output: &mut StreamOutput,
+    name: &str,
+    values: &[Value],
+) -> Result<(), TransportActionWireError> {
+    output.write_string(name);
+    output.write_vint(values.len() as i32);
+    for value in values {
+        write_generic_json_value(output, value)?;
+    }
+    Ok(())
+}
+
+fn read_document_field(
+    input: &mut StreamInput,
+    shape: &'static str,
+) -> Result<(String, Vec<Value>), TransportActionWireError> {
+    let name = input.read_string()?;
+    let len = read_len(input)?;
+    let mut values = Vec::with_capacity(len);
+    for _ in 0..len {
+        values.push(read_generic_json_value(input, shape)?);
+    }
+    Ok((name, values))
+}
+
+fn write_generic_json_value(
+    output: &mut StreamOutput,
+    value: &Value,
+) -> Result<(), TransportActionWireError> {
+    match value {
+        Value::Null => output.write_byte(255),
+        Value::String(value) => {
+            output.write_byte(0);
+            output.write_string(value);
+        }
+        Value::Number(value) => {
+            if let Some(value) = value.as_i64() {
+                output.write_byte(2);
+                output.write_i64(value);
+            } else if let Some(value) = value.as_u64() {
+                let value = i64::try_from(value).map_err(|_| {
+                    TransportActionWireError::UnsupportedWireShape {
+                        shape: "generic json value",
+                        reason: "unsigned generic JSON value does not fit the OpenSearch long wire shape",
+                    }
+                })?;
+                output.write_byte(2);
+                output.write_i64(value);
+            } else if let Some(value) = value.as_f64() {
+                output.write_byte(4);
+                output.write_f64(value);
+            } else {
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "generic json value",
+                    reason: "JSON number cannot be mapped to an OpenSearch generic value",
+                });
+            }
+        }
+        Value::Bool(value) => {
+            output.write_byte(5);
+            output.write_bool(*value);
+        }
+        Value::Array(values) => {
+            output.write_byte(7);
+            output.write_vint(values.len() as i32);
+            for value in values {
+                write_generic_json_value(output, value)?;
+            }
+        }
+        Value::Object(values) => {
+            output.write_byte(10);
+            output.write_vint(values.len() as i32);
+            for (key, value) in values {
+                output.write_string(key);
+                write_generic_json_value(output, value)?;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn read_generic_json_value(
+    input: &mut StreamInput,
+    shape: &'static str,
+) -> Result<Value, TransportActionWireError> {
+    match input.read_byte()? {
+        255 => Ok(Value::Null),
+        0 => Ok(Value::String(input.read_string()?)),
+        1 => Ok(Value::Number(input.read_i32()?.into())),
+        2 => Ok(Value::Number(input.read_i64()?.into())),
+        3 => serde_json::Number::from_f64(input.read_f32()? as f64)
+            .map(Value::Number)
+            .ok_or(TransportActionWireError::UnsupportedWireShape {
+                shape,
+                reason: "OpenSearch float generic value is not a finite JSON number",
+            }),
+        4 => serde_json::Number::from_f64(input.read_f64()?)
+            .map(Value::Number)
+            .ok_or(TransportActionWireError::UnsupportedWireShape {
+                shape,
+                reason: "OpenSearch double generic value is not a finite JSON number",
+            }),
+        5 => Ok(Value::Bool(input.read_bool()?)),
+        7 | 8 => {
+            let len = read_len(input)?;
+            let mut values = Vec::with_capacity(len);
+            for _ in 0..len {
+                values.push(read_generic_json_value(input, shape)?);
+            }
+            Ok(Value::Array(values))
+        }
+        9 | 10 => {
+            let len = read_len(input)?;
+            let mut values = serde_json::Map::new();
+            for _ in 0..len {
+                let key = input.read_string()?;
+                values.insert(key, read_generic_json_value(input, shape)?);
+            }
+            Ok(Value::Object(values))
+        }
+        11 => Ok(Value::Number(i64::from(input.read_byte()? as i8).into())),
+        16 => Ok(Value::Number(i64::from(input.read_i16()?).into())),
+        _ => Err(TransportActionWireError::UnsupportedWireShape {
+            shape,
+            reason: "OpenSearch generic value type is not decoded by this SearchHit fields subset",
+        }),
     }
 }
 
@@ -57914,6 +58095,13 @@ mod tests {
                 seq_no: 3,
                 primary_term: 2,
                 source: Some(json!({ "message": "hello" })),
+                fields: BTreeMap::from([
+                    ("status".to_string(), vec![json!("ok")]),
+                    (
+                        "payload".to_string(),
+                        vec![json!({ "nested": [1, "two", true, null] })],
+                    ),
+                ]),
                 sort_values: vec![json!(42), json!("tenant-a"), json!(true), Value::Null],
             }],
             ..OpenSearchSearchResponseWire::default()
@@ -57932,6 +58120,14 @@ mod tests {
         assert_eq!(decoded.hits[0].seq_no, 3);
         assert_eq!(decoded.hits[0].primary_term, 2);
         assert_eq!(
+            decoded.hits[0].fields.get("status"),
+            Some(&vec![json!("ok")])
+        );
+        assert_eq!(
+            decoded.hits[0].fields.get("payload"),
+            Some(&vec![json!({ "nested": [1, "two", true, null] })])
+        );
+        assert_eq!(
             decoded.hits[0].sort_values,
             vec![json!(42), json!("tenant-a"), json!(true), Value::Null]
         );
@@ -57939,29 +58135,30 @@ mod tests {
 
     #[test]
     fn opensearch_search_response_rejects_unsupported_hit_sections_or_invalid_counts() {
-        let mut hit_with_document_fields = StreamOutput::new();
-        hit_with_document_fields.write_bool(true);
-        hit_with_document_fields.write_vlong(1);
-        hit_with_document_fields.write_vint(0);
-        hit_with_document_fields.write_f32(1.0);
-        hit_with_document_fields.write_vint(1);
-        hit_with_document_fields.write_f32(1.0);
-        write_optional_text_string(&mut hit_with_document_fields, Some("doc-1")).unwrap();
-        hit_with_document_fields.write_bool(false);
-        hit_with_document_fields.write_i64(1);
-        hit_with_document_fields.write_zlong(0);
-        hit_with_document_fields.write_vlong(1);
-        write_json_bytes_reference(&mut hit_with_document_fields, &json!({ "message": "hello" }))
+        let mut hit_with_meta_fields = StreamOutput::new();
+        hit_with_meta_fields.write_bool(true);
+        hit_with_meta_fields.write_vlong(1);
+        hit_with_meta_fields.write_vint(0);
+        hit_with_meta_fields.write_f32(1.0);
+        hit_with_meta_fields.write_vint(1);
+        hit_with_meta_fields.write_f32(1.0);
+        write_optional_text_string(&mut hit_with_meta_fields, Some("doc-1")).unwrap();
+        hit_with_meta_fields.write_bool(false);
+        hit_with_meta_fields.write_i64(1);
+        hit_with_meta_fields.write_zlong(0);
+        hit_with_meta_fields.write_vlong(1);
+        write_json_bytes_reference(&mut hit_with_meta_fields, &json!({ "message": "hello" }))
             .unwrap();
-        hit_with_document_fields.write_bool(false);
-        hit_with_document_fields.write_vint(1);
+        hit_with_meta_fields.write_bool(false);
+        hit_with_meta_fields.write_vint(0);
+        hit_with_meta_fields.write_vint(1);
         assert!(matches!(
             OpenSearchSearchResponseWire::read(
-                hit_with_document_fields.freeze(),
+                hit_with_meta_fields.freeze(),
                 OPENSEARCH_3_7_0_TRANSPORT
             ),
             Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "search hit document fields",
+                shape: "search hit metadata fields",
                 ..
             })
         ));
@@ -57986,6 +58183,7 @@ mod tests {
             seq_no: 0,
             primary_term: 1,
             source: Some(json!({})),
+            fields: BTreeMap::new(),
             sort_values: Vec::new(),
         };
         assert!(matches!(
@@ -58003,6 +58201,7 @@ mod tests {
             seq_no: 0,
             primary_term: 1,
             source: Some(json!({})),
+            fields: BTreeMap::new(),
             sort_values: vec![json!({ "unsupported": true })],
         };
         let mut output = StreamOutput::new();
