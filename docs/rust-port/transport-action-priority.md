@@ -2281,9 +2281,11 @@ The create-PIT boundary covers:
 - OpenSearch `CreatePitRequest` parent task, indices array, search default
   indices options, routing, preference, keep-alive time value, and optional
   `allowPartialPitCreation` flag at the wire decode/build layer;
-- OpenSearch `CreatePitResponse` success rendering with PIT id, total,
-  successful, failed, skipped shard counts, creation time, and an empty shard
-  failure list;
+- OpenSearch `CreatePitResponse` rendering with PIT id, total, successful,
+  failed, skipped shard counts, creation time, and an empty shard failure list;
+- raw create-PIT request `TimeValue` values down to `-1` and raw response
+  scalar fields decode without extra local value validation like the OpenSearch
+  wire objects;
 - local transport PIT context allocation for default all-indices requests and
   index/alias/wildcard targets with routing filters into the shared `SteelNode`
   PIT context store, including the resolved index set, document snapshot,

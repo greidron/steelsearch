@@ -32409,10 +32409,10 @@ impl OpenSearchCreatePitRequestWire {
     }
 
     pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
-        if self.keep_alive.duration <= 0 {
+        if self.keep_alive.duration < -1 {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "create pit keep alive",
-                reason: "OpenSearch create-PIT requests require a positive keep-alive value",
+                reason: "OpenSearch TimeValue rejects durations below -1",
             });
         }
         if self.keep_alive.time_unit_ordinal > 6 {
@@ -32460,7 +32460,6 @@ impl OpenSearchCreatePitResponseWire {
     }
 
     pub fn write(&self, output: &mut StreamOutput) -> Result<(), TransportActionWireError> {
-        self.validate_supported_subset()?;
         output.write_string(&self.pit_id);
         output.write_vint(self.total_shards);
         output.write_vint(self.successful_shards);
@@ -32495,48 +32494,10 @@ impl OpenSearchCreatePitResponseWire {
             });
         }
         require_no_trailing_bytes(&input)?;
-        response.validate_supported_subset()?;
         Ok(response)
     }
 
     pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
-        if self.pit_id.is_empty() {
-            return Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "create pit response id",
-                reason: "CreatePitResponse requires a non-empty PIT id",
-            });
-        }
-        if self.total_shards < 0 || self.successful_shards < 0 || self.failed_shards < 0 {
-            return Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "create pit response shard counts",
-                reason: "CreatePitResponse shard counts must be non-negative",
-            });
-        }
-        if self.skipped_shards < 0 {
-            return Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "create pit response skipped shards",
-                reason: "CreatePitResponse skipped shards must be non-negative",
-            });
-        }
-        if self.successful_shards > self.total_shards {
-            return Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "create pit response successful shards",
-                reason: "CreatePitResponse successful shards cannot exceed total shards",
-            });
-        }
-        if self.failed_shards != 0 {
-            return Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "create pit response failed shards",
-                reason:
-                    "CreatePitResponse failed shard metadata is not decoded by this adapter yet",
-            });
-        }
-        if self.creation_time_millis < 0 {
-            return Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "create pit response creation time",
-                reason: "CreatePitResponse creation time must be non-negative",
-            });
-        }
         Ok(())
     }
 }
@@ -68617,15 +68578,15 @@ mod tests {
 
     #[test]
     fn opensearch_create_pit_request_rejects_unsupported_shapes() {
-        let missing_keep_alive = OpenSearchCreatePitRequestWire {
+        let below_time_value_floor = OpenSearchCreatePitRequestWire {
             keep_alive: TimeValueWire {
-                duration: 0,
+                duration: -2,
                 time_unit_ordinal: TIME_UNIT_MILLISECONDS,
             },
             ..OpenSearchCreatePitRequestWire::default()
         };
         assert!(matches!(
-            missing_keep_alive.reject_unsupported_execution(),
+            below_time_value_floor.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "create pit keep alive",
                 ..
@@ -68646,6 +68607,24 @@ mod tests {
                 ..
             })
         ));
+
+        let zero_keep_alive = OpenSearchCreatePitRequestWire {
+            keep_alive: TimeValueWire {
+                duration: 0,
+                time_unit_ordinal: TIME_UNIT_MILLISECONDS,
+            },
+            ..OpenSearchCreatePitRequestWire::default()
+        };
+        zero_keep_alive.validate_supported_subset().unwrap();
+
+        let minus_one_keep_alive = OpenSearchCreatePitRequestWire {
+            keep_alive: TimeValueWire {
+                duration: -1,
+                time_unit_ordinal: TIME_UNIT_MILLISECONDS,
+            },
+            ..OpenSearchCreatePitRequestWire::default()
+        };
+        minus_one_keep_alive.validate_supported_subset().unwrap();
 
         let index_filter = OpenSearchCreatePitRequestWire {
             indices: vec!["logs".to_string()],
@@ -68701,28 +68680,25 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_create_pit_response_rejects_unsupported_shapes() {
-        assert!(matches!(
-            OpenSearchCreatePitResponseWire::success("", 1_700_000_000_000, 1)
-                .validate_supported_subset(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "create pit response id",
-                ..
-            })
-        ));
+    fn opensearch_create_pit_response_allows_raw_field_values_like_opensearch() {
+        let response = OpenSearchCreatePitResponseWire {
+            pit_id: String::new(),
+            total_shards: 1,
+            successful_shards: 2,
+            failed_shards: 3,
+            skipped_shards: 4,
+            creation_time_millis: -1,
+        };
+        let mut output = StreamOutput::new();
+        response.write(&mut output).unwrap();
 
-        assert!(matches!(
-            OpenSearchCreatePitResponseWire {
-                successful_shards: 2,
-                ..OpenSearchCreatePitResponseWire::success("pit-context", 1_700_000_000_000, 1)
-            }
-            .validate_supported_subset(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "create pit response successful shards",
-                ..
-            })
-        ));
+        let decoded = OpenSearchCreatePitResponseWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, response);
+        decoded.validate_supported_subset().unwrap();
+    }
 
+    #[test]
+    fn opensearch_create_pit_response_rejects_shard_failure_payloads() {
         let mut failure_payload = StreamOutput::new();
         failure_payload.write_string("pit-context");
         failure_payload.write_vint(1);
