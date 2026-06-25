@@ -20906,7 +20906,11 @@ fn pit_unrecognized_query_param_response_allowing_source(
     let keys = request
         .query_params
         .keys()
-        .filter(|key| key.as_str() != "source" && key.as_str() != "source_content_type")
+        .filter(|key| {
+            key.as_str() != "source"
+                && !(key.as_str() == "source_content_type"
+                    && request.query_params.contains_key("source"))
+        })
         .collect::<Vec<_>>();
     unrecognized_query_param_response_for_keys(request, &keys)
 }
@@ -39731,6 +39735,25 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         ));
         assert_eq!(listed_pits.status, 200);
         assert_eq!(listed_pits.body["pits"], serde_json::json!([]));
+    }
+
+    #[test]
+    fn delete_pit_rejects_lonely_source_content_type_like_opensearch() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        let response = node.handle_rest_request(RestRequest::new(
+            RestMethod::Delete,
+            "/_search/point_in_time?source_content_type=json",
+        ));
+        assert_eq!(response.status, 400);
+        assert_eq!(response.body["error"]["type"], "illegal_argument_exception");
+        assert_eq!(
+            response.body["error"]["root_cause"][0]["reason"],
+            "request [/_search/point_in_time] contains unrecognized parameter: [source_content_type]"
+        );
     }
 
     #[test]

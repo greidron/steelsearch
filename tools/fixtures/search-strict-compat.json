@@ -2619,6 +2619,18 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "pit_close_lonely_source_content_type_error_search",
+      "area": "search",
+      "method": "DELETE",
+      "path": "/_search/point_in_time?source_content_type=json",
+      "body": null,
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] close PIT rejects source_content_type without source like OpenSearch",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "pit_clear_all_query_param_error_search",
       "area": "search",
       "method": "DELETE",
