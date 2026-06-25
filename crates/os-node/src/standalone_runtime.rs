@@ -10210,12 +10210,11 @@ impl SteelNode {
         if let Some(response) = pit_unrecognized_query_param_response(request) {
             return response;
         }
-        let now_millis = current_epoch_millis();
         let mut contexts = self
             .pit_contexts
             .lock()
             .expect("pit contexts lock poisoned");
-        contexts.retain(|_, context| context.expires_at_millis > now_millis);
+        prune_expired_pit_contexts(&mut contexts, current_epoch_millis());
         let pits = contexts
             .iter()
             .map(|(id, context)| {
@@ -10245,6 +10244,7 @@ impl SteelNode {
             .pit_contexts
             .lock()
             .expect("pit contexts lock poisoned");
+        prune_expired_pit_contexts(&mut contexts, current_epoch_millis());
         let pits = contexts
             .keys()
             .map(|id| {
@@ -10382,7 +10382,7 @@ impl SteelNode {
             .pit_contexts
             .lock()
             .expect("pit contexts lock poisoned");
-        pit_contexts.retain(|_, context| context.expires_at_millis > creation_time_millis);
+        prune_expired_pit_contexts(&mut pit_contexts, creation_time_millis);
         if pit_contexts.len() >= DEFAULT_MAX_OPEN_PIT_CONTEXTS {
             return search_phase_rejected_execution_error(format!(
                 "Trying to create too many Point In Time contexts. Must be less than or equal to: [{DEFAULT_MAX_OPEN_PIT_CONTEXTS}]. This limit can be set by changing the [search.max_open_pit_context] setting."
@@ -22899,6 +22899,10 @@ fn normalize_pit_keep_alive_millis(keep_alive_millis: u64) -> u64 {
 
 fn pit_expires_at_millis(now_millis: u128, keep_alive_millis: u64) -> u128 {
     now_millis + u128::from(keep_alive_millis.max(DEFAULT_PIT_EXPIRY_REAPER_GRACE_MILLIS))
+}
+
+fn prune_expired_pit_contexts(contexts: &mut BTreeMap<String, PitContext>, now_millis: u128) {
+    contexts.retain(|_, context| context.expires_at_millis > now_millis);
 }
 
 fn format_time_value_millis(value: u64) -> String {
@@ -39479,6 +39483,59 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             delete_all_pits.body["pits"].as_array().unwrap().len(),
             DEFAULT_MAX_OPEN_PIT_CONTEXTS
         );
+    }
+
+    #[test]
+    fn delete_all_pits_prunes_expired_contexts_like_opensearch() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        let now_millis = current_epoch_millis();
+        {
+            let mut contexts = node
+                .pit_contexts
+                .lock()
+                .expect("pit contexts lock poisoned");
+            contexts.insert(
+                "pit-expired".to_string(),
+                PitContext {
+                    indices: vec!["logs-pit-expired".to_string()],
+                    documents: BTreeMap::new(),
+                    keep_alive_millis: 1,
+                    expires_at_millis: now_millis.saturating_sub(1),
+                    creation_time_millis: now_millis.saturating_sub(2),
+                },
+            );
+            contexts.insert(
+                "pit-active".to_string(),
+                PitContext {
+                    indices: vec!["logs-pit-active".to_string()],
+                    documents: BTreeMap::new(),
+                    keep_alive_millis: 60_000,
+                    expires_at_millis: now_millis + 60_000,
+                    creation_time_millis: now_millis,
+                },
+            );
+        }
+
+        let delete_all_pits = node
+            .handle_rest_request(RestRequest::new(RestMethod::Delete, "/_search/point_in_time/_all"));
+        assert_eq!(delete_all_pits.status, 200);
+        assert_eq!(
+            delete_all_pits.body["pits"],
+            serde_json::json!([
+                {
+                    "successful": true,
+                    "pit_id": "pit-active"
+                }
+            ])
+        );
+        assert!(node
+            .pit_contexts
+            .lock()
+            .expect("pit contexts lock poisoned")
+            .is_empty());
     }
 
     #[test]
