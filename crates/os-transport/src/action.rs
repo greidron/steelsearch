@@ -25993,6 +25993,7 @@ pub struct OpenSearchSearchResponseWire {
     pub total_hits_relation: i32,
     pub max_score: f32,
     pub hits: Vec<OpenSearchSearchHitWire>,
+    pub sort_fields: Option<Vec<OpenSearchSortFieldWire>>,
     pub collapse_field: Option<String>,
     pub collapse_values: Option<Vec<Value>>,
     pub total_shards: i32,
@@ -26016,6 +26017,7 @@ impl OpenSearchSearchResponseWire {
             total_hits_relation: 0,
             max_score: f32::NAN,
             hits: Vec::new(),
+            sort_fields: None,
             collapse_field: None,
             collapse_values: None,
             total_shards: 1,
@@ -26043,7 +26045,7 @@ impl OpenSearchSearchResponseWire {
         for hit in &self.hits {
             hit.write_at_depth(output, version, 0)?;
         }
-        output.write_bool(false);
+        write_optional_sort_fields(output, self.sort_fields.as_deref())?;
         output.write_optional_string(self.collapse_field.as_deref());
         write_optional_search_sort_values(output, self.collapse_values.as_deref())?;
         output.write_bool(false);
@@ -26091,7 +26093,7 @@ impl OpenSearchSearchResponseWire {
                 &mut input, version, 0,
             )?);
         }
-        reject_optional_array_present(&mut input, "search response sort fields")?;
+        let sort_fields = read_optional_sort_fields(&mut input, "search response sort fields")?;
         let collapse_field = input.read_optional_string()?;
         let collapse_values =
             read_optional_search_sort_values(&mut input, "search response collapse values")?;
@@ -26130,6 +26132,7 @@ impl OpenSearchSearchResponseWire {
             total_hits_relation: total_hits.map(|(_, relation)| relation).unwrap_or(0),
             max_score,
             hits,
+            sort_fields,
             collapse_field,
             collapse_values,
             total_shards: input.read_vint()?,
@@ -26191,6 +26194,10 @@ impl OpenSearchSearchResponseWire {
             self.collapse_values.as_deref(),
             "search response collapse",
         )?;
+        validate_sort_fields(
+            self.sort_fields.as_deref(),
+            "search response sort fields",
+        )?;
         if self.total_shards < 0 || self.successful_shards < 0 || self.skipped_shards < 0 {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "search response shard counts",
@@ -26211,6 +26218,219 @@ impl OpenSearchSearchResponseWire {
         }
         Ok(())
     }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum OpenSearchSortMissingValueWire {
+    Generic(Value),
+    StringFirst,
+    StringLast,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct OpenSearchSortFieldWire {
+    pub field: Option<String>,
+    pub sort_type: i32,
+    pub missing_value: Option<OpenSearchSortMissingValueWire>,
+    pub reverse: bool,
+}
+
+impl OpenSearchSortFieldWire {
+    pub const SCORE: i32 = 0;
+    pub const DOC: i32 = 1;
+    pub const STRING: i32 = 2;
+    pub const INT: i32 = 3;
+    pub const FLOAT: i32 = 4;
+    pub const LONG: i32 = 5;
+    pub const DOUBLE: i32 = 6;
+    pub const CUSTOM: i32 = 7;
+    pub const STRING_VAL: i32 = 8;
+    pub const REWRITEABLE: i32 = 9;
+
+    pub fn score(reverse: bool) -> Self {
+        Self {
+            field: None,
+            sort_type: Self::SCORE,
+            missing_value: None,
+            reverse,
+        }
+    }
+
+    pub fn doc(reverse: bool) -> Self {
+        Self {
+            field: None,
+            sort_type: Self::DOC,
+            missing_value: None,
+            reverse,
+        }
+    }
+
+    pub fn field(
+        field: impl Into<String>,
+        sort_type: i32,
+        reverse: bool,
+        missing_value: Option<OpenSearchSortMissingValueWire>,
+    ) -> Self {
+        Self {
+            field: Some(field.into()),
+            sort_type,
+            missing_value,
+            reverse,
+        }
+    }
+
+    fn validate_supported_subset(&self, shape: &'static str) -> Result<(), TransportActionWireError> {
+        if self.field.as_ref().is_some_and(|field| field.is_empty()) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape,
+                reason: "OpenSearch SortField field must be non-empty when present",
+            });
+        }
+        if !(Self::SCORE..=Self::REWRITEABLE).contains(&self.sort_type) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape,
+                reason: "OpenSearch SortField type ordinal is outside the Lucene SortField.Type range",
+            });
+        }
+        if matches!(self.sort_type, Self::CUSTOM | Self::REWRITEABLE) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape,
+                reason: "OpenSearch SortField CUSTOM and REWRITEABLE reduced forms are not accepted by this subset",
+            });
+        }
+        if matches!(
+            (&self.missing_value, self.sort_type),
+            (Some(OpenSearchSortMissingValueWire::StringFirst | OpenSearchSortMissingValueWire::StringLast), sort_type)
+                if sort_type != Self::STRING && sort_type != Self::STRING_VAL
+        ) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape,
+                reason: "OpenSearch string sentinel missing values require a string SortField type",
+            });
+        }
+        Ok(())
+    }
+}
+
+fn write_optional_sort_fields(
+    output: &mut StreamOutput,
+    sort_fields: Option<&[OpenSearchSortFieldWire]>,
+) -> Result<(), TransportActionWireError> {
+    if let Some(sort_fields) = sort_fields {
+        output.write_bool(true);
+        output.write_vint(sort_fields.len() as i32);
+        for sort_field in sort_fields {
+            write_sort_field(output, sort_field)?;
+        }
+    } else {
+        output.write_bool(false);
+    }
+    Ok(())
+}
+
+fn read_optional_sort_fields(
+    input: &mut StreamInput,
+    shape: &'static str,
+) -> Result<Option<Vec<OpenSearchSortFieldWire>>, TransportActionWireError> {
+    if !input.read_bool()? {
+        return Ok(None);
+    }
+    let len = read_len(input)?;
+    let mut sort_fields = Vec::with_capacity(len);
+    for _ in 0..len {
+        sort_fields.push(read_sort_field(input, shape)?);
+    }
+    validate_sort_fields(Some(&sort_fields), shape)?;
+    Ok(Some(sort_fields))
+}
+
+fn write_sort_field(
+    output: &mut StreamOutput,
+    sort_field: &OpenSearchSortFieldWire,
+) -> Result<(), TransportActionWireError> {
+    sort_field.validate_supported_subset("search hits sort fields")?;
+    if let Some(field) = &sort_field.field {
+        output.write_bool(true);
+        output.write_string(field);
+    } else {
+        output.write_bool(false);
+    }
+    output.write_vint(sort_field.sort_type);
+    write_sort_missing_value(output, sort_field.missing_value.as_ref())?;
+    output.write_bool(sort_field.reverse);
+    Ok(())
+}
+
+fn read_sort_field(
+    input: &mut StreamInput,
+    shape: &'static str,
+) -> Result<OpenSearchSortFieldWire, TransportActionWireError> {
+    let field = if input.read_bool()? {
+        Some(input.read_string()?)
+    } else {
+        None
+    };
+    let sort_field = OpenSearchSortFieldWire {
+        field,
+        sort_type: input.read_vint()?,
+        missing_value: read_sort_missing_value(input, shape)?,
+        reverse: input.read_bool()?,
+    };
+    sort_field.validate_supported_subset(shape)?;
+    Ok(sort_field)
+}
+
+fn write_sort_missing_value(
+    output: &mut StreamOutput,
+    missing_value: Option<&OpenSearchSortMissingValueWire>,
+) -> Result<(), TransportActionWireError> {
+    match missing_value {
+        Some(OpenSearchSortMissingValueWire::StringFirst) => output.write_byte(1),
+        Some(OpenSearchSortMissingValueWire::StringLast) => output.write_byte(2),
+        Some(OpenSearchSortMissingValueWire::Generic(value)) => {
+            output.write_byte(0);
+            write_generic_json_value(output, value)?;
+        }
+        None => {
+            output.write_byte(0);
+            write_generic_json_value(output, &Value::Null)?;
+        }
+    }
+    Ok(())
+}
+
+fn read_sort_missing_value(
+    input: &mut StreamInput,
+    shape: &'static str,
+) -> Result<Option<OpenSearchSortMissingValueWire>, TransportActionWireError> {
+    match input.read_byte()? {
+        0 => {
+            let value = read_generic_json_value(input, shape)?;
+            if value.is_null() {
+                Ok(None)
+            } else {
+                Ok(Some(OpenSearchSortMissingValueWire::Generic(value)))
+            }
+        }
+        1 => Ok(Some(OpenSearchSortMissingValueWire::StringFirst)),
+        2 => Ok(Some(OpenSearchSortMissingValueWire::StringLast)),
+        _ => Err(TransportActionWireError::UnsupportedWireShape {
+            shape,
+            reason: "OpenSearch SortField missing value marker is not supported",
+        }),
+    }
+}
+
+fn validate_sort_fields(
+    sort_fields: Option<&[OpenSearchSortFieldWire]>,
+    shape: &'static str,
+) -> Result<(), TransportActionWireError> {
+    if let Some(sort_fields) = sort_fields {
+        for sort_field in sort_fields {
+            sort_field.validate_supported_subset(shape)?;
+        }
+    }
+    Ok(())
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -26324,6 +26544,7 @@ pub struct OpenSearchSearchHitsWire {
     pub total_hits_relation: i32,
     pub max_score: f32,
     pub hits: Vec<OpenSearchSearchHitWire>,
+    pub sort_fields: Option<Vec<OpenSearchSortFieldWire>>,
     pub collapse_field: Option<String>,
     pub collapse_values: Option<Vec<Value>>,
 }
@@ -26354,7 +26575,7 @@ impl OpenSearchSearchHitsWire {
         for hit in &self.hits {
             hit.write_at_depth(output, version, depth)?;
         }
-        output.write_bool(false);
+        write_optional_sort_fields(output, self.sort_fields.as_deref())?;
         output.write_optional_string(self.collapse_field.as_deref());
         write_optional_search_sort_values(output, self.collapse_values.as_deref())?;
         Ok(())
@@ -26387,7 +26608,7 @@ impl OpenSearchSearchHitsWire {
                 input, version, depth,
             )?);
         }
-        reject_optional_array_present(input, "search inner hits sort fields")?;
+        let sort_fields = read_optional_sort_fields(input, "search inner hits sort fields")?;
         let collapse_field = input.read_optional_string()?;
         let collapse_values =
             read_optional_search_sort_values(input, "search inner hits collapse values")?;
@@ -26396,6 +26617,7 @@ impl OpenSearchSearchHitsWire {
             total_hits_relation: total_hits.map(|(_, relation)| relation).unwrap_or(0),
             max_score,
             hits,
+            sort_fields,
             collapse_field,
             collapse_values,
         };
@@ -26433,6 +26655,10 @@ impl OpenSearchSearchHitsWire {
             self.collapse_field.as_deref(),
             self.collapse_values.as_deref(),
             "search inner hits collapse",
+        )?;
+        validate_sort_fields(
+            self.sort_fields.as_deref(),
+            "search inner hits sort fields",
         )?;
         Ok(())
     }
@@ -34907,19 +35133,6 @@ fn read_search_sort_value(
             reason: "OpenSearch sort value type is not decoded by this subset",
         }),
     }
-}
-
-fn reject_optional_array_present(
-    input: &mut StreamInput,
-    shape: &'static str,
-) -> Result<(), TransportActionWireError> {
-    if input.read_bool()? {
-        return Err(TransportActionWireError::UnsupportedWireShape {
-            shape,
-            reason: "only absent OpenSearch optional arrays are decoded by this subset",
-        });
-    }
-    Ok(())
 }
 
 fn reject_optional_writeable_present(
@@ -58838,6 +59051,7 @@ mod tests {
             total_hits_relation: 0,
             max_score: f32::NAN,
             hits: Vec::new(),
+            sort_fields: None,
             collapse_field: None,
             collapse_values: None,
             total_shards: 3,
@@ -58870,6 +59084,15 @@ mod tests {
         let response = OpenSearchSearchResponseWire {
             total_hits: Some(1),
             max_score: 1.0,
+            sort_fields: Some(vec![
+                OpenSearchSortFieldWire::score(true),
+                OpenSearchSortFieldWire::field(
+                    "tenant",
+                    OpenSearchSortFieldWire::STRING,
+                    false,
+                    Some(OpenSearchSortMissingValueWire::StringLast),
+                ),
+            ]),
             collapse_field: Some("tenant".to_string()),
             collapse_values: Some(vec![json!("tenant-a")]),
             hits: vec![OpenSearchSearchHitWire {
@@ -58940,6 +59163,12 @@ mod tests {
                         total_hits: Some(1),
                         total_hits_relation: 0,
                         max_score: 0.5,
+                        sort_fields: Some(vec![OpenSearchSortFieldWire::field(
+                            "comments.rank",
+                            OpenSearchSortFieldWire::LONG,
+                            true,
+                            Some(OpenSearchSortMissingValueWire::Generic(json!(0))),
+                        )]),
                         collapse_field: Some("comments.author".to_string()),
                         collapse_values: Some(vec![json!("ann")]),
                         hits: vec![OpenSearchSearchHitWire {
@@ -58975,6 +59204,18 @@ mod tests {
             OpenSearchSearchResponseWire::read(output.freeze(), OPENSEARCH_3_7_0_TRANSPORT)
                 .unwrap();
         assert_eq!(decoded.total_hits, Some(1));
+        assert_eq!(
+            decoded.sort_fields,
+            Some(vec![
+                OpenSearchSortFieldWire::score(true),
+                OpenSearchSortFieldWire::field(
+                    "tenant",
+                    OpenSearchSortFieldWire::STRING,
+                    false,
+                    Some(OpenSearchSortMissingValueWire::StringLast),
+                ),
+            ])
+        );
         assert_eq!(decoded.collapse_field.as_deref(), Some("tenant"));
         assert_eq!(decoded.collapse_values, Some(vec![json!("tenant-a")]));
         assert_eq!(decoded.hits.len(), 1);
@@ -59050,6 +59291,15 @@ mod tests {
             .expect("comments inner hits should round-trip");
         assert_eq!(comments_inner_hits.total_hits, Some(1));
         assert_eq!(comments_inner_hits.max_score, 0.5);
+        assert_eq!(
+            comments_inner_hits.sort_fields,
+            Some(vec![OpenSearchSortFieldWire::field(
+                "comments.rank",
+                OpenSearchSortFieldWire::LONG,
+                true,
+                Some(OpenSearchSortMissingValueWire::Generic(json!(0))),
+            )])
+        );
         assert_eq!(
             comments_inner_hits.collapse_field.as_deref(),
             Some("comments.author")
@@ -59136,6 +59386,23 @@ mod tests {
             invalid_collapse.validate_supported_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "search response collapse",
+                ..
+            })
+        ));
+
+        let invalid_sort_field = OpenSearchSearchResponseWire {
+            sort_fields: Some(vec![OpenSearchSortFieldWire::field(
+                "bad",
+                OpenSearchSortFieldWire::CUSTOM,
+                false,
+                None,
+            )]),
+            ..OpenSearchSearchResponseWire::default()
+        };
+        assert!(matches!(
+            invalid_sort_field.validate_supported_subset(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search response sort fields",
                 ..
             })
         ));
