@@ -24946,6 +24946,7 @@ pub enum OpenSearchQueryBuilderWire {
     MatchNone(OpenSearchMatchNoneQueryBuilderWire),
     MatchPhrase(OpenSearchMatchPhraseQueryBuilderWire),
     MatchPhrasePrefix(OpenSearchMatchPhrasePrefixQueryBuilderWire),
+    MoreLikeThis(OpenSearchMoreLikeThisQueryBuilderWire),
     MultiMatch(OpenSearchMultiMatchQueryBuilderWire),
     Nested(OpenSearchNestedQueryBuilderWire),
     Prefix(OpenSearchPrefixQueryBuilderWire),
@@ -25424,6 +25425,27 @@ pub struct OpenSearchMatchPhrasePrefixQueryBuilderWire {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+pub struct OpenSearchMoreLikeThisQueryBuilderWire {
+    pub boost: f32,
+    pub query_name: Option<String>,
+    pub fields: Option<Vec<String>>,
+    pub like_texts: Vec<String>,
+    pub unlike_texts: Vec<String>,
+    pub max_query_terms: i32,
+    pub min_term_freq: i32,
+    pub min_doc_freq: i32,
+    pub max_doc_freq: i32,
+    pub min_word_length: i32,
+    pub max_word_length: i32,
+    pub stop_words: Option<Vec<String>>,
+    pub analyzer: Option<String>,
+    pub minimum_should_match: String,
+    pub boost_terms: Value,
+    pub include: bool,
+    pub fail_on_unsupported_field: bool,
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub struct OpenSearchPrefixQueryBuilderWire {
     pub boost: f32,
     pub query_name: Option<String>,
@@ -25702,6 +25724,29 @@ fn write_named_query_builder(output: &mut StreamOutput, query: &OpenSearchQueryB
             output.write_vint(query.max_expansions);
             output.write_optional_string(query.analyzer.as_deref());
             write_zero_terms_query(output, query.zero_terms_query);
+        }
+        OpenSearchQueryBuilderWire::MoreLikeThis(query) => {
+            output.write_string("more_like_this");
+            output.write_f32(query.boost);
+            output.write_optional_string(query.query_name.as_deref());
+            write_optional_string_list(output, query.fields.as_deref());
+            output.write_string_array(&query.like_texts);
+            write_empty_writeable_list(output);
+            output.write_string_array(&query.unlike_texts);
+            write_empty_writeable_list(output);
+            output.write_vint(query.max_query_terms);
+            output.write_vint(query.min_term_freq);
+            output.write_vint(query.min_doc_freq);
+            output.write_vint(query.max_doc_freq);
+            output.write_vint(query.min_word_length);
+            output.write_vint(query.max_word_length);
+            write_optional_string_list(output, query.stop_words.as_deref());
+            output.write_optional_string(query.analyzer.as_deref());
+            output.write_string(&query.minimum_should_match);
+            write_generic_json_value(output, &query.boost_terms)
+                .expect("validated more_like_this boost_terms must encode as an OpenSearch generic scalar");
+            output.write_bool(query.include);
+            output.write_bool(query.fail_on_unsupported_field);
         }
         OpenSearchQueryBuilderWire::MultiMatch(query) => {
             output.write_string("multi_match");
@@ -26170,6 +26215,42 @@ fn read_named_query_builder(
                 zero_terms_query: read_zero_terms_query(input)?,
             },
         )),
+        "more_like_this" => {
+            let boost = input.read_f32()?;
+            let query_name = input.read_optional_string()?;
+            let fields = read_optional_string_list(input)?;
+            let like_texts = input.read_string_array()?;
+            reject_empty_writeable_list(input, "search request source query more_like_this like items")?;
+            let unlike_texts = input.read_string_array()?;
+            reject_empty_writeable_list(
+                input,
+                "search request source query more_like_this unlike items",
+            )?;
+            Ok(OpenSearchQueryBuilderWire::MoreLikeThis(
+                OpenSearchMoreLikeThisQueryBuilderWire {
+                    boost,
+                    query_name,
+                    fields,
+                    like_texts,
+                    unlike_texts,
+                    max_query_terms: input.read_vint()?,
+                    min_term_freq: input.read_vint()?,
+                    min_doc_freq: input.read_vint()?,
+                    max_doc_freq: input.read_vint()?,
+                    min_word_length: input.read_vint()?,
+                    max_word_length: input.read_vint()?,
+                    stop_words: read_optional_string_list(input)?,
+                    analyzer: input.read_optional_string()?,
+                    minimum_should_match: input.read_string()?,
+                    boost_terms: read_generic_json_value(
+                        input,
+                        "search request source query more_like_this boost_terms",
+                    )?,
+                    include: input.read_bool()?,
+                    fail_on_unsupported_field: input.read_bool()?,
+                },
+            ))
+        }
         "multi_match" => {
             let boost = input.read_f32()?;
             let query_name = input.read_optional_string()?;
@@ -26484,7 +26565,7 @@ fn read_named_query_builder(
         )),
         _ => Err(TransportActionWireError::UnsupportedWireShape {
             shape: "search request source query",
-            reason: "only OpenSearch bool, boosting, common, combined_fields, constant_score, dis_max, exists, field_masking_span, function_score, fuzzy, geo_distance, ids, match_all, match_none, match, match_bool_prefix, match_phrase, match_phrase_prefix, multi_match, nested, prefix, query_string, range, regexp, script_score, simple_query_string, span_multi, span_near, span_or, span_term, term, terms, terms_set, wildcard, and wrapper QueryBuilder values are decoded by this subset",
+            reason: "only OpenSearch bool, boosting, common, combined_fields, constant_score, dis_max, exists, field_masking_span, function_score, fuzzy, geo_distance, ids, match_all, match_none, match, match_bool_prefix, match_phrase, match_phrase_prefix, more_like_this, multi_match, nested, prefix, query_string, range, regexp, script_score, simple_query_string, span_multi, span_near, span_or, span_term, term, terms, terms_set, wildcard, and wrapper QueryBuilder values are decoded by this subset",
         }),
     }
 }
@@ -26960,6 +27041,78 @@ fn validate_query_builder(
                 });
             }
             validate_optional_non_empty_query_string(query.analyzer.as_deref())?;
+        }
+        OpenSearchQueryBuilderWire::MoreLikeThis(query) => {
+            validate_query_boost_and_name(query.boost, query.query_name.as_deref())?;
+            let Some(fields) = query.fields.as_ref() else {
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "search request source query more_like_this fields",
+                    reason: "OpenSearch MoreLikeThisQueryBuilder fields are required by this execution subset",
+                });
+            };
+            if fields.is_empty() || fields.iter().any(|field| field.is_empty()) {
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "search request source query more_like_this fields",
+                    reason: "OpenSearch MoreLikeThisQueryBuilder fields must be non-empty strings",
+                });
+            }
+            if query.like_texts.len() != 1 || query.like_texts.iter().any(|text| text.is_empty()) {
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "search request source query more_like_this like",
+                    reason: "OpenSearch MoreLikeThisQueryBuilder requires exactly one non-empty like text in this execution subset",
+                });
+            }
+            if !query.unlike_texts.is_empty() {
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "search request source query more_like_this unlike",
+                    reason: "OpenSearch MoreLikeThisQueryBuilder unlike text is not supported by this execution subset",
+                });
+            }
+            if query.max_query_terms <= 0 {
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "search request source query more_like_this max_query_terms",
+                    reason: "OpenSearch MoreLikeThisQueryBuilder max_query_terms must be positive",
+                });
+            }
+            if query.min_term_freq < 0 || query.min_doc_freq < 0 {
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "search request source query more_like_this frequency",
+                    reason: "OpenSearch MoreLikeThisQueryBuilder frequency thresholds must be non-negative",
+                });
+            }
+            if query.max_doc_freq != i32::MAX
+                || query.min_word_length != 0
+                || query.max_word_length != 0
+            {
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "search request source query more_like_this options",
+                    reason: "OpenSearch MoreLikeThisQueryBuilder max_doc_freq and word length options must stay at OpenSearch defaults in this execution subset",
+                });
+            }
+            if query.stop_words.is_some() || query.analyzer.is_some() {
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "search request source query more_like_this analysis",
+                    reason: "OpenSearch MoreLikeThisQueryBuilder analyzer and stop_words are not supported by this execution subset",
+                });
+            }
+            if query.minimum_should_match != "30%" {
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "search request source query more_like_this minimum_should_match",
+                    reason: "OpenSearch MoreLikeThisQueryBuilder minimum_should_match must stay at the OpenSearch default in this execution subset",
+                });
+            }
+            if query.boost_terms.as_f64() != Some(0.0) {
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "search request source query more_like_this boost_terms",
+                    reason: "OpenSearch MoreLikeThisQueryBuilder boost_terms must stay at the OpenSearch default in this execution subset",
+                });
+            }
+            if query.include || !query.fail_on_unsupported_field {
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "search request source query more_like_this flags",
+                    reason: "OpenSearch MoreLikeThisQueryBuilder include and fail_on_unsupported_field must stay at OpenSearch defaults in this execution subset",
+                });
+            }
         }
         OpenSearchQueryBuilderWire::MultiMatch(query) => {
             validate_query_boost_and_name(query.boost, query.query_name.as_deref())?;
@@ -28456,6 +28609,24 @@ fn read_optional_string_list(
     } else {
         Ok(None)
     }
+}
+
+fn write_empty_writeable_list(output: &mut StreamOutput) {
+    output.write_vint(0);
+}
+
+fn reject_empty_writeable_list(
+    input: &mut StreamInput,
+    shape: &'static str,
+) -> Result<(), TransportActionWireError> {
+    let len = input.read_vint()?;
+    if len != 0 {
+        return Err(TransportActionWireError::UnsupportedWireShape {
+            shape,
+            reason: "only empty OpenSearch Writeable lists are decoded by this execution subset",
+        });
+    }
+    Ok(())
 }
 
 fn validate_search_source_stats(values: Option<&[String]>) -> Result<(), TransportActionWireError> {
@@ -64844,6 +65015,39 @@ mod tests {
         let decoded = OpenSearchSearchRequestWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, match_phrase_prefix_query_request);
 
+        let more_like_this_query_request = OpenSearchSearchRequestWire {
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                query: Some(OpenSearchQueryBuilderWire::MoreLikeThis(
+                    OpenSearchMoreLikeThisQueryBuilderWire {
+                        boost: 1.0,
+                        query_name: Some("similar-message".to_string()),
+                        fields: Some(vec!["message".to_string(), "title".to_string()]),
+                        like_texts: vec!["steel search".to_string()],
+                        unlike_texts: Vec::new(),
+                        max_query_terms: 25,
+                        min_term_freq: 2,
+                        min_doc_freq: 5,
+                        max_doc_freq: i32::MAX,
+                        min_word_length: 0,
+                        max_word_length: 0,
+                        stop_words: None,
+                        analyzer: None,
+                        minimum_should_match: "30%".to_string(),
+                        boost_terms: json!(0.0),
+                        include: false,
+                        fail_on_unsupported_field: true,
+                    },
+                )),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        let mut output = StreamOutput::new();
+        more_like_this_query_request.write(&mut output);
+
+        let decoded = OpenSearchSearchRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, more_like_this_query_request);
+
         let match_bool_prefix_query_request = OpenSearchSearchRequestWire {
             source: Some(OpenSearchSearchSourceBuilderWire {
                 query: Some(OpenSearchQueryBuilderWire::MatchBoolPrefix(
@@ -66247,6 +66451,76 @@ mod tests {
             invalid_function_score_weight.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "search request source query function_score score function",
+                ..
+            })
+        ));
+
+        let invalid_more_like_this_unlike = OpenSearchSearchRequestWire {
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                query: Some(OpenSearchQueryBuilderWire::MoreLikeThis(
+                    OpenSearchMoreLikeThisQueryBuilderWire {
+                        boost: 1.0,
+                        query_name: None,
+                        fields: Some(vec!["message".to_string()]),
+                        like_texts: vec!["steel search".to_string()],
+                        unlike_texts: vec!["legacy".to_string()],
+                        max_query_terms: 25,
+                        min_term_freq: 2,
+                        min_doc_freq: 5,
+                        max_doc_freq: i32::MAX,
+                        min_word_length: 0,
+                        max_word_length: 0,
+                        stop_words: None,
+                        analyzer: None,
+                        minimum_should_match: "30%".to_string(),
+                        boost_terms: json!(0.0),
+                        include: false,
+                        fail_on_unsupported_field: true,
+                    },
+                )),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        assert!(matches!(
+            invalid_more_like_this_unlike.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source query more_like_this unlike",
+                ..
+            })
+        ));
+
+        let invalid_more_like_this_fields = OpenSearchSearchRequestWire {
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                query: Some(OpenSearchQueryBuilderWire::MoreLikeThis(
+                    OpenSearchMoreLikeThisQueryBuilderWire {
+                        boost: 1.0,
+                        query_name: None,
+                        fields: None,
+                        like_texts: vec!["steel search".to_string()],
+                        unlike_texts: Vec::new(),
+                        max_query_terms: 25,
+                        min_term_freq: 2,
+                        min_doc_freq: 5,
+                        max_doc_freq: i32::MAX,
+                        min_word_length: 0,
+                        max_word_length: 0,
+                        stop_words: None,
+                        analyzer: None,
+                        minimum_should_match: "30%".to_string(),
+                        boost_terms: json!(0.0),
+                        include: false,
+                        fail_on_unsupported_field: true,
+                    },
+                )),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        assert!(matches!(
+            invalid_more_like_this_fields.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source query more_like_this fields",
                 ..
             })
         ));
