@@ -3339,6 +3339,23 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "scroll_rejects_oversized_batch_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search?scroll=1m",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "size": 10001
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] scroll batch size is bounded by index.max_result_window",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "simple_query_string_search",
       "area": "search",
       "method": "POST",
@@ -4388,6 +4405,24 @@
       "extract": "search_hits",
       "family": "ranking",
       "description": "[ranking] search after search",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "result_window_too_large_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "from": 10000,
+        "size": 1
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "ranking",
+      "description": "[ranking] from + size is bounded by index.max_result_window",
       "strict_source_parity_required": true
     },
     {

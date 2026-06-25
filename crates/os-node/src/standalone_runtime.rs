@@ -19267,6 +19267,9 @@ fn value_contains_key(value: &Value, key: &str) -> bool {
 }
 
 fn validate_search_request_body(body: &Value, scroll: bool) -> Option<RestResponse> {
+    if let Some(response) = validate_search_result_window(body, scroll) {
+        return Some(response);
+    }
     if let Some(derived) = body.get("derived") {
         if let Some(response) = validate_derived_request_body(derived) {
             return Some(response);
@@ -19436,6 +19439,26 @@ fn validate_search_request_body(body: &Value, scroll: bool) -> Option<RestRespon
         }
     }
     validate_search_query_body(&body["query"])
+}
+
+fn validate_search_result_window(body: &Value, scroll: bool) -> Option<RestResponse> {
+    const DEFAULT_MAX_RESULT_WINDOW: u64 = 10_000;
+    let from = body.get("from").and_then(Value::as_u64).unwrap_or(0);
+    let size = body.get("size").and_then(Value::as_u64).unwrap_or(10);
+    let result_window = from.saturating_add(size);
+    if result_window <= DEFAULT_MAX_RESULT_WINDOW {
+        return None;
+    }
+    let reason = if scroll {
+        format!(
+            "Batch size is too large, size must be less than or equal to: [{DEFAULT_MAX_RESULT_WINDOW}] but was [{result_window}]. Scroll batch sizes cost as much memory as result windows so they are controlled by the [index.max_result_window] index level setting."
+        )
+    } else {
+        format!(
+            "Result window is too large, from + size must be less than or equal to: [{DEFAULT_MAX_RESULT_WINDOW}] but was [{result_window}]. See the scroll api for a more efficient way to request large data sets. This limit can be set by changing the [index.max_result_window] index level setting."
+        )
+    };
+    Some(search_after_validation_error(reason))
 }
 
 fn validate_scroll_context_request_body(
@@ -44266,6 +44289,36 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(query_param_window.body["hits"]["total"]["value"], 3);
         assert_eq!(query_param_window.body["hits"]["hits"].as_array().map(Vec::len), Some(1));
         assert_eq!(query_param_window.body["hits"]["hits"][0]["_id"], "doc-3");
+
+        let oversized_result_window = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-params-*/_search")
+                .with_json_body(serde_json::json!({
+                    "query": { "match_all": {} },
+                    "from": 10000,
+                    "size": 1
+                })),
+        );
+        assert_eq!(oversized_result_window.status, 400);
+        assert_eq!(
+            oversized_result_window.body["error"]["root_cause"][0]["reason"],
+            "Result window is too large, from + size must be less than or equal to: [10000] but was [10001]. See the scroll api for a more efficient way to request large data sets. This limit can be set by changing the [index.max_result_window] index level setting."
+        );
+
+        let oversized_scroll_batch = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/logs-search-params-*/_search?scroll=1m",
+            )
+            .with_json_body(serde_json::json!({
+                "query": { "match_all": {} },
+                "size": 10001
+            })),
+        );
+        assert_eq!(oversized_scroll_batch.status, 400);
+        assert_eq!(
+            oversized_scroll_batch.body["error"]["root_cause"][0]["reason"],
+            "Batch size is too large, size must be less than or equal to: [10000] but was [10001]. Scroll batch sizes cost as much memory as result windows so they are controlled by the [index.max_result_window] index level setting."
+        );
 
         let invalid_query_param_from = node.handle_rest_request(
             RestRequest::new(
