@@ -24293,7 +24293,7 @@ pub struct OpenSearchSearchRequestWire {
     pub indices: Vec<String>,
     pub routing: Option<String>,
     pub preference: Option<String>,
-    pub source_empty: bool,
+    pub source: Option<OpenSearchSearchSourceBuilderWire>,
     pub indices_options: OpenSearchIndicesOptionsWire,
     pub request_cache: Option<bool>,
     pub batched_reduce_size: i32,
@@ -24316,7 +24316,7 @@ impl Default for OpenSearchSearchRequestWire {
             indices: Vec::new(),
             routing: None,
             preference: None,
-            source_empty: false,
+            source: None,
             indices_options:
                 OpenSearchIndicesOptionsWire::strict_expand_open_forbid_closed_ignore_throttled(),
             request_cache: None,
@@ -24341,9 +24341,9 @@ impl OpenSearchSearchRequestWire {
         output.write_optional_string(self.routing.as_deref());
         output.write_optional_string(self.preference.as_deref());
         output.write_bool(false);
-        output.write_bool(self.source_empty);
-        if self.source_empty {
-            write_empty_search_source_builder(output);
+        output.write_bool(self.source.is_some());
+        if let Some(source) = &self.source {
+            write_search_source_builder(output, source);
         }
         self.indices_options.write(output);
         write_optional_bool(output, self.request_cache);
@@ -24387,11 +24387,10 @@ impl OpenSearchSearchRequestWire {
                 reason: "scroll search requests require scroll context mapping before admission",
             });
         }
-        let source_empty = if input.read_bool()? {
-            read_empty_search_source_builder(input)?;
-            true
+        let source = if input.read_bool()? {
+            Some(read_search_source_builder(input)?)
         } else {
-            false
+            None
         };
         let indices_options = OpenSearchIndicesOptionsWire::read(input)?;
         let request_cache = read_optional_bool(input)?;
@@ -24411,7 +24410,7 @@ impl OpenSearchSearchRequestWire {
             indices,
             routing,
             preference,
-            source_empty,
+            source,
             indices_options,
             request_cache,
             batched_reduce_size,
@@ -24460,6 +24459,9 @@ impl OpenSearchSearchRequestWire {
                 shape: "search request preference",
                 reason: "preference-aware search requires shard iterator ordering semantics",
             });
+        }
+        if let Some(source) = &self.source {
+            source.validate_supported_subset()?;
         }
         if self.indices_options
             != OpenSearchIndicesOptionsWire::strict_expand_open_forbid_closed_ignore_throttled()
@@ -24533,13 +24535,46 @@ impl OpenSearchSearchRequestWire {
     }
 }
 
-fn write_empty_search_source_builder(output: &mut StreamOutput) {
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchSearchSourceBuilderWire {
+    pub from: i32,
+    pub size: i32,
+}
+
+impl Default for OpenSearchSearchSourceBuilderWire {
+    fn default() -> Self {
+        Self { from: 0, size: 10 }
+    }
+}
+
+impl OpenSearchSearchSourceBuilderWire {
+    fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
+        if self.from < 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source from",
+                reason: "OpenSearch SearchSourceBuilder from must be non-negative",
+            });
+        }
+        if self.size < 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source size",
+                reason: "OpenSearch SearchSourceBuilder size must be non-negative",
+            });
+        }
+        Ok(())
+    }
+}
+
+fn write_search_source_builder(
+    output: &mut StreamOutput,
+    source: &OpenSearchSearchSourceBuilderWire,
+) {
     output.write_bool(false); // aggregations
     write_optional_bool(output, None); // explain
     output.write_bool(false); // fetch source context
     output.write_bool(false); // doc value fields
     output.write_bool(false); // stored fields
-    output.write_vint(0); // from
+    output.write_vint(source.from); // from
     output.write_bool(false); // highlight
     output.write_vint(0); // index boosts
     output.write_bool(false); // min score
@@ -24547,7 +24582,7 @@ fn write_empty_search_source_builder(output: &mut StreamOutput) {
     output.write_bool(false); // query
     output.write_bool(false); // rescore builders
     output.write_bool(false); // script fields
-    output.write_vint(10); // size
+    output.write_vint(source.size); // size
     output.write_bool(false); // sorts
     output.write_bool(false); // stats
     output.write_bool(false); // suggest
@@ -24572,19 +24607,19 @@ fn write_empty_search_source_builder(output: &mut StreamOutput) {
     output.write_bool(false); // verbose pipeline, OpenSearch 2.19+
 }
 
-fn read_empty_search_source_builder(
+fn read_search_source_builder(
     input: &mut StreamInput,
-) -> Result<(), TransportActionWireError> {
+) -> Result<OpenSearchSearchSourceBuilderWire, TransportActionWireError> {
     reject_absent_optional_writeable(input, "search request source aggregations")?;
     reject_optional_bool_is_none(input, "search request source explain")?;
     reject_absent_optional_writeable(input, "search request source fetch source")?;
     reject_absent_bool_list(input, "search request source doc value fields")?;
     reject_absent_optional_writeable(input, "search request source stored fields")?;
     let from = input.read_vint()?;
-    if from != 0 {
+    if from < 0 {
         return Err(TransportActionWireError::UnsupportedWireShape {
             shape: "search request source from",
-            reason: "only default empty SearchSourceBuilder from=0 is decoded",
+            reason: "OpenSearch SearchSourceBuilder from must be non-negative",
         });
     }
     reject_absent_optional_writeable(input, "search request source highlight")?;
@@ -24595,10 +24630,10 @@ fn read_empty_search_source_builder(
     reject_absent_bool_list(input, "search request source rescore builders")?;
     reject_absent_bool_list(input, "search request source script fields")?;
     let size = input.read_vint()?;
-    if size != 10 {
+    if size < 0 {
         return Err(TransportActionWireError::UnsupportedWireShape {
             shape: "search request source size",
-            reason: "only default empty SearchSourceBuilder size=10 is decoded",
+            reason: "OpenSearch SearchSourceBuilder size must be non-negative",
         });
     }
     reject_absent_bool_list(input, "search request source sorts")?;
@@ -24649,7 +24684,9 @@ fn read_empty_search_source_builder(
             reason: "only default SearchSourceBuilder verbose pipeline=false is decoded",
         });
     }
-    Ok(())
+    let source = OpenSearchSearchSourceBuilderWire { from, size };
+    source.validate_supported_subset()?;
+    Ok(source)
 }
 
 fn reject_absent_optional_writeable(
@@ -57903,7 +57940,7 @@ mod tests {
             })
         ));
 
-        let mut source_present = search_request_body_with_non_default_source_size();
+        let mut source_present = search_request_body_with_present_query();
         let mut suffix = StreamOutput::new();
         suffix.write_string("logs-view");
         let suffix = suffix.freeze();
@@ -57911,7 +57948,7 @@ mod tests {
         assert!(matches!(
             OpenSearchSearchViewRequestWire::read(source_present.freeze()),
             Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "search request source size",
+                shape: "search request source query",
                 ..
             })
         ));
@@ -59498,15 +59535,15 @@ mod tests {
             })
         ));
 
-        let source_empty_request = OpenSearchSearchRequestWire {
-            source_empty: true,
+        let source_request = OpenSearchSearchRequestWire {
+            source: Some(OpenSearchSearchSourceBuilderWire { from: 3, size: 25 }),
             ..OpenSearchSearchRequestWire::default()
         };
         let mut output = StreamOutput::new();
-        source_empty_request.write(&mut output);
+        source_request.write(&mut output);
 
         let decoded = OpenSearchSearchRequestWire::read(output.freeze()).unwrap();
-        assert_eq!(decoded, source_empty_request);
+        assert_eq!(decoded, source_request);
         assert!(matches!(
             decoded.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
@@ -59542,11 +59579,11 @@ mod tests {
             })
         ));
 
-        let source_present = search_request_body_with_non_default_source_size();
+        let source_present = search_request_body_with_present_query();
         assert!(matches!(
             OpenSearchSearchRequestWire::read(source_present.freeze()),
             Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "search request source size",
+                shape: "search request source query",
                 ..
             })
         ));
@@ -61158,7 +61195,10 @@ mod tests {
         }
         output.write_bool(source_present);
         if source_present {
-            write_empty_search_source_builder(&mut output);
+            write_search_source_builder(
+                &mut output,
+                &OpenSearchSearchSourceBuilderWire::default(),
+            );
             OpenSearchIndicesOptionsWire::strict_expand_open_forbid_closed_ignore_throttled()
                 .write(&mut output);
             write_optional_bool(&mut output, None);
@@ -61175,7 +61215,7 @@ mod tests {
         BytesMut::from(&output.freeze()[..])
     }
 
-    fn search_request_body_with_non_default_source_size() -> BytesMut {
+    fn search_request_body_with_present_query() -> BytesMut {
         let mut output = StreamOutput::new();
         write_parent_task_id(&mut output, "", None);
         output.write_byte(1);
@@ -61184,11 +61224,11 @@ mod tests {
         output.write_optional_string(None);
         output.write_bool(false);
         output.write_bool(true);
-        write_empty_search_source_builder_with_size(&mut output, 25);
+        write_search_source_builder_with_query_present(&mut output);
         BytesMut::from(&output.freeze()[..])
     }
 
-    fn write_empty_search_source_builder_with_size(output: &mut StreamOutput, size: i32) {
+    fn write_search_source_builder_with_query_present(output: &mut StreamOutput) {
         output.write_bool(false);
         write_optional_bool(output, None);
         output.write_bool(false);
@@ -61199,10 +61239,11 @@ mod tests {
         output.write_vint(0);
         output.write_bool(false);
         output.write_bool(false);
+        output.write_bool(true);
+        output.write_string("match_all");
         output.write_bool(false);
         output.write_bool(false);
-        output.write_bool(false);
-        output.write_vint(size);
+        output.write_vint(10);
         output.write_bool(false);
         output.write_bool(false);
         output.write_bool(false);
