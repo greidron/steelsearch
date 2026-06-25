@@ -24937,6 +24937,7 @@ pub enum OpenSearchQueryBuilderWire {
     Range(OpenSearchRangeQueryBuilderWire),
     Term(OpenSearchTermQueryBuilderWire),
     Terms(OpenSearchTermsQueryBuilderWire),
+    Wildcard(OpenSearchWildcardQueryBuilderWire),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -25009,6 +25010,16 @@ pub struct OpenSearchMatchQueryBuilderWire {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct OpenSearchPrefixQueryBuilderWire {
+    pub boost: f32,
+    pub query_name: Option<String>,
+    pub field_name: String,
+    pub value: String,
+    pub rewrite: Option<String>,
+    pub case_insensitive: bool,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct OpenSearchWildcardQueryBuilderWire {
     pub boost: f32,
     pub query_name: Option<String>,
     pub field_name: String,
@@ -25163,6 +25174,15 @@ fn write_named_query_builder(output: &mut StreamOutput, query: &OpenSearchQueryB
             write_terms_query_values(output, &query.values)
                 .expect("validated terms query values must encode as OpenSearch generic scalars");
             output.write_vint(0); // ValueType.DEFAULT
+        }
+        OpenSearchQueryBuilderWire::Wildcard(query) => {
+            output.write_string("wildcard");
+            output.write_f32(query.boost);
+            output.write_optional_string(query.query_name.as_deref());
+            output.write_string(&query.field_name);
+            output.write_string(&query.value);
+            output.write_optional_string(query.rewrite.as_deref());
+            output.write_bool(query.case_insensitive);
         }
     }
 }
@@ -25322,9 +25342,19 @@ fn read_named_query_builder(
                 }),
             }
         }
+        "wildcard" => Ok(OpenSearchQueryBuilderWire::Wildcard(
+            OpenSearchWildcardQueryBuilderWire {
+                boost: input.read_f32()?,
+                query_name: input.read_optional_string()?,
+                field_name: input.read_string()?,
+                value: input.read_string()?,
+                rewrite: input.read_optional_string()?,
+                case_insensitive: input.read_bool()?,
+            },
+        )),
         _ => Err(TransportActionWireError::UnsupportedWireShape {
             shape: "search request source query",
-            reason: "only OpenSearch bool, exists, ids, match_all, match, prefix, range, term, and terms QueryBuilder values are decoded by this subset",
+            reason: "only OpenSearch bool, exists, ids, match_all, match, prefix, range, term, terms, and wildcard QueryBuilder values are decoded by this subset",
         }),
     }
 }
@@ -25474,6 +25504,16 @@ fn validate_query_builder(
             for value in &query.values {
                 validate_terms_query_value(value)?;
             }
+        }
+        OpenSearchQueryBuilderWire::Wildcard(query) => {
+            validate_query_boost_and_name(query.boost, query.query_name.as_deref())?;
+            if query.field_name.is_empty() {
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "search request source query",
+                    reason: "OpenSearch WildcardQueryBuilder field name must be non-empty",
+                });
+            }
+            validate_optional_non_empty_query_string(query.rewrite.as_deref())?;
         }
     }
     Ok(())
@@ -61891,6 +61931,28 @@ mod tests {
         let decoded = OpenSearchSearchRequestWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, prefix_query_request);
 
+        let wildcard_query_request = OpenSearchSearchRequestWire {
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                query: Some(OpenSearchQueryBuilderWire::Wildcard(
+                    OpenSearchWildcardQueryBuilderWire {
+                        boost: 1.0,
+                        query_name: Some("tenant-wildcard".to_string()),
+                        field_name: "tenant".to_string(),
+                        value: "tenant-*".to_string(),
+                        rewrite: Some("constant_score".to_string()),
+                        case_insensitive: true,
+                    },
+                )),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        let mut output = StreamOutput::new();
+        wildcard_query_request.write(&mut output);
+
+        let decoded = OpenSearchSearchRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, wildcard_query_request);
+
         let match_query_request = OpenSearchSearchRequestWire {
             source: Some(OpenSearchSearchSourceBuilderWire {
                 query: Some(OpenSearchQueryBuilderWire::Match(
@@ -62132,7 +62194,7 @@ mod tests {
 
         let mut unsupported_query = StreamOutput::new();
         unsupported_query.write_bool(true);
-        unsupported_query.write_string("wildcard");
+        unsupported_query.write_string("regexp");
         assert!(matches!(
             read_optional_query_builder(&mut StreamInput::new(unsupported_query.freeze())),
             Err(TransportActionWireError::UnsupportedWireShape {
@@ -62395,6 +62457,54 @@ mod tests {
             })
         ));
 
+        let invalid_wildcard_field = OpenSearchSearchRequestWire {
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                query: Some(OpenSearchQueryBuilderWire::Wildcard(
+                    OpenSearchWildcardQueryBuilderWire {
+                        boost: 1.0,
+                        query_name: None,
+                        field_name: String::new(),
+                        value: "tenant-*".to_string(),
+                        rewrite: None,
+                        case_insensitive: false,
+                    },
+                )),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        assert!(matches!(
+            invalid_wildcard_field.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source query",
+                ..
+            })
+        ));
+
+        let invalid_wildcard_rewrite = OpenSearchSearchRequestWire {
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                query: Some(OpenSearchQueryBuilderWire::Wildcard(
+                    OpenSearchWildcardQueryBuilderWire {
+                        boost: 1.0,
+                        query_name: None,
+                        field_name: "tenant".to_string(),
+                        value: "tenant-*".to_string(),
+                        rewrite: Some(String::new()),
+                        case_insensitive: false,
+                    },
+                )),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        assert!(matches!(
+            invalid_wildcard_rewrite.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source query",
+                ..
+            })
+        ));
+
         let mut terms_with_lookup = StreamOutput::new();
         terms_with_lookup.write_bool(true);
         terms_with_lookup.write_string("terms");
@@ -62525,7 +62635,7 @@ mod tests {
         bool_with_unsupported_child.write_f32(1.0);
         bool_with_unsupported_child.write_optional_string(None);
         bool_with_unsupported_child.write_vint(1);
-        bool_with_unsupported_child.write_string("wildcard");
+        bool_with_unsupported_child.write_string("regexp");
         bool_with_unsupported_child.write_vint(0);
         bool_with_unsupported_child.write_vint(0);
         bool_with_unsupported_child.write_vint(0);
