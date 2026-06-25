@@ -20199,10 +20199,11 @@ fn validate_pit_request_body(pit: &Value) -> Option<RestResponse> {
             "point int time id is not provided",
         ));
     }
-    if object.get("id").and_then(Value::as_str).is_none() {
-        return Some(build_unsupported_search_response(
-            "unsupported search option [pit]",
-        ));
+    if let Some(id) = object.get("id").filter(|id| !id.is_string()) {
+        return Some(build_x_content_parse_search_response_with_root_cause(&format!(
+            "[1:16] [pit] id doesn't support values of type: {}",
+            opensearch_xcontent_token_name(id)
+        )));
     }
     if let Some(key) = object.keys().find(|key| *key != "id" && *key != "keep_alive") {
         return Some(build_x_content_parse_search_response_with_root_cause(&format!(
@@ -39592,6 +39593,26 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             non_object_pit_search.body["error"]["root_cause"][0]["reason"],
             "Unknown key for a VALUE_STRING in [pit]."
+        );
+
+        let numeric_pit_id_search = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_search")
+                .with_json_body(serde_json::json!({
+                    "pit": {
+                        "id": 7,
+                        "keep_alive": "1m"
+                    },
+                    "query": { "match_all": {} }
+                })),
+        );
+        assert_eq!(numeric_pit_id_search.status, 400);
+        assert_eq!(
+            numeric_pit_id_search.body["error"]["type"],
+            "x_content_parse_exception"
+        );
+        assert_eq!(
+            numeric_pit_id_search.body["error"]["root_cause"][0]["reason"],
+            "[1:16] [pit] id doesn't support values of type: VALUE_NUMBER"
         );
 
         let empty_pit_id_search = node.handle_rest_request(
