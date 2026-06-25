@@ -24929,12 +24929,22 @@ fn validate_search_after_values(values: Option<&[Value]>) -> Result<(), Transpor
 #[derive(Clone, Debug, PartialEq)]
 pub enum OpenSearchQueryBuilderWire {
     MatchAll(OpenSearchMatchAllQueryBuilderWire),
+    Term(OpenSearchTermQueryBuilderWire),
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct OpenSearchMatchAllQueryBuilderWire {
     pub boost: f32,
     pub query_name: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct OpenSearchTermQueryBuilderWire {
+    pub boost: f32,
+    pub query_name: Option<String>,
+    pub field_name: String,
+    pub value: Value,
+    pub case_insensitive: bool,
 }
 
 impl Default for OpenSearchMatchAllQueryBuilderWire {
@@ -24958,6 +24968,15 @@ fn write_optional_query_builder(
                 output.write_f32(query.boost);
                 output.write_optional_string(query.query_name.as_deref());
             }
+            OpenSearchQueryBuilderWire::Term(query) => {
+                output.write_string("term");
+                output.write_f32(query.boost);
+                output.write_optional_string(query.query_name.as_deref());
+                output.write_string(&query.field_name);
+                write_term_query_value(output, &query.value)
+                    .expect("validated term query value must encode as an OpenSearch generic scalar");
+                output.write_bool(query.case_insensitive);
+            }
         }
     } else {
         output.write_bool(false);
@@ -24976,10 +24995,17 @@ fn read_optional_query_builder(
             boost: input.read_f32()?,
             query_name: input.read_optional_string()?,
         }),
+        "term" => OpenSearchQueryBuilderWire::Term(OpenSearchTermQueryBuilderWire {
+            boost: input.read_f32()?,
+            query_name: input.read_optional_string()?,
+            field_name: input.read_string()?,
+            value: read_term_query_value(input)?,
+            case_insensitive: input.read_bool()?,
+        }),
         _ => {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "search request source query",
-                reason: "only OpenSearch match_all QueryBuilder values are decoded by this subset",
+                reason: "only OpenSearch match_all and term QueryBuilder values are decoded by this subset",
             });
         }
     };
@@ -25008,8 +25034,106 @@ fn validate_query_builder(
                 });
             }
         }
+        OpenSearchQueryBuilderWire::Term(query) => {
+            validate_query_boost_and_name(query.boost, query.query_name.as_deref())?;
+            if query.field_name.is_empty() {
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "search request source query",
+                    reason: "OpenSearch TermQueryBuilder field name must be non-empty",
+                });
+            }
+            validate_term_query_value(&query.value)?;
+        }
     }
     Ok(())
+}
+
+fn validate_query_boost_and_name(
+    boost: f32,
+    query_name: Option<&str>,
+) -> Result<(), TransportActionWireError> {
+    if !boost.is_finite() || boost < 0.0 {
+        return Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "search request source query",
+            reason: "OpenSearch QueryBuilder boost must be finite and non-negative",
+        });
+    }
+    if query_name.is_some_and(str::is_empty) {
+        return Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "search request source query",
+            reason: "OpenSearch QueryBuilder query name must be non-empty when present",
+        });
+    }
+    Ok(())
+}
+
+fn validate_term_query_value(value: &Value) -> Result<(), TransportActionWireError> {
+    match value {
+        Value::String(_) | Value::Bool(_) | Value::Number(_) => Ok(()),
+        Value::Null => Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "search request source query",
+            reason: "OpenSearch TermQueryBuilder value cannot be null",
+        }),
+        Value::Array(_) | Value::Object(_) => Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "search request source query",
+            reason: "OpenSearch TermQueryBuilder value must be scalar",
+        }),
+    }
+}
+
+fn write_term_query_value(
+    output: &mut StreamOutput,
+    value: &Value,
+) -> Result<(), TransportActionWireError> {
+    validate_term_query_value(value)?;
+    match value {
+        Value::String(value) => {
+            output.write_byte(21);
+            output.write_vint(value.len() as i32);
+            for byte in value.as_bytes() {
+                output.write_byte(*byte);
+            }
+            Ok(())
+        }
+        Value::Bool(_) | Value::Number(_) => write_generic_json_value(output, value),
+        Value::Null | Value::Array(_) | Value::Object(_) => unreachable!("validated above"),
+    }
+}
+
+fn read_term_query_value(input: &mut StreamInput) -> Result<Value, TransportActionWireError> {
+    match input.read_byte()? {
+        21 => {
+            let len = read_len(input)?;
+            let bytes = input.read_bytes(len)?;
+            let value = String::from_utf8(bytes.to_vec()).map_err(|_| {
+                TransportActionWireError::UnsupportedWireShape {
+                    shape: "search request source query",
+                    reason: "OpenSearch TermQueryBuilder BytesRef value must be UTF-8 in this subset",
+                }
+            })?;
+            Ok(Value::String(value))
+        }
+        0 => Ok(Value::String(input.read_string()?)),
+        1 => Ok(Value::Number(input.read_i32()?.into())),
+        2 => Ok(Value::Number(input.read_i64()?.into())),
+        3 => serde_json::Number::from_f64(input.read_f32()? as f64)
+            .map(Value::Number)
+            .ok_or(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source query",
+                reason: "OpenSearch TermQueryBuilder float value is not finite",
+            }),
+        4 => serde_json::Number::from_f64(input.read_f64()?)
+            .map(Value::Number)
+            .ok_or(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source query",
+                reason: "OpenSearch TermQueryBuilder double value is not finite",
+            }),
+        5 => Ok(Value::Bool(input.read_bool()?)),
+        _ => Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "search request source query",
+            reason: "OpenSearch TermQueryBuilder value must be scalar in this subset",
+        }),
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -55789,7 +55913,7 @@ mod tests {
         write_parent_task_id(&mut output, "", None);
         output.write_string_array(&[]);
         OpenSearchIndicesOptionsWire::validate_query_default().write(&mut output);
-        output.write_string("term");
+        output.write_string("range");
         output.write_i32(1.0f32.to_bits() as i32);
         output.write_optional_string(None);
         output.write_bool(false);
@@ -61049,6 +61173,27 @@ mod tests {
 
         let decoded = OpenSearchSearchRequestWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, source_disabled_request);
+
+        let term_query_request = OpenSearchSearchRequestWire {
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                query: Some(OpenSearchQueryBuilderWire::Term(
+                    OpenSearchTermQueryBuilderWire {
+                        boost: 2.0,
+                        query_name: Some("tenant-filter".to_string()),
+                        field_name: "tenant".to_string(),
+                        value: json!("tenant-a"),
+                        case_insensitive: true,
+                    },
+                )),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        let mut output = StreamOutput::new();
+        term_query_request.write(&mut output);
+
+        let decoded = OpenSearchSearchRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, term_query_request);
     }
 
     #[test]
@@ -61164,9 +61309,55 @@ mod tests {
 
         let mut unsupported_query = StreamOutput::new();
         unsupported_query.write_bool(true);
-        unsupported_query.write_string("term");
+        unsupported_query.write_string("range");
         assert!(matches!(
             read_optional_query_builder(&mut StreamInput::new(unsupported_query.freeze())),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source query",
+                ..
+            })
+        ));
+
+        let invalid_term_field = OpenSearchSearchRequestWire {
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                query: Some(OpenSearchQueryBuilderWire::Term(
+                    OpenSearchTermQueryBuilderWire {
+                        boost: 1.0,
+                        query_name: None,
+                        field_name: String::new(),
+                        value: json!("tenant-a"),
+                        case_insensitive: false,
+                    },
+                )),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        assert!(matches!(
+            invalid_term_field.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source query",
+                ..
+            })
+        ));
+
+        let invalid_term_value = OpenSearchSearchRequestWire {
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                query: Some(OpenSearchQueryBuilderWire::Term(
+                    OpenSearchTermQueryBuilderWire {
+                        boost: 1.0,
+                        query_name: None,
+                        field_name: "tenant".to_string(),
+                        value: Value::Null,
+                        case_insensitive: false,
+                    },
+                )),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        assert!(matches!(
+            invalid_term_value.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "search request source query",
                 ..
