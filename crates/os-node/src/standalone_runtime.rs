@@ -20195,7 +20195,7 @@ fn validate_pit_request_body(pit: &Value) -> Option<RestResponse> {
         )));
     };
     if !object.contains_key("id") {
-        return Some(build_unsupported_search_response(
+        return Some(build_illegal_argument_search_response_with_root_cause(
             "point int time id is not provided",
         ));
     }
@@ -39560,6 +39560,14 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(missing_pit_id_search.status, 400);
         assert_eq!(
             missing_pit_id_search.body["error"]["reason"],
+            "point int time id is not provided"
+        );
+        assert_eq!(
+            missing_pit_id_search.body["error"]["root_cause"][0]["type"],
+            "illegal_argument_exception"
+        );
+        assert_eq!(
+            missing_pit_id_search.body["error"]["root_cause"][0]["reason"],
             "point int time id is not provided"
         );
 
