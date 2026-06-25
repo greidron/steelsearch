@@ -2230,9 +2230,10 @@ The clear-scroll boundary covers:
   decode/build layer;
 - OpenSearch `ClearScrollResponse` succeeded rendering with non-negative
   `num_freed` counts;
-- local transport route invalidation for `_all` and explicit scroll ids through
-  the shared `SteelNode` scroll context store;
-- explicit rejection for empty scroll id arrays and empty scroll id entries.
+- local transport route invalidation for standalone `_all` and explicit scroll
+  ids through the shared `SteelNode` scroll context store;
+- explicit rejection for empty scroll id arrays, empty scroll id entries, and
+  `_all` mixed with explicit scroll ids at the local lifecycle boundary.
 
 The explain boundary covers:
 
