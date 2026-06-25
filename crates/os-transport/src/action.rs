@@ -24934,6 +24934,7 @@ pub enum OpenSearchQueryBuilderWire {
     Ids(OpenSearchIdsQueryBuilderWire),
     MatchAll(OpenSearchMatchAllQueryBuilderWire),
     Match(OpenSearchMatchQueryBuilderWire),
+    MatchBoolPrefix(OpenSearchMatchBoolPrefixQueryBuilderWire),
     MatchPhrase(OpenSearchMatchPhraseQueryBuilderWire),
     MatchPhrasePrefix(OpenSearchMatchPhrasePrefixQueryBuilderWire),
     Prefix(OpenSearchPrefixQueryBuilderWire),
@@ -25035,6 +25036,22 @@ pub struct OpenSearchMatchQueryBuilderWire {
     pub fuzzy_rewrite: Option<String>,
     pub cutoff_frequency: Option<f32>,
     pub auto_generate_synonyms_phrase_query: bool,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct OpenSearchMatchBoolPrefixQueryBuilderWire {
+    pub boost: f32,
+    pub query_name: Option<String>,
+    pub field_name: String,
+    pub value: Value,
+    pub analyzer: Option<String>,
+    pub operator: OpenSearchMatchOperatorWire,
+    pub minimum_should_match: Option<String>,
+    pub fuzziness: Option<OpenSearchFuzzinessWire>,
+    pub prefix_length: i32,
+    pub max_expansions: i32,
+    pub fuzzy_transpositions: bool,
+    pub fuzzy_rewrite: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -25208,6 +25225,22 @@ fn write_named_query_builder(output: &mut StreamOutput, query: &OpenSearchQueryB
             output.write_bool(false); // fuzziness
             write_optional_float(output, query.cutoff_frequency);
             output.write_bool(query.auto_generate_synonyms_phrase_query);
+        }
+        OpenSearchQueryBuilderWire::MatchBoolPrefix(query) => {
+            output.write_string("match_bool_prefix");
+            output.write_f32(query.boost);
+            output.write_optional_string(query.query_name.as_deref());
+            output.write_string(&query.field_name);
+            write_generic_json_value(output, &query.value)
+                .expect("validated match_bool_prefix query value must encode as an OpenSearch generic scalar");
+            output.write_optional_string(query.analyzer.as_deref());
+            write_match_operator(output, query.operator);
+            output.write_optional_string(query.minimum_should_match.as_deref());
+            write_optional_fuzziness(output, query.fuzziness.as_ref());
+            output.write_vint(query.prefix_length);
+            output.write_vint(query.max_expansions);
+            output.write_bool(query.fuzzy_transpositions);
+            output.write_optional_string(query.fuzzy_rewrite.as_deref());
         }
         OpenSearchQueryBuilderWire::MatchPhrase(query) => {
             output.write_string("match_phrase");
@@ -25389,6 +25422,22 @@ fn read_named_query_builder(
                 auto_generate_synonyms_phrase_query: input.read_bool()?,
             }))
         }
+        "match_bool_prefix" => Ok(OpenSearchQueryBuilderWire::MatchBoolPrefix(
+            OpenSearchMatchBoolPrefixQueryBuilderWire {
+                boost: input.read_f32()?,
+                query_name: input.read_optional_string()?,
+                field_name: input.read_string()?,
+                value: read_generic_json_value(input, "search request source query")?,
+                analyzer: input.read_optional_string()?,
+                operator: read_match_operator(input)?,
+                minimum_should_match: input.read_optional_string()?,
+                fuzziness: read_optional_fuzziness(input)?,
+                prefix_length: input.read_vint()?,
+                max_expansions: input.read_vint()?,
+                fuzzy_transpositions: input.read_bool()?,
+                fuzzy_rewrite: input.read_optional_string()?,
+            },
+        )),
         "match_phrase" => Ok(OpenSearchQueryBuilderWire::MatchPhrase(
             OpenSearchMatchPhraseQueryBuilderWire {
                 boost: input.read_f32()?,
@@ -25513,7 +25562,7 @@ fn read_named_query_builder(
         )),
         _ => Err(TransportActionWireError::UnsupportedWireShape {
             shape: "search request source query",
-            reason: "only OpenSearch bool, exists, fuzzy, ids, match_all, match, match_phrase, match_phrase_prefix, prefix, range, regexp, term, terms, and wildcard QueryBuilder values are decoded by this subset",
+            reason: "only OpenSearch bool, exists, fuzzy, ids, match_all, match, match_bool_prefix, match_phrase, match_phrase_prefix, prefix, range, regexp, term, terms, and wildcard QueryBuilder values are decoded by this subset",
         }),
     }
 }
@@ -25643,6 +25692,34 @@ fn validate_query_builder(
                     reason: "OpenSearch MatchQueryBuilder cutoff frequency must be finite when present",
                 });
             }
+        }
+        OpenSearchQueryBuilderWire::MatchBoolPrefix(query) => {
+            validate_query_boost_and_name(query.boost, query.query_name.as_deref())?;
+            if query.field_name.is_empty() {
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "search request source query",
+                    reason: "OpenSearch MatchBoolPrefixQueryBuilder field name must be non-empty",
+                });
+            }
+            validate_match_query_value(&query.value)?;
+            validate_optional_non_empty_query_string(query.analyzer.as_deref())?;
+            validate_optional_non_empty_query_string(query.minimum_should_match.as_deref())?;
+            if let Some(fuzziness) = &query.fuzziness {
+                validate_fuzziness(fuzziness)?;
+            }
+            if query.prefix_length < 0 {
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "search request source query",
+                    reason: "OpenSearch MatchBoolPrefixQueryBuilder prefix length must be non-negative",
+                });
+            }
+            if query.max_expansions <= 0 {
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "search request source query",
+                    reason: "OpenSearch MatchBoolPrefixQueryBuilder max expansions must be positive",
+                });
+            }
+            validate_optional_non_empty_query_string(query.fuzzy_rewrite.as_deref())?;
         }
         OpenSearchQueryBuilderWire::MatchPhrase(query) => {
             validate_query_boost_and_name(query.boost, query.query_name.as_deref())?;
@@ -25834,6 +25911,15 @@ fn write_fuzziness(output: &mut StreamOutput, value: &OpenSearchFuzzinessWire) {
     }
 }
 
+fn write_optional_fuzziness(output: &mut StreamOutput, value: Option<&OpenSearchFuzzinessWire>) {
+    if let Some(value) = value {
+        output.write_bool(true);
+        write_fuzziness(output, value);
+    } else {
+        output.write_bool(false);
+    }
+}
+
 fn read_fuzziness(
     input: &mut StreamInput,
 ) -> Result<OpenSearchFuzzinessWire, TransportActionWireError> {
@@ -25852,6 +25938,16 @@ fn read_fuzziness(
     };
     validate_fuzziness(&fuzziness)?;
     Ok(fuzziness)
+}
+
+fn read_optional_fuzziness(
+    input: &mut StreamInput,
+) -> Result<Option<OpenSearchFuzzinessWire>, TransportActionWireError> {
+    if input.read_bool()? {
+        Ok(Some(read_fuzziness(input)?))
+    } else {
+        Ok(None)
+    }
 }
 
 fn write_match_operator(output: &mut StreamOutput, value: OpenSearchMatchOperatorWire) {
@@ -62364,6 +62460,37 @@ mod tests {
         let decoded = OpenSearchSearchRequestWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, match_phrase_prefix_query_request);
 
+        let match_bool_prefix_query_request = OpenSearchSearchRequestWire {
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                query: Some(OpenSearchQueryBuilderWire::MatchBoolPrefix(
+                    OpenSearchMatchBoolPrefixQueryBuilderWire {
+                        boost: 1.0,
+                        query_name: Some("message-bool-prefix".to_string()),
+                        field_name: "message".to_string(),
+                        value: json!("steel sea"),
+                        analyzer: Some("standard".to_string()),
+                        operator: OpenSearchMatchOperatorWire::And,
+                        minimum_should_match: Some("2<75%".to_string()),
+                        fuzziness: Some(OpenSearchFuzzinessWire {
+                            value: "AUTO".to_string(),
+                            custom_auto: None,
+                        }),
+                        prefix_length: 1,
+                        max_expansions: 50,
+                        fuzzy_transpositions: true,
+                        fuzzy_rewrite: Some("constant_score".to_string()),
+                    },
+                )),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        let mut output = StreamOutput::new();
+        match_bool_prefix_query_request.write(&mut output);
+
+        let decoded = OpenSearchSearchRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, match_bool_prefix_query_request);
+
         let match_query_request = OpenSearchSearchRequestWire {
             source: Some(OpenSearchSearchSourceBuilderWire {
                 query: Some(OpenSearchQueryBuilderWire::Match(
@@ -63127,6 +63254,69 @@ mod tests {
         };
         assert!(matches!(
             invalid_match_phrase_prefix_zero_terms.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source query",
+                ..
+            })
+        ));
+
+        let invalid_match_bool_prefix_expansions = OpenSearchSearchRequestWire {
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                query: Some(OpenSearchQueryBuilderWire::MatchBoolPrefix(
+                    OpenSearchMatchBoolPrefixQueryBuilderWire {
+                        boost: 1.0,
+                        query_name: None,
+                        field_name: "message".to_string(),
+                        value: json!("steel sea"),
+                        analyzer: None,
+                        operator: OpenSearchMatchOperatorWire::Or,
+                        minimum_should_match: None,
+                        fuzziness: None,
+                        prefix_length: 0,
+                        max_expansions: 0,
+                        fuzzy_transpositions: true,
+                        fuzzy_rewrite: None,
+                    },
+                )),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        assert!(matches!(
+            invalid_match_bool_prefix_expansions.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source query",
+                ..
+            })
+        ));
+
+        let invalid_match_bool_prefix_fuzziness = OpenSearchSearchRequestWire {
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                query: Some(OpenSearchQueryBuilderWire::MatchBoolPrefix(
+                    OpenSearchMatchBoolPrefixQueryBuilderWire {
+                        boost: 1.0,
+                        query_name: None,
+                        field_name: "message".to_string(),
+                        value: json!("steel sea"),
+                        analyzer: None,
+                        operator: OpenSearchMatchOperatorWire::Or,
+                        minimum_should_match: None,
+                        fuzziness: Some(OpenSearchFuzzinessWire {
+                            value: String::new(),
+                            custom_auto: None,
+                        }),
+                        prefix_length: 0,
+                        max_expansions: 50,
+                        fuzzy_transpositions: true,
+                        fuzzy_rewrite: None,
+                    },
+                )),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        assert!(matches!(
+            invalid_match_bool_prefix_fuzziness.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "search request source query",
                 ..
