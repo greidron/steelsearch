@@ -890,6 +890,19 @@ def run_case_request(
     saved_values: dict[str, Any] = {}
     for index, step in enumerate(steps):
         resolved_step = resolve_step_placeholders(step, response, saved_values)
+        if "sleep_seconds" in resolved_step:
+            sleep_seconds = float(resolved_step["sleep_seconds"])
+            time.sleep(sleep_seconds)
+            step_results.append(
+                {
+                    "name": resolved_step.get("name", f"step-{index + 1}"),
+                    "status": "slept",
+                    "expected_status": "slept",
+                    "passed": True,
+                    "extract": {"sleep_seconds": sleep_seconds},
+                }
+            )
+            continue
         step_headers = resolve_request_headers(fixture, resolved_step, case_headers)
         response = http_json(
             base_url,

@@ -2396,6 +2396,7 @@ pub struct PitContext {
 }
 
 const DEFAULT_MAX_PIT_KEEP_ALIVE_MILLIS: u64 = 86_400_000;
+const DEFAULT_PIT_EXPIRY_REAPER_GRACE_MILLIS: u64 = 60_000;
 
 #[derive(Clone, Debug)]
 struct ParsedMsearchRequest {
@@ -10229,7 +10230,7 @@ impl SteelNode {
                     indices: resolved_indices,
                     documents,
                     keep_alive_millis,
-                    expires_at_millis: creation_time_millis + u128::from(keep_alive_millis),
+                    expires_at_millis: pit_expires_at_millis(creation_time_millis, keep_alive_millis),
                     creation_time_millis,
                 },
             );
@@ -10269,7 +10270,7 @@ impl SteelNode {
         };
         if let Some(keep_alive_millis) = keep_alive_millis {
             context.keep_alive_millis = keep_alive_millis;
-            context.expires_at_millis = now_millis + u128::from(keep_alive_millis);
+            context.expires_at_millis = pit_expires_at_millis(now_millis, keep_alive_millis);
         }
         Ok(context.clone())
     }
@@ -22086,6 +22087,10 @@ fn validate_pit_keep_alive_limit(keep_alive_millis: u64) -> Option<RestResponse>
             "status": 400
         }),
     ))
+}
+
+fn pit_expires_at_millis(now_millis: u128, keep_alive_millis: u64) -> u128 {
+    now_millis + u128::from(keep_alive_millis.max(DEFAULT_PIT_EXPIRY_REAPER_GRACE_MILLIS))
 }
 
 fn format_time_value_millis(value: u64) -> String {
@@ -39630,6 +39635,18 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             pit_second_page.body["hits"]["hits"][0]["sort"],
             serde_json::json!([20])
+        );
+    }
+
+    #[test]
+    fn point_in_time_short_keep_alive_uses_reaper_grace_like_opensearch() {
+        assert_eq!(
+            pit_expires_at_millis(1_000, 1),
+            1_000 + u128::from(DEFAULT_PIT_EXPIRY_REAPER_GRACE_MILLIS)
+        );
+        assert_eq!(
+            pit_expires_at_millis(1_000, DEFAULT_MAX_PIT_KEEP_ALIVE_MILLIS),
+            1_000 + u128::from(DEFAULT_MAX_PIT_KEEP_ALIVE_MILLIS)
         );
     }
 
