@@ -4191,10 +4191,7 @@ fn get_all_pits_request_supports_local_lifecycle_subset(
         return false;
     };
     if request.validate_supported_subset().is_err()
-        || request
-            .node_ids
-            .as_ref()
-            .is_some_and(|node_ids| !node_ids.is_empty())
+        || !get_all_pits_node_ids_match_local(request.node_ids.as_deref(), transport_identity)
         || request.timeout.is_some()
     {
         return false;
@@ -4203,6 +4200,20 @@ fn get_all_pits_request_supports_local_lifecycle_subset(
         None => true,
         Some([node]) => node.id == transport_identity.node_id,
         Some(_) => false,
+    }
+}
+
+fn get_all_pits_node_ids_match_local(
+    node_ids: Option<&[String]>,
+    transport_identity: &DevTransportIdentity,
+) -> bool {
+    match node_ids {
+        None => true,
+        Some(node_ids) => node_ids.iter().all(|node_id| {
+            node_id == "_local"
+                || node_id == &transport_identity.node_id
+                || node_id == &transport_identity.node_name
+        }),
     }
 }
 
@@ -11934,13 +11945,33 @@ mod tests {
             &transport_identity
         ));
 
+        let local_node_id_request = os_transport::action::OpenSearchGetAllPitsRequestWire {
+            node_ids: Some(vec![
+                "steel-node-id".to_string(),
+                "steel-node".to_string(),
+                "_local".to_string(),
+            ]),
+            ..os_transport::action::OpenSearchGetAllPitsRequestWire::default()
+        };
+        let local_node_id_frame =
+            os_transport::action::build_opensearch_get_all_pits_request_message(
+                94,
+                OPENSEARCH_3_7_0_TRANSPORT,
+                &local_node_id_request,
+            )
+            .unwrap();
+        assert!(get_all_pits_request_supports_local_lifecycle_subset(
+            &local_node_id_frame[6..],
+            &transport_identity
+        ));
+
         let node_filtered_request = os_transport::action::OpenSearchGetAllPitsRequestWire {
             node_ids: Some(vec!["node-b".to_string()]),
             ..os_transport::action::OpenSearchGetAllPitsRequestWire::default()
         };
         let node_filtered_frame =
             os_transport::action::build_opensearch_get_all_pits_request_message(
-                94,
+                95,
                 OPENSEARCH_3_7_0_TRANSPORT,
                 &node_filtered_request,
             )
@@ -11956,7 +11987,7 @@ mod tests {
         };
         let concrete_node_frame =
             os_transport::action::build_opensearch_get_all_pits_request_message(
-                95,
+                96,
                 OPENSEARCH_3_7_0_TRANSPORT,
                 &concrete_node_request,
             )
@@ -11974,7 +12005,7 @@ mod tests {
         };
         let remote_concrete_node_frame =
             os_transport::action::build_opensearch_get_all_pits_request_message(
-                96,
+                97,
                 OPENSEARCH_3_7_0_TRANSPORT,
                 &remote_concrete_node_request,
             )
@@ -11992,7 +12023,7 @@ mod tests {
         };
         let mixed_concrete_node_frame =
             os_transport::action::build_opensearch_get_all_pits_request_message(
-                97,
+                98,
                 OPENSEARCH_3_7_0_TRANSPORT,
                 &mixed_concrete_node_request,
             )
@@ -12007,7 +12038,7 @@ mod tests {
             ..os_transport::action::OpenSearchGetAllPitsRequestWire::default()
         };
         let timeout_frame = os_transport::action::build_opensearch_get_all_pits_request_message(
-            98,
+            99,
             OPENSEARCH_3_7_0_TRANSPORT,
             &timeout_request,
         )

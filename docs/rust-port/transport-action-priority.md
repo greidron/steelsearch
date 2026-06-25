@@ -2273,10 +2273,11 @@ The get-all-PITs boundary covers:
 - request validation for the default all-nodes request and response
   build/decode support for non-empty PIT info node lists;
 - shared `SteelNode` PIT context listing for the local-node transport subset;
-- node-id filters, non-local/multi-node concrete-node payloads, and timeout
-  values decode as valid OpenSearch `BaseNodesRequest` fields, but are excluded
-  from the local lifecycle route until multi-node fanout semantics are
-  implemented;
+- local node-id filters (`_local`, local node id, or local node name) are
+  admitted by the local lifecycle route, while remote node-id filters,
+  non-local/multi-node concrete-node payloads, and timeout values decode as
+  valid OpenSearch `BaseNodesRequest` fields but are excluded until multi-node
+  fanout semantics are implemented;
 - single local concrete-node payloads are admitted by the local lifecycle route,
   matching OpenSearch `PitService` requests that target the local transport node;
 - raw `ListPitInfo` values decode without local id/range validation like the
