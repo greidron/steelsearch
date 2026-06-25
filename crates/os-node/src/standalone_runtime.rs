@@ -19312,6 +19312,12 @@ fn validate_search_request_body(body: &Value, scroll: bool) -> Option<RestRespon
         }
     }
     if let Some(track_total_hits) = body.get("track_total_hits") {
+        if let Some(threshold) = track_total_hits
+            .as_i64()
+            .filter(|threshold| *threshold < -1)
+        {
+            return Some(search_phase_total_hits_threshold_error(threshold));
+        }
         if !matches!(track_total_hits, Value::Bool(_))
             && search_track_total_hits_value(track_total_hits).is_none()
         {
@@ -19558,6 +19564,11 @@ fn apply_search_source_query_params(
         object.insert("sort".to_string(), Value::Array(sort_values));
     }
     if let Some(raw_track_total_hits) = query_params.get("track_total_hits") {
+        if let Ok(threshold) = raw_track_total_hits.parse::<i64>() {
+            if threshold < -1 {
+                return Some(track_total_hits_negative_threshold_error(threshold));
+            }
+        }
         let Some(track_total_hits) = parse_rest_track_total_hits(raw_track_total_hits) else {
             return Some(track_total_hits_query_param_parse_error(raw_track_total_hits));
         };
@@ -19853,6 +19864,45 @@ fn track_total_hits_query_param_parse_error(value: &str) -> RestResponse {
             "error": {
                 "type": "illegal_argument_exception",
                 "reason": format!("Failed to parse value [{value}] for [track_total_hits]")
+            },
+            "status": 400
+        }),
+    )
+}
+
+fn track_total_hits_negative_threshold_error(threshold: i64) -> RestResponse {
+    build_unsupported_search_response(&format!(
+        "[track_total_hits] parameter must be positive or equals to -1, got {threshold}"
+    ))
+}
+
+fn search_phase_total_hits_threshold_error(threshold: i64) -> RestResponse {
+    let reason = format!("totalHitsThreshold must be >= 0, got {threshold}");
+    RestResponse::json(
+        400,
+        serde_json::json!({
+            "error": {
+                "type": "search_phase_execution_exception",
+                "reason": "all shards failed",
+                "root_cause": [
+                    {
+                        "type": "illegal_argument_exception",
+                        "reason": reason
+                    }
+                ],
+                "caused_by": {
+                    "type": "illegal_argument_exception",
+                    "reason": reason
+                },
+                "failed_shards": [
+                    {
+                        "shard": 0,
+                        "reason": {
+                            "type": "illegal_argument_exception",
+                            "reason": reason
+                        }
+                    }
+                ]
             },
             "status": 400
         }),

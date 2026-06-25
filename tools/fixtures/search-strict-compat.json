@@ -4764,6 +4764,23 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "track_total_hits_negative_threshold_body_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "track_total_hits": -2
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "ranking",
+      "description": "[ranking] track_total_hits below -1 is rejected",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "track_total_hits_true_search",
       "area": "search",
       "method": "POST",
@@ -4827,6 +4844,22 @@
       "extract": "search_summary",
       "family": "ranking",
       "description": "[ranking] query-param numeric -1 disables track_total_hits",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "track_total_hits_query_param_negative_threshold_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search?track_total_hits=-2",
+      "body": {
+        "query": {
+          "match_all": {}
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error",
+      "family": "ranking",
+      "description": "[ranking] query-param track_total_hits below -1 is rejected",
       "strict_source_parity_required": true
     },
     {
