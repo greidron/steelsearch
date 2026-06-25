@@ -87,6 +87,57 @@ class StatefulCompatCaseSelectionTests(unittest.TestCase):
             },
         )
 
+    def test_stateful_probe_materializes_captured_pit_ids(self) -> None:
+        probe = load_tool_module("probe_stateful_route_ledger")
+        captures = {"pit_id": "opaque-pit-id"}
+        case = {
+            "method": "DELETE",
+            "path": "/_search/point_in_time",
+            "body": {"pit_id": ["${pit_id}"]},
+        }
+
+        materialized = probe.materialize_case(case, captures)
+
+        self.assertEqual(
+            materialized,
+            {
+                "method": "DELETE",
+                "path": "/_search/point_in_time",
+                "body": {"pit_id": ["opaque-pit-id"]},
+            },
+        )
+
+    def test_stateful_probe_captures_json_pointer_values(self) -> None:
+        probe = load_tool_module("probe_stateful_route_ledger")
+        captures: dict[str, object] = {}
+        case = {"capture_json": {"pit_id": "/pit_id"}}
+        result = {"body": '{"pit_id":"opaque-pit-id"}'}
+
+        probe.capture_values(case, result, captures)
+
+        self.assertEqual(captures, {"pit_id": "opaque-pit-id"})
+
+    def test_stateful_probe_normalizes_pit_report_values_only_for_report(self) -> None:
+        probe = load_tool_module("probe_stateful_route_ledger")
+        case = {
+            "name": "search_point_in_time_all_get",
+            "path": "/_search/point_in_time/_all",
+        }
+        result = {
+            "status": 200,
+            "body": '{"pits":[{"pit_id":"opaque-pit-id","creation_time":123,"keep_alive":60000}]}',
+        }
+
+        normalized = probe.normalize_result_for_report(case, result)
+
+        self.assertEqual(
+            normalized,
+            {
+                "status": 200,
+                "body": '{"pits":[{"creation_time":0,"keep_alive":60000,"pit_id":"<pit_id>"}]}',
+            },
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

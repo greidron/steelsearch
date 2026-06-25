@@ -182,7 +182,7 @@ fn generated_openapi_and_route_evidence_artifacts_are_release_auditable() {
         fs::read_to_string(stateful_probe_report_path).expect("stateful route probe report should exist");
     let stateful_probe: Value =
         serde_json::from_str(&stateful_probe_text).expect("stateful route probe report should parse");
-    assert_eq!(stateful_probe["summary"]["passed"], 266);
+    assert_eq!(stateful_probe["summary"]["passed"], 268);
     assert_eq!(
         stateful_probe["semantic_coverage_required"],
         serde_json::json!(["happy-path", "error-path", "idempotency-or-selector"])

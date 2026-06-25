@@ -23,6 +23,37 @@ def encode_body(case: dict[str, Any]) -> tuple[bytes | None, str | None]:
     return None, None
 
 
+def json_pointer_get(value: Any, pointer: str) -> Any:
+    current = value
+    for part in pointer.strip('/').split('/'):
+        if part == '':
+            continue
+        part = part.replace('~1', '/').replace('~0', '~')
+        if isinstance(current, dict):
+            current = current[part]
+        elif isinstance(current, list):
+            current = current[int(part)]
+        else:
+            raise KeyError(pointer)
+    return current
+
+
+def materialize(value: Any, captures: dict[str, Any]) -> Any:
+    if isinstance(value, str):
+        if value.startswith('${') and value.endswith('}'):
+            return captures[value[2:-1]]
+        return value
+    if isinstance(value, list):
+        return [materialize(item, captures) for item in value]
+    if isinstance(value, dict):
+        return {key: materialize(item, captures) for key, item in value.items()}
+    return value
+
+
+def materialize_case(case: dict[str, Any], captures: dict[str, Any]) -> dict[str, Any]:
+    return {key: materialize(value, captures) for key, value in case.items()}
+
+
 def request(base_url: str, case: dict[str, Any]) -> dict[str, Any]:
     data, content_type = encode_body(case)
     req = urllib.request.Request(base_url + case['path'], data=data, method=case['method'])
@@ -35,6 +66,51 @@ def request(base_url: str, case: dict[str, Any]) -> dict[str, Any]:
     except urllib.error.HTTPError as error:
         body = error.read().decode('utf-8', errors='replace')
         return {'status': error.code, 'body': body}
+
+
+def capture_values(case: dict[str, Any], result: dict[str, Any], captures: dict[str, Any]) -> None:
+    capture_json = case.get('capture_json')
+    if not isinstance(capture_json, dict):
+        return
+    body = json.loads(result.get('body') or 'null')
+    for name, pointer in capture_json.items():
+        captures[str(name)] = json_pointer_get(body, str(pointer))
+
+
+def normalize_pit_report_value(value: Any) -> Any:
+    if isinstance(value, dict):
+        normalized = {}
+        for key, item in value.items():
+            if key == 'pit_id':
+                normalized[key] = '<pit_id>'
+            elif key == 'creation_time':
+                normalized[key] = 0
+            else:
+                normalized[key] = normalize_pit_report_value(item)
+        return normalized
+    if isinstance(value, list):
+        return [normalize_pit_report_value(item) for item in value]
+    return value
+
+
+def normalize_result_for_report(case: dict[str, Any], result: dict[str, Any]) -> dict[str, Any]:
+    probe_surface = ' '.join(
+        str(case.get(key, '')) for key in ('name', 'path', 'inventory_path')
+    )
+    if 'point_in_time' not in probe_surface and 'pit' not in probe_surface:
+        return result
+    try:
+        body = json.loads(result.get('body') or 'null')
+    except json.JSONDecodeError:
+        return result
+    return {
+        **result,
+        'body': json.dumps(
+            normalize_pit_report_value(body),
+            separators=(',', ':'),
+            sort_keys=True,
+        ),
+    }
 
 
 def classify(result: dict[str, Any]) -> str:
@@ -78,16 +154,22 @@ def infer_semantic_tags(case: dict[str, Any]) -> list[str]:
 def main() -> int:
     base_url = (sys.argv[1] if len(sys.argv) > 1 else 'http://127.0.0.1:19200').rstrip('/')
     fixture = json.loads(FIXTURE.read_text(encoding='utf-8'))
+    captures: dict[str, Any] = {}
     setup_results = [
-        {**step, 'result': request(base_url, step)}
+        {**step, 'result': request(base_url, materialize_case(step, captures))}
         for step in fixture.get('setup', [])
     ]
+    for record in setup_results:
+        capture_values(record, record['result'], captures)
     cases = []
     summary = defaultdict(int)
     by_family: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
     semantic_coverage: dict[str, set[str]] = defaultdict(set)
     for case in fixture['cases']:
-        result = request(base_url, case)
+        request_case = materialize_case(case, captures)
+        result = request(base_url, request_case)
+        capture_values(case, result, captures)
+        report_result = normalize_result_for_report(case, result)
         runtime_status = classify(result)
         status = 'passed' if runtime_status == case['expected_runtime_status'] else 'failed'
         semantic_tags = infer_semantic_tags(case)
@@ -96,7 +178,7 @@ def main() -> int:
             **case,
             'inventory_path': inventory_path,
             'runtime_status': runtime_status,
-            'result': result,
+            'result': report_result,
             'status': status,
             'semantic_tags': semantic_tags,
         }

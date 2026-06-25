@@ -1130,13 +1130,35 @@
       "expected_runtime_status": "stateful-route-present"
     },
     {
+      "name": "search_point_in_time_target_post_for_single_delete",
+      "family": "search",
+      "inventory_path": "/{index}/_search/point_in_time",
+      "method": "POST",
+      "path": "/logs-stateful-probe/_search/point_in_time?keep_alive=1m",
+      "expected_runtime_status": "stateful-route-present",
+      "capture_json": {
+        "single_delete_pit_id": "/pit_id"
+      }
+    },
+    {
+      "name": "search_point_in_time_target_post_for_array_delete",
+      "family": "search",
+      "inventory_path": "/{index}/_search/point_in_time",
+      "method": "POST",
+      "path": "/logs-stateful-probe/_search/point_in_time?keep_alive=1m",
+      "expected_runtime_status": "stateful-route-present",
+      "capture_json": {
+        "array_delete_pit_id": "/pit_id"
+      }
+    },
+    {
       "name": "search_point_in_time_root_delete",
       "family": "search",
       "inventory_path": "/_search/point_in_time",
       "method": "DELETE",
       "path": "/_search/point_in_time",
       "body": {
-        "id": "pit-1"
+        "pit_id": "${single_delete_pit_id}"
       },
       "expected_runtime_status": "stateful-route-present"
     },
@@ -1147,9 +1169,8 @@
       "method": "DELETE",
       "path": "/_search/point_in_time",
       "body": {
-        "id": [
-          "pit-1",
-          "pit-2"
+        "pit_id": [
+          "${array_delete_pit_id}"
         ]
       },
       "expected_runtime_status": "stateful-route-present"
