@@ -10148,7 +10148,13 @@ impl SteelNode {
                 serde_json::json!({
                     "error": {
                         "type": "action_request_validation_exception",
-                        "reason": "Validation Failed: 1: keep alive not specified;"
+                        "reason": "Validation Failed: 1: keep alive not specified;",
+                        "root_cause": [
+                            {
+                                "type": "action_request_validation_exception",
+                                "reason": "Validation Failed: 1: keep alive not specified;"
+                            }
+                        ]
                     },
                     "status": 400
                 }),
@@ -38925,6 +38931,14 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         );
         assert_eq!(
             missing_keep_alive_pit.body["error"]["reason"],
+            "Validation Failed: 1: keep alive not specified;"
+        );
+        assert_eq!(
+            missing_keep_alive_pit.body["error"]["root_cause"][0]["type"],
+            "action_request_validation_exception"
+        );
+        assert_eq!(
+            missing_keep_alive_pit.body["error"]["root_cause"][0]["reason"],
             "Validation Failed: 1: keep alive not specified;"
         );
 

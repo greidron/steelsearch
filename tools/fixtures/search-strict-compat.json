@@ -2309,6 +2309,18 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "pit_open_missing_keep_alive_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search/point_in_time",
+      "body": null,
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] create PIT rejects missing keep_alive like OpenSearch",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "pit_open_with_preference_search",
       "area": "search",
       "method": "POST",
