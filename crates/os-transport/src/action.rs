@@ -26214,6 +26214,7 @@ pub struct OpenSearchSearchHitWire {
     pub source: Option<Value>,
     pub explanation: Option<Value>,
     pub fields: BTreeMap<String, Vec<Value>>,
+    pub meta_fields: BTreeMap<String, Vec<Value>>,
     pub highlight_fields: BTreeMap<String, Option<Vec<String>>>,
     pub sort_values: Vec<Value>,
     pub matched_queries: BTreeMap<String, f32>,
@@ -26232,6 +26233,7 @@ impl OpenSearchSearchHitWire {
             source: Some(hit.source),
             explanation: hit.explanation,
             fields: normalized_document_fields(hit.fields),
+            meta_fields: BTreeMap::new(),
             highlight_fields: normalized_highlight_fields(hit.highlight),
             sort_values: normalized_sort_values(hit.sort),
             matched_queries: BTreeMap::new(),
@@ -26263,7 +26265,7 @@ impl OpenSearchSearchHitWire {
             output.write_bool(false);
         }
         write_document_field_map(output, &self.fields)?;
-        output.write_vint(0);
+        write_document_field_map(output, &self.meta_fields)?;
         write_highlight_field_map(output, &self.highlight_fields)?;
         write_search_sort_values(output, &self.sort_values)?;
         write_search_sort_values(output, &self.sort_values)?;
@@ -26289,6 +26291,7 @@ impl OpenSearchSearchHitWire {
             source: read_optional_json_bytes_reference(input)?,
             explanation: None,
             fields: BTreeMap::new(),
+            meta_fields: BTreeMap::new(),
             highlight_fields: BTreeMap::new(),
             sort_values: Vec::new(),
             matched_queries: BTreeMap::new(),
@@ -26300,7 +26303,7 @@ impl OpenSearchSearchHitWire {
             None
         };
         let fields = read_document_field_map(input, "search hit document fields")?;
-        reject_empty_list_len(input, "search hit metadata fields")?;
+        let meta_fields = read_document_field_map(input, "search hit metadata fields")?;
         let highlight_fields = read_highlight_field_map(input, "search hit highlight fields")?;
         let formatted_sort_values = read_search_sort_values(input, "search hit formatted sort values")?;
         let raw_sort_values = read_search_sort_values(input, "search hit raw sort values")?;
@@ -26313,6 +26316,7 @@ impl OpenSearchSearchHitWire {
         let hit = Self {
             explanation,
             fields,
+            meta_fields,
             highlight_fields,
             sort_values: formatted_sort_values,
             ..hit
@@ -58533,6 +58537,10 @@ mod tests {
                         vec![json!({ "nested": [1, "two", true, null] })],
                     ),
                 ]),
+                meta_fields: BTreeMap::from([(
+                    "_routing".to_string(),
+                    vec![json!("tenant-a")],
+                )]),
                 highlight_fields: BTreeMap::from([
                     (
                         "message".to_string(),
@@ -58593,6 +58601,10 @@ mod tests {
             Some(&vec![json!({ "nested": [1, "two", true, null] })])
         );
         assert_eq!(
+            decoded.hits[0].meta_fields.get("_routing"),
+            Some(&vec![json!("tenant-a")])
+        );
+        assert_eq!(
             decoded.hits[0].highlight_fields.get("message"),
             Some(&Some(vec!["<em>hello</em>".to_string(), "world".to_string()]))
         );
@@ -58617,30 +58629,36 @@ mod tests {
 
     #[test]
     fn opensearch_search_response_rejects_unsupported_hit_sections_or_invalid_counts() {
-        let mut hit_with_meta_fields = StreamOutput::new();
-        hit_with_meta_fields.write_bool(true);
-        hit_with_meta_fields.write_vlong(1);
-        hit_with_meta_fields.write_vint(0);
-        hit_with_meta_fields.write_f32(1.0);
-        hit_with_meta_fields.write_vint(1);
-        hit_with_meta_fields.write_f32(1.0);
-        write_optional_text_string(&mut hit_with_meta_fields, Some("doc-1")).unwrap();
-        hit_with_meta_fields.write_bool(false);
-        hit_with_meta_fields.write_i64(1);
-        hit_with_meta_fields.write_zlong(0);
-        hit_with_meta_fields.write_vlong(1);
-        write_json_bytes_reference(&mut hit_with_meta_fields, &json!({ "message": "hello" }))
+        let mut hit_with_inner_hits = StreamOutput::new();
+        hit_with_inner_hits.write_bool(true);
+        hit_with_inner_hits.write_vlong(1);
+        hit_with_inner_hits.write_vint(0);
+        hit_with_inner_hits.write_f32(1.0);
+        hit_with_inner_hits.write_vint(1);
+        hit_with_inner_hits.write_f32(1.0);
+        write_optional_text_string(&mut hit_with_inner_hits, Some("doc-1")).unwrap();
+        hit_with_inner_hits.write_bool(false);
+        hit_with_inner_hits.write_i64(1);
+        hit_with_inner_hits.write_zlong(0);
+        hit_with_inner_hits.write_vlong(1);
+        write_json_bytes_reference(&mut hit_with_inner_hits, &json!({ "message": "hello" }))
             .unwrap();
-        hit_with_meta_fields.write_bool(false);
-        hit_with_meta_fields.write_vint(0);
-        hit_with_meta_fields.write_vint(1);
+        hit_with_inner_hits.write_bool(false);
+        hit_with_inner_hits.write_vint(0);
+        hit_with_inner_hits.write_vint(0);
+        hit_with_inner_hits.write_vint(0);
+        write_search_sort_values(&mut hit_with_inner_hits, &[]).unwrap();
+        write_search_sort_values(&mut hit_with_inner_hits, &[]).unwrap();
+        hit_with_inner_hits.write_vint(0);
+        hit_with_inner_hits.write_bool(false);
+        hit_with_inner_hits.write_vint(1);
         assert!(matches!(
             OpenSearchSearchResponseWire::read(
-                hit_with_meta_fields.freeze(),
+                hit_with_inner_hits.freeze(),
                 OPENSEARCH_3_7_0_TRANSPORT
             ),
             Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "search hit metadata fields",
+                shape: "search hit inner hits",
                 ..
             })
         ));
@@ -58667,6 +58685,7 @@ mod tests {
             source: Some(json!({})),
             explanation: None,
             fields: BTreeMap::new(),
+            meta_fields: BTreeMap::new(),
             highlight_fields: BTreeMap::new(),
             sort_values: Vec::new(),
             matched_queries: BTreeMap::new(),
@@ -58689,6 +58708,7 @@ mod tests {
             source: Some(json!({})),
             explanation: None,
             fields: BTreeMap::new(),
+            meta_fields: BTreeMap::new(),
             highlight_fields: BTreeMap::new(),
             sort_values: vec![json!({ "unsupported": true })],
             matched_queries: BTreeMap::new(),
