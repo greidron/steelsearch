@@ -4170,6 +4170,77 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "search_after_without_sort_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "search_after": [
+          "2026-04-22T00:00:00Z"
+        ]
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "ranking",
+      "description": "[ranking] search_after without sort is rejected",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "search_after_with_from_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search?from=1",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "sort": [
+          {
+            "ts": {
+              "order": "asc"
+            }
+          }
+        ],
+        "search_after": [
+          "2026-04-22T00:00:00Z"
+        ]
+      },
+      "expected_status": 500,
+      "extract": "search_error_root_cause",
+      "family": "ranking",
+      "description": "[ranking] search_after with from is rejected",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "search_after_with_scroll_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search?scroll=1m",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "sort": [
+          {
+            "ts": {
+              "order": "asc"
+            }
+          }
+        ],
+        "search_after": [
+          "2026-04-22T00:00:00Z"
+        ]
+      },
+      "expected_status": 500,
+      "extract": "search_error_root_cause",
+      "family": "ranking",
+      "description": "[ranking] search_after with scroll is rejected",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "sorted_paginated_search_window",
       "area": "search",
       "method": "POST",
