@@ -3454,6 +3454,77 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "terminate_after_query_param_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search?terminate_after=1",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "sort": [
+          {
+            "ts": {
+              "order": "asc"
+            }
+          }
+        ],
+        "size": 2
+      },
+      "extract": "search_summary",
+      "family": "lexical",
+      "description": "[lexical] query-param terminate after search",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "terminate_after_not_reached_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "terminate_after": 10,
+        "sort": [
+          {
+            "ts": {
+              "order": "asc"
+            }
+          }
+        ],
+        "size": 2
+      },
+      "extract": "search_summary",
+      "family": "lexical",
+      "description": "[lexical] terminate after not reached search",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "terminate_after_zero_query_param_preserves_body_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search?terminate_after=0",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "terminate_after": 1,
+        "sort": [
+          {
+            "ts": {
+              "order": "asc"
+            }
+          }
+        ],
+        "size": 2
+      },
+      "extract": "search_summary",
+      "family": "lexical",
+      "description": "[lexical] zero query-param terminate after preserves body search",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "terms_set_query_search",
       "area": "search",
       "method": "POST",
