@@ -3564,14 +3564,25 @@ impl SteelNode {
                 _ => None,
             };
         }
-        if request.path == "/_search/point_in_time" && request.method == RestMethod::Delete {
-            return Some(self.handle_close_point_in_time_route(request));
+        if request.path == "/_search/point_in_time" {
+            return match request.method {
+                RestMethod::Delete => Some(self.handle_close_point_in_time_route(request)),
+                _ => Some(method_not_allowed_response(
+                    request.method,
+                    request.path.as_str(),
+                    "DELETE",
+                )),
+            };
         }
         if request.path == "/_search/point_in_time/_all" {
             return match request.method {
                 RestMethod::Get => Some(self.handle_list_all_point_in_time_route(request)),
                 RestMethod::Delete => Some(self.handle_clear_all_point_in_time_route(request)),
-                _ => None,
+                _ => Some(method_not_allowed_response(
+                    request.method,
+                    request.path.as_str(),
+                    "DELETE, GET",
+                )),
             };
         }
         if (request.method == RestMethod::Post || request.method == RestMethod::Put)
@@ -20808,6 +20819,22 @@ fn unrecognized_query_param_response_for_keys(
             )))
         }
     }
+}
+
+fn method_not_allowed_response(method: RestMethod, path: &str, allowed: &str) -> RestResponse {
+    RestResponse::json(
+        405,
+        serde_json::json!({
+            "error": format!(
+                "Incorrect HTTP method for uri [{}] and method [{}], allowed: [{}]",
+                path,
+                method.as_str(),
+                allowed
+            ),
+            "status": 405
+        }),
+    )
+    .with_header("allow", allowed)
 }
 
 fn unsupported_pit_id_version_response() -> RestResponse {
@@ -39399,7 +39426,11 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             RestMethod::Post,
             "/_search/point_in_time?keep_alive=1m",
         ));
-        assert_eq!(root_open_pit.status, 404);
+        assert_eq!(root_open_pit.status, 405);
+        assert_eq!(
+            root_open_pit.body["error"],
+            "Incorrect HTTP method for uri [/_search/point_in_time] and method [POST], allowed: [DELETE]"
+        );
 
         let missing_keep_alive_pit = node.handle_rest_request(RestRequest::new(
             RestMethod::Post,
@@ -40509,6 +40540,39 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             query_param_list_pit.body["error"]["root_cause"][0]["reason"],
             "request [/_search/point_in_time/_all] contains unrecognized parameter: [pit_id]"
+        );
+
+        let get_close_path = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_search/point_in_time",
+        ));
+        assert_eq!(get_close_path.status, 405);
+        assert_eq!(get_close_path.headers.get("allow").map(String::as_str), Some("DELETE"));
+        assert_eq!(
+            get_close_path.body["error"],
+            "Incorrect HTTP method for uri [/_search/point_in_time] and method [GET], allowed: [DELETE]"
+        );
+
+        let post_close_path = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/_search/point_in_time",
+        ));
+        assert_eq!(post_close_path.status, 405);
+        assert_eq!(post_close_path.headers.get("allow").map(String::as_str), Some("DELETE"));
+        assert_eq!(
+            post_close_path.body["error"],
+            "Incorrect HTTP method for uri [/_search/point_in_time] and method [POST], allowed: [DELETE]"
+        );
+
+        let put_all_path = node.handle_rest_request(RestRequest::new(
+            RestMethod::Put,
+            "/_search/point_in_time/_all",
+        ));
+        assert_eq!(put_all_path.status, 405);
+        assert_eq!(put_all_path.headers.get("allow").map(String::as_str), Some("DELETE, GET"));
+        assert_eq!(
+            put_all_path.body["error"],
+            "Incorrect HTTP method for uri [/_search/point_in_time/_all] and method [PUT], allowed: [DELETE, GET]"
         );
 
         let duplicate_missing_close_pit = node.handle_rest_request(

@@ -2364,6 +2364,44 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "pit_close_get_method_error_search",
+      "area": "search",
+      "method": "GET",
+      "path": "/_search/point_in_time",
+      "body": null,
+      "expected_status": 405,
+      "extract": "search_error",
+      "family": "lexical",
+      "description": "[lexical] close PIT path rejects GET with OpenSearch method error",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "pit_close_post_method_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/_search/point_in_time",
+      "body": {
+        "pit_id": "pit-missing"
+      },
+      "expected_status": 405,
+      "extract": "search_error",
+      "family": "lexical",
+      "description": "[lexical] close PIT path rejects POST with OpenSearch method error",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "pit_all_put_method_error_search",
+      "area": "search",
+      "method": "PUT",
+      "path": "/_search/point_in_time/_all",
+      "body": null,
+      "expected_status": 405,
+      "extract": "search_error",
+      "family": "lexical",
+      "description": "[lexical] PIT _all path rejects PUT with OpenSearch method error",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "pit_close_all_mixed_array_error_search",
       "area": "search",
       "method": "DELETE",
