@@ -3718,13 +3718,7 @@ fn build_local_create_pit_response(
     let Some(resolved_indices) = transport_pit_indices(bindings, &request) else {
         return build_empty_transport_response(request_id, header_version_id);
     };
-    let routing_values = request
-        .routing
-        .as_deref()
-        .map(parse_transport_routing_values)
-        .filter(|values| !values.is_empty());
-    let documents =
-        transport_pit_document_snapshot(bindings, &resolved_indices, routing_values.as_deref());
+    let documents = transport_pit_document_snapshot(bindings, &resolved_indices);
     let total_shards = transport_pit_total_primary_shards(bindings, &resolved_indices);
     let pit_id = {
         let mut next_id = bindings
@@ -3890,7 +3884,6 @@ fn transport_pit_index_matches_options(
 fn transport_pit_document_snapshot(
     bindings: &DevTransportPitBindings,
     resolved_indices: &[String],
-    routing_values: Option<&[String]>,
 ) -> BTreeMap<String, StoredDocument> {
     bindings
         .documents
@@ -3898,20 +3891,11 @@ fn transport_pit_document_snapshot(
         .expect("dev transport documents lock poisoned")
         .iter()
         .filter_map(|(key, record)| {
-            let (doc_index, _, doc_routing) = split_transport_document_key(key)?;
+            let (doc_index, _, _) = split_transport_document_key(key)?;
             resolved_indices
                 .iter()
                 .any(|candidate| candidate == doc_index)
                 .then_some(())?;
-            if let Some(routing_values) = routing_values {
-                let record_routing = record.routing.as_deref().unwrap_or(doc_routing);
-                if !routing_values
-                    .iter()
-                    .any(|routing| routing == record_routing)
-                {
-                    return None;
-                }
-            }
             Some((key.clone(), record.clone()))
         })
         .collect()
@@ -3941,15 +3925,6 @@ fn transport_pit_total_primary_shards(
 fn split_transport_document_key(key: &str) -> Option<(&str, &str, &str)> {
     let mut parts = key.splitn(3, ':');
     Some((parts.next()?, parts.next()?, parts.next()?))
-}
-
-fn parse_transport_routing_values(routing: &str) -> Vec<String> {
-    routing
-        .split(',')
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(ToOwned::to_owned)
-        .collect()
 }
 
 fn transport_index_metadata_is_hidden(index_body: &Value) -> bool {
@@ -11099,7 +11074,7 @@ mod tests {
         assert!(routed_pit_context
             .documents
             .contains_key("logs-routed-pit-000001:doc-a:tenant-a"));
-        assert!(!routed_pit_context
+        assert!(routed_pit_context
             .documents
             .contains_key("logs-routed-pit-000001:doc-b:tenant-b"));
         assert!(!routed_pit_context

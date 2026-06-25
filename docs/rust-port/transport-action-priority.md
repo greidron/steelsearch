@@ -2293,10 +2293,11 @@ The create-PIT boundary covers:
   scalar fields decode without extra local value validation like the OpenSearch
   wire objects;
 - local transport PIT context allocation for default all-indices requests and
-  index/alias/wildcard targets with routing filters into the shared `SteelNode`
-  PIT context store, including the resolved index set, document snapshot,
-  primary-shard count, keep-alive expiry bookkeeping, and read-all/delete
-  visibility through the same lifecycle state;
+  index/alias/wildcard targets with routing accepted as a shard-routing hint
+  rather than a document filter, into the shared `SteelNode` PIT context store,
+  including the resolved index set, document snapshot, primary-shard count,
+  keep-alive expiry bookkeeping, and read-all/delete visibility through the
+  same lifecycle state;
 - REST and local transport create-PIT responses now return unpadded base64url
   opaque PIT ids instead of the earlier `pit-N` debug-shaped ids, while storing
   and resolving the same opaque id through list, search, delete, and segments
