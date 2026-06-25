@@ -40644,6 +40644,37 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         ));
         assert_eq!(updated.status, 200);
         assert_eq!(updated.body["_source"]["processed"], Value::Bool(true));
+
+        let plain_upsert = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/logs-update-probe/_update/doc-plain-upsert",
+            )
+            .with_json_body(serde_json::json!({
+                "doc": {
+                    "message": "ignored-doc-patch"
+                },
+                "upsert": {
+                    "message": "plain-upsert",
+                    "level": "notice"
+                }
+            })),
+        );
+        assert_eq!(plain_upsert.status, 201);
+        assert_eq!(plain_upsert.body["result"], "created");
+
+        let plain_upsert_readback = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/logs-update-probe/_doc/doc-plain-upsert",
+        ));
+        assert_eq!(plain_upsert_readback.status, 200);
+        assert_eq!(
+            plain_upsert_readback.body["_source"],
+            serde_json::json!({
+                "message": "plain-upsert",
+                "level": "notice"
+            })
+        );
     }
 
     #[test]

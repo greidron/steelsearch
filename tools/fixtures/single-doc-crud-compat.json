@@ -484,6 +484,56 @@
       }
     },
     {
+      "name": "update_single_doc_upsert_create",
+      "method": "POST",
+      "path": "/single-doc-compat-000001/_update/doc-plain-upsert?routing=tenant-a",
+      "body": {
+        "doc": {
+          "message": "ignored-doc-patch",
+          "level": "debug"
+        },
+        "upsert": {
+          "message": "plain-upsert",
+          "level": "notice"
+        }
+      },
+      "compare": {
+        "expected_status": 201,
+        "body_paths_present": [
+          "_index",
+          "_id",
+          "result"
+        ],
+        "body_paths_equal": [
+          "_index",
+          "_id",
+          "result"
+        ]
+      }
+    },
+    {
+      "name": "get_single_doc_plain_upsert_created",
+      "method": "GET",
+      "path": "/single-doc-compat-000001/_doc/doc-plain-upsert?routing=tenant-a&realtime=true",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "_index",
+          "_id",
+          "found",
+          "_source.message",
+          "_source.level"
+        ],
+        "body_paths_equal": [
+          "_index",
+          "_id",
+          "found",
+          "_source.message",
+          "_source.level"
+        ]
+      }
+    },
+    {
       "name": "update_single_doc_scripted_upsert_create",
       "method": "POST",
       "path": "/single-doc-compat-000001/_update/doc-scripted-upsert?routing=tenant-a",
