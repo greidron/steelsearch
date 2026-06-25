@@ -26215,6 +26215,7 @@ pub struct OpenSearchSearchHitWire {
     pub fields: BTreeMap<String, Vec<Value>>,
     pub highlight_fields: BTreeMap<String, Option<Vec<String>>>,
     pub sort_values: Vec<Value>,
+    pub matched_queries: BTreeMap<String, f32>,
 }
 
 impl OpenSearchSearchHitWire {
@@ -26229,6 +26230,7 @@ impl OpenSearchSearchHitWire {
             fields: normalized_document_fields(hit.fields),
             highlight_fields: normalized_highlight_fields(hit.highlight),
             sort_values: normalized_sort_values(hit.sort),
+            matched_queries: BTreeMap::new(),
         }
     }
 
@@ -26255,7 +26257,7 @@ impl OpenSearchSearchHitWire {
         write_highlight_field_map(output, &self.highlight_fields)?;
         write_search_sort_values(output, &self.sort_values)?;
         write_search_sort_values(output, &self.sort_values)?;
-        output.write_vint(0);
+        write_matched_queries(output, &self.matched_queries)?;
         output.write_bool(false);
         output.write_vint(0);
         Ok(())
@@ -26278,6 +26280,7 @@ impl OpenSearchSearchHitWire {
             fields: BTreeMap::new(),
             highlight_fields: BTreeMap::new(),
             sort_values: Vec::new(),
+            matched_queries: BTreeMap::new(),
         };
         reject_bool_present(input, "search hit explanation")?;
         let fields = read_document_field_map(input, "search hit document fields")?;
@@ -26297,7 +26300,11 @@ impl OpenSearchSearchHitWire {
             sort_values: formatted_sort_values,
             ..hit
         };
-        reject_empty_list_len(input, "search hit matched queries")?;
+        let matched_queries = read_matched_queries(input, "search hit matched queries")?;
+        let hit = Self {
+            matched_queries,
+            ..hit
+        };
         reject_optional_writeable_present(input, "search hit shard target")?;
         reject_empty_list_len(input, "search hit inner hits")?;
         hit.validate_supported_subset()?;
@@ -34170,6 +34177,46 @@ fn read_search_sort_values(
         values.push(read_search_sort_value(input, shape)?);
     }
     Ok(values)
+}
+
+fn write_matched_queries(
+    output: &mut StreamOutput,
+    queries: &BTreeMap<String, f32>,
+) -> Result<(), TransportActionWireError> {
+    output.write_vint(queries.len() as i32);
+    if queries.is_empty() {
+        return Ok(());
+    }
+    output.write_vint(queries.len() as i32);
+    for (name, score) in queries {
+        output.write_string(name);
+        output.write_f32(*score);
+    }
+    Ok(())
+}
+
+fn read_matched_queries(
+    input: &mut StreamInput,
+    shape: &'static str,
+) -> Result<BTreeMap<String, f32>, TransportActionWireError> {
+    let expected_len = read_len(input)?;
+    let mut queries = BTreeMap::new();
+    if expected_len == 0 {
+        return Ok(queries);
+    }
+    let map_len = read_len(input)?;
+    if map_len != expected_len {
+        return Err(TransportActionWireError::UnsupportedWireShape {
+            shape,
+            reason: "OpenSearch 2.13+ matched query count must match the following map size",
+        });
+    }
+    for _ in 0..map_len {
+        let name = input.read_string()?;
+        let score = input.read_f32()?;
+        queries.insert(name, score);
+    }
+    Ok(queries)
 }
 
 fn write_search_sort_value(
@@ -58244,6 +58291,10 @@ mod tests {
                     ("missing".to_string(), None),
                 ]),
                 sort_values: vec![json!(42), json!("tenant-a"), json!(true), Value::Null],
+                matched_queries: BTreeMap::from([
+                    ("named-a".to_string(), 0.75),
+                    ("named-b".to_string(), 1.25),
+                ]),
             }],
             ..OpenSearchSearchResponseWire::default()
         };
@@ -58277,6 +58328,8 @@ mod tests {
             decoded.hits[0].sort_values,
             vec![json!(42), json!("tenant-a"), json!(true), Value::Null]
         );
+        assert_eq!(decoded.hits[0].matched_queries.get("named-a"), Some(&0.75));
+        assert_eq!(decoded.hits[0].matched_queries.get("named-b"), Some(&1.25));
     }
 
     #[test]
@@ -58332,6 +58385,7 @@ mod tests {
             fields: BTreeMap::new(),
             highlight_fields: BTreeMap::new(),
             sort_values: Vec::new(),
+            matched_queries: BTreeMap::new(),
         };
         assert!(matches!(
             invalid_hit.validate_supported_subset(),
@@ -58351,6 +58405,7 @@ mod tests {
             fields: BTreeMap::new(),
             highlight_fields: BTreeMap::new(),
             sort_values: vec![json!({ "unsupported": true })],
+            matched_queries: BTreeMap::new(),
         };
         let mut output = StreamOutput::new();
         assert!(matches!(
