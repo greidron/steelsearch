@@ -2568,6 +2568,42 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "pit_open_invalid_ignore_unavailable_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search/point_in_time?keep_alive=1m&ignore_unavailable=maybe",
+      "body": null,
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] open PIT rejects invalid ignore_unavailable like OpenSearch",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "pit_open_invalid_allow_no_indices_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search/point_in_time?keep_alive=1m&allow_no_indices=maybe",
+      "body": null,
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] open PIT rejects invalid allow_no_indices like OpenSearch",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "pit_open_invalid_ignore_throttled_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search/point_in_time?keep_alive=1m&ignore_throttled=maybe",
+      "body": null,
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] open PIT rejects invalid ignore_throttled like OpenSearch",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "pit_open_ignore_unavailable_multi_target_search",
       "area": "search",
       "method": "POST",

@@ -10168,6 +10168,9 @@ impl SteelNode {
         ) {
             return response;
         }
+        if let Some(response) = validate_create_pit_indices_options_boolean_query_params(request) {
+            return response;
+        }
         let Some(keep_alive) = request.query_params.get("keep_alive").map(String::as_str) else {
             return RestResponse::json(
                 400,
@@ -20685,6 +20688,35 @@ fn create_pit_unrecognized_query_param_response(request: &RestRequest) -> Option
         .filter(|key| !ALLOWED_PARAMS.contains(&key.as_str()))
         .collect::<Vec<_>>();
     unrecognized_query_param_response_for_keys(request, &keys)
+}
+
+fn validate_create_pit_indices_options_boolean_query_params(
+    request: &RestRequest,
+) -> Option<RestResponse> {
+    for field in ["allow_no_indices", "ignore_throttled", "ignore_unavailable"] {
+        if let Some(response) = validate_opensearch_named_boolean_query_param(
+            field,
+            request.query_params.get(field),
+        ) {
+            return Some(response);
+        }
+    }
+    None
+}
+
+fn validate_opensearch_named_boolean_query_param(
+    field: &str,
+    raw: Option<&String>,
+) -> Option<RestResponse> {
+    let Some(value) = raw.map(String::as_str) else {
+        return None;
+    };
+    if value.is_empty() || value == "true" || value == "false" {
+        return None;
+    }
+    Some(delete_pit_illegal_argument(format!(
+        "Could not convert [{field}] to boolean"
+    )))
 }
 
 fn unrecognized_query_param_response_for_keys(
@@ -39165,6 +39197,35 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             unknown_query_open_pit.body["error"]["root_cause"][0]["reason"],
             "request [/logs-session-000001/_search/point_in_time] contains unrecognized parameter: [foo]"
         );
+
+        for (field, path) in [
+            (
+                "ignore_unavailable",
+                "/logs-session-000001/_search/point_in_time?keep_alive=1m&ignore_unavailable=maybe",
+            ),
+            (
+                "allow_no_indices",
+                "/logs-session-000001/_search/point_in_time?keep_alive=1m&allow_no_indices=maybe",
+            ),
+            (
+                "ignore_throttled",
+                "/logs-session-000001/_search/point_in_time?keep_alive=1m&ignore_throttled=maybe",
+            ),
+        ] {
+            let invalid_indices_option = node.handle_rest_request(RestRequest::new(
+                RestMethod::Post,
+                path,
+            ));
+            assert_eq!(invalid_indices_option.status, 400);
+            assert_eq!(
+                invalid_indices_option.body["error"]["type"],
+                "illegal_argument_exception"
+            );
+            assert_eq!(
+                invalid_indices_option.body["error"]["root_cause"][0]["reason"],
+                format!("Could not convert [{field}] to boolean")
+            );
+        }
 
         let too_large_open_pit = node.handle_rest_request(RestRequest::new(
             RestMethod::Post,
