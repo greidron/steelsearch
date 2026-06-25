@@ -25996,6 +25996,7 @@ pub struct OpenSearchSearchResponseWire {
     pub sort_fields: Option<Vec<OpenSearchSortFieldWire>>,
     pub collapse_field: Option<String>,
     pub collapse_values: Option<Vec<Value>>,
+    pub aggregations_empty: bool,
     pub suggest_empty: bool,
     pub timed_out: bool,
     pub terminated_early: Option<bool>,
@@ -26027,6 +26028,7 @@ impl OpenSearchSearchResponseWire {
             sort_fields: None,
             collapse_field: None,
             collapse_values: None,
+            aggregations_empty: false,
             suggest_empty: false,
             timed_out: false,
             terminated_early: None,
@@ -26062,7 +26064,7 @@ impl OpenSearchSearchResponseWire {
         write_optional_sort_fields(output, self.sort_fields.as_deref())?;
         output.write_optional_string(self.collapse_field.as_deref());
         write_optional_search_sort_values(output, self.collapse_values.as_deref())?;
-        output.write_bool(false);
+        write_optional_empty_aggregations(output, self.aggregations_empty);
         write_optional_empty_suggest(output, self.suggest_empty);
         output.write_bool(self.timed_out);
         write_optional_bool(output, self.terminated_early);
@@ -26111,7 +26113,7 @@ impl OpenSearchSearchResponseWire {
         let collapse_field = input.read_optional_string()?;
         let collapse_values =
             read_optional_search_sort_values(&mut input, "search response collapse values")?;
-        reject_optional_writeable_present(&mut input, "search response aggregations")?;
+        let aggregations_empty = read_optional_empty_aggregations(&mut input)?;
         let suggest_empty = read_optional_empty_suggest(&mut input)?;
         let timed_out = input.read_bool()?;
         let terminated_early = read_optional_bool(&mut input)?;
@@ -26139,6 +26141,7 @@ impl OpenSearchSearchResponseWire {
             sort_fields,
             collapse_field,
             collapse_values,
+            aggregations_empty,
             suggest_empty,
             timed_out,
             terminated_early,
@@ -26348,6 +26351,29 @@ fn read_processor_result(
     };
     processor_result.validate_supported_subset()?;
     Ok(processor_result)
+}
+
+fn write_optional_empty_aggregations(output: &mut StreamOutput, present: bool) {
+    output.write_bool(present);
+    if present {
+        output.write_vint(0);
+    }
+}
+
+fn read_optional_empty_aggregations(
+    input: &mut StreamInput,
+) -> Result<bool, TransportActionWireError> {
+    if !input.read_bool()? {
+        return Ok(false);
+    }
+    let len = input.read_vint()?;
+    if len != 0 {
+        return Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "search response aggregations",
+            reason: "only empty OpenSearch aggregation containers are decoded by this subset",
+        });
+    }
+    Ok(true)
 }
 
 fn write_optional_empty_suggest(output: &mut StreamOutput, present: bool) {
@@ -35453,19 +35479,6 @@ fn read_search_sort_value(
             reason: "OpenSearch sort value type is not decoded by this subset",
         }),
     }
-}
-
-fn reject_optional_writeable_present(
-    input: &mut StreamInput,
-    shape: &'static str,
-) -> Result<(), TransportActionWireError> {
-    if input.read_bool()? {
-        return Err(TransportActionWireError::UnsupportedWireShape {
-            shape,
-            reason: "only absent OpenSearch optional writeables are decoded by this subset",
-        });
-    }
-    Ok(())
 }
 
 fn reject_empty_list_len(
@@ -59374,6 +59387,7 @@ mod tests {
             sort_fields: None,
             collapse_field: None,
             collapse_values: None,
+            aggregations_empty: true,
             suggest_empty: true,
             timed_out: true,
             terminated_early: Some(false),
@@ -59423,6 +59437,7 @@ mod tests {
         assert_eq!(decoded.total_hits, response.total_hits);
         assert_eq!(decoded.total_hits_relation, response.total_hits_relation);
         assert!(decoded.max_score.is_nan());
+        assert!(decoded.aggregations_empty);
         assert!(decoded.suggest_empty);
         assert_eq!(decoded.timed_out, response.timed_out);
         assert_eq!(decoded.terminated_early, response.terminated_early);
@@ -59721,6 +59736,28 @@ mod tests {
             ),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "search hit inner hits",
+                ..
+            })
+        ));
+
+        let mut non_empty_aggregations = StreamOutput::new();
+        non_empty_aggregations.write_bool(true);
+        non_empty_aggregations.write_vlong(0);
+        non_empty_aggregations.write_vint(0);
+        non_empty_aggregations.write_f32(f32::NAN);
+        non_empty_aggregations.write_vint(0);
+        write_optional_sort_fields(&mut non_empty_aggregations, None).unwrap();
+        non_empty_aggregations.write_optional_string(None);
+        write_optional_search_sort_values(&mut non_empty_aggregations, None).unwrap();
+        non_empty_aggregations.write_bool(true);
+        non_empty_aggregations.write_vint(1);
+        assert!(matches!(
+            OpenSearchSearchResponseWire::read(
+                non_empty_aggregations.freeze(),
+                OPENSEARCH_3_7_0_TRANSPORT
+            ),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search response aggregations",
                 ..
             })
         ));
