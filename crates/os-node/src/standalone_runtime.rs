@@ -20214,9 +20214,11 @@ fn validate_pit_request_body(pit: &Value) -> Option<RestResponse> {
         .get("keep_alive")
         .is_some_and(|keep_alive| !keep_alive.is_string())
     {
-        return Some(build_unsupported_search_response(
-            "unsupported search option [pit]",
-        ));
+        let keep_alive = object.get("keep_alive").expect("keep_alive checked above");
+        return Some(build_x_content_parse_search_response_with_root_cause(&format!(
+            "[1:45] [pit] keep_alive doesn't support values of type: {}",
+            opensearch_xcontent_token_name(keep_alive)
+        )));
     }
     None
 }
@@ -39539,7 +39541,11 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(numeric_pit_keep_alive.status, 400);
         assert_eq!(
             numeric_pit_keep_alive.body["error"]["type"],
-            "illegal_argument_exception"
+            "x_content_parse_exception"
+        );
+        assert_eq!(
+            numeric_pit_keep_alive.body["error"]["root_cause"][0]["reason"],
+            "[1:45] [pit] keep_alive doesn't support values of type: VALUE_NUMBER"
         );
 
         let missing_pit_id_search = node.handle_rest_request(
