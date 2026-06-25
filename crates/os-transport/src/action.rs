@@ -24929,6 +24929,7 @@ fn validate_search_after_values(values: Option<&[Value]>) -> Result<(), Transpor
 #[derive(Clone, Debug, PartialEq)]
 pub enum OpenSearchQueryBuilderWire {
     Bool(OpenSearchBoolQueryBuilderWire),
+    Exists(OpenSearchExistsQueryBuilderWire),
     MatchAll(OpenSearchMatchAllQueryBuilderWire),
     Match(OpenSearchMatchQueryBuilderWire),
     Range(OpenSearchRangeQueryBuilderWire),
@@ -24946,6 +24947,13 @@ pub struct OpenSearchBoolQueryBuilderWire {
     pub filter: Vec<OpenSearchQueryBuilderWire>,
     pub adjust_pure_negative: bool,
     pub minimum_should_match: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct OpenSearchExistsQueryBuilderWire {
+    pub boost: f32,
+    pub query_name: Option<String>,
+    pub field_name: String,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -25057,6 +25065,12 @@ fn write_named_query_builder(output: &mut StreamOutput, query: &OpenSearchQueryB
             output.write_bool(query.adjust_pure_negative);
             output.write_optional_string(query.minimum_should_match.as_deref());
         }
+        OpenSearchQueryBuilderWire::Exists(query) => {
+            output.write_string("exists");
+            output.write_f32(query.boost);
+            output.write_optional_string(query.query_name.as_deref());
+            output.write_string(&query.field_name);
+        }
         OpenSearchQueryBuilderWire::MatchAll(query) => {
             output.write_string("match_all");
             output.write_f32(query.boost);
@@ -25145,6 +25159,13 @@ fn read_named_query_builder(
             adjust_pure_negative: input.read_bool()?,
             minimum_should_match: input.read_optional_string()?,
         })),
+        "exists" => Ok(OpenSearchQueryBuilderWire::Exists(
+            OpenSearchExistsQueryBuilderWire {
+                boost: input.read_f32()?,
+                query_name: input.read_optional_string()?,
+                field_name: input.read_string()?,
+            },
+        )),
         "match_all" => Ok(OpenSearchQueryBuilderWire::MatchAll(OpenSearchMatchAllQueryBuilderWire {
             boost: input.read_f32()?,
             query_name: input.read_optional_string()?,
@@ -25252,7 +25273,7 @@ fn read_named_query_builder(
         }
         _ => Err(TransportActionWireError::UnsupportedWireShape {
             shape: "search request source query",
-            reason: "only OpenSearch bool, match_all, match, range, term, and terms QueryBuilder values are decoded by this subset",
+            reason: "only OpenSearch bool, exists, match_all, match, range, term, and terms QueryBuilder values are decoded by this subset",
         }),
     }
 }
@@ -25298,6 +25319,15 @@ fn validate_query_builder(
             validate_query_builder_list(&query.must_not)?;
             validate_query_builder_list(&query.should)?;
             validate_query_builder_list(&query.filter)?;
+        }
+        OpenSearchQueryBuilderWire::Exists(query) => {
+            validate_query_boost_and_name(query.boost, query.query_name.as_deref())?;
+            if query.field_name.is_empty() {
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "search request source query",
+                    reason: "OpenSearch ExistsQueryBuilder field name must be non-empty",
+                });
+            }
         }
         OpenSearchQueryBuilderWire::MatchAll(query) => {
             if !query.boost.is_finite() || query.boost < 0.0 {
@@ -61737,6 +61767,25 @@ mod tests {
         let decoded = OpenSearchSearchRequestWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, terms_query_request);
 
+        let exists_query_request = OpenSearchSearchRequestWire {
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                query: Some(OpenSearchQueryBuilderWire::Exists(
+                    OpenSearchExistsQueryBuilderWire {
+                        boost: 1.0,
+                        query_name: Some("has-status".to_string()),
+                        field_name: "status".to_string(),
+                    },
+                )),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        let mut output = StreamOutput::new();
+        exists_query_request.write(&mut output);
+
+        let decoded = OpenSearchSearchRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, exists_query_request);
+
         let match_query_request = OpenSearchSearchRequestWire {
             source: Some(OpenSearchSearchSourceBuilderWire {
                 query: Some(OpenSearchQueryBuilderWire::Match(
@@ -62145,6 +62194,27 @@ mod tests {
         };
         assert!(matches!(
             invalid_terms_value.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source query",
+                ..
+            })
+        ));
+
+        let invalid_exists_field = OpenSearchSearchRequestWire {
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                query: Some(OpenSearchQueryBuilderWire::Exists(
+                    OpenSearchExistsQueryBuilderWire {
+                        boost: 1.0,
+                        query_name: None,
+                        field_name: String::new(),
+                    },
+                )),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        assert!(matches!(
+            invalid_exists_field.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "search request source query",
                 ..
