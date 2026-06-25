@@ -25733,6 +25733,55 @@ fn build_search_aggregations(
             );
             continue;
         }
+        if let Some(rare_terms) = aggregation_object.get("rare_terms").and_then(Value::as_object) {
+            let field = rare_terms
+                .get("field")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            let max_doc_count = rare_terms
+                .get("max_doc_count")
+                .and_then(Value::as_u64)
+                .unwrap_or(1);
+            if max_doc_count == 0 || max_doc_count > 100 {
+                return Err(build_unsupported_search_response(
+                    "unsupported aggregation option [rare_terms.max_doc_count]",
+                ));
+            }
+            let mut counts = std::collections::BTreeMap::<String, (Value, u64)>::new();
+            for hit in hits {
+                let Some(key) = hit
+                    .get("_source")
+                    .and_then(|source| lookup_query_field_value(source, field))
+                    .filter(|value| !value.is_null())
+                else {
+                    continue;
+                };
+                let sort_key = aggregation_bucket_sort_key(key);
+                let entry = counts.entry(sort_key).or_insert_with(|| (key.clone(), 0));
+                entry.1 += 1;
+            }
+            let mut buckets = counts
+                .into_iter()
+                .filter_map(|(_, (key, doc_count))| {
+                    (doc_count <= max_doc_count).then_some((key, doc_count))
+                })
+                .collect::<Vec<_>>();
+            buckets.sort_by(|left, right| {
+                left.1
+                    .cmp(&right.1)
+                    .then_with(|| aggregation_bucket_sort_key(&left.0).cmp(&aggregation_bucket_sort_key(&right.0)))
+            });
+            result.insert(
+                name.clone(),
+                serde_json::json!({
+                    "buckets": buckets
+                        .into_iter()
+                        .map(|(key, doc_count)| serde_json::json!({"key": key, "doc_count": doc_count}))
+                        .collect::<Vec<_>>()
+                }),
+            );
+            continue;
+        }
         if let Some((metric_name, metric_body)) = first_supported_metric_aggregation(aggregation_object) {
             let field = metric_body.get("field").and_then(Value::as_str).unwrap_or_default();
             let values: Vec<f64> = hits
@@ -26216,6 +26265,13 @@ fn parse_ip_address_to_u128(value: &str) -> Option<u128> {
     match value.parse::<std::net::IpAddr>().ok()? {
         std::net::IpAddr::V4(ip) => Some(u32::from(ip) as u128),
         std::net::IpAddr::V6(ip) => Some(u128::from(ip)),
+    }
+}
+
+fn aggregation_bucket_sort_key(value: &Value) -> String {
+    match value {
+        Value::String(value) => value.clone(),
+        other => other.to_string(),
     }
 }
 
@@ -42548,6 +42604,31 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             global.body["aggregations"]["all_docs"]["by_service"]["buckets"][1],
             serde_json::json!({ "key": "catalog", "doc_count": 1 })
+        );
+
+        let rare_terms = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-aggs-000001/_search")
+                .with_json_body(serde_json::json!({
+                    "size": 0,
+                    "aggs": {
+                        "rare_services": {
+                            "rare_terms": {
+                                "field": "service",
+                                "max_doc_count": 1
+                            }
+                        }
+                    }
+                })),
+        );
+        assert_eq!(rare_terms.status, 200);
+        assert_eq!(
+            rare_terms.body["aggregations"]["rare_services"]["buckets"],
+            serde_json::json!([
+                {
+                    "key": "catalog",
+                    "doc_count": 1
+                }
+            ])
         );
 
         let date_range = node.handle_rest_request(
