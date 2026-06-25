@@ -10309,6 +10309,12 @@ impl SteelNode {
             Ok(_) => {}
             Err(response) => return response,
         }
+        if let Some(key) = request.query_params.keys().next() {
+            return delete_pit_illegal_argument(format!(
+                "request [{}] contains unrecognized parameter: [{key}]",
+                request.path
+            ));
+        }
         let body = serde_json::from_slice::<Value>(&request.body).unwrap_or(Value::Null);
         let ids = match parse_delete_pit_ids(&body) {
             Ok(ids) => ids,
@@ -40018,6 +40024,22 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             array_empty_close_pit.body["error"]["root_cause"][0]["reason"],
             "invalid id: []"
+        );
+
+        let mut query_param_close_pit =
+            RestRequest::new(RestMethod::Delete, "/_search/point_in_time");
+        query_param_close_pit
+            .query_params
+            .insert("pit_id".to_string(), "QUERY_STRING,QUERY_STRING_1".to_string());
+        let query_param_close_pit = node.handle_rest_request(query_param_close_pit);
+        assert_eq!(query_param_close_pit.status, 400);
+        assert_eq!(
+            query_param_close_pit.body["error"]["type"],
+            "illegal_argument_exception"
+        );
+        assert_eq!(
+            query_param_close_pit.body["error"]["root_cause"][0]["reason"],
+            "request [/_search/point_in_time] contains unrecognized parameter: [pit_id]"
         );
 
         let close_single_pit = node.handle_rest_request(
