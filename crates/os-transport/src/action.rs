@@ -24935,6 +24935,7 @@ pub enum OpenSearchQueryBuilderWire {
     ConstantScore(OpenSearchConstantScoreQueryBuilderWire),
     DisMax(OpenSearchDisMaxQueryBuilderWire),
     Exists(OpenSearchExistsQueryBuilderWire),
+    FunctionScore(OpenSearchFunctionScoreQueryBuilderWire),
     Fuzzy(OpenSearchFuzzyQueryBuilderWire),
     GeoDistance(OpenSearchGeoDistanceQueryBuilderWire),
     Ids(OpenSearchIdsQueryBuilderWire),
@@ -25186,6 +25187,55 @@ pub struct OpenSearchFuzzyQueryBuilderWire {
     pub max_expansions: i32,
     pub transpositions: bool,
     pub rewrite: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct OpenSearchFunctionScoreQueryBuilderWire {
+    pub boost: f32,
+    pub query_name: Option<String>,
+    pub query: Box<OpenSearchQueryBuilderWire>,
+    pub filter_functions: Vec<OpenSearchFilterFunctionBuilderWire>,
+    pub max_boost: f32,
+    pub min_score: Option<f32>,
+    pub boost_mode: Option<OpenSearchCombineFunctionWire>,
+    pub score_mode: OpenSearchFunctionScoreModeWire,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct OpenSearchFilterFunctionBuilderWire {
+    pub filter: Box<OpenSearchQueryBuilderWire>,
+    pub score_function: OpenSearchScoreFunctionBuilderWire,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum OpenSearchScoreFunctionBuilderWire {
+    Weight(OpenSearchWeightScoreFunctionBuilderWire),
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct OpenSearchWeightScoreFunctionBuilderWire {
+    pub weight: Option<f32>,
+    pub function_name: Option<String>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum OpenSearchCombineFunctionWire {
+    Multiply,
+    Replace,
+    Sum,
+    Avg,
+    Min,
+    Max,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum OpenSearchFunctionScoreModeWire {
+    First,
+    Avg,
+    Max,
+    Sum,
+    Min,
+    Multiply,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -25480,6 +25530,17 @@ fn write_named_query_builder(output: &mut StreamOutput, query: &OpenSearchQueryB
             output.write_f32(query.boost);
             output.write_optional_string(query.query_name.as_deref());
             output.write_string(&query.field_name);
+        }
+        OpenSearchQueryBuilderWire::FunctionScore(query) => {
+            output.write_string("function_score");
+            output.write_f32(query.boost);
+            output.write_optional_string(query.query_name.as_deref());
+            write_named_query_builder(output, &query.query);
+            write_filter_function_list(output, &query.filter_functions);
+            output.write_f32(query.max_boost);
+            write_optional_float(output, query.min_score);
+            write_optional_combine_function(output, query.boost_mode);
+            write_function_score_mode(output, query.score_mode);
         }
         OpenSearchQueryBuilderWire::Fuzzy(query) => {
             output.write_string("fuzzy");
@@ -25859,6 +25920,28 @@ fn read_named_query_builder(
                 field_name: input.read_string()?,
             },
         )),
+        "function_score" => {
+            let boost = input.read_f32()?;
+            let query_name = input.read_optional_string()?;
+            let query = Box::new(read_named_query_builder(input)?);
+            let filter_functions = read_filter_function_list(input)?;
+            let max_boost = input.read_f32()?;
+            let min_score = read_optional_float(input)?;
+            let boost_mode = read_optional_combine_function(input)?;
+            let score_mode = read_function_score_mode(input)?;
+            Ok(OpenSearchQueryBuilderWire::FunctionScore(
+                OpenSearchFunctionScoreQueryBuilderWire {
+                    boost,
+                    query_name,
+                    query,
+                    filter_functions,
+                    max_boost,
+                    min_score,
+                    boost_mode,
+                    score_mode,
+                },
+            ))
+        }
         "fuzzy" => Ok(OpenSearchQueryBuilderWire::Fuzzy(
             OpenSearchFuzzyQueryBuilderWire {
                 boost: input.read_f32()?,
@@ -26236,7 +26319,7 @@ fn read_named_query_builder(
         )),
         _ => Err(TransportActionWireError::UnsupportedWireShape {
             shape: "search request source query",
-            reason: "only OpenSearch bool, boosting, common, combined_fields, constant_score, dis_max, exists, fuzzy, geo_distance, ids, match_all, match_none, match, match_bool_prefix, match_phrase, match_phrase_prefix, multi_match, nested, prefix, query_string, range, regexp, script_score, simple_query_string, term, terms, wildcard, and wrapper QueryBuilder values are decoded by this subset",
+            reason: "only OpenSearch bool, boosting, common, combined_fields, constant_score, dis_max, exists, function_score, fuzzy, geo_distance, ids, match_all, match_none, match, match_bool_prefix, match_phrase, match_phrase_prefix, multi_match, nested, prefix, query_string, range, regexp, script_score, simple_query_string, term, terms, wildcard, and wrapper QueryBuilder values are decoded by this subset",
         }),
     }
 }
@@ -26259,11 +26342,92 @@ fn read_query_builder_list(
     Ok(queries)
 }
 
+fn write_filter_function_list(
+    output: &mut StreamOutput,
+    functions: &[OpenSearchFilterFunctionBuilderWire],
+) {
+    output.write_vint(functions.len() as i32);
+    for function in functions {
+        write_named_query_builder(output, &function.filter);
+        write_named_score_function_builder(output, &function.score_function);
+    }
+}
+
+fn read_filter_function_list(
+    input: &mut StreamInput,
+) -> Result<Vec<OpenSearchFilterFunctionBuilderWire>, TransportActionWireError> {
+    let len = read_len(input)?;
+    let mut functions = Vec::with_capacity(len);
+    for _ in 0..len {
+        functions.push(OpenSearchFilterFunctionBuilderWire {
+            filter: Box::new(read_named_query_builder(input)?),
+            score_function: read_named_score_function_builder(input)?,
+        });
+    }
+    Ok(functions)
+}
+
+fn write_named_score_function_builder(
+    output: &mut StreamOutput,
+    function: &OpenSearchScoreFunctionBuilderWire,
+) {
+    match function {
+        OpenSearchScoreFunctionBuilderWire::Weight(function) => {
+            output.write_string("weight");
+            write_optional_float(output, function.weight);
+            output.write_optional_string(function.function_name.as_deref());
+        }
+    }
+}
+
+fn read_named_score_function_builder(
+    input: &mut StreamInput,
+) -> Result<OpenSearchScoreFunctionBuilderWire, TransportActionWireError> {
+    let name = input.read_string()?;
+    match name.as_str() {
+        "weight" => Ok(OpenSearchScoreFunctionBuilderWire::Weight(
+            OpenSearchWeightScoreFunctionBuilderWire {
+                weight: read_optional_float(input)?,
+                function_name: input.read_optional_string()?,
+            },
+        )),
+        _ => Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "search request source query function_score score function",
+            reason: "only OpenSearch weight score functions are decoded by this subset",
+        }),
+    }
+}
+
 fn validate_query_builder_list(
     queries: &[OpenSearchQueryBuilderWire],
 ) -> Result<(), TransportActionWireError> {
     for query in queries {
         validate_query_builder(Some(query))?;
+    }
+    Ok(())
+}
+
+fn validate_score_function_builder(
+    function: &OpenSearchScoreFunctionBuilderWire,
+) -> Result<(), TransportActionWireError> {
+    match function {
+        OpenSearchScoreFunctionBuilderWire::Weight(function) => {
+            if function
+                .weight
+                .is_some_and(|weight| !weight.is_finite() || weight <= 0.0)
+            {
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "search request source query function_score score function",
+                    reason: "OpenSearch weight score function weight must be finite and positive in this execution subset",
+                });
+            }
+            if function.function_name.as_deref().is_some_and(str::is_empty) {
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "search request source query function_score score function",
+                    reason: "OpenSearch score function name must be non-empty when present",
+                });
+            }
+        }
     }
     Ok(())
 }
@@ -26368,6 +26532,54 @@ fn validate_query_builder(
                     shape: "search request source query",
                     reason: "OpenSearch ExistsQueryBuilder field name must be non-empty",
                 });
+            }
+        }
+        OpenSearchQueryBuilderWire::FunctionScore(query) => {
+            validate_query_boost_and_name(query.boost, query.query_name.as_deref())?;
+            validate_query_builder(Some(query.query.as_ref()))?;
+            if !query.max_boost.is_finite() || query.max_boost < 0.0 {
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "search request source query",
+                    reason: "OpenSearch FunctionScoreQueryBuilder max_boost must be finite and non-negative",
+                });
+            }
+            if query.min_score.is_some_and(|min_score| !min_score.is_finite() || min_score < 0.0)
+            {
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "search request source query",
+                    reason: "OpenSearch FunctionScoreQueryBuilder min_score must be finite and non-negative when present",
+                });
+            }
+            if !matches!(
+                query.boost_mode,
+                None | Some(OpenSearchCombineFunctionWire::Multiply)
+                    | Some(OpenSearchCombineFunctionWire::Replace)
+            ) {
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "search request source query",
+                    reason: "OpenSearch FunctionScoreQueryBuilder boost_mode must be multiply or replace in this execution subset",
+                });
+            }
+            if query.score_mode != OpenSearchFunctionScoreModeWire::Multiply {
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "search request source query",
+                    reason: "OpenSearch FunctionScoreQueryBuilder score_mode must be multiply in this execution subset",
+                });
+            }
+            if query.filter_functions.len() > 1 {
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "search request source query function_score functions",
+                    reason: "only a single top-level weight function is supported by this execution subset",
+                });
+            }
+            for function in &query.filter_functions {
+                if !matches!(function.filter.as_ref(), OpenSearchQueryBuilderWire::MatchAll(_)) {
+                    return Err(TransportActionWireError::UnsupportedWireShape {
+                        shape: "search request source query function_score filter",
+                        reason: "only match_all function filters are supported by this execution subset",
+                    });
+                }
+                validate_score_function_builder(&function.score_function)?;
             }
         }
         OpenSearchQueryBuilderWire::Fuzzy(query) => {
@@ -27011,6 +27223,84 @@ fn read_nested_score_mode(
         _ => Err(TransportActionWireError::UnsupportedWireShape {
             shape: "search request source query",
             reason: "OpenSearch NestedQueryBuilder score mode ordinal is unknown",
+        }),
+    }
+}
+
+fn write_optional_combine_function(
+    output: &mut StreamOutput,
+    function: Option<OpenSearchCombineFunctionWire>,
+) {
+    if let Some(function) = function {
+        output.write_bool(true);
+        write_combine_function(output, function);
+    } else {
+        output.write_bool(false);
+    }
+}
+
+fn read_optional_combine_function(
+    input: &mut StreamInput,
+) -> Result<Option<OpenSearchCombineFunctionWire>, TransportActionWireError> {
+    if input.read_bool()? {
+        read_combine_function(input).map(Some)
+    } else {
+        Ok(None)
+    }
+}
+
+fn write_combine_function(output: &mut StreamOutput, function: OpenSearchCombineFunctionWire) {
+    output.write_vint(match function {
+        OpenSearchCombineFunctionWire::Multiply => 0,
+        OpenSearchCombineFunctionWire::Replace => 1,
+        OpenSearchCombineFunctionWire::Sum => 2,
+        OpenSearchCombineFunctionWire::Avg => 3,
+        OpenSearchCombineFunctionWire::Min => 4,
+        OpenSearchCombineFunctionWire::Max => 5,
+    });
+}
+
+fn read_combine_function(
+    input: &mut StreamInput,
+) -> Result<OpenSearchCombineFunctionWire, TransportActionWireError> {
+    match input.read_vint()? {
+        0 => Ok(OpenSearchCombineFunctionWire::Multiply),
+        1 => Ok(OpenSearchCombineFunctionWire::Replace),
+        2 => Ok(OpenSearchCombineFunctionWire::Sum),
+        3 => Ok(OpenSearchCombineFunctionWire::Avg),
+        4 => Ok(OpenSearchCombineFunctionWire::Min),
+        5 => Ok(OpenSearchCombineFunctionWire::Max),
+        _ => Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "search request source query",
+            reason: "OpenSearch CombineFunction ordinal is unknown",
+        }),
+    }
+}
+
+fn write_function_score_mode(output: &mut StreamOutput, mode: OpenSearchFunctionScoreModeWire) {
+    output.write_vint(match mode {
+        OpenSearchFunctionScoreModeWire::First => 0,
+        OpenSearchFunctionScoreModeWire::Avg => 1,
+        OpenSearchFunctionScoreModeWire::Max => 2,
+        OpenSearchFunctionScoreModeWire::Sum => 3,
+        OpenSearchFunctionScoreModeWire::Min => 4,
+        OpenSearchFunctionScoreModeWire::Multiply => 5,
+    });
+}
+
+fn read_function_score_mode(
+    input: &mut StreamInput,
+) -> Result<OpenSearchFunctionScoreModeWire, TransportActionWireError> {
+    match input.read_vint()? {
+        0 => Ok(OpenSearchFunctionScoreModeWire::First),
+        1 => Ok(OpenSearchFunctionScoreModeWire::Avg),
+        2 => Ok(OpenSearchFunctionScoreModeWire::Max),
+        3 => Ok(OpenSearchFunctionScoreModeWire::Sum),
+        4 => Ok(OpenSearchFunctionScoreModeWire::Min),
+        5 => Ok(OpenSearchFunctionScoreModeWire::Multiply),
+        _ => Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "search request source query",
+            reason: "OpenSearch FunctionScoreQuery score mode ordinal is unknown",
         }),
     }
 }
@@ -63843,6 +64133,51 @@ mod tests {
         let decoded = OpenSearchSearchRequestWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, script_score_query_request);
 
+        let function_score_query_request = OpenSearchSearchRequestWire {
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                query: Some(OpenSearchQueryBuilderWire::FunctionScore(
+                    OpenSearchFunctionScoreQueryBuilderWire {
+                        boost: 1.0,
+                        query_name: Some("weighted-status".to_string()),
+                        query: Box::new(OpenSearchQueryBuilderWire::Term(
+                            OpenSearchTermQueryBuilderWire {
+                                boost: 1.0,
+                                query_name: None,
+                                field_name: "status".to_string(),
+                                value: json!("ok"),
+                                case_insensitive: false,
+                            },
+                        )),
+                        filter_functions: vec![OpenSearchFilterFunctionBuilderWire {
+                            filter: Box::new(OpenSearchQueryBuilderWire::MatchAll(
+                                OpenSearchMatchAllQueryBuilderWire {
+                                    boost: 1.0,
+                                    query_name: None,
+                                },
+                            )),
+                            score_function: OpenSearchScoreFunctionBuilderWire::Weight(
+                                OpenSearchWeightScoreFunctionBuilderWire {
+                                    weight: Some(2.0),
+                                    function_name: None,
+                                },
+                            ),
+                        }],
+                        max_boost: f32::MAX,
+                        min_score: None,
+                        boost_mode: Some(OpenSearchCombineFunctionWire::Replace),
+                        score_mode: OpenSearchFunctionScoreModeWire::Multiply,
+                    },
+                )),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        let mut output = StreamOutput::new();
+        function_score_query_request.write(&mut output);
+
+        let decoded = OpenSearchSearchRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, function_score_query_request);
+
         let prefix_query_request = OpenSearchSearchRequestWire {
             source: Some(OpenSearchSearchSourceBuilderWire {
                 query: Some(OpenSearchQueryBuilderWire::Prefix(
@@ -65352,6 +65687,50 @@ mod tests {
             })
         ));
 
+        let invalid_function_score_weight = OpenSearchSearchRequestWire {
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                query: Some(OpenSearchQueryBuilderWire::FunctionScore(
+                    OpenSearchFunctionScoreQueryBuilderWire {
+                        boost: 1.0,
+                        query_name: None,
+                        query: Box::new(OpenSearchQueryBuilderWire::MatchAll(
+                            OpenSearchMatchAllQueryBuilderWire {
+                                boost: 1.0,
+                                query_name: None,
+                            },
+                        )),
+                        filter_functions: vec![OpenSearchFilterFunctionBuilderWire {
+                            filter: Box::new(OpenSearchQueryBuilderWire::MatchAll(
+                                OpenSearchMatchAllQueryBuilderWire {
+                                    boost: 1.0,
+                                    query_name: None,
+                                },
+                            )),
+                            score_function: OpenSearchScoreFunctionBuilderWire::Weight(
+                                OpenSearchWeightScoreFunctionBuilderWire {
+                                    weight: Some(0.0),
+                                    function_name: None,
+                                },
+                            ),
+                        }],
+                        max_boost: f32::MAX,
+                        min_score: None,
+                        boost_mode: Some(OpenSearchCombineFunctionWire::Multiply),
+                        score_mode: OpenSearchFunctionScoreModeWire::Multiply,
+                    },
+                )),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        assert!(matches!(
+            invalid_function_score_weight.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source query function_score score function",
+                ..
+            })
+        ));
+
         let mut multi_match_with_unknown_type = StreamOutput::new();
         multi_match_with_unknown_type.write_bool(true);
         multi_match_with_unknown_type.write_string("multi_match");
@@ -65491,6 +65870,37 @@ mod tests {
             )),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "search request source query script_score script",
+                ..
+            })
+        ));
+
+        let mut function_score_with_unknown_score_function = StreamOutput::new();
+        function_score_with_unknown_score_function.write_bool(true);
+        function_score_with_unknown_score_function.write_string("function_score");
+        function_score_with_unknown_score_function.write_f32(1.0);
+        function_score_with_unknown_score_function.write_optional_string(None);
+        write_named_query_builder(
+            &mut function_score_with_unknown_score_function,
+            &OpenSearchQueryBuilderWire::MatchAll(OpenSearchMatchAllQueryBuilderWire {
+                boost: 1.0,
+                query_name: None,
+            }),
+        );
+        function_score_with_unknown_score_function.write_vint(1);
+        write_named_query_builder(
+            &mut function_score_with_unknown_score_function,
+            &OpenSearchQueryBuilderWire::MatchAll(OpenSearchMatchAllQueryBuilderWire {
+                boost: 1.0,
+                query_name: None,
+            }),
+        );
+        function_score_with_unknown_score_function.write_string("random_score");
+        assert!(matches!(
+            read_optional_query_builder(&mut StreamInput::new(
+                function_score_with_unknown_score_function.freeze()
+            )),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source query function_score score function",
                 ..
             })
         ));
