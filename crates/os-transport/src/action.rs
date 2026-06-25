@@ -24933,6 +24933,7 @@ pub enum OpenSearchQueryBuilderWire {
     Match(OpenSearchMatchQueryBuilderWire),
     Range(OpenSearchRangeQueryBuilderWire),
     Term(OpenSearchTermQueryBuilderWire),
+    Terms(OpenSearchTermsQueryBuilderWire),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -24960,6 +24961,14 @@ pub struct OpenSearchTermQueryBuilderWire {
     pub field_name: String,
     pub value: Value,
     pub case_insensitive: bool,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct OpenSearchTermsQueryBuilderWire {
+    pub boost: f32,
+    pub query_name: Option<String>,
+    pub field_name: String,
+    pub values: Vec<Value>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -25097,6 +25106,16 @@ fn write_named_query_builder(output: &mut StreamOutput, query: &OpenSearchQueryB
                 .expect("validated term query value must encode as an OpenSearch generic scalar");
             output.write_bool(query.case_insensitive);
         }
+        OpenSearchQueryBuilderWire::Terms(query) => {
+            output.write_string("terms");
+            output.write_f32(query.boost);
+            output.write_optional_string(query.query_name.as_deref());
+            output.write_string(&query.field_name);
+            output.write_bool(false); // terms lookup
+            write_terms_query_values(output, &query.values)
+                .expect("validated terms query values must encode as OpenSearch generic scalars");
+            output.write_vint(0); // ValueType.DEFAULT
+        }
     }
 }
 
@@ -25205,9 +25224,35 @@ fn read_named_query_builder(
             value: read_term_query_value(input)?,
             case_insensitive: input.read_bool()?,
         })),
+        "terms" => {
+            let boost = input.read_f32()?;
+            let query_name = input.read_optional_string()?;
+            let field_name = input.read_string()?;
+            if input.read_bool()? {
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "search request source query terms lookup",
+                    reason: "OpenSearch TermsQueryBuilder terms lookup requires document lookup execution semantics",
+                });
+            }
+            let values = read_terms_query_values(input)?;
+            match input.read_vint()? {
+                0 => Ok(OpenSearchQueryBuilderWire::Terms(
+                    OpenSearchTermsQueryBuilderWire {
+                        boost,
+                        query_name,
+                        field_name,
+                        values,
+                    },
+                )),
+                _ => Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "search request source query terms value type",
+                    reason: "only OpenSearch TermsQueryBuilder DEFAULT value_type is decoded by this subset",
+                }),
+            }
+        }
         _ => Err(TransportActionWireError::UnsupportedWireShape {
             shape: "search request source query",
-            reason: "only OpenSearch bool, match_all, match, range, and term QueryBuilder values are decoded by this subset",
+            reason: "only OpenSearch bool, match_all, match, range, term, and terms QueryBuilder values are decoded by this subset",
         }),
     }
 }
@@ -25323,6 +25368,18 @@ fn validate_query_builder(
                 });
             }
             validate_term_query_value(&query.value)?;
+        }
+        OpenSearchQueryBuilderWire::Terms(query) => {
+            validate_query_boost_and_name(query.boost, query.query_name.as_deref())?;
+            if query.field_name.is_empty() {
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "search request source query",
+                    reason: "OpenSearch TermsQueryBuilder field name must be non-empty",
+                });
+            }
+            for value in &query.values {
+                validate_terms_query_value(value)?;
+            }
         }
     }
     Ok(())
@@ -25501,6 +25558,59 @@ fn read_term_query_value(input: &mut StreamInput) -> Result<Value, TransportActi
         });
     }
     Ok(value)
+}
+
+fn validate_terms_query_value(value: &Value) -> Result<(), TransportActionWireError> {
+    match value {
+        Value::String(_) | Value::Bool(_) | Value::Number(_) => Ok(()),
+        Value::Null => Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "search request source query",
+            reason: "OpenSearch TermsQueryBuilder values cannot contain null",
+        }),
+        Value::Array(_) | Value::Object(_) => Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "search request source query",
+            reason: "OpenSearch TermsQueryBuilder values must be scalar",
+        }),
+    }
+}
+
+fn write_terms_query_values(
+    output: &mut StreamOutput,
+    values: &[Value],
+) -> Result<(), TransportActionWireError> {
+    output.write_byte(7);
+    output.write_vint(values.len() as i32);
+    for value in values {
+        validate_terms_query_value(value)?;
+        write_term_query_value(output, value)?;
+    }
+    Ok(())
+}
+
+fn read_terms_query_values(input: &mut StreamInput) -> Result<Vec<Value>, TransportActionWireError> {
+    match input.read_byte()? {
+        7 | 8 => {
+            let len = read_len(input)?;
+            let mut values = Vec::with_capacity(len);
+            for _ in 0..len {
+                let value = read_scalar_or_null_query_value(
+                    input,
+                    "OpenSearch TermsQueryBuilder values must be scalar in this subset",
+                )?;
+                validate_terms_query_value(&value)?;
+                values.push(value);
+            }
+            Ok(values)
+        }
+        255 => Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "search request source query",
+            reason: "OpenSearch TermsQueryBuilder direct values cannot be null",
+        }),
+        _ => Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "search request source query",
+            reason: "OpenSearch TermsQueryBuilder values must be an array in this subset",
+        }),
+    }
 }
 
 fn read_scalar_or_null_query_value(
@@ -61602,6 +61712,31 @@ mod tests {
         let decoded = OpenSearchSearchRequestWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, term_query_request);
 
+        let terms_query_request = OpenSearchSearchRequestWire {
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                query: Some(OpenSearchQueryBuilderWire::Terms(
+                    OpenSearchTermsQueryBuilderWire {
+                        boost: 1.0,
+                        query_name: Some("tenant-set".to_string()),
+                        field_name: "tenant".to_string(),
+                        values: vec![
+                            json!("tenant-a"),
+                            json!("tenant-b"),
+                            json!(42),
+                            json!(true),
+                        ],
+                    },
+                )),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        let mut output = StreamOutput::new();
+        terms_query_request.write(&mut output);
+
+        let decoded = OpenSearchSearchRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, terms_query_request);
+
         let match_query_request = OpenSearchSearchRequestWire {
             source: Some(OpenSearchSearchSourceBuilderWire {
                 query: Some(OpenSearchQueryBuilderWire::Match(
@@ -61968,6 +62103,82 @@ mod tests {
             invalid_term_value.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "search request source query",
+                ..
+            })
+        ));
+
+        let invalid_terms_field = OpenSearchSearchRequestWire {
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                query: Some(OpenSearchQueryBuilderWire::Terms(
+                    OpenSearchTermsQueryBuilderWire {
+                        boost: 1.0,
+                        query_name: None,
+                        field_name: String::new(),
+                        values: vec![json!("tenant-a")],
+                    },
+                )),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        assert!(matches!(
+            invalid_terms_field.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source query",
+                ..
+            })
+        ));
+
+        let invalid_terms_value = OpenSearchSearchRequestWire {
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                query: Some(OpenSearchQueryBuilderWire::Terms(
+                    OpenSearchTermsQueryBuilderWire {
+                        boost: 1.0,
+                        query_name: None,
+                        field_name: "tenant".to_string(),
+                        values: vec![json!("tenant-a"), Value::Null],
+                    },
+                )),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        assert!(matches!(
+            invalid_terms_value.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source query",
+                ..
+            })
+        ));
+
+        let mut terms_with_lookup = StreamOutput::new();
+        terms_with_lookup.write_bool(true);
+        terms_with_lookup.write_string("terms");
+        terms_with_lookup.write_f32(1.0);
+        terms_with_lookup.write_optional_string(None);
+        terms_with_lookup.write_string("tenant");
+        terms_with_lookup.write_bool(true);
+        assert!(matches!(
+            read_optional_query_builder(&mut StreamInput::new(terms_with_lookup.freeze())),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source query terms lookup",
+                ..
+            })
+        ));
+
+        let mut terms_with_bitmap_type = StreamOutput::new();
+        terms_with_bitmap_type.write_bool(true);
+        terms_with_bitmap_type.write_string("terms");
+        terms_with_bitmap_type.write_f32(1.0);
+        terms_with_bitmap_type.write_optional_string(None);
+        terms_with_bitmap_type.write_string("tenant");
+        terms_with_bitmap_type.write_bool(false);
+        write_terms_query_values(&mut terms_with_bitmap_type, &[json!("tenant-a")]).unwrap();
+        terms_with_bitmap_type.write_vint(1);
+        assert!(matches!(
+            read_optional_query_builder(&mut StreamInput::new(terms_with_bitmap_type.freeze())),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source query terms value type",
                 ..
             })
         ));
