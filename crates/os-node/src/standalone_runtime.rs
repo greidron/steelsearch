@@ -20753,13 +20753,9 @@ fn pit_search_uses_explicit_indices(index: &str, request: &RestRequest) -> bool 
 }
 
 fn pit_search_uses_non_default_indices_options(query_params: &BTreeMap<String, String>) -> bool {
-    query_param_is_true(query_params.get("ignore_unavailable"))
-        || query_params
-            .get("allow_no_indices")
-            .is_some_and(|value| value == "false" || value == "0")
-        || query_params
-            .get("expand_wildcards")
-            .is_some_and(|value| value != "open")
+    query_params.contains_key("ignore_unavailable")
+        || query_params.contains_key("allow_no_indices")
+        || query_params.contains_key("expand_wildcards")
         || query_params.contains_key("ignore_throttled")
 }
 
@@ -40636,7 +40632,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             "Failed to parse value [maybe] as only [true] or [false] are allowed."
         );
 
-        let default_indices_options_pit_search = node.handle_rest_request(
+        let explicit_default_indices_options_pit_search = node.handle_rest_request(
             RestRequest::new(
                 RestMethod::Post,
                 "/_search?ignore_unavailable=false&allow_no_indices=true&expand_wildcards=open",
@@ -40649,11 +40645,15 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 "query": { "match_all": {} }
             })),
         );
-        assert_eq!(default_indices_options_pit_search.status, 200);
+        assert_eq!(explicit_default_indices_options_pit_search.status, 400);
         assert_eq!(
-            default_indices_options_pit_search.body["hits"]["total"]["value"],
-            2
+            explicit_default_indices_options_pit_search.body["error"]["type"],
+            "action_request_validation_exception"
         );
+        assert!(explicit_default_indices_options_pit_search.body["error"]["reason"]
+            .as_str()
+            .unwrap()
+            .contains("[indicesOptions] cannot be used with point in time"));
 
         let order_sensitive_default_wildcards_pit_search = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/_search?expand_wildcards=none,open")
@@ -43847,6 +43847,26 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(metadata_camel_indices_msearch.body["responses"][0]["status"], 400);
         assert!(
             metadata_camel_indices_msearch.body["responses"][0]["error"]["reason"]
+                .as_str()
+                .unwrap()
+                .contains("[indicesOptions] cannot be used with point in time")
+        );
+
+        let metadata_default_indices_pit_body = format!(
+            "{{\"ignore_unavailable\":false,\"allow_no_indices\":true,\"expand_wildcards\":\"open\"}}\n{{\"pit\":{{\"id\":\"{pit_id}\",\"keep_alive\":\"1m\"}},\"query\":{{\"match_all\":{{}}}}}}\n"
+        );
+        let metadata_default_indices_msearch = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_msearch")
+                .with_header("content-type", "application/x-ndjson")
+                .with_body(metadata_default_indices_pit_body.into_bytes()),
+        );
+        assert_eq!(metadata_default_indices_msearch.status, 200);
+        assert_eq!(
+            metadata_default_indices_msearch.body["responses"][0]["status"],
+            400
+        );
+        assert!(
+            metadata_default_indices_msearch.body["responses"][0]["error"]["reason"]
                 .as_str()
                 .unwrap()
                 .contains("[indicesOptions] cannot be used with point in time")

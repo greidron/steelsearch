@@ -3568,6 +3568,40 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "pit_search_rejects_explicit_default_indices_options",
+      "area": "search",
+      "extract": "search_error",
+      "steps": [
+        {
+          "name": "pit-open",
+          "method": "POST",
+          "path": "/logs-compat/_search/point_in_time?keep_alive=1m",
+          "body": null,
+          "expected_status": 200,
+          "extract": "pit_open"
+        },
+        {
+          "name": "pit-search-with-default-indices-options",
+          "method": "POST",
+          "path": "/_search?ignore_unavailable=false&allow_no_indices=true&expand_wildcards=open",
+          "body": {
+            "pit": {
+              "id": "${last.id}",
+              "keep_alive": "1m"
+            },
+            "query": {
+              "match_all": {}
+            }
+          },
+          "expected_status": 400,
+          "extract": "search_error"
+        }
+      ],
+      "family": "lexical",
+      "description": "[lexical] pit search rejects explicitly provided default indices options",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "pit_unknown_field_error_search",
       "area": "search",
       "method": "POST",
