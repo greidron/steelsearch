@@ -20578,12 +20578,17 @@ fn parse_pit_ids_with_messages(
     let ids = if let Some(id_array) = pit_id.as_array() {
         let mut ids = Vec::new();
         for id in id_array {
+            if id.is_number() {
+                return Err(delete_pit_invalid_id_response(&id.to_string()));
+            }
             let Some(id) = pit_id_value_as_text(id) else {
                 return Err(delete_pit_illegal_argument(array_error));
             };
             ids.push(id);
         }
         ids
+    } else if pit_id.is_number() {
+        return Err(delete_pit_invalid_id_response(&pit_id.to_string()));
     } else if let Some(id) = pit_id_value_as_text(pit_id) {
         vec![id]
     } else {
@@ -20630,6 +20635,30 @@ fn delete_pit_illegal_argument(reason: impl Into<String>) -> RestResponse {
                         "reason": reason
                     }
                 ]
+            },
+            "status": 400
+        }),
+    )
+}
+
+fn delete_pit_invalid_id_response(id: &str) -> RestResponse {
+    let reason = format!("invalid id: [{id}]");
+    RestResponse::json(
+        400,
+        serde_json::json!({
+            "error": {
+                "type": "illegal_argument_exception",
+                "reason": reason,
+                "root_cause": [
+                    {
+                        "type": "illegal_argument_exception",
+                        "reason": reason
+                    }
+                ],
+                "caused_by": {
+                    "type": "illegal_argument_exception",
+                    "reason": "Input byte[] should at least have 2 bytes for base64 bytes"
+                }
             },
             "status": 400
         }),
@@ -39889,8 +39918,12 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             RestRequest::new(RestMethod::Delete, "/_search/point_in_time")
                 .with_json_body(serde_json::json!({ "pit_id": 7 })),
         );
-        assert_eq!(numeric_close_pit.status, 200);
-        assert_eq!(numeric_close_pit.body["pits"][0]["pit_id"], "7");
+        assert_eq!(numeric_close_pit.status, 400);
+        assert_eq!(numeric_close_pit.body["error"]["type"], "illegal_argument_exception");
+        assert_eq!(
+            numeric_close_pit.body["error"]["root_cause"][0]["reason"],
+            "invalid id: [7]"
+        );
 
         let close_single_pit = node.handle_rest_request(
             RestRequest::new(RestMethod::Delete, "/_search/point_in_time")
