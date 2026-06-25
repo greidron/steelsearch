@@ -24950,6 +24950,7 @@ pub enum OpenSearchQueryBuilderWire {
     QueryString(OpenSearchQueryStringQueryBuilderWire),
     Range(OpenSearchRangeQueryBuilderWire),
     Regexp(OpenSearchRegexpQueryBuilderWire),
+    ScriptScore(OpenSearchScriptScoreQueryBuilderWire),
     SimpleQueryString(OpenSearchSimpleQueryStringQueryBuilderWire),
     Term(OpenSearchTermQueryBuilderWire),
     Terms(OpenSearchTermsQueryBuilderWire),
@@ -25099,6 +25100,15 @@ pub struct OpenSearchSimpleQueryStringQueryBuilderWire {
     pub fuzzy_prefix_length: i32,
     pub fuzzy_max_expansions: i32,
     pub fuzzy_transpositions: bool,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct OpenSearchScriptScoreQueryBuilderWire {
+    pub boost: f32,
+    pub query_name: Option<String>,
+    pub query: Box<OpenSearchQueryBuilderWire>,
+    pub script: OpenSearchInlineScriptWire,
+    pub min_score: Option<f32>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -25680,6 +25690,19 @@ fn write_named_query_builder(output: &mut StreamOutput, query: &OpenSearchQueryB
             output.write_optional_string(query.rewrite.as_deref());
             output.write_bool(query.case_insensitive);
         }
+        OpenSearchQueryBuilderWire::ScriptScore(query) => {
+            output.write_string("script_score");
+            output.write_f32(query.boost);
+            output.write_optional_string(query.query_name.as_deref());
+            write_named_query_builder(output, &query.query);
+            write_inline_script(
+                output,
+                &query.script,
+                "search request source query script_score script",
+            )
+            .expect("validated script_score inline script must encode as an OpenSearch Script");
+            write_optional_float(output, query.min_score);
+        }
         OpenSearchQueryBuilderWire::SimpleQueryString(query) => {
             output.write_string("simple_query_string");
             output.write_f32(query.boost);
@@ -26111,6 +26134,23 @@ fn read_named_query_builder(
                 case_insensitive: input.read_bool()?,
             },
         )),
+        "script_score" => {
+            let boost = input.read_f32()?;
+            let query_name = input.read_optional_string()?;
+            let query = Box::new(read_named_query_builder(input)?);
+            let script =
+                read_inline_script(input, "search request source query script_score script")?;
+            let min_score = read_optional_float(input)?;
+            Ok(OpenSearchQueryBuilderWire::ScriptScore(
+                OpenSearchScriptScoreQueryBuilderWire {
+                    boost,
+                    query_name,
+                    query,
+                    script,
+                    min_score,
+                },
+            ))
+        }
         "simple_query_string" => {
             let boost = input.read_f32()?;
             let query_name = input.read_optional_string()?;
@@ -26196,7 +26236,7 @@ fn read_named_query_builder(
         )),
         _ => Err(TransportActionWireError::UnsupportedWireShape {
             shape: "search request source query",
-            reason: "only OpenSearch bool, boosting, common, combined_fields, constant_score, dis_max, exists, fuzzy, geo_distance, ids, match_all, match_none, match, match_bool_prefix, match_phrase, match_phrase_prefix, multi_match, nested, prefix, query_string, range, regexp, simple_query_string, term, terms, wildcard, and wrapper QueryBuilder values are decoded by this subset",
+            reason: "only OpenSearch bool, boosting, common, combined_fields, constant_score, dis_max, exists, fuzzy, geo_distance, ids, match_all, match_none, match, match_bool_prefix, match_phrase, match_phrase_prefix, multi_match, nested, prefix, query_string, range, regexp, script_score, simple_query_string, term, terms, wildcard, and wrapper QueryBuilder values are decoded by this subset",
         }),
     }
 }
@@ -26693,6 +26733,27 @@ fn validate_query_builder(
                 });
             }
             validate_optional_non_empty_query_string(query.rewrite.as_deref())?;
+        }
+        OpenSearchQueryBuilderWire::ScriptScore(query) => {
+            validate_query_boost_and_name(query.boost, query.query_name.as_deref())?;
+            validate_query_builder(Some(query.query.as_ref()))?;
+            validate_inline_script(
+                &query.script,
+                "search request source query script_score script",
+            )?;
+            if query.script.source.parse::<f64>().ok().filter(|score| *score > 0.0).is_none() {
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "search request source query script_score script",
+                    reason: "OpenSearch ScriptScoreQueryBuilder script source must be a positive numeric string in this execution subset",
+                });
+            }
+            if query.min_score.is_some_and(|min_score| !min_score.is_finite() || min_score < 0.0)
+            {
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "search request source query",
+                    reason: "OpenSearch ScriptScoreQueryBuilder min_score must be finite and non-negative when present",
+                });
+            }
         }
         OpenSearchQueryBuilderWire::SimpleQueryString(query) => {
             validate_query_boost_and_name(query.boost, query.query_name.as_deref())?;
@@ -28265,18 +28326,26 @@ fn validate_inline_script(
 }
 
 fn inline_script_options_shape(shape: &'static str) -> &'static str {
-    if shape == "search request source script fields script" {
-        "search request source script fields script options"
-    } else {
-        "search request source derived fields script options"
+    match shape {
+        "search request source script fields script" => {
+            "search request source script fields script options"
+        }
+        "search request source query script_score script" => {
+            "search request source query script_score script options"
+        }
+        _ => "search request source derived fields script options",
     }
 }
 
 fn inline_script_params_shape(shape: &'static str) -> &'static str {
-    if shape == "search request source script fields script" {
-        "search request source script fields script params"
-    } else {
-        "search request source derived fields script params"
+    match shape {
+        "search request source script fields script" => {
+            "search request source script fields script params"
+        }
+        "search request source query script_score script" => {
+            "search request source query script_score script params"
+        }
+        _ => "search request source derived fields script params",
     }
 }
 
@@ -63743,6 +63812,37 @@ mod tests {
         let decoded = OpenSearchSearchRequestWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, geo_distance_query_request);
 
+        let script_score_query_request = OpenSearchSearchRequestWire {
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                query: Some(OpenSearchQueryBuilderWire::ScriptScore(
+                    OpenSearchScriptScoreQueryBuilderWire {
+                        boost: 1.0,
+                        query_name: Some("score-literal".to_string()),
+                        query: Box::new(OpenSearchQueryBuilderWire::MatchAll(
+                            OpenSearchMatchAllQueryBuilderWire {
+                                boost: 1.0,
+                                query_name: None,
+                            },
+                        )),
+                        script: OpenSearchInlineScriptWire {
+                            lang: Some("painless".to_string()),
+                            source: "2.5".to_string(),
+                            options: json!({}),
+                            params: json!({}),
+                        },
+                        min_score: Some(1.0),
+                    },
+                )),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        let mut output = StreamOutput::new();
+        script_score_query_request.write(&mut output);
+
+        let decoded = OpenSearchSearchRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, script_score_query_request);
+
         let prefix_query_request = OpenSearchSearchRequestWire {
             source: Some(OpenSearchSearchSourceBuilderWire {
                 query: Some(OpenSearchQueryBuilderWire::Prefix(
@@ -65219,6 +65319,39 @@ mod tests {
             })
         ));
 
+        let invalid_script_score = OpenSearchSearchRequestWire {
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                query: Some(OpenSearchQueryBuilderWire::ScriptScore(
+                    OpenSearchScriptScoreQueryBuilderWire {
+                        boost: 1.0,
+                        query_name: None,
+                        query: Box::new(OpenSearchQueryBuilderWire::MatchAll(
+                            OpenSearchMatchAllQueryBuilderWire {
+                                boost: 1.0,
+                                query_name: None,
+                            },
+                        )),
+                        script: OpenSearchInlineScriptWire {
+                            lang: Some("painless".to_string()),
+                            source: "not-a-number".to_string(),
+                            options: json!({}),
+                            params: json!({}),
+                        },
+                        min_score: None,
+                    },
+                )),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        assert!(matches!(
+            invalid_script_score.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source query script_score script",
+                ..
+            })
+        ));
+
         let mut multi_match_with_unknown_type = StreamOutput::new();
         multi_match_with_unknown_type.write_bool(true);
         multi_match_with_unknown_type.write_string("multi_match");
@@ -65335,6 +65468,29 @@ mod tests {
             )),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "search request source query",
+                ..
+            })
+        ));
+
+        let mut script_score_with_stored_script = StreamOutput::new();
+        script_score_with_stored_script.write_bool(true);
+        script_score_with_stored_script.write_string("script_score");
+        script_score_with_stored_script.write_f32(1.0);
+        script_score_with_stored_script.write_optional_string(None);
+        write_named_query_builder(
+            &mut script_score_with_stored_script,
+            &OpenSearchQueryBuilderWire::MatchAll(OpenSearchMatchAllQueryBuilderWire {
+                boost: 1.0,
+                query_name: None,
+            }),
+        );
+        script_score_with_stored_script.write_vint(1);
+        assert!(matches!(
+            read_optional_query_builder(&mut StreamInput::new(
+                script_score_with_stored_script.freeze()
+            )),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source query script_score script",
                 ..
             })
         ));
