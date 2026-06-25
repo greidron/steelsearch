@@ -1676,7 +1676,7 @@ fn handle_transport_seed_connection<S: TransportConnection>(
         )?;
     } else if is_request
         && normalized_action_hint == Some("indices:data/read/point_in_time/readall")
-        && get_all_pits_request_supports_local_lifecycle_subset(&body)
+        && get_all_pits_request_supports_local_lifecycle_subset(&body, transport_identity)
     {
         let response =
             build_local_get_all_pits_response(request_id, header_version_id, transport_identity);
@@ -4083,10 +4083,27 @@ fn clear_scroll_request_supports_local_lifecycle_subset(body: &[u8]) -> bool {
         .is_some()
 }
 
-fn get_all_pits_request_supports_local_lifecycle_subset(body: &[u8]) -> bool {
-    decode_get_all_pits_request_from_transport_body(body)
-        .and_then(|request| request.supports_local_lifecycle_subset().ok())
-        .is_some()
+fn get_all_pits_request_supports_local_lifecycle_subset(
+    body: &[u8],
+    transport_identity: &DevTransportIdentity,
+) -> bool {
+    let Some(request) = decode_get_all_pits_request_from_transport_body(body) else {
+        return false;
+    };
+    if request.validate_supported_subset().is_err()
+        || request
+            .node_ids
+            .as_ref()
+            .is_some_and(|node_ids| !node_ids.is_empty())
+        || request.timeout.is_some()
+    {
+        return false;
+    }
+    match request.concrete_nodes.as_deref() {
+        None => true,
+        Some([node]) => node.id == transport_identity.node_id,
+        Some(_) => false,
+    }
 }
 
 fn clear_transport_scroll_contexts(
@@ -6090,7 +6107,7 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
             ))
         }
         Some("indices:data/read/point_in_time/readall")
-            if get_all_pits_request_supports_local_lifecycle_subset(body) =>
+            if get_all_pits_request_supports_local_lifecycle_subset(body, transport_identity) =>
         {
             Some(build_local_get_all_pits_response(
                 request_id,
@@ -11396,6 +11413,20 @@ mod tests {
 
     #[test]
     fn get_all_pits_transport_route_admits_only_local_lifecycle_subset() {
+        let transport_identity = DevTransportIdentity {
+            cluster_name: "steelsearch-dev".to_string(),
+            node_name: "steel-node".to_string(),
+            node_id: "steel-node-id".to_string(),
+            ephemeral_id: "steel-node-ephemeral".to_string(),
+            transport_address: "127.0.0.1:9300".parse().unwrap(),
+            attributes: Vec::new(),
+            roles: vec!["cluster_manager".to_string(), "data".to_string()],
+            seed_peer_identity: None,
+            seed_peer_identities: Vec::new(),
+            coordination_state: Arc::new(Mutex::new(DevTransportCoordinationState::default())),
+            remote_transport_queue_gate: Arc::new(RemoteTransportQueueGate::new(1, 1000)),
+            task_queue_state: None,
+        };
         let default_request = os_transport::action::OpenSearchGetAllPitsRequestWire::default();
         let default_frame = os_transport::action::build_opensearch_get_all_pits_request_message(
             93,
@@ -11404,7 +11435,8 @@ mod tests {
         )
         .unwrap();
         assert!(get_all_pits_request_supports_local_lifecycle_subset(
-            &default_frame[6..]
+            &default_frame[6..],
+            &transport_identity
         ));
 
         let node_filtered_request = os_transport::action::OpenSearchGetAllPitsRequestWire {
@@ -11419,7 +11451,8 @@ mod tests {
             )
             .unwrap();
         assert!(!get_all_pits_request_supports_local_lifecycle_subset(
-            &node_filtered_frame[6..]
+            &node_filtered_frame[6..],
+            &transport_identity
         ));
 
         let concrete_node_request = os_transport::action::OpenSearchGetAllPitsRequestWire {
@@ -11433,8 +11466,45 @@ mod tests {
                 &concrete_node_request,
             )
             .unwrap();
+        assert!(get_all_pits_request_supports_local_lifecycle_subset(
+            &concrete_node_frame[6..],
+            &transport_identity
+        ));
+
+        let mut remote_node = test_discovery_node_wire();
+        remote_node.id = "remote-node-id".to_string();
+        let remote_concrete_node_request = os_transport::action::OpenSearchGetAllPitsRequestWire {
+            concrete_nodes: Some(vec![remote_node]),
+            ..os_transport::action::OpenSearchGetAllPitsRequestWire::default()
+        };
+        let remote_concrete_node_frame =
+            os_transport::action::build_opensearch_get_all_pits_request_message(
+                96,
+                OPENSEARCH_3_7_0_TRANSPORT,
+                &remote_concrete_node_request,
+            )
+            .unwrap();
         assert!(!get_all_pits_request_supports_local_lifecycle_subset(
-            &concrete_node_frame[6..]
+            &remote_concrete_node_frame[6..],
+            &transport_identity
+        ));
+
+        let mut mixed_remote_node = test_discovery_node_wire();
+        mixed_remote_node.id = "remote-node-id".to_string();
+        let mixed_concrete_node_request = os_transport::action::OpenSearchGetAllPitsRequestWire {
+            concrete_nodes: Some(vec![test_discovery_node_wire(), mixed_remote_node]),
+            ..os_transport::action::OpenSearchGetAllPitsRequestWire::default()
+        };
+        let mixed_concrete_node_frame =
+            os_transport::action::build_opensearch_get_all_pits_request_message(
+                97,
+                OPENSEARCH_3_7_0_TRANSPORT,
+                &mixed_concrete_node_request,
+            )
+            .unwrap();
+        assert!(!get_all_pits_request_supports_local_lifecycle_subset(
+            &mixed_concrete_node_frame[6..],
+            &transport_identity
         ));
 
         let timeout_request = os_transport::action::OpenSearchGetAllPitsRequestWire {
@@ -11442,13 +11512,14 @@ mod tests {
             ..os_transport::action::OpenSearchGetAllPitsRequestWire::default()
         };
         let timeout_frame = os_transport::action::build_opensearch_get_all_pits_request_message(
-            96,
+            98,
             OPENSEARCH_3_7_0_TRANSPORT,
             &timeout_request,
         )
         .unwrap();
         assert!(!get_all_pits_request_supports_local_lifecycle_subset(
-            &timeout_frame[6..]
+            &timeout_frame[6..],
+            &transport_identity
         ));
     }
 
