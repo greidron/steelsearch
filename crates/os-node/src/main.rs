@@ -4168,15 +4168,13 @@ fn build_local_pit_segments_node_response(
 fn transport_pit_segment_ids_exist(
     request: &os_transport::action::OpenSearchPitSegmentsRequestWire,
 ) -> bool {
-    let Some(pit_ids) = &request.pit_ids else {
-        return false;
-    };
     let mut contexts = dev_transport_pit_bindings()
         .contexts
         .lock()
         .expect("dev transport PIT contexts lock poisoned");
     prune_expired_transport_pits(&mut contexts, now_epoch_ms());
-    pit_ids
+    request
+        .pit_ids
         .iter()
         .all(|pit_id| pit_id == "_all" || contexts.contains_key(pit_id))
 }
@@ -11627,7 +11625,7 @@ mod tests {
             .contains_key(pit_id));
 
         let request = os_transport::action::OpenSearchPitSegmentsRequestWire {
-            pit_ids: Some(vec![pit_id.to_string()]),
+            pit_ids: vec![pit_id.to_string()],
             ..os_transport::action::OpenSearchPitSegmentsRequestWire::default()
         };
         let frame = os_transport::action::build_opensearch_pit_segments_request_message(
@@ -11696,7 +11694,7 @@ mod tests {
             task_queue_state: None,
         };
         let request = os_transport::action::OpenSearchPitSegmentsRequestWire {
-            pit_ids: Some(vec!["_all".to_string()]),
+            pit_ids: vec!["_all".to_string()],
             ..os_transport::action::OpenSearchPitSegmentsRequestWire::default()
         };
         let frame = os_transport::action::build_opensearch_pit_segments_request_message(
@@ -11764,7 +11762,7 @@ mod tests {
             task_queue_state: None,
         };
         let request = os_transport::action::OpenSearchPitSegmentsRequestWire {
-            pit_ids: Some(vec![pit_id.to_string()]),
+            pit_ids: vec![pit_id.to_string()],
             ..os_transport::action::OpenSearchPitSegmentsRequestWire::default()
         };
         let frame = os_transport::action::build_opensearch_pit_segments_request_message(
@@ -11798,7 +11796,7 @@ mod tests {
         assert_eq!(input.remaining(), 0);
 
         let unknown_request = os_transport::action::OpenSearchPitSegmentsRequestWire {
-            pit_ids: Some(vec!["missing-pit-context".to_string()]),
+            pit_ids: vec!["missing-pit-context".to_string()],
             ..os_transport::action::OpenSearchPitSegmentsRequestWire::default()
         };
         let unknown_frame = os_transport::action::build_opensearch_pit_segments_request_message(

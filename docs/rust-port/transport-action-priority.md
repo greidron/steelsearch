@@ -1835,15 +1835,15 @@ The indices-segments boundary covers:
 The PIT-segments boundary covers:
 
 - OpenSearch `PitSegmentsRequest` parent task, broadcast indices array,
-  `IndicesOptions.strictExpandOpenAndForbidClosed()`, nullable PIT id array,
-  and `verbose` at the wire decode/build layer;
+  `IndicesOptions.strictExpandOpenAndForbidClosed()`, PIT id string array, and
+  `verbose` at the wire decode/build layer;
 - empty `IndicesSegmentResponse` rendering for explicit `_all` and explicit PIT
   ids that resolve through the shared `SteelNode` PIT context store, including
   daemon transport routing when the decoded request validates as the supported
   local subset;
-- explicit rejection for index filters, custom indices options, null PIT id
-  arrays, empty PIT id arrays, empty PIT id entries, verbose output, and
-  unknown explicit PIT ids at the local runtime boundary.
+- explicit rejection for index filters, custom indices options, empty PIT id
+  arrays, empty PIT id entries, verbose output, and unknown explicit PIT ids at
+  the local runtime boundary.
 
 The indices-shard-stores boundary covers:
 
@@ -5202,7 +5202,7 @@ pit_segments_wire_bottleneck_ops_per_second=1358270.66
 
 The current PIT-segments supported-subset boundary bottleneck is request
 validation. This path carries the ActionRequest parent task, broadcast index
-controls, nullable PIT id array, and verbose flag before accepting the empty
+controls, PIT id string array, and verbose flag before accepting the empty
 `_all` or existing explicit-id response subset. At roughly 1.36M ops/s, the
 boundary itself is lightweight; response encode/decode stays above 4.2M ops/s.
 The first performance point to inspect before expanding execution is non-empty

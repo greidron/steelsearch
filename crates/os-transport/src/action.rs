@@ -23003,7 +23003,7 @@ pub struct OpenSearchPitSegmentsRequestWire {
     pub parent_task_id: Option<i64>,
     pub indices: Vec<String>,
     pub indices_options: OpenSearchIndicesOptionsWire,
-    pub pit_ids: Option<Vec<String>>,
+    pub pit_ids: Vec<String>,
     pub verbose: bool,
 }
 
@@ -23014,7 +23014,7 @@ impl Default for OpenSearchPitSegmentsRequestWire {
             parent_task_id: None,
             indices: Vec::new(),
             indices_options: OpenSearchIndicesOptionsWire::strict_expand_open_forbid_closed(),
-            pit_ids: Some(Vec::new()),
+            pit_ids: Vec::new(),
             verbose: false,
         }
     }
@@ -23025,7 +23025,7 @@ impl OpenSearchPitSegmentsRequestWire {
         write_parent_task_id(output, &self.parent_task_node, self.parent_task_id);
         output.write_string_array(&self.indices);
         self.indices_options.write(output);
-        write_optional_string_array(output, self.pit_ids.as_deref());
+        output.write_string_array(&self.pit_ids);
         output.write_bool(self.verbose);
     }
 
@@ -23037,7 +23037,7 @@ impl OpenSearchPitSegmentsRequestWire {
             parent_task_id,
             indices: input.read_string_array()?,
             indices_options: OpenSearchIndicesOptionsWire::read(&mut input)?,
-            pit_ids: read_optional_string_array(&mut input)?,
+            pit_ids: input.read_string_array()?,
             verbose: input.read_bool()?,
         };
         require_no_trailing_bytes(&input)?;
@@ -23058,19 +23058,13 @@ impl OpenSearchPitSegmentsRequestWire {
                 reason: "custom PIT segment indices options require index resolution semantics",
             });
         }
-        let Some(pit_ids) = &self.pit_ids else {
-            return Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "pit segments null ids",
-                reason: "OpenSearch PIT segments requests require explicit PIT ids",
-            });
-        };
-        if pit_ids.is_empty() {
+        if self.pit_ids.is_empty() {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "pit segments empty ids",
                 reason: "OpenSearch PIT segments requests require at least one PIT id",
             });
         }
-        if pit_ids.iter().any(String::is_empty) {
+        if self.pit_ids.iter().any(String::is_empty) {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "pit segments empty id",
                 reason: "OpenSearch PIT segments requests require non-empty PIT ids",
@@ -60747,20 +60741,8 @@ mod tests {
             })
         ));
 
-        let null_ids = OpenSearchPitSegmentsRequestWire {
-            pit_ids: None,
-            ..OpenSearchPitSegmentsRequestWire::default()
-        };
-        assert!(matches!(
-            null_ids.reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "pit segments null ids",
-                ..
-            })
-        ));
-
         let empty_ids = OpenSearchPitSegmentsRequestWire {
-            pit_ids: Some(Vec::new()),
+            pit_ids: Vec::new(),
             ..OpenSearchPitSegmentsRequestWire::default()
         };
         assert!(matches!(
@@ -60771,8 +60753,20 @@ mod tests {
             })
         ));
 
+        let empty_id = OpenSearchPitSegmentsRequestWire {
+            pit_ids: vec![String::new()],
+            ..OpenSearchPitSegmentsRequestWire::default()
+        };
+        assert!(matches!(
+            empty_id.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "pit segments empty id",
+                ..
+            })
+        ));
+
         let verbose = OpenSearchPitSegmentsRequestWire {
-            pit_ids: Some(vec!["_all".to_string()]),
+            pit_ids: vec!["_all".to_string()],
             verbose: true,
             ..OpenSearchPitSegmentsRequestWire::default()
         };
@@ -60785,7 +60779,7 @@ mod tests {
         ));
 
         let explicit_id = OpenSearchPitSegmentsRequestWire {
-            pit_ids: Some(vec!["pit-context".to_string()]),
+            pit_ids: vec!["pit-context".to_string()],
             ..OpenSearchPitSegmentsRequestWire::default()
         };
         explicit_id.validate_supported_subset().unwrap();
@@ -60794,7 +60788,7 @@ mod tests {
     #[test]
     fn opensearch_pit_segments_transport_messages_bind_action_frames() {
         let request = OpenSearchPitSegmentsRequestWire {
-            pit_ids: Some(vec!["_all".to_string()]),
+            pit_ids: vec!["_all".to_string()],
             ..OpenSearchPitSegmentsRequestWire::default()
         };
         let mut frame =
