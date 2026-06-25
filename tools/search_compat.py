@@ -1001,6 +1001,23 @@ def resolve_placeholders(
         return value_at_path(previous_response, value[len("${last.") : -1])
     if value.startswith("${saved.") and value.endswith("}"):
         return (saved_values or {}).get(value[len("${saved.") : -1])
+    if "${" in value:
+        def replace_placeholder(match: re.Match[str]) -> str:
+            expression = match.group(1)
+            if expression == "last._scroll_id":
+                resolved = ((previous_response.get("body") or {}).get("_scroll_id"))
+            elif expression == "last.id":
+                body = previous_response.get("body") or {}
+                resolved = body.get("id") or body.get("pit_id")
+            elif expression.startswith("last."):
+                resolved = value_at_path(previous_response, expression[len("last.") :])
+            elif expression.startswith("saved."):
+                resolved = (saved_values or {}).get(expression[len("saved.") :])
+            else:
+                return match.group(0)
+            return "" if resolved is None else str(resolved)
+
+        return re.sub(r"\$\{([^}]+)\}", replace_placeholder, value)
     return value
 
 
@@ -1748,6 +1765,31 @@ def extract(kind: str, response: dict[str, Any]) -> Any:
                     "status": entry.get("status") if isinstance(entry, dict) else None,
                     "total": total_value,
                     "ids": [hit.get("_id") for hit in hits if isinstance(hit, dict)],
+                }
+            )
+        return {
+            "status": response["status"],
+            "responses": normalized,
+        }
+    if kind == "msearch_pit_summary":
+        responses = body.get("responses") or []
+        normalized = []
+        for entry in responses if isinstance(responses, list) else []:
+            hits = ((entry.get("hits") or {}).get("hits") or []) if isinstance(entry, dict) else []
+            total = ((entry.get("hits") or {}).get("total")) if isinstance(entry, dict) else None
+            if isinstance(total, dict):
+                total_value = total.get("value")
+            else:
+                total_value = total
+            error = entry.get("error") if isinstance(entry, dict) else None
+            normalized.append(
+                {
+                    "status": entry.get("status") if isinstance(entry, dict) else None,
+                    "total": total_value,
+                    "ids": [hit.get("_id") for hit in hits if isinstance(hit, dict)],
+                    "pit_id_present": bool(entry.get("pit_id")) if isinstance(entry, dict) else False,
+                    "error_type": error.get("type") if isinstance(error, dict) else None,
+                    "error_reason": error.get("reason") if isinstance(error, dict) else None,
                 }
             )
         return {

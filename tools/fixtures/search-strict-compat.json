@@ -3018,6 +3018,66 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "msearch_pit_search",
+      "area": "search",
+      "extract": "msearch_pit_summary",
+      "steps": [
+        {
+          "name": "pit-open",
+          "method": "POST",
+          "path": "/logs-compat/_search/point_in_time?keep_alive=1m",
+          "body": null,
+          "expected_status": 200,
+          "extract": "pit_open",
+          "save": {
+            "pit_id": "body.pit_id"
+          }
+        },
+        {
+          "name": "msearch-pit",
+          "method": "POST",
+          "path": "/_msearch",
+          "raw": true,
+          "body": "{}\n{\"pit\":{\"id\":\"${saved.pit_id}\",\"keep_alive\":\"1m\"},\"query\":{\"match_all\":{}},\"sort\":[{\"ts\":{\"order\":\"asc\"}}],\"size\":1}\n",
+          "expected_status": 200,
+          "extract": "msearch_pit_summary"
+        }
+      ],
+      "family": "lexical",
+      "description": "[lexical] msearch PIT search follows OpenSearch preparePointInTime behavior",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "msearch_pit_target_rejects_explicit_indices",
+      "area": "search",
+      "extract": "msearch_pit_summary",
+      "steps": [
+        {
+          "name": "pit-open",
+          "method": "POST",
+          "path": "/logs-compat/_search/point_in_time?keep_alive=1m",
+          "body": null,
+          "expected_status": 200,
+          "extract": "pit_open",
+          "save": {
+            "pit_id": "body.pit_id"
+          }
+        },
+        {
+          "name": "msearch-pit-targeted",
+          "method": "POST",
+          "path": "/logs-compat/_msearch",
+          "raw": true,
+          "body": "{}\n{\"pit\":{\"id\":\"${saved.pit_id}\",\"keep_alive\":\"1m\"},\"query\":{\"match_all\":{}},\"size\":1}\n",
+          "expected_status": 400,
+          "extract": "msearch_pit_summary"
+        }
+      ],
+      "family": "lexical",
+      "description": "[lexical] targeted msearch PIT rejects explicit indices like OpenSearch",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "pit_shard_doc_search_after_search",
       "area": "search",
       "extract": "search_hits",

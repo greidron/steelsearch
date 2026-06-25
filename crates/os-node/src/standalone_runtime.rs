@@ -8223,26 +8223,26 @@ impl SteelNode {
     fn handle_msearch_route(&self, target: Option<&str>, request: &RestRequest) -> RestResponse {
         match self.parse_msearch_requests(request) {
             Ok(Some(requests)) => {
-                let responses = requests
-                    .into_iter()
-                    .map(|parsed| {
-                        let effective_target =
-                            parsed.target.as_deref().or(target).unwrap_or("_all");
-                        let search_path = if parsed.target.is_some() || target.is_some() {
-                            format!("/{effective_target}/_search")
-                        } else {
-                            "/_search".to_string()
-                        };
-                        let mut search_request = RestRequest::new(RestMethod::Post, search_path)
-                            .with_json_body(parsed.body);
+                let mut responses = Vec::new();
+                for parsed in requests {
+                    let effective_target = parsed.target.as_deref().or(target).unwrap_or("_all");
+                    let search_path = if parsed.target.is_some() || target.is_some() {
+                        format!("/{effective_target}/_search")
+                    } else {
+                        "/_search".to_string()
+                    };
+                    let has_pit = parsed.body.get("pit").is_some();
+                    let mut search_request =
+                        RestRequest::new(RestMethod::Post, search_path).with_json_body(parsed.body);
                         search_request.headers = request.headers.clone();
                         search_request.query_params = request.query_params.clone();
                         search_request.query_params.extend(parsed.query_params);
-                        msearch_response_with_status(
-                            self.handle_index_search_route(effective_target, &search_request),
-                        )
-                    })
-                    .collect::<Vec<_>>();
+                    let response = self.handle_index_search_route(effective_target, &search_request);
+                    if has_pit && is_msearch_pit_request_validation_response(&response) {
+                        return response;
+                    }
+                    responses.push(msearch_response_with_status(response));
+                }
                 return RestResponse::json(200, serde_json::json!({ "responses": responses }));
             }
             Ok(None) => {}
@@ -20351,6 +20351,21 @@ fn msearch_response_with_status(response: RestResponse) -> Value {
         object.insert("status".to_string(), Value::from(response.status));
     }
     body
+}
+
+fn is_msearch_pit_request_validation_response(response: &RestResponse) -> bool {
+    if response.status != 400 {
+        return false;
+    }
+    let error_type = response
+        .body
+        .get("error")
+        .and_then(|error| error.get("type"))
+        .and_then(Value::as_str);
+    matches!(
+        error_type,
+        Some("action_request_validation_exception" | "illegal_argument_exception")
+    )
 }
 
 fn native_search_response_to_rest_response(
@@ -49034,21 +49049,26 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             200
         );
 
+        let assert_top_level_pit_error =
+            |response: &RestResponse, error_type: &str, reason_parts: &[&str]| {
+                assert_eq!(response.status, 400);
+                assert_eq!(response.body["error"]["type"], error_type);
+                let reason = response.body["error"]["reason"].as_str().unwrap();
+                for part in reason_parts {
+                    assert!(reason.contains(part), "{reason}");
+                }
+            };
+
         let invalid_msearch = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/_msearch?ccs_minimize_roundtrips=true")
                 .with_header("content-type", "application/x-ndjson")
                 .with_body(pit_search_body.into_bytes()),
         );
-        assert_eq!(invalid_msearch.status, 200);
-        assert_eq!(invalid_msearch.body["responses"][0]["status"], 400);
-        assert_eq!(
-            invalid_msearch.body["responses"][0]["error"]["type"],
-            "action_request_validation_exception"
+        assert_top_level_pit_error(
+            &invalid_msearch,
+            "action_request_validation_exception",
+            &["[ccs_minimize_roundtrips] cannot be used with point in time"],
         );
-        assert!(invalid_msearch.body["responses"][0]["error"]["reason"]
-            .as_str()
-            .unwrap()
-            .contains("[ccs_minimize_roundtrips] cannot be used with point in time"));
 
         let metadata_default_ccs_pit_body = format!(
             "{{\"ccs_minimize_roundtrips\":false}}\n{{\"pit\":{{\"id\":\"{pit_id}\",\"keep_alive\":\"1m\"}},\"query\":{{\"match_all\":{{}}}}}}\n"
@@ -49076,16 +49096,10 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 .with_header("content-type", "application/x-ndjson")
                 .with_body(metadata_true_ccs_pit_body.into_bytes()),
         );
-        assert_eq!(metadata_true_ccs_msearch.status, 200);
-        assert_eq!(
-            metadata_true_ccs_msearch.body["responses"][0]["status"],
-            400
-        );
-        assert!(
-            metadata_true_ccs_msearch.body["responses"][0]["error"]["reason"]
-                .as_str()
-                .unwrap()
-                .contains("[ccs_minimize_roundtrips] cannot be used with point in time")
+        assert_top_level_pit_error(
+            &metadata_true_ccs_msearch,
+            "action_request_validation_exception",
+            &["[ccs_minimize_roundtrips] cannot be used with point in time"],
         );
 
         let metadata_invalid_ccs_pit_body = format!(
@@ -49096,14 +49110,10 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 .with_header("content-type", "application/x-ndjson")
                 .with_body(metadata_invalid_ccs_pit_body.into_bytes()),
         );
-        assert_eq!(metadata_invalid_ccs_msearch.status, 200);
-        assert_eq!(
-            metadata_invalid_ccs_msearch.body["responses"][0]["status"],
-            400
-        );
-        assert_eq!(
-            metadata_invalid_ccs_msearch.body["responses"][0]["error"]["type"],
-            "illegal_argument_exception"
+        assert_top_level_pit_error(
+            &metadata_invalid_ccs_msearch,
+            "illegal_argument_exception",
+            &["Failed to parse value [maybe] as only [true] or [false] are allowed."],
         );
 
         let metadata_camel_ccs_pit_body = format!(
@@ -49114,16 +49124,10 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 .with_header("content-type", "application/x-ndjson")
                 .with_body(metadata_camel_ccs_pit_body.into_bytes()),
         );
-        assert_eq!(metadata_camel_ccs_msearch.status, 200);
-        assert_eq!(
-            metadata_camel_ccs_msearch.body["responses"][0]["status"],
-            400
-        );
-        assert!(
-            metadata_camel_ccs_msearch.body["responses"][0]["error"]["reason"]
-                .as_str()
-                .unwrap()
-                .contains("[ccs_minimize_roundtrips] cannot be used with point in time")
+        assert_top_level_pit_error(
+            &metadata_camel_ccs_msearch,
+            "action_request_validation_exception",
+            &["[ccs_minimize_roundtrips] cannot be used with point in time"],
         );
 
         let metadata_camel_indices_pit_body = format!(
@@ -49134,16 +49138,10 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 .with_header("content-type", "application/x-ndjson")
                 .with_body(metadata_camel_indices_pit_body.into_bytes()),
         );
-        assert_eq!(metadata_camel_indices_msearch.status, 200);
-        assert_eq!(
-            metadata_camel_indices_msearch.body["responses"][0]["status"],
-            400
-        );
-        assert!(
-            metadata_camel_indices_msearch.body["responses"][0]["error"]["reason"]
-                .as_str()
-                .unwrap()
-                .contains("[indicesOptions] cannot be used with point in time")
+        assert_top_level_pit_error(
+            &metadata_camel_indices_msearch,
+            "action_request_validation_exception",
+            &["[indicesOptions] cannot be used with point in time"],
         );
 
         let metadata_default_indices_pit_body = format!(
@@ -49154,16 +49152,10 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 .with_header("content-type", "application/x-ndjson")
                 .with_body(metadata_default_indices_pit_body.into_bytes()),
         );
-        assert_eq!(metadata_default_indices_msearch.status, 200);
-        assert_eq!(
-            metadata_default_indices_msearch.body["responses"][0]["status"],
-            400
-        );
-        assert!(
-            metadata_default_indices_msearch.body["responses"][0]["error"]["reason"]
-                .as_str()
-                .unwrap()
-                .contains("[indicesOptions] cannot be used with point in time")
+        assert_top_level_pit_error(
+            &metadata_default_indices_msearch,
+            "action_request_validation_exception",
+            &["[indicesOptions] cannot be used with point in time"],
         );
 
         let targeted_pit_body = format!(
@@ -49174,12 +49166,11 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 .with_header("content-type", "application/x-ndjson")
                 .with_body(targeted_pit_body.into_bytes()),
         );
-        assert_eq!(targeted_msearch.status, 200);
-        assert_eq!(targeted_msearch.body["responses"][0]["status"], 400);
-        assert!(targeted_msearch.body["responses"][0]["error"]["reason"]
-            .as_str()
-            .unwrap()
-            .contains("[indices] cannot be used with point in time"));
+        assert_top_level_pit_error(
+            &targeted_msearch,
+            "action_request_validation_exception",
+            &["[indices] cannot be used with point in time"],
+        );
 
         let explicit_header_pit_body = format!(
             "{{\"index\":\"_all\"}}\n{{\"pit\":{{\"id\":\"{pit_id}\",\"keep_alive\":\"1m\"}},\"query\":{{\"match_all\":{{}}}}}}\n"
@@ -49189,13 +49180,10 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 .with_header("content-type", "application/x-ndjson")
                 .with_body(explicit_header_pit_body.into_bytes()),
         );
-        assert_eq!(explicit_header_msearch.status, 200);
-        assert_eq!(explicit_header_msearch.body["responses"][0]["status"], 400);
-        assert!(
-            explicit_header_msearch.body["responses"][0]["error"]["reason"]
-                .as_str()
-                .unwrap()
-                .contains("[indices] cannot be used with point in time")
+        assert_top_level_pit_error(
+            &explicit_header_msearch,
+            "action_request_validation_exception",
+            &["[indices] cannot be used with point in time"],
         );
 
         let explicit_indices_header_pit_body = format!(
@@ -49206,16 +49194,10 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 .with_header("content-type", "application/x-ndjson")
                 .with_body(explicit_indices_header_pit_body.into_bytes()),
         );
-        assert_eq!(explicit_indices_header_msearch.status, 200);
-        assert_eq!(
-            explicit_indices_header_msearch.body["responses"][0]["status"],
-            400
-        );
-        assert!(
-            explicit_indices_header_msearch.body["responses"][0]["error"]["reason"]
-                .as_str()
-                .unwrap()
-                .contains("[indices] cannot be used with point in time")
+        assert_top_level_pit_error(
+            &explicit_indices_header_msearch,
+            "action_request_validation_exception",
+            &["[indices] cannot be used with point in time"],
         );
 
         let metadata_pit_body = format!(
@@ -49226,14 +49208,15 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 .with_header("content-type", "application/x-ndjson")
                 .with_body(metadata_pit_body.into_bytes()),
         );
-        assert_eq!(metadata_msearch.status, 200);
-        assert_eq!(metadata_msearch.body["responses"][0]["status"], 400);
-        let metadata_reason = metadata_msearch.body["responses"][0]["error"]["reason"]
-            .as_str()
-            .unwrap();
-        assert!(metadata_reason.contains("[indicesOptions] cannot be used with point in time"));
-        assert!(metadata_reason.contains("[routing] cannot be used with point in time"));
-        assert!(metadata_reason.contains("[preference] cannot be used with point in time"));
+        assert_top_level_pit_error(
+            &metadata_msearch,
+            "action_request_validation_exception",
+            &[
+                "[indicesOptions] cannot be used with point in time",
+                "[routing] cannot be used with point in time",
+                "[preference] cannot be used with point in time",
+            ],
+        );
     }
 
     #[test]
