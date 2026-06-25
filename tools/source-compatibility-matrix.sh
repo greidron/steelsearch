@@ -41,6 +41,12 @@ route_status() {
   local path="$3"
 
   if [[ "${source}" == "${KNN_ROOT}"/* ]]; then
+    case "${source}" in
+      *"/RestClearCacheHandler.java"|*"/RestDeleteModelHandler.java"|*"/RestGetModelHandler.java"|*"/RestKNNStatsHandler.java"|*"/RestKNNWarmupHandler.java"|*"/RestSearchModelHandler.java"|*"/RestTrainModelHandler.java")
+        echo "implemented"
+        return
+        ;;
+    esac
     echo "planned"
     return
   fi

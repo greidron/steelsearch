@@ -376,18 +376,18 @@ rest_route	planned	POST	"/{index}/_tier/" + targetTier		/home/ubuntu/OpenSearch/
 rest_route	planned	POST	/_tier/_cancel/{index}		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/storage/action/tiering/RestCancelTierAction.java	39
 rest_route	planned	GET	/{index}/_tier		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/storage/action/tiering/status/rest/RestGetTieringStatusAction.java	37
 rest_route	planned	GET	/_tier/all		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/storage/action/tiering/status/rest/RestListTieringStatusAction.java	39
-rest_route	planned	POST	String.format(Locale.ROOT, "%s/%s/{%s}", KNNPlugin.KNN_BASE_URI, CLEAR_CACHE, INDEX)		/home/ubuntu/k-NN/src/main/java/org/opensearch/knn/plugin/rest/RestClearCacheHandler.java	58
-rest_route	planned	DELETE	String.format(Locale.ROOT, "%s/%s/{%s}", KNNPlugin.KNN_BASE_URI, MODELS, MODEL_ID)		/home/ubuntu/k-NN/src/main/java/org/opensearch/knn/plugin/rest/RestDeleteModelHandler.java	47
-rest_route	planned	GET	String.format(Locale.ROOT, "%s/%s/{%s}", KNNPlugin.KNN_BASE_URI, MODELS, MODEL_ID)		/home/ubuntu/k-NN/src/main/java/org/opensearch/knn/plugin/rest/RestGetModelHandler.java	46
-rest_route	planned	GET	KNNPlugin.KNN_BASE_URI + "/{nodeId}/stats/"		/home/ubuntu/k-NN/src/main/java/org/opensearch/knn/plugin/rest/RestKNNStatsHandler.java	98
-rest_route	planned	GET	KNNPlugin.KNN_BASE_URI + "/{nodeId}/stats/{stat}"		/home/ubuntu/k-NN/src/main/java/org/opensearch/knn/plugin/rest/RestKNNStatsHandler.java	99
-rest_route	planned	GET	KNNPlugin.KNN_BASE_URI + "/stats/"		/home/ubuntu/k-NN/src/main/java/org/opensearch/knn/plugin/rest/RestKNNStatsHandler.java	100
-rest_route	planned	GET	KNNPlugin.KNN_BASE_URI + "/stats/{stat}"		/home/ubuntu/k-NN/src/main/java/org/opensearch/knn/plugin/rest/RestKNNStatsHandler.java	101
-rest_route	planned	GET	KNNPlugin.KNN_BASE_URI + URL_PATH		/home/ubuntu/k-NN/src/main/java/org/opensearch/knn/plugin/rest/RestKNNWarmupHandler.java	61
-rest_route	planned	GET	String.format(Locale.ROOT, "%s/%s/%s", KNNPlugin.KNN_BASE_URI, MODELS, SEARCH)		/home/ubuntu/k-NN/src/main/java/org/opensearch/knn/plugin/rest/RestSearchModelHandler.java	57
-rest_route	planned	POST	String.format(Locale.ROOT, "%s/%s/%s", KNNPlugin.KNN_BASE_URI, MODELS, SEARCH)		/home/ubuntu/k-NN/src/main/java/org/opensearch/knn/plugin/rest/RestSearchModelHandler.java	58
-rest_route	planned	POST	String.format(Locale.ROOT, "%s/%s/{%s}/_train", KNNPlugin.KNN_BASE_URI, MODELS, MODEL_ID)		/home/ubuntu/k-NN/src/main/java/org/opensearch/knn/plugin/rest/RestTrainModelHandler.java	73
-rest_route	planned	POST	String.format(Locale.ROOT, "%s/%s/_train", KNNPlugin.KNN_BASE_URI, MODELS)		/home/ubuntu/k-NN/src/main/java/org/opensearch/knn/plugin/rest/RestTrainModelHandler.java	74
+rest_route	implemented	POST	String.format(Locale.ROOT, "%s/%s/{%s}", KNNPlugin.KNN_BASE_URI, CLEAR_CACHE, INDEX)		/home/ubuntu/k-NN/src/main/java/org/opensearch/knn/plugin/rest/RestClearCacheHandler.java	58
+rest_route	implemented	DELETE	String.format(Locale.ROOT, "%s/%s/{%s}", KNNPlugin.KNN_BASE_URI, MODELS, MODEL_ID)		/home/ubuntu/k-NN/src/main/java/org/opensearch/knn/plugin/rest/RestDeleteModelHandler.java	47
+rest_route	implemented	GET	String.format(Locale.ROOT, "%s/%s/{%s}", KNNPlugin.KNN_BASE_URI, MODELS, MODEL_ID)		/home/ubuntu/k-NN/src/main/java/org/opensearch/knn/plugin/rest/RestGetModelHandler.java	46
+rest_route	implemented	GET	KNNPlugin.KNN_BASE_URI + "/{nodeId}/stats/"		/home/ubuntu/k-NN/src/main/java/org/opensearch/knn/plugin/rest/RestKNNStatsHandler.java	98
+rest_route	implemented	GET	KNNPlugin.KNN_BASE_URI + "/{nodeId}/stats/{stat}"		/home/ubuntu/k-NN/src/main/java/org/opensearch/knn/plugin/rest/RestKNNStatsHandler.java	99
+rest_route	implemented	GET	KNNPlugin.KNN_BASE_URI + "/stats/"		/home/ubuntu/k-NN/src/main/java/org/opensearch/knn/plugin/rest/RestKNNStatsHandler.java	100
+rest_route	implemented	GET	KNNPlugin.KNN_BASE_URI + "/stats/{stat}"		/home/ubuntu/k-NN/src/main/java/org/opensearch/knn/plugin/rest/RestKNNStatsHandler.java	101
+rest_route	implemented	GET	KNNPlugin.KNN_BASE_URI + URL_PATH		/home/ubuntu/k-NN/src/main/java/org/opensearch/knn/plugin/rest/RestKNNWarmupHandler.java	61
+rest_route	implemented	GET	String.format(Locale.ROOT, "%s/%s/%s", KNNPlugin.KNN_BASE_URI, MODELS, SEARCH)		/home/ubuntu/k-NN/src/main/java/org/opensearch/knn/plugin/rest/RestSearchModelHandler.java	57
+rest_route	implemented	POST	String.format(Locale.ROOT, "%s/%s/%s", KNNPlugin.KNN_BASE_URI, MODELS, SEARCH)		/home/ubuntu/k-NN/src/main/java/org/opensearch/knn/plugin/rest/RestSearchModelHandler.java	58
+rest_route	implemented	POST	String.format(Locale.ROOT, "%s/%s/{%s}/_train", KNNPlugin.KNN_BASE_URI, MODELS, MODEL_ID)		/home/ubuntu/k-NN/src/main/java/org/opensearch/knn/plugin/rest/RestTrainModelHandler.java	73
+rest_route	implemented	POST	String.format(Locale.ROOT, "%s/%s/_train", KNNPlugin.KNN_BASE_URI, MODELS)		/home/ubuntu/k-NN/src/main/java/org/opensearch/knn/plugin/rest/RestTrainModelHandler.java	74
 transport_action	implemented	action	MainAction.INSTANCE	TransportMainAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	656
 transport_action	implemented	action	NodesInfoAction.INSTANCE	TransportNodesInfoAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	657
 transport_action	implemented	action	RemoteInfoAction.INSTANCE	TransportRemoteInfoAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	658
