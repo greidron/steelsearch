@@ -2369,7 +2369,7 @@ pub fn classify_opensearch_transport_action(
         OPENSEARCH_SEARCH_SCROLL_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "search-scroll transport execution remains gated on SearchHit optional section rendering and scroll-id execution mapping",
+            reason: "search-scroll transport execution remains gated on remaining SearchHit optional sections and scroll-id execution mapping",
         },
         OPENSEARCH_CLEAR_SCROLL_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -26212,6 +26212,7 @@ pub struct OpenSearchSearchHitWire {
     pub seq_no: i64,
     pub primary_term: i64,
     pub source: Option<Value>,
+    pub sort_values: Vec<Value>,
 }
 
 impl OpenSearchSearchHitWire {
@@ -26223,6 +26224,7 @@ impl OpenSearchSearchHitWire {
             seq_no: hit.metadata.seq_no,
             primary_term: hit.metadata.primary_term as i64,
             source: Some(hit.source),
+            sort_values: normalized_sort_values(hit.sort),
         }
     }
 
@@ -26247,8 +26249,8 @@ impl OpenSearchSearchHitWire {
         output.write_vint(0);
         output.write_vint(0);
         output.write_vint(0);
-        output.write_vint(0);
-        output.write_vint(0);
+        write_search_sort_values(output, &self.sort_values)?;
+        write_search_sort_values(output, &self.sort_values)?;
         output.write_vint(0);
         output.write_bool(false);
         output.write_vint(0);
@@ -26269,13 +26271,24 @@ impl OpenSearchSearchHitWire {
             seq_no: read_zlong(input)?,
             primary_term: input.read_vlong()?,
             source: read_optional_json_bytes_reference(input)?,
+            sort_values: Vec::new(),
         };
         reject_bool_present(input, "search hit explanation")?;
         reject_empty_list_len(input, "search hit document fields")?;
         reject_empty_list_len(input, "search hit metadata fields")?;
         reject_empty_list_len(input, "search hit highlight fields")?;
-        reject_empty_list_len(input, "search hit formatted sort values")?;
-        reject_empty_list_len(input, "search hit raw sort values")?;
+        let formatted_sort_values = read_search_sort_values(input, "search hit formatted sort values")?;
+        let raw_sort_values = read_search_sort_values(input, "search hit raw sort values")?;
+        if raw_sort_values.len() != formatted_sort_values.len() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search hit raw sort values",
+                reason: "OpenSearch SearchSortValues raw and formatted arrays must have matching lengths",
+            });
+        }
+        let hit = Self {
+            sort_values: formatted_sort_values,
+            ..hit
+        };
         reject_empty_list_len(input, "search hit matched queries")?;
         reject_optional_writeable_present(input, "search hit shard target")?;
         reject_empty_list_len(input, "search hit inner hits")?;
@@ -33811,6 +33824,115 @@ fn read_optional_json_bytes_reference(
     serde_json::from_slice(&value)
         .map(Some)
         .map_err(TransportActionWireError::JsonDecode)
+}
+
+fn normalized_sort_values(sort: Option<Value>) -> Vec<Value> {
+    match sort {
+        Some(Value::Array(values)) => values,
+        Some(value) => vec![value],
+        None => Vec::new(),
+    }
+}
+
+fn write_search_sort_values(
+    output: &mut StreamOutput,
+    values: &[Value],
+) -> Result<(), TransportActionWireError> {
+    output.write_vint(values.len() as i32);
+    for value in values {
+        write_search_sort_value(output, value)?;
+    }
+    Ok(())
+}
+
+fn read_search_sort_values(
+    input: &mut StreamInput,
+    shape: &'static str,
+) -> Result<Vec<Value>, TransportActionWireError> {
+    let len = read_len(input)?;
+    let mut values = Vec::with_capacity(len);
+    for _ in 0..len {
+        values.push(read_search_sort_value(input, shape)?);
+    }
+    Ok(values)
+}
+
+fn write_search_sort_value(
+    output: &mut StreamOutput,
+    value: &Value,
+) -> Result<(), TransportActionWireError> {
+    match value {
+        Value::Null => output.write_byte(0),
+        Value::String(value) => {
+            output.write_byte(1);
+            output.write_string(value);
+        }
+        Value::Number(value) => {
+            if let Some(value) = value.as_i64() {
+                output.write_byte(3);
+                output.write_i64(value);
+            } else if let Some(value) = value.as_u64() {
+                let value = i64::try_from(value).map_err(|_| {
+                    TransportActionWireError::UnsupportedWireShape {
+                        shape: "search hit sort value",
+                        reason: "unsigned sort value does not fit the OpenSearch long wire shape",
+                    }
+                })?;
+                output.write_byte(3);
+                output.write_i64(value);
+            } else if let Some(value) = value.as_f64() {
+                output.write_byte(5);
+                output.write_f64(value);
+            } else {
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "search hit sort value",
+                    reason: "JSON number cannot be mapped to an OpenSearch sort value",
+                });
+            }
+        }
+        Value::Bool(value) => {
+            output.write_byte(8);
+            output.write_bool(*value);
+        }
+        Value::Array(_) | Value::Object(_) => {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search hit sort value",
+                reason: "OpenSearch sort values must be scalar JSON values",
+            });
+        }
+    }
+    Ok(())
+}
+
+fn read_search_sort_value(
+    input: &mut StreamInput,
+    shape: &'static str,
+) -> Result<Value, TransportActionWireError> {
+    match input.read_byte()? {
+        0 => Ok(Value::Null),
+        1 => Ok(Value::String(input.read_string()?)),
+        2 => Ok(Value::Number(input.read_i32()?.into())),
+        3 => Ok(Value::Number(input.read_i64()?.into())),
+        4 => serde_json::Number::from_f64(input.read_f32()? as f64)
+            .map(Value::Number)
+            .ok_or(TransportActionWireError::UnsupportedWireShape {
+                shape,
+                reason: "OpenSearch float sort value is not a finite JSON number",
+            }),
+        5 => serde_json::Number::from_f64(input.read_f64()?)
+            .map(Value::Number)
+            .ok_or(TransportActionWireError::UnsupportedWireShape {
+                shape,
+                reason: "OpenSearch double sort value is not a finite JSON number",
+            }),
+        6 => Ok(Value::Number(i64::from(input.read_byte()? as i8).into())),
+        7 => Ok(Value::Number(i64::from(input.read_i16()?).into())),
+        8 => Ok(Value::Bool(input.read_bool()?)),
+        _ => Err(TransportActionWireError::UnsupportedWireShape {
+            shape,
+            reason: "OpenSearch sort value type is not decoded by this subset",
+        }),
+    }
 }
 
 fn reject_bool_present(
@@ -57792,6 +57914,7 @@ mod tests {
                 seq_no: 3,
                 primary_term: 2,
                 source: Some(json!({ "message": "hello" })),
+                sort_values: vec![json!(42), json!("tenant-a"), json!(true), Value::Null],
             }],
             ..OpenSearchSearchResponseWire::default()
         };
@@ -57808,6 +57931,10 @@ mod tests {
         assert_eq!(decoded.hits[0].version, 7);
         assert_eq!(decoded.hits[0].seq_no, 3);
         assert_eq!(decoded.hits[0].primary_term, 2);
+        assert_eq!(
+            decoded.hits[0].sort_values,
+            vec![json!(42), json!("tenant-a"), json!(true), Value::Null]
+        );
     }
 
     #[test]
@@ -57859,11 +57986,30 @@ mod tests {
             seq_no: 0,
             primary_term: 1,
             source: Some(json!({})),
+            sort_values: Vec::new(),
         };
         assert!(matches!(
             invalid_hit.validate_supported_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "search hit id",
+                ..
+            })
+        ));
+
+        let unsupported_sort = OpenSearchSearchHitWire {
+            id: Some("doc-1".to_string()),
+            score: 1.0,
+            version: 1,
+            seq_no: 0,
+            primary_term: 1,
+            source: Some(json!({})),
+            sort_values: vec![json!({ "unsupported": true })],
+        };
+        let mut output = StreamOutput::new();
+        assert!(matches!(
+            unsupported_sort.write(&mut output, OPENSEARCH_3_7_0_TRANSPORT),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search hit sort value",
                 ..
             })
         ));

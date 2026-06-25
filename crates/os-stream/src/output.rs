@@ -23,6 +23,10 @@ impl StreamOutput {
         self.bytes.put_i32(value);
     }
 
+    pub fn write_i16(&mut self, value: i16) {
+        self.bytes.put_i16(value);
+    }
+
     pub fn write_i64(&mut self, value: i64) {
         self.bytes.put_i64(value);
     }
@@ -140,6 +144,7 @@ mod tests {
     fn roundtrips_basic_values() {
         let mut output = StreamOutput::new();
         output.write_i32(123);
+        output.write_i16(12);
         output.write_i64(456);
         output.write_f32(1.5);
         output.write_f64(2.5);
@@ -151,6 +156,7 @@ mod tests {
 
         let mut input = StreamInput::new(output.freeze());
         assert_eq!(input.read_i32().unwrap(), 123);
+        assert_eq!(input.read_i16().unwrap(), 12);
         assert_eq!(input.read_i64().unwrap(), 456);
         assert_eq!(input.read_f32().unwrap(), 1.5);
         assert_eq!(input.read_f64().unwrap(), 2.5);

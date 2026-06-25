@@ -1270,7 +1270,7 @@
       "request_wire_type": "SearchScrollRequest",
       "response_wire_type": "SearchResponse",
       "disposition": "rejected",
-      "reason": "Search-scroll transport execution remains gated on SearchHit optional section rendering and scroll-id execution mapping."
+      "reason": "Search-scroll transport execution remains gated on remaining SearchHit optional sections and scroll-id execution mapping."
     },
     {
       "action_name": "indices:data/read/scroll/clear",
