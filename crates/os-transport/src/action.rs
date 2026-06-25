@@ -24953,6 +24953,7 @@ pub enum OpenSearchQueryBuilderWire {
     Regexp(OpenSearchRegexpQueryBuilderWire),
     ScriptScore(OpenSearchScriptScoreQueryBuilderWire),
     SimpleQueryString(OpenSearchSimpleQueryStringQueryBuilderWire),
+    SpanMulti(OpenSearchSpanMultiTermQueryBuilderWire),
     SpanNear(OpenSearchSpanNearQueryBuilderWire),
     SpanOr(OpenSearchSpanOrQueryBuilderWire),
     SpanTerm(OpenSearchSpanTermQueryBuilderWire),
@@ -25328,6 +25329,13 @@ pub struct OpenSearchSpanNearQueryBuilderWire {
     pub clauses: Vec<OpenSearchQueryBuilderWire>,
     pub slop: i32,
     pub in_order: bool,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct OpenSearchSpanMultiTermQueryBuilderWire {
+    pub boost: f32,
+    pub query_name: Option<String>,
+    pub query: Box<OpenSearchQueryBuilderWire>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -25826,6 +25834,12 @@ fn write_named_query_builder(output: &mut StreamOutput, query: &OpenSearchQueryB
             output.write_vint(query.fuzzy_prefix_length);
             output.write_vint(query.fuzzy_max_expansions);
             output.write_bool(query.fuzzy_transpositions);
+        }
+        OpenSearchQueryBuilderWire::SpanMulti(query) => {
+            output.write_string("span_multi");
+            output.write_f32(query.boost);
+            output.write_optional_string(query.query_name.as_deref());
+            write_named_query_builder(output, &query.query);
         }
         OpenSearchQueryBuilderWire::SpanNear(query) => {
             output.write_string("span_near");
@@ -26342,6 +26356,13 @@ fn read_named_query_builder(
                 },
             ))
         }
+        "span_multi" => Ok(OpenSearchQueryBuilderWire::SpanMulti(
+            OpenSearchSpanMultiTermQueryBuilderWire {
+                boost: input.read_f32()?,
+                query_name: input.read_optional_string()?,
+                query: Box::new(read_named_query_builder(input)?),
+            },
+        )),
         "span_near" => Ok(OpenSearchQueryBuilderWire::SpanNear(
             OpenSearchSpanNearQueryBuilderWire {
                 boost: input.read_f32()?,
@@ -26439,7 +26460,7 @@ fn read_named_query_builder(
         )),
         _ => Err(TransportActionWireError::UnsupportedWireShape {
             shape: "search request source query",
-            reason: "only OpenSearch bool, boosting, common, combined_fields, constant_score, dis_max, exists, function_score, fuzzy, geo_distance, ids, match_all, match_none, match, match_bool_prefix, match_phrase, match_phrase_prefix, multi_match, nested, prefix, query_string, range, regexp, script_score, simple_query_string, span_near, span_or, span_term, term, terms, terms_set, wildcard, and wrapper QueryBuilder values are decoded by this subset",
+            reason: "only OpenSearch bool, boosting, common, combined_fields, constant_score, dis_max, exists, function_score, fuzzy, geo_distance, ids, match_all, match_none, match, match_bool_prefix, match_phrase, match_phrase_prefix, multi_match, nested, prefix, query_string, range, regexp, script_score, simple_query_string, span_multi, span_near, span_or, span_term, term, terms, terms_set, wildcard, and wrapper QueryBuilder values are decoded by this subset",
         }),
     }
 }
@@ -26550,6 +26571,16 @@ fn validate_score_function_builder(
         }
     }
     Ok(())
+}
+
+fn query_builder_is_supported_span_clause(query: &OpenSearchQueryBuilderWire) -> bool {
+    match query {
+        OpenSearchQueryBuilderWire::SpanTerm(_) => true,
+        OpenSearchQueryBuilderWire::SpanMulti(query) => {
+            matches!(query.query.as_ref(), OpenSearchQueryBuilderWire::Prefix(_))
+        }
+        _ => false,
+    }
 }
 
 fn validate_query_builder(
@@ -27131,6 +27162,16 @@ fn validate_query_builder(
                 });
             }
         }
+        OpenSearchQueryBuilderWire::SpanMulti(query) => {
+            validate_query_boost_and_name(query.boost, query.query_name.as_deref())?;
+            if !matches!(query.query.as_ref(), OpenSearchQueryBuilderWire::Prefix(_)) {
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "search request source query span_multi match",
+                    reason: "OpenSearch SpanMultiTermQueryBuilder match must be a prefix query in this execution subset",
+                });
+            }
+            validate_query_builder(Some(query.query.as_ref()))?;
+        }
         OpenSearchQueryBuilderWire::SpanNear(query) => {
             validate_query_boost_and_name(query.boost, query.query_name.as_deref())?;
             if query.clauses.len() < 2 {
@@ -27146,10 +27187,10 @@ fn validate_query_builder(
                 });
             }
             for clause in &query.clauses {
-                if !matches!(clause, OpenSearchQueryBuilderWire::SpanTerm(_)) {
+                if !query_builder_is_supported_span_clause(clause) {
                     return Err(TransportActionWireError::UnsupportedWireShape {
                         shape: "search request source query span_near clauses",
-                        reason: "OpenSearch SpanNearQueryBuilder clauses must be span_term queries in this execution subset",
+                        reason: "OpenSearch SpanNearQueryBuilder clauses must be span_term or span_multi(prefix) queries in this execution subset",
                     });
                 }
                 validate_query_builder(Some(clause))?;
@@ -27164,10 +27205,10 @@ fn validate_query_builder(
                 });
             }
             for clause in &query.clauses {
-                if !matches!(clause, OpenSearchQueryBuilderWire::SpanTerm(_)) {
+                if !query_builder_is_supported_span_clause(clause) {
                     return Err(TransportActionWireError::UnsupportedWireShape {
                         shape: "search request source query span_or clauses",
-                        reason: "OpenSearch SpanOrQueryBuilder clauses must be span_term queries in this execution subset",
+                        reason: "OpenSearch SpanOrQueryBuilder clauses must be span_term or span_multi(prefix) queries in this execution subset",
                     });
                 }
                 validate_query_builder(Some(clause))?;
@@ -64295,6 +64336,34 @@ mod tests {
         let decoded = OpenSearchSearchRequestWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, span_near_query_request);
 
+        let span_multi_query_request = OpenSearchSearchRequestWire {
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                query: Some(OpenSearchQueryBuilderWire::SpanMulti(
+                    OpenSearchSpanMultiTermQueryBuilderWire {
+                        boost: 1.0,
+                        query_name: Some("span-prefix".to_string()),
+                        query: Box::new(OpenSearchQueryBuilderWire::Prefix(
+                            OpenSearchPrefixQueryBuilderWire {
+                                boost: 1.0,
+                                query_name: None,
+                                field_name: "body".to_string(),
+                                value: "read".to_string(),
+                                rewrite: None,
+                                case_insensitive: false,
+                            },
+                        )),
+                    },
+                )),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        let mut output = StreamOutput::new();
+        span_multi_query_request.write(&mut output);
+
+        let decoded = OpenSearchSearchRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, span_multi_query_request);
+
         let exists_query_request = OpenSearchSearchRequestWire {
             source: Some(OpenSearchSearchSourceBuilderWire {
                 query: Some(OpenSearchQueryBuilderWire::Exists(
@@ -66254,6 +66323,36 @@ mod tests {
             invalid_span_near_clause.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "search request source query span_near clauses",
+                ..
+            })
+        ));
+
+        let invalid_span_multi_inner = OpenSearchSearchRequestWire {
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                query: Some(OpenSearchQueryBuilderWire::SpanMulti(
+                    OpenSearchSpanMultiTermQueryBuilderWire {
+                        boost: 1.0,
+                        query_name: None,
+                        query: Box::new(OpenSearchQueryBuilderWire::Wildcard(
+                            OpenSearchWildcardQueryBuilderWire {
+                                boost: 1.0,
+                                query_name: None,
+                                field_name: "body".to_string(),
+                                value: "read*".to_string(),
+                                rewrite: None,
+                                case_insensitive: false,
+                            },
+                        )),
+                    },
+                )),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        assert!(matches!(
+            invalid_span_multi_inner.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source query span_multi match",
                 ..
             })
         ));
