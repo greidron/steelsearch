@@ -9168,6 +9168,9 @@ impl SteelNode {
             .and_then(|pit| pit.get("id"))
             .and_then(Value::as_str)
         {
+            if pit_id.is_empty() {
+                return create_pit_invalid_empty_id_response();
+            }
             if let Some(response) = validate_point_in_time_search_request(index, request) {
                 return response;
             }
@@ -20911,6 +20914,29 @@ fn create_pit_invalid_null_id_response() -> RestResponse {
                 "caused_by": {
                     "type": "null_pointer_exception",
                     "reason": "Cannot invoke \"String.getBytes(java.nio.charset.Charset)\" because \"src\" is null"
+                }
+            },
+            "status": 400
+        }),
+    )
+}
+
+fn create_pit_invalid_empty_id_response() -> RestResponse {
+    RestResponse::json(
+        400,
+        serde_json::json!({
+            "error": {
+                "type": "illegal_argument_exception",
+                "reason": "invalid id: []",
+                "root_cause": [
+                    {
+                        "type": "illegal_argument_exception",
+                        "reason": "invalid id: []"
+                    }
+                ],
+                "caused_by": {
+                    "type": "e_o_f_exception",
+                    "reason": Value::Null
                 }
             },
             "status": 400
@@ -39698,14 +39724,14 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                     "query": { "match_all": {} }
                 })),
         );
-        assert_eq!(empty_pit_id_search.status, 404);
+        assert_eq!(empty_pit_id_search.status, 400);
         assert_eq!(
             empty_pit_id_search.body["error"]["type"],
-            "search_phase_execution_exception"
+            "illegal_argument_exception"
         );
         assert_eq!(
-            empty_pit_id_search.body["error"]["caused_by"]["type"],
-            "search_context_missing_exception"
+            empty_pit_id_search.body["error"]["root_cause"][0]["reason"],
+            "invalid id: []"
         );
 
         let list_pits =
