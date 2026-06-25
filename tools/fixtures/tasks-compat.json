@@ -26,6 +26,43 @@
       }
     },
     {
+      "name": "get_tasks_list_group_by_parents_shape",
+      "method": "GET",
+      "path": "/_tasks?group_by=parents",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "tasks"
+        ],
+        "compare_mode": "tasks_parents_shape"
+      }
+    },
+    {
+      "name": "get_tasks_list_group_by_none_shape",
+      "method": "GET",
+      "path": "/_tasks?group_by=none",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "tasks"
+        ],
+        "compare_mode": "tasks_flat_shape"
+      }
+    },
+    {
+      "name": "reject_tasks_list_invalid_group_by",
+      "method": "GET",
+      "path": "/_tasks?group_by=bogus",
+      "compare": {
+        "expected_status": 400,
+        "body_paths_present": [
+          "error.type",
+          "error.reason",
+          "status"
+        ]
+      }
+    },
+    {
       "name": "reject_unknown_task_cancel_shape",
       "method": "POST",
       "path": "/_tasks/_cancel?task_id=node-a:999",

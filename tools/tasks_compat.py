@@ -118,6 +118,10 @@ def compare_targets(case: dict[str, Any], steelsearch: dict[str, Any], opensearc
         return compare_pending_tasks_shape(steelsearch, opensearch)
     if mode == "tasks_list_shape":
         return compare_tasks_list_shape(steelsearch, opensearch)
+    if mode == "tasks_parents_shape":
+        return compare_tasks_parents_shape(steelsearch, opensearch)
+    if mode == "tasks_flat_shape":
+        return compare_tasks_flat_shape(steelsearch, opensearch)
     for path in compare.get("body_paths_equal", []):
         left = extract_path(steelsearch.get("body"), path)
         right = extract_path(opensearch.get("body"), path)
@@ -177,6 +181,56 @@ def compare_tasks_list_shape(steelsearch: dict[str, Any], opensearch: dict[str, 
         missing_task = sorted(required_task.difference(first_task.keys()))
         if missing_task:
             errors.append(f"{label} task item missing fields {missing_task}")
+    return errors
+
+
+def compare_tasks_parents_shape(steelsearch: dict[str, Any], opensearch: dict[str, Any]) -> list[str]:
+    errors: list[str] = []
+    required_task = {
+        "node",
+        "id",
+        "type",
+        "action",
+        "start_time_in_millis",
+        "running_time_in_nanos",
+        "cancellable",
+        "cancelled",
+        "headers",
+    }
+    for label, response in (("steelsearch", steelsearch), ("opensearch", opensearch)):
+        tasks = response.get("body", {}).get("tasks", {})
+        if not isinstance(tasks, dict) or not tasks:
+            errors.append(f"{label} returned empty parent task map")
+            continue
+        first_task = next(iter(tasks.values()))
+        missing_task = sorted(required_task.difference(first_task.keys()))
+        if missing_task:
+            errors.append(f"{label} parent task item missing fields {missing_task}")
+    return errors
+
+
+def compare_tasks_flat_shape(steelsearch: dict[str, Any], opensearch: dict[str, Any]) -> list[str]:
+    errors: list[str] = []
+    required_task = {
+        "node",
+        "id",
+        "type",
+        "action",
+        "start_time_in_millis",
+        "running_time_in_nanos",
+        "cancellable",
+        "cancelled",
+        "headers",
+    }
+    for label, response in (("steelsearch", steelsearch), ("opensearch", opensearch)):
+        tasks = response.get("body", {}).get("tasks", [])
+        if not isinstance(tasks, list) or not tasks:
+            errors.append(f"{label} returned empty flat task list")
+            continue
+        first_task = tasks[0]
+        missing_task = sorted(required_task.difference(first_task.keys()))
+        if missing_task:
+            errors.append(f"{label} flat task item missing fields {missing_task}")
     return errors
 
 

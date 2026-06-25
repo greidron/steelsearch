@@ -248,6 +248,18 @@ pub fn invoke_tasks_list_by_parent_live_route(body: &serde_json::Value) -> serde
     serde_json::json!({ "tasks": parent_rows })
 }
 
+pub fn invoke_tasks_list_flat_live_route(body: &serde_json::Value) -> serde_json::Value {
+    let tasks = body
+        .get("tasks")
+        .and_then(serde_json::Value::as_array)
+        .cloned()
+        .unwrap_or_default()
+        .into_iter()
+        .map(|task| normalize_bounded_task_value(&task))
+        .collect::<Vec<_>>();
+    serde_json::json!({ "tasks": tasks })
+}
+
 pub fn invoke_tasks_get_live_route(body: &serde_json::Value) -> serde_json::Value {
     let task = body.get("task").unwrap_or(body);
     serde_json::json!({
@@ -450,6 +462,31 @@ mod tests {
             grouped["tasks"]["node-a:99"]["children"][0]["headers"]["x-opaque-id"],
             serde_json::json!("child-request")
         );
+    }
+
+    #[test]
+    fn tasks_flat_grouping_returns_task_array() {
+        let body = serde_json::json!({
+            "tasks": [
+                {
+                    "node": "node-a",
+                    "id": 7,
+                    "action": "cluster:monitor/tasks/lists",
+                    "cancellable": false,
+                    "unexpected": "drop-me"
+                }
+            ]
+        });
+
+        let flat = invoke_tasks_list_flat_live_route(&body);
+
+        assert!(flat["tasks"].is_array());
+        assert_eq!(flat["tasks"][0]["id"], serde_json::json!(7));
+        assert_eq!(
+            flat["tasks"][0]["action"],
+            serde_json::json!("cluster:monitor/tasks/lists")
+        );
+        assert!(flat["tasks"][0].get("unexpected").is_none());
     }
 
     #[test]

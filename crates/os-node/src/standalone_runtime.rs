@@ -11661,10 +11661,12 @@ impl SteelNode {
     fn handle_tasks_list_route(&self, request: &RestRequest) -> RestResponse {
         let body = self.tasks_body();
         let response = match request.query_params.get("group_by").map(String::as_str) {
+            Some("nodes") | None => tasks_route_registration::invoke_tasks_list_live_route(&body),
             Some("parents") => {
                 tasks_route_registration::invoke_tasks_list_by_parent_live_route(&body)
             }
-            _ => tasks_route_registration::invoke_tasks_list_live_route(&body),
+            Some("none") => tasks_route_registration::invoke_tasks_list_flat_live_route(&body),
+            Some(group_by) => return invalid_tasks_group_by_response(group_by),
         };
         RestResponse::json(200, response)
     }
@@ -20017,6 +20019,19 @@ fn action_request_validation_error_owned(validation_errors: Vec<String>) -> Rest
                     .collect::<Vec<_>>()
                     .join("")
                 )
+            },
+            "status": 400
+        }),
+    )
+}
+
+fn invalid_tasks_group_by_response(group_by: &str) -> RestResponse {
+    RestResponse::json(
+        400,
+        serde_json::json!({
+            "error": {
+                "type": "illegal_argument_exception",
+                "reason": format!("[group_by] must be one of [nodes], [parents] or [none] but was [{group_by}]")
             },
             "status": 400
         }),
@@ -30820,6 +30835,26 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             missing.body["node_failures"][0]["type"],
             Value::String("failed_node_exception".to_string())
+        );
+    }
+
+    #[test]
+    fn tasks_list_rejects_invalid_group_by_like_opensearch() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        let response = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_tasks?group_by=bogus",
+        ));
+
+        assert_eq!(response.status, 400);
+        assert_eq!(response.body["error"]["type"], "illegal_argument_exception");
+        assert_eq!(
+            response.body["error"]["reason"],
+            "[group_by] must be one of [nodes], [parents] or [none] but was [bogus]"
         );
     }
 
