@@ -2450,6 +2450,7 @@ pub struct PitContext {
 const DEFAULT_MAX_PIT_KEEP_ALIVE_MILLIS: u64 = 86_400_000;
 const DEFAULT_PIT_NON_POSITIVE_KEEP_ALIVE_MILLIS: u64 = 30_000;
 const DEFAULT_PIT_EXPIRY_REAPER_GRACE_MILLIS: u64 = 60_000;
+const DEFAULT_MAX_OPEN_PIT_CONTEXTS: usize = 300;
 
 #[derive(Clone, Debug)]
 struct ParsedMsearchRequest {
@@ -10377,25 +10378,32 @@ impl SteelNode {
             .iter()
             .map(|index| self.index_primary_shard_count(index))
             .sum::<usize>();
+        let mut pit_contexts = self
+            .pit_contexts
+            .lock()
+            .expect("pit contexts lock poisoned");
+        pit_contexts.retain(|_, context| context.expires_at_millis > creation_time_millis);
+        if pit_contexts.len() >= DEFAULT_MAX_OPEN_PIT_CONTEXTS {
+            return search_phase_rejected_execution_error(format!(
+                "Trying to create too many Point In Time contexts. Must be less than or equal to: [{DEFAULT_MAX_OPEN_PIT_CONTEXTS}]. This limit can be set by changing the [search.max_open_pit_context] setting."
+            ));
+        }
         let mut next_id = self
             .next_pit_id
             .lock()
             .expect("next pit id lock poisoned");
         *next_id += 1;
         let pit_id = format!("pit-{}", *next_id);
-        self.pit_contexts
-            .lock()
-            .expect("pit contexts lock poisoned")
-            .insert(
-                pit_id.clone(),
-                PitContext {
-                    indices: resolved_indices,
-                    documents,
-                    keep_alive_millis,
-                    expires_at_millis: pit_expires_at_millis(creation_time_millis, keep_alive_millis),
-                    creation_time_millis,
-                },
-            );
+        pit_contexts.insert(
+            pit_id.clone(),
+            PitContext {
+                indices: resolved_indices,
+                documents,
+                keep_alive_millis,
+                expires_at_millis: pit_expires_at_millis(creation_time_millis, keep_alive_millis),
+                creation_time_millis,
+            },
+        );
         RestResponse::json(
             200,
             serde_json::json!({
@@ -39410,6 +39418,66 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             fractional_keep_alive_pit.body["error"]["root_cause"][0]["reason"],
             "failed to parse [1.5s], fractional time values are not supported"
+        );
+    }
+
+    #[test]
+    fn create_pit_rejects_more_than_max_open_contexts_like_opensearch() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(RestMethod::Put, "/logs-pit-max-open"))
+                .status,
+            200
+        );
+
+        for index in 1..=DEFAULT_MAX_OPEN_PIT_CONTEXTS {
+            let open_pit = node.handle_rest_request(RestRequest::new(
+                RestMethod::Post,
+                "/logs-pit-max-open/_search/point_in_time?keep_alive=1d",
+            ));
+            assert_eq!(open_pit.status, 200, "{index}");
+            assert_eq!(open_pit.body["pit_id"], format!("pit-{index}"), "{index}");
+        }
+
+        let too_many_pits = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/logs-pit-max-open/_search/point_in_time?keep_alive=1d",
+        ));
+        assert_eq!(too_many_pits.status, 429);
+        assert_eq!(
+            too_many_pits.body["error"]["type"],
+            "search_phase_execution_exception"
+        );
+        assert_eq!(too_many_pits.body["error"]["reason"], "all shards failed");
+        assert_eq!(
+            too_many_pits.body["error"]["root_cause"][0]["type"],
+            "rejected_execution_exception"
+        );
+        assert_eq!(
+            too_many_pits.body["error"]["root_cause"][0]["reason"],
+            format!(
+                "Trying to create too many Point In Time contexts. Must be less than or equal to: [{DEFAULT_MAX_OPEN_PIT_CONTEXTS}]. This limit can be set by changing the [search.max_open_pit_context] setting."
+            )
+        );
+
+        let list_pits =
+            node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_search/point_in_time/_all"));
+        assert_eq!(list_pits.status, 200);
+        assert_eq!(
+            list_pits.body["pits"].as_array().unwrap().len(),
+            DEFAULT_MAX_OPEN_PIT_CONTEXTS
+        );
+
+        let delete_all_pits = node
+            .handle_rest_request(RestRequest::new(RestMethod::Delete, "/_search/point_in_time/_all"));
+        assert_eq!(delete_all_pits.status, 200);
+        assert_eq!(
+            delete_all_pits.body["pits"].as_array().unwrap().len(),
+            DEFAULT_MAX_OPEN_PIT_CONTEXTS
         );
     }
 

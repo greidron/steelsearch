@@ -2286,6 +2286,8 @@ The create-PIT boundary covers:
   visibility through the same lifecycle state;
 - REST create-PIT and PIT-search keep-alive extension reject values above the
   OpenSearch default `point_in_time.max_keep_alive` of `24h`;
+- REST create-PIT rejects local open PIT context creation beyond the OpenSearch
+  default `search.max_open_pit_context` limit of `300`;
 - PIT search rejects `scroll` query parameters with the OpenSearch validation
   error used for point-in-time requests in scroll contexts, including
   aggregated scroll validation when PIT, `_shard_doc`, `from`, `size=0`,
