@@ -2299,6 +2299,8 @@ The create-PIT boundary covers:
 - PIT searches invalidate the local PIT context when its backing index has been
   deleted or closed, matching OpenSearch deleted-index and missing-context
   failure semantics;
+- PIT searches reject malformed local PIT ids with the OpenSearch `invalid id`
+  error while preserving missing-context handling for well-formed local ids;
 - manifest-backed create-PIT index option handling for unavailable targets,
   `allow_no_indices`, ignored aliases, alias fanout guards, open/closed
   wildcard expansion, and hidden wildcard expansion;

@@ -9257,6 +9257,9 @@ impl SteelNode {
             if pit_id.is_empty() {
                 return create_pit_invalid_empty_id_response();
             }
+            if !pit_search_id_has_local_shape(pit_id) {
+                return delete_pit_invalid_id_response(pit_id);
+            }
             if let Some(response) = validate_point_in_time_search_request(index, request) {
                 return response;
             }
@@ -20491,6 +20494,10 @@ fn validate_point_in_time_search_request(index: &str, request: &RestRequest) -> 
         return None;
     }
     Some(action_request_validation_error(validation_errors))
+}
+
+fn pit_search_id_has_local_shape(pit_id: &str) -> bool {
+    pit_id.strip_prefix("pit-").is_some_and(|suffix| !suffix.is_empty())
 }
 
 fn action_request_validation_error(validation_errors: Vec<&str>) -> RestResponse {
@@ -40574,6 +40581,30 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             empty_pit_id_search.body["error"]["root_cause"][0]["reason"],
             "invalid id: []"
+        );
+
+        let malformed_pit_id_search = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_search")
+                .with_json_body(serde_json::json!({
+                    "pit": {
+                        "id": "nondecodableid",
+                        "keep_alive": "1m"
+                    },
+                    "query": { "match_all": {} }
+                })),
+        );
+        assert_eq!(malformed_pit_id_search.status, 400);
+        assert_eq!(
+            malformed_pit_id_search.body["error"]["type"],
+            "illegal_argument_exception"
+        );
+        assert_eq!(
+            malformed_pit_id_search.body["error"]["reason"],
+            "invalid id: [nondecodableid]"
+        );
+        assert_eq!(
+            malformed_pit_id_search.body["error"]["root_cause"][0]["reason"],
+            "invalid id: [nondecodableid]"
         );
 
         let list_pits =
