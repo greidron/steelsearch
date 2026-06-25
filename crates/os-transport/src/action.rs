@@ -26213,6 +26213,7 @@ pub struct OpenSearchSearchHitWire {
     pub primary_term: i64,
     pub source: Option<Value>,
     pub fields: BTreeMap<String, Vec<Value>>,
+    pub highlight_fields: BTreeMap<String, Option<Vec<String>>>,
     pub sort_values: Vec<Value>,
 }
 
@@ -26226,6 +26227,7 @@ impl OpenSearchSearchHitWire {
             primary_term: hit.metadata.primary_term as i64,
             source: Some(hit.source),
             fields: normalized_document_fields(hit.fields),
+            highlight_fields: normalized_highlight_fields(hit.highlight),
             sort_values: normalized_sort_values(hit.sort),
         }
     }
@@ -26250,7 +26252,7 @@ impl OpenSearchSearchHitWire {
         output.write_bool(false);
         write_document_field_map(output, &self.fields)?;
         output.write_vint(0);
-        output.write_vint(0);
+        write_highlight_field_map(output, &self.highlight_fields)?;
         write_search_sort_values(output, &self.sort_values)?;
         write_search_sort_values(output, &self.sort_values)?;
         output.write_vint(0);
@@ -26274,12 +26276,13 @@ impl OpenSearchSearchHitWire {
             primary_term: input.read_vlong()?,
             source: read_optional_json_bytes_reference(input)?,
             fields: BTreeMap::new(),
+            highlight_fields: BTreeMap::new(),
             sort_values: Vec::new(),
         };
         reject_bool_present(input, "search hit explanation")?;
         let fields = read_document_field_map(input, "search hit document fields")?;
         reject_empty_list_len(input, "search hit metadata fields")?;
-        reject_empty_list_len(input, "search hit highlight fields")?;
+        let highlight_fields = read_highlight_field_map(input, "search hit highlight fields")?;
         let formatted_sort_values = read_search_sort_values(input, "search hit formatted sort values")?;
         let raw_sort_values = read_search_sort_values(input, "search hit raw sort values")?;
         if raw_sort_values.len() != formatted_sort_values.len() {
@@ -26290,6 +26293,7 @@ impl OpenSearchSearchHitWire {
         }
         let hit = Self {
             fields,
+            highlight_fields,
             sort_values: formatted_sort_values,
             ..hit
         };
@@ -26317,6 +26321,12 @@ impl OpenSearchSearchHitWire {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "search hit seq no",
                 reason: "OpenSearch search hit seq_no cannot be less than the unassigned sentinel",
+            });
+        }
+        if self.highlight_fields.keys().any(|name| name.is_empty()) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search hit highlight fields",
+                reason: "OpenSearch highlight field names must be non-empty",
             });
         }
         Ok(())
@@ -33853,6 +33863,35 @@ fn normalized_document_fields(fields: Option<Value>) -> BTreeMap<String, Vec<Val
     normalized
 }
 
+fn normalized_highlight_fields(highlight: Option<Value>) -> BTreeMap<String, Option<Vec<String>>> {
+    let mut normalized = BTreeMap::new();
+    let Some(Value::Object(fields)) = highlight else {
+        return normalized;
+    };
+    for (name, value) in fields {
+        let fragments = match value {
+            Value::Null => None,
+            Value::Array(values) => Some(
+                values
+                    .into_iter()
+                    .map(json_value_to_highlight_fragment)
+                    .collect(),
+            ),
+            Value::String(value) => Some(vec![value]),
+            value => Some(vec![json_value_to_highlight_fragment(value)]),
+        };
+        normalized.insert(name, fragments);
+    }
+    normalized
+}
+
+fn json_value_to_highlight_fragment(value: Value) -> String {
+    match value {
+        Value::String(value) => value,
+        value => value.to_string(),
+    }
+}
+
 fn write_document_field_map(
     output: &mut StreamOutput,
     fields: &BTreeMap<String, Vec<Value>>,
@@ -33909,6 +33948,101 @@ fn read_document_field(
         values.push(read_generic_json_value(input, shape)?);
     }
     Ok((name, values))
+}
+
+fn write_highlight_field_map(
+    output: &mut StreamOutput,
+    fields: &BTreeMap<String, Option<Vec<String>>>,
+) -> Result<(), TransportActionWireError> {
+    output.write_vint(fields.len() as i32);
+    for (name, fragments) in fields {
+        write_highlight_field(output, name, fragments.as_deref())?;
+    }
+    Ok(())
+}
+
+fn read_highlight_field_map(
+    input: &mut StreamInput,
+    shape: &'static str,
+) -> Result<BTreeMap<String, Option<Vec<String>>>, TransportActionWireError> {
+    let len = read_len(input)?;
+    let mut fields = BTreeMap::new();
+    for _ in 0..len {
+        let (name, fragments) = read_highlight_field(input, shape)?;
+        fields.insert(name, fragments);
+    }
+    Ok(fields)
+}
+
+fn write_highlight_field(
+    output: &mut StreamOutput,
+    name: &str,
+    fragments: Option<&[String]>,
+) -> Result<(), TransportActionWireError> {
+    output.write_string(name);
+    if let Some(fragments) = fragments {
+        output.write_bool(true);
+        output.write_vint(fragments.len() as i32);
+        for fragment in fragments {
+            write_text_string(output, fragment)?;
+        }
+    } else {
+        output.write_bool(false);
+    }
+    Ok(())
+}
+
+fn read_highlight_field(
+    input: &mut StreamInput,
+    shape: &'static str,
+) -> Result<(String, Option<Vec<String>>), TransportActionWireError> {
+    let name = input.read_string()?;
+    if !input.read_bool()? {
+        return Ok((name, None));
+    }
+    let len = read_len(input)?;
+    let mut fragments = Vec::with_capacity(len);
+    for _ in 0..len {
+        fragments.push(read_text_string(input, shape)?);
+    }
+    Ok((name, Some(fragments)))
+}
+
+fn write_text_string(
+    output: &mut StreamOutput,
+    value: &str,
+) -> Result<(), TransportActionWireError> {
+    let bytes = value.as_bytes();
+    let len = i32::try_from(bytes.len()).map_err(|_| {
+        TransportActionWireError::UnsupportedWireShape {
+            shape: "text",
+            reason: "OpenSearch Text byte length does not fit the int wire shape",
+        }
+    })?;
+    output.write_i32(len);
+    output.write_raw_bytes(bytes);
+    Ok(())
+}
+
+fn read_text_string(
+    input: &mut StreamInput,
+    shape: &'static str,
+) -> Result<String, TransportActionWireError> {
+    let len = input.read_i32()?;
+    if len < 0 {
+        return Err(TransportActionWireError::UnsupportedWireShape {
+            shape,
+            reason: "OpenSearch Text length cannot be negative",
+        });
+    }
+    let bytes = input.read_bytes(len as usize)?;
+    let value = std::str::from_utf8(&bytes).map_err(|_| {
+        TransportActionWireError::UnsupportedWireShape {
+            shape,
+            reason: "only UTF-8 OpenSearch Text values are decoded by this subset",
+        }
+    })?;
+    Ok(value.to_string())
 }
 
 fn write_generic_json_value(
@@ -58102,6 +58236,13 @@ mod tests {
                         vec![json!({ "nested": [1, "two", true, null] })],
                     ),
                 ]),
+                highlight_fields: BTreeMap::from([
+                    (
+                        "message".to_string(),
+                        Some(vec!["<em>hello</em>".to_string(), "world".to_string()]),
+                    ),
+                    ("missing".to_string(), None),
+                ]),
                 sort_values: vec![json!(42), json!("tenant-a"), json!(true), Value::Null],
             }],
             ..OpenSearchSearchResponseWire::default()
@@ -58127,6 +58268,11 @@ mod tests {
             decoded.hits[0].fields.get("payload"),
             Some(&vec![json!({ "nested": [1, "two", true, null] })])
         );
+        assert_eq!(
+            decoded.hits[0].highlight_fields.get("message"),
+            Some(&Some(vec!["<em>hello</em>".to_string(), "world".to_string()]))
+        );
+        assert_eq!(decoded.hits[0].highlight_fields.get("missing"), Some(&None));
         assert_eq!(
             decoded.hits[0].sort_values,
             vec![json!(42), json!("tenant-a"), json!(true), Value::Null]
@@ -58184,6 +58330,7 @@ mod tests {
             primary_term: 1,
             source: Some(json!({})),
             fields: BTreeMap::new(),
+            highlight_fields: BTreeMap::new(),
             sort_values: Vec::new(),
         };
         assert!(matches!(
@@ -58202,6 +58349,7 @@ mod tests {
             primary_term: 1,
             source: Some(json!({})),
             fields: BTreeMap::new(),
+            highlight_fields: BTreeMap::new(),
             sort_values: vec![json!({ "unsupported": true })],
         };
         let mut output = StreamOutput::new();
