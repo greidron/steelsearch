@@ -24955,6 +24955,7 @@ pub enum OpenSearchQueryBuilderWire {
     SimpleQueryString(OpenSearchSimpleQueryStringQueryBuilderWire),
     Term(OpenSearchTermQueryBuilderWire),
     Terms(OpenSearchTermsQueryBuilderWire),
+    TermsSet(OpenSearchTermsSetQueryBuilderWire),
     Wildcard(OpenSearchWildcardQueryBuilderWire),
     Wrapper(OpenSearchWrapperQueryBuilderWire),
 }
@@ -25308,6 +25309,16 @@ pub struct OpenSearchTermsQueryBuilderWire {
     pub query_name: Option<String>,
     pub field_name: String,
     pub values: Vec<Value>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct OpenSearchTermsSetQueryBuilderWire {
+    pub boost: f32,
+    pub query_name: Option<String>,
+    pub field_name: String,
+    pub values: Vec<Value>,
+    pub minimum_should_match_field: Option<String>,
+    pub minimum_should_match_script: Option<OpenSearchInlineScriptWire>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -25808,6 +25819,21 @@ fn write_named_query_builder(output: &mut StreamOutput, query: &OpenSearchQueryB
                 .expect("validated terms query values must encode as OpenSearch generic scalars");
             output.write_vint(0); // ValueType.DEFAULT
         }
+        OpenSearchQueryBuilderWire::TermsSet(query) => {
+            output.write_string("terms_set");
+            output.write_f32(query.boost);
+            output.write_optional_string(query.query_name.as_deref());
+            output.write_string(&query.field_name);
+            write_terms_query_values(output, &query.values)
+                .expect("validated terms_set query values must encode as OpenSearch generic scalars");
+            output.write_optional_string(query.minimum_should_match_field.as_deref());
+            write_optional_inline_script(
+                output,
+                query.minimum_should_match_script.as_ref(),
+                "search request source query terms_set minimum_should_match_script",
+            )
+            .expect("validated terms_set minimum_should_match_script must encode");
+        }
         OpenSearchQueryBuilderWire::Wildcard(query) => {
             output.write_string("wildcard");
             output.write_f32(query.boost);
@@ -26300,6 +26326,27 @@ fn read_named_query_builder(
                 }),
             }
         }
+        "terms_set" => {
+            let boost = input.read_f32()?;
+            let query_name = input.read_optional_string()?;
+            let field_name = input.read_string()?;
+            let values = read_terms_query_values(input)?;
+            let minimum_should_match_field = input.read_optional_string()?;
+            let minimum_should_match_script = read_optional_inline_script(
+                input,
+                "search request source query terms_set minimum_should_match_script",
+            )?;
+            Ok(OpenSearchQueryBuilderWire::TermsSet(
+                OpenSearchTermsSetQueryBuilderWire {
+                    boost,
+                    query_name,
+                    field_name,
+                    values,
+                    minimum_should_match_field,
+                    minimum_should_match_script,
+                },
+            ))
+        }
         "wildcard" => Ok(OpenSearchQueryBuilderWire::Wildcard(
             OpenSearchWildcardQueryBuilderWire {
                 boost: input.read_f32()?,
@@ -26319,7 +26366,7 @@ fn read_named_query_builder(
         )),
         _ => Err(TransportActionWireError::UnsupportedWireShape {
             shape: "search request source query",
-            reason: "only OpenSearch bool, boosting, common, combined_fields, constant_score, dis_max, exists, function_score, fuzzy, geo_distance, ids, match_all, match_none, match, match_bool_prefix, match_phrase, match_phrase_prefix, multi_match, nested, prefix, query_string, range, regexp, script_score, simple_query_string, term, terms, wildcard, and wrapper QueryBuilder values are decoded by this subset",
+            reason: "only OpenSearch bool, boosting, common, combined_fields, constant_score, dis_max, exists, function_score, fuzzy, geo_distance, ids, match_all, match_none, match, match_bool_prefix, match_phrase, match_phrase_prefix, multi_match, nested, prefix, query_string, range, regexp, script_score, simple_query_string, term, terms, terms_set, wildcard, and wrapper QueryBuilder values are decoded by this subset",
         }),
     }
 }
@@ -27031,6 +27078,52 @@ fn validate_query_builder(
             }
             for value in &query.values {
                 validate_terms_query_value(value)?;
+            }
+        }
+        OpenSearchQueryBuilderWire::TermsSet(query) => {
+            validate_query_boost_and_name(query.boost, query.query_name.as_deref())?;
+            if query.field_name.is_empty() {
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "search request source query",
+                    reason: "OpenSearch TermsSetQueryBuilder field name must be non-empty",
+                });
+            }
+            if query.values.is_empty() {
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "search request source query",
+                    reason: "OpenSearch TermsSetQueryBuilder values must be non-empty in this subset",
+                });
+            }
+            for value in &query.values {
+                validate_terms_query_value(value)?;
+            }
+            if query.minimum_should_match_field.is_some() {
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "search request source query terms_set minimum_should_match_field",
+                    reason: "OpenSearch TermsSetQueryBuilder minimum_should_match_field requires document-field threshold execution",
+                });
+            }
+            let Some(script) = query.minimum_should_match_script.as_ref() else {
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "search request source query terms_set minimum_should_match_script",
+                    reason: "OpenSearch TermsSetQueryBuilder minimum_should_match_script is required by this execution subset",
+                });
+            };
+            validate_inline_script(
+                script,
+                "search request source query terms_set minimum_should_match_script",
+            )?;
+            if script
+                .source
+                .parse::<u64>()
+                .ok()
+                .filter(|threshold| *threshold > 0)
+                .is_none()
+            {
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "search request source query terms_set minimum_should_match_script",
+                    reason: "OpenSearch TermsSetQueryBuilder minimum_should_match_script source must be a positive integer string in this execution subset",
+                });
             }
         }
         OpenSearchQueryBuilderWire::Wildcard(query) => {
@@ -28519,6 +28612,20 @@ fn write_inline_script(
     Ok(())
 }
 
+fn write_optional_inline_script(
+    output: &mut StreamOutput,
+    script: Option<&OpenSearchInlineScriptWire>,
+    shape: &'static str,
+) -> Result<(), TransportActionWireError> {
+    if let Some(script) = script {
+        output.write_bool(true);
+        write_inline_script(output, script, shape)?;
+    } else {
+        output.write_bool(false);
+    }
+    Ok(())
+}
+
 fn read_inline_script(
     input: &mut StreamInput,
     shape: &'static str,
@@ -28538,6 +28645,17 @@ fn read_inline_script(
     };
     validate_inline_script(&script, shape)?;
     Ok(script)
+}
+
+fn read_optional_inline_script(
+    input: &mut StreamInput,
+    shape: &'static str,
+) -> Result<Option<OpenSearchInlineScriptWire>, TransportActionWireError> {
+    if input.read_bool()? {
+        read_inline_script(input, shape).map(Some)
+    } else {
+        Ok(None)
+    }
 }
 
 fn validate_derived_fields(
@@ -28623,6 +28741,9 @@ fn inline_script_options_shape(shape: &'static str) -> &'static str {
         "search request source query script_score script" => {
             "search request source query script_score script options"
         }
+        "search request source query terms_set minimum_should_match_script" => {
+            "search request source query terms_set minimum_should_match_script options"
+        }
         _ => "search request source derived fields script options",
     }
 }
@@ -28634,6 +28755,9 @@ fn inline_script_params_shape(shape: &'static str) -> &'static str {
         }
         "search request source query script_score script" => {
             "search request source query script_score script params"
+        }
+        "search request source query terms_set minimum_should_match_script" => {
+            "search request source query terms_set minimum_should_match_script params"
         }
         _ => "search request source derived fields script params",
     }
@@ -63911,6 +64035,33 @@ mod tests {
         let decoded = OpenSearchSearchRequestWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, terms_query_request);
 
+        let terms_set_query_request = OpenSearchSearchRequestWire {
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                query: Some(OpenSearchQueryBuilderWire::TermsSet(
+                    OpenSearchTermsSetQueryBuilderWire {
+                        boost: 1.0,
+                        query_name: Some("required-tags".to_string()),
+                        field_name: "tags".to_string(),
+                        values: vec![json!("prod"), json!("blue"), json!("stable")],
+                        minimum_should_match_field: None,
+                        minimum_should_match_script: Some(OpenSearchInlineScriptWire {
+                            lang: Some("painless".to_string()),
+                            source: "2".to_string(),
+                            options: json!({}),
+                            params: json!({}),
+                        }),
+                    },
+                )),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        let mut output = StreamOutput::new();
+        terms_set_query_request.write(&mut output);
+
+        let decoded = OpenSearchSearchRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, terms_set_query_request);
+
         let exists_query_request = OpenSearchSearchRequestWire {
             source: Some(OpenSearchSearchSourceBuilderWire {
                 query: Some(OpenSearchQueryBuilderWire::Exists(
@@ -65727,6 +65878,59 @@ mod tests {
             invalid_function_score_weight.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "search request source query function_score score function",
+                ..
+            })
+        ));
+
+        let invalid_terms_set_threshold_field = OpenSearchSearchRequestWire {
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                query: Some(OpenSearchQueryBuilderWire::TermsSet(
+                    OpenSearchTermsSetQueryBuilderWire {
+                        boost: 1.0,
+                        query_name: None,
+                        field_name: "tags".to_string(),
+                        values: vec![json!("prod"), json!("blue")],
+                        minimum_should_match_field: Some("required_matches".to_string()),
+                        minimum_should_match_script: None,
+                    },
+                )),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        assert!(matches!(
+            invalid_terms_set_threshold_field.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source query terms_set minimum_should_match_field",
+                ..
+            })
+        ));
+
+        let invalid_terms_set_script = OpenSearchSearchRequestWire {
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                query: Some(OpenSearchQueryBuilderWire::TermsSet(
+                    OpenSearchTermsSetQueryBuilderWire {
+                        boost: 1.0,
+                        query_name: None,
+                        field_name: "tags".to_string(),
+                        values: vec![json!("prod"), json!("blue")],
+                        minimum_should_match_field: None,
+                        minimum_should_match_script: Some(OpenSearchInlineScriptWire {
+                            lang: Some("painless".to_string()),
+                            source: "params.required".to_string(),
+                            options: json!({}),
+                            params: json!({}),
+                        }),
+                    },
+                )),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        assert!(matches!(
+            invalid_terms_set_script.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source query terms_set minimum_should_match_script",
                 ..
             })
         ));
