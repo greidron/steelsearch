@@ -24935,6 +24935,7 @@ pub enum OpenSearchQueryBuilderWire {
     MatchAll(OpenSearchMatchAllQueryBuilderWire),
     Match(OpenSearchMatchQueryBuilderWire),
     MatchBoolPrefix(OpenSearchMatchBoolPrefixQueryBuilderWire),
+    MatchNone(OpenSearchMatchNoneQueryBuilderWire),
     MatchPhrase(OpenSearchMatchPhraseQueryBuilderWire),
     MatchPhrasePrefix(OpenSearchMatchPhrasePrefixQueryBuilderWire),
     Prefix(OpenSearchPrefixQueryBuilderWire),
@@ -24998,6 +24999,12 @@ pub struct OpenSearchFuzzinessAutoBoundsWire {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct OpenSearchMatchAllQueryBuilderWire {
+    pub boost: f32,
+    pub query_name: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct OpenSearchMatchNoneQueryBuilderWire {
     pub boost: f32,
     pub query_name: Option<String>,
 }
@@ -25151,6 +25158,15 @@ impl Default for OpenSearchMatchAllQueryBuilderWire {
     }
 }
 
+impl Default for OpenSearchMatchNoneQueryBuilderWire {
+    fn default() -> Self {
+        Self {
+            boost: 1.0,
+            query_name: None,
+        }
+    }
+}
+
 fn write_optional_query_builder(
     output: &mut StreamOutput,
     query: Option<&OpenSearchQueryBuilderWire>,
@@ -25203,6 +25219,11 @@ fn write_named_query_builder(output: &mut StreamOutput, query: &OpenSearchQueryB
         }
         OpenSearchQueryBuilderWire::MatchAll(query) => {
             output.write_string("match_all");
+            output.write_f32(query.boost);
+            output.write_optional_string(query.query_name.as_deref());
+        }
+        OpenSearchQueryBuilderWire::MatchNone(query) => {
+            output.write_string("match_none");
             output.write_f32(query.boost);
             output.write_optional_string(query.query_name.as_deref());
         }
@@ -25388,6 +25409,12 @@ fn read_named_query_builder(
             boost: input.read_f32()?,
             query_name: input.read_optional_string()?,
         })),
+        "match_none" => Ok(OpenSearchQueryBuilderWire::MatchNone(
+            OpenSearchMatchNoneQueryBuilderWire {
+                boost: input.read_f32()?,
+                query_name: input.read_optional_string()?,
+            },
+        )),
         "match" => {
             let boost = input.read_f32()?;
             let query_name = input.read_optional_string()?;
@@ -25562,7 +25589,7 @@ fn read_named_query_builder(
         )),
         _ => Err(TransportActionWireError::UnsupportedWireShape {
             shape: "search request source query",
-            reason: "only OpenSearch bool, exists, fuzzy, ids, match_all, match, match_bool_prefix, match_phrase, match_phrase_prefix, prefix, range, regexp, term, terms, and wildcard QueryBuilder values are decoded by this subset",
+            reason: "only OpenSearch bool, exists, fuzzy, ids, match_all, match_none, match, match_bool_prefix, match_phrase, match_phrase_prefix, prefix, range, regexp, term, terms, and wildcard QueryBuilder values are decoded by this subset",
         }),
     }
 }
@@ -25658,6 +25685,9 @@ fn validate_query_builder(
                     reason: "OpenSearch MatchAllQueryBuilder query name must be non-empty when present",
                 });
             }
+        }
+        OpenSearchQueryBuilderWire::MatchNone(query) => {
+            validate_query_boost_and_name(query.boost, query.query_name.as_deref())?;
         }
         OpenSearchQueryBuilderWire::Match(query) => {
             validate_query_boost_and_name(query.boost, query.query_name.as_deref())?;
@@ -62230,6 +62260,24 @@ mod tests {
         let decoded = OpenSearchSearchRequestWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, source_disabled_request);
 
+        let match_none_query_request = OpenSearchSearchRequestWire {
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                query: Some(OpenSearchQueryBuilderWire::MatchNone(
+                    OpenSearchMatchNoneQueryBuilderWire {
+                        boost: 1.0,
+                        query_name: Some("no-docs".to_string()),
+                    },
+                )),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        let mut output = StreamOutput::new();
+        match_none_query_request.write(&mut output);
+
+        let decoded = OpenSearchSearchRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, match_none_query_request);
+
         let term_query_request = OpenSearchSearchRequestWire {
             source: Some(OpenSearchSearchSourceBuilderWire {
                 query: Some(OpenSearchQueryBuilderWire::Term(
@@ -62724,6 +62772,26 @@ mod tests {
         };
         assert!(matches!(
             invalid_match_all_name.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source query",
+                ..
+            })
+        ));
+
+        let invalid_match_none_name = OpenSearchSearchRequestWire {
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                query: Some(OpenSearchQueryBuilderWire::MatchNone(
+                    OpenSearchMatchNoneQueryBuilderWire {
+                        boost: 1.0,
+                        query_name: Some(String::new()),
+                    },
+                )),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        assert!(matches!(
+            invalid_match_none_name.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "search request source query",
                 ..
