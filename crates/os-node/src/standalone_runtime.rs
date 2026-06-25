@@ -20661,11 +20661,25 @@ fn delete_pit_illegal_argument(reason: impl Into<String>) -> RestResponse {
 }
 
 fn pit_unrecognized_query_param_response(request: &RestRequest) -> Option<RestResponse> {
-    let key = request.query_params.keys().next()?;
-    Some(delete_pit_illegal_argument(format!(
-        "request [{}] contains unrecognized parameter: [{key}]",
-        request.path
-    )))
+    let keys = request.query_params.keys().collect::<Vec<_>>();
+    match keys.as_slice() {
+        [] => None,
+        [key] => Some(delete_pit_illegal_argument(format!(
+            "request [{}] contains unrecognized parameter: [{key}]",
+            request.path
+        ))),
+        keys => {
+            let formatted_keys = keys
+                .iter()
+                .map(|key| format!("[{key}]"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            Some(delete_pit_illegal_argument(format!(
+                "request [{}] contains unrecognized parameters: {formatted_keys}",
+                request.path
+            )))
+        }
+    }
 }
 
 fn delete_pit_invalid_id_response(id: &str) -> RestResponse {
@@ -40051,6 +40065,26 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             query_param_close_pit.body["error"]["root_cause"][0]["reason"],
             "request [/_search/point_in_time] contains unrecognized parameter: [pit_id]"
+        );
+
+        let mut multiple_query_param_close_pit =
+            RestRequest::new(RestMethod::Delete, "/_search/point_in_time");
+        multiple_query_param_close_pit
+            .query_params
+            .insert("pit_id".to_string(), "QUERY_STRING".to_string());
+        multiple_query_param_close_pit
+            .query_params
+            .insert("foo".to_string(), "bar".to_string());
+        let multiple_query_param_close_pit =
+            node.handle_rest_request(multiple_query_param_close_pit);
+        assert_eq!(multiple_query_param_close_pit.status, 400);
+        assert_eq!(
+            multiple_query_param_close_pit.body["error"]["type"],
+            "illegal_argument_exception"
+        );
+        assert_eq!(
+            multiple_query_param_close_pit.body["error"]["root_cause"][0]["reason"],
+            "request [/_search/point_in_time] contains unrecognized parameters: [foo], [pit_id]"
         );
 
         let mut query_param_clear_all_pit =
