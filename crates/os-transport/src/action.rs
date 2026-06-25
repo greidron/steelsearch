@@ -32441,6 +32441,7 @@ pub struct OpenSearchCreatePitResponseWire {
     pub failed_shards: i32,
     pub skipped_shards: i32,
     pub creation_time_millis: i64,
+    pub shard_failures: Vec<OpenSearchShardSearchFailureWire>,
 }
 
 impl OpenSearchCreatePitResponseWire {
@@ -32456,6 +32457,7 @@ impl OpenSearchCreatePitResponseWire {
             failed_shards: 0,
             skipped_shards: 0,
             creation_time_millis,
+            shard_failures: Vec::new(),
         }
     }
 
@@ -32466,7 +32468,7 @@ impl OpenSearchCreatePitResponseWire {
         output.write_vint(self.failed_shards);
         output.write_vint(self.skipped_shards);
         output.write_i64(self.creation_time_millis);
-        output.write_vint(0);
+        write_shard_search_failures(output, &self.shard_failures)?;
         Ok(())
     }
 
@@ -32479,25 +32481,16 @@ impl OpenSearchCreatePitResponseWire {
             failed_shards: input.read_vint()?,
             skipped_shards: input.read_vint()?,
             creation_time_millis: input.read_i64()?,
+            shard_failures: read_shard_search_failures(&mut input)?,
         };
-        let failure_count = input.read_vint()?;
-        if failure_count < 0 {
-            return Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "create pit response failure count",
-                reason: "CreatePitResponse failure count must be non-negative",
-            });
-        }
-        if failure_count != 0 {
-            return Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "create pit response failures",
-                reason: "CreatePitResponse shard failures require ShardSearchFailure decoding",
-            });
-        }
         require_no_trailing_bytes(&input)?;
         Ok(response)
     }
 
     pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
+        for failure in &self.shard_failures {
+            failure.validate_supported_subset()?;
+        }
         Ok(())
     }
 }
@@ -68688,6 +68681,7 @@ mod tests {
             failed_shards: 3,
             skipped_shards: 4,
             creation_time_millis: -1,
+            shard_failures: Vec::new(),
         };
         let mut output = StreamOutput::new();
         response.write(&mut output).unwrap();
@@ -68698,22 +68692,20 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_create_pit_response_rejects_shard_failure_payloads() {
-        let mut failure_payload = StreamOutput::new();
-        failure_payload.write_string("pit-context");
-        failure_payload.write_vint(1);
-        failure_payload.write_vint(1);
-        failure_payload.write_vint(0);
-        failure_payload.write_vint(0);
-        failure_payload.write_i64(1_700_000_000_000);
-        failure_payload.write_vint(1);
-        assert!(matches!(
-            OpenSearchCreatePitResponseWire::read(failure_payload.freeze()),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "create pit response failures",
-                ..
-            })
-        ));
+    fn opensearch_create_pit_response_round_trips_shard_failure_payloads() {
+        let response = OpenSearchCreatePitResponseWire {
+            failed_shards: 1,
+            shard_failures: vec![OpenSearchShardSearchFailureWire::illegal_argument(
+                "pit create failed",
+            )],
+            ..OpenSearchCreatePitResponseWire::success("pit-context", 1_700_000_000_000, 1)
+        };
+        let mut output = StreamOutput::new();
+        response.write(&mut output).unwrap();
+
+        let decoded = OpenSearchCreatePitResponseWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, response);
+        decoded.validate_supported_subset().unwrap();
     }
 
     #[test]

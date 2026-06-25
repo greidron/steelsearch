@@ -2282,7 +2282,8 @@ The create-PIT boundary covers:
   indices options, routing, preference, keep-alive time value, and optional
   `allowPartialPitCreation` flag at the wire decode/build layer;
 - OpenSearch `CreatePitResponse` rendering with PIT id, total, successful,
-  failed, skipped shard counts, creation time, and an empty shard failure list;
+  failed, skipped shard counts, creation time, and `ShardSearchFailure`
+  payloads;
 - raw create-PIT request `TimeValue` values down to `-1` and raw response
   scalar fields decode without extra local value validation like the OpenSearch
   wire objects;
@@ -2317,9 +2318,8 @@ The create-PIT boundary covers:
   wildcard expansion, and hidden wildcard expansion;
 - create-PIT `preference` and `allow_partial_pit_creation` wire/runtime
   admission for the local all-success shard subset;
-- explicit rejection for non-positive keep-alive values, unknown keep-alive
-  units; non-empty shard failure payloads remain fail-closed until shard-level
-  failure aggregation is mapped.
+- explicit runtime rejection for non-positive keep-alive values and wire
+  rejection for unknown keep-alive units.
 
 The indices-stats boundary covers:
 
