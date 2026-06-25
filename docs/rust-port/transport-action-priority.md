@@ -1851,6 +1851,8 @@ The PIT-segments boundary covers:
 - REST `_nodes/stats` exposes local search session resource accounting through
   `indices.search.open_contexts`, counting active PIT plus scroll contexts after
   pruning expired PIT entries.
+- daemon startup owns a local PIT expiry reaper that prunes expired PIT contexts
+  without requiring a user request to hit list/delete/search/stats routes.
 
 The indices-shard-stores boundary covers:
 

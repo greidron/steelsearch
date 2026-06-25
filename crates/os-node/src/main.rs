@@ -397,6 +397,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     node.register_default_dev_endpoints(config.cluster_name.clone(), cluster_uuid);
     node.register_development_cluster_endpoints(cluster_view);
     node.start_rest();
+    let _pit_expiry_reaper = node.spawn_pit_expiry_reaper_until(Duration::from_secs(30), || {
+        SHUTDOWN_REQUESTED.load(Ordering::SeqCst)
+    });
     bind_dev_transport_pit_store(
         Arc::clone(&node.pit_contexts),
         Arc::clone(&node.next_pit_id),

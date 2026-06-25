@@ -2588,6 +2588,27 @@ impl SteelNode {
         self
     }
 
+    pub fn spawn_pit_expiry_reaper_until<F>(
+        &self,
+        interval: Duration,
+        should_stop: F,
+    ) -> std::thread::JoinHandle<()>
+    where
+        F: Fn() -> bool + Send + 'static,
+    {
+        let contexts = Arc::clone(&self.pit_contexts);
+        std::thread::spawn(move || loop {
+            {
+                let mut contexts = contexts.lock().expect("pit contexts lock poisoned");
+                prune_expired_pit_contexts(&mut contexts, current_epoch_millis());
+            }
+            if should_stop() {
+                break;
+            }
+            std::thread::sleep(interval);
+        })
+    }
+
     pub fn extension_lifecycle_execution_transcript(&self) -> Vec<ExtensionLifecycleExecution> {
         self.extension_lifecycle_executions
             .lock()
@@ -45585,6 +45606,71 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             pit_expires_at_millis(1_000, DEFAULT_MAX_PIT_KEEP_ALIVE_MILLIS),
             1_000 + u128::from(DEFAULT_MAX_PIT_KEEP_ALIVE_MILLIS)
         );
+    }
+
+    #[test]
+    fn point_in_time_background_reaper_prunes_expired_contexts_without_request() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        let now_millis = current_epoch_millis();
+        let expired_pit_id = build_local_pit_id(301);
+        let active_pit_id = build_local_pit_id(302);
+        {
+            let mut contexts = node
+                .pit_contexts
+                .lock()
+                .expect("pit contexts lock poisoned");
+            contexts.insert(
+                expired_pit_id.clone(),
+                PitContext {
+                    indices: vec!["logs-pit-reaper-expired".to_string()],
+                    documents: BTreeMap::new(),
+                    keep_alive_millis: 1,
+                    expires_at_millis: now_millis.saturating_sub(1),
+                    creation_time_millis: now_millis.saturating_sub(2),
+                },
+            );
+            contexts.insert(
+                active_pit_id.clone(),
+                PitContext {
+                    indices: vec!["logs-pit-reaper-active".to_string()],
+                    documents: BTreeMap::new(),
+                    keep_alive_millis: 60_000,
+                    expires_at_millis: now_millis + 60_000,
+                    creation_time_millis: now_millis,
+                },
+            );
+        }
+
+        let should_stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let reaper_stop = std::sync::Arc::clone(&should_stop);
+        let reaper = node.spawn_pit_expiry_reaper_until(Duration::from_millis(1), move || {
+            reaper_stop.load(std::sync::atomic::Ordering::SeqCst)
+        });
+        for _ in 0..100 {
+            if !node
+                .pit_contexts
+                .lock()
+                .expect("pit contexts lock poisoned")
+                .contains_key(&expired_pit_id)
+            {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        should_stop.store(true, std::sync::atomic::Ordering::SeqCst);
+        reaper
+            .join()
+            .expect("PIT expiry reaper should stop cleanly");
+
+        let contexts = node
+            .pit_contexts
+            .lock()
+            .expect("pit contexts lock poisoned");
+        assert!(!contexts.contains_key(&expired_pit_id));
+        assert!(contexts.contains_key(&active_pit_id));
     }
 
     #[test]
