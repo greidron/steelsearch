@@ -102,6 +102,7 @@ pub enum Query {
     },
     GeoDistance(GeoDistanceQuery),
     GeoBoundingBox(GeoBoundingBoxQuery),
+    GeoPolygon(GeoPolygonQuery),
     Exists {
         field: String,
     },
@@ -213,6 +214,19 @@ pub struct GeoBoundingBoxQuery {
     pub bottom: f64,
     pub right: f64,
     pub ignore_unmapped: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct GeoPolygonQuery {
+    pub field: String,
+    pub points: Vec<GeoPoint>,
+    pub ignore_unmapped: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct GeoPoint {
+    pub lat: f64,
+    pub lon: f64,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -654,6 +668,7 @@ pub fn parse_query(value: &Value) -> QueryDslResult<Query> {
         "range" => parse_range(body),
         "geo_distance" => parse_geo_distance(body),
         "geo_bounding_box" => parse_geo_bounding_box(body),
+        "geo_polygon" => parse_geo_polygon(body),
         "exists" => parse_exists(body),
         "distance_feature" => parse_distance_feature(body),
         "rank_feature" => parse_rank_feature(body),
@@ -3213,6 +3228,83 @@ fn parse_geo_bounding_box(body: &Value) -> QueryDslResult<Query> {
     }))
 }
 
+fn parse_geo_polygon(body: &Value) -> QueryDslResult<Query> {
+    let object = body.as_object().ok_or(QueryDslError::ExpectedObject)?;
+    let ignore_unmapped = object
+        .get("ignore_unmapped")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let mut field_name = None;
+    let mut points = None;
+    for (option, value) in object {
+        match option.as_str() {
+            "ignore_unmapped" | "validation_method" | "_name" | "boost" => {}
+            field => {
+                let polygon_object = value.as_object().ok_or(QueryDslError::ExpectedObject)?;
+                let parsed_points = polygon_object
+                    .get("points")
+                    .and_then(Value::as_array)
+                    .ok_or_else(|| QueryDslError::MissingField {
+                        clause: "geo_polygon".to_string(),
+                        field: "points".to_string(),
+                    })?
+                    .iter()
+                    .map(parse_geo_point)
+                    .collect::<Option<Vec<_>>>()
+                    .ok_or_else(|| QueryDslError::InvalidValue {
+                        clause: "geo_polygon".to_string(),
+                        field: "points".to_string(),
+                        reason: "invalid geo point".to_string(),
+                    })?;
+                field_name = Some(field.to_string());
+                points = Some(parsed_points);
+            }
+        }
+    }
+    let field = field_name.ok_or_else(|| QueryDslError::ExpectedSingleField {
+        clause: "geo_polygon".to_string(),
+    })?;
+    let mut points = points.ok_or_else(|| QueryDslError::MissingField {
+        clause: "geo_polygon".to_string(),
+        field: "points".to_string(),
+    })?;
+    let already_closed = points.first() == points.last();
+    if points.len() < 3 || (already_closed && points.len() < 4) {
+        return Err(QueryDslError::InvalidValue {
+            clause: "geo_polygon".to_string(),
+            field: "points".to_string(),
+            reason: "too few points defined for geo_polygon query".to_string(),
+        });
+    }
+    if !already_closed {
+        if let Some(first) = points.first().cloned() {
+            points.push(first);
+        }
+    }
+    Ok(Query::GeoPolygon(GeoPolygonQuery {
+        field,
+        points,
+        ignore_unmapped,
+    }))
+}
+
+fn parse_geo_point(value: &Value) -> Option<GeoPoint> {
+    if let Some(object) = value.as_object() {
+        return Some(GeoPoint {
+            lat: object.get("lat")?.as_f64()?,
+            lon: object.get("lon")?.as_f64()?,
+        });
+    }
+    let array = value.as_array()?;
+    if array.len() != 2 {
+        return None;
+    }
+    Some(GeoPoint {
+        lon: array[0].as_f64()?,
+        lat: array[1].as_f64()?,
+    })
+}
+
 fn parse_geo_point_object(value: &Value) -> Option<(f64, f64)> {
     let point = value.as_object()?;
     Some((point.get("lat")?.as_f64()?, point.get("lon")?.as_f64()?))
@@ -4379,6 +4471,37 @@ mod tests {
                 left: -122.5,
                 bottom: 37.0,
                 right: -121.0,
+                ignore_unmapped: true,
+            })
+        );
+    }
+
+    #[test]
+    fn parses_geo_polygon_query() {
+        let query = parse_query(&serde_json::json!({
+            "geo_polygon": {
+                "location": {
+                    "points": [
+                        { "lat": 38.0, "lon": -123.0 },
+                        [ -122.0, 38.0 ],
+                        { "lat": 37.0, "lon": -122.0 }
+                    ]
+                },
+                "ignore_unmapped": true
+            }
+        }))
+        .unwrap();
+
+        assert_eq!(
+            query,
+            Query::GeoPolygon(GeoPolygonQuery {
+                field: "location".to_string(),
+                points: vec![
+                    GeoPoint { lat: 38.0, lon: -123.0 },
+                    GeoPoint { lat: 38.0, lon: -122.0 },
+                    GeoPoint { lat: 37.0, lon: -122.0 },
+                    GeoPoint { lat: 38.0, lon: -123.0 },
+                ],
                 ignore_unmapped: true,
             })
         );

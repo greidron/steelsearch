@@ -28,6 +28,7 @@ class SourceSearchRegistrationsTests(unittest.TestCase):
             ("query", "QuerySpec<>(MatchQueryBuilder.NAME,"),
             ("query", "BoolQueryBuilder.NAME"),
             ("query", "GeoBoundingBoxQueryBuilder.NAME"),
+            ("query", "GeoPolygonQueryBuilder.NAME"),
             ("query", "ScriptScoreQueryBuilder.NAME"),
             ("aggregation", "AggregationSpec(TermsAggregationBuilder.NAME,"),
             ("aggregation", "AdjacencyMatrixAggregationBuilder.NAME"),

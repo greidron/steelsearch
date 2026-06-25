@@ -22371,6 +22371,7 @@ fn validate_search_query_body(query: &Value) -> Option<RestResponse> {
         | "nested"
         | "geo_distance"
         | "geo_bounding_box"
+        | "geo_polygon"
         | "function_score"
         | "script_score"
         | "span_term"
@@ -22807,6 +22808,55 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
         if field.is_empty() || !valid_box {
             return Some(build_unsupported_search_response(
                 "unsupported geo_bounding_box query shape",
+            ));
+        }
+    }
+    if let Some(spec) = query.get("geo_polygon").and_then(Value::as_object) {
+        if spec.keys().filter(|key| {
+            !matches!(
+                key.as_str(),
+                "ignore_unmapped" | "validation_method" | "_name" | "boost"
+            )
+        }).count() != 1
+        {
+            return Some(build_unsupported_search_response(
+                "unsupported geo_polygon query shape",
+            ));
+        }
+        let Some((field, polygon_spec)) = spec.iter().find(|(key, _)| {
+            !matches!(
+                key.as_str(),
+                "ignore_unmapped" | "validation_method" | "_name" | "boost"
+            )
+        }) else {
+            return Some(build_unsupported_search_response(
+                "unsupported geo_polygon query shape",
+            ));
+        };
+        let Some(points) = polygon_spec
+            .as_object()
+            .and_then(|object| object.get("points"))
+            .and_then(Value::as_array)
+        else {
+            return Some(build_unsupported_search_response(
+                "unsupported geo_polygon query shape",
+            ));
+        };
+        let parsed_points = points
+            .iter()
+            .map(parse_geo_point_value)
+            .collect::<Option<Vec<_>>>();
+        let Some(parsed_points) = parsed_points else {
+            return Some(build_unsupported_search_response(
+                "unsupported geo_polygon query shape",
+            ));
+        };
+        if field.is_empty()
+            || parsed_points.len() < 3
+            || (parsed_points.first() == parsed_points.last() && parsed_points.len() < 4)
+        {
+            return Some(build_unsupported_search_response(
+                "unsupported geo_polygon query shape",
             ));
         }
     }
@@ -23888,7 +23938,7 @@ fn extract_geo_query_field(query: &Value) -> Option<String> {
     {
         return Some(field);
     }
-    query
+    if let Some(field) = query
         .get("geo_bounding_box")
         .and_then(Value::as_object)
         .and_then(|spec| {
@@ -23897,6 +23947,22 @@ fn extract_geo_query_field(query: &Value) -> Option<String> {
                     !matches!(
                         key.as_str(),
                         "ignore_unmapped" | "validation_method" | "type" | "_name" | "boost"
+                    )
+                })
+                .map(|(key, _)| key.clone())
+        })
+    {
+        return Some(field);
+    }
+    query
+        .get("geo_polygon")
+        .and_then(Value::as_object)
+        .and_then(|spec| {
+            spec.iter()
+                .find(|(key, _)| {
+                    !matches!(
+                        key.as_str(),
+                        "ignore_unmapped" | "validation_method" | "_name" | "boost"
                     )
                 })
                 .map(|(key, _)| key.clone())
@@ -24426,6 +24492,24 @@ fn evaluate_search_query_source_with_mappings(
             .and_then(parse_geo_point_value)?;
         let candidate_point = lookup_query_field_value(source, field).and_then(parse_geo_point_value)?;
         let matched = geo_point_in_bounding_box(candidate_point, top_left, bottom_right);
+        return Some((matched, if matched { 1.0 } else { 0.0 }));
+    }
+    if let Some(geo_polygon_query) = query.get("geo_polygon").and_then(Value::as_object) {
+        let (field, polygon_spec) = geo_polygon_query.iter().find(|(key, _)| {
+            !matches!(
+                key.as_str(),
+                "ignore_unmapped" | "validation_method" | "_name" | "boost"
+            )
+        })?;
+        let points = polygon_spec
+            .as_object()?
+            .get("points")?
+            .as_array()?
+            .iter()
+            .map(parse_geo_point_value)
+            .collect::<Option<Vec<_>>>()?;
+        let candidate_point = lookup_query_field_value(source, field).and_then(parse_geo_point_value)?;
+        let matched = geo_point_in_polygon(candidate_point, &points);
         return Some((matched, if matched { 1.0 } else { 0.0 }));
     }
     if let Some(bool_query) = query.get("bool").and_then(Value::as_object) {
@@ -25342,11 +25426,17 @@ fn parse_distance_meters(raw: &str) -> Option<f64> {
 }
 
 fn parse_geo_point_value(value: &Value) -> Option<(f64, f64)> {
-    let object = value.as_object()?;
-    Some((
-        object.get("lat")?.as_f64()?,
-        object.get("lon")?.as_f64()?,
-    ))
+    if let Some(object) = value.as_object() {
+        return Some((
+            object.get("lat")?.as_f64()?,
+            object.get("lon")?.as_f64()?,
+        ));
+    }
+    let array = value.as_array()?;
+    if array.len() != 2 {
+        return None;
+    }
+    Some((array[1].as_f64()?, array[0].as_f64()?))
 }
 
 fn geo_point_in_bounding_box(
@@ -25378,6 +25468,46 @@ fn normalize_geo_lon_f64(lon: f64) -> f64 {
         normalized -= 360.0;
     }
     normalized
+}
+
+fn geo_point_in_polygon(point: (f64, f64), polygon: &[(f64, f64)]) -> bool {
+    if polygon.len() < 3 {
+        return false;
+    }
+    let (lat, lon) = point;
+    let mut inside = false;
+    let mut previous = *polygon.last().expect("checked len");
+    for &current in polygon {
+        if point_on_polygon_segment(lat, lon, previous, current) {
+            return true;
+        }
+        let intersects = ((current.0 > lat) != (previous.0 > lat))
+            && (lon
+                < (previous.1 - current.1) * (lat - current.0)
+                    / (previous.0 - current.0)
+                    + current.1);
+        if intersects {
+            inside = !inside;
+        }
+        previous = current;
+    }
+    inside
+}
+
+fn point_on_polygon_segment(
+    lat: f64,
+    lon: f64,
+    start: (f64, f64),
+    end: (f64, f64),
+) -> bool {
+    let cross = (lat - start.0) * (end.1 - start.1) - (lon - start.1) * (end.0 - start.0);
+    if cross.abs() > 1.0e-9 {
+        return false;
+    }
+    lat >= start.0.min(end.0)
+        && lat <= start.0.max(end.0)
+        && lon >= start.1.min(end.1)
+        && lon <= start.1.max(end.1)
 }
 
 fn haversine_distance_meters(left: (f64, f64), right: (f64, f64)) -> f64 {
@@ -44182,6 +44312,57 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             bounding_box_partial_response.body["hits"]["total"]["value"],
             1
         );
+
+        let polygon_response = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-geo-good-000001/_search")
+                .with_json_body(serde_json::json!({
+                    "query": {
+                        "geo_polygon": {
+                            "location": {
+                                "points": [
+                                    { "lat": 38.0, "lon": -123.0 },
+                                    { "lat": 38.0, "lon": -122.0 },
+                                    { "lat": 37.0, "lon": -122.0 },
+                                    { "lat": 37.0, "lon": -123.0 }
+                                ]
+                            }
+                        }
+                    }
+                })),
+        );
+        assert_eq!(polygon_response.status, 200);
+        assert_eq!(polygon_response.body["hits"]["total"]["value"], 1);
+        assert_eq!(polygon_response.body["hits"]["hits"][0]["_id"], "doc-1");
+
+        let polygon_partial_response = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/logs-geo-good-000001,logs-geo-bad-000001/_search",
+            )
+            .with_json_body(serde_json::json!({
+                "query": {
+                    "geo_polygon": {
+                        "location": {
+                            "points": [
+                                [ -123.0, 38.0 ],
+                                [ -122.0, 38.0 ],
+                                [ -122.0, 37.0 ],
+                                [ -123.0, 37.0 ]
+                            ]
+                        }
+                    }
+                }
+            })),
+        );
+        assert_eq!(polygon_partial_response.status, 200);
+        assert_eq!(polygon_partial_response.body["_shards"]["total"], 2);
+        assert_eq!(polygon_partial_response.body["_shards"]["successful"], 1);
+        assert_eq!(polygon_partial_response.body["_shards"]["failed"], 1);
+        assert_eq!(
+            polygon_partial_response.body["_shards"]["failures"][0]["index"],
+            "logs-geo-bad-000001"
+        );
+        assert_eq!(polygon_partial_response.body["hits"]["total"]["value"], 1);
 
         let disallow_partial_response = node.handle_rest_request(
             RestRequest::new(

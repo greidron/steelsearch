@@ -2734,6 +2734,7 @@ fn build_tantivy_query(
         Query::Range { field, bounds } => build_tantivy_range_query(search_state, field, bounds),
         Query::GeoDistance(geo_query) => build_tantivy_geo_distance_query(search_state, geo_query),
         Query::GeoBoundingBox(geo_query) => build_tantivy_geo_bounding_box_query(search_state, geo_query),
+        Query::GeoPolygon(_) => Ok(None),
         Query::Ids { values } => {
             let mut clauses = Vec::new();
             for value in values {
@@ -15502,6 +15503,8 @@ fn document_matches_query(query: &Query, id: &str, source: &Value) -> bool {
             )
             })
         }
+        Query::GeoPolygon(geo_query) => source_value_for_highlight_field(source, &geo_query.field)
+            .is_some_and(|value| matches_geo_polygon_query(value, &geo_query.points)),
         Query::Exists { field } => {
             source_value_for_highlight_field(source, field).is_some_and(value_matches_exists_query)
         }
@@ -15663,6 +15666,7 @@ fn query_contains_lexical_minimum_should_match_above_one_bool(query: &Query) -> 
 fn query_requires_native_candidate_post_filter(query: &Query) -> bool {
     match query {
         Query::GeoDistance(_)
+        | Query::GeoPolygon(_)
         | Query::Nested { .. }
         | Query::Pinned { .. }
         | Query::MoreLikeThis { .. }
@@ -15718,6 +15722,7 @@ fn query_allows_source_candidate_scan_for_native_post_filter(query: &Query) -> b
         Query::QueryString { .. }
         | Query::SimpleQueryString { .. }
         | Query::MoreLikeThis { .. }
+        | Query::GeoPolygon(_)
         | Query::TermsSet { .. }
         | Query::DistanceFeature { .. }
         | Query::RankFeature { .. }
@@ -16030,6 +16035,63 @@ fn geo_distance_matching_value_count(
             .is_some_and(|distance| distance <= distance_meters)
             .into(),
     }
+}
+
+fn matches_geo_polygon_query(field_value: &Value, polygon: &[os_query_dsl::GeoPoint]) -> bool {
+    match field_value {
+        Value::Array(items) => {
+            if geo_point_value(field_value).is_some() {
+                geo_point_value(field_value)
+                    .is_some_and(|point| geo_point_in_polygon(point, polygon))
+            } else {
+                items
+                    .iter()
+                    .any(|item| matches_geo_polygon_query(item, polygon))
+            }
+        }
+        _ => geo_point_value(field_value).is_some_and(|point| geo_point_in_polygon(point, polygon)),
+    }
+}
+
+fn geo_point_in_polygon(point: (f64, f64), polygon: &[os_query_dsl::GeoPoint]) -> bool {
+    if polygon.len() < 3 {
+        return false;
+    }
+    let (lat, lon) = point;
+    let mut inside = false;
+    let mut previous = polygon.last().expect("checked len");
+    for current in polygon {
+        if point_on_polygon_segment(lat, lon, previous, current) {
+            return true;
+        }
+        let intersects = ((current.lat > lat) != (previous.lat > lat))
+            && (lon
+                < (previous.lon - current.lon) * (lat - current.lat)
+                    / (previous.lat - current.lat)
+                    + current.lon);
+        if intersects {
+            inside = !inside;
+        }
+        previous = current;
+    }
+    inside
+}
+
+fn point_on_polygon_segment(
+    lat: f64,
+    lon: f64,
+    start: &os_query_dsl::GeoPoint,
+    end: &os_query_dsl::GeoPoint,
+) -> bool {
+    let cross =
+        (lat - start.lat) * (end.lon - start.lon) - (lon - start.lon) * (end.lat - start.lat);
+    if cross.abs() > 1.0e-9 {
+        return false;
+    }
+    lat >= start.lat.min(end.lat)
+        && lat <= start.lat.max(end.lat)
+        && lon >= start.lon.min(end.lon)
+        && lon <= start.lon.max(end.lon)
 }
 
 fn matches_match_query(field_value: Option<&Value>, query: &Value) -> bool {
