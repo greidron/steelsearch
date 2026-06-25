@@ -24541,6 +24541,7 @@ pub struct OpenSearchSearchSourceBuilderWire {
     pub size: i32,
     pub explain: Option<bool>,
     pub min_score: Option<f32>,
+    pub search_after: Option<Vec<Value>>,
     pub terminate_after: i32,
     pub timeout: Option<TimeValueWire>,
     pub track_scores: bool,
@@ -24560,6 +24561,7 @@ impl Default for OpenSearchSearchSourceBuilderWire {
             size: 10,
             explain: None,
             min_score: None,
+            search_after: None,
             terminate_after: 0,
             timeout: None,
             track_scores: false,
@@ -24600,6 +24602,7 @@ impl OpenSearchSearchSourceBuilderWire {
                 reason: "OpenSearch SearchSourceBuilder min_score must be finite when present",
             });
         }
+        validate_search_after_values(self.search_after.as_deref())?;
         if self
             .track_total_hits_up_to
             .is_some_and(|track_total_hits| track_total_hits < -1)
@@ -24647,7 +24650,7 @@ fn write_search_source_builder(
     write_optional_bool(output, source.seq_no_and_primary_term); // seq no and primary term
     output.write_vint(0); // ext builders
     output.write_bool(source.profile); // profile
-    output.write_bool(false); // search after
+    write_optional_search_after_values(output, source.search_after.as_deref()); // search after
     output.write_bool(false); // slice
     output.write_bool(false); // collapse
     write_optional_int(output, source.track_total_hits_up_to); // track total hits up to
@@ -24712,7 +24715,7 @@ fn read_search_source_builder(
     let seq_no_and_primary_term = read_optional_bool(input)?;
     reject_empty_vint_list(input, "search request source ext builders")?;
     let profile = input.read_bool()?;
-    reject_absent_optional_writeable(input, "search request source search after")?;
+    let search_after = read_optional_search_after_values(input)?;
     reject_absent_optional_writeable(input, "search request source slice")?;
     reject_absent_optional_writeable(input, "search request source collapse")?;
     let track_total_hits_up_to = read_optional_int(input)?;
@@ -24741,6 +24744,7 @@ fn read_search_source_builder(
         size,
         explain,
         min_score,
+        search_after,
         terminate_after,
         timeout,
         track_scores,
@@ -24754,6 +24758,80 @@ fn read_search_source_builder(
     };
     source.validate_supported_subset()?;
     Ok(source)
+}
+
+fn write_optional_search_after_values(output: &mut StreamOutput, values: Option<&[Value]>) {
+    if let Some(values) = values {
+        output.write_bool(true);
+        output.write_vint(values.len() as i32);
+        for value in values {
+            write_generic_json_value(output, value)
+                .expect("validated search_after values must encode as generic values");
+        }
+    } else {
+        output.write_bool(false);
+    }
+}
+
+fn read_optional_search_after_values(
+    input: &mut StreamInput,
+) -> Result<Option<Vec<Value>>, TransportActionWireError> {
+    if !input.read_bool()? {
+        return Ok(None);
+    }
+    let len = read_len(input)?;
+    let mut values = Vec::with_capacity(len);
+    for _ in 0..len {
+        values.push(read_generic_json_value(input, "search request source search after")?);
+    }
+    validate_search_after_values(Some(&values))?;
+    Ok(Some(values))
+}
+
+fn validate_search_after_values(values: Option<&[Value]>) -> Result<(), TransportActionWireError> {
+    let Some(values) = values else {
+        return Ok(());
+    };
+    if values.is_empty() {
+        return Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "search request source search after",
+            reason: "OpenSearch SearchAfterBuilder requires at least one sort value when present",
+        });
+    }
+    for value in values {
+        match value {
+            Value::Null | Value::String(_) | Value::Bool(_) => {}
+            Value::Number(number) => {
+                if number.as_i64().is_some() {
+                    continue;
+                }
+                if let Some(value) = number.as_u64() {
+                    i64::try_from(value).map_err(|_| {
+                        TransportActionWireError::UnsupportedWireShape {
+                            shape: "search request source search after",
+                            reason:
+                                "unsigned search_after value does not fit the OpenSearch long wire shape",
+                        }
+                    })?;
+                    continue;
+                }
+                if number.as_f64().is_some() {
+                    continue;
+                }
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "search request source search after",
+                    reason: "JSON search_after number cannot be mapped to an OpenSearch generic value",
+                });
+            }
+            Value::Array(_) | Value::Object(_) => {
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "search request source search after",
+                    reason: "OpenSearch SearchAfterBuilder sort values must be scalar or null",
+                });
+            }
+        }
+    }
+    Ok(())
 }
 
 fn reject_absent_optional_writeable(
@@ -59587,6 +59665,7 @@ mod tests {
                 size: 25,
                 explain: Some(true),
                 min_score: Some(0.25),
+                search_after: Some(vec![json!(20), json!("tenant-a"), json!(true), Value::Null]),
                 terminate_after: 100,
                 timeout: Some(TimeValueWire::seconds(2)),
                 track_scores: true,
@@ -59681,6 +59760,36 @@ mod tests {
             invalid_min_score.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "search request source min score",
+                ..
+            })
+        ));
+
+        let empty_search_after = OpenSearchSearchRequestWire {
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                search_after: Some(Vec::new()),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        assert!(matches!(
+            empty_search_after.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source search after",
+                ..
+            })
+        ));
+
+        let object_search_after = OpenSearchSearchRequestWire {
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                search_after: Some(vec![json!({ "unsupported": true })]),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        assert!(matches!(
+            object_search_after.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source search after",
                 ..
             })
         ));
