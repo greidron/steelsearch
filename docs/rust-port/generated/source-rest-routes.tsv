@@ -1,5 +1,5 @@
 status	method	path_or_expression	source	line
-planned	GET	/_ingest/processor/grok	/home/ubuntu/OpenSearch/modules/ingest-common/src/main/java/org/opensearch/ingest/common/GrokProcessorGetAction.java	162
+implemented	GET	/_ingest/processor/grok	/home/ubuntu/OpenSearch/modules/ingest-common/src/main/java/org/opensearch/ingest/common/GrokProcessorGetAction.java	162
 implemented	GET	/_msearch/template	/home/ubuntu/OpenSearch/modules/lang-mustache/src/main/java/org/opensearch/script/mustache/RestMultiSearchTemplateAction.java	75
 implemented	POST	/_msearch/template	/home/ubuntu/OpenSearch/modules/lang-mustache/src/main/java/org/opensearch/script/mustache/RestMultiSearchTemplateAction.java	76
 implemented	GET	/{index}/_msearch/template	/home/ubuntu/OpenSearch/modules/lang-mustache/src/main/java/org/opensearch/script/mustache/RestMultiSearchTemplateAction.java	77
@@ -12,9 +12,9 @@ implemented	GET	/_search/template	/home/ubuntu/OpenSearch/modules/lang-mustache/
 implemented	POST	/_search/template	/home/ubuntu/OpenSearch/modules/lang-mustache/src/main/java/org/opensearch/script/mustache/RestSearchTemplateAction.java	69
 implemented	GET	/{index}/_search/template	/home/ubuntu/OpenSearch/modules/lang-mustache/src/main/java/org/opensearch/script/mustache/RestSearchTemplateAction.java	70
 implemented	POST	/{index}/_search/template	/home/ubuntu/OpenSearch/modules/lang-mustache/src/main/java/org/opensearch/script/mustache/RestSearchTemplateAction.java	71
-planned	GET	/_scripts/painless/_context	/home/ubuntu/OpenSearch/modules/lang-painless/src/main/java/org/opensearch/painless/action/PainlessContextAction.java	215
-planned	GET	/_scripts/painless/_execute	/home/ubuntu/OpenSearch/modules/lang-painless/src/main/java/org/opensearch/painless/action/PainlessExecuteAction.java	621
-planned	POST	/_scripts/painless/_execute	/home/ubuntu/OpenSearch/modules/lang-painless/src/main/java/org/opensearch/painless/action/PainlessExecuteAction.java	621
+implemented	GET	/_scripts/painless/_context	/home/ubuntu/OpenSearch/modules/lang-painless/src/main/java/org/opensearch/painless/action/PainlessContextAction.java	215
+implemented	GET	/_scripts/painless/_execute	/home/ubuntu/OpenSearch/modules/lang-painless/src/main/java/org/opensearch/painless/action/PainlessExecuteAction.java	621
+implemented	POST	/_scripts/painless/_execute	/home/ubuntu/OpenSearch/modules/lang-painless/src/main/java/org/opensearch/painless/action/PainlessExecuteAction.java	621
 out-of-scope		"/_opensearch_dashboards" + route.getPath(	/home/ubuntu/OpenSearch/modules/opensearch-dashboards/src/main/java/org/opensearch/dashboards/OpenSearchDashboardsModulePlugin.java	176
 planned	GET	"/" + ENDPOINT	/home/ubuntu/OpenSearch/modules/rank-eval/src/main/java/org/opensearch/index/rankeval/RestRankEvalAction.java	112
 planned	POST	"/" + ENDPOINT	/home/ubuntu/OpenSearch/modules/rank-eval/src/main/java/org/opensearch/index/rankeval/RestRankEvalAction.java	113
@@ -331,14 +331,14 @@ implemented	POST	/{index}/_termvectors	/home/ubuntu/OpenSearch/server/src/main/j
 implemented	GET	/{index}/_termvectors/{id}	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/document/RestTermVectorsAction.java	70
 implemented	POST	/{index}/_termvectors/{id}	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/document/RestTermVectorsAction.java	71
 implemented	POST	/{index}/_update/{id}	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/document/RestUpdateAction.java	64
-planned	DELETE	/_ingest/pipeline/{id}	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/ingest/RestDeletePipelineAction.java	58
-planned	GET	/_ingest/pipeline	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/ingest/RestGetPipelineAction.java	61
-planned	GET	/_ingest/pipeline/{id}	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/ingest/RestGetPipelineAction.java	61
-planned	PUT	/_ingest/pipeline/{id}	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/ingest/RestPutPipelineAction.java	62
-planned	GET	/_ingest/pipeline/{id}/_simulate	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/ingest/RestSimulatePipelineAction.java	63
-planned	POST	/_ingest/pipeline/{id}/_simulate	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/ingest/RestSimulatePipelineAction.java	64
-planned	GET	/_ingest/pipeline/_simulate	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/ingest/RestSimulatePipelineAction.java	65
-planned	POST	/_ingest/pipeline/_simulate	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/ingest/RestSimulatePipelineAction.java	66
+implemented	DELETE	/_ingest/pipeline/{id}	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/ingest/RestDeletePipelineAction.java	58
+implemented	GET	/_ingest/pipeline	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/ingest/RestGetPipelineAction.java	61
+implemented	GET	/_ingest/pipeline/{id}	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/ingest/RestGetPipelineAction.java	61
+implemented	PUT	/_ingest/pipeline/{id}	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/ingest/RestPutPipelineAction.java	62
+implemented	GET	/_ingest/pipeline/{id}/_simulate	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/ingest/RestSimulatePipelineAction.java	63
+implemented	POST	/_ingest/pipeline/{id}/_simulate	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/ingest/RestSimulatePipelineAction.java	64
+implemented	GET	/_ingest/pipeline/_simulate	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/ingest/RestSimulatePipelineAction.java	65
+implemented	POST	/_ingest/pipeline/_simulate	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/ingest/RestSimulatePipelineAction.java	66
 implemented	GET	/_list/indices	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/list/RestIndicesListAction.java	45
 implemented	GET	/_list/indices/{index}	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/list/RestIndicesListAction.java	45
 implemented	GET	/_list	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/list/RestListAction.java	45

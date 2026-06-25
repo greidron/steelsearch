@@ -138,6 +138,12 @@ route_status() {
     "GET /_msearch/template"|"POST /_msearch/template"|"GET /{index}/_msearch/template"|"POST /{index}/_msearch/template"|"GET /_render/template"|"POST /_render/template"|"GET /_render/template/{id}"|"POST /_render/template/{id}"|"GET /_search/template"|"POST /_search/template"|"GET /{index}/_search/template"|"POST /{index}/_search/template")
       echo "implemented"
       ;;
+    "GET /_ingest/processor/grok"|"GET /_scripts/painless/_context"|"GET /_scripts/painless/_execute"|"POST /_scripts/painless/_execute")
+      echo "implemented"
+      ;;
+    "DELETE /_ingest/pipeline/{id}"|"GET /_ingest/pipeline"|"GET /_ingest/pipeline/{id}"|"PUT /_ingest/pipeline/{id}"|"GET /_ingest/pipeline/{id}/_simulate"|"POST /_ingest/pipeline/{id}/_simulate"|"GET /_ingest/pipeline/_simulate"|"POST /_ingest/pipeline/_simulate")
+      echo "implemented"
+      ;;
     "GET /_cluster/health"|"PUT /{index}"|"GET /{index}"|"DELETE /{index}")
       echo "stubbed"
       ;;
