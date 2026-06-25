@@ -9,6 +9,7 @@ struct PolicyFixture {
     accepted_query_families: Vec<PolicyRow>,
     accepted_request_options: Vec<String>,
     rejected_query_families: Vec<PolicyRow>,
+    excluded_request_extensions: Vec<PolicyRow>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -61,9 +62,23 @@ fn interop_search_forwarding_policy_fixture_stays_bounded_and_explicit() {
     ] {
         assert!(accepted.contains(required), "missing accepted family {required}");
     }
-    for required in ["scroll", "knn", "hybrid", "runtime_mappings"] {
+    for required in ["scroll", "knn", "hybrid"] {
         assert!(rejected.contains(required), "missing rejected family {required}");
     }
+    let mut excluded = BTreeSet::new();
+    for row in &fixture.excluded_request_extensions {
+        assert_eq!(row.policy, "excluded");
+        assert!(!row.reason.is_empty(), "excluded extension missing reason: {}", row.family);
+        assert!(excluded.insert(row.family.clone()), "duplicate excluded extension {}", row.family);
+    }
+    assert!(
+        excluded.contains("runtime_mappings"),
+        "runtime_mappings should be tracked as an excluded Steelsearch extension"
+    );
+    assert!(
+        !rejected.contains("runtime_mappings"),
+        "runtime_mappings must not be counted as an OpenSearch forwarding parity rejection"
+    );
     assert!(
         !rejected.contains("pit"),
         "pit must not remain rejected after lifecycle forwarding profile coverage"

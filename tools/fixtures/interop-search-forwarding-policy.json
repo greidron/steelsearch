@@ -101,11 +101,13 @@
       "family": "hybrid",
       "policy": "rejected",
       "reason": "Hybrid lexical/vector forwarding depends on plugin-specific transport policy."
-    },
+    }
+  ],
+  "excluded_request_extensions": [
     {
       "family": "runtime_mappings",
-      "policy": "rejected",
-      "reason": "Request-body runtime field policy is not part of the OpenSearch parity baseline."
+      "policy": "excluded",
+      "reason": "Request-body runtime_mappings remains a Steelsearch-only extension and is not counted as an OpenSearch forwarding parity gap."
     }
   ]
 }
