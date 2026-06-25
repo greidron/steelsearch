@@ -25782,6 +25782,103 @@ fn build_search_aggregations(
             );
             continue;
         }
+        if let Some(multi_terms) = aggregation_object.get("multi_terms").and_then(Value::as_object) {
+            let fields = multi_terms
+                .get("terms")
+                .and_then(Value::as_array)
+                .map(|terms| {
+                    terms
+                        .iter()
+                        .filter_map(|term| {
+                            term.get("field")
+                                .and_then(Value::as_str)
+                                .map(str::to_string)
+                        })
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default();
+            if fields.is_empty() {
+                return Err(build_unsupported_search_response(
+                    "unsupported aggregation option [multi_terms.terms]",
+                ));
+            }
+            let min_doc_count = multi_terms
+                .get("min_doc_count")
+                .and_then(Value::as_u64)
+                .unwrap_or(1);
+            let size = multi_terms
+                .get("size")
+                .and_then(Value::as_u64)
+                .unwrap_or(10) as usize;
+            let mut counts = std::collections::BTreeMap::<String, (Vec<Value>, u64)>::new();
+            for hit in hits {
+                let Some(source) = hit.get("_source") else {
+                    continue;
+                };
+                let mut key_values = Vec::new();
+                let mut sort_parts = Vec::new();
+                for field in &fields {
+                    let Some(value) = lookup_query_field_value(source, field).filter(|value| !value.is_null()) else {
+                        key_values.clear();
+                        break;
+                    };
+                    key_values.push(value.clone());
+                    sort_parts.push(aggregation_bucket_sort_key(value));
+                }
+                if key_values.is_empty() {
+                    continue;
+                }
+                let sort_key = sort_parts.join("\u{1f}");
+                let entry = counts.entry(sort_key).or_insert_with(|| (key_values, 0));
+                entry.1 += 1;
+            }
+            let mut buckets = counts
+                .into_iter()
+                .filter_map(|(_, (key, doc_count))| {
+                    (doc_count >= min_doc_count).then_some((key, doc_count))
+                })
+                .collect::<Vec<_>>();
+            let order = multi_terms.get("order").and_then(Value::as_object);
+            let order_key = order
+                .and_then(|value| value.iter().next())
+                .map(|(key, direction)| (key.as_str(), direction.as_str().unwrap_or("desc")));
+            match order_key {
+                Some(("_count", "asc")) => buckets.sort_by(|left, right| {
+                    left.1
+                        .cmp(&right.1)
+                        .then_with(|| aggregation_multi_terms_sort_key(&left.0).cmp(&aggregation_multi_terms_sort_key(&right.0)))
+                }),
+                Some(("_count", _)) | None => buckets.sort_by(|left, right| {
+                    right.1
+                        .cmp(&left.1)
+                        .then_with(|| aggregation_multi_terms_sort_key(&left.0).cmp(&aggregation_multi_terms_sort_key(&right.0)))
+                }),
+                Some(("_key", "desc")) => buckets.sort_by(|left, right| {
+                    aggregation_multi_terms_sort_key(&right.0)
+                        .cmp(&aggregation_multi_terms_sort_key(&left.0))
+                }),
+                Some(("_key", _)) => buckets.sort_by(|left, right| {
+                    aggregation_multi_terms_sort_key(&left.0)
+                        .cmp(&aggregation_multi_terms_sort_key(&right.0))
+                }),
+                Some(_) => {
+                    return Err(build_unsupported_search_response(
+                        "unsupported aggregation option [multi_terms.order]",
+                    ))
+                }
+            }
+            result.insert(
+                name.clone(),
+                serde_json::json!({
+                    "buckets": buckets
+                        .into_iter()
+                        .take(size)
+                        .map(|(key, doc_count)| serde_json::json!({"key": key, "doc_count": doc_count}))
+                        .collect::<Vec<_>>()
+                }),
+            );
+            continue;
+        }
         if let Some((metric_name, metric_body)) = first_supported_metric_aggregation(aggregation_object) {
             let field = metric_body.get("field").and_then(Value::as_str).unwrap_or_default();
             let values: Vec<f64> = hits
@@ -26273,6 +26370,14 @@ fn aggregation_bucket_sort_key(value: &Value) -> String {
         Value::String(value) => value.clone(),
         other => other.to_string(),
     }
+}
+
+fn aggregation_multi_terms_sort_key(values: &[Value]) -> String {
+    values
+        .iter()
+        .map(aggregation_bucket_sort_key)
+        .collect::<Vec<_>>()
+        .join("\u{1f}")
 }
 
 fn date_histogram_bucket_day(timestamp: &str) -> Option<(i64, String)> {
@@ -42628,6 +42733,34 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                     "key": "catalog",
                     "doc_count": 1
                 }
+            ])
+        );
+
+        let multi_terms = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-aggs-000001/_search")
+                .with_json_body(serde_json::json!({
+                    "size": 0,
+                    "aggs": {
+                        "service_levels": {
+                            "multi_terms": {
+                                "terms": [
+                                    { "field": "service" },
+                                    { "field": "level" }
+                                ],
+                                "order": { "_count": "desc" },
+                                "size": 3
+                            }
+                        }
+                    }
+                })),
+        );
+        assert_eq!(multi_terms.status, 200);
+        assert_eq!(
+            multi_terms.body["aggregations"]["service_levels"]["buckets"],
+            serde_json::json!([
+                { "key": ["catalog", "warn"], "doc_count": 1 },
+                { "key": ["checkout", "info"], "doc_count": 1 },
+                { "key": ["checkout", "warn"], "doc_count": 1 }
             ])
         );
 

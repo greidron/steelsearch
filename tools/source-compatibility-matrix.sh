@@ -253,11 +253,11 @@ search_registration_status() {
       ;;
     aggregation)
       case "${text}" in
-        *AutoDateHistogramAggregationBuilder.NAME*|*VariableWidthHistogramAggregationBuilder.NAME*|*MultiTermsAggregationBuilder.NAME*)
+        *AutoDateHistogramAggregationBuilder.NAME*|*VariableWidthHistogramAggregationBuilder.NAME*)
           echo "planned"
           return
           ;;
-        *'TermsAggregationBuilder.NAME'*|*'DateHistogramAggregationBuilder.NAME'*|*'HistogramAggregationBuilder.NAME'*|*'RangeAggregationBuilder.NAME'*|*'MinAggregationBuilder.NAME'*|*'MaxAggregationBuilder.NAME'*|*'SumAggregationBuilder.NAME'*|*'AvgAggregationBuilder.NAME'*|*'WeightedAvgAggregationBuilder.NAME'*|*'StatsAggregationBuilder.NAME'*|*'ExtendedStatsAggregationBuilder.NAME'*|*'PercentilesAggregationBuilder.NAME'*|*'PercentileRanksAggregationBuilder.NAME'*|*'MedianAbsoluteDeviationAggregationBuilder.NAME'*|*'CardinalityAggregationBuilder.NAME'*|*'ValueCountAggregationBuilder.NAME'*|*'GlobalAggregationBuilder.NAME'*|*'MissingAggregationBuilder.NAME'*|*'FilterAggregationBuilder.NAME'*|*'FiltersAggregationBuilder.NAME'*|*'TopHitsAggregationBuilder.NAME'*|*'CompositeAggregationBuilder.NAME'*|*'RareTermsAggregationBuilder.NAME'*|*'SignificantTermsAggregationBuilder.NAME'*|*'DateRangeAggregationBuilder.NAME'*|*'IpRangeAggregationBuilder.NAME'*|*'GeoCentroidAggregationBuilder.NAME'*|*'ScriptedMetricAggregationBuilder.NAME'*)
+        *'TermsAggregationBuilder.NAME'*|*'DateHistogramAggregationBuilder.NAME'*|*'HistogramAggregationBuilder.NAME'*|*'RangeAggregationBuilder.NAME'*|*'MinAggregationBuilder.NAME'*|*'MaxAggregationBuilder.NAME'*|*'SumAggregationBuilder.NAME'*|*'AvgAggregationBuilder.NAME'*|*'WeightedAvgAggregationBuilder.NAME'*|*'StatsAggregationBuilder.NAME'*|*'ExtendedStatsAggregationBuilder.NAME'*|*'PercentilesAggregationBuilder.NAME'*|*'PercentileRanksAggregationBuilder.NAME'*|*'MedianAbsoluteDeviationAggregationBuilder.NAME'*|*'CardinalityAggregationBuilder.NAME'*|*'ValueCountAggregationBuilder.NAME'*|*'GlobalAggregationBuilder.NAME'*|*'MissingAggregationBuilder.NAME'*|*'FilterAggregationBuilder.NAME'*|*'FiltersAggregationBuilder.NAME'*|*'TopHitsAggregationBuilder.NAME'*|*'CompositeAggregationBuilder.NAME'*|*'RareTermsAggregationBuilder.NAME'*|*'SignificantTermsAggregationBuilder.NAME'*|*'DateRangeAggregationBuilder.NAME'*|*'IpRangeAggregationBuilder.NAME'*|*'MultiTermsAggregationBuilder.NAME'*|*'GeoCentroidAggregationBuilder.NAME'*|*'ScriptedMetricAggregationBuilder.NAME'*)
           echo "implemented"
           return
           ;;

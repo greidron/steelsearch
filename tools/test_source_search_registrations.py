@@ -32,6 +32,7 @@ class SourceSearchRegistrationsTests(unittest.TestCase):
             ("aggregation", "AggregationSpec( DateHistogramAggregationBuilder.NAME,"),
             ("aggregation", "DateRangeAggregationBuilder.NAME"),
             ("aggregation", "IpRangeAggregationBuilder.NAME"),
+            ("aggregation", "MultiTermsAggregationBuilder.NAME"),
             ("aggregation", "RareTermsAggregationBuilder.NAME"),
             ("aggregation", "GlobalAggregationBuilder.NAME"),
             ("aggregation", "TopHitsAggregationBuilder.NAME"),
