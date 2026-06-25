@@ -4036,7 +4036,17 @@ impl SteelNode {
             return Some(self.handle_cat_templates_route(request, None));
         }
         if let Some(name) = request.path.strip_prefix("/_cat/templates/") {
-            return Some(self.handle_cat_templates_route(request, Some(name)));
+            return match request.method {
+                RestMethod::Get => Some(self.handle_cat_templates_route(request, Some(name))),
+                _ => {
+                    let uri = request_uri_with_query(request);
+                    Some(method_not_allowed_response(
+                        request.method,
+                        uri.as_str(),
+                        "GET",
+                    ))
+                }
+            };
         }
         if request.method == RestMethod::Get && request.path == "/_cat/thread_pool" {
             return Some(self.handle_cat_thread_pool_route(request, None));
@@ -33376,6 +33386,20 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert!(templates_text.contains("name index_patterns order version composed_of"));
         assert!(templates_text.contains("logs-template"));
         assert!(!templates_text.contains("metrics-template"));
+
+        let post_templates_target = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/_cat/templates/logs-*?v=true",
+        ));
+        assert_eq!(post_templates_target.status, 405);
+        assert_eq!(
+            post_templates_target.headers.get("allow").map(String::as_str),
+            Some("GET")
+        );
+        assert_eq!(
+            post_templates_target.body["error"],
+            "Incorrect HTTP method for uri [/_cat/templates/logs-*?v=true] and method [POST], allowed: [GET]"
+        );
     }
 
     #[test]
