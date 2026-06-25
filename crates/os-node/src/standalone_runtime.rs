@@ -19099,6 +19099,25 @@ fn build_parsing_search_response(reason: &str) -> RestResponse {
     )
 }
 
+fn build_parsing_search_response_with_root_cause(reason: &str) -> RestResponse {
+    RestResponse::json(
+        400,
+        serde_json::json!({
+            "error": {
+                "type": "parsing_exception",
+                "reason": reason,
+                "root_cause": [
+                    {
+                        "type": "parsing_exception",
+                        "reason": reason
+                    }
+                ]
+            },
+            "status": 400
+        }),
+    )
+}
+
 fn search_partial_shards_failure_response(
     failed_indices: &std::collections::BTreeSet<String>,
 ) -> RestResponse {
@@ -20178,21 +20197,38 @@ fn validate_indices_boost_request_body(indices_boost: &Value) -> Option<RestResp
         Value::Array(boosts) => {
             for boost in boosts {
                 let Some(object) = boost.as_object() else {
-                    return Some(build_unsupported_search_response(
-                        "unsupported search option [indices_boost]",
-                    ));
+                    return Some(indices_boost_parsing_error(format!(
+                        "Expected [START_OBJECT] in [indices_boost] but found [{}]",
+                        opensearch_xcontent_token_name(boost)
+                    )));
                 };
                 if object.len() != 1 {
-                    return Some(build_unsupported_search_response(
-                        "unsupported search option [indices_boost]",
-                    ));
+                    let found = if object.is_empty() {
+                        "END_OBJECT"
+                    } else {
+                        "FIELD_NAME"
+                    };
+                    let expected = if object.is_empty() {
+                        "FIELD_NAME"
+                    } else {
+                        "END_OBJECT"
+                    };
+                    return Some(indices_boost_parsing_error(format!(
+                        "Expected [{expected}] in [indices_boost] but found [{found}]"
+                    )));
                 }
                 let Some((index, value)) = object.iter().next() else {
-                    return Some(build_unsupported_search_response(
-                        "unsupported search option [indices_boost]",
+                    return Some(indices_boost_parsing_error(
+                        "Expected [FIELD_NAME] in [indices_boost] but found [END_OBJECT]",
                     ));
                 };
-                if index.is_empty() || !value.is_number() {
+                if !value.is_number() {
+                    return Some(indices_boost_parsing_error(format!(
+                        "Expected [VALUE_NUMBER] in [indices_boost] but found [{}]",
+                        opensearch_xcontent_token_name(value)
+                    )));
+                }
+                if index.is_empty() {
                     return Some(build_unsupported_search_response(
                         "unsupported search option [indices_boost]",
                     ));
@@ -20203,6 +20239,21 @@ fn validate_indices_boost_request_body(indices_boost: &Value) -> Option<RestResp
         _ => Some(build_unsupported_search_response(
             "unsupported search option [indices_boost]",
         )),
+    }
+}
+
+fn indices_boost_parsing_error(reason: impl AsRef<str>) -> RestResponse {
+    build_parsing_search_response_with_root_cause(reason.as_ref())
+}
+
+fn opensearch_xcontent_token_name(value: &Value) -> &'static str {
+    match value {
+        Value::Null => "VALUE_NULL",
+        Value::Bool(_) => "VALUE_BOOLEAN",
+        Value::Number(_) => "VALUE_NUMBER",
+        Value::String(_) => "VALUE_STRING",
+        Value::Array(_) => "START_ARRAY",
+        Value::Object(_) => "START_OBJECT",
     }
 }
 
@@ -43513,8 +43564,16 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         );
         assert_eq!(invalid_indices_boost.status, 400);
         assert_eq!(
+            invalid_indices_boost.body["error"]["type"],
+            "parsing_exception"
+        );
+        assert_eq!(
             invalid_indices_boost.body["error"]["reason"],
-            "unsupported search option [indices_boost]"
+            "Expected [VALUE_NUMBER] in [indices_boost] but found [VALUE_STRING]"
+        );
+        assert_eq!(
+            invalid_indices_boost.body["error"]["root_cause"][0]["reason"],
+            "Expected [VALUE_NUMBER] in [indices_boost] but found [VALUE_STRING]"
         );
 
         let sliced_without_scroll_or_pit = node.handle_rest_request(

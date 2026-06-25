@@ -3828,6 +3828,27 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "indices_boost_array_string_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "indices_boost": [
+          {
+            "logs-compat": "2.0"
+          }
+        ]
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] array indices_boost rejects string boost like OpenSearch",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "terminate_after_search",
       "area": "search",
       "method": "POST",
