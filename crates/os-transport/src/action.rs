@@ -25951,12 +25951,6 @@ impl OpenSearchSearchScrollRequestWire {
                 reason: "OpenSearch search-scroll requests require a non-empty scroll id",
             });
         }
-        if self.keep_alive.is_none() {
-            return Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "search scroll missing keep alive",
-                reason: "search-scroll requests without keep-alive require scroll context defaulting semantics",
-            });
-        }
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "search scroll execution",
             reason: "search-scroll transport execution requires scroll context lifecycle mapping",
@@ -57245,7 +57239,7 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_search_scroll_request_rejects_unsupported_shapes() {
+    fn opensearch_search_scroll_request_rejects_empty_id_but_allows_missing_keep_alive() {
         let empty_scroll_id = OpenSearchSearchScrollRequestWire {
             scroll_id: String::new(),
             ..OpenSearchSearchScrollRequestWire::default()
@@ -57265,7 +57259,7 @@ mod tests {
         assert!(matches!(
             missing_keep_alive.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "search scroll missing keep alive",
+                shape: "search scroll execution",
                 ..
             })
         ));

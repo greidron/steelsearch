@@ -2220,8 +2220,7 @@ The search-scroll boundary covers:
   keep-alive `Scroll` time value at the wire decode/build layer;
 - explicit fail-closed classification for `indices:data/read/scroll` until
   scroll context lifecycle and response rendering are mapped;
-- explicit rejection for empty scroll ids, missing keep-alive values, and
-  search-scroll execution.
+- explicit rejection for empty scroll ids and search-scroll execution.
 
 The clear-scroll boundary covers:
 
