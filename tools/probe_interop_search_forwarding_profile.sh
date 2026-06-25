@@ -105,6 +105,9 @@ for case in fixture["cases"]:
             f"/{index_name}/_search/point_in_time?keep_alive=1m",
         )
         pit_id = open_body.get("pit_id") or open_body.get("id")
+        for mutation in case.get("mutate_after_pit", []):
+            mutation_path = mutation["path"].replace("{index}", index_name)
+            request(mutation["method"], mutation_path, mutation.get("body"))
         search_body = dict(case["body"])
         search_body["pit"] = {"id": pit_id, "keep_alive": "1m"}
         status, body = request("GET", "/_search", search_body)

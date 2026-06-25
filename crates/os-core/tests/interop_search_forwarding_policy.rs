@@ -185,6 +185,15 @@ fn interop_search_forwarding_policy_fixture_stays_bounded_and_explicit() {
     );
     assert!(
         cases.iter().any(|case| {
+            case["name"] == "pit_snapshot_after_mutation_search"
+                && case["use_pit"] == true
+                && case["mutate_after_pit"].as_array().is_some_and(|steps| steps.len() >= 2)
+                && case["expected_ids"].as_array().is_some_and(|ids| ids.len() == 2)
+        }),
+        "accepted pit policy requires a PIT snapshot case that mutates documents after PIT open"
+    );
+    assert!(
+        cases.iter().any(|case| {
             case["name"] == "search_after_search"
                 && case["body"]["search_after"].as_array().is_some()
         }),
