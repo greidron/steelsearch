@@ -32804,6 +32804,7 @@ impl OpenSearchGetAllPitsNodeResponseWire {
 pub struct OpenSearchGetAllPitsResponseWire {
     pub cluster_name: String,
     pub nodes: Vec<OpenSearchGetAllPitsNodeResponseWire>,
+    pub failures: Vec<FailedNodeExceptionWire>,
 }
 
 impl Default for OpenSearchGetAllPitsResponseWire {
@@ -32811,6 +32812,7 @@ impl Default for OpenSearchGetAllPitsResponseWire {
         Self {
             cluster_name: "steelsearch".to_string(),
             nodes: Vec::new(),
+            failures: Vec::new(),
         }
     }
 }
@@ -32820,6 +32822,7 @@ impl OpenSearchGetAllPitsResponseWire {
         Self {
             cluster_name: cluster_name.into(),
             nodes: Vec::new(),
+            failures: Vec::new(),
         }
     }
 
@@ -32830,6 +32833,19 @@ impl OpenSearchGetAllPitsResponseWire {
         Self {
             cluster_name: cluster_name.into(),
             nodes,
+            failures: Vec::new(),
+        }
+    }
+
+    pub fn with_nodes_and_failures(
+        cluster_name: impl Into<String>,
+        nodes: Vec<OpenSearchGetAllPitsNodeResponseWire>,
+        failures: Vec<FailedNodeExceptionWire>,
+    ) -> Self {
+        Self {
+            cluster_name: cluster_name.into(),
+            nodes,
+            failures,
         }
     }
 
@@ -32840,7 +32856,10 @@ impl OpenSearchGetAllPitsResponseWire {
         for node in &self.nodes {
             node.write(output)?;
         }
-        output.write_vint(0);
+        output.write_vint(self.failures.len() as i32);
+        for failure in &self.failures {
+            failure.write(output)?;
+        }
         Ok(())
     }
 
@@ -32858,23 +32877,16 @@ impl OpenSearchGetAllPitsResponseWire {
         for _ in 0..nodes_count {
             nodes.push(OpenSearchGetAllPitsNodeResponseWire::read(&mut input)?);
         }
-        let failures_count = input.read_vint()?;
-        if failures_count < 0 {
-            return Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "get all pits response failures count",
-                reason: "GetAllPitNodesResponse failures count must be non-negative",
-            });
-        }
-        if failures_count != 0 {
-            return Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "get all pits node failures",
-                reason: "GetAllPitNodesResponse node failures require FailedNodeException decoding",
-            });
+        let failure_count = read_len(&mut input)?;
+        let mut failures = Vec::with_capacity(failure_count);
+        for _ in 0..failure_count {
+            failures.push(FailedNodeExceptionWire::read(&mut input)?);
         }
         require_no_trailing_bytes(&input)?;
         let response = Self {
             cluster_name,
             nodes,
+            failures,
         };
         response.validate_supported_subset()?;
         Ok(response)
@@ -32889,6 +32901,9 @@ impl OpenSearchGetAllPitsResponseWire {
         }
         for node in &self.nodes {
             node.validate_supported_subset()?;
+        }
+        for failure in &self.failures {
+            validate_supported_exception(failure.cause.as_ref(), "get all pits node failure")?;
         }
         Ok(())
     }
@@ -68939,19 +68954,7 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_get_all_pits_response_rejects_failures_and_allows_raw_pit_info_values() {
-        let mut failure_payload = StreamOutput::new();
-        failure_payload.write_string("steelsearch-dev");
-        failure_payload.write_vint(0);
-        failure_payload.write_vint(1);
-        assert!(matches!(
-            OpenSearchGetAllPitsResponseWire::read(failure_payload.freeze()),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "get all pits node failures",
-                ..
-            })
-        ));
-
+    fn opensearch_get_all_pits_response_allows_failures_and_raw_pit_info_values() {
         assert!(matches!(
             OpenSearchGetAllPitsResponseWire::empty(" ").validate_supported_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
@@ -68971,6 +68974,20 @@ mod tests {
         permissive_list_info_response.write(&mut output).unwrap();
         let decoded = OpenSearchGetAllPitsResponseWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, permissive_list_info_response);
+        decoded.validate_supported_subset().unwrap();
+
+        let failed_node_response = OpenSearchGetAllPitsResponseWire::with_nodes_and_failures(
+            "steelsearch-dev",
+            Vec::new(),
+            vec![FailedNodeExceptionWire::illegal_argument(
+                "node-b".to_string(),
+                "pit listing failed".to_string(),
+            )],
+        );
+        let mut output = StreamOutput::new();
+        failed_node_response.write(&mut output).unwrap();
+        let decoded = OpenSearchGetAllPitsResponseWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, failed_node_response);
         decoded.validate_supported_subset().unwrap();
     }
 
