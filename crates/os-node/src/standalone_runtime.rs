@@ -6679,7 +6679,7 @@ impl SteelNode {
         let mut settings = serde_json::json!({
             "index": {
                 "number_of_shards": "1",
-                "number_of_replicas": "0",
+                "number_of_replicas": "1",
                 "creation_date": "0",
                 "provided_name": index,
                 "uuid": format!("{index}-uuid"),
@@ -6927,18 +6927,8 @@ impl SteelNode {
             })
     }
 
-    fn write_response_index(&self, target: &str, resolved_index: &str) -> String {
-        if self.target_is_data_stream(target) {
-            resolved_index.to_string()
-        } else if self.target_is_alias(target) {
-            if self.alias_has_explicit_routing_metadata(target) {
-                resolved_index.to_string()
-            } else {
-                target.to_string()
-            }
-        } else {
-            resolved_index.to_string()
-        }
+    fn write_response_index(&self, _target: &str, resolved_index: &str) -> String {
+        resolved_index.to_string()
     }
 
     fn validate_single_doc_require_alias(
@@ -7852,13 +7842,22 @@ impl SteelNode {
             .created_indices_state
             .lock()
             .expect("created indices state lock poisoned")
-            .len() as u64;
+            .iter()
+            .map(|index| self.index_total_shard_copy_count(index))
+            .sum::<usize>() as u64;
+        let successful = self
+            .created_indices_state
+            .lock()
+            .expect("created indices state lock poisoned")
+            .iter()
+            .map(|index| self.index_primary_shard_count(index))
+            .sum::<usize>() as u64;
         RestResponse::json(
             200,
             serde_json::json!({
                 "_shards": {
                     "total": total.max(1),
-                    "successful": total.max(1),
+                    "successful": successful.max(1),
                     "failed": 0
                 }
             }),
@@ -7895,8 +7894,14 @@ impl SteelNode {
             200,
             serde_json::json!({
                 "_shards": {
-                    "total": matched.len(),
-                    "successful": matched.len(),
+                    "total": matched
+                        .iter()
+                        .map(|index| self.index_total_shard_copy_count(index))
+                        .sum::<usize>(),
+                    "successful": matched
+                        .iter()
+                        .map(|index| self.index_primary_shard_count(index))
+                        .sum::<usize>(),
                     "failed": 0
                 }
             }),
@@ -15550,14 +15555,13 @@ impl SteelNode {
     }
 
     fn handle_post_doc_route(&self, index: &str, request: &RestRequest) -> RestResponse {
-        if self.target_is_data_stream(index) && !Self::request_uses_create_op_type(request) {
-            return Self::data_stream_requires_create_op_response(index);
-        }
-
         let generated_id = format!(
             "generated-{}",
             *self.next_seq_no.lock().expect("seq_no lock poisoned") + 1
         );
+        if self.target_is_data_stream(index) {
+            return self.handle_create_doc_route(index, &generated_id, request);
+        }
         self.handle_put_doc_route(index, &generated_id, request)
     }
 
@@ -19747,6 +19751,10 @@ impl SteelNode {
                     .map(|value| value as usize)
             })
             .unwrap_or(0)
+    }
+
+    fn index_total_shard_copy_count(&self, index: &str) -> usize {
+        self.index_primary_shard_count(index) * (self.index_replica_count(index) + 1)
     }
 
     fn index_document_count(&self, index: &str) -> usize {
@@ -54775,18 +54783,22 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             200
         );
 
-        for (method, path, expected_total) in [
-            (RestMethod::Get, "/_refresh", 3),
-            (RestMethod::Post, "/_refresh", 3),
-            (RestMethod::Get, "/logs-refresh-000001/_refresh", 1),
-            (RestMethod::Post, "/logs-refresh-000001/_refresh", 1),
-            (RestMethod::Get, "/logs-refresh-*/_refresh", 2),
-            (RestMethod::Post, "/logs-refresh-*/_refresh", 2),
+        for (method, path, expected_total, expected_successful) in [
+            (RestMethod::Get, "/_refresh", 6, 3),
+            (RestMethod::Post, "/_refresh", 6, 3),
+            (RestMethod::Get, "/logs-refresh-000001/_refresh", 2, 1),
+            (RestMethod::Post, "/logs-refresh-000001/_refresh", 2, 1),
+            (RestMethod::Get, "/logs-refresh-*/_refresh", 4, 2),
+            (RestMethod::Post, "/logs-refresh-*/_refresh", 4, 2),
         ] {
             let response = node.handle_rest_request(RestRequest::new(method, path));
             assert_eq!(response.status, 200, "path {path}");
             assert_eq!(
                 response.body["_shards"]["total"], expected_total,
+                "path {path}"
+            );
+            assert_eq!(
+                response.body["_shards"]["successful"], expected_successful,
                 "path {path}"
             );
             assert_eq!(response.body["_shards"]["failed"], 0, "path {path}");

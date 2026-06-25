@@ -710,38 +710,38 @@
     },
     {
       "name": "create_single_doc_alias_write_indices",
-      "method": "PUT",
-      "path": "/single-doc-alias-write-000001",
+      "method": "POST",
+      "path": "/_aliases",
       "setup": [
+        {
+          "method": "PUT",
+          "path": "/single-doc-alias-write-000001",
+          "body": {}
+        },
         {
           "method": "PUT",
           "path": "/single-doc-alias-write-000002",
           "body": {}
-        },
-        {
-          "method": "POST",
-          "path": "/_aliases",
-          "body": {
-            "actions": [
-              {
-                "add": {
-                  "index": "single-doc-alias-write-000001",
-                  "alias": "single-doc-write",
-                  "is_write_index": false
-                }
-              },
-              {
-                "add": {
-                  "index": "single-doc-alias-write-000002",
-                  "alias": "single-doc-write",
-                  "is_write_index": true
-                }
-              }
-            ]
-          }
         }
       ],
-      "body": {},
+      "body": {
+        "actions": [
+          {
+            "add": {
+              "index": "single-doc-alias-write-000001",
+              "alias": "single-doc-write",
+              "is_write_index": false
+            }
+          },
+          {
+            "add": {
+              "index": "single-doc-alias-write-000002",
+              "alias": "single-doc-write",
+              "is_write_index": true
+            }
+          }
+        ]
+      },
       "compare": {
         "expected_status": 200
       }
@@ -768,9 +768,70 @@
       }
     },
     {
-      "name": "get_single_doc_via_alias_write_target",
+      "name": "get_single_doc_from_alias_write_target",
       "method": "GET",
-      "path": "/single-doc-write/_doc/alias-doc?realtime=true",
+      "path": "/single-doc-alias-write-000002/_doc/alias-doc?realtime=true",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "_index",
+          "_id",
+          "found",
+          "_source.message"
+        ],
+        "body_paths_equal": [
+          "_index",
+          "_id",
+          "found",
+          "_source.message"
+        ]
+      }
+    },
+    {
+      "name": "put_single_doc_require_alias_concrete_rejected",
+      "method": "PUT",
+      "path": "/single-doc-compat-000001/_doc/doc-require-alias-concrete?require_alias=true",
+      "body": {
+        "message": "require-alias-concrete"
+      },
+      "compare": {
+        "expected_status": 404,
+        "body_paths_present": [
+          "error.type",
+          "error.reason",
+          "status"
+        ],
+        "body_paths_equal": [
+          "error.type",
+          "status"
+        ]
+      }
+    },
+    {
+      "name": "put_single_doc_require_alias_via_write_alias",
+      "method": "PUT",
+      "path": "/single-doc-write/_doc/alias-require-doc?require_alias=true&refresh=wait_for",
+      "body": {
+        "message": "alias-require-write"
+      },
+      "compare": {
+        "expected_status": 201,
+        "body_paths_present": [
+          "_index",
+          "_id",
+          "result"
+        ],
+        "body_paths_equal": [
+          "_index",
+          "_id",
+          "result"
+        ]
+      }
+    },
+    {
+      "name": "get_single_doc_require_alias_from_write_target",
+      "method": "GET",
+      "path": "/single-doc-alias-write-000002/_doc/alias-require-doc?realtime=true",
       "compare": {
         "expected_status": 200,
         "body_paths_present": [
