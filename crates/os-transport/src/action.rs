@@ -26212,6 +26212,7 @@ pub struct OpenSearchSearchHitWire {
     pub seq_no: i64,
     pub primary_term: i64,
     pub source: Option<Value>,
+    pub explanation: Option<Value>,
     pub fields: BTreeMap<String, Vec<Value>>,
     pub highlight_fields: BTreeMap<String, Option<Vec<String>>>,
     pub sort_values: Vec<Value>,
@@ -26229,6 +26230,7 @@ impl OpenSearchSearchHitWire {
             seq_no: hit.metadata.seq_no,
             primary_term: hit.metadata.primary_term as i64,
             source: Some(hit.source),
+            explanation: hit.explanation,
             fields: normalized_document_fields(hit.fields),
             highlight_fields: normalized_highlight_fields(hit.highlight),
             sort_values: normalized_sort_values(hit.sort),
@@ -26254,7 +26256,12 @@ impl OpenSearchSearchHitWire {
         } else {
             output.write_bytes_reference(&[]);
         }
-        output.write_bool(false);
+        if let Some(explanation) = &self.explanation {
+            output.write_bool(true);
+            write_search_explanation(output, explanation)?;
+        } else {
+            output.write_bool(false);
+        }
         write_document_field_map(output, &self.fields)?;
         output.write_vint(0);
         write_highlight_field_map(output, &self.highlight_fields)?;
@@ -26280,13 +26287,18 @@ impl OpenSearchSearchHitWire {
             seq_no: read_zlong(input)?,
             primary_term: input.read_vlong()?,
             source: read_optional_json_bytes_reference(input)?,
+            explanation: None,
             fields: BTreeMap::new(),
             highlight_fields: BTreeMap::new(),
             sort_values: Vec::new(),
             matched_queries: BTreeMap::new(),
             shard_target: None,
         };
-        reject_bool_present(input, "search hit explanation")?;
+        let explanation = if input.read_bool()? {
+            Some(read_search_explanation(input, "search hit explanation")?)
+        } else {
+            None
+        };
         let fields = read_document_field_map(input, "search hit document fields")?;
         reject_empty_list_len(input, "search hit metadata fields")?;
         let highlight_fields = read_highlight_field_map(input, "search hit highlight fields")?;
@@ -26299,6 +26311,7 @@ impl OpenSearchSearchHitWire {
             });
         }
         let hit = Self {
+            explanation,
             fields,
             highlight_fields,
             sort_values: formatted_sort_values,
@@ -34069,6 +34082,121 @@ fn read_highlight_field(
     Ok((name, Some(fragments)))
 }
 
+fn write_search_explanation(
+    output: &mut StreamOutput,
+    explanation: &Value,
+) -> Result<(), TransportActionWireError> {
+    let matches = explanation
+        .get("match")
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
+    output.write_bool(matches);
+    output.write_string(
+        explanation
+            .get("description")
+            .and_then(Value::as_str)
+            .unwrap_or_default(),
+    );
+    let details = explanation
+        .get("details")
+        .and_then(Value::as_array)
+        .map(Vec::as_slice)
+        .unwrap_or(&[]);
+    output.write_vint(details.len() as i32);
+    for detail in details {
+        write_search_explanation(output, detail)?;
+    }
+    if matches {
+        write_explanation_number(
+            output,
+            explanation.get("value").unwrap_or(&Value::from(0)),
+        )?;
+    }
+    Ok(())
+}
+
+fn read_search_explanation(
+    input: &mut StreamInput,
+    shape: &'static str,
+) -> Result<Value, TransportActionWireError> {
+    let matches = input.read_bool()?;
+    let description = input.read_string()?;
+    let detail_count = read_len(input)?;
+    let mut details = Vec::with_capacity(detail_count);
+    for _ in 0..detail_count {
+        details.push(read_search_explanation(input, shape)?);
+    }
+    let mut object = serde_json::Map::new();
+    if !matches {
+        object.insert("match".to_string(), Value::Bool(false));
+    }
+    object.insert("description".to_string(), Value::String(description));
+    object.insert("details".to_string(), Value::Array(details));
+    if matches {
+        object.insert("value".to_string(), read_explanation_number(input, shape)?);
+    }
+    Ok(Value::Object(object))
+}
+
+fn write_explanation_number(
+    output: &mut StreamOutput,
+    value: &Value,
+) -> Result<(), TransportActionWireError> {
+    let Some(number) = value.as_number() else {
+        return Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "search hit explanation",
+            reason: "OpenSearch explanation values must be numeric",
+        });
+    };
+    if let Some(value) = number.as_i64() {
+        output.write_byte(2);
+        output.write_zlong(value);
+    } else if let Some(value) = number.as_u64() {
+        let value = i64::try_from(value).map_err(|_| {
+            TransportActionWireError::UnsupportedWireShape {
+                shape: "search hit explanation",
+                reason: "unsigned explanation value does not fit the OpenSearch long wire shape",
+            }
+        })?;
+        output.write_byte(2);
+        output.write_zlong(value);
+    } else if let Some(value) = number.as_f64() {
+        output.write_byte(1);
+        output.write_f64(value);
+    } else {
+        return Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "search hit explanation",
+            reason: "JSON explanation value cannot be mapped to an OpenSearch number",
+        });
+    }
+    Ok(())
+}
+
+fn read_explanation_number(
+    input: &mut StreamInput,
+    shape: &'static str,
+) -> Result<Value, TransportActionWireError> {
+    match input.read_byte()? {
+        0 => serde_json::Number::from_f64(input.read_f32()? as f64)
+            .map(Value::Number)
+            .ok_or(TransportActionWireError::UnsupportedWireShape {
+                shape,
+                reason: "OpenSearch float explanation value is not a finite JSON number",
+            }),
+        1 => serde_json::Number::from_f64(input.read_f64()?)
+            .map(Value::Number)
+            .ok_or(TransportActionWireError::UnsupportedWireShape {
+                shape,
+                reason: "OpenSearch double explanation value is not a finite JSON number",
+            }),
+        2 => Ok(Value::Number(read_zlong(input)?.into())),
+        _ => Err(TransportActionWireError::UnsupportedWireShape {
+            shape,
+            reason: "OpenSearch explanation number type is not supported",
+        }),
+    }
+}
+
 fn write_text_string(
     output: &mut StreamOutput,
     value: &str,
@@ -34414,19 +34542,6 @@ fn read_search_sort_value(
             reason: "OpenSearch sort value type is not decoded by this subset",
         }),
     }
-}
-
-fn reject_bool_present(
-    input: &mut StreamInput,
-    shape: &'static str,
-) -> Result<(), TransportActionWireError> {
-    if input.read_bool()? {
-        return Err(TransportActionWireError::UnsupportedWireShape {
-            shape,
-            reason: "only absent boolean-gated OpenSearch sections are decoded by this subset",
-        });
-    }
-    Ok(())
 }
 
 fn reject_optional_array_present(
@@ -58395,6 +58510,22 @@ mod tests {
                 seq_no: 3,
                 primary_term: 2,
                 source: Some(json!({ "message": "hello" })),
+                explanation: Some(json!({
+                    "value": 1.0,
+                    "description": "score explanation",
+                    "details": [
+                        {
+                            "value": 2,
+                            "description": "integer detail",
+                            "details": []
+                        },
+                        {
+                            "match": false,
+                            "description": "no match detail",
+                            "details": []
+                        }
+                    ]
+                })),
                 fields: BTreeMap::from([
                     ("status".to_string(), vec![json!("ok")]),
                     (
@@ -58437,6 +58568,22 @@ mod tests {
         assert_eq!(decoded.hits[0].version, 7);
         assert_eq!(decoded.hits[0].seq_no, 3);
         assert_eq!(decoded.hits[0].primary_term, 2);
+        assert_eq!(
+            decoded.hits[0]
+                .explanation
+                .as_ref()
+                .and_then(|value| value.get("description")),
+            Some(&json!("score explanation"))
+        );
+        assert_eq!(
+            decoded.hits[0]
+                .explanation
+                .as_ref()
+                .and_then(|value| value.get("details"))
+                .and_then(Value::as_array)
+                .map(Vec::len),
+            Some(2)
+        );
         assert_eq!(
             decoded.hits[0].fields.get("status"),
             Some(&vec![json!("ok")])
@@ -58518,6 +58665,7 @@ mod tests {
             seq_no: 0,
             primary_term: 1,
             source: Some(json!({})),
+            explanation: None,
             fields: BTreeMap::new(),
             highlight_fields: BTreeMap::new(),
             sort_values: Vec::new(),
@@ -58539,6 +58687,7 @@ mod tests {
             seq_no: 0,
             primary_term: 1,
             source: Some(json!({})),
+            explanation: None,
             fields: BTreeMap::new(),
             highlight_fields: BTreeMap::new(),
             sort_values: vec![json!({ "unsupported": true })],
