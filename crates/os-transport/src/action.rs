@@ -2369,7 +2369,7 @@ pub fn classify_opensearch_transport_action(
         OPENSEARCH_SEARCH_SCROLL_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "search-scroll transport execution remains gated on OpenSearch SearchResponse wire rendering and scroll-id execution mapping",
+            reason: "search-scroll transport execution remains gated on non-empty OpenSearch SearchResponse hit rendering and scroll-id execution mapping",
         },
         OPENSEARCH_CLEAR_SCROLL_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -11849,6 +11849,35 @@ pub fn read_opensearch_search_scroll_request_message(
         });
     }
     OpenSearchSearchScrollRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_opensearch_search_scroll_response_message(
+    request_id: i64,
+    version: Version,
+    response: &OpenSearchSearchResponseWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    response.write(&mut body, version)?;
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::response(),
+        version,
+        variable_header: BytesMut::new(),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_search_scroll_response_message(
+    message: &TransportMessage,
+) -> Result<OpenSearchSearchResponseWire, TransportActionWireError> {
+    if message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "response",
+            actual: message.status.bits(),
+        });
+    }
+    OpenSearchSearchResponseWire::read(message.body.clone().freeze(), message.version)
 }
 
 pub fn build_opensearch_clear_scroll_request_message(
@@ -25958,6 +25987,216 @@ impl OpenSearchSearchScrollRequestWire {
     }
 }
 
+#[derive(Clone, Debug)]
+pub struct OpenSearchSearchResponseWire {
+    pub total_hits: Option<i64>,
+    pub total_hits_relation: i32,
+    pub max_score: f32,
+    pub total_shards: i32,
+    pub successful_shards: i32,
+    pub skipped_shards: i32,
+    pub scroll_id: Option<String>,
+    pub took_millis: i64,
+    pub point_in_time_id: Option<String>,
+}
+
+impl Default for OpenSearchSearchResponseWire {
+    fn default() -> Self {
+        Self::empty_with_total_hits(0)
+    }
+}
+
+impl OpenSearchSearchResponseWire {
+    pub fn empty_with_total_hits(total_hits: i64) -> Self {
+        Self {
+            total_hits: Some(total_hits),
+            total_hits_relation: 0,
+            max_score: f32::NAN,
+            total_shards: 1,
+            successful_shards: 1,
+            skipped_shards: 0,
+            scroll_id: None,
+            took_millis: 0,
+            point_in_time_id: None,
+        }
+    }
+
+    pub fn write(
+        &self,
+        output: &mut StreamOutput,
+        version: Version,
+    ) -> Result<(), TransportActionWireError> {
+        self.validate_supported_subset()?;
+        output.write_bool(self.total_hits.is_some());
+        if let Some(total_hits) = self.total_hits {
+            output.write_vlong(total_hits);
+            output.write_vint(self.total_hits_relation);
+        }
+        output.write_f32(self.max_score);
+        output.write_vint(0);
+        output.write_bool(false);
+        output.write_optional_string(None);
+        output.write_bool(false);
+        output.write_bool(false);
+        output.write_bool(false);
+        output.write_bool(false);
+        write_optional_bool(output, None);
+        output.write_bool(false);
+        output.write_vint(1);
+        if version.on_or_after(Version::from_id(2_100_099)) {
+            output.write_vint(0);
+        }
+        if version.on_or_after(Version::from_id(2_190_099)) {
+            output.write_vint(0);
+        }
+        output.write_vint(self.total_shards);
+        output.write_vint(self.successful_shards);
+        output.write_vint(0);
+        output.write_vint(0);
+        output.write_vint(0);
+        output.write_vint(0);
+        output.write_optional_string(self.scroll_id.as_deref());
+        output.write_vlong(self.took_millis);
+        if version.on_or_after(Version::from_id(2_120_099)) {
+            output.write_bool(false);
+        }
+        output.write_vint(self.skipped_shards);
+        output.write_optional_string(self.point_in_time_id.as_deref());
+        Ok(())
+    }
+
+    pub fn read(bytes: Bytes, version: Version) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let total_hits = if input.read_bool()? {
+            let value = input.read_vlong()?;
+            let relation = input.read_vint()?;
+            Some((value, relation))
+        } else {
+            None
+        };
+        let max_score = input.read_f32()?;
+        let hit_count = input.read_vint()?;
+        if hit_count != 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search response hits",
+                reason: "only empty OpenSearch SearchHits responses are decoded",
+            });
+        }
+        reject_optional_array_present(&mut input, "search response sort fields")?;
+        if input.read_optional_string()?.is_some() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search response collapse field",
+                reason: "search response collapse field is not decoded by this subset",
+            });
+        }
+        reject_optional_array_present(&mut input, "search response collapse values")?;
+        reject_optional_writeable_present(&mut input, "search response aggregations")?;
+        reject_optional_writeable_present(&mut input, "search response suggest")?;
+        let timed_out = input.read_bool()?;
+        if timed_out {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search response timeout",
+                reason: "timed-out SearchResponse wire rendering is not supported by this subset",
+            });
+        }
+        let terminated_early = read_optional_bool(&mut input)?;
+        if terminated_early.is_some() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search response terminated early",
+                reason: "terminated-early SearchResponse wire rendering is not supported by this subset",
+            });
+        }
+        reject_optional_writeable_present(&mut input, "search response profile results")?;
+        let num_reduce_phases = input.read_vint()?;
+        if num_reduce_phases != 1 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search response reduce phases",
+                reason: "only the single reduce phase response subset is decoded",
+            });
+        }
+        if version.on_or_after(Version::from_id(2_100_099)) {
+            reject_empty_list_len(&mut input, "search response ext builders")?;
+        }
+        if version.on_or_after(Version::from_id(2_190_099)) {
+            reject_empty_list_len(&mut input, "search response processor results")?;
+        }
+        let response = Self {
+            total_hits: total_hits.map(|(value, _)| value),
+            total_hits_relation: total_hits.map(|(_, relation)| relation).unwrap_or(0),
+            max_score,
+            total_shards: input.read_vint()?,
+            successful_shards: input.read_vint()?,
+            skipped_shards: 0,
+            scroll_id: None,
+            took_millis: 0,
+            point_in_time_id: None,
+        };
+        reject_empty_list_len(&mut input, "search response shard failures")?;
+        let cluster_total = input.read_vint()?;
+        let cluster_successful = input.read_vint()?;
+        let cluster_skipped = input.read_vint()?;
+        if cluster_total != 0 || cluster_successful != 0 || cluster_skipped != 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search response clusters",
+                reason: "cross-cluster SearchResponse wire rendering is not supported by this subset",
+            });
+        }
+        let mut response = Self {
+            scroll_id: input.read_optional_string()?,
+            took_millis: input.read_vlong()?,
+            ..response
+        };
+        if version.on_or_after(Version::from_id(2_120_099)) {
+            reject_optional_writeable_present(&mut input, "search response phase took")?;
+        }
+        response.skipped_shards = input.read_vint()?;
+        response.point_in_time_id = input.read_optional_string()?;
+        require_no_trailing_bytes(&input)?;
+        response.validate_supported_subset()?;
+        Ok(response)
+    }
+
+    pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
+        if self.total_hits.is_some_and(|total_hits| total_hits < 0) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search response total hits",
+                reason: "OpenSearch SearchResponse total hits cannot be negative",
+            });
+        }
+        if self.total_hits_relation != 0 && self.total_hits_relation != 1 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search response total hits relation",
+                reason: "OpenSearch TotalHits.Relation ordinal must be EQUAL_TO or GREATER_THAN_OR_EQUAL_TO",
+            });
+        }
+        if self.total_hits.is_none() && self.total_hits_relation != 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search response total hits relation",
+                reason: "total hits relation is only meaningful when total hits are present",
+            });
+        }
+        if self.total_shards < 0 || self.successful_shards < 0 || self.skipped_shards < 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search response shard counts",
+                reason: "OpenSearch SearchResponse shard counts cannot be negative",
+            });
+        }
+        if self.successful_shards > self.total_shards || self.skipped_shards > self.total_shards {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search response shard counts",
+                reason: "successful and skipped shards cannot exceed total shards",
+            });
+        }
+        if self.took_millis < 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search response took",
+                reason: "OpenSearch SearchResponse took millis cannot be negative",
+            });
+        }
+        Ok(())
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OpenSearchClearScrollRequestWire {
     pub parent_task_node: String,
@@ -33408,6 +33647,46 @@ fn read_optional_bool(input: &mut StreamInput) -> Result<Option<bool>, Transport
             reason: "optional boolean must use the OpenSearch 0/1/2 wire encoding",
         }),
     }
+}
+
+fn reject_optional_array_present(
+    input: &mut StreamInput,
+    shape: &'static str,
+) -> Result<(), TransportActionWireError> {
+    if input.read_bool()? {
+        return Err(TransportActionWireError::UnsupportedWireShape {
+            shape,
+            reason: "only absent OpenSearch optional arrays are decoded by this subset",
+        });
+    }
+    Ok(())
+}
+
+fn reject_optional_writeable_present(
+    input: &mut StreamInput,
+    shape: &'static str,
+) -> Result<(), TransportActionWireError> {
+    if input.read_bool()? {
+        return Err(TransportActionWireError::UnsupportedWireShape {
+            shape,
+            reason: "only absent OpenSearch optional writeables are decoded by this subset",
+        });
+    }
+    Ok(())
+}
+
+fn reject_empty_list_len(
+    input: &mut StreamInput,
+    shape: &'static str,
+) -> Result<(), TransportActionWireError> {
+    let len = input.read_vint()?;
+    if len != 0 {
+        return Err(TransportActionWireError::UnsupportedWireShape {
+            shape,
+            reason: "only empty OpenSearch lists are decoded by this subset",
+        });
+    }
+    Ok(())
 }
 
 fn build_extension_transport_message_bytes(action: &str, request_bytes: &[u8]) -> Bytes {
@@ -57289,6 +57568,98 @@ mod tests {
                 shape: "search scroll execution",
                 ..
             })
+        ));
+    }
+
+    #[test]
+    fn opensearch_search_response_wire_round_trips_empty_hits_subset() {
+        let response = OpenSearchSearchResponseWire {
+            total_hits: Some(7),
+            total_hits_relation: 0,
+            max_score: f32::NAN,
+            total_shards: 3,
+            successful_shards: 3,
+            skipped_shards: 0,
+            scroll_id: Some("scroll-context".to_string()),
+            took_millis: 12,
+            point_in_time_id: Some("pit-context".to_string()),
+        };
+        let mut output = StreamOutput::new();
+        response.write(&mut output, OPENSEARCH_3_7_0_TRANSPORT).unwrap();
+
+        let decoded =
+            OpenSearchSearchResponseWire::read(output.freeze(), OPENSEARCH_3_7_0_TRANSPORT)
+                .unwrap();
+        assert_eq!(decoded.total_hits, response.total_hits);
+        assert_eq!(decoded.total_hits_relation, response.total_hits_relation);
+        assert!(decoded.max_score.is_nan());
+        assert_eq!(decoded.total_shards, response.total_shards);
+        assert_eq!(decoded.successful_shards, response.successful_shards);
+        assert_eq!(decoded.skipped_shards, response.skipped_shards);
+        assert_eq!(decoded.scroll_id, response.scroll_id);
+        assert_eq!(decoded.took_millis, response.took_millis);
+        assert_eq!(decoded.point_in_time_id, response.point_in_time_id);
+        decoded.validate_supported_subset().unwrap();
+    }
+
+    #[test]
+    fn opensearch_search_response_rejects_non_empty_hits_or_optional_sections() {
+        let mut non_empty_hits = StreamOutput::new();
+        non_empty_hits.write_bool(true);
+        non_empty_hits.write_vlong(1);
+        non_empty_hits.write_vint(0);
+        non_empty_hits.write_f32(1.0);
+        non_empty_hits.write_vint(1);
+        assert!(matches!(
+            OpenSearchSearchResponseWire::read(
+                non_empty_hits.freeze(),
+                OPENSEARCH_3_7_0_TRANSPORT
+            ),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search response hits",
+                ..
+            })
+        ));
+
+        let invalid_counts = OpenSearchSearchResponseWire {
+            successful_shards: 2,
+            total_shards: 1,
+            ..OpenSearchSearchResponseWire::default()
+        };
+        assert!(matches!(
+            invalid_counts.validate_supported_subset(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search response shard counts",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_search_scroll_response_transport_message_round_trips_empty_search_response() {
+        let response = OpenSearchSearchResponseWire {
+            scroll_id: Some("scroll-context".to_string()),
+            took_millis: 3,
+            ..OpenSearchSearchResponseWire::empty_with_total_hits(0)
+        };
+        let mut frame = build_opensearch_search_scroll_response_message(
+            49,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &response,
+        )
+        .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected search-scroll response message");
+        };
+        let decoded = read_opensearch_search_scroll_response_message(&message).unwrap();
+        assert_eq!(decoded.total_hits, Some(0));
+        assert!(decoded.max_score.is_nan());
+        assert_eq!(decoded.scroll_id.as_deref(), Some("scroll-context"));
+        assert_eq!(decoded.took_millis, 3);
+
+        assert!(matches!(
+            read_opensearch_search_scroll_request_message(&message),
+            Err(TransportActionWireError::UnexpectedMessageStatus { .. })
         ));
     }
 

@@ -27,6 +27,10 @@ impl StreamOutput {
         self.bytes.put_i64(value);
     }
 
+    pub fn write_f32(&mut self, value: f32) {
+        self.bytes.put_f32(value);
+    }
+
     pub fn write_f64(&mut self, value: f64) {
         self.bytes.put_f64(value);
     }
@@ -133,6 +137,8 @@ mod tests {
         let mut output = StreamOutput::new();
         output.write_i32(123);
         output.write_i64(456);
+        output.write_f32(1.5);
+        output.write_f64(2.5);
         output.write_vint(789);
         output.write_vint(-1);
         output.write_string("steelsearch 검색");
@@ -140,6 +146,8 @@ mod tests {
         let mut input = StreamInput::new(output.freeze());
         assert_eq!(input.read_i32().unwrap(), 123);
         assert_eq!(input.read_i64().unwrap(), 456);
+        assert_eq!(input.read_f32().unwrap(), 1.5);
+        assert_eq!(input.read_f64().unwrap(), 2.5);
         assert_eq!(input.read_vint().unwrap(), 789);
         assert_eq!(input.read_vint().unwrap(), -1);
         assert_eq!(input.read_string().unwrap(), "steelsearch 검색");

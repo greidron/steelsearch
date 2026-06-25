@@ -44,6 +44,11 @@ impl StreamInput {
         Ok(self.bytes.get_i64())
     }
 
+    pub fn read_f32(&mut self) -> Result<f32, StreamInputError> {
+        self.ensure(4)?;
+        Ok(self.bytes.get_f32())
+    }
+
     pub fn read_f64(&mut self) -> Result<f64, StreamInputError> {
         self.ensure(8)?;
         Ok(self.bytes.get_f64())

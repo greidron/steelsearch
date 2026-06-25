@@ -158,7 +158,13 @@ fn interop_search_forwarding_policy_fixture_stays_bounded_and_explicit() {
                 evidence.iter().any(|item| item.as_str().map_or(false, |value| {
                     value.contains("SearchResponse.java::writeTo")
                 })),
-                "scroll rejection must name the OpenSearch SearchResponse wire blocker"
+                "scroll rejection must name the OpenSearch SearchResponse source contract"
+            );
+            assert!(
+                evidence.iter().any(|item| item.as_str().map_or(false, |value| {
+                    value.contains("opensearch_search_response_wire_round_trips_empty_hits_subset")
+                })),
+                "scroll rejection must name the implemented empty SearchResponse wire subset"
             );
         }
     }
