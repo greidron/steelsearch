@@ -3119,6 +3119,155 @@ fn daemon_search_endpoint_covers_supported_queries_and_errors_over_real_socket()
 }
 
 #[test]
+fn daemon_point_in_time_search_preserves_snapshot_over_real_socket() {
+    let binary = os_node_binary();
+    let root = unique_work_dir();
+    fs::create_dir_all(root.join("data")).unwrap();
+
+    let mut child = Command::new(&binary)
+        .arg("--http.host")
+        .arg("127.0.0.1")
+        .arg("--http.port")
+        .arg("0")
+        .arg("--transport.host")
+        .arg("127.0.0.1")
+        .arg("--transport.port")
+        .arg(free_port().to_string())
+        .arg("--cluster.name")
+        .arg("steel-dev-pit-api")
+        .arg("--path.data")
+        .arg(root.join("data"))
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+
+    let stderr = child.stderr.take().unwrap();
+    let mut reader = BufReader::new(stderr);
+    let port = read_reported_http_port(&mut reader);
+    let _guard = ChildGuard {
+        children: vec![child],
+    };
+
+    let create = wait_http_response(
+        port,
+        "PUT",
+        "/pit-it",
+        Some(
+            br#"{"mappings":{"properties":{"status":{"type":"keyword"},"ordinal":{"type":"long"},"message":{"type":"text"}}}}"#,
+        ),
+    );
+    assert_eq!(create["status"], 200);
+
+    for (id, source) in [
+        (
+            "1",
+            br#"{"status":"active","ordinal":1,"message":"first snapshot document"}"#.as_slice(),
+        ),
+        (
+            "2",
+            br#"{"status":"active","ordinal":2,"message":"second snapshot document"}"#.as_slice(),
+        ),
+    ] {
+        let response = http_response(port, "PUT", &format!("/pit-it/_doc/{id}"), Some(source));
+        assert_eq!(response["status"], 201);
+    }
+    assert_refresh_success(&http_response(
+        port,
+        "POST",
+        "/pit-it/_refresh",
+        Some(b"{}"),
+    ));
+
+    let open_pit = http_response(
+        port,
+        "POST",
+        "/pit-it/_search/point_in_time?keep_alive=1m",
+        Some(b"{}"),
+    );
+    assert_eq!(open_pit["status"], 200, "{open_pit}");
+    let pit_id = open_pit["body"]["pit_id"]
+        .as_str()
+        .expect("pit id")
+        .to_string();
+    assert!(!pit_id.is_empty());
+
+    let update = http_response(
+        port,
+        "PUT",
+        "/pit-it/_doc/1",
+        Some(br#"{"status":"archived","ordinal":1,"message":"updated after pit"}"#),
+    );
+    assert_eq!(update["status"], 200);
+    let delete = http_response(port, "DELETE", "/pit-it/_doc/2", None);
+    assert_eq!(delete["status"], 200);
+    let insert = http_response(
+        port,
+        "PUT",
+        "/pit-it/_doc/3",
+        Some(br#"{"status":"active","ordinal":3,"message":"inserted after pit"}"#),
+    );
+    assert_eq!(insert["status"], 201);
+    assert_refresh_success(&http_response(
+        port,
+        "POST",
+        "/pit-it/_refresh",
+        Some(b"{}"),
+    ));
+
+    assert_eq!(
+        search_ids(
+            port,
+            "POST",
+            "/pit-it/_search",
+            br#"{"query":{"term":{"status":"active"}},"sort":[{"ordinal":"asc"}],"size":10}"#,
+        ),
+        vec!["3"],
+        "live search should observe mutations after PIT open"
+    );
+
+    let pit_search_body = format!(
+        r#"{{"pit":{{"id":"{pit_id}","keep_alive":"1m"}},"query":{{"term":{{"status":"active"}}}},"sort":[{{"ordinal":"asc"}}],"size":10}}"#
+    );
+    let pit_search = http_response(port, "POST", "/_search", Some(pit_search_body.as_bytes()));
+    assert_eq!(pit_search["status"], 200, "{pit_search}");
+    assert_eq!(pit_search["body"]["pit_id"], pit_id);
+    assert_eq!(search_hit_ids(&pit_search["body"]), vec!["1", "2"]);
+
+    let list = http_response(port, "GET", "/_search/point_in_time/_all", None);
+    assert_eq!(list["status"], 200, "{list}");
+    assert!(list["body"]["pits"]
+        .as_array()
+        .expect("pits")
+        .iter()
+        .any(|pit| pit["pit_id"] == pit_id));
+
+    let close_body = format!(r#"{{"pit_id":"{pit_id}"}}"#);
+    let close = http_response(
+        port,
+        "DELETE",
+        "/_search/point_in_time",
+        Some(close_body.as_bytes()),
+    );
+    assert_eq!(close["status"], 200, "{close}");
+    assert_eq!(close["body"]["pits"][0]["successful"], true);
+    assert_eq!(close["body"]["pits"][0]["pit_id"], pit_id);
+
+    let closed_search = http_response(port, "POST", "/_search", Some(pit_search_body.as_bytes()));
+    assert_eq!(closed_search["status"], 404, "{closed_search}");
+    assert_eq!(
+        closed_search["body"]["error"]["type"], "search_phase_execution_exception",
+        "{closed_search}"
+    );
+    assert_eq!(
+        closed_search["body"]["error"]["root_cause"][0]["type"], "search_context_missing_exception",
+        "{closed_search}"
+    );
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
 fn daemon_search_endpoint_preserves_result_shape_sorting_and_pagination() {
     let binary = os_node_binary();
     let root = unique_work_dir();
@@ -5767,7 +5916,11 @@ fn bulk_retry_checksum(body: &Value) -> String {
 fn search_ids(port: u16, method: &str, path: &str, body: &[u8]) -> Vec<String> {
     let response = http_response(port, method, path, Some(body));
     assert_eq!(response["status"], 200, "{response}");
-    response["body"]["hits"]["hits"]
+    search_hit_ids(&response["body"])
+}
+
+fn search_hit_ids(body: &Value) -> Vec<String> {
+    body["hits"]["hits"]
         .as_array()
         .unwrap()
         .iter()
