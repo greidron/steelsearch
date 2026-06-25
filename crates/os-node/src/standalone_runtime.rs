@@ -4017,7 +4017,17 @@ impl SteelNode {
             return Some(self.handle_cat_snapshots_route(request, None));
         }
         if let Some(repository) = request.path.strip_prefix("/_cat/snapshots/") {
-            return Some(self.handle_cat_snapshots_route(request, Some(repository)));
+            return match request.method {
+                RestMethod::Get => Some(self.handle_cat_snapshots_route(request, Some(repository))),
+                _ => {
+                    let uri = request_uri_with_query(request);
+                    Some(method_not_allowed_response(
+                        request.method,
+                        uri.as_str(),
+                        "GET",
+                    ))
+                }
+            };
         }
         if request.method == RestMethod::Get && request.path == "/_cat/tasks" {
             return Some(self.handle_cat_tasks_route(request));
@@ -33214,6 +33224,23 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         let snapshots_json_response = node.handle_rest_request(snapshots_json_request);
         assert_eq!(snapshots_json_response.status, 200);
         assert_eq!(snapshots_json_response.body, Value::Array(Vec::new()));
+
+        let post_snapshots_repository = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/_cat/snapshots/repo-cat-snapshots?format=json",
+        ));
+        assert_eq!(post_snapshots_repository.status, 405);
+        assert_eq!(
+            post_snapshots_repository
+                .headers
+                .get("allow")
+                .map(String::as_str),
+            Some("GET")
+        );
+        assert_eq!(
+            post_snapshots_repository.body["error"],
+            "Incorrect HTTP method for uri [/_cat/snapshots/repo-cat-snapshots?format=json] and method [POST], allowed: [GET]"
+        );
 
         let mut snapshots_text_request =
             RestRequest::new(RestMethod::Get, "/_cat/snapshots/repo-cat-snapshots");
