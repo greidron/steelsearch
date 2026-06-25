@@ -24930,6 +24930,7 @@ fn validate_search_after_values(values: Option<&[Value]>) -> Result<(), Transpor
 pub enum OpenSearchQueryBuilderWire {
     Bool(OpenSearchBoolQueryBuilderWire),
     Exists(OpenSearchExistsQueryBuilderWire),
+    Ids(OpenSearchIdsQueryBuilderWire),
     MatchAll(OpenSearchMatchAllQueryBuilderWire),
     Match(OpenSearchMatchQueryBuilderWire),
     Range(OpenSearchRangeQueryBuilderWire),
@@ -24954,6 +24955,13 @@ pub struct OpenSearchExistsQueryBuilderWire {
     pub boost: f32,
     pub query_name: Option<String>,
     pub field_name: String,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct OpenSearchIdsQueryBuilderWire {
+    pub boost: f32,
+    pub query_name: Option<String>,
+    pub ids: Vec<String>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -25071,6 +25079,12 @@ fn write_named_query_builder(output: &mut StreamOutput, query: &OpenSearchQueryB
             output.write_optional_string(query.query_name.as_deref());
             output.write_string(&query.field_name);
         }
+        OpenSearchQueryBuilderWire::Ids(query) => {
+            output.write_string("ids");
+            output.write_f32(query.boost);
+            output.write_optional_string(query.query_name.as_deref());
+            output.write_string_array(&query.ids);
+        }
         OpenSearchQueryBuilderWire::MatchAll(query) => {
             output.write_string("match_all");
             output.write_f32(query.boost);
@@ -25164,6 +25178,13 @@ fn read_named_query_builder(
                 boost: input.read_f32()?,
                 query_name: input.read_optional_string()?,
                 field_name: input.read_string()?,
+            },
+        )),
+        "ids" => Ok(OpenSearchQueryBuilderWire::Ids(
+            OpenSearchIdsQueryBuilderWire {
+                boost: input.read_f32()?,
+                query_name: input.read_optional_string()?,
+                ids: input.read_string_array()?,
             },
         )),
         "match_all" => Ok(OpenSearchQueryBuilderWire::MatchAll(OpenSearchMatchAllQueryBuilderWire {
@@ -25273,7 +25294,7 @@ fn read_named_query_builder(
         }
         _ => Err(TransportActionWireError::UnsupportedWireShape {
             shape: "search request source query",
-            reason: "only OpenSearch bool, exists, match_all, match, range, term, and terms QueryBuilder values are decoded by this subset",
+            reason: "only OpenSearch bool, exists, ids, match_all, match, range, term, and terms QueryBuilder values are decoded by this subset",
         }),
     }
 }
@@ -25328,6 +25349,9 @@ fn validate_query_builder(
                     reason: "OpenSearch ExistsQueryBuilder field name must be non-empty",
                 });
             }
+        }
+        OpenSearchQueryBuilderWire::Ids(query) => {
+            validate_query_boost_and_name(query.boost, query.query_name.as_deref())?;
         }
         OpenSearchQueryBuilderWire::MatchAll(query) => {
             if !query.boost.is_finite() || query.boost < 0.0 {
@@ -61786,6 +61810,25 @@ mod tests {
         let decoded = OpenSearchSearchRequestWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, exists_query_request);
 
+        let ids_query_request = OpenSearchSearchRequestWire {
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                query: Some(OpenSearchQueryBuilderWire::Ids(
+                    OpenSearchIdsQueryBuilderWire {
+                        boost: 1.0,
+                        query_name: Some("selected-docs".to_string()),
+                        ids: vec!["doc-1".to_string(), "doc-2".to_string()],
+                    },
+                )),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        let mut output = StreamOutput::new();
+        ids_query_request.write(&mut output);
+
+        let decoded = OpenSearchSearchRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, ids_query_request);
+
         let match_query_request = OpenSearchSearchRequestWire {
             source: Some(OpenSearchSearchSourceBuilderWire {
                 query: Some(OpenSearchQueryBuilderWire::Match(
@@ -62215,6 +62258,27 @@ mod tests {
         };
         assert!(matches!(
             invalid_exists_field.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source query",
+                ..
+            })
+        ));
+
+        let invalid_ids_query_name = OpenSearchSearchRequestWire {
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                query: Some(OpenSearchQueryBuilderWire::Ids(
+                    OpenSearchIdsQueryBuilderWire {
+                        boost: 1.0,
+                        query_name: Some(String::new()),
+                        ids: vec!["doc-1".to_string()],
+                    },
+                )),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        assert!(matches!(
+            invalid_ids_query_name.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "search request source query",
                 ..
