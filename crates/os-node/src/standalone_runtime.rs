@@ -25920,6 +25920,52 @@ fn build_search_aggregations(
             result.insert(name.clone(), serde_json::json!({ "buckets": buckets }));
             continue;
         }
+        if let Some(date_range) = aggregation_object.get("date_range").and_then(Value::as_object) {
+            let field = date_range.get("field").and_then(Value::as_str).unwrap_or_default();
+            let ranges = date_range
+                .get("ranges")
+                .and_then(Value::as_array)
+                .cloned()
+                .unwrap_or_default();
+            let mut buckets = Vec::new();
+            for bucket in ranges {
+                let Some(bucket_object) = bucket.as_object() else {
+                    continue;
+                };
+                let from = bucket_object.get("from").and_then(Value::as_str);
+                let to = bucket_object.get("to").and_then(Value::as_str);
+                let key = bucket_object
+                    .get("key")
+                    .cloned()
+                    .unwrap_or_else(|| Value::String(default_date_range_bucket_key(from, to)));
+                let doc_count = hits
+                    .iter()
+                    .filter(|hit| {
+                        let Some(value) = hit
+                            .get("_source")
+                            .and_then(|source| source.get(field))
+                            .and_then(Value::as_str)
+                        else {
+                            return false;
+                        };
+                        from.map_or(true, |bound| value >= bound)
+                            && to.map_or(true, |bound| value < bound)
+                    })
+                    .count() as u64;
+                let mut rendered = serde_json::Map::new();
+                rendered.insert("key".to_string(), key);
+                rendered.insert("doc_count".to_string(), Value::from(doc_count));
+                if let Some(from) = from {
+                    rendered.insert("from_as_string".to_string(), Value::String(from.to_string()));
+                }
+                if let Some(to) = to {
+                    rendered.insert("to_as_string".to_string(), Value::String(to.to_string()));
+                }
+                buckets.push(Value::Object(rendered));
+            }
+            result.insert(name.clone(), serde_json::json!({ "buckets": buckets }));
+            continue;
+        }
         if let Some(range) = aggregation_object.get("range").and_then(Value::as_object) {
             let field = range.get("field").and_then(Value::as_str).unwrap_or_default();
             let ranges = range.get("ranges").and_then(Value::as_array).cloned().unwrap_or_default();
@@ -26091,6 +26137,15 @@ fn build_search_aggregations(
 }
 
 fn default_range_bucket_key(from: Option<f64>, to: Option<f64>) -> String {
+    match (from, to) {
+        (Some(from), Some(to)) => format!("{from}-{to}"),
+        (Some(from), None) => format!("{from}-*"),
+        (None, Some(to)) => format!("*-{to}"),
+        (None, None) => "*".to_string(),
+    }
+}
+
+fn default_date_range_bucket_key(from: Option<&str>, to: Option<&str>) -> String {
     match (from, to) {
         (Some(from), Some(to)) => format!("{from}-{to}"),
         (Some(from), None) => format!("{from}-*"),
@@ -42341,6 +42396,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                     "service": "checkout",
                     "level": "warn",
                     "bytes": 120,
+                    "ts": "2026-04-22T00:00:00Z",
                     "location": { "lat": 37.7749, "lon": -122.4194 }
                 }),
             ),
@@ -42350,6 +42406,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                     "service": "checkout",
                     "level": "info",
                     "bytes": 80,
+                    "ts": "2026-04-23T00:00:00Z",
                     "location": { "lat": 37.8044, "lon": -122.2711 }
                 }),
             ),
@@ -42359,6 +42416,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                     "service": "catalog",
                     "level": "warn",
                     "bytes": 40,
+                    "ts": "2026-04-24T00:00:00Z",
                     "location": { "lat": 34.0522, "lon": -118.2437 }
                 }),
             ),
@@ -42422,6 +42480,39 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             global.body["aggregations"]["all_docs"]["by_service"]["buckets"][1],
             serde_json::json!({ "key": "catalog", "doc_count": 1 })
+        );
+
+        let date_range = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-aggs-000001/_search")
+                .with_json_body(serde_json::json!({
+                    "size": 0,
+                    "aggs": {
+                        "by_window": {
+                            "date_range": {
+                                "field": "ts",
+                                "ranges": [
+                                    {
+                                        "key": "first-two-days",
+                                        "to": "2026-04-24T00:00:00Z"
+                                    },
+                                    {
+                                        "key": "last-day",
+                                        "from": "2026-04-24T00:00:00Z"
+                                    }
+                                ]
+                            }
+                        }
+                    }
+                })),
+        );
+        assert_eq!(date_range.status, 200);
+        assert_eq!(
+            date_range.body["aggregations"]["by_window"]["buckets"][0]["doc_count"],
+            2
+        );
+        assert_eq!(
+            date_range.body["aggregations"]["by_window"]["buckets"][1]["doc_count"],
+            1
         );
 
         let filtered = node.handle_rest_request(
