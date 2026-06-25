@@ -24545,6 +24545,7 @@ pub struct OpenSearchSearchSourceBuilderWire {
     pub point_in_time: Option<OpenSearchPointInTimeBuilderWire>,
     pub slice: Option<OpenSearchSliceBuilderWire>,
     pub collapse: Option<OpenSearchCollapseBuilderWire>,
+    pub stats: Option<Vec<String>>,
     pub terminate_after: i32,
     pub timeout: Option<TimeValueWire>,
     pub track_scores: bool,
@@ -24568,6 +24569,7 @@ impl Default for OpenSearchSearchSourceBuilderWire {
             point_in_time: None,
             slice: None,
             collapse: None,
+            stats: None,
             terminate_after: 0,
             timeout: None,
             track_scores: false,
@@ -24618,6 +24620,7 @@ impl OpenSearchSearchSourceBuilderWire {
         if let Some(collapse) = &self.collapse {
             collapse.validate_supported_subset()?;
         }
+        validate_search_source_stats(self.stats.as_deref())?;
         if self
             .track_total_hits_up_to
             .is_some_and(|track_total_hits| track_total_hits < -1)
@@ -24656,7 +24659,7 @@ fn write_search_source_builder(
     output.write_bool(false); // script fields
     output.write_vint(source.size); // size
     output.write_bool(false); // sorts
-    output.write_bool(false); // stats
+    write_optional_string_list(output, source.stats.as_deref()); // stats
     output.write_bool(false); // suggest
     output.write_vint(source.terminate_after); // terminate after
     write_optional_time_value(output, source.timeout.as_ref()); // timeout
@@ -24715,7 +24718,8 @@ fn read_search_source_builder(
         });
     }
     reject_absent_bool_list(input, "search request source sorts")?;
-    reject_absent_bool_list(input, "search request source stats")?;
+    let stats = read_optional_string_list(input)?;
+    validate_search_source_stats(stats.as_deref())?;
     reject_absent_optional_writeable(input, "search request source suggest")?;
     let terminate_after = input.read_vint()?;
     if terminate_after < 0 {
@@ -24763,6 +24767,7 @@ fn read_search_source_builder(
         point_in_time,
         slice,
         collapse,
+        stats,
         terminate_after,
         timeout,
         track_scores,
@@ -25014,6 +25019,38 @@ fn read_optional_collapse_builder(
     reject_empty_vint_list(input, "search request source collapse inner hits")?;
     collapse.validate_supported_subset()?;
     Ok(Some(collapse))
+}
+
+fn write_optional_string_list(output: &mut StreamOutput, values: Option<&[String]>) {
+    if let Some(values) = values {
+        output.write_bool(true);
+        output.write_string_array(values);
+    } else {
+        output.write_bool(false);
+    }
+}
+
+fn read_optional_string_list(
+    input: &mut StreamInput,
+) -> Result<Option<Vec<String>>, TransportActionWireError> {
+    if input.read_bool()? {
+        Ok(Some(input.read_string_array()?))
+    } else {
+        Ok(None)
+    }
+}
+
+fn validate_search_source_stats(values: Option<&[String]>) -> Result<(), TransportActionWireError> {
+    let Some(values) = values else {
+        return Ok(());
+    };
+    if values.iter().any(|value| value.is_empty()) {
+        return Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "search request source stats",
+            reason: "OpenSearch SearchSourceBuilder stats group names must be non-empty",
+        });
+    }
+    Ok(())
 }
 
 fn reject_absent_optional_writeable(
@@ -59861,6 +59898,7 @@ mod tests {
                     field: "tenant".to_string(),
                     max_concurrent_group_requests: 2,
                 }),
+                stats: Some(vec!["tenant-stats".to_string(), "latency".to_string()]),
                 terminate_after: 100,
                 timeout: Some(TimeValueWire::seconds(2)),
                 track_scores: true,
@@ -60055,6 +60093,21 @@ mod tests {
             )),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "search request source collapse inner hits",
+                ..
+            })
+        ));
+
+        let invalid_stats = OpenSearchSearchRequestWire {
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                stats: Some(vec![String::new()]),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        assert!(matches!(
+            invalid_stats.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source stats",
                 ..
             })
         ));
