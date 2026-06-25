@@ -29,6 +29,7 @@ class SourceSearchRegistrationsTests(unittest.TestCase):
             ("query", "BoolQueryBuilder.NAME"),
             ("query", "ScriptScoreQueryBuilder.NAME"),
             ("aggregation", "AggregationSpec(TermsAggregationBuilder.NAME,"),
+            ("aggregation", "AdjacencyMatrixAggregationBuilder.NAME"),
             ("aggregation", "AggregationSpec( DateHistogramAggregationBuilder.NAME,"),
             ("aggregation", "DateRangeAggregationBuilder.NAME"),
             ("aggregation", "DiversifiedAggregationBuilder.NAME"),

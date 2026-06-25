@@ -26009,6 +26009,67 @@ fn build_search_aggregations(
             result.insert(name.clone(), serde_json::json!({ "doc_count": doc_count }));
             continue;
         }
+        if let Some(adjacency_matrix) = aggregation_object
+            .get("adjacency_matrix")
+            .and_then(Value::as_object)
+        {
+            let filters = adjacency_matrix
+                .get("filters")
+                .and_then(Value::as_object)
+                .cloned()
+                .unwrap_or_default();
+            if filters.is_empty() {
+                return Err(build_unsupported_search_response(
+                    "unsupported aggregation option [adjacency_matrix.filters]",
+                ));
+            }
+            let separator = adjacency_matrix
+                .get("separator")
+                .and_then(Value::as_str)
+                .unwrap_or("&");
+            let show_only_intersecting = adjacency_matrix
+                .get("show_only_intersecting")
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
+            let mut filter_entries = filters.into_iter().collect::<Vec<_>>();
+            filter_entries.sort_by(|left, right| left.0.cmp(&right.0));
+            let mut buckets = Vec::new();
+            if !show_only_intersecting {
+                for (bucket_name, filter) in &filter_entries {
+                    let doc_count = hits
+                        .iter()
+                        .filter(|hit| hit_matches_query(hit, filter))
+                        .count() as u64;
+                    if doc_count > 0 {
+                        buckets.push(serde_json::json!({
+                            "key": bucket_name,
+                            "doc_count": doc_count,
+                        }));
+                    }
+                }
+            }
+            for left_index in 0..filter_entries.len() {
+                for right_index in (left_index + 1)..filter_entries.len() {
+                    let (left_name, left_filter) = &filter_entries[left_index];
+                    let (right_name, right_filter) = &filter_entries[right_index];
+                    let doc_count = hits
+                        .iter()
+                        .filter(|hit| {
+                            hit_matches_query(hit, left_filter)
+                                && hit_matches_query(hit, right_filter)
+                        })
+                        .count() as u64;
+                    if doc_count > 0 {
+                        buckets.push(serde_json::json!({
+                            "key": format!("{left_name}{separator}{right_name}"),
+                            "doc_count": doc_count,
+                        }));
+                    }
+                }
+            }
+            result.insert(name.clone(), serde_json::json!({ "buckets": buckets }));
+            continue;
+        }
         if let Some(filters) = aggregation_object
             .get("filters")
             .and_then(|value| value.get("filters"))
@@ -43141,6 +43202,33 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(filtered.body["aggregations"]["checkout_only"]["doc_count"], 2);
         assert_eq!(filtered.body["aggregations"]["by_level"]["buckets"]["infos"]["doc_count"], 1);
         assert_eq!(filtered.body["aggregations"]["by_level"]["buckets"]["warnings"]["doc_count"], 2);
+
+        let adjacency_matrix = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-aggs-000001/_search")
+                .with_json_body(serde_json::json!({
+                    "size": 0,
+                    "aggs": {
+                        "matrix": {
+                            "adjacency_matrix": {
+                                "separator": "&",
+                                "filters": {
+                                    "checkout": { "term": { "service": "checkout" } },
+                                    "warning": { "term": { "level": "warn" } }
+                                }
+                            }
+                        }
+                    }
+                })),
+        );
+        assert_eq!(adjacency_matrix.status, 200);
+        assert_eq!(
+            adjacency_matrix.body["aggregations"]["matrix"]["buckets"],
+            serde_json::json!([
+                { "key": "checkout", "doc_count": 2 },
+                { "key": "warning", "doc_count": 2 },
+                { "key": "checkout&warning", "doc_count": 1 }
+            ])
+        );
 
         let top_hits = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/logs-search-aggs-000001/_search")
