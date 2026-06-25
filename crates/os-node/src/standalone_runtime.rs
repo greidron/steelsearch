@@ -26258,6 +26258,59 @@ fn build_search_aggregations(
             result.insert(name.clone(), serde_json::json!({ "buckets": buckets }));
             continue;
         }
+        if let Some(variable_width_histogram) = aggregation_object
+            .get("variable_width_histogram")
+            .and_then(Value::as_object)
+        {
+            let field = variable_width_histogram
+                .get("field")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            let target_buckets = variable_width_histogram
+                .get("buckets")
+                .and_then(Value::as_u64)
+                .unwrap_or(10) as usize;
+            if target_buckets == 0 {
+                return Err(build_unsupported_search_response(
+                    "unsupported aggregation option [variable_width_histogram.buckets]",
+                ));
+            }
+            let values = hits
+                .iter()
+                .filter_map(|hit| {
+                    hit.get("_source")
+                        .and_then(|source| lookup_query_field_value(source, field))
+                        .and_then(Value::as_f64)
+                })
+                .collect::<Vec<_>>();
+            let interval =
+                choose_fallback_variable_width_histogram_interval(&values, target_buckets);
+            let mut counts = std::collections::BTreeMap::<u64, (f64, u64)>::new();
+            for value in values {
+                let Some(bucket_key) = fallback_histogram_bucket_key(value, interval) else {
+                    continue;
+                };
+                let entry = counts
+                    .entry(bucket_key.to_bits())
+                    .or_insert((bucket_key, 0));
+                entry.1 += 1;
+            }
+            let buckets = counts
+                .into_values()
+                .map(|(key, doc_count)| serde_json::json!({
+                    "key": key,
+                    "doc_count": doc_count,
+                }))
+                .collect::<Vec<_>>();
+            result.insert(
+                name.clone(),
+                serde_json::json!({
+                    "buckets": buckets,
+                    "interval": interval,
+                }),
+            );
+            continue;
+        }
         if let Some(geo_distance) = aggregation_object.get("geo_distance").and_then(Value::as_object) {
             let field = geo_distance
                 .get("field")
@@ -26693,6 +26746,32 @@ fn aggregation_multi_terms_sort_key(values: &[Value]) -> String {
         .map(aggregation_bucket_sort_key)
         .collect::<Vec<_>>()
         .join("\u{1f}")
+}
+
+fn choose_fallback_variable_width_histogram_interval(values: &[f64], target_buckets: usize) -> f64 {
+    if values.len() <= 1 {
+        return 1.0;
+    }
+    let target_buckets = target_buckets.max(1);
+    let min = values.iter().copied().reduce(f64::min).unwrap_or(0.0);
+    let max = values.iter().copied().reduce(f64::max).unwrap_or(min);
+    let span = (max - min).abs();
+    if !span.is_finite() || span == 0.0 {
+        return 1.0;
+    }
+    let interval = span / (target_buckets as f64);
+    if interval.is_finite() && interval > 0.0 {
+        interval
+    } else {
+        1.0
+    }
+}
+
+fn fallback_histogram_bucket_key(value: f64, interval: f64) -> Option<f64> {
+    if !interval.is_finite() || interval <= 0.0 || !value.is_finite() {
+        return None;
+    }
+    Some((value / interval).floor() * interval)
 }
 
 fn date_histogram_bucket_day(timestamp: &str) -> Option<(i64, String)> {
@@ -43299,6 +43378,43 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 {
                     "key": 1776988800000_i64,
                     "key_as_string": "2026-04-24T00:00:00.000Z",
+                    "doc_count": 1
+                }
+            ])
+        );
+
+        let variable_width_histogram = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-aggs-000001/_search")
+                .with_json_body(serde_json::json!({
+                    "size": 0,
+                    "aggs": {
+                        "by_variable_bytes": {
+                            "variable_width_histogram": {
+                                "field": "bytes",
+                                "buckets": 2
+                            }
+                        }
+                    }
+                })),
+        );
+        assert_eq!(variable_width_histogram.status, 200);
+        assert_eq!(
+            variable_width_histogram.body["aggregations"]["by_variable_bytes"]["interval"],
+            40.0
+        );
+        assert_eq!(
+            variable_width_histogram.body["aggregations"]["by_variable_bytes"]["buckets"],
+            serde_json::json!([
+                {
+                    "key": 40.0,
+                    "doc_count": 1
+                },
+                {
+                    "key": 80.0,
+                    "doc_count": 1
+                },
+                {
+                    "key": 120.0,
                     "doc_count": 1
                 }
             ])

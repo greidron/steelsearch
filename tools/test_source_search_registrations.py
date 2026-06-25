@@ -41,6 +41,7 @@ class SourceSearchRegistrationsTests(unittest.TestCase):
             ("aggregation", "GlobalAggregationBuilder.NAME"),
             ("aggregation", "SignificantTextAggregationBuilder.NAME"),
             ("aggregation", "TopHitsAggregationBuilder.NAME"),
+            ("aggregation", "VariableWidthHistogramAggregationBuilder.NAME"),
             ("pipeline_aggregation", "BucketSortPipelineAggregationBuilder.NAME"),
             ("suggester", "TermSuggestionBuilder.SUGGESTION_NAME"),
             ("suggester", "PhraseSuggestionBuilder.SUGGESTION_NAME"),
@@ -62,7 +63,6 @@ class SourceSearchRegistrationsTests(unittest.TestCase):
     def test_unbacked_search_registrations_remain_planned(self):
         planned = [
             ("query", "GeoShapeQueryBuilder.NAME"),
-            ("aggregation", "VariableWidthHistogramAggregationBuilder.NAME"),
             ("suggester", "SuggesterSpec<?> suggester"),
         ]
         for category, needle in planned:
