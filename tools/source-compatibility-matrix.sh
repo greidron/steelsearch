@@ -238,6 +238,52 @@ action_status() {
   esac
 }
 
+search_registration_status() {
+  local category="$1"
+  local text="$2"
+
+  case "${category}" in
+    query)
+      case "${text}" in
+        *MatchQueryBuilder.NAME*|*MatchPhraseQueryBuilder.NAME*|*MatchPhrasePrefixQueryBuilder.NAME*|*MatchBoolPrefixQueryBuilder.NAME*|*MultiMatchQueryBuilder.NAME*|*CombinedFieldsQueryBuilder.NAME*|*QueryStringQueryBuilder.NAME*|*SimpleQueryStringBuilder.NAME*|*MoreLikeThisQueryBuilder.NAME*|*BoolQueryBuilder.NAME*|*BoostingQueryBuilder.NAME*|*ConstantScoreQueryBuilder.NAME*|*DisMaxQueryBuilder.NAME*|*FunctionScoreQueryBuilder.NAME*|*ScriptScoreQueryBuilder.NAME*|*MatchAllQueryBuilder.NAME*|*MatchNoneQueryBuilder.NAME*|*TermQueryBuilder.NAME*|*TermsQueryBuilder.NAME*|*TermsSetQueryBuilder.NAME*|*RangeQueryBuilder.NAME*|*ExistsQueryBuilder.NAME*|*IdsQueryBuilder.NAME*|*PrefixQueryBuilder.NAME*|*WildcardQueryBuilder.NAME*|*RegexpQueryBuilder.NAME*|*FuzzyQueryBuilder.NAME*|*WrapperQueryBuilder.NAME*|*NestedQueryBuilder.NAME*|*GeoDistanceQueryBuilder.NAME*|*DistanceFeatureQueryBuilder.NAME*|*RankFeatureQueryBuilder.NAME*|*PinnedQueryBuilder.NAME*|*SpanTermQueryBuilder.NAME*|*SpanOrQueryBuilder.NAME*|*SpanFirstQueryBuilder.NAME*|*SpanNearQueryBuilder.NAME*|*SpanNotQueryBuilder.NAME*|*SpanContainingQueryBuilder.NAME*|*SpanWithinQueryBuilder.NAME*|*SpanMultiTermQueryBuilder.NAME*|*FieldMaskingSpanQueryBuilder.SPAN_FIELD_MASKING_FIELD*)
+          echo "implemented"
+          return
+          ;;
+      esac
+      ;;
+    aggregation)
+      case "${text}" in
+        *RareTermsAggregationBuilder.NAME*|*DateRangeAggregationBuilder.NAME*|*IpRangeAggregationBuilder.NAME*|*AutoDateHistogramAggregationBuilder.NAME*|*VariableWidthHistogramAggregationBuilder.NAME*|*MultiTermsAggregationBuilder.NAME*)
+          echo "planned"
+          return
+          ;;
+        *'TermsAggregationBuilder.NAME'*|*'DateHistogramAggregationBuilder.NAME'*|*'HistogramAggregationBuilder.NAME'*|*'RangeAggregationBuilder.NAME'*|*'MinAggregationBuilder.NAME'*|*'MaxAggregationBuilder.NAME'*|*'SumAggregationBuilder.NAME'*|*'AvgAggregationBuilder.NAME'*|*'WeightedAvgAggregationBuilder.NAME'*|*'StatsAggregationBuilder.NAME'*|*'ExtendedStatsAggregationBuilder.NAME'*|*'PercentilesAggregationBuilder.NAME'*|*'PercentileRanksAggregationBuilder.NAME'*|*'MedianAbsoluteDeviationAggregationBuilder.NAME'*|*'CardinalityAggregationBuilder.NAME'*|*'ValueCountAggregationBuilder.NAME'*|*'MissingAggregationBuilder.NAME'*|*'FilterAggregationBuilder.NAME'*|*'FiltersAggregationBuilder.NAME'*|*'TopHitsAggregationBuilder.NAME'*|*'CompositeAggregationBuilder.NAME'*|*'SignificantTermsAggregationBuilder.NAME'*|*'GeoCentroidAggregationBuilder.NAME'*|*'ScriptedMetricAggregationBuilder.NAME'*)
+          echo "implemented"
+          return
+          ;;
+      esac
+      ;;
+    pipeline_aggregation)
+      case "${text}" in
+        *DerivativePipelineAggregationBuilder.NAME*|*MaxBucketPipelineAggregationBuilder.NAME*|*MinBucketPipelineAggregationBuilder.NAME*|*AvgBucketPipelineAggregationBuilder.NAME*|*SumBucketPipelineAggregationBuilder.NAME*|*StatsBucketPipelineAggregationBuilder.NAME*|*ExtendedStatsBucketPipelineAggregationBuilder.NAME*|*PercentilesBucketPipelineAggregationBuilder.NAME*|*MovAvgPipelineAggregationBuilder.NAME*|*CumulativeSumPipelineAggregationBuilder.NAME*|*BucketScriptPipelineAggregationBuilder.NAME*|*BucketSelectorPipelineAggregationBuilder.NAME*|*BucketSortPipelineAggregationBuilder.NAME*|*SerialDiffPipelineAggregationBuilder.NAME*|*MovFnPipelineAggregationBuilder.NAME*)
+          echo "implemented"
+          return
+          ;;
+      esac
+      ;;
+    fetch_subphase)
+      case "${text}" in
+        *ExplainPhase*|*FetchSourcePhase*|*FetchScorePhase*|*HighlightPhase*|*MatchedQueriesPhase*)
+          echo "implemented"
+          return
+          ;;
+      esac
+      ;;
+  esac
+
+  echo "planned"
+}
+
 extract_search_registrations() {
   local output="$1"
   {
@@ -264,7 +310,7 @@ extract_search_registrations() {
           registerFetchSubPhase) category="fetch_subphase" ;;
           *) category="other" ;;
         esac
-        status="planned"
+        status="$(search_registration_status "${category}" "${text}")"
         printf '%s\t%s\t%s\t%s\t%s\n' "${status}" "${category}" "${text}" "${OPENSEARCH_ROOT}/server/src/main/java/org/opensearch/search/SearchModule.java" "${line}"
       done
   } >"${output}"
