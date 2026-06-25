@@ -20610,8 +20610,7 @@ fn pit_id_value_as_text(value: &Value) -> Option<String> {
         Value::String(value) => Some(value.clone()),
         Value::Number(value) => Some(value.to_string()),
         Value::Bool(value) => Some(value.to_string()),
-        Value::Null => Some("null".to_string()),
-        Value::Array(_) | Value::Object(_) => None,
+        Value::Null | Value::Array(_) | Value::Object(_) => None,
     }
 }
 
@@ -39963,6 +39962,17 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             boolean_close_pit.body["error"]["root_cause"][0]["reason"],
             "invalid id: [true]"
+        );
+
+        let null_close_pit = node.handle_rest_request(
+            RestRequest::new(RestMethod::Delete, "/_search/point_in_time")
+                .with_json_body(serde_json::json!({ "pit_id": Value::Null })),
+        );
+        assert_eq!(null_close_pit.status, 400);
+        assert_eq!(null_close_pit.body["error"]["type"], "illegal_argument_exception");
+        assert_eq!(
+            null_close_pit.body["error"]["root_cause"][0]["reason"],
+            "pit_id element should only contain pit_id"
         );
 
         let close_single_pit = node.handle_rest_request(
