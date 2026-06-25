@@ -51,6 +51,16 @@
       "family": "function_score",
       "policy": "accepted",
       "reason": "Function-score ordering is validated by the forwarding profile with a bounded field-value-factor score and deterministic hit ids."
+    },
+    {
+      "family": "rescore",
+      "policy": "accepted",
+      "reason": "Second-pass ranking is validated by the forwarding profile with a bounded rescore window and deterministic hit ids."
+    },
+    {
+      "family": "collapse",
+      "policy": "accepted",
+      "reason": "Collapsed hit shaping is validated by the forwarding profile with a keyword collapse field and deterministic hit ids."
     }
   ],
   "accepted_request_options": [
@@ -81,16 +91,6 @@
       "family": "scroll",
       "policy": "rejected",
       "reason": "Search session lifecycle requires additional forwarding contracts."
-    },
-    {
-      "family": "rescore",
-      "policy": "rejected",
-      "reason": "Second-pass ranking semantics are not yet part of the forwarding baseline."
-    },
-    {
-      "family": "collapse",
-      "policy": "rejected",
-      "reason": "Collapsed hit shaping is not yet covered by forwarding parity tests."
     },
     {
       "family": "knn",

@@ -53,6 +53,8 @@ fn interop_search_forwarding_policy_fixture_stays_bounded_and_explicit() {
         "geo_distance",
         "script_score",
         "function_score",
+        "rescore",
+        "collapse",
     ] {
         assert!(accepted.contains(required), "missing accepted family {required}");
     }
@@ -82,6 +84,14 @@ fn interop_search_forwarding_policy_fixture_stays_bounded_and_explicit() {
     assert!(
         !rejected.contains("function_score"),
         "function_score must not remain rejected after forwarding profile coverage"
+    );
+    assert!(
+        !rejected.contains("rescore"),
+        "rescore must not remain rejected after forwarding profile coverage"
+    );
+    assert!(
+        !rejected.contains("collapse"),
+        "collapse must not remain rejected after forwarding profile coverage"
     );
     for required in ["sort", "from", "size", "track_total_hits", "pit", "search_after"] {
         assert!(
@@ -137,5 +147,19 @@ fn interop_search_forwarding_policy_fixture_stays_bounded_and_explicit() {
                 && case["body"]["query"]["function_score"].is_object()
         }),
         "accepted function_score policy requires an executable function_score forwarding profile case"
+    );
+    assert!(
+        cases.iter().any(|case| {
+            case["name"] == "rescore_search"
+                && case["body"]["rescore"].is_object()
+        }),
+        "accepted rescore policy requires an executable rescore forwarding profile case"
+    );
+    assert!(
+        cases.iter().any(|case| {
+            case["name"] == "collapse_search"
+                && case["body"]["collapse"].is_object()
+        }),
+        "accepted collapse policy requires an executable collapse forwarding profile case"
     );
 }

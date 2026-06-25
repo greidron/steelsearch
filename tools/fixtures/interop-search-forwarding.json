@@ -14,6 +14,9 @@
         "level": {
           "type": "keyword"
         },
+        "message": {
+          "type": "text"
+        },
         "comments": {
           "type": "nested",
           "properties": {
@@ -38,6 +41,7 @@
         "service": "api",
         "latency_ms": 90,
         "level": "info",
+        "message": "checkout success",
         "comments": [
           {
             "author": "ann",
@@ -60,6 +64,7 @@
         "service": "api",
         "latency_ms": 210,
         "level": "warn",
+        "message": "checkout timeout",
         "comments": [
           {
             "author": "ann",
@@ -78,6 +83,7 @@
         "service": "worker",
         "latency_ms": 150,
         "level": "info",
+        "message": "worker timeout",
         "comments": [
           {
             "author": "cara",
@@ -343,6 +349,59 @@
         "doc-2",
         "doc-3",
         "doc-1"
+      ]
+    },
+    {
+      "name": "rescore_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "rescore": {
+          "window_size": 2,
+          "query": {
+            "rescore_query": {
+              "match": {
+                "message": "timeout"
+              }
+            },
+            "query_weight": 1.0,
+            "rescore_query_weight": 10.0
+          }
+        },
+        "size": 10,
+        "track_total_hits": true
+      },
+      "expected_total": 3,
+      "expected_ids": [
+        "doc-2",
+        "doc-1",
+        "doc-3"
+      ]
+    },
+    {
+      "name": "collapse_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "sort": [
+          {
+            "service": {
+              "order": "asc"
+            }
+          }
+        ],
+        "collapse": {
+          "field": "service"
+        },
+        "size": 10,
+        "track_total_hits": true
+      },
+      "expected_total": 3,
+      "expected_ids": [
+        "doc-1",
+        "doc-3"
       ]
     }
   ]
