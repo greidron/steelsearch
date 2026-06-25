@@ -49,6 +49,7 @@ static DEV_TRANSPORT_PIT_BINDINGS: OnceLock<DevTransportPitBindings> = OnceLock:
 static DEV_TRANSPORT_SCROLL_BINDINGS: OnceLock<DevTransportScrollBindings> = OnceLock::new();
 const TRANSPORT_PIT_EXPIRY_REAPER_GRACE_MILLIS: u64 = 60_000;
 const DEV_TRANSPORT_MAX_OPEN_PIT_CONTEXTS: usize = 300;
+const DEV_TRANSPORT_MAX_PIT_KEEP_ALIVE_MILLIS: i64 = 86_400_000;
 
 fn now_epoch_ms() -> u128 {
     SystemTime::now()
@@ -3819,6 +3820,9 @@ fn build_local_create_pit_response(
     let now_millis = now_epoch_ms();
     let creation_time_millis = now_millis as i64;
     let keep_alive_millis = time_value_wire_to_millis(&request.keep_alive);
+    if keep_alive_millis > DEV_TRANSPORT_MAX_PIT_KEEP_ALIVE_MILLIS {
+        return build_empty_transport_response(request_id, header_version_id);
+    }
     let keep_alive_millis_u64 = keep_alive_millis.max(1) as u64;
     let bindings = dev_transport_pit_bindings();
     let Some(resolved_indices) = transport_pit_indices(bindings, &request) else {
@@ -11537,6 +11541,90 @@ mod tests {
                 .lock()
                 .expect("dev transport next PIT id lock poisoned"),
             41
+        );
+    }
+
+    #[test]
+    fn create_pit_transport_route_rejects_keep_alive_above_default_max() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        let bindings = dev_transport_pit_bindings();
+        bindings
+            .contexts
+            .lock()
+            .expect("dev transport PIT contexts lock poisoned")
+            .clear();
+        bindings
+            .created_indices
+            .lock()
+            .expect("dev transport created indices lock poisoned")
+            .clear();
+        bindings
+            .documents
+            .lock()
+            .expect("dev transport documents lock poisoned")
+            .clear();
+        *bindings
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned") = serde_json::json!({
+            "indices": {
+                "logs-keepalive-pit-000001": {
+                    "settings": {
+                        "index": {
+                            "number_of_shards": "1"
+                        }
+                    }
+                }
+            }
+        });
+        *bindings
+            .next_id
+            .lock()
+            .expect("dev transport next PIT id lock poisoned") = 7;
+
+        let request = os_transport::action::OpenSearchCreatePitRequestWire {
+            indices: vec!["logs-keepalive-pit-000001".to_string()],
+            keep_alive: os_transport::action::TimeValueWire {
+                duration: 25,
+                time_unit_ordinal: 5,
+            },
+            ..os_transport::action::OpenSearchCreatePitRequestWire::default()
+        };
+        let frame = os_transport::action::build_opensearch_create_pit_request_message(
+            195,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        let response = build_local_create_pit_response(
+            195,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &frame[6..],
+        );
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected create-PIT fallback response frame");
+        };
+
+        assert_eq!(message.request_id, 195);
+        assert!(message.body.is_empty());
+        assert!(bindings
+            .contexts
+            .lock()
+            .expect("dev transport PIT contexts lock poisoned")
+            .is_empty());
+        assert_eq!(
+            *bindings
+                .next_id
+                .lock()
+                .expect("dev transport next PIT id lock poisoned"),
+            7
         );
     }
 

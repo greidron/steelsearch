@@ -2303,8 +2303,9 @@ The create-PIT boundary covers:
   opaque PIT ids instead of the earlier `pit-N` debug-shaped ids, while storing
   and resolving the same opaque id through list, search, delete, and segments
   lifecycle paths;
-- REST create-PIT and PIT-search keep-alive extension reject values above the
-  OpenSearch default `point_in_time.max_keep_alive` of `24h`;
+- REST create-PIT, local transport create-PIT, and PIT-search keep-alive
+  extension reject values above the OpenSearch default
+  `point_in_time.max_keep_alive` of `24h`;
 - REST create-PIT rejects local open PIT context creation beyond the OpenSearch
   default `search.max_open_pit_context` limit of `300`;
 - local transport create-PIT applies the same open PIT context ceiling before
