@@ -359,6 +359,28 @@
       }
     },
     {
+      "name": "update_single_doc_retry_with_occ_rejected",
+      "method": "POST",
+      "path": "/single-doc-compat-000001/_update/doc-1?routing=tenant-a&if_seq_no=5&if_primary_term=1&retry_on_conflict=3",
+      "body": {
+        "doc": {
+          "message": "retry-with-occ"
+        }
+      },
+      "compare": {
+        "expected_status": 400,
+        "body_paths_present": [
+          "error.type",
+          "error.reason",
+          "status"
+        ],
+        "body_paths_equal": [
+          "error.type",
+          "status"
+        ]
+      }
+    },
+    {
       "name": "update_single_doc_doc_patch_success",
       "method": "POST",
       "path": "/single-doc-compat-000001/_update/doc-1?routing=tenant-a",
