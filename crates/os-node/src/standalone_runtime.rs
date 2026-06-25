@@ -40006,6 +40006,20 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             "invalid id: []"
         );
 
+        let array_empty_close_pit = node.handle_rest_request(
+            RestRequest::new(RestMethod::Delete, "/_search/point_in_time")
+                .with_json_body(serde_json::json!({ "pit_id": [""] })),
+        );
+        assert_eq!(array_empty_close_pit.status, 400);
+        assert_eq!(
+            array_empty_close_pit.body["error"]["type"],
+            "illegal_argument_exception"
+        );
+        assert_eq!(
+            array_empty_close_pit.body["error"]["root_cause"][0]["reason"],
+            "invalid id: []"
+        );
+
         let close_single_pit = node.handle_rest_request(
             RestRequest::new(RestMethod::Delete, "/_search/point_in_time")
                 .with_json_body(serde_json::json!({ "pit_id": "pit-1" })),
