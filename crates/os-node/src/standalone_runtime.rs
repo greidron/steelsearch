@@ -20189,9 +20189,10 @@ fn search_query_param_parse_error(param: &str, value: &str) -> RestResponse {
 
 fn validate_pit_request_body(pit: &Value) -> Option<RestResponse> {
     let Some(object) = pit.as_object() else {
-        return Some(build_unsupported_search_response(
-            "unsupported search option [pit]",
-        ));
+        return Some(build_parsing_search_response_with_root_cause(&format!(
+            "Unknown key for a {} in [pit].",
+            opensearch_xcontent_token_name(pit)
+        )));
     };
     if !object.contains_key("id") {
         return Some(build_unsupported_search_response(
@@ -39574,6 +39575,23 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             unknown_pit_field_search.body["error"]["root_cause"][0]["reason"],
             "[1:51] [pit] unknown field [unexpected]"
+        );
+
+        let non_object_pit_search = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_search")
+                .with_json_body(serde_json::json!({
+                    "pit": "pit-missing",
+                    "query": { "match_all": {} }
+                })),
+        );
+        assert_eq!(non_object_pit_search.status, 400);
+        assert_eq!(
+            non_object_pit_search.body["error"]["type"],
+            "parsing_exception"
+        );
+        assert_eq!(
+            non_object_pit_search.body["error"]["root_cause"][0]["reason"],
+            "Unknown key for a VALUE_STRING in [pit]."
         );
 
         let empty_pit_id_search = node.handle_rest_request(

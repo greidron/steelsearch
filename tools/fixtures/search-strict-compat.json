@@ -2995,6 +2995,23 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "pit_non_object_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/_search",
+      "body": {
+        "pit": "pit-missing",
+        "query": {
+          "match_all": {}
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] PIT rejects non-object values like OpenSearch",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "pre_filter_shard_size_search",
       "area": "search",
       "method": "POST",
