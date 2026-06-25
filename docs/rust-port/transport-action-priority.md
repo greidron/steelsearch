@@ -1776,13 +1776,13 @@ The get-settings boundary covers:
   array, `local` flag, `IndicesOptions.fromOptions(false, true, true, true)`,
   names array, `humanReadable`, and `includeDefaults` at the wire decode/build
   layer;
-- implemented classification for `indices:monitor/settings/get` default
-  all-indices/no-name/no-default requests, returning OpenSearch-shaped
-  index-settings from the local metadata manifest and an empty default-settings
-  response;
+- implemented classification for `indices:monitor/settings/get`
+  metadata-backed requests with index/name filtering and no default expansion,
+  returning OpenSearch-shaped index-settings from the local metadata manifest
+  and an empty default-settings response;
 - explicit rejection for custom cluster-manager timeout, index filters, local
-  reads, custom indices options, name filters, human-readable formatting,
-  and include-default expansion.
+  reads, custom indices options, human-readable formatting, and include-default
+  expansion.
 
 The cluster-search-shards boundary covers:
 

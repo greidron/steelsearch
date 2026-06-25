@@ -1334,7 +1334,7 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end_at_ms,
         )?;
     } else if is_request && normalized_action_hint == Some("indices:monitor/settings/get") {
-        let response = build_get_settings_response(request_id, header_version_id);
+        let response = build_get_settings_response(request_id, header_version_id, &body);
         response_frame = summarize_transport_response_frame_for_action(
             &response,
             Some("indices:monitor/settings/get"),
@@ -3574,12 +3574,16 @@ fn build_empty_get_aliases_response(request_id: i64, header_version_id: u32) -> 
     .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
 }
 
-fn build_get_settings_response(request_id: i64, header_version_id: u32) -> Vec<u8> {
+fn build_get_settings_response(request_id: i64, header_version_id: u32, body: &[u8]) -> Vec<u8> {
+    let request = decode_get_settings_request_from_transport_body(body)
+        .filter(|request| request.validate_supported_subset().is_ok())
+        .unwrap_or_default();
     let response = get_settings_response_from_metadata_manifest(
         &dev_transport_pit_bindings()
             .metadata_manifest
             .lock()
             .expect("metadata manifest lock poisoned"),
+        &request,
     );
     os_transport::action::build_opensearch_get_settings_response_message(
         request_id,
@@ -3592,21 +3596,63 @@ fn build_get_settings_response(request_id: i64, header_version_id: u32) -> Vec<u
 
 fn get_settings_response_from_metadata_manifest(
     metadata_manifest: &Value,
+    request: &os_transport::action::OpenSearchGetSettingsRequestWire,
 ) -> os_transport::action::OpenSearchGetSettingsResponseWire {
     let mut index_settings = BTreeMap::new();
-    for (index, entry) in metadata_manifest["indices"]
-        .as_object()
-        .into_iter()
-        .flatten()
-    {
+    for (index, entry) in transport_get_settings_indices(metadata_manifest, request) {
         let mut flattened = BTreeMap::new();
         flatten_string_settings(None, &entry["settings"], &mut flattened);
+        if !request.names.is_empty() {
+            flattened.retain(|setting, _| {
+                request
+                    .names
+                    .iter()
+                    .any(|pattern| wildcard_match(pattern, setting))
+            });
+        }
         index_settings.insert(index.clone(), flattened);
     }
     os_transport::action::OpenSearchGetSettingsResponseWire {
         index_settings,
         default_settings: BTreeMap::new(),
     }
+}
+
+fn decode_get_settings_request_from_transport_body(
+    body: &[u8],
+) -> Option<os_transport::action::OpenSearchGetSettingsRequestWire> {
+    let message = decode_transport_message_from_body(body)?;
+    os_transport::action::read_opensearch_get_settings_request_message(&message).ok()
+}
+
+fn transport_get_settings_indices<'a>(
+    metadata_manifest: &'a Value,
+    request: &os_transport::action::OpenSearchGetSettingsRequestWire,
+) -> Vec<(&'a String, &'a Value)> {
+    let Some(indices) = metadata_manifest["indices"].as_object() else {
+        return Vec::new();
+    };
+    if request.indices.is_empty() {
+        return indices.iter().collect();
+    }
+    let mut selected: Vec<(&String, &Value)> = Vec::new();
+    for selector in request
+        .indices
+        .iter()
+        .filter(|selector| !selector.is_empty())
+    {
+        let selector = if selector == "_all" { "*" } else { selector };
+        for (index, entry) in indices {
+            if wildcard_match(selector, index)
+                && !selected
+                    .iter()
+                    .any(|selected_entry| selected_entry.0 == index)
+            {
+                selected.push((index, entry));
+            }
+        }
+    }
+    selected
 }
 
 fn flatten_string_settings(
@@ -6058,9 +6104,11 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
             request_id,
             header_version_id,
         )),
-        Some("indices:monitor/settings/get") => {
-            Some(build_get_settings_response(request_id, header_version_id))
-        }
+        Some("indices:monitor/settings/get") => Some(build_get_settings_response(
+            request_id,
+            header_version_id,
+            body,
+        )),
         Some("indices:admin/mappings/get") => Some(build_empty_get_mappings_response(
             request_id,
             header_version_id,
@@ -10456,27 +10504,31 @@ mod tests {
 
     #[test]
     fn get_settings_response_from_metadata_manifest_flattens_live_index_settings() {
-        let response = get_settings_response_from_metadata_manifest(&serde_json::json!({
-            "indices": {
-                "logs-000001": {
-                    "settings": {
-                        "index": {
-                            "number_of_shards": "3",
-                            "number_of_replicas": "1",
-                            "refresh_interval": "5s",
-                            "replication": {
-                                "type": "DOCUMENT"
+        let request = os_transport::action::OpenSearchGetSettingsRequestWire::default();
+        let response = get_settings_response_from_metadata_manifest(
+            &serde_json::json!({
+                "indices": {
+                    "logs-000001": {
+                        "settings": {
+                            "index": {
+                                "number_of_shards": "3",
+                                "number_of_replicas": "1",
+                                "refresh_interval": "5s",
+                                "replication": {
+                                    "type": "DOCUMENT"
+                                }
                             }
                         }
-                    }
-                },
-                "metrics-000001": {
-                    "settings": {
-                        "index.number_of_replicas": "0"
+                    },
+                    "metrics-000001": {
+                        "settings": {
+                            "index.number_of_replicas": "0"
+                        }
                     }
                 }
-            }
-        }));
+            }),
+            &request,
+        );
 
         assert_eq!(
             response.index_settings["logs-000001"]["index.number_of_shards"],
@@ -10502,8 +10554,55 @@ mod tests {
     }
 
     #[test]
+    fn get_settings_response_from_metadata_manifest_applies_index_and_name_filters() {
+        let request = os_transport::action::OpenSearchGetSettingsRequestWire {
+            indices: vec!["logs-*".to_string()],
+            names: vec!["index.refresh_*".to_string()],
+            ..os_transport::action::OpenSearchGetSettingsRequestWire::default()
+        };
+        let response = get_settings_response_from_metadata_manifest(
+            &serde_json::json!({
+                "indices": {
+                    "logs-000001": {
+                        "settings": {
+                            "index": {
+                                "number_of_replicas": "1",
+                                "refresh_interval": "5s"
+                            }
+                        }
+                    },
+                    "metrics-000001": {
+                        "settings": {
+                            "index": {
+                                "refresh_interval": "30s"
+                            }
+                        }
+                    }
+                }
+            }),
+            &request,
+        );
+
+        assert!(response.index_settings.contains_key("logs-000001"));
+        assert!(!response.index_settings.contains_key("metrics-000001"));
+        assert_eq!(
+            response.index_settings["logs-000001"]["index.refresh_interval"],
+            "5s"
+        );
+        assert!(!response.index_settings["logs-000001"].contains_key("index.number_of_replicas"));
+    }
+
+    #[test]
     fn get_settings_transport_route_builds_opensearch_shaped_metadata_response() {
-        let response = build_get_settings_response(83, OPENSEARCH_3_7_0_TRANSPORT.id() as u32);
+        let request = os_transport::action::OpenSearchGetSettingsRequestWire::default();
+        let frame = os_transport::action::build_opensearch_get_settings_request_message(
+            83,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        let response =
+            build_get_settings_response(83, OPENSEARCH_3_7_0_TRANSPORT.id() as u32, &frame[6..]);
         let mut frame = BytesMut::from(&response[..]);
         let os_transport::frame::DecodedFrame::Message(message) =
             os_transport::frame::decode_frame(&mut frame)

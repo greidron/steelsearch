@@ -3309,8 +3309,24 @@ fn daemon_transport_get_settings_reflects_rest_created_index_metadata() {
         ),
     );
     assert_eq!(create["status"], 200, "{create}");
+    let create_other = wait_http_response(
+        http_port,
+        "PUT",
+        "/settings-other",
+        Some(
+            br#"{"settings":{"index":{"number_of_shards":1,"number_of_replicas":0,"refresh_interval":"30s"}}}"#,
+        ),
+    );
+    assert_eq!(create_other["status"], 200, "{create_other}");
 
-    let request = os_transport::action::OpenSearchGetSettingsRequestWire::default();
+    let request = os_transport::action::OpenSearchGetSettingsRequestWire {
+        indices: vec!["settings-it".to_string()],
+        names: vec![
+            "index.refresh_*".to_string(),
+            "index.number_of_shards".to_string(),
+        ],
+        ..os_transport::action::OpenSearchGetSettingsRequestWire::default()
+    };
     let frame = os_transport::action::build_opensearch_get_settings_request_message(
         91,
         OPENSEARCH_3_7_0_TRANSPORT,
@@ -3326,13 +3342,11 @@ fn daemon_transport_get_settings_reflects_rest_created_index_metadata() {
         "3"
     );
     assert_eq!(
-        settings.index_settings["settings-it"]["index.number_of_replicas"],
-        "1"
-    );
-    assert_eq!(
         settings.index_settings["settings-it"]["index.refresh_interval"],
         "5s"
     );
+    assert!(!settings.index_settings["settings-it"].contains_key("index.number_of_replicas"));
+    assert!(!settings.index_settings.contains_key("settings-other"));
 
     let _ = fs::remove_dir_all(root);
 }

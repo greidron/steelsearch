@@ -2202,7 +2202,7 @@ pub fn classify_opensearch_transport_action(
         OPENSEARCH_GET_SETTINGS_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Implemented,
-            reason: "get-settings transport adapter returns OpenSearch-shaped index settings from the local metadata manifest for the default all-indices request",
+            reason: "get-settings transport adapter returns OpenSearch-shaped index settings from the local metadata manifest with index and name filtering",
         },
         OPENSEARCH_CLUSTER_SEARCH_SHARDS_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -22324,12 +22324,6 @@ impl OpenSearchGetSettingsRequestWire {
                     "custom cluster-manager timeout is not mapped by the get-settings adapter yet",
             });
         }
-        if !self.indices.is_empty() {
-            return Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "get settings index filter",
-                reason: "index-scoped settings reads require cluster metadata response rendering",
-            });
-        }
         if self.local {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "get settings local",
@@ -22343,12 +22337,6 @@ impl OpenSearchGetSettingsRequestWire {
                 shape: "get settings indices options",
                 reason:
                     "custom get-settings indices options require cluster metadata resolution semantics",
-            });
-        }
-        if !self.names.is_empty() {
-            return Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "get settings name filter",
-                reason: "settings name filters require settings response filtering semantics",
             });
         }
         if self.human_readable {
@@ -60049,13 +60037,7 @@ mod tests {
             indices: vec!["logs-*".to_string()],
             ..OpenSearchGetSettingsRequestWire::default()
         };
-        assert!(matches!(
-            index_filter.reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "get settings index filter",
-                ..
-            })
-        ));
+        index_filter.validate_supported_subset().unwrap();
 
         let local = OpenSearchGetSettingsRequestWire {
             local: true,
@@ -60088,13 +60070,7 @@ mod tests {
             names: vec!["index.number_of_shards".to_string()],
             ..OpenSearchGetSettingsRequestWire::default()
         };
-        assert!(matches!(
-            name_filter.reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "get settings name filter",
-                ..
-            })
-        ));
+        name_filter.validate_supported_subset().unwrap();
 
         let human_readable = OpenSearchGetSettingsRequestWire {
             human_readable: true,
