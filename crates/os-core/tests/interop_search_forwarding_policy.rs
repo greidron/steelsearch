@@ -153,6 +153,14 @@ fn interop_search_forwarding_policy_fixture_stays_bounded_and_explicit() {
             evidence.iter().all(|item| item.as_str().map_or(false, |value| !value.is_empty())),
             "rejected family {family} has blank blocking evidence"
         );
+        if family == "scroll" {
+            assert!(
+                evidence.iter().any(|item| item.as_str().map_or(false, |value| {
+                    value.contains("SearchResponse.java::writeTo")
+                })),
+                "scroll rejection must name the OpenSearch SearchResponse wire blocker"
+            );
+        }
     }
     let cases = forwarding_fixture["cases"]
         .as_array()

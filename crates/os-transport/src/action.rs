@@ -2369,7 +2369,7 @@ pub fn classify_opensearch_transport_action(
         OPENSEARCH_SEARCH_SCROLL_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "search-scroll transport execution requires scroll context lifecycle mapping",
+            reason: "search-scroll transport execution remains gated on OpenSearch SearchResponse wire rendering and scroll-id execution mapping",
         },
         OPENSEARCH_CLEAR_SCROLL_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),

@@ -2219,7 +2219,8 @@ The search-scroll boundary covers:
 - OpenSearch `SearchScrollRequest` parent task, scroll id, and optional
   keep-alive `Scroll` time value at the wire decode/build layer;
 - explicit fail-closed classification for `indices:data/read/scroll` until
-  scroll context lifecycle and response rendering are mapped;
+  OpenSearch `SearchResponse` wire rendering and scroll-id execution mapping
+  are implemented;
 - explicit rejection for empty scroll ids and search-scroll execution.
 
 The clear-scroll boundary covers:
