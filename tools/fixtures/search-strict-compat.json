@@ -2310,6 +2310,20 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "pit_close_malformed_body_error_search",
+      "area": "search",
+      "method": "DELETE",
+      "path": "/_search/point_in_time",
+      "body": [
+        "pit-1"
+      ],
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] close PIT rejects non-object body like OpenSearch",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "pit_open_search",
       "area": "search",
       "method": "POST",

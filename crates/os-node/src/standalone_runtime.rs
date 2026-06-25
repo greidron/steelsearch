@@ -20617,12 +20617,19 @@ fn xcontent_token_name(value: &Value) -> &'static str {
 }
 
 fn delete_pit_illegal_argument(reason: impl Into<String>) -> RestResponse {
+    let reason = reason.into();
     RestResponse::json(
         400,
         serde_json::json!({
             "error": {
                 "type": "illegal_argument_exception",
-                "reason": reason.into()
+                "reason": reason,
+                "root_cause": [
+                    {
+                        "type": "illegal_argument_exception",
+                        "reason": reason
+                    }
+                ]
             },
             "status": 400
         }),
@@ -39841,6 +39848,10 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(malformed_close_pit.status, 400);
         assert_eq!(
             malformed_close_pit.body["error"]["reason"],
+            "Malformed content, must start with an object"
+        );
+        assert_eq!(
+            malformed_close_pit.body["error"]["root_cause"][0]["reason"],
             "Malformed content, must start with an object"
         );
 
