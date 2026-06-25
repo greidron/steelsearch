@@ -2721,6 +2721,7 @@ fn build_tantivy_query(
         Query::FunctionScore { query } => build_tantivy_query(search_state, query),
         Query::ScriptScore { query, .. } => build_tantivy_query(search_state, query),
         Query::Script { .. } => Ok(None),
+        Query::Intervals { .. } => Ok(None),
         Query::CombinedFields { fields, query } => {
             build_tantivy_tokenized_field_set_query(search_state, Some(fields.as_slice()), query)
         }
@@ -14936,6 +14937,87 @@ fn script_value_matches(actual: &Value, operator: &str, expected: &Value) -> boo
     }
 }
 
+fn matches_intervals_query(source: &Value, field: &str, spec: &Value) -> bool {
+    source_value_for_highlight_field(source, field)
+        .and_then(Value::as_str)
+        .is_some_and(|candidate| matches_intervals_spec(candidate, spec))
+}
+
+fn matches_intervals_spec(candidate: &str, spec: &Value) -> bool {
+    let tokens = tokenize_phrase_text(candidate);
+    let Some(interval_object) = spec.as_object() else {
+        return false;
+    };
+    if let Some(match_spec) = interval_object.get("match").and_then(Value::as_object) {
+        let Some(query_text) = match_spec.get("query").and_then(Value::as_str) else {
+            return false;
+        };
+        let ordered = match_spec.get("ordered").and_then(Value::as_bool).unwrap_or(true);
+        let max_gaps = match_spec.get("max_gaps").and_then(Value::as_u64).unwrap_or(0) as usize;
+        let terms = tokenize_phrase_text(query_text);
+        return tokens_match_interval_terms(&tokens, &terms, ordered, max_gaps);
+    }
+    if let Some(all_of) = interval_object.get("all_of").and_then(Value::as_object) {
+        let ordered = all_of.get("ordered").and_then(Value::as_bool).unwrap_or(true);
+        let max_gaps = all_of.get("max_gaps").and_then(Value::as_u64).unwrap_or(0) as usize;
+        let mut terms = Vec::new();
+        let Some(intervals) = all_of.get("intervals").and_then(Value::as_array) else {
+            return false;
+        };
+        for interval in intervals {
+            let Some(query_text) = interval
+                .get("match")
+                .and_then(Value::as_object)
+                .and_then(|match_spec| match_spec.get("query"))
+                .and_then(Value::as_str)
+            else {
+                return false;
+            };
+            terms.extend(tokenize_phrase_text(query_text));
+        }
+        return tokens_match_interval_terms(&tokens, &terms, ordered, max_gaps);
+    }
+    false
+}
+
+fn tokens_match_interval_terms(
+    candidate_tokens: &[String],
+    expected_terms: &[String],
+    ordered: bool,
+    max_gaps: usize,
+) -> bool {
+    if expected_terms.is_empty() {
+        return false;
+    }
+    if ordered {
+        let mut previous_position = None;
+        for expected in expected_terms {
+            let start = previous_position.map(|position| position + 1).unwrap_or(0);
+            let mut matched_position = None;
+            for (index, token) in candidate_tokens.iter().enumerate().skip(start) {
+                if token == expected {
+                    matched_position = Some(index);
+                    break;
+                }
+            }
+            let Some(position) = matched_position else {
+                return false;
+            };
+            if let Some(previous) = previous_position {
+                let gap = position.saturating_sub(previous + 1);
+                if gap > max_gaps {
+                    return false;
+                }
+            }
+            previous_position = Some(position);
+        }
+        return true;
+    }
+    expected_terms
+        .iter()
+        .all(|expected| candidate_tokens.iter().any(|token| token == expected))
+}
+
 fn document_source_value_for_prechecked_aggregation_field<'a>(
     document: &'a StoredDocument,
     field: &str,
@@ -15487,6 +15569,9 @@ fn document_matches_query(query: &Query, id: &str, source: &Value) -> bool {
     if let Query::Script { script } = query {
         return matches_script_filter_query(source, script);
     }
+    if let Query::Intervals { field, spec } = query {
+        return matches_intervals_query(source, field, spec);
+    }
     match query {
         Query::MatchAll => true,
         Query::MatchNone => false,
@@ -15800,7 +15885,8 @@ fn query_requires_native_candidate_post_filter(query: &Query) -> bool {
         | Query::Boosting { .. }
         | Query::FunctionScore { .. }
         | Query::ScriptScore { .. }
-        | Query::Script { .. } => true,
+        | Query::Script { .. }
+        | Query::Intervals { .. } => true,
         Query::Prefix {
             field,
             case_insensitive,
@@ -15835,6 +15921,7 @@ fn query_allows_source_candidate_scan_for_native_post_filter(query: &Query) -> b
         | Query::MoreLikeThis { .. }
         | Query::GeoPolygon(_)
         | Query::Script { .. }
+        | Query::Intervals { .. }
         | Query::TermsSet { .. }
         | Query::DistanceFeature { .. }
         | Query::RankFeature { .. }
@@ -142454,6 +142541,65 @@ mod tests {
             .unwrap()
             .expect("native script filter hits");
         assert_eq!(search_hit_ids(&native_hits), vec!["2", "3"]);
+    }
+
+    #[test]
+    fn native_tantivy_path_executes_intervals_query() {
+        let engine = TantivyEngine::default();
+        engine
+            .create_index(CreateIndexRequest {
+                index: "bench".to_string(),
+                settings: serde_json::json!({}),
+                mappings: serde_json::json!({
+                    "properties": {
+                        "message": { "type": "text" }
+                    }
+                }),
+            })
+            .unwrap();
+
+        for (id, message) in [
+            ("1", "checkout service started"),
+            ("2", "checkout payment service started"),
+            ("3", "service checkout started"),
+        ] {
+            engine
+                .index_document(IndexDocumentRequest {
+                    index: "bench".to_string(),
+                    id: id.to_string(),
+                    source: serde_json::json!({ "message": message }),
+                })
+                .unwrap();
+        }
+        engine
+            .refresh(RefreshRequest {
+                indices: vec!["bench".to_string()],
+            })
+            .unwrap();
+
+        let query = parse_query(&serde_json::json!({
+            "intervals": {
+                "message": {
+                    "all_of": {
+                        "ordered": true,
+                        "max_gaps": 0,
+                        "intervals": [
+                            { "match": { "query": "checkout" } },
+                            { "match": { "query": "service" } }
+                        ]
+                    }
+                }
+            }
+        }))
+        .unwrap();
+
+        let mut store = engine.store.write().unwrap();
+        let index = store.indices.get_mut("bench").unwrap();
+        let native_hits = index
+            .search_hits_for_query_native("bench", &query, &[])
+            .unwrap()
+            .expect("native intervals hits");
+        assert_eq!(search_hit_ids(&native_hits), vec!["1"]);
     }
 
     #[test]

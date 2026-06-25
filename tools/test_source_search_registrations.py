@@ -32,6 +32,7 @@ class SourceSearchRegistrationsTests(unittest.TestCase):
             ("query", "SpanGapQueryBuilder.NAME"),
             ("query", "ScriptQueryBuilder.NAME"),
             ("query", "ScriptScoreQueryBuilder.NAME"),
+            ("query", "IntervalQueryBuilder.NAME"),
             ("aggregation", "AggregationSpec(TermsAggregationBuilder.NAME,"),
             ("aggregation", "AdjacencyMatrixAggregationBuilder.NAME"),
             ("aggregation", "AggregationSpec( DateHistogramAggregationBuilder.NAME,"),

@@ -176,6 +176,10 @@ pub enum Query {
     Script {
         script: Value,
     },
+    Intervals {
+        field: String,
+        spec: Value,
+    },
     Knn(KnnQuery),
     Bool {
         clauses: BoolQuery,
@@ -694,6 +698,7 @@ pub fn parse_query(value: &Value) -> QueryDslResult<Query> {
         "function_score" => parse_function_score(body),
         "script_score" => parse_script_score(body),
         "script" => parse_script(body),
+        "intervals" => parse_intervals(body),
         "knn" => parse_knn(body),
         "bool" => parse_bool(body),
         _ => Err(QueryDslError::UnsupportedClause {
@@ -3114,6 +3119,69 @@ fn parse_script(body: &Value) -> QueryDslResult<Query> {
     Ok(Query::Script { script })
 }
 
+fn parse_intervals(body: &Value) -> QueryDslResult<Query> {
+    let object = body.as_object().ok_or(QueryDslError::ExpectedObject)?;
+    if object.len() != 1 {
+        return Err(QueryDslError::ExpectedSingleField {
+            clause: "intervals".to_string(),
+        });
+    }
+    let (field, spec) = object.iter().next().expect("checked len");
+    let spec_object = spec.as_object().ok_or(QueryDslError::ExpectedObject)?;
+    let interval_rule_count = spec_object
+        .keys()
+        .filter(|key| key.as_str() != "_name" && key.as_str() != "boost")
+        .count();
+    if interval_rule_count != 1 {
+        return Err(QueryDslError::ExpectedSingleField {
+            clause: "intervals".to_string(),
+        });
+    }
+    if !intervals_spec_is_supported(spec) {
+        return Err(QueryDslError::UnsupportedOption {
+            clause: "intervals".to_string(),
+            option: "rule".to_string(),
+        });
+    }
+    Ok(Query::Intervals {
+        field: field.clone(),
+        spec: spec.clone(),
+    })
+}
+
+fn intervals_spec_is_supported(spec: &Value) -> bool {
+    let Some(object) = spec.as_object() else {
+        return false;
+    };
+    if let Some(match_spec) = object.get("match").and_then(Value::as_object) {
+        return match_spec
+            .get("query")
+            .and_then(Value::as_str)
+            .is_some_and(|query| !query.is_empty())
+            && match_spec
+                .keys()
+                .all(|key| key == "query" || key == "ordered" || key == "max_gaps");
+    }
+    if let Some(all_of) = object.get("all_of").and_then(Value::as_object) {
+        let Some(intervals) = all_of.get("intervals").and_then(Value::as_array) else {
+            return false;
+        };
+        return !intervals.is_empty()
+            && all_of
+                .keys()
+                .all(|key| key == "intervals" || key == "ordered" || key == "max_gaps")
+            && intervals.iter().all(|interval| {
+                interval
+                    .get("match")
+                    .and_then(Value::as_object)
+                    .and_then(|match_spec| match_spec.get("query"))
+                    .and_then(Value::as_str)
+                    .is_some_and(|query| !query.is_empty())
+            });
+    }
+    false
+}
+
 fn parse_string_multiterm(
     clause: &str,
     body: &Value,
@@ -4495,6 +4563,42 @@ mod tests {
             string_script,
             Query::Script {
                 script: serde_json::json!("params._source['tenant'] == 'beta'"),
+            }
+        );
+    }
+
+    #[test]
+    fn parses_intervals_queries() {
+        let query = parse_query(&serde_json::json!({
+            "intervals": {
+                "message": {
+                    "all_of": {
+                        "ordered": true,
+                        "max_gaps": 0,
+                        "intervals": [
+                            { "match": { "query": "checkout" } },
+                            { "match": { "query": "service" } }
+                        ]
+                    }
+                }
+            }
+        }))
+        .unwrap();
+
+        assert_eq!(
+            query,
+            Query::Intervals {
+                field: "message".to_string(),
+                spec: serde_json::json!({
+                    "all_of": {
+                        "ordered": true,
+                        "max_gaps": 0,
+                        "intervals": [
+                            { "match": { "query": "checkout" } },
+                            { "match": { "query": "service" } }
+                        ]
+                    }
+                }),
             }
         );
     }
