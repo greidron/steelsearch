@@ -173,6 +173,9 @@ pub enum Query {
         query: Box<Query>,
         script: Value,
     },
+    Script {
+        script: Value,
+    },
     Knn(KnnQuery),
     Bool {
         clauses: BoolQuery,
@@ -690,6 +693,7 @@ pub fn parse_query(value: &Value) -> QueryDslResult<Query> {
         "boosting" => parse_boosting(body),
         "function_score" => parse_function_score(body),
         "script_score" => parse_script_score(body),
+        "script" => parse_script(body),
         "knn" => parse_knn(body),
         "bool" => parse_bool(body),
         _ => Err(QueryDslError::UnsupportedClause {
@@ -3075,6 +3079,41 @@ fn parse_script_score(body: &Value) -> QueryDslResult<Query> {
     })
 }
 
+fn parse_script(body: &Value) -> QueryDslResult<Query> {
+    let object = body.as_object().ok_or(QueryDslError::ExpectedObject)?;
+    let script = object
+        .get("script")
+        .cloned()
+        .ok_or_else(|| QueryDslError::MissingField {
+            clause: "script".to_string(),
+            field: "script".to_string(),
+        })?;
+
+    if !(script.is_string()
+        || script
+            .as_object()
+            .and_then(|script_object| script_object.get("source"))
+            .and_then(Value::as_str)
+            .is_some())
+    {
+        return Err(QueryDslError::UnsupportedOption {
+            clause: "script".to_string(),
+            option: "script".to_string(),
+        });
+    }
+
+    for option in object.keys() {
+        if option != "script" && option != "_name" && option != "boost" {
+            return Err(QueryDslError::UnsupportedOption {
+                clause: "script".to_string(),
+                option: option.clone(),
+            });
+        }
+    }
+
+    Ok(Query::Script { script })
+}
+
 fn parse_string_multiterm(
     clause: &str,
     body: &Value,
@@ -4419,6 +4458,43 @@ mod tests {
                     value: serde_json::json!("api"),
                 }),
                 script: serde_json::json!({ "source": "_score" }),
+            }
+        );
+    }
+
+    #[test]
+    fn parses_script_filter_queries() {
+        let object_script = parse_query(&serde_json::json!({
+            "script": {
+                "script": {
+                    "source": "doc['rank'].value > 1",
+                    "lang": "painless"
+                }
+            }
+        }))
+        .unwrap();
+        assert_eq!(
+            object_script,
+            Query::Script {
+                script: serde_json::json!({
+                    "source": "doc['rank'].value > 1",
+                    "lang": "painless"
+                }),
+            }
+        );
+
+        let string_script = parse_query(&serde_json::json!({
+            "script": {
+                "script": "params._source['tenant'] == 'beta'",
+                "_name": "tenant-script",
+                "boost": 1.0
+            }
+        }))
+        .unwrap();
+        assert_eq!(
+            string_script,
+            Query::Script {
+                script: serde_json::json!("params._source['tenant'] == 'beta'"),
             }
         );
     }

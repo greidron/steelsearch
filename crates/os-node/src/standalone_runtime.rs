@@ -22374,6 +22374,7 @@ fn validate_search_query_body(query: &Value) -> Option<RestResponse> {
         | "geo_polygon"
         | "function_score"
         | "script_score"
+        | "script"
         | "span_term"
         | "span_gap"
         | "span_or"
@@ -22918,6 +22919,30 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
         }
         if let Some(response) = validate_search_query_body(inner_query) {
             return Some(response);
+        }
+    }
+    if let Some(spec) = query.get("script").and_then(Value::as_object) {
+        let Some(script) = spec.get("script") else {
+            return Some(build_parsing_search_response(
+                "script must be provided with a [script] filter",
+            ));
+        };
+        if !script_filter_source(script).is_some_and(script_filter_source_is_supported) {
+            return Some(build_unsupported_search_response(
+                "unsupported script query source",
+            ));
+        }
+        if spec
+            .keys()
+            .any(|key| key != "script" && key != "_name" && key != "boost")
+        {
+            return Some(build_x_content_parse_search_response(&format!(
+                "[script] query does not support [{}]",
+                spec.keys()
+                    .find(|key| key.as_str() != "script" && key.as_str() != "_name" && key.as_str() != "boost")
+                    .map(String::as_str)
+                    .unwrap_or("unknown")
+            )));
         }
     }
     if let Some(spec) = query.get("span_term").and_then(Value::as_object) {
@@ -24420,6 +24445,12 @@ fn evaluate_search_query_source_with_mappings(
             .unwrap_or(1.0);
         return Some((true, score.max(1.0)));
     }
+    if let Some(script_query) = query.get("script").and_then(Value::as_object) {
+        let matched = script_query
+            .get("script")
+            .is_some_and(|script| matches_script_filter_query(source, script));
+        return Some((matched, if matched { 1.0 } else { 0.0 }));
+    }
     if let Some(span_term) = query.get("span_term").and_then(Value::as_object) {
         return evaluate_span_query(source, span_term).map(|matched| (matched, if matched { 1.0 } else { 0.0 }));
     }
@@ -25259,6 +25290,129 @@ fn lookup_query_field_value<'a>(source: &'a Value, field: &str) -> Option<&'a Va
         return Some(current);
     }
     field.rsplit('.').next().and_then(|last| source.get(last))
+}
+
+fn script_filter_source(script: &Value) -> Option<&str> {
+    if let Some(source) = script.as_str() {
+        return Some(source);
+    }
+    script
+        .as_object()
+        .and_then(|object| object.get("source"))
+        .and_then(Value::as_str)
+}
+
+fn script_filter_source_is_supported(source: &str) -> bool {
+    let source = source.trim();
+    source == "true"
+        || source == "false"
+        || ["==", "!=", ">=", "<=", ">", "<"].iter().any(|operator| {
+            source.split_once(operator).is_some_and(|(left, right)| {
+                script_field_operand(left.trim()).is_some()
+                    && parse_script_literal(right.trim()).is_some()
+            })
+        })
+}
+
+fn matches_script_filter_query(source: &Value, script: &Value) -> bool {
+    let Some(script_source) = script_filter_source(script).map(str::trim) else {
+        return false;
+    };
+    match script_source {
+        "true" => return true,
+        "false" => return false,
+        _ => {}
+    }
+
+    for operator in ["==", "!=", ">=", "<=", ">", "<"] {
+        let Some((left, right)) = script_source.split_once(operator) else {
+            continue;
+        };
+        let Some(field) = script_field_operand(left.trim()) else {
+            return false;
+        };
+        let Some(expected) = parse_script_literal(right.trim()) else {
+            return false;
+        };
+        return lookup_query_field_value(source, field)
+            .is_some_and(|actual| script_value_matches(actual, operator, &expected));
+    }
+    false
+}
+
+fn script_field_operand(operand: &str) -> Option<&str> {
+    let operand = operand.strip_suffix(".value").unwrap_or(operand);
+    script_bracket_operand(operand, "doc")
+        .or_else(|| script_bracket_operand(operand, "params._source"))
+}
+
+fn script_bracket_operand<'a>(operand: &'a str, prefix: &str) -> Option<&'a str> {
+    let rest = operand.strip_prefix(prefix)?.trim_start();
+    let rest = rest.strip_prefix('[')?.trim_start();
+    let quote = rest.chars().next()?;
+    if quote != '\'' && quote != '"' {
+        return None;
+    }
+    let rest = &rest[quote.len_utf8()..];
+    let end = rest.find(quote)?;
+    let field = &rest[..end];
+    let tail = rest[end + quote.len_utf8()..].trim_start();
+    if tail == "]" && !field.is_empty() {
+        Some(field)
+    } else {
+        None
+    }
+}
+
+fn parse_script_literal(value: &str) -> Option<Value> {
+    let value = value.trim();
+    if value.len() >= 2
+        && ((value.starts_with('\'') && value.ends_with('\''))
+            || (value.starts_with('"') && value.ends_with('"')))
+    {
+        return Some(Value::String(value[1..value.len() - 1].to_string()));
+    }
+    match value {
+        "true" => return Some(Value::Bool(true)),
+        "false" => return Some(Value::Bool(false)),
+        "null" => return Some(Value::Null),
+        _ => {}
+    }
+    value
+        .parse::<f64>()
+        .ok()
+        .and_then(serde_json::Number::from_f64)
+        .map(Value::Number)
+}
+
+fn script_value_matches(actual: &Value, operator: &str, expected: &Value) -> bool {
+    if let Value::Array(items) = actual {
+        return items
+            .iter()
+            .any(|item| script_value_matches(item, operator, expected));
+    }
+
+    match operator {
+        "==" => compare_script_values(actual, expected).is_some_and(|ordering| ordering.is_eq()),
+        "!=" => compare_script_values(actual, expected).is_some_and(|ordering| !ordering.is_eq()),
+        ">" => compare_script_values(actual, expected).is_some_and(|ordering| ordering.is_gt()),
+        ">=" => compare_script_values(actual, expected).is_some_and(|ordering| ordering.is_ge()),
+        "<" => compare_script_values(actual, expected).is_some_and(|ordering| ordering.is_lt()),
+        "<=" => compare_script_values(actual, expected).is_some_and(|ordering| ordering.is_le()),
+        _ => false,
+    }
+}
+
+fn compare_script_values(left: &Value, right: &Value) -> Option<std::cmp::Ordering> {
+    match (left, right) {
+        (Value::Number(left), Value::Number(right)) => left
+            .as_f64()
+            .zip(right.as_f64())
+            .and_then(|(left, right)| left.partial_cmp(&right)),
+        (Value::Bool(left), Value::Bool(right)) => Some(left.cmp(right)),
+        (Value::String(left), Value::String(right)) => Some(left.cmp(right)),
+        _ => None,
+    }
 }
 
 fn extract_string_query_value(value: &Value) -> Option<&str> {
@@ -43157,6 +43311,71 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(span_gap_width_one_match.status, 200);
         assert_eq!(span_gap_width_one_match.body["hits"]["total"]["value"], 1);
         assert_eq!(span_gap_width_one_match.body["hits"]["hits"][0]["_id"], "doc-2");
+    }
+
+    #[test]
+    fn search_routes_support_script_filter_query_subset() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(RestMethod::Put, "/logs-script-query-000001"))
+                .status,
+            200
+        );
+        for (id, rank, tenant) in [("doc-1", 1, "alpha"), ("doc-2", 2, "beta"), ("doc-3", 3, "beta")] {
+            assert_eq!(
+                node.handle_rest_request(
+                    RestRequest::new(
+                        RestMethod::Put,
+                        &format!("/logs-script-query-000001/_doc/{id}"),
+                    )
+                    .with_json_body(serde_json::json!({
+                        "rank": rank,
+                        "tenant": tenant
+                    })),
+                )
+                .status,
+                201
+            );
+        }
+
+        let numeric_script = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-script-query-000001/_search")
+                .with_json_body(serde_json::json!({
+                    "query": {
+                        "script": {
+                            "script": {
+                                "source": "doc['rank'].value > 1",
+                                "lang": "painless"
+                            }
+                        }
+                    },
+                    "sort": [{ "rank": "asc" }]
+                })),
+        );
+        assert_eq!(numeric_script.status, 200);
+        assert_eq!(numeric_script.body["hits"]["total"]["value"], 2);
+        assert_eq!(numeric_script.body["hits"]["hits"][0]["_id"], "doc-2");
+        assert_eq!(numeric_script.body["hits"]["hits"][1]["_id"], "doc-3");
+
+        let source_script = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-script-query-000001/_search")
+                .with_json_body(serde_json::json!({
+                    "query": {
+                        "script": {
+                            "script": "params._source['tenant'] == 'beta'"
+                        }
+                    },
+                    "sort": [{ "rank": "asc" }]
+                })),
+        );
+        assert_eq!(source_script.status, 200);
+        assert_eq!(source_script.body["hits"]["total"]["value"], 2);
+        assert_eq!(source_script.body["hits"]["hits"][0]["_id"], "doc-2");
+        assert_eq!(source_script.body["hits"]["hits"][1]["_id"], "doc-3");
     }
 
     #[test]

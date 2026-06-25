@@ -2720,6 +2720,7 @@ fn build_tantivy_query(
         Query::Boosting { positive, .. } => build_tantivy_query(search_state, positive),
         Query::FunctionScore { query } => build_tantivy_query(search_state, query),
         Query::ScriptScore { query, .. } => build_tantivy_query(search_state, query),
+        Query::Script { .. } => Ok(None),
         Query::CombinedFields { fields, query } => {
             build_tantivy_tokenized_field_set_query(search_state, Some(fields.as_slice()), query)
         }
@@ -14836,6 +14837,105 @@ fn source_value_for_prechecked_highlight_field<'a>(
     source_value_for_highlight_field(source, field)
 }
 
+fn script_query_source(script: &Value) -> Option<&str> {
+    if let Some(source) = script.as_str() {
+        return Some(source);
+    }
+    script
+        .as_object()
+        .and_then(|object| object.get("source"))
+        .and_then(Value::as_str)
+}
+
+fn matches_script_filter_query(source: &Value, script: &Value) -> bool {
+    let Some(script_source) = script_query_source(script).map(str::trim) else {
+        return false;
+    };
+    match script_source {
+        "true" => return true,
+        "false" => return false,
+        _ => {}
+    }
+
+    for operator in ["==", "!=", ">=", "<=", ">", "<"] {
+        let Some((left, right)) = script_source.split_once(operator) else {
+            continue;
+        };
+        let Some(field) = script_field_operand(left.trim()) else {
+            return false;
+        };
+        let Some(expected) = parse_script_literal(right.trim()) else {
+            return false;
+        };
+        return source_value_for_highlight_field(source, field)
+            .is_some_and(|actual| script_value_matches(actual, operator, &expected));
+    }
+    false
+}
+
+fn script_field_operand(operand: &str) -> Option<&str> {
+    let operand = operand.strip_suffix(".value").unwrap_or(operand);
+    script_bracket_operand(operand, "doc")
+        .or_else(|| script_bracket_operand(operand, "params._source"))
+}
+
+fn script_bracket_operand<'a>(operand: &'a str, prefix: &str) -> Option<&'a str> {
+    let rest = operand.strip_prefix(prefix)?.trim_start();
+    let rest = rest.strip_prefix('[')?.trim_start();
+    let quote = rest.chars().next()?;
+    if quote != '\'' && quote != '"' {
+        return None;
+    }
+    let rest = &rest[quote.len_utf8()..];
+    let end = rest.find(quote)?;
+    let field = &rest[..end];
+    let tail = rest[end + quote.len_utf8()..].trim_start();
+    if tail == "]" && !field.is_empty() {
+        Some(field)
+    } else {
+        None
+    }
+}
+
+fn parse_script_literal(value: &str) -> Option<Value> {
+    let value = value.trim();
+    if value.len() >= 2
+        && ((value.starts_with('\'') && value.ends_with('\''))
+            || (value.starts_with('"') && value.ends_with('"')))
+    {
+        return Some(Value::String(value[1..value.len() - 1].to_string()));
+    }
+    match value {
+        "true" => return Some(Value::Bool(true)),
+        "false" => return Some(Value::Bool(false)),
+        "null" => return Some(Value::Null),
+        _ => {}
+    }
+    value
+        .parse::<f64>()
+        .ok()
+        .and_then(serde_json::Number::from_f64)
+        .map(Value::Number)
+}
+
+fn script_value_matches(actual: &Value, operator: &str, expected: &Value) -> bool {
+    if let Value::Array(items) = actual {
+        return items
+            .iter()
+            .any(|item| script_value_matches(item, operator, expected));
+    }
+
+    match operator {
+        "==" => compare_values(actual, expected).is_some_and(|ordering| ordering.is_eq()),
+        "!=" => compare_values(actual, expected).is_some_and(|ordering| !ordering.is_eq()),
+        ">" => compare_values(actual, expected).is_some_and(|ordering| ordering.is_gt()),
+        ">=" => compare_values(actual, expected).is_some_and(|ordering| ordering.is_ge()),
+        "<" => compare_values(actual, expected).is_some_and(|ordering| ordering.is_lt()),
+        "<=" => compare_values(actual, expected).is_some_and(|ordering| ordering.is_le()),
+        _ => false,
+    }
+}
+
 fn document_source_value_for_prechecked_aggregation_field<'a>(
     document: &'a StoredDocument,
     field: &str,
@@ -15384,6 +15484,9 @@ fn document_matches_query(query: &Query, id: &str, source: &Value) -> bool {
     if let Query::ScriptScore { query, .. } = query {
         return document_matches_query(query, id, source);
     }
+    if let Query::Script { script } = query {
+        return matches_script_filter_query(source, script);
+    }
     match query {
         Query::MatchAll => true,
         Query::MatchNone => false,
@@ -15696,7 +15799,8 @@ fn query_requires_native_candidate_post_filter(query: &Query) -> bool {
         | Query::DisMax { .. }
         | Query::Boosting { .. }
         | Query::FunctionScore { .. }
-        | Query::ScriptScore { .. } => true,
+        | Query::ScriptScore { .. }
+        | Query::Script { .. } => true,
         Query::Prefix {
             field,
             case_insensitive,
@@ -15730,6 +15834,7 @@ fn query_allows_source_candidate_scan_for_native_post_filter(query: &Query) -> b
         | Query::SimpleQueryString { .. }
         | Query::MoreLikeThis { .. }
         | Query::GeoPolygon(_)
+        | Query::Script { .. }
         | Query::TermsSet { .. }
         | Query::DistanceFeature { .. }
         | Query::RankFeature { .. }
@@ -142299,6 +142404,56 @@ mod tests {
             .unwrap()
             .expect("native script_score hits");
         assert_eq!(search_hit_ids(&native_hits), vec!["1", "3"]);
+    }
+
+    #[test]
+    fn native_tantivy_path_executes_script_filter_query() {
+        let engine = TantivyEngine::default();
+        engine
+            .create_index(CreateIndexRequest {
+                index: "bench".to_string(),
+                settings: serde_json::json!({}),
+                mappings: serde_json::json!({
+                    "properties": {
+                        "rank": { "type": "integer" },
+                        "tenant": { "type": "keyword" }
+                    }
+                }),
+            })
+            .unwrap();
+
+        for (id, rank, tenant) in [("1", 1, "alpha"), ("2", 2, "beta"), ("3", 3, "beta")] {
+            engine
+                .index_document(IndexDocumentRequest {
+                    index: "bench".to_string(),
+                    id: id.to_string(),
+                    source: serde_json::json!({ "rank": rank, "tenant": tenant }),
+                })
+                .unwrap();
+        }
+        engine
+            .refresh(RefreshRequest {
+                indices: vec!["bench".to_string()],
+            })
+            .unwrap();
+
+        let query = parse_query(&serde_json::json!({
+            "script": {
+                "script": {
+                    "source": "doc['rank'].value > 1",
+                    "lang": "painless"
+                }
+            }
+        }))
+        .unwrap();
+
+        let mut store = engine.store.write().unwrap();
+        let index = store.indices.get_mut("bench").unwrap();
+        let native_hits = index
+            .search_hits_for_query_native("bench", &query, &[])
+            .unwrap()
+            .expect("native script filter hits");
+        assert_eq!(search_hit_ids(&native_hits), vec!["2", "3"]);
     }
 
     #[test]

@@ -30,6 +30,7 @@ class SourceSearchRegistrationsTests(unittest.TestCase):
             ("query", "GeoBoundingBoxQueryBuilder.NAME"),
             ("query", "GeoPolygonQueryBuilder.NAME"),
             ("query", "SpanGapQueryBuilder.NAME"),
+            ("query", "ScriptQueryBuilder.NAME"),
             ("query", "ScriptScoreQueryBuilder.NAME"),
             ("aggregation", "AggregationSpec(TermsAggregationBuilder.NAME,"),
             ("aggregation", "AdjacencyMatrixAggregationBuilder.NAME"),
