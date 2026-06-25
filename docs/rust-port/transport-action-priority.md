@@ -2258,7 +2258,8 @@ The delete-PIT boundary covers:
   removed PIT contexts still render successful `DeletePitInfo` entries;
 - `_all` delete prunes expired local PIT contexts before rendering active
   deletion results;
-- explicit rejection for empty PIT id arrays and empty PIT id entries.
+- explicit rejection for empty PIT id arrays, while wire-level empty PIT id
+  entries decode like OpenSearch and remain a runtime/REST invalid-id concern.
 
 The get-all-PITs boundary covers:
 
@@ -2270,8 +2271,10 @@ The get-all-PITs boundary covers:
 - request validation for the default all-nodes request and response
   build/decode support for non-empty PIT info node lists;
 - shared `SteelNode` PIT context listing for the local-node transport subset;
+- raw `ListPitInfo` values decode without local id/range validation like the
+  OpenSearch wire object;
 - explicit rejection for concrete node payloads, node filters, timeout
-  semantics, invalid PIT info entries, and failed-node payloads.
+  semantics, and failed-node payloads.
 
 The create-PIT boundary covers:
 

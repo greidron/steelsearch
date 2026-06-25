@@ -32583,12 +32583,6 @@ impl OpenSearchDeletePitRequestWire {
                 reason: "OpenSearch delete-PIT requests require at least one PIT id",
             });
         }
-        if self.pit_ids.iter().any(String::is_empty) {
-            return Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "delete pit empty id",
-                reason: "OpenSearch delete-PIT requests require non-empty PIT ids",
-            });
-        }
         Ok(())
     }
 
@@ -32632,12 +32626,6 @@ impl OpenSearchDeletePitInfoWire {
     }
 
     pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
-        if self.pit_id.is_empty() {
-            return Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "delete pit response empty id",
-                reason: "DeletePitInfo requires a non-empty PIT id",
-            });
-        }
         Ok(())
     }
 }
@@ -32809,24 +32797,6 @@ impl OpenSearchListPitInfoWire {
     }
 
     pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
-        if self.pit_id.is_empty() {
-            return Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "get all pits empty pit id",
-                reason: "ListPitInfo requires a non-empty PIT id",
-            });
-        }
-        if self.creation_time_millis < 0 {
-            return Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "get all pits creation time",
-                reason: "ListPitInfo creation time must be non-negative",
-            });
-        }
-        if self.keep_alive_millis <= 0 {
-            return Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "get all pits keep alive",
-                reason: "ListPitInfo keep-alive must be positive",
-            });
-        }
         Ok(())
     }
 }
@@ -68848,13 +68818,7 @@ mod tests {
             pit_ids: vec![String::new()],
             ..OpenSearchDeletePitRequestWire::default()
         };
-        assert!(matches!(
-            empty_id.reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "delete pit empty id",
-                ..
-            })
-        ));
+        empty_id.validate_supported_subset().unwrap();
 
         let explicit_id = OpenSearchDeletePitRequestWire {
             pit_ids: vec!["pit-context".to_string()],
@@ -68878,30 +68842,17 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_delete_pit_response_rejects_invalid_results() {
-        let mut output = StreamOutput::new();
-        output.write_vint(1);
-        output.write_bool(true);
-        output.write_string("");
-        assert!(matches!(
-            OpenSearchDeletePitResponseWire::read(output.freeze()),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "delete pit response empty id",
-                ..
-            })
-        ));
-
+    fn opensearch_delete_pit_response_allows_empty_result_id_like_opensearch() {
         let response =
             OpenSearchDeletePitResponseWire::with_results(vec![OpenSearchDeletePitInfoWire::new(
                 true, "",
             )]);
-        assert!(matches!(
-            response.validate_supported_subset(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "delete pit response empty id",
-                ..
-            })
-        ));
+        let mut output = StreamOutput::new();
+        response.write(&mut output).unwrap();
+
+        let decoded = OpenSearchDeletePitResponseWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, response);
+        decoded.validate_supported_subset().unwrap();
     }
 
     #[test]
@@ -69020,26 +68971,7 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_get_all_pits_response_rejects_invalid_pit_infos_or_failures() {
-        let response = OpenSearchGetAllPitsResponseWire::with_nodes(
-            "steelsearch-dev",
-            vec![OpenSearchGetAllPitsNodeResponseWire::new(
-                test_discovery_node_wire(),
-                vec![OpenSearchListPitInfoWire::new(
-                    "",
-                    1_700_000_000_000,
-                    60_000,
-                )],
-            )],
-        );
-        assert!(matches!(
-            response.validate_supported_subset(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "get all pits empty pit id",
-                ..
-            })
-        ));
-
+    fn opensearch_get_all_pits_response_rejects_failures_and_allows_raw_pit_info_values() {
         let mut failure_payload = StreamOutput::new();
         failure_payload.write_string("steelsearch-dev");
         failure_payload.write_vint(0);
@@ -69060,22 +68992,18 @@ mod tests {
             })
         ));
 
-        assert!(matches!(
-            OpenSearchListPitInfoWire::new("pit-context", -1, 60_000).validate_supported_subset(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "get all pits creation time",
-                ..
-            })
-        ));
-
-        assert!(matches!(
-            OpenSearchListPitInfoWire::new("pit-context", 1_700_000_000_000, 0)
-                .validate_supported_subset(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "get all pits keep alive",
-                ..
-            })
-        ));
+        let permissive_list_info_response = OpenSearchGetAllPitsResponseWire::with_nodes(
+            "steelsearch-dev",
+            vec![OpenSearchGetAllPitsNodeResponseWire::new(
+                test_discovery_node_wire(),
+                vec![OpenSearchListPitInfoWire::new("", -1, 0)],
+            )],
+        );
+        let mut output = StreamOutput::new();
+        permissive_list_info_response.write(&mut output).unwrap();
+        let decoded = OpenSearchGetAllPitsResponseWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, permissive_list_info_response);
+        decoded.validate_supported_subset().unwrap();
     }
 
     #[test]
