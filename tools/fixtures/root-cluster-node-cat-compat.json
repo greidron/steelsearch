@@ -458,6 +458,13 @@
       "extract": "error_response"
     },
     {
+      "name": "cat_pit_segments_all_source_query_param_error",
+      "area": "operational",
+      "method": "GET",
+      "path": "/_cat/pit_segments/_all?source=%7B%22pit_id%22%3A%22pit-missing%22%7D&source_content_type=json",
+      "extract": "error_response"
+    },
+    {
       "name": "cat_pit_segments_all_text",
       "area": "operational",
       "method": "GET",

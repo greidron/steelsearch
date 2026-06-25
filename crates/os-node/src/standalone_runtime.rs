@@ -17101,7 +17101,7 @@ impl SteelNode {
     }
 
     fn handle_cat_pit_segments_route(&self, request: &RestRequest, include_all: bool) -> RestResponse {
-        if let Some(response) = cat_pit_segments_unrecognized_query_param_response(request) {
+        if let Some(response) = cat_pit_segments_unrecognized_query_param_response(request, include_all) {
             return response;
         }
         let pit_ids = if include_all {
@@ -20944,6 +20944,7 @@ fn pit_body_or_source_param(request: &RestRequest) -> Result<Value, RestResponse
 
 fn cat_pit_segments_unrecognized_query_param_response(
     request: &RestRequest,
+    include_all: bool,
 ) -> Option<RestResponse> {
     const ALLOWED_RESPONSE_PARAMS: &[&str] = &[
         "bytes", "format", "h", "pri", "s", "size", "time", "timeout", "ts", "v",
@@ -20953,8 +20954,9 @@ fn cat_pit_segments_unrecognized_query_param_response(
         .keys()
         .filter(|key| {
             !ALLOWED_RESPONSE_PARAMS.contains(&key.as_str())
-                && key.as_str() != "source"
+                && !(key.as_str() == "source" && !include_all)
                 && !(key.as_str() == "source_content_type"
+                    && !include_all
                     && request.query_params.contains_key("source"))
         })
         .collect::<Vec<_>>();
@@ -29363,6 +29365,16 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             pit_all_lonely_source_type.body["error"]["root_cause"][0]["reason"],
             "request [/_cat/pit_segments/_all] contains unrecognized parameter: [source_content_type]"
+        );
+
+        let pit_all_source = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_cat/pit_segments/_all?source=%7B%22pit_id%22%3A%22pit-missing%22%7D&source_content_type=json",
+        ));
+        assert_eq!(pit_all_source.status, 400);
+        assert_eq!(
+            pit_all_source.body["error"]["root_cause"][0]["reason"],
+            "request [/_cat/pit_segments/_all] contains unrecognized parameters: [source], [source_content_type]"
         );
 
         assert_eq!(
