@@ -55,10 +55,13 @@ fn interop_search_forwarding_policy_fixture_stays_bounded_and_explicit() {
         "function_score",
         "rescore",
         "collapse",
+        "aggregations",
+        "highlight",
+        "suggest",
     ] {
         assert!(accepted.contains(required), "missing accepted family {required}");
     }
-    for required in ["scroll", "knn", "hybrid", "aggregations"] {
+    for required in ["scroll", "knn", "hybrid", "runtime_mappings"] {
         assert!(rejected.contains(required), "missing rejected family {required}");
     }
     assert!(
@@ -92,6 +95,18 @@ fn interop_search_forwarding_policy_fixture_stays_bounded_and_explicit() {
     assert!(
         !rejected.contains("collapse"),
         "collapse must not remain rejected after forwarding profile coverage"
+    );
+    assert!(
+        !rejected.contains("aggregations"),
+        "aggregations must not remain rejected after forwarding profile coverage"
+    );
+    assert!(
+        !rejected.contains("highlight"),
+        "highlight must not remain rejected after forwarding profile coverage"
+    );
+    assert!(
+        !rejected.contains("suggest"),
+        "suggest must not remain rejected after forwarding profile coverage"
     );
     for required in ["sort", "from", "size", "track_total_hits", "pit", "search_after"] {
         assert!(
@@ -161,5 +176,29 @@ fn interop_search_forwarding_policy_fixture_stays_bounded_and_explicit() {
                 && case["body"]["collapse"].is_object()
         }),
         "accepted collapse policy requires an executable collapse forwarding profile case"
+    );
+    assert!(
+        cases.iter().any(|case| {
+            case["name"] == "terms_aggregation_search"
+                && case["body"]["aggs"].is_object()
+                && case["expected_values"].is_object()
+        }),
+        "accepted aggregations policy requires an executable aggregation forwarding profile case"
+    );
+    assert!(
+        cases.iter().any(|case| {
+            case["name"] == "highlight_search"
+                && case["body"]["highlight"].is_object()
+                && case["expected_values"].is_object()
+        }),
+        "accepted highlight policy requires an executable highlight forwarding profile case"
+    );
+    assert!(
+        cases.iter().any(|case| {
+            case["name"] == "term_suggest_search"
+                && case["body"]["suggest"].is_object()
+                && case["expected_values"].is_object()
+        }),
+        "accepted suggest policy requires an executable suggest forwarding profile case"
     );
 }

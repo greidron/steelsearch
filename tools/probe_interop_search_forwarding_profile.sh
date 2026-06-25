@@ -70,6 +70,20 @@ def request(method, path, body=None):
     with urllib.request.urlopen(req) as resp:
         return resp.status, json.loads(resp.read().decode("utf-8"))
 
+def path_value(value, path):
+    current = value
+    for part in path.split("."):
+        if isinstance(current, list):
+            try:
+                current = current[int(part)]
+            except (ValueError, IndexError):
+                return None
+        elif isinstance(current, dict):
+            current = current.get(part)
+        else:
+            return None
+    return current
+
 try:
     request("DELETE", f"/{index_name}?ignore_unavailable=true")
 except Exception:
@@ -115,6 +129,9 @@ for case in fixture["cases"]:
         "total": actual_total == case["expected_total"],
         "ids": actual_ids == case["expected_ids"],
     }
+    expected_values = case.get("expected_values", {})
+    for path, expected in expected_values.items():
+        checks[f"value:{path}"] = path_value(body, path) == expected
     if case.get("use_pit"):
         checks.update(
             {
@@ -132,6 +149,7 @@ for case in fixture["cases"]:
             "actual_ids": actual_ids,
             "pit_id_present": bool(pit_id) if case.get("use_pit") else None,
             "pit_list_before_close_count": pit_list_before_close_count,
+            "expected_values": expected_values,
         }
     )
     all_checks.extend(checks.values())

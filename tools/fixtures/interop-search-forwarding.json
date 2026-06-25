@@ -403,6 +403,80 @@
         "doc-1",
         "doc-3"
       ]
+    },
+    {
+      "name": "terms_aggregation_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "size": 0,
+        "track_total_hits": true,
+        "aggs": {
+          "by_service": {
+            "terms": {
+              "field": "service"
+            }
+          }
+        }
+      },
+      "expected_total": 3,
+      "expected_ids": [],
+      "expected_values": {
+        "aggregations.by_service.buckets.0.key": "api",
+        "aggregations.by_service.buckets.0.doc_count": 2,
+        "aggregations.by_service.buckets.1.key": "worker",
+        "aggregations.by_service.buckets.1.doc_count": 1
+      }
+    },
+    {
+      "name": "highlight_search",
+      "body": {
+        "query": {
+          "match": {
+            "message": "timeout"
+          }
+        },
+        "sort": [
+          "_id"
+        ],
+        "size": 10,
+        "track_total_hits": true,
+        "highlight": {
+          "fields": {
+            "message": {}
+          }
+        }
+      },
+      "expected_total": 2,
+      "expected_ids": [
+        "doc-2",
+        "doc-3"
+      ],
+      "expected_values": {
+        "hits.hits.0.highlight.message.0": "checkout <em>timeout</em>",
+        "hits.hits.1.highlight.message.0": "worker <em>timeout</em>"
+      }
+    },
+    {
+      "name": "term_suggest_search",
+      "body": {
+        "suggest": {
+          "message-suggest": {
+            "text": "chekout",
+            "term": {
+              "field": "message"
+            }
+          }
+        },
+        "size": 0,
+        "track_total_hits": true
+      },
+      "expected_total": 0,
+      "expected_ids": [],
+      "expected_values": {
+        "suggest.message-suggest.0.options.0.text": "checkout"
+      }
     }
   ]
 }
