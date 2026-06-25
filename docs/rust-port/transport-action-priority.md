@@ -2257,8 +2257,9 @@ The delete-PIT boundary covers:
 - shared `SteelNode` PIT context invalidation for explicit PIT ids and `_all`;
 - OpenSearch-compatible explicit-id delete idempotence where missing or already
   removed PIT contexts still render successful `DeletePitInfo` entries;
-- `_all` delete prunes expired local PIT contexts before rendering active
-  deletion results;
+- standalone `_all` delete prunes expired local PIT contexts before rendering
+  active deletion results, while `_all` mixed with explicit ids is excluded
+  from the local lifecycle route;
 - explicit local lifecycle rejection for empty PIT id arrays and empty PIT id
   entries, while wire-level empty PIT id entries still decode like OpenSearch.
 

@@ -4155,6 +4155,12 @@ fn delete_pit_request_matches_local_lifecycle_subset(
 ) -> bool {
     request.validate_supported_subset().is_ok()
         && !request.pit_ids.iter().any(|pit_id| pit_id.is_empty())
+        && delete_pit_ids_use_all_only_as_standalone(&request.pit_ids)
+}
+
+fn delete_pit_ids_use_all_only_as_standalone(pit_ids: &[String]) -> bool {
+    !pit_ids.iter().any(|pit_id| pit_id == "_all")
+        || (pit_ids.len() == 1 && pit_ids.first().is_some_and(|pit_id| pit_id == "_all"))
 }
 
 fn decode_delete_pit_request_from_transport_body(
@@ -11831,6 +11837,64 @@ mod tests {
         };
         assert_eq!(message.request_id, 198);
         assert!(message.body.is_empty());
+    }
+
+    #[test]
+    fn delete_pit_transport_route_rejects_all_mixed_with_explicit_ids() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        {
+            let mut contexts = dev_transport_pit_bindings()
+                .contexts
+                .lock()
+                .expect("dev transport PIT contexts lock poisoned");
+            contexts.clear();
+            contexts.insert(
+                "pit-context".to_string(),
+                PitContext {
+                    indices: Vec::new(),
+                    documents: BTreeMap::new(),
+                    keep_alive_millis: 60_000,
+                    expires_at_millis: now_epoch_ms() + 60_000,
+                    creation_time_millis: now_epoch_ms(),
+                },
+            );
+        }
+        let request = os_transport::action::OpenSearchDeletePitRequestWire {
+            pit_ids: vec!["_all".to_string(), "pit-context".to_string()],
+            ..os_transport::action::OpenSearchDeletePitRequestWire::default()
+        };
+        let frame = os_transport::action::build_opensearch_delete_pit_request_message(
+            199,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(!delete_pit_request_supports_local_lifecycle_subset(
+            &frame[6..]
+        ));
+
+        let response = build_local_delete_pit_response(
+            199,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &frame[6..],
+        );
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected delete-PIT fallback response message");
+        };
+        assert_eq!(message.request_id, 199);
+        assert!(message.body.is_empty());
+        assert!(dev_transport_pit_bindings()
+            .contexts
+            .lock()
+            .expect("dev transport PIT contexts lock poisoned")
+            .contains_key("pit-context"));
     }
 
     #[test]
