@@ -24548,6 +24548,7 @@ pub struct OpenSearchSearchSourceBuilderWire {
     pub slice: Option<OpenSearchSliceBuilderWire>,
     pub collapse: Option<OpenSearchCollapseBuilderWire>,
     pub stats: Option<Vec<String>>,
+    pub script_fields: Option<Vec<OpenSearchScriptFieldWire>>,
     pub doc_value_fields: Option<Vec<OpenSearchFieldAndFormatWire>>,
     pub fetch_fields: Option<Vec<OpenSearchFieldAndFormatWire>>,
     pub stored_fields: Option<OpenSearchStoredFieldsContextWire>,
@@ -24580,6 +24581,7 @@ impl Default for OpenSearchSearchSourceBuilderWire {
             slice: None,
             collapse: None,
             stats: None,
+            script_fields: None,
             doc_value_fields: None,
             fetch_fields: None,
             stored_fields: None,
@@ -24641,6 +24643,7 @@ impl OpenSearchSearchSourceBuilderWire {
             collapse.validate_supported_subset()?;
         }
         validate_search_source_stats(self.stats.as_deref())?;
+        validate_script_fields(self.script_fields.as_deref())?;
         validate_field_and_format_list(
             self.doc_value_fields.as_deref(),
             "search request source doc value fields",
@@ -24696,7 +24699,8 @@ fn write_search_source_builder(
     output.write_bool(false); // post query
     output.write_bool(false); // query
     output.write_bool(false); // rescore builders
-    output.write_bool(false); // script fields
+    write_optional_script_fields(output, source.script_fields.as_deref())
+        .expect("validated script fields must encode as OpenSearch ScriptField values"); // script fields
     output.write_vint(source.size); // size
     output.write_bool(false); // sorts
     write_optional_string_list(output, source.stats.as_deref()); // stats
@@ -24753,7 +24757,7 @@ fn read_search_source_builder(
     reject_absent_optional_writeable(input, "search request source post query")?;
     reject_absent_optional_writeable(input, "search request source query")?;
     reject_absent_bool_list(input, "search request source rescore builders")?;
-    reject_absent_bool_list(input, "search request source script fields")?;
+    let script_fields = read_optional_script_fields(input)?;
     let size = input.read_vint()?;
     if size < 0 {
         return Err(TransportActionWireError::UnsupportedWireShape {
@@ -24817,6 +24821,7 @@ fn read_search_source_builder(
         slice,
         collapse,
         stats,
+        script_fields,
         doc_value_fields,
         fetch_fields,
         stored_fields,
@@ -25428,6 +25433,73 @@ fn validate_optional_generic_map(
 }
 
 #[derive(Clone, Debug, PartialEq)]
+pub struct OpenSearchScriptFieldWire {
+    pub field_name: String,
+    pub script: OpenSearchInlineScriptWire,
+    pub ignore_failure: bool,
+}
+
+fn write_optional_script_fields(
+    output: &mut StreamOutput,
+    values: Option<&[OpenSearchScriptFieldWire]>,
+) -> Result<(), TransportActionWireError> {
+    if let Some(values) = values {
+        validate_script_fields(Some(values))?;
+        output.write_bool(true);
+        output.write_vint(values.len() as i32);
+        for value in values {
+            output.write_string(&value.field_name);
+            write_inline_script(
+                output,
+                &value.script,
+                "search request source script fields script",
+            )?;
+            output.write_bool(value.ignore_failure);
+        }
+    } else {
+        output.write_bool(false);
+    }
+    Ok(())
+}
+
+fn read_optional_script_fields(
+    input: &mut StreamInput,
+) -> Result<Option<Vec<OpenSearchScriptFieldWire>>, TransportActionWireError> {
+    if !input.read_bool()? {
+        return Ok(None);
+    }
+    let len = read_len(input)?;
+    let mut values = Vec::with_capacity(len);
+    for _ in 0..len {
+        values.push(OpenSearchScriptFieldWire {
+            field_name: input.read_string()?,
+            script: read_inline_script(input, "search request source script fields script")?,
+            ignore_failure: input.read_bool()?,
+        });
+    }
+    validate_script_fields(Some(&values))?;
+    Ok(Some(values))
+}
+
+fn validate_script_fields(
+    values: Option<&[OpenSearchScriptFieldWire]>,
+) -> Result<(), TransportActionWireError> {
+    let Some(values) = values else {
+        return Ok(());
+    };
+    for value in values {
+        if value.field_name.is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source script fields",
+                reason: "OpenSearch ScriptField field name must be non-empty",
+            });
+        }
+        validate_inline_script(&value.script, "search request source script fields script")?;
+    }
+    Ok(())
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub struct OpenSearchDerivedFieldWire {
     pub name: String,
     pub field_type: String,
@@ -25457,7 +25529,11 @@ fn write_optional_derived_fields(
         for value in values {
             output.write_string(&value.name);
             output.write_string(&value.field_type);
-            write_inline_script(output, &value.script)?;
+            write_inline_script(
+                output,
+                &value.script,
+                "search request source derived fields script",
+            )?;
             write_optional_generic_map(output, value.properties.as_ref())?;
             output.write_optional_string(value.prefilter_field.as_deref());
             output.write_optional_string(value.format.as_deref());
@@ -25481,7 +25557,7 @@ fn read_optional_derived_fields(
         values.push(OpenSearchDerivedFieldWire {
             name: input.read_string()?,
             field_type: input.read_string()?,
-            script: read_inline_script(input)?,
+            script: read_inline_script(input, "search request source derived fields script")?,
             properties: read_optional_generic_map(
                 input,
                 "search request source derived fields properties",
@@ -25498,8 +25574,9 @@ fn read_optional_derived_fields(
 fn write_inline_script(
     output: &mut StreamOutput,
     script: &OpenSearchInlineScriptWire,
+    shape: &'static str,
 ) -> Result<(), TransportActionWireError> {
-    validate_inline_script(script)?;
+    validate_inline_script(script, shape)?;
     output.write_vint(0);
     output.write_optional_string(script.lang.as_deref());
     output.write_string(&script.source);
@@ -25510,27 +25587,22 @@ fn write_inline_script(
 
 fn read_inline_script(
     input: &mut StreamInput,
+    shape: &'static str,
 ) -> Result<OpenSearchInlineScriptWire, TransportActionWireError> {
     let script_type = input.read_vint()?;
     if script_type != 0 {
         return Err(TransportActionWireError::UnsupportedWireShape {
-            shape: "search request source derived fields script",
-            reason: "only inline derived-field scripts are decoded by this subset",
+            shape,
+            reason: "only inline scripts are decoded by this subset",
         });
     }
     let script = OpenSearchInlineScriptWire {
         lang: input.read_optional_string()?,
         source: input.read_string()?,
-        options: read_generic_json_value(
-            input,
-            "search request source derived fields script options",
-        )?,
-        params: read_generic_json_value(
-            input,
-            "search request source derived fields script params",
-        )?,
+        options: read_generic_json_value(input, inline_script_options_shape(shape))?,
+        params: read_generic_json_value(input, inline_script_params_shape(shape))?,
     };
-    validate_inline_script(&script)?;
+    validate_inline_script(&script, shape)?;
     Ok(script)
 }
 
@@ -25553,7 +25625,7 @@ fn validate_derived_fields(
                 reason: "OpenSearch DerivedField type must be non-empty",
             });
         }
-        validate_inline_script(&value.script)?;
+        validate_inline_script(&value.script, "search request source derived fields script")?;
         validate_optional_generic_map(
             value.properties.as_ref(),
             "search request source derived fields properties",
@@ -25576,36 +25648,53 @@ fn validate_derived_fields(
 
 fn validate_inline_script(
     script: &OpenSearchInlineScriptWire,
+    shape: &'static str,
 ) -> Result<(), TransportActionWireError> {
     if script.lang.as_deref().is_some_and(str::is_empty) {
         return Err(TransportActionWireError::UnsupportedWireShape {
-            shape: "search request source derived fields script",
+            shape,
             reason: "OpenSearch inline Script lang must be non-empty when present",
         });
     }
     if script.source.is_empty() {
         return Err(TransportActionWireError::UnsupportedWireShape {
-            shape: "search request source derived fields script",
+            shape,
             reason: "OpenSearch inline Script source must be non-empty",
         });
     }
     validate_optional_generic_map(
         Some(&script.options),
-        "search request source derived fields script options",
+        inline_script_options_shape(shape),
     )?;
     validate_optional_generic_map(
         Some(&script.params),
-        "search request source derived fields script params",
+        inline_script_params_shape(shape),
     )?;
     if let Some(options) = script.options.as_object() {
         if options.values().any(|value| !value.is_string()) {
             return Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "search request source derived fields script options",
+                shape: inline_script_options_shape(shape),
                 reason: "OpenSearch inline Script options must be string values",
             });
         }
     }
     Ok(())
+}
+
+fn inline_script_options_shape(shape: &'static str) -> &'static str {
+    if shape == "search request source script fields script" {
+        "search request source script fields script options"
+    } else {
+        "search request source derived fields script options"
+    }
+}
+
+fn inline_script_params_shape(shape: &'static str) -> &'static str {
+    if shape == "search request source script fields script" {
+        "search request source script fields script params"
+    } else {
+        "search request source derived fields script params"
+    }
 }
 
 fn reject_absent_optional_writeable(
@@ -60456,6 +60545,16 @@ mod tests {
                     max_concurrent_group_requests: 2,
                 }),
                 stats: Some(vec!["tenant-stats".to_string(), "latency".to_string()]),
+                script_fields: Some(vec![OpenSearchScriptFieldWire {
+                    field_name: "tenant_copy".to_string(),
+                    script: OpenSearchInlineScriptWire {
+                        lang: Some("painless".to_string()),
+                        source: "emit(params._source['tenant'])".to_string(),
+                        options: json!({}),
+                        params: json!({}),
+                    },
+                    ignore_failure: false,
+                }]),
                 doc_value_fields: Some(vec![
                     OpenSearchFieldAndFormatWire {
                         field: "rank".to_string(),
@@ -60795,6 +60894,54 @@ mod tests {
             invalid_stats.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "search request source stats",
+                ..
+            })
+        ));
+
+        let invalid_script_field_name = OpenSearchSearchRequestWire {
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                script_fields: Some(vec![OpenSearchScriptFieldWire {
+                    field_name: String::new(),
+                    script: OpenSearchInlineScriptWire {
+                        lang: Some("painless".to_string()),
+                        source: "emit('value')".to_string(),
+                        options: json!({}),
+                        params: json!({}),
+                    },
+                    ignore_failure: false,
+                }]),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        assert!(matches!(
+            invalid_script_field_name.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source script fields",
+                ..
+            })
+        ));
+
+        let invalid_script_field_source = OpenSearchSearchRequestWire {
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                script_fields: Some(vec![OpenSearchScriptFieldWire {
+                    field_name: "tenant_copy".to_string(),
+                    script: OpenSearchInlineScriptWire {
+                        lang: Some("painless".to_string()),
+                        source: String::new(),
+                        options: json!({}),
+                        params: json!({}),
+                    },
+                    ignore_failure: false,
+                }]),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        assert!(matches!(
+            invalid_script_field_source.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source script fields script",
                 ..
             })
         ));
