@@ -40233,6 +40233,33 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             "[1:45] [pit] keep_alive doesn't support values of type: VALUE_NUMBER"
         );
 
+        for (name, keep_alive_value, token_name) in [
+            ("boolean", serde_json::json!(true), "VALUE_BOOLEAN"),
+            ("null", Value::Null, "VALUE_NULL"),
+        ] {
+            let pit_keep_alive_type_search = node.handle_rest_request(
+                RestRequest::new(RestMethod::Post, "/_search")
+                    .with_json_body(serde_json::json!({
+                        "pit": {
+                            "id": second_open_pit.body["pit_id"].as_str().unwrap(),
+                            "keep_alive": keep_alive_value
+                        },
+                        "query": { "match_all": {} }
+                    })),
+            );
+            assert_eq!(pit_keep_alive_type_search.status, 400, "{name}");
+            assert_eq!(
+                pit_keep_alive_type_search.body["error"]["type"],
+                "x_content_parse_exception",
+                "{name}"
+            );
+            assert_eq!(
+                pit_keep_alive_type_search.body["error"]["root_cause"][0]["reason"],
+                format!("[1:45] [pit] keep_alive doesn't support values of type: {token_name}"),
+                "{name}"
+            );
+        }
+
         let missing_pit_id_search = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/_search")
                 .with_json_body(serde_json::json!({
@@ -40313,6 +40340,39 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             numeric_pit_id_search.body["error"]["root_cause"][0]["reason"],
             "[1:16] [pit] id doesn't support values of type: VALUE_NUMBER"
         );
+
+        for (name, id_value, token_name) in [
+            ("boolean", serde_json::json!(true), "VALUE_BOOLEAN"),
+            ("null", Value::Null, "VALUE_NULL"),
+            (
+                "object",
+                serde_json::json!({ "value": "pit-missing" }),
+                "START_OBJECT",
+            ),
+            ("array", serde_json::json!(["pit-missing"]), "START_ARRAY"),
+        ] {
+            let pit_id_type_search = node.handle_rest_request(
+                RestRequest::new(RestMethod::Post, "/_search")
+                    .with_json_body(serde_json::json!({
+                        "pit": {
+                            "id": id_value,
+                            "keep_alive": "1m"
+                        },
+                        "query": { "match_all": {} }
+                    })),
+            );
+            assert_eq!(pit_id_type_search.status, 400, "{name}");
+            assert_eq!(
+                pit_id_type_search.body["error"]["type"],
+                "x_content_parse_exception",
+                "{name}"
+            );
+            assert_eq!(
+                pit_id_type_search.body["error"]["root_cause"][0]["reason"],
+                format!("[1:16] [pit] id doesn't support values of type: {token_name}"),
+                "{name}"
+            );
+        }
 
         let empty_pit_id_search = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/_search")
