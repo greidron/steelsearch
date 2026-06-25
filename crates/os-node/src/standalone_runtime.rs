@@ -10160,6 +10160,9 @@ impl SteelNode {
             Ok(_) => {}
             Err(response) => return response,
         }
+        if let Some(response) = create_pit_unrecognized_query_param_response(request) {
+            return response;
+        }
         if let Some(response) = validate_opensearch_boolean_query_param(
             request.query_params.get("allow_partial_pit_creation"),
         ) {
@@ -20662,7 +20665,33 @@ fn delete_pit_illegal_argument(reason: impl Into<String>) -> RestResponse {
 
 fn pit_unrecognized_query_param_response(request: &RestRequest) -> Option<RestResponse> {
     let keys = request.query_params.keys().collect::<Vec<_>>();
-    match keys.as_slice() {
+    unrecognized_query_param_response_for_keys(request, &keys)
+}
+
+fn create_pit_unrecognized_query_param_response(request: &RestRequest) -> Option<RestResponse> {
+    const ALLOWED_PARAMS: &[&str] = &[
+        "allow_no_indices",
+        "allow_partial_pit_creation",
+        "expand_wildcards",
+        "ignore_throttled",
+        "ignore_unavailable",
+        "keep_alive",
+        "preference",
+        "routing",
+    ];
+    let keys = request
+        .query_params
+        .keys()
+        .filter(|key| !ALLOWED_PARAMS.contains(&key.as_str()))
+        .collect::<Vec<_>>();
+    unrecognized_query_param_response_for_keys(request, &keys)
+}
+
+fn unrecognized_query_param_response_for_keys(
+    request: &RestRequest,
+    keys: &[&String],
+) -> Option<RestResponse> {
+    match keys {
         [] => None,
         [key] => Some(delete_pit_illegal_argument(format!(
             "request [{}] contains unrecognized parameter: [{key}]",
@@ -39121,6 +39150,20 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             invalid_allow_partial_pit.body["error"]["reason"],
             "Failed to parse value [maybe] as only [true] or [false] are allowed."
+        );
+
+        let unknown_query_open_pit = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/logs-session-000001/_search/point_in_time?keep_alive=1m&foo=bar",
+        ));
+        assert_eq!(unknown_query_open_pit.status, 400);
+        assert_eq!(
+            unknown_query_open_pit.body["error"]["type"],
+            "illegal_argument_exception"
+        );
+        assert_eq!(
+            unknown_query_open_pit.body["error"]["root_cause"][0]["reason"],
+            "request [/logs-session-000001/_search/point_in_time] contains unrecognized parameter: [foo]"
         );
 
         let too_large_open_pit = node.handle_rest_request(RestRequest::new(

@@ -2556,6 +2556,18 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "pit_open_unknown_query_param_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search/point_in_time?keep_alive=1m&foo=bar",
+      "body": null,
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] open PIT rejects unknown query params like OpenSearch",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "pit_open_ignore_unavailable_multi_target_search",
       "area": "search",
       "method": "POST",
