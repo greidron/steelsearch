@@ -2202,7 +2202,7 @@ pub fn classify_opensearch_transport_action(
         OPENSEARCH_GET_SETTINGS_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Implemented,
-            reason: "get-settings transport adapter returns an OpenSearch-shaped empty settings response for the default all-indices request",
+            reason: "get-settings transport adapter returns OpenSearch-shaped index settings from the local metadata manifest for the default all-indices request",
         },
         OPENSEARCH_CLUSTER_SEARCH_SHARDS_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -24620,7 +24620,10 @@ impl OpenSearchSearchSourceBuilderWire {
                 reason: "OpenSearch SearchSourceBuilder terminate_after must be non-negative",
             });
         }
-        if self.min_score.is_some_and(|min_score| !min_score.is_finite()) {
+        if self
+            .min_score
+            .is_some_and(|min_score| !min_score.is_finite())
+        {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "search request source min score",
                 reason: "OpenSearch SearchSourceBuilder min_score must be finite when present",
@@ -24676,7 +24679,8 @@ impl OpenSearchSearchSourceBuilderWire {
         if self.search_pipeline.as_deref().is_some_and(str::is_empty) {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "search request source search pipeline",
-                reason: "OpenSearch SearchSourceBuilder search pipeline must be non-empty when present",
+                reason:
+                    "OpenSearch SearchSourceBuilder search pipeline must be non-empty when present",
             });
         }
         Ok(())
@@ -24868,7 +24872,10 @@ fn read_optional_search_after_values(
     let len = read_len(input)?;
     let mut values = Vec::with_capacity(len);
     for _ in 0..len {
-        values.push(read_generic_json_value(input, "search request source search after")?);
+        values.push(read_generic_json_value(
+            input,
+            "search request source search after",
+        )?);
     }
     validate_search_after_values(Some(&values))?;
     Ok(Some(values))
@@ -24906,7 +24913,8 @@ fn validate_search_after_values(values: Option<&[Value]>) -> Result<(), Transpor
                 }
                 return Err(TransportActionWireError::UnsupportedWireShape {
                     shape: "search request source search after",
-                    reason: "JSON search_after number cannot be mapped to an OpenSearch generic value",
+                    reason:
+                        "JSON search_after number cannot be mapped to an OpenSearch generic value",
                 });
             }
             Value::Array(_) | Value::Object(_) => {
@@ -25560,8 +25568,9 @@ fn write_named_query_builder(output: &mut StreamOutput, query: &OpenSearchQueryB
             output.write_f32(query.boost);
             output.write_optional_string(query.query_name.as_deref());
             output.write_string(&query.field_name);
-            write_generic_json_value(output, &query.text)
-                .expect("validated common terms query text must encode as an OpenSearch generic scalar");
+            write_generic_json_value(output, &query.text).expect(
+                "validated common terms query text must encode as an OpenSearch generic scalar",
+            );
             write_match_operator(output, query.high_freq_operator);
             write_match_operator(output, query.low_freq_operator);
             output.write_optional_string(query.analyzer.as_deref());
@@ -25573,8 +25582,9 @@ fn write_named_query_builder(output: &mut StreamOutput, query: &OpenSearchQueryB
             output.write_string("combined_fields");
             output.write_f32(query.boost);
             output.write_optional_string(query.query_name.as_deref());
-            write_generic_json_value(output, &query.query_value)
-                .expect("validated combined_fields query value must encode as an OpenSearch generic scalar");
+            write_generic_json_value(output, &query.query_value).expect(
+                "validated combined_fields query value must encode as an OpenSearch generic scalar",
+            );
             output.write_vint(query.fields.len() as i32);
             for field in &query.fields {
                 output.write_string(&field.field_name);
@@ -25701,8 +25711,9 @@ fn write_named_query_builder(output: &mut StreamOutput, query: &OpenSearchQueryB
             output.write_f32(query.boost);
             output.write_optional_string(query.query_name.as_deref());
             output.write_string(&query.field_name);
-            write_generic_json_value(output, &query.value)
-                .expect("validated match_phrase query value must encode as an OpenSearch generic scalar");
+            write_generic_json_value(output, &query.value).expect(
+                "validated match_phrase query value must encode as an OpenSearch generic scalar",
+            );
             output.write_vint(query.slop);
             write_zero_terms_query(output, query.zero_terms_query);
             output.write_optional_string(query.analyzer.as_deref());
@@ -25737,8 +25748,9 @@ fn write_named_query_builder(output: &mut StreamOutput, query: &OpenSearchQueryB
             write_optional_string_list(output, query.stop_words.as_deref());
             output.write_optional_string(query.analyzer.as_deref());
             output.write_string(&query.minimum_should_match);
-            write_generic_json_value(output, &query.boost_terms)
-                .expect("validated more_like_this boost_terms must encode as an OpenSearch generic scalar");
+            write_generic_json_value(output, &query.boost_terms).expect(
+                "validated more_like_this boost_terms must encode as an OpenSearch generic scalar",
+            );
             output.write_bool(query.include);
             output.write_bool(query.fail_on_unsupported_field);
         }
@@ -25746,8 +25758,9 @@ fn write_named_query_builder(output: &mut StreamOutput, query: &OpenSearchQueryB
             output.write_string("multi_match");
             output.write_f32(query.boost);
             output.write_optional_string(query.query_name.as_deref());
-            write_generic_json_value(output, &query.value)
-                .expect("validated multi_match query value must encode as an OpenSearch generic scalar");
+            write_generic_json_value(output, &query.value).expect(
+                "validated multi_match query value must encode as an OpenSearch generic scalar",
+            );
             output.write_vint(query.fields.len() as i32);
             let mut fields = query.fields.iter().collect::<Vec<_>>();
             fields.sort_by(|left, right| left.field_name.cmp(&right.field_name));
@@ -25915,8 +25928,9 @@ fn write_named_query_builder(output: &mut StreamOutput, query: &OpenSearchQueryB
             output.write_f32(query.boost);
             output.write_optional_string(query.query_name.as_deref());
             output.write_string(&query.field_name);
-            write_term_query_value(output, &query.value)
-                .expect("validated span_term query value must encode as an OpenSearch generic scalar");
+            write_term_query_value(output, &query.value).expect(
+                "validated span_term query value must encode as an OpenSearch generic scalar",
+            );
         }
         OpenSearchQueryBuilderWire::Term(query) => {
             output.write_string("term");
@@ -25942,8 +25956,9 @@ fn write_named_query_builder(output: &mut StreamOutput, query: &OpenSearchQueryB
             output.write_f32(query.boost);
             output.write_optional_string(query.query_name.as_deref());
             output.write_string(&query.field_name);
-            write_terms_query_values(output, &query.values)
-                .expect("validated terms_set query values must encode as OpenSearch generic scalars");
+            write_terms_query_values(output, &query.values).expect(
+                "validated terms_set query values must encode as OpenSearch generic scalars",
+            );
             output.write_optional_string(query.minimum_should_match_field.as_deref());
             write_optional_inline_script(
                 output,
@@ -26749,7 +26764,8 @@ fn validate_query_builder(
                 if field.field_name.is_empty() {
                     return Err(TransportActionWireError::UnsupportedWireShape {
                         shape: "search request source query",
-                        reason: "OpenSearch CombinedFieldsQueryBuilder field name must be non-empty",
+                        reason:
+                            "OpenSearch CombinedFieldsQueryBuilder field name must be non-empty",
                     });
                 }
                 if !field.weight.is_finite() {
@@ -26792,7 +26808,10 @@ fn validate_query_builder(
                     reason: "OpenSearch FieldMaskingSpanQueryBuilder field name must be non-empty",
                 });
             }
-            if !matches!(query.query.as_ref(), OpenSearchQueryBuilderWire::SpanTerm(_)) {
+            if !matches!(
+                query.query.as_ref(),
+                OpenSearchQueryBuilderWire::SpanTerm(_)
+            ) {
                 return Err(TransportActionWireError::UnsupportedWireShape {
                     shape: "search request source query field_masking_span query",
                     reason: "OpenSearch FieldMaskingSpanQueryBuilder query must be span_term in this execution subset",
@@ -26809,7 +26828,9 @@ fn validate_query_builder(
                     reason: "OpenSearch FunctionScoreQueryBuilder max_boost must be finite and non-negative",
                 });
             }
-            if query.min_score.is_some_and(|min_score| !min_score.is_finite() || min_score < 0.0)
+            if query
+                .min_score
+                .is_some_and(|min_score| !min_score.is_finite() || min_score < 0.0)
             {
                 return Err(TransportActionWireError::UnsupportedWireShape {
                     shape: "search request source query",
@@ -26839,10 +26860,14 @@ fn validate_query_builder(
                 });
             }
             for function in &query.filter_functions {
-                if !matches!(function.filter.as_ref(), OpenSearchQueryBuilderWire::MatchAll(_)) {
+                if !matches!(
+                    function.filter.as_ref(),
+                    OpenSearchQueryBuilderWire::MatchAll(_)
+                ) {
                     return Err(TransportActionWireError::UnsupportedWireShape {
                         shape: "search request source query function_score filter",
-                        reason: "only match_all function filters are supported by this execution subset",
+                        reason:
+                            "only match_all function filters are supported by this execution subset",
                     });
                 }
                 validate_score_function_builder(&function.score_function)?;
@@ -26915,7 +26940,8 @@ fn validate_query_builder(
             if query.query_name.as_deref().is_some_and(str::is_empty) {
                 return Err(TransportActionWireError::UnsupportedWireShape {
                     shape: "search request source query",
-                    reason: "OpenSearch MatchAllQueryBuilder query name must be non-empty when present",
+                    reason:
+                        "OpenSearch MatchAllQueryBuilder query name must be non-empty when present",
                 });
             }
         }
@@ -26952,7 +26978,8 @@ fn validate_query_builder(
             {
                 return Err(TransportActionWireError::UnsupportedWireShape {
                     shape: "search request source query",
-                    reason: "OpenSearch MatchQueryBuilder cutoff frequency must be finite when present",
+                    reason:
+                        "OpenSearch MatchQueryBuilder cutoff frequency must be finite when present",
                 });
             }
         }
@@ -26973,13 +27000,15 @@ fn validate_query_builder(
             if query.prefix_length < 0 {
                 return Err(TransportActionWireError::UnsupportedWireShape {
                     shape: "search request source query",
-                    reason: "OpenSearch MatchBoolPrefixQueryBuilder prefix length must be non-negative",
+                    reason:
+                        "OpenSearch MatchBoolPrefixQueryBuilder prefix length must be non-negative",
                 });
             }
             if query.max_expansions <= 0 {
                 return Err(TransportActionWireError::UnsupportedWireShape {
                     shape: "search request source query",
-                    reason: "OpenSearch MatchBoolPrefixQueryBuilder max expansions must be positive",
+                    reason:
+                        "OpenSearch MatchBoolPrefixQueryBuilder max expansions must be positive",
                 });
             }
             validate_optional_non_empty_query_string(query.fuzzy_rewrite.as_deref())?;
@@ -27002,7 +27031,8 @@ fn validate_query_builder(
             if query.zero_terms_query == OpenSearchZeroTermsQueryWire::Null {
                 return Err(TransportActionWireError::UnsupportedWireShape {
                     shape: "search request source query",
-                    reason: "OpenSearch MatchPhraseQueryBuilder zero terms query must be NONE or ALL",
+                    reason:
+                        "OpenSearch MatchPhraseQueryBuilder zero terms query must be NONE or ALL",
                 });
             }
             validate_optional_non_empty_query_string(query.analyzer.as_deref())?;
@@ -27152,10 +27182,14 @@ fn validate_query_builder(
             if query.tie_breaker.is_some_and(|value| !value.is_finite()) {
                 return Err(TransportActionWireError::UnsupportedWireShape {
                     shape: "search request source query",
-                    reason: "OpenSearch MultiMatchQueryBuilder tie breaker must be finite when present",
+                    reason:
+                        "OpenSearch MultiMatchQueryBuilder tie breaker must be finite when present",
                 });
             }
-            if query.cutoff_frequency.is_some_and(|value| !value.is_finite()) {
+            if query
+                .cutoff_frequency
+                .is_some_and(|value| !value.is_finite())
+            {
                 return Err(TransportActionWireError::UnsupportedWireShape {
                     shape: "search request source query",
                     reason: "OpenSearch MultiMatchQueryBuilder cutoff frequency must be finite when present",
@@ -27164,7 +27198,8 @@ fn validate_query_builder(
             if query.zero_terms_query == OpenSearchZeroTermsQueryWire::Null {
                 return Err(TransportActionWireError::UnsupportedWireShape {
                     shape: "search request source query",
-                    reason: "OpenSearch MultiMatchQueryBuilder zero terms query must be NONE or ALL",
+                    reason:
+                        "OpenSearch MultiMatchQueryBuilder zero terms query must be NONE or ALL",
                 });
             }
         }
@@ -27224,7 +27259,8 @@ fn validate_query_builder(
             if query.fuzzy_max_expansions <= 0 {
                 return Err(TransportActionWireError::UnsupportedWireShape {
                     shape: "search request source query",
-                    reason: "OpenSearch QueryStringQueryBuilder fuzzy max expansions must be positive",
+                    reason:
+                        "OpenSearch QueryStringQueryBuilder fuzzy max expansions must be positive",
                 });
             }
             validate_optional_non_empty_query_string(query.fuzzy_rewrite.as_deref())?;
@@ -27237,7 +27273,8 @@ fn validate_query_builder(
             if query.tie_breaker.is_some_and(|value| !value.is_finite()) {
                 return Err(TransportActionWireError::UnsupportedWireShape {
                     shape: "search request source query",
-                    reason: "OpenSearch QueryStringQueryBuilder tie breaker must be finite when present",
+                    reason:
+                        "OpenSearch QueryStringQueryBuilder tie breaker must be finite when present",
                 });
             }
             validate_optional_non_empty_query_string(query.rewrite.as_deref())?;
@@ -27279,7 +27316,8 @@ fn validate_query_builder(
             if query.max_determinized_states < 0 {
                 return Err(TransportActionWireError::UnsupportedWireShape {
                     shape: "search request source query",
-                    reason: "OpenSearch RegexpQueryBuilder max determinized states must be non-negative",
+                    reason:
+                        "OpenSearch RegexpQueryBuilder max determinized states must be non-negative",
                 });
             }
             validate_optional_non_empty_query_string(query.rewrite.as_deref())?;
@@ -27291,13 +27329,22 @@ fn validate_query_builder(
                 &query.script,
                 "search request source query script_score script",
             )?;
-            if query.script.source.parse::<f64>().ok().filter(|score| *score > 0.0).is_none() {
+            if query
+                .script
+                .source
+                .parse::<f64>()
+                .ok()
+                .filter(|score| *score > 0.0)
+                .is_none()
+            {
                 return Err(TransportActionWireError::UnsupportedWireShape {
                     shape: "search request source query script_score script",
                     reason: "OpenSearch ScriptScoreQueryBuilder script source must be a positive numeric string in this execution subset",
                 });
             }
-            if query.min_score.is_some_and(|min_score| !min_score.is_finite() || min_score < 0.0)
+            if query
+                .min_score
+                .is_some_and(|min_score| !min_score.is_finite() || min_score < 0.0)
             {
                 return Err(TransportActionWireError::UnsupportedWireShape {
                     shape: "search request source query",
@@ -27345,7 +27392,8 @@ fn validate_query_builder(
             if query.fuzzy_max_expansions <= 0 {
                 return Err(TransportActionWireError::UnsupportedWireShape {
                     shape: "search request source query",
-                    reason: "OpenSearch SimpleQueryStringBuilder fuzzy max expansions must be positive",
+                    reason:
+                        "OpenSearch SimpleQueryStringBuilder fuzzy max expansions must be positive",
                 });
             }
         }
@@ -27458,7 +27506,8 @@ fn validate_query_builder(
             if query.values.is_empty() {
                 return Err(TransportActionWireError::UnsupportedWireShape {
                     shape: "search request source query",
-                    reason: "OpenSearch TermsSetQueryBuilder values must be non-empty in this subset",
+                    reason:
+                        "OpenSearch TermsSetQueryBuilder values must be non-empty in this subset",
                 });
             }
             for value in &query.values {
@@ -27595,10 +27644,7 @@ fn read_fuzziness(
     } else {
         None
     };
-    let fuzziness = OpenSearchFuzzinessWire {
-        value,
-        custom_auto,
-    };
+    let fuzziness = OpenSearchFuzzinessWire { value, custom_auto };
     validate_fuzziness(&fuzziness)?;
     Ok(fuzziness)
 }
@@ -27656,7 +27702,8 @@ fn read_multi_match_type(
         5 => Ok(OpenSearchMultiMatchTypeWire::BoolPrefix),
         _ => Err(TransportActionWireError::UnsupportedWireShape {
             shape: "search request source query",
-            reason: "OpenSearch MultiMatchQueryBuilder type ordinal must be in the known 0..=5 range",
+            reason:
+                "OpenSearch MultiMatchQueryBuilder type ordinal must be in the known 0..=5 range",
         }),
     }
 }
@@ -27815,7 +27862,9 @@ fn write_geo_point(output: &mut StreamOutput, point: OpenSearchGeoPointWire) {
     output.write_f64(point.lon);
 }
 
-fn read_geo_point(input: &mut StreamInput) -> Result<OpenSearchGeoPointWire, TransportActionWireError> {
+fn read_geo_point(
+    input: &mut StreamInput,
+) -> Result<OpenSearchGeoPointWire, TransportActionWireError> {
     Ok(OpenSearchGeoPointWire {
         lat: input.read_f64()?,
         lon: input.read_f64()?,
@@ -27915,7 +27964,10 @@ fn write_range_bound_value(
 }
 
 fn read_range_bound_value(input: &mut StreamInput) -> Result<Value, TransportActionWireError> {
-    read_scalar_or_null_query_value(input, "OpenSearch RangeQueryBuilder bounds must be scalar or null")
+    read_scalar_or_null_query_value(
+        input,
+        "OpenSearch RangeQueryBuilder bounds must be scalar or null",
+    )
 }
 
 fn write_term_query_value(
@@ -27978,7 +28030,9 @@ fn write_terms_query_values(
     Ok(())
 }
 
-fn read_terms_query_values(input: &mut StreamInput) -> Result<Vec<Value>, TransportActionWireError> {
+fn read_terms_query_values(
+    input: &mut StreamInput,
+) -> Result<Vec<Value>, TransportActionWireError> {
     match input.read_byte()? {
         7 | 8 => {
             let len = read_len(input)?;
@@ -28016,7 +28070,8 @@ fn read_scalar_or_null_query_value(
             let value = String::from_utf8(bytes.to_vec()).map_err(|_| {
                 TransportActionWireError::UnsupportedWireShape {
                     shape: "search request source query",
-                    reason: "OpenSearch TermQueryBuilder BytesRef value must be UTF-8 in this subset",
+                    reason:
+                        "OpenSearch TermQueryBuilder BytesRef value must be UTF-8 in this subset",
                 }
             })?;
             Ok(Value::String(value))
@@ -28155,15 +28210,17 @@ fn read_optional_field_sort_builders(
                     });
                 }
                 let numeric_type = input.read_optional_string()?;
-                values.push(OpenSearchSortBuilderWire::Field(OpenSearchFieldSortBuilderWire {
-                    field_name,
-                    nested_path,
-                    missing,
-                    order,
-                    sort_mode,
-                    unmapped_type,
-                    numeric_type,
-                }));
+                values.push(OpenSearchSortBuilderWire::Field(
+                    OpenSearchFieldSortBuilderWire {
+                        field_name,
+                        nested_path,
+                        missing,
+                        order,
+                        sort_mode,
+                        unmapped_type,
+                        numeric_type,
+                    },
+                ));
             }
             "_score" => {
                 values.push(OpenSearchSortBuilderWire::Score(
@@ -28258,19 +28315,23 @@ fn read_optional_sort_mode(
         4 => Ok(Some(OpenSearchSortModeWire::Median)),
         _ => Err(TransportActionWireError::UnsupportedWireShape {
             shape: "search request source sort mode",
-            reason: "OpenSearch SortMode ordinal must be MIN(0), MAX(1), SUM(2), AVG(3), or MEDIAN(4)",
+            reason:
+                "OpenSearch SortMode ordinal must be MIN(0), MAX(1), SUM(2), AVG(3), or MEDIAN(4)",
         }),
     }
 }
 
-fn validate_sort_builders(values: Option<&[OpenSearchSortBuilderWire]>) -> Result<(), TransportActionWireError> {
+fn validate_sort_builders(
+    values: Option<&[OpenSearchSortBuilderWire]>,
+) -> Result<(), TransportActionWireError> {
     let Some(values) = values else {
         return Ok(());
     };
     if values.is_empty() {
         return Err(TransportActionWireError::UnsupportedWireShape {
             shape: "search request source sorts",
-            reason: "OpenSearch SearchSourceBuilder sorts must contain at least one sort when present",
+            reason:
+                "OpenSearch SearchSourceBuilder sorts must contain at least one sort when present",
         });
     }
     for value in values {
@@ -28550,7 +28611,8 @@ impl OpenSearchCollapseBuilderWire {
         if self.max_concurrent_group_requests < 0 {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "search request source collapse",
-                reason: "OpenSearch CollapseBuilder maxConcurrentGroupRequests must be non-negative",
+                reason:
+                    "OpenSearch CollapseBuilder maxConcurrentGroupRequests must be non-negative",
             });
         }
         Ok(())
@@ -29099,14 +29161,8 @@ fn validate_inline_script(
             reason: "OpenSearch inline Script source must be non-empty",
         });
     }
-    validate_optional_generic_map(
-        Some(&script.options),
-        inline_script_options_shape(shape),
-    )?;
-    validate_optional_generic_map(
-        Some(&script.params),
-        inline_script_params_shape(shape),
-    )?;
+    validate_optional_generic_map(Some(&script.options), inline_script_options_shape(shape))?;
+    validate_optional_generic_map(Some(&script.params), inline_script_params_shape(shape))?;
     if let Some(options) = script.options.as_object() {
         if options.values().any(|value| !value.is_string()) {
             return Err(TransportActionWireError::UnsupportedWireShape {
@@ -29168,7 +29224,8 @@ fn reject_absent_bool_list(
     if input.read_bool()? {
         return Err(TransportActionWireError::UnsupportedWireShape {
             shape,
-            reason: "only absent optional lists are decoded in the empty SearchSourceBuilder subset",
+            reason:
+                "only absent optional lists are decoded in the empty SearchSourceBuilder subset",
         });
     }
     Ok(())
@@ -30832,7 +30889,8 @@ impl OpenSearchSearchResponseWire {
         if cluster_total != 0 || cluster_successful != 0 || cluster_skipped != 0 {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "search response clusters",
-                reason: "cross-cluster SearchResponse wire rendering is not supported by this subset",
+                reason:
+                    "cross-cluster SearchResponse wire rendering is not supported by this subset",
             });
         }
         let mut response = Self {
@@ -30877,10 +30935,7 @@ impl OpenSearchSearchResponseWire {
             self.collapse_values.as_deref(),
             "search response collapse",
         )?;
-        validate_sort_fields(
-            self.sort_fields.as_deref(),
-            "search response sort fields",
-        )?;
+        validate_sort_fields(self.sort_fields.as_deref(), "search response sort fields")?;
         if self.total_shards < 0 || self.successful_shards < 0 || self.skipped_shards < 0 {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "search response shard counts",
@@ -31150,7 +31205,8 @@ fn read_search_ext_builders(
         if name != OpenSearchGenericSearchExtBuilderWire::WRITEABLE_NAME {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "search response ext builders",
-                reason: "only OpenSearch generic_ext search ext builders are decoded by this subset",
+                reason:
+                    "only OpenSearch generic_ext search ext builders are decoded by this subset",
             });
         }
         let value_type = input.read_i32()?;
@@ -31299,7 +31355,10 @@ fn read_shard_search_failures(
     let mut failures = Vec::with_capacity(len);
     for _ in 0..len {
         let failure = OpenSearchShardSearchFailureWire {
-            shard_target: read_optional_search_shard_target(input, "search response shard failure target")?,
+            shard_target: read_optional_search_shard_target(
+                input,
+                "search response shard failure target",
+            )?,
             reason: input.read_string()?,
             status: input.read_string()?,
             cause: read_exception(input)?,
@@ -31343,9 +31402,7 @@ fn read_optional_phase_took(
     Ok(phase_took)
 }
 
-fn validate_phase_took(
-    phase_took: &BTreeMap<String, i64>,
-) -> Result<(), TransportActionWireError> {
+fn validate_phase_took(phase_took: &BTreeMap<String, i64>) -> Result<(), TransportActionWireError> {
     if phase_took.keys().any(|name| name.is_empty()) {
         return Err(TransportActionWireError::UnsupportedWireShape {
             shape: "search response phase took",
@@ -31420,7 +31477,10 @@ impl OpenSearchSortFieldWire {
         }
     }
 
-    fn validate_supported_subset(&self, shape: &'static str) -> Result<(), TransportActionWireError> {
+    fn validate_supported_subset(
+        &self,
+        shape: &'static str,
+    ) -> Result<(), TransportActionWireError> {
         if self.field.as_ref().is_some_and(|field| field.is_empty()) {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape,
@@ -31430,7 +31490,8 @@ impl OpenSearchSortFieldWire {
         if !(Self::SCORE..=Self::REWRITEABLE).contains(&self.sort_type) {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape,
-                reason: "OpenSearch SortField type ordinal is outside the Lucene SortField.Type range",
+                reason:
+                    "OpenSearch SortField type ordinal is outside the Lucene SortField.Type range",
             });
         }
         if matches!(self.sort_type, Self::CUSTOM | Self::REWRITEABLE) {
@@ -31780,7 +31841,8 @@ impl OpenSearchSearchHitsWire {
         if self.total_hits_relation != 0 && self.total_hits_relation != 1 {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "search inner hits total relation",
-                reason: "OpenSearch TotalHits relation must be equal-to or greater-than-or-equal-to",
+                reason:
+                    "OpenSearch TotalHits relation must be equal-to or greater-than-or-equal-to",
             });
         }
         if self.total_hits.is_none() && self.total_hits_relation != 0 {
@@ -31797,10 +31859,7 @@ impl OpenSearchSearchHitsWire {
             self.collapse_values.as_deref(),
             "search inner hits collapse",
         )?;
-        validate_sort_fields(
-            self.sort_fields.as_deref(),
-            "search inner hits sort fields",
-        )?;
+        validate_sort_fields(self.sort_fields.as_deref(), "search inner hits sort fields")?;
         Ok(())
     }
 }
@@ -31937,7 +31996,8 @@ impl OpenSearchSearchHitWire {
         let fields = read_document_field_map(input, "search hit document fields")?;
         let meta_fields = read_document_field_map(input, "search hit metadata fields")?;
         let highlight_fields = read_highlight_field_map(input, "search hit highlight fields")?;
-        let formatted_sort_values = read_search_sort_values(input, "search hit formatted sort values")?;
+        let formatted_sort_values =
+            read_search_sort_values(input, "search hit formatted sort values")?;
         let raw_sort_values = read_search_sort_values(input, "search hit raw sort values")?;
         if raw_sort_values.len() != formatted_sort_values.len() {
             return Err(TransportActionWireError::UnsupportedWireShape {
@@ -32538,7 +32598,8 @@ impl OpenSearchDeletePitRequestWire {
         self.validate_supported_subset()?;
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "delete pit execution",
-            reason: "use validate_supported_subset for the implemented local PIT invalidation adapter",
+            reason:
+                "use validate_supported_subset for the implemented local PIT invalidation adapter",
         })
     }
 }
@@ -32727,7 +32788,8 @@ impl OpenSearchGetAllPitsRequestWire {
         self.supports_local_lifecycle_subset()?;
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "get all pits execution",
-            reason: "use supports_local_lifecycle_subset for the implemented local PIT listing adapter",
+            reason:
+                "use supports_local_lifecycle_subset for the implemented local PIT listing adapter",
         })
     }
 }
@@ -39813,10 +39875,7 @@ fn write_search_explanation(
         write_search_explanation(output, detail)?;
     }
     if matches {
-        write_explanation_number(
-            output,
-            explanation.get("value").unwrap_or(&Value::from(0)),
-        )?;
+        write_explanation_number(output, explanation.get("value").unwrap_or(&Value::from(0)))?;
     }
     Ok(())
 }
@@ -39858,12 +39917,11 @@ fn write_explanation_number(
         output.write_byte(2);
         output.write_zlong(value);
     } else if let Some(value) = number.as_u64() {
-        let value = i64::try_from(value).map_err(|_| {
-            TransportActionWireError::UnsupportedWireShape {
+        let value =
+            i64::try_from(value).map_err(|_| TransportActionWireError::UnsupportedWireShape {
                 shape: "search hit explanation",
                 reason: "unsigned explanation value does not fit the OpenSearch long wire shape",
-            }
-        })?;
+            })?;
         output.write_byte(2);
         output.write_zlong(value);
     } else if let Some(value) = number.as_f64() {
@@ -39908,12 +39966,11 @@ fn write_text_string(
     value: &str,
 ) -> Result<(), TransportActionWireError> {
     let bytes = value.as_bytes();
-    let len = i32::try_from(bytes.len()).map_err(|_| {
-        TransportActionWireError::UnsupportedWireShape {
+    let len =
+        i32::try_from(bytes.len()).map_err(|_| TransportActionWireError::UnsupportedWireShape {
             shape: "text",
             reason: "OpenSearch Text byte length does not fit the int wire shape",
-        }
-    })?;
+        })?;
     output.write_i32(len);
     output.write_raw_bytes(bytes);
     Ok(())
@@ -64065,10 +64122,7 @@ mod tests {
                 ]),
                 stored_fields: Some(OpenSearchStoredFieldsContextWire {
                     fetch_fields: true,
-                    field_names: Some(vec![
-                        "stored_status".to_string(),
-                        "stored_rank".to_string(),
-                    ]),
+                    field_names: Some(vec!["stored_status".to_string(), "stored_rank".to_string()]),
                 }),
                 search_pipeline_source: Some(json!({
                     "request_processors": [
@@ -64300,44 +64354,40 @@ mod tests {
                         boost: 1.0,
                         query_name: Some("message-dismax".to_string()),
                         queries: vec![
-                            OpenSearchQueryBuilderWire::Match(
-                                OpenSearchMatchQueryBuilderWire {
-                                    boost: 1.0,
-                                    query_name: None,
-                                    field_name: "title".to_string(),
-                                    value: json!("steel search"),
-                                    operator: OpenSearchMatchOperatorWire::Or,
-                                    prefix_length: 0,
-                                    max_expansions: 50,
-                                    fuzzy_transpositions: true,
-                                    lenient: false,
-                                    zero_terms_query: OpenSearchZeroTermsQueryWire::None,
-                                    analyzer: None,
-                                    minimum_should_match: None,
-                                    fuzzy_rewrite: None,
-                                    cutoff_frequency: None,
-                                    auto_generate_synonyms_phrase_query: true,
-                                },
-                            ),
-                            OpenSearchQueryBuilderWire::Match(
-                                OpenSearchMatchQueryBuilderWire {
-                                    boost: 1.0,
-                                    query_name: None,
-                                    field_name: "body".to_string(),
-                                    value: json!("steel search"),
-                                    operator: OpenSearchMatchOperatorWire::Or,
-                                    prefix_length: 0,
-                                    max_expansions: 50,
-                                    fuzzy_transpositions: true,
-                                    lenient: false,
-                                    zero_terms_query: OpenSearchZeroTermsQueryWire::None,
-                                    analyzer: None,
-                                    minimum_should_match: None,
-                                    fuzzy_rewrite: None,
-                                    cutoff_frequency: None,
-                                    auto_generate_synonyms_phrase_query: true,
-                                },
-                            ),
+                            OpenSearchQueryBuilderWire::Match(OpenSearchMatchQueryBuilderWire {
+                                boost: 1.0,
+                                query_name: None,
+                                field_name: "title".to_string(),
+                                value: json!("steel search"),
+                                operator: OpenSearchMatchOperatorWire::Or,
+                                prefix_length: 0,
+                                max_expansions: 50,
+                                fuzzy_transpositions: true,
+                                lenient: false,
+                                zero_terms_query: OpenSearchZeroTermsQueryWire::None,
+                                analyzer: None,
+                                minimum_should_match: None,
+                                fuzzy_rewrite: None,
+                                cutoff_frequency: None,
+                                auto_generate_synonyms_phrase_query: true,
+                            }),
+                            OpenSearchQueryBuilderWire::Match(OpenSearchMatchQueryBuilderWire {
+                                boost: 1.0,
+                                query_name: None,
+                                field_name: "body".to_string(),
+                                value: json!("steel search"),
+                                operator: OpenSearchMatchOperatorWire::Or,
+                                prefix_length: 0,
+                                max_expansions: 50,
+                                fuzzy_transpositions: true,
+                                lenient: false,
+                                zero_terms_query: OpenSearchZeroTermsQueryWire::None,
+                                analyzer: None,
+                                minimum_should_match: None,
+                                fuzzy_rewrite: None,
+                                cutoff_frequency: None,
+                                auto_generate_synonyms_phrase_query: true,
+                            }),
                         ],
                         tie_breaker: 0.1,
                     },
@@ -64399,12 +64449,7 @@ mod tests {
                         boost: 1.0,
                         query_name: Some("tenant-set".to_string()),
                         field_name: "tenant".to_string(),
-                        values: vec![
-                            json!("tenant-a"),
-                            json!("tenant-b"),
-                            json!(42),
-                            json!(true),
-                        ],
+                        values: vec![json!("tenant-a"), json!("tenant-b"), json!(42), json!(true)],
                     },
                 )),
                 ..OpenSearchSearchSourceBuilderWire::default()
@@ -65664,8 +65709,7 @@ mod tests {
         range_with_time_zone.write_f32(1.0);
         range_with_time_zone.write_optional_string(None);
         range_with_time_zone.write_string("@timestamp");
-        write_range_bound_value(&mut range_with_time_zone, &json!("2026-01-01T00:00:00Z"))
-            .unwrap();
+        write_range_bound_value(&mut range_with_time_zone, &json!("2026-01-01T00:00:00Z")).unwrap();
         write_range_bound_value(&mut range_with_time_zone, &Value::Null).unwrap();
         range_with_time_zone.write_bool(true);
         range_with_time_zone.write_bool(true);
@@ -66753,7 +66797,10 @@ mod tests {
         query_string_with_unknown_type.write_string("status:ok");
         query_string_with_unknown_type.write_optional_string(None);
         query_string_with_unknown_type.write_vint(0);
-        write_match_operator(&mut query_string_with_unknown_type, OpenSearchMatchOperatorWire::Or);
+        write_match_operator(
+            &mut query_string_with_unknown_type,
+            OpenSearchMatchOperatorWire::Or,
+        );
         query_string_with_unknown_type.write_optional_string(None);
         query_string_with_unknown_type.write_optional_string(None);
         query_string_with_unknown_type.write_optional_string(None);
@@ -67103,15 +67150,17 @@ mod tests {
 
         let empty_sort_field = OpenSearchSearchRequestWire {
             source: Some(OpenSearchSearchSourceBuilderWire {
-                sorts: Some(vec![OpenSearchSortBuilderWire::Field(OpenSearchFieldSortBuilderWire {
-                    field_name: String::new(),
-                    nested_path: None,
-                    missing: Value::Null,
-                    order: Some(OpenSearchSortOrderWire::Asc),
-                    sort_mode: None,
-                    unmapped_type: None,
-                    numeric_type: None,
-                })]),
+                sorts: Some(vec![OpenSearchSortBuilderWire::Field(
+                    OpenSearchFieldSortBuilderWire {
+                        field_name: String::new(),
+                        nested_path: None,
+                        missing: Value::Null,
+                        order: Some(OpenSearchSortOrderWire::Asc),
+                        sort_mode: None,
+                        unmapped_type: None,
+                        numeric_type: None,
+                    },
+                )]),
                 ..OpenSearchSearchSourceBuilderWire::default()
             }),
             ..OpenSearchSearchRequestWire::default()
@@ -67126,15 +67175,17 @@ mod tests {
 
         let object_sort_missing = OpenSearchSearchRequestWire {
             source: Some(OpenSearchSearchSourceBuilderWire {
-                sorts: Some(vec![OpenSearchSortBuilderWire::Field(OpenSearchFieldSortBuilderWire {
-                    field_name: "rank".to_string(),
-                    nested_path: None,
-                    missing: json!({ "unsupported": true }),
-                    order: Some(OpenSearchSortOrderWire::Asc),
-                    sort_mode: None,
-                    unmapped_type: None,
-                    numeric_type: None,
-                })]),
+                sorts: Some(vec![OpenSearchSortBuilderWire::Field(
+                    OpenSearchFieldSortBuilderWire {
+                        field_name: "rank".to_string(),
+                        nested_path: None,
+                        missing: json!({ "unsupported": true }),
+                        order: Some(OpenSearchSortOrderWire::Asc),
+                        sort_mode: None,
+                        unmapped_type: None,
+                        numeric_type: None,
+                    },
+                )]),
                 ..OpenSearchSearchSourceBuilderWire::default()
             }),
             ..OpenSearchSearchRequestWire::default()
@@ -67798,14 +67849,13 @@ mod tests {
             skipped_shards: 0,
             scroll_id: Some("scroll-context".to_string()),
             took_millis: 12,
-            phase_took: BTreeMap::from([
-                ("query".to_string(), 4),
-                ("fetch".to_string(), 2),
-            ]),
+            phase_took: BTreeMap::from([("query".to_string(), 4), ("fetch".to_string(), 2)]),
             point_in_time_id: Some("pit-context".to_string()),
         };
         let mut output = StreamOutput::new();
-        response.write(&mut output, OPENSEARCH_3_7_0_TRANSPORT).unwrap();
+        response
+            .write(&mut output, OPENSEARCH_3_7_0_TRANSPORT)
+            .unwrap();
 
         let decoded =
             OpenSearchSearchResponseWire::read(output.freeze(), OPENSEARCH_3_7_0_TRANSPORT)
@@ -67886,10 +67936,7 @@ mod tests {
                         vec![json!({ "nested": [1, "two", true, null] })],
                     ),
                 ]),
-                meta_fields: BTreeMap::from([(
-                    "_routing".to_string(),
-                    vec![json!("tenant-a")],
-                )]),
+                meta_fields: BTreeMap::from([("_routing".to_string(), vec![json!("tenant-a")])]),
                 highlight_fields: BTreeMap::from([
                     (
                         "message".to_string(),
@@ -67950,7 +67997,9 @@ mod tests {
             ..OpenSearchSearchResponseWire::default()
         };
         let mut output = StreamOutput::new();
-        response.write(&mut output, OPENSEARCH_3_7_0_TRANSPORT).unwrap();
+        response
+            .write(&mut output, OPENSEARCH_3_7_0_TRANSPORT)
+            .unwrap();
 
         let decoded =
             OpenSearchSearchResponseWire::read(output.freeze(), OPENSEARCH_3_7_0_TRANSPORT)
@@ -68018,7 +68067,10 @@ mod tests {
         );
         assert_eq!(
             decoded.hits[0].highlight_fields.get("message"),
-            Some(&Some(vec!["<em>hello</em>".to_string(), "world".to_string()]))
+            Some(&Some(vec![
+                "<em>hello</em>".to_string(),
+                "world".to_string()
+            ]))
         );
         assert_eq!(decoded.hits[0].highlight_fields.get("missing"), Some(&None));
         assert_eq!(
@@ -68056,7 +68108,10 @@ mod tests {
             comments_inner_hits.collapse_field.as_deref(),
             Some("comments.author")
         );
-        assert_eq!(comments_inner_hits.collapse_values, Some(vec![json!("ann")]));
+        assert_eq!(
+            comments_inner_hits.collapse_values,
+            Some(vec![json!("ann")])
+        );
         assert_eq!(comments_inner_hits.hits.len(), 1);
         assert_eq!(
             comments_inner_hits.hits[0].id.as_deref(),
@@ -68086,8 +68141,11 @@ mod tests {
         hit_with_invalid_inner_hits.write_i64(1);
         hit_with_invalid_inner_hits.write_zlong(0);
         hit_with_invalid_inner_hits.write_vlong(1);
-        write_json_bytes_reference(&mut hit_with_invalid_inner_hits, &json!({ "message": "hello" }))
-            .unwrap();
+        write_json_bytes_reference(
+            &mut hit_with_invalid_inner_hits,
+            &json!({ "message": "hello" }),
+        )
+        .unwrap();
         hit_with_invalid_inner_hits.write_bool(false);
         hit_with_invalid_inner_hits.write_vint(0);
         hit_with_invalid_inner_hits.write_vint(0);
@@ -69147,10 +69205,7 @@ mod tests {
         }
         output.write_bool(source_present);
         if source_present {
-            write_search_source_builder(
-                &mut output,
-                &OpenSearchSearchSourceBuilderWire::default(),
-            );
+            write_search_source_builder(&mut output, &OpenSearchSearchSourceBuilderWire::default());
             OpenSearchIndicesOptionsWire::strict_expand_open_forbid_closed_ignore_throttled()
                 .write(&mut output);
             write_optional_bool(&mut output, None);

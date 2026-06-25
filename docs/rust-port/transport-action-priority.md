@@ -265,8 +265,8 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `cluster:admin/routing/awareness/weights/put` (rejected fail-closed)
 - `cluster:admin/routing/awareness/weights/get` (rejected fail-closed)
 - `cluster:admin/routing/awareness/weights/delete` (rejected fail-closed)
-- `indices:admin/mappings/get` (rejected fail-closed)
-- `indices:admin/mappings/fields/get` (rejected fail-closed)
+- `indices:admin/mappings/get` (implemented empty-mapping metadata subset)
+- `indices:admin/mappings/fields/get` (implemented empty field-mapping subset)
 - `indices:admin/get` (rejected fail-closed)
 - `indices:admin/exists` (rejected fail-closed)
 - `indices:admin/template/get` (rejected fail-closed)
@@ -275,9 +275,9 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `cluster:admin/component_template/delete` (rejected fail-closed)
 - `indices:admin/index_template/get` (rejected fail-closed)
 - `indices:admin/index_template/delete` (rejected fail-closed)
-- `indices:admin/aliases/get` (rejected fail-closed)
-- `indices:monitor/settings/get` (rejected fail-closed)
-- `indices:admin/shards/search_shards` (rejected fail-closed)
+- `indices:admin/aliases/get` (implemented empty alias metadata subset)
+- `indices:monitor/settings/get` (implemented metadata-backed index-settings subset)
+- `indices:admin/shards/search_shards` (implemented empty search-shards subset)
 - `indices:data/read/field_caps` (rejected fail-closed)
 - `indices:monitor/recovery` (implemented local empty-recovery subset)
 - `indices:monitor/segment_replication` (implemented local empty segment-replication-stats subset)
@@ -1777,8 +1777,9 @@ The get-settings boundary covers:
   names array, `humanReadable`, and `includeDefaults` at the wire decode/build
   layer;
 - implemented classification for `indices:monitor/settings/get` default
-  all-indices/no-name/no-default requests, returning an OpenSearch-shaped empty
-  index-settings and default-settings response;
+  all-indices/no-name/no-default requests, returning OpenSearch-shaped
+  index-settings from the local metadata manifest and an empty default-settings
+  response;
 - explicit rejection for custom cluster-manager timeout, index filters, local
   reads, custom indices options, name filters, human-readable formatting,
   and include-default expansion.

@@ -973,7 +973,7 @@
       "request_wire_type": "GetSettingsRequest",
       "response_wire_type": "GetSettingsResponse",
       "disposition": "implemented",
-      "reason": "Get-settings transport adapter returns an OpenSearch-shaped empty settings response for the default all-indices request"
+      "reason": "Get-settings transport adapter returns OpenSearch-shaped index settings from the local metadata manifest for the default all-indices request"
     },
     {
       "action_name": "indices:admin/shards/search_shards",

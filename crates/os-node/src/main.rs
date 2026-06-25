@@ -1334,7 +1334,7 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end_at_ms,
         )?;
     } else if is_request && normalized_action_hint == Some("indices:monitor/settings/get") {
-        let response = build_empty_get_settings_response(request_id, header_version_id);
+        let response = build_get_settings_response(request_id, header_version_id);
         response_frame = summarize_transport_response_frame_for_action(
             &response,
             Some("indices:monitor/settings/get"),
@@ -3574,14 +3574,73 @@ fn build_empty_get_aliases_response(request_id: i64, header_version_id: u32) -> 
     .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
 }
 
-fn build_empty_get_settings_response(request_id: i64, header_version_id: u32) -> Vec<u8> {
+fn build_get_settings_response(request_id: i64, header_version_id: u32) -> Vec<u8> {
+    let response = get_settings_response_from_metadata_manifest(
+        &dev_transport_pit_bindings()
+            .metadata_manifest
+            .lock()
+            .expect("metadata manifest lock poisoned"),
+    );
     os_transport::action::build_opensearch_get_settings_response_message(
         request_id,
         Version::from_id(header_version_id as i32),
-        &os_transport::action::OpenSearchGetSettingsResponseWire::empty(),
+        &response,
     )
     .map(|frame| frame.to_vec())
     .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
+}
+
+fn get_settings_response_from_metadata_manifest(
+    metadata_manifest: &Value,
+) -> os_transport::action::OpenSearchGetSettingsResponseWire {
+    let mut index_settings = BTreeMap::new();
+    for (index, entry) in metadata_manifest["indices"]
+        .as_object()
+        .into_iter()
+        .flatten()
+    {
+        let mut flattened = BTreeMap::new();
+        flatten_string_settings(None, &entry["settings"], &mut flattened);
+        index_settings.insert(index.clone(), flattened);
+    }
+    os_transport::action::OpenSearchGetSettingsResponseWire {
+        index_settings,
+        default_settings: BTreeMap::new(),
+    }
+}
+
+fn flatten_string_settings(
+    prefix: Option<&str>,
+    value: &Value,
+    flattened: &mut BTreeMap<String, String>,
+) {
+    match value {
+        Value::Object(object) => {
+            for (key, nested) in object {
+                let next_key = match prefix {
+                    Some(prefix) if !prefix.is_empty() => format!("{prefix}.{key}"),
+                    _ => key.clone(),
+                };
+                flatten_string_settings(Some(&next_key), nested, flattened);
+            }
+        }
+        Value::String(raw) => {
+            if let Some(key) = prefix {
+                flattened.insert(key.to_string(), raw.clone());
+            }
+        }
+        Value::Bool(raw) => {
+            if let Some(key) = prefix {
+                flattened.insert(key.to_string(), raw.to_string());
+            }
+        }
+        Value::Number(raw) => {
+            if let Some(key) = prefix {
+                flattened.insert(key.to_string(), raw.to_string());
+            }
+        }
+        _ => {}
+    }
 }
 
 fn build_empty_get_mappings_response(request_id: i64, header_version_id: u32) -> Vec<u8> {
@@ -5999,10 +6058,9 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
             request_id,
             header_version_id,
         )),
-        Some("indices:monitor/settings/get") => Some(build_empty_get_settings_response(
-            request_id,
-            header_version_id,
-        )),
+        Some("indices:monitor/settings/get") => {
+            Some(build_get_settings_response(request_id, header_version_id))
+        }
         Some("indices:admin/mappings/get") => Some(build_empty_get_mappings_response(
             request_id,
             header_version_id,
@@ -10397,9 +10455,55 @@ mod tests {
     }
 
     #[test]
-    fn get_settings_transport_route_builds_opensearch_shaped_empty_response() {
-        let response =
-            build_empty_get_settings_response(83, OPENSEARCH_3_7_0_TRANSPORT.id() as u32);
+    fn get_settings_response_from_metadata_manifest_flattens_live_index_settings() {
+        let response = get_settings_response_from_metadata_manifest(&serde_json::json!({
+            "indices": {
+                "logs-000001": {
+                    "settings": {
+                        "index": {
+                            "number_of_shards": "3",
+                            "number_of_replicas": "1",
+                            "refresh_interval": "5s",
+                            "replication": {
+                                "type": "DOCUMENT"
+                            }
+                        }
+                    }
+                },
+                "metrics-000001": {
+                    "settings": {
+                        "index.number_of_replicas": "0"
+                    }
+                }
+            }
+        }));
+
+        assert_eq!(
+            response.index_settings["logs-000001"]["index.number_of_shards"],
+            "3"
+        );
+        assert_eq!(
+            response.index_settings["logs-000001"]["index.number_of_replicas"],
+            "1"
+        );
+        assert_eq!(
+            response.index_settings["logs-000001"]["index.refresh_interval"],
+            "5s"
+        );
+        assert_eq!(
+            response.index_settings["logs-000001"]["index.replication.type"],
+            "DOCUMENT"
+        );
+        assert_eq!(
+            response.index_settings["metrics-000001"]["index.number_of_replicas"],
+            "0"
+        );
+        assert!(response.default_settings.is_empty());
+    }
+
+    #[test]
+    fn get_settings_transport_route_builds_opensearch_shaped_metadata_response() {
+        let response = build_get_settings_response(83, OPENSEARCH_3_7_0_TRANSPORT.id() as u32);
         let mut frame = BytesMut::from(&response[..]);
         let os_transport::frame::DecodedFrame::Message(message) =
             os_transport::frame::decode_frame(&mut frame)
@@ -10413,7 +10517,6 @@ mod tests {
         assert!(!message.status.is_request());
         let response =
             os_transport::action::read_opensearch_get_settings_response_message(&message).unwrap();
-        assert!(response.index_settings.is_empty());
         assert!(response.default_settings.is_empty());
     }
 
@@ -11292,11 +11395,8 @@ mod tests {
         let body = &frame[6..];
         assert!(clear_scroll_request_supports_local_lifecycle_subset(body));
 
-        let response = build_local_clear_scroll_response(
-            95,
-            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
-            body,
-        );
+        let response =
+            build_local_clear_scroll_response(95, OPENSEARCH_3_7_0_TRANSPORT.id() as u32, body);
         let mut frame = BytesMut::from(&response[..]);
         let os_transport::frame::DecodedFrame::Message(message) =
             os_transport::frame::decode_frame(&mut frame)
@@ -11347,7 +11447,9 @@ mod tests {
             &request,
         )
         .unwrap();
-        assert!(clear_scroll_request_supports_local_lifecycle_subset(&frame[6..]));
+        assert!(clear_scroll_request_supports_local_lifecycle_subset(
+            &frame[6..]
+        ));
 
         let response = build_local_clear_scroll_response(
             96,

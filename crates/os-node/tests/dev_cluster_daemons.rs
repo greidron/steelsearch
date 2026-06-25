@@ -1,3 +1,4 @@
+use os_core::OPENSEARCH_3_7_0_TRANSPORT;
 use os_engine::{shard_manifest_checksum, ShardManifest, SHARD_MANIFEST_FILE_NAME};
 use os_node::{
     load_gateway_state_manifest, persist_gateway_state_manifest, ClusterManagerTask,
@@ -3268,6 +3269,75 @@ fn daemon_point_in_time_search_preserves_snapshot_over_real_socket() {
 }
 
 #[test]
+fn daemon_transport_get_settings_reflects_rest_created_index_metadata() {
+    let binary = os_node_binary();
+    let root = unique_work_dir();
+    fs::create_dir_all(root.join("data")).unwrap();
+    let transport_port = free_port();
+
+    let mut child = Command::new(&binary)
+        .arg("--http.host")
+        .arg("127.0.0.1")
+        .arg("--http.port")
+        .arg("0")
+        .arg("--transport.host")
+        .arg("127.0.0.1")
+        .arg("--transport.port")
+        .arg(transport_port.to_string())
+        .arg("--cluster.name")
+        .arg("steel-dev-settings-transport")
+        .arg("--path.data")
+        .arg(root.join("data"))
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+
+    let stderr = child.stderr.take().unwrap();
+    let mut reader = BufReader::new(stderr);
+    let http_port = read_reported_http_port(&mut reader);
+    let _guard = ChildGuard {
+        children: vec![child],
+    };
+
+    let create = wait_http_response(
+        http_port,
+        "PUT",
+        "/settings-it",
+        Some(
+            br#"{"settings":{"index":{"number_of_shards":3,"number_of_replicas":1,"refresh_interval":"5s"}}}"#,
+        ),
+    );
+    assert_eq!(create["status"], 200, "{create}");
+
+    let request = os_transport::action::OpenSearchGetSettingsRequestWire::default();
+    let frame = os_transport::action::build_opensearch_get_settings_request_message(
+        91,
+        OPENSEARCH_3_7_0_TRANSPORT,
+        &request,
+    )
+    .unwrap();
+    let response = send_transport_request_and_decode_response(transport_port, &frame);
+    let settings =
+        os_transport::action::read_opensearch_get_settings_response_message(&response).unwrap();
+
+    assert_eq!(
+        settings.index_settings["settings-it"]["index.number_of_shards"],
+        "3"
+    );
+    assert_eq!(
+        settings.index_settings["settings-it"]["index.number_of_replicas"],
+        "1"
+    );
+    assert_eq!(
+        settings.index_settings["settings-it"]["index.refresh_interval"],
+        "5s"
+    );
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
 fn daemon_search_endpoint_preserves_result_shape_sorting_and_pagination() {
     let binary = os_node_binary();
     let root = unique_work_dir();
@@ -5649,6 +5719,41 @@ fn assert_transport_keepalive_responds(port: u16) {
         panic!("transport port {port} should echo keepalive ping: {error}")
     });
     assert_eq!(response, keepalive);
+}
+
+fn send_transport_request_and_decode_response(
+    port: u16,
+    frame: &[u8],
+) -> os_transport::TransportMessage {
+    let mut stream = TcpStream::connect(("127.0.0.1", port))
+        .unwrap_or_else(|error| panic!("transport port {port} should accept TCP: {error}"));
+    stream
+        .set_read_timeout(Some(Duration::from_secs(5)))
+        .unwrap();
+    stream
+        .set_write_timeout(Some(Duration::from_secs(5)))
+        .unwrap();
+    stream.write_all(frame).unwrap();
+    stream.flush().unwrap();
+
+    let mut header = [0_u8; 6];
+    stream.read_exact(&mut header).unwrap();
+    assert_eq!(&header[0..2], b"ES");
+    let body_len = i32::from_be_bytes([header[2], header[3], header[4], header[5]]);
+    assert!(body_len >= 0, "negative transport response body length");
+    let mut body = vec![0_u8; body_len as usize];
+    stream.read_exact(&mut body).unwrap();
+
+    let mut bytes = bytes::BytesMut::from(&header[..]);
+    bytes.extend_from_slice(&body);
+    let os_transport::frame::DecodedFrame::Message(message) =
+        os_transport::frame::decode_frame(&mut bytes)
+            .unwrap()
+            .unwrap()
+    else {
+        panic!("expected transport response message");
+    };
+    message
 }
 
 fn send_query_phase_transport_frame_and_hold(port: u16, request_id: i64, hold_for: Duration) {
