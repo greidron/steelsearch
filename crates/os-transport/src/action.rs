@@ -25998,6 +25998,7 @@ pub struct OpenSearchSearchResponseWire {
     pub collapse_values: Option<Vec<Value>>,
     pub total_shards: i32,
     pub successful_shards: i32,
+    pub shard_failures: Vec<OpenSearchShardSearchFailureWire>,
     pub skipped_shards: i32,
     pub scroll_id: Option<String>,
     pub took_millis: i64,
@@ -26023,6 +26024,7 @@ impl OpenSearchSearchResponseWire {
             collapse_values: None,
             total_shards: 1,
             successful_shards: 1,
+            shard_failures: Vec::new(),
             skipped_shards: 0,
             scroll_id: None,
             took_millis: 0,
@@ -26064,7 +26066,7 @@ impl OpenSearchSearchResponseWire {
         }
         output.write_vint(self.total_shards);
         output.write_vint(self.successful_shards);
-        output.write_vint(0);
+        write_shard_search_failures(output, &self.shard_failures)?;
         output.write_vint(0);
         output.write_vint(0);
         output.write_vint(0);
@@ -26139,13 +26141,17 @@ impl OpenSearchSearchResponseWire {
             collapse_values,
             total_shards: input.read_vint()?,
             successful_shards: input.read_vint()?,
+            shard_failures: Vec::new(),
             skipped_shards: 0,
             scroll_id: None,
             took_millis: 0,
             phase_took: BTreeMap::new(),
             point_in_time_id: None,
         };
-        reject_empty_list_len(&mut input, "search response shard failures")?;
+        let response = Self {
+            shard_failures: read_shard_search_failures(&mut input)?,
+            ..response
+        };
         let cluster_total = input.read_vint()?;
         let cluster_successful = input.read_vint()?;
         let cluster_skipped = input.read_vint()?;
@@ -26213,6 +26219,15 @@ impl OpenSearchSearchResponseWire {
                 reason: "successful and skipped shards cannot exceed total shards",
             });
         }
+        if self.shard_failures.len() > self.total_shards as usize {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search response shard failures",
+                reason: "OpenSearch SearchResponse failed shard count cannot exceed total shards",
+            });
+        }
+        for failure in &self.shard_failures {
+            failure.validate_supported_subset()?;
+        }
         if self.took_millis < 0 {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "search response took",
@@ -26222,6 +26237,82 @@ impl OpenSearchSearchResponseWire {
         validate_phase_took(&self.phase_took)?;
         Ok(())
     }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchShardSearchFailureWire {
+    pub shard_target: Option<OpenSearchSearchShardTargetWire>,
+    pub reason: String,
+    pub status: String,
+    pub cause: Option<TransportError>,
+}
+
+impl OpenSearchShardSearchFailureWire {
+    pub fn illegal_argument(reason: impl Into<String>) -> Self {
+        let reason = reason.into();
+        Self {
+            shard_target: None,
+            reason: reason.clone(),
+            status: "BAD_REQUEST".to_string(),
+            cause: Some(TransportError {
+                class_name: "java.lang.IllegalArgumentException".to_string(),
+                message: Some(reason),
+                cause: None,
+            }),
+        }
+    }
+
+    fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
+        if self.reason.is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search response shard failure",
+                reason: "OpenSearch ShardSearchFailure reason must be non-empty",
+            });
+        }
+        if self.status.is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search response shard failure",
+                reason: "OpenSearch ShardSearchFailure status must be non-empty",
+            });
+        }
+        if let Some(shard_target) = &self.shard_target {
+            shard_target.validate_supported_subset()?;
+        }
+        validate_supported_exception(self.cause.as_ref(), "search response shard failure cause")
+    }
+}
+
+fn write_shard_search_failures(
+    output: &mut StreamOutput,
+    failures: &[OpenSearchShardSearchFailureWire],
+) -> Result<(), TransportActionWireError> {
+    output.write_vint(failures.len() as i32);
+    for failure in failures {
+        failure.validate_supported_subset()?;
+        write_optional_search_shard_target(output, failure.shard_target.as_ref())?;
+        output.write_string(&failure.reason);
+        output.write_string(&failure.status);
+        write_supported_exception(output, failure.cause.as_ref())?;
+    }
+    Ok(())
+}
+
+fn read_shard_search_failures(
+    input: &mut StreamInput,
+) -> Result<Vec<OpenSearchShardSearchFailureWire>, TransportActionWireError> {
+    let len = read_len(input)?;
+    let mut failures = Vec::with_capacity(len);
+    for _ in 0..len {
+        let failure = OpenSearchShardSearchFailureWire {
+            shard_target: read_optional_search_shard_target(input, "search response shard failure target")?,
+            reason: input.read_string()?,
+            status: input.read_string()?,
+            cause: read_exception(input)?,
+        };
+        failure.validate_supported_subset()?;
+        failures.push(failure);
+    }
+    Ok(failures)
 }
 
 fn write_optional_phase_took(
@@ -29049,6 +29140,7 @@ fn write_supported_exception(
     output: &mut StreamOutput,
     error: Option<&TransportError>,
 ) -> Result<(), TransportActionWireError> {
+    validate_supported_exception(error, "failed node exception cause")?;
     let Some(error) = error else {
         output.write_bool(false);
         return Ok(());
@@ -29078,6 +29170,24 @@ fn write_supported_exception(
         }
     }
     Ok(())
+}
+
+fn validate_supported_exception(
+    error: Option<&TransportError>,
+    shape: &'static str,
+) -> Result<(), TransportActionWireError> {
+    let Some(error) = error else {
+        return Ok(());
+    };
+    match error.class_name.as_str() {
+        "org.opensearch.ResourceNotFoundException" | "java.lang.IllegalArgumentException" => {
+            validate_supported_exception(error.cause.as_deref(), shape)
+        }
+        _ => Err(TransportActionWireError::UnsupportedWireShape {
+            shape,
+            reason: "only ResourceNotFoundException and IllegalArgumentException causes are encoded by this adapter",
+        }),
+    }
 }
 
 fn write_empty_stack_trace(output: &mut StreamOutput) {
@@ -59110,7 +59220,23 @@ mod tests {
             collapse_field: None,
             collapse_values: None,
             total_shards: 3,
-            successful_shards: 3,
+            successful_shards: 2,
+            shard_failures: vec![OpenSearchShardSearchFailureWire {
+                shard_target: Some(OpenSearchSearchShardTargetWire {
+                    node_id: Some("node-b".to_string()),
+                    index: "logs-000001".to_string(),
+                    index_uuid: "_na_".to_string(),
+                    shard_id: 1,
+                    cluster_alias: None,
+                }),
+                reason: "bad query".to_string(),
+                status: "BAD_REQUEST".to_string(),
+                cause: Some(TransportError {
+                    class_name: "java.lang.IllegalArgumentException".to_string(),
+                    message: Some("bad query".to_string()),
+                    cause: None,
+                }),
+            }],
             skipped_shards: 0,
             scroll_id: Some("scroll-context".to_string()),
             took_millis: 12,
@@ -59131,6 +59257,7 @@ mod tests {
         assert!(decoded.max_score.is_nan());
         assert_eq!(decoded.total_shards, response.total_shards);
         assert_eq!(decoded.successful_shards, response.successful_shards);
+        assert_eq!(decoded.shard_failures, response.shard_failures);
         assert_eq!(decoded.skipped_shards, response.skipped_shards);
         assert_eq!(decoded.scroll_id, response.scroll_id);
         assert_eq!(decoded.took_millis, response.took_millis);
@@ -59475,6 +59602,22 @@ mod tests {
             invalid_phase_took.validate_supported_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "search response phase took",
+                ..
+            })
+        ));
+
+        let invalid_failure_count = OpenSearchSearchResponseWire {
+            total_shards: 1,
+            shard_failures: vec![
+                OpenSearchShardSearchFailureWire::illegal_argument("first"),
+                OpenSearchShardSearchFailureWire::illegal_argument("second"),
+            ],
+            ..OpenSearchSearchResponseWire::default()
+        };
+        assert!(matches!(
+            invalid_failure_count.validate_supported_subset(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search response shard failures",
                 ..
             })
         ));
