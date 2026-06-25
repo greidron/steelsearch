@@ -2607,6 +2607,18 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "pit_close_source_query_param_search",
+      "area": "search",
+      "method": "DELETE",
+      "path": "/_search/point_in_time?source=%7B%22pit_id%22%3A%22pit-missing%22%7D&source_content_type=json",
+      "body": null,
+      "expected_status": 200,
+      "extract": "pit_clear",
+      "family": "lexical",
+      "description": "[lexical] close PIT accepts source query body like OpenSearch",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "pit_clear_all_query_param_error_search",
       "area": "search",
       "method": "DELETE",

@@ -10457,10 +10457,13 @@ impl SteelNode {
             Ok(_) => {}
             Err(response) => return response,
         }
-        if let Some(response) = pit_unrecognized_query_param_response(request) {
+        if let Some(response) = pit_unrecognized_query_param_response_allowing_source(request) {
             return response;
         }
-        let body = serde_json::from_slice::<Value>(&request.body).unwrap_or(Value::Null);
+        let body = match pit_body_or_source_param(request) {
+            Ok(body) => body,
+            Err(response) => return response,
+        };
         let ids = match parse_delete_pit_ids(&body) {
             Ok(ids) => ids,
             Err(response) => return response,
@@ -17106,7 +17109,10 @@ impl SteelNode {
                 .cloned()
                 .collect::<Vec<_>>()
         } else {
-            let body = serde_json::from_slice::<Value>(&request.body).unwrap_or(Value::Null);
+            let body = match pit_body_or_source_param(request) {
+                Ok(body) => body,
+                Err(response) => return response,
+            };
             match parse_pit_segments_ids(&body) {
                 Ok(ids) => ids,
                 Err(response) => return response,
@@ -20892,6 +20898,41 @@ fn delete_pit_illegal_argument(reason: impl Into<String>) -> RestResponse {
 fn pit_unrecognized_query_param_response(request: &RestRequest) -> Option<RestResponse> {
     let keys = request.query_params.keys().collect::<Vec<_>>();
     unrecognized_query_param_response_for_keys(request, &keys)
+}
+
+fn pit_unrecognized_query_param_response_allowing_source(
+    request: &RestRequest,
+) -> Option<RestResponse> {
+    let keys = request
+        .query_params
+        .keys()
+        .filter(|key| key.as_str() != "source" && key.as_str() != "source_content_type")
+        .collect::<Vec<_>>();
+    unrecognized_query_param_response_for_keys(request, &keys)
+}
+
+fn pit_body_or_source_param(request: &RestRequest) -> Result<Value, RestResponse> {
+    if !request.body.is_empty() {
+        return Ok(serde_json::from_slice::<Value>(&request.body).unwrap_or(Value::Null));
+    }
+    let Some(source) = request.query_params.get("source") else {
+        return Ok(Value::Null);
+    };
+    let Some(source_content_type) = request.query_params.get("source_content_type") else {
+        return Err(delete_pit_illegal_argument(
+            "source and source_content_type parameters are required",
+        ));
+    };
+    if !matches!(
+        source_content_type.as_str(),
+        "json" | "application/json" | "application/vnd.opensearch+json"
+    ) {
+        return Err(delete_pit_illegal_argument(format!(
+            "Unknown value for source_content_type [{source_content_type}]"
+        )));
+    }
+    serde_json::from_str::<Value>(source)
+        .map_err(|_| delete_pit_illegal_argument("Failed to parse request body"))
 }
 
 fn create_pit_unrecognized_query_param_response(request: &RestRequest) -> Option<RestResponse> {
@@ -29315,6 +29356,25 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             "logs-pit-segments-000001"
         );
         assert_eq!(pit_body_json_response.body[0]["docs.count"], "2");
+
+        let mut pit_source_json_request = RestRequest::new(RestMethod::Get, "/_cat/pit_segments");
+        pit_source_json_request
+            .query_params
+            .insert("format".to_string(), "json".to_string());
+        pit_source_json_request.query_params.insert(
+            "source".to_string(),
+            serde_json::json!({ "pit_id": pit_id }).to_string(),
+        );
+        pit_source_json_request
+            .query_params
+            .insert("source_content_type".to_string(), "json".to_string());
+        let pit_source_json_response = node.handle_rest_request(pit_source_json_request);
+        assert_eq!(pit_source_json_response.status, 200);
+        assert_eq!(
+            pit_source_json_response.body[0]["index"],
+            "logs-pit-segments-000001"
+        );
+        assert_eq!(pit_source_json_response.body[0]["docs.count"], "2");
 
         let object_pit_segments_id = node.handle_rest_request(
             RestRequest::new(RestMethod::Get, "/_cat/pit_segments")
@@ -39624,6 +39684,53 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             .lock()
             .expect("pit contexts lock poisoned")
             .is_empty());
+    }
+
+    #[test]
+    fn delete_pit_accepts_source_query_body_like_opensearch() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(RestMethod::Put, "/logs-pit-source-param"))
+                .status,
+            200
+        );
+        let open_pit = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/logs-pit-source-param/_search/point_in_time?keep_alive=1m",
+        ));
+        assert_eq!(open_pit.status, 200);
+        let pit_id = open_pit.body["pit_id"].as_str().unwrap();
+
+        let mut delete_pit = RestRequest::new(RestMethod::Delete, "/_search/point_in_time");
+        delete_pit.query_params.insert(
+            "source".to_string(),
+            serde_json::json!({ "pit_id": pit_id }).to_string(),
+        );
+        delete_pit
+            .query_params
+            .insert("source_content_type".to_string(), "json".to_string());
+        let delete_response = node.handle_rest_request(delete_pit);
+        assert_eq!(delete_response.status, 200);
+        assert_eq!(
+            delete_response.body["pits"],
+            serde_json::json!([
+                {
+                    "successful": true,
+                    "pit_id": pit_id
+                }
+            ])
+        );
+
+        let listed_pits = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_search/point_in_time/_all",
+        ));
+        assert_eq!(listed_pits.status, 200);
+        assert_eq!(listed_pits.body["pits"], serde_json::json!([]));
     }
 
     #[test]
