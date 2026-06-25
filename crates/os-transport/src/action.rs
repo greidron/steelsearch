@@ -24931,6 +24931,7 @@ pub enum OpenSearchQueryBuilderWire {
     Bool(OpenSearchBoolQueryBuilderWire),
     Boosting(OpenSearchBoostingQueryBuilderWire),
     ConstantScore(OpenSearchConstantScoreQueryBuilderWire),
+    DisMax(OpenSearchDisMaxQueryBuilderWire),
     Exists(OpenSearchExistsQueryBuilderWire),
     Fuzzy(OpenSearchFuzzyQueryBuilderWire),
     Ids(OpenSearchIdsQueryBuilderWire),
@@ -24962,6 +24963,14 @@ pub struct OpenSearchConstantScoreQueryBuilderWire {
     pub boost: f32,
     pub query_name: Option<String>,
     pub filter: Box<OpenSearchQueryBuilderWire>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct OpenSearchDisMaxQueryBuilderWire {
+    pub boost: f32,
+    pub query_name: Option<String>,
+    pub queries: Vec<OpenSearchQueryBuilderWire>,
+    pub tie_breaker: f32,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -25224,6 +25233,13 @@ fn write_named_query_builder(output: &mut StreamOutput, query: &OpenSearchQueryB
             output.write_optional_string(query.query_name.as_deref());
             write_named_query_builder(output, &query.filter);
         }
+        OpenSearchQueryBuilderWire::DisMax(query) => {
+            output.write_string("dis_max");
+            output.write_f32(query.boost);
+            output.write_optional_string(query.query_name.as_deref());
+            write_query_builder_list(output, &query.queries);
+            output.write_f32(query.tie_breaker);
+        }
         OpenSearchQueryBuilderWire::Exists(query) => {
             output.write_string("exists");
             output.write_f32(query.boost);
@@ -25424,6 +25440,14 @@ fn read_named_query_builder(
                 boost: input.read_f32()?,
                 query_name: input.read_optional_string()?,
                 filter: Box::new(read_named_query_builder(input)?),
+            },
+        )),
+        "dis_max" => Ok(OpenSearchQueryBuilderWire::DisMax(
+            OpenSearchDisMaxQueryBuilderWire {
+                boost: input.read_f32()?,
+                query_name: input.read_optional_string()?,
+                queries: read_query_builder_list(input)?,
+                tie_breaker: input.read_f32()?,
             },
         )),
         "exists" => Ok(OpenSearchQueryBuilderWire::Exists(
@@ -25637,7 +25661,7 @@ fn read_named_query_builder(
         )),
         _ => Err(TransportActionWireError::UnsupportedWireShape {
             shape: "search request source query",
-            reason: "only OpenSearch bool, boosting, constant_score, exists, fuzzy, ids, match_all, match_none, match, match_bool_prefix, match_phrase, match_phrase_prefix, prefix, range, regexp, term, terms, and wildcard QueryBuilder values are decoded by this subset",
+            reason: "only OpenSearch bool, boosting, constant_score, dis_max, exists, fuzzy, ids, match_all, match_none, match, match_bool_prefix, match_phrase, match_phrase_prefix, prefix, range, regexp, term, terms, and wildcard QueryBuilder values are decoded by this subset",
         }),
     }
 }
@@ -25698,6 +25722,16 @@ fn validate_query_builder(
         OpenSearchQueryBuilderWire::ConstantScore(query) => {
             validate_query_boost_and_name(query.boost, query.query_name.as_deref())?;
             validate_query_builder(Some(&query.filter))?;
+        }
+        OpenSearchQueryBuilderWire::DisMax(query) => {
+            validate_query_boost_and_name(query.boost, query.query_name.as_deref())?;
+            validate_query_builder_list(&query.queries)?;
+            if !query.tie_breaker.is_finite() {
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "search request source query",
+                    reason: "OpenSearch DisMaxQueryBuilder tie breaker must be finite",
+                });
+            }
         }
         OpenSearchQueryBuilderWire::Exists(query) => {
             validate_query_boost_and_name(query.boost, query.query_name.as_deref())?;
@@ -62415,6 +62449,65 @@ mod tests {
         let decoded = OpenSearchSearchRequestWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, boosting_query_request);
 
+        let dis_max_query_request = OpenSearchSearchRequestWire {
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                query: Some(OpenSearchQueryBuilderWire::DisMax(
+                    OpenSearchDisMaxQueryBuilderWire {
+                        boost: 1.0,
+                        query_name: Some("message-dismax".to_string()),
+                        queries: vec![
+                            OpenSearchQueryBuilderWire::Match(
+                                OpenSearchMatchQueryBuilderWire {
+                                    boost: 1.0,
+                                    query_name: None,
+                                    field_name: "title".to_string(),
+                                    value: json!("steel search"),
+                                    operator: OpenSearchMatchOperatorWire::Or,
+                                    prefix_length: 0,
+                                    max_expansions: 50,
+                                    fuzzy_transpositions: true,
+                                    lenient: false,
+                                    zero_terms_query: OpenSearchZeroTermsQueryWire::None,
+                                    analyzer: None,
+                                    minimum_should_match: None,
+                                    fuzzy_rewrite: None,
+                                    cutoff_frequency: None,
+                                    auto_generate_synonyms_phrase_query: true,
+                                },
+                            ),
+                            OpenSearchQueryBuilderWire::Match(
+                                OpenSearchMatchQueryBuilderWire {
+                                    boost: 1.0,
+                                    query_name: None,
+                                    field_name: "body".to_string(),
+                                    value: json!("steel search"),
+                                    operator: OpenSearchMatchOperatorWire::Or,
+                                    prefix_length: 0,
+                                    max_expansions: 50,
+                                    fuzzy_transpositions: true,
+                                    lenient: false,
+                                    zero_terms_query: OpenSearchZeroTermsQueryWire::None,
+                                    analyzer: None,
+                                    minimum_should_match: None,
+                                    fuzzy_rewrite: None,
+                                    cutoff_frequency: None,
+                                    auto_generate_synonyms_phrase_query: true,
+                                },
+                            ),
+                        ],
+                        tie_breaker: 0.1,
+                    },
+                )),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        let mut output = StreamOutput::new();
+        dis_max_query_request.write(&mut output);
+
+        let decoded = OpenSearchSearchRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, dis_max_query_request);
+
         let term_query_request = OpenSearchSearchRequestWire {
             source: Some(OpenSearchSearchSourceBuilderWire {
                 query: Some(OpenSearchQueryBuilderWire::Term(
@@ -62991,6 +63084,30 @@ mod tests {
         };
         assert!(matches!(
             invalid_boosting_negative_boost.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source query",
+                ..
+            })
+        ));
+
+        let invalid_dis_max_tie_breaker = OpenSearchSearchRequestWire {
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                query: Some(OpenSearchQueryBuilderWire::DisMax(
+                    OpenSearchDisMaxQueryBuilderWire {
+                        boost: 1.0,
+                        query_name: None,
+                        queries: vec![OpenSearchQueryBuilderWire::MatchAll(
+                            OpenSearchMatchAllQueryBuilderWire::default(),
+                        )],
+                        tie_breaker: f32::NAN,
+                    },
+                )),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        assert!(matches!(
+            invalid_dis_max_tie_breaker.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "search request source query",
                 ..
