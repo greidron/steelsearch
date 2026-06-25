@@ -61,7 +61,7 @@ class SourceSearchRegistrationsTests(unittest.TestCase):
     def test_unbacked_search_registrations_remain_planned(self):
         planned = [
             ("query", "GeoShapeQueryBuilder.NAME"),
-            ("aggregation", "AutoDateHistogramAggregationBuilder.NAME"),
+            ("aggregation", "VariableWidthHistogramAggregationBuilder.NAME"),
             ("suggester", "SuggesterSpec<?> suggester"),
         ]
         for category, needle in planned:

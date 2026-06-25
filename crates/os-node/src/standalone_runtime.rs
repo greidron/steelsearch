@@ -26178,6 +26178,55 @@ fn build_search_aggregations(
             result.insert(name.clone(), serde_json::json!({ "buckets": buckets }));
             continue;
         }
+        if let Some(auto_date_histogram) = aggregation_object
+            .get("auto_date_histogram")
+            .and_then(Value::as_object)
+        {
+            let field = auto_date_histogram
+                .get("field")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            let minimum_interval = auto_date_histogram
+                .get("minimum_interval")
+                .and_then(Value::as_str)
+                .unwrap_or("day");
+            if !matches!(minimum_interval, "day" | "1d") {
+                return Err(build_unsupported_search_response(
+                    "unsupported aggregation option [auto_date_histogram.minimum_interval]",
+                ));
+            }
+            let mut counts = std::collections::BTreeMap::<i64, (String, u64)>::new();
+            for hit in hits {
+                let Some(raw) = hit
+                    .get("_source")
+                    .and_then(|source| lookup_query_field_value(source, field))
+                    .and_then(Value::as_str)
+                else {
+                    continue;
+                };
+                let Some((bucket_key, bucket_string)) = date_histogram_bucket_day(raw) else {
+                    continue;
+                };
+                let entry = counts.entry(bucket_key).or_insert((bucket_string, 0));
+                entry.1 += 1;
+            }
+            let buckets = counts
+                .into_iter()
+                .map(|(key, (key_as_string, doc_count))| serde_json::json!({
+                    "key": key,
+                    "key_as_string": key_as_string,
+                    "doc_count": doc_count,
+                }))
+                .collect::<Vec<_>>();
+            result.insert(
+                name.clone(),
+                serde_json::json!({
+                    "buckets": buckets,
+                    "interval": "1d"
+                }),
+            );
+            continue;
+        }
         if let Some(histogram) = aggregation_object.get("histogram").and_then(Value::as_object) {
             let field = histogram.get("field").and_then(Value::as_str).unwrap_or_default();
             let interval = histogram.get("interval").and_then(Value::as_f64).unwrap_or(0.0);
@@ -43087,6 +43136,47 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             date_range.body["aggregations"]["by_window"]["buckets"][1]["doc_count"],
             1
+        );
+
+        let auto_date_histogram = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-aggs-000001/_search")
+                .with_json_body(serde_json::json!({
+                    "size": 0,
+                    "aggs": {
+                        "by_auto_day": {
+                            "auto_date_histogram": {
+                                "field": "ts",
+                                "buckets": 10,
+                                "minimum_interval": "day"
+                            }
+                        }
+                    }
+                })),
+        );
+        assert_eq!(auto_date_histogram.status, 200);
+        assert_eq!(
+            auto_date_histogram.body["aggregations"]["by_auto_day"]["interval"],
+            "1d"
+        );
+        assert_eq!(
+            auto_date_histogram.body["aggregations"]["by_auto_day"]["buckets"],
+            serde_json::json!([
+                {
+                    "key": 1776816000000_i64,
+                    "key_as_string": "2026-04-22T00:00:00.000Z",
+                    "doc_count": 1
+                },
+                {
+                    "key": 1776902400000_i64,
+                    "key_as_string": "2026-04-23T00:00:00.000Z",
+                    "doc_count": 1
+                },
+                {
+                    "key": 1776988800000_i64,
+                    "key_as_string": "2026-04-24T00:00:00.000Z",
+                    "doc_count": 1
+                }
+            ])
         );
 
         let ip_range = node.handle_rest_request(
