@@ -3359,6 +3359,54 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "track_scores_body_field_sort_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "track_scores": true,
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ],
+        "size": 2
+      },
+      "extract": "search_score_rendering",
+      "family": "lexical",
+      "description": "[lexical] body track scores field sort search",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "track_scores_query_param_overrides_body_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search?track_scores=false",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "track_scores": true,
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ],
+        "size": 2
+      },
+      "extract": "search_score_rendering",
+      "family": "lexical",
+      "description": "[lexical] track scores query param overrides body search",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "search_boolean_execution_query_params",
       "area": "search",
       "method": "POST",

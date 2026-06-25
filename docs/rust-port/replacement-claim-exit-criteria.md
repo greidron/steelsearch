@@ -370,6 +370,8 @@ Required semantic cases:
 - `search_coordinator_knobs_search`
 - `allow_partial_search_results_true_search`
 - `track_scores_field_sort_search`
+- `track_scores_body_field_sort_search`
+- `track_scores_query_param_overrides_body_search`
 - `search_boolean_execution_query_params`
 - `min_score_search`
 - `post_filter_search`
