@@ -24544,6 +24544,10 @@ pub struct OpenSearchSearchSourceBuilderWire {
     pub track_scores: bool,
     pub version: Option<bool>,
     pub seq_no_and_primary_term: Option<bool>,
+    pub track_total_hits_up_to: Option<i32>,
+    pub include_named_queries_score: Option<bool>,
+    pub search_pipeline: Option<String>,
+    pub verbose_pipeline: bool,
 }
 
 impl Default for OpenSearchSearchSourceBuilderWire {
@@ -24556,6 +24560,10 @@ impl Default for OpenSearchSearchSourceBuilderWire {
             track_scores: false,
             version: None,
             seq_no_and_primary_term: None,
+            track_total_hits_up_to: None,
+            include_named_queries_score: None,
+            search_pipeline: None,
+            verbose_pipeline: false,
         }
     }
 }
@@ -24578,6 +24586,21 @@ impl OpenSearchSearchSourceBuilderWire {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "search request source terminate after",
                 reason: "OpenSearch SearchSourceBuilder terminate_after must be non-negative",
+            });
+        }
+        if self
+            .track_total_hits_up_to
+            .is_some_and(|track_total_hits| track_total_hits < -1)
+        {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source track total hits",
+                reason: "OpenSearch SearchSourceBuilder track_total_hits must be positive or -1",
+            });
+        }
+        if self.search_pipeline.as_deref().is_some_and(str::is_empty) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source search pipeline",
+                reason: "OpenSearch SearchSourceBuilder search pipeline must be non-empty when present",
             });
         }
         Ok(())
@@ -24615,15 +24638,15 @@ fn write_search_source_builder(
     output.write_bool(false); // search after
     output.write_bool(false); // slice
     output.write_bool(false); // collapse
-    output.write_bool(false); // track total hits up to
+    write_optional_int(output, source.track_total_hits_up_to); // track total hits up to
     output.write_bool(false); // fetch fields
     output.write_bool(false); // point in time
     output.write_bool(false); // search pipeline source, OpenSearch 2.8+
-    write_optional_bool(output, None); // include named queries score, OpenSearch 2.13+
+    write_optional_bool(output, source.include_named_queries_score); // include named queries score, OpenSearch 2.13+
     output.write_bool(false); // derived fields object, OpenSearch 2.14+
     output.write_bool(false); // derived fields, OpenSearch 2.14+
-    output.write_optional_string(None); // search pipeline, OpenSearch 2.18+
-    output.write_bool(false); // verbose pipeline, OpenSearch 2.19+
+    output.write_optional_string(source.search_pipeline.as_deref()); // search pipeline, OpenSearch 2.18+
+    output.write_bool(source.verbose_pipeline); // verbose pipeline, OpenSearch 2.19+
 }
 
 fn read_search_source_builder(
@@ -24679,25 +24702,27 @@ fn read_search_source_builder(
     reject_absent_optional_writeable(input, "search request source search after")?;
     reject_absent_optional_writeable(input, "search request source slice")?;
     reject_absent_optional_writeable(input, "search request source collapse")?;
-    reject_absent_optional_int(input, "search request source track total hits")?;
+    let track_total_hits_up_to = read_optional_int(input)?;
+    if track_total_hits_up_to.is_some_and(|track_total_hits| track_total_hits < -1) {
+        return Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "search request source track total hits",
+            reason: "OpenSearch SearchSourceBuilder track_total_hits must be positive or -1",
+        });
+    }
     reject_absent_bool_list(input, "search request source fetch fields")?;
     reject_absent_optional_writeable(input, "search request source point in time")?;
     reject_absent_bool_map(input, "search request source search pipeline source")?;
-    reject_optional_bool_is_none(input, "search request source include named queries score")?;
+    let include_named_queries_score = read_optional_bool(input)?;
     reject_absent_bool_map(input, "search request source derived fields object")?;
     reject_absent_bool_list(input, "search request source derived fields")?;
-    if input.read_optional_string()?.is_some() {
+    let search_pipeline = input.read_optional_string()?;
+    if search_pipeline.as_deref().is_some_and(str::is_empty) {
         return Err(TransportActionWireError::UnsupportedWireShape {
             shape: "search request source search pipeline",
-            reason: "only absent SearchSourceBuilder search pipeline is decoded",
+            reason: "OpenSearch SearchSourceBuilder search pipeline must be non-empty when present",
         });
     }
-    if input.read_bool()? {
-        return Err(TransportActionWireError::UnsupportedWireShape {
-            shape: "search request source verbose pipeline",
-            reason: "only default SearchSourceBuilder verbose pipeline=false is decoded",
-        });
-    }
+    let verbose_pipeline = input.read_bool()?;
     let source = OpenSearchSearchSourceBuilderWire {
         from,
         size,
@@ -24706,6 +24731,10 @@ fn read_search_source_builder(
         track_scores,
         version,
         seq_no_and_primary_term,
+        track_total_hits_up_to,
+        include_named_queries_score,
+        search_pipeline,
+        verbose_pipeline,
     };
     source.validate_supported_subset()?;
     Ok(source)
@@ -24786,20 +24815,6 @@ fn reject_absent_optional_float(
         return Err(TransportActionWireError::UnsupportedWireShape {
             shape,
             reason: "only absent optional floats are decoded in the empty SearchSourceBuilder subset",
-        });
-    }
-    Ok(())
-}
-
-fn reject_absent_optional_int(
-    input: &mut StreamInput,
-    shape: &'static str,
-) -> Result<(), TransportActionWireError> {
-    if input.read_bool()? {
-        let _ = input.read_i32()?;
-        return Err(TransportActionWireError::UnsupportedWireShape {
-            shape,
-            reason: "only absent optional ints are decoded in the empty SearchSourceBuilder subset",
         });
     }
     Ok(())
@@ -35180,6 +35195,23 @@ fn read_optional_bool(input: &mut StreamInput) -> Result<Option<bool>, Transport
             shape: "optional boolean",
             reason: "optional boolean must use the OpenSearch 0/1/2 wire encoding",
         }),
+    }
+}
+
+fn write_optional_int(output: &mut StreamOutput, value: Option<i32>) {
+    if let Some(value) = value {
+        output.write_bool(true);
+        output.write_i32(value);
+    } else {
+        output.write_bool(false);
+    }
+}
+
+fn read_optional_int(input: &mut StreamInput) -> Result<Option<i32>, TransportActionWireError> {
+    if input.read_bool()? {
+        Ok(Some(input.read_i32()?))
+    } else {
+        Ok(None)
     }
 }
 
@@ -59552,6 +59584,10 @@ mod tests {
                 track_scores: true,
                 version: Some(true),
                 seq_no_and_primary_term: Some(false),
+                track_total_hits_up_to: Some(-1),
+                include_named_queries_score: Some(true),
+                search_pipeline: Some("pipeline-a".to_string()),
+                verbose_pipeline: true,
             }),
             ..OpenSearchSearchRequestWire::default()
         };
@@ -59606,6 +59642,21 @@ mod tests {
             invalid_terminate_after.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "search request source terminate after",
+                ..
+            })
+        ));
+
+        let invalid_track_total_hits = OpenSearchSearchRequestWire {
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                track_total_hits_up_to: Some(-2),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        assert!(matches!(
+            invalid_track_total_hits.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source track total hits",
                 ..
             })
         ));
