@@ -24953,6 +24953,7 @@ pub enum OpenSearchQueryBuilderWire {
     Regexp(OpenSearchRegexpQueryBuilderWire),
     ScriptScore(OpenSearchScriptScoreQueryBuilderWire),
     SimpleQueryString(OpenSearchSimpleQueryStringQueryBuilderWire),
+    SpanTerm(OpenSearchSpanTermQueryBuilderWire),
     Term(OpenSearchTermQueryBuilderWire),
     Terms(OpenSearchTermsQueryBuilderWire),
     TermsSet(OpenSearchTermsSetQueryBuilderWire),
@@ -25301,6 +25302,14 @@ pub struct OpenSearchTermQueryBuilderWire {
     pub field_name: String,
     pub value: Value,
     pub case_insensitive: bool,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct OpenSearchSpanTermQueryBuilderWire {
+    pub boost: f32,
+    pub query_name: Option<String>,
+    pub field_name: String,
+    pub value: Value,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -25800,6 +25809,14 @@ fn write_named_query_builder(output: &mut StreamOutput, query: &OpenSearchQueryB
             output.write_vint(query.fuzzy_max_expansions);
             output.write_bool(query.fuzzy_transpositions);
         }
+        OpenSearchQueryBuilderWire::SpanTerm(query) => {
+            output.write_string("span_term");
+            output.write_f32(query.boost);
+            output.write_optional_string(query.query_name.as_deref());
+            output.write_string(&query.field_name);
+            write_term_query_value(output, &query.value)
+                .expect("validated span_term query value must encode as an OpenSearch generic scalar");
+        }
         OpenSearchQueryBuilderWire::Term(query) => {
             output.write_string("term");
             output.write_f32(query.boost);
@@ -26293,6 +26310,14 @@ fn read_named_query_builder(
                 },
             ))
         }
+        "span_term" => Ok(OpenSearchQueryBuilderWire::SpanTerm(
+            OpenSearchSpanTermQueryBuilderWire {
+                boost: input.read_f32()?,
+                query_name: input.read_optional_string()?,
+                field_name: input.read_string()?,
+                value: read_term_query_value(input)?,
+            },
+        )),
         "term" => Ok(OpenSearchQueryBuilderWire::Term(OpenSearchTermQueryBuilderWire {
             boost: input.read_f32()?,
             query_name: input.read_optional_string()?,
@@ -26366,7 +26391,7 @@ fn read_named_query_builder(
         )),
         _ => Err(TransportActionWireError::UnsupportedWireShape {
             shape: "search request source query",
-            reason: "only OpenSearch bool, boosting, common, combined_fields, constant_score, dis_max, exists, function_score, fuzzy, geo_distance, ids, match_all, match_none, match, match_bool_prefix, match_phrase, match_phrase_prefix, multi_match, nested, prefix, query_string, range, regexp, script_score, simple_query_string, term, terms, terms_set, wildcard, and wrapper QueryBuilder values are decoded by this subset",
+            reason: "only OpenSearch bool, boosting, common, combined_fields, constant_score, dis_max, exists, function_score, fuzzy, geo_distance, ids, match_all, match_none, match, match_bool_prefix, match_phrase, match_phrase_prefix, multi_match, nested, prefix, query_string, range, regexp, script_score, simple_query_string, span_term, term, terms, terms_set, wildcard, and wrapper QueryBuilder values are decoded by this subset",
         }),
     }
 }
@@ -27056,6 +27081,30 @@ fn validate_query_builder(
                     shape: "search request source query",
                     reason: "OpenSearch SimpleQueryStringBuilder fuzzy max expansions must be positive",
                 });
+            }
+        }
+        OpenSearchQueryBuilderWire::SpanTerm(query) => {
+            validate_query_boost_and_name(query.boost, query.query_name.as_deref())?;
+            if query.field_name.is_empty() {
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "search request source query",
+                    reason: "OpenSearch SpanTermQueryBuilder field name must be non-empty",
+                });
+            }
+            match &query.value {
+                Value::String(value) if !value.is_empty() => {}
+                Value::String(_) => {
+                    return Err(TransportActionWireError::UnsupportedWireShape {
+                        shape: "search request source query",
+                        reason: "OpenSearch SpanTermQueryBuilder string value must be non-empty",
+                    });
+                }
+                _ => {
+                    return Err(TransportActionWireError::UnsupportedWireShape {
+                        shape: "search request source query",
+                        reason: "OpenSearch SpanTermQueryBuilder value must be a string in this execution subset",
+                    });
+                }
             }
         }
         OpenSearchQueryBuilderWire::Term(query) => {
@@ -64062,6 +64111,26 @@ mod tests {
         let decoded = OpenSearchSearchRequestWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, terms_set_query_request);
 
+        let span_term_query_request = OpenSearchSearchRequestWire {
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                query: Some(OpenSearchQueryBuilderWire::SpanTerm(
+                    OpenSearchSpanTermQueryBuilderWire {
+                        boost: 1.0,
+                        query_name: Some("span-status".to_string()),
+                        field_name: "body".to_string(),
+                        value: json!("ready"),
+                    },
+                )),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        let mut output = StreamOutput::new();
+        span_term_query_request.write(&mut output);
+
+        let decoded = OpenSearchSearchRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, span_term_query_request);
+
         let exists_query_request = OpenSearchSearchRequestWire {
             source: Some(OpenSearchSearchSourceBuilderWire {
                 query: Some(OpenSearchQueryBuilderWire::Exists(
@@ -65931,6 +66000,28 @@ mod tests {
             invalid_terms_set_script.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "search request source query terms_set minimum_should_match_script",
+                ..
+            })
+        ));
+
+        let invalid_span_term_value = OpenSearchSearchRequestWire {
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                query: Some(OpenSearchQueryBuilderWire::SpanTerm(
+                    OpenSearchSpanTermQueryBuilderWire {
+                        boost: 1.0,
+                        query_name: None,
+                        field_name: "body".to_string(),
+                        value: json!(7),
+                    },
+                )),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        assert!(matches!(
+            invalid_span_term_value.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source query",
                 ..
             })
         ));
