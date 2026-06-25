@@ -997,23 +997,26 @@ def resolve_placeholders(
         body = previous_response.get("body") or {}
         return body.get("id") or body.get("pit_id")
     if value.startswith("${last.") and value.endswith("}"):
-        current: Any = previous_response
-        for part in value[len("${last.") : -1].split("."):
-            if isinstance(current, dict):
-                current = current.get(part)
-            else:
-                return None
-        return current
+        return value_at_path(previous_response, value[len("${last.") : -1])
     if value.startswith("${saved.") and value.endswith("}"):
         return (saved_values or {}).get(value[len("${saved.") : -1])
     return value
 
 
 def response_path(response: dict[str, Any], path: str) -> Any:
-    current: Any = response
+    return value_at_path(response, path)
+
+
+def value_at_path(value: Any, path: str) -> Any:
+    current: Any = value
     for part in path.split("."):
         if isinstance(current, dict):
             current = current.get(part)
+        elif isinstance(current, list) and part.isdigit():
+            index = int(part)
+            if index >= len(current):
+                return None
+            current = current[index]
         else:
             return None
     return current
