@@ -39,6 +39,7 @@ class SourceSearchRegistrationsTests(unittest.TestCase):
             ("aggregation", "RareTermsAggregationBuilder.NAME"),
             ("aggregation", "SamplerAggregationBuilder.NAME"),
             ("aggregation", "GlobalAggregationBuilder.NAME"),
+            ("aggregation", "SignificantTextAggregationBuilder.NAME"),
             ("aggregation", "TopHitsAggregationBuilder.NAME"),
             ("pipeline_aggregation", "BucketSortPipelineAggregationBuilder.NAME"),
             ("suggester", "TermSuggestionBuilder.SUGGESTION_NAME"),

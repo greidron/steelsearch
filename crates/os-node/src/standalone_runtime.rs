@@ -26498,6 +26498,45 @@ fn build_search_aggregations(
             );
             continue;
         }
+        if let Some(significant_text) = aggregation_object
+            .get("significant_text")
+            .and_then(Value::as_object)
+        {
+            let field = significant_text
+                .get("field")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            let size = significant_text
+                .get("size")
+                .and_then(Value::as_u64)
+                .unwrap_or(10) as usize;
+            let min_doc_count = significant_text
+                .get("min_doc_count")
+                .and_then(Value::as_u64)
+                .unwrap_or(3);
+            let background_filter = significant_text.get("background_filter");
+            let background_hits = if background_filter.is_some() {
+                hits.iter()
+                    .filter(|hit| {
+                        background_filter
+                            .is_some_and(|filter| hit_matches_query(hit, filter))
+                    })
+                    .collect::<Vec<_>>()
+            } else {
+                hits.iter().collect::<Vec<_>>()
+            };
+            result.insert(
+                name.clone(),
+                build_fallback_significant_text_aggregation(
+                    field,
+                    size,
+                    min_doc_count,
+                    hits,
+                    &background_hits,
+                ),
+            );
+            continue;
+        }
         if let Some(geo_bounds) = aggregation_object.get("geo_bounds").and_then(Value::as_object) {
             let field = geo_bounds.get("field").and_then(Value::as_str).unwrap_or_default();
             let mut min_lat = f64::INFINITY;
@@ -26774,6 +26813,92 @@ fn build_fallback_significant_terms_aggregation(
         "bg_count": total_bg_count,
         "buckets": buckets
     })
+}
+
+fn build_fallback_significant_text_aggregation(
+    field: &str,
+    size: usize,
+    min_doc_count: u64,
+    hits: &[Value],
+    background_hits: &[&Value],
+) -> Value {
+    let mut buckets = std::collections::BTreeMap::<String, u64>::new();
+    let mut background_counts = std::collections::BTreeMap::<String, u64>::new();
+    for hit in background_hits {
+        if let Some(value) = hit
+            .get("_source")
+            .and_then(|source| lookup_query_field_value(source, field))
+        {
+            for token in fallback_text_bucket_tokens(value) {
+                *background_counts.entry(token).or_insert(0) += 1;
+            }
+        }
+    }
+    for hit in hits {
+        if let Some(value) = hit
+            .get("_source")
+            .and_then(|source| lookup_query_field_value(source, field))
+        {
+            for token in fallback_text_bucket_tokens(value) {
+                *buckets.entry(token).or_insert(0) += 1;
+            }
+        }
+    }
+    let total_doc_count = hits.len() as u64;
+    let total_bg_count = background_hits.len() as u64;
+    let mut buckets = buckets
+        .into_iter()
+        .filter(|(_, doc_count)| *doc_count >= min_doc_count)
+        .map(|(key, doc_count)| {
+            let bg_count = background_counts.get(&key).copied().unwrap_or(doc_count);
+            serde_json::json!({
+                "key": key,
+                "doc_count": doc_count,
+                "bg_count": bg_count,
+                "score": doc_count as f64
+            })
+        })
+        .collect::<Vec<_>>();
+    buckets.sort_by(|left, right| {
+        let left_count = left.get("doc_count").and_then(Value::as_u64).unwrap_or(0);
+        let right_count = right.get("doc_count").and_then(Value::as_u64).unwrap_or(0);
+        right_count.cmp(&left_count).then_with(|| {
+            left.get("key")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .cmp(right.get("key").and_then(Value::as_str).unwrap_or_default())
+        })
+    });
+    buckets.truncate(size);
+    serde_json::json!({
+        "doc_count": total_doc_count,
+        "bg_count": total_bg_count,
+        "buckets": buckets
+    })
+}
+
+fn fallback_text_bucket_tokens(value: &Value) -> Vec<String> {
+    fn visit(value: &Value, values: &mut std::collections::BTreeMap<String, ()>) {
+        match value {
+            Value::Array(items) => {
+                for item in items {
+                    visit(item, values);
+                }
+            }
+            Value::String(text) => {
+                for token in text
+                    .split(|ch: char| !ch.is_ascii_alphanumeric())
+                    .filter(|token| !token.is_empty())
+                {
+                    values.insert(token.to_ascii_lowercase(), ());
+                }
+            }
+            _ => {}
+        }
+    }
+    let mut values = std::collections::BTreeMap::new();
+    visit(value, &mut values);
+    values.into_keys().collect()
 }
 
 fn fallback_scalar_bucket_values(value: &Value) -> Vec<Value> {
@@ -43447,11 +43572,11 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             200
         );
 
-        for (id, service) in [
-            ("doc-1", "checkout"),
-            ("doc-2", "checkout"),
-            ("doc-3", "checkout"),
-            ("doc-4", "catalog"),
+        for (id, service, message) in [
+            ("doc-1", "checkout", "checkout timeout warning"),
+            ("doc-2", "checkout", "checkout timeout retry"),
+            ("doc-3", "checkout", "checkout success"),
+            ("doc-4", "catalog", "catalog success"),
         ] {
             assert_eq!(
                 node.handle_rest_request(
@@ -43460,7 +43585,8 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                         &format!("/logs-significant-terms-000001/_doc/{id}?refresh=true"),
                     )
                     .with_json_body(serde_json::json!({
-                        "service": service
+                        "service": service,
+                        "message": message
                     })),
                 )
                 .status,
@@ -43519,6 +43645,43 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             significant_terms_background.body["aggregations"]["sig"]["buckets"][0]["doc_count"],
             3
+        );
+
+        let significant_text = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-significant-terms-000001/_search")
+                .with_json_body(serde_json::json!({
+                    "size": 0,
+                    "aggs": {
+                        "interesting_text": {
+                            "significant_text": {
+                                "field": "message",
+                                "size": 2,
+                                "min_doc_count": 2,
+                                "background_filter": {
+                                    "match_all": {}
+                                }
+                            }
+                        }
+                    }
+                })),
+        );
+        assert_eq!(significant_text.status, 200);
+        assert_eq!(
+            significant_text.body["aggregations"]["interesting_text"]["buckets"],
+            serde_json::json!([
+                {
+                    "key": "checkout",
+                    "doc_count": 3,
+                    "bg_count": 3,
+                    "score": 3.0
+                },
+                {
+                    "key": "success",
+                    "doc_count": 2,
+                    "bg_count": 2,
+                    "score": 2.0
+                }
+            ])
         );
     }
 
