@@ -218,7 +218,7 @@ Current 0.2.4 mixed-cluster coverage evidence:
   runtime entries. Of the transport source rows, 42 are `implemented`, 118 are
   `partial`, and none remain `planned`; the partial rows still require
   owner-level server-side execution work before they can be promoted. Of the
-  REST source rows, 371 are in scope and all are matched by fixtures, but 238
+  REST source rows, 371 are in scope and all are matched by fixtures, but 217
   REST rows remain classified as `planned` in the source-derived matrix until
   each route has an owner-level implementation classification and exhaustive
   positive/negative live comparison coverage.
