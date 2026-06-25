@@ -19092,6 +19092,25 @@ fn build_x_content_parse_search_response(reason: &str) -> RestResponse {
     )
 }
 
+fn build_x_content_parse_search_response_with_root_cause(reason: &str) -> RestResponse {
+    RestResponse::json(
+        400,
+        serde_json::json!({
+            "error": {
+                "type": "x_content_parse_exception",
+                "reason": reason,
+                "root_cause": [
+                    {
+                        "type": "x_content_parse_exception",
+                        "reason": reason
+                    }
+                ]
+            },
+            "status": 400
+        }),
+    )
+}
+
 fn build_unexpected_end_of_input_search_response() -> RestResponse {
     RestResponse::json(
         400,
@@ -20184,10 +20203,10 @@ fn validate_pit_request_body(pit: &Value) -> Option<RestResponse> {
             "unsupported search option [pit]",
         ));
     }
-    if object.keys().any(|key| key != "id" && key != "keep_alive") {
-        return Some(build_unsupported_search_response(
-            "unsupported search option [pit]",
-        ));
+    if let Some(key) = object.keys().find(|key| *key != "id" && *key != "keep_alive") {
+        return Some(build_x_content_parse_search_response_with_root_cause(&format!(
+            "[1:51] [pit] unknown field [{key}]"
+        )));
     }
     if object
         .get("keep_alive")
@@ -39534,6 +39553,27 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             missing_pit_id_search.body["error"]["reason"],
             "point int time id is not provided"
+        );
+
+        let unknown_pit_field_search = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_search")
+                .with_json_body(serde_json::json!({
+                    "pit": {
+                        "id": "pit-missing",
+                        "keep_alive": "1m",
+                        "unexpected": true
+                    },
+                    "query": { "match_all": {} }
+                })),
+        );
+        assert_eq!(unknown_pit_field_search.status, 400);
+        assert_eq!(
+            unknown_pit_field_search.body["error"]["type"],
+            "x_content_parse_exception"
+        );
+        assert_eq!(
+            unknown_pit_field_search.body["error"]["root_cause"][0]["reason"],
+            "[1:51] [pit] unknown field [unexpected]"
         );
 
         let empty_pit_id_search = node.handle_rest_request(
