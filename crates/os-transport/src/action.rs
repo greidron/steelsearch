@@ -24546,6 +24546,7 @@ pub struct OpenSearchSearchSourceBuilderWire {
     pub slice: Option<OpenSearchSliceBuilderWire>,
     pub collapse: Option<OpenSearchCollapseBuilderWire>,
     pub stats: Option<Vec<String>>,
+    pub doc_value_fields: Option<Vec<OpenSearchFieldAndFormatWire>>,
     pub fetch_fields: Option<Vec<OpenSearchFieldAndFormatWire>>,
     pub terminate_after: i32,
     pub timeout: Option<TimeValueWire>,
@@ -24571,6 +24572,7 @@ impl Default for OpenSearchSearchSourceBuilderWire {
             slice: None,
             collapse: None,
             stats: None,
+            doc_value_fields: None,
             fetch_fields: None,
             terminate_after: 0,
             timeout: None,
@@ -24624,6 +24626,10 @@ impl OpenSearchSearchSourceBuilderWire {
         }
         validate_search_source_stats(self.stats.as_deref())?;
         validate_field_and_format_list(
+            self.doc_value_fields.as_deref(),
+            "search request source doc value fields",
+        )?;
+        validate_field_and_format_list(
             self.fetch_fields.as_deref(),
             "search request source fetch fields",
         )?;
@@ -24653,7 +24659,7 @@ fn write_search_source_builder(
     output.write_bool(false); // aggregations
     write_optional_bool(output, source.explain); // explain
     output.write_bool(false); // fetch source context
-    output.write_bool(false); // doc value fields
+    write_optional_field_and_format_list(output, source.doc_value_fields.as_deref()); // doc value fields
     output.write_bool(false); // stored fields
     output.write_vint(source.from); // from
     output.write_bool(false); // highlight
@@ -24694,7 +24700,8 @@ fn read_search_source_builder(
     reject_absent_optional_writeable(input, "search request source aggregations")?;
     let explain = read_optional_bool(input)?;
     reject_absent_optional_writeable(input, "search request source fetch source")?;
-    reject_absent_bool_list(input, "search request source doc value fields")?;
+    let doc_value_fields =
+        read_optional_field_and_format_list(input, "search request source doc value fields")?;
     reject_absent_optional_writeable(input, "search request source stored fields")?;
     let from = input.read_vint()?;
     if from < 0 {
@@ -24775,6 +24782,7 @@ fn read_search_source_builder(
         slice,
         collapse,
         stats,
+        doc_value_fields,
         fetch_fields,
         terminate_after,
         timeout,
@@ -59964,6 +59972,16 @@ mod tests {
                     max_concurrent_group_requests: 2,
                 }),
                 stats: Some(vec!["tenant-stats".to_string(), "latency".to_string()]),
+                doc_value_fields: Some(vec![
+                    OpenSearchFieldAndFormatWire {
+                        field: "rank".to_string(),
+                        format: None,
+                    },
+                    OpenSearchFieldAndFormatWire {
+                        field: "@timestamp".to_string(),
+                        format: Some("epoch_millis".to_string()),
+                    },
+                ]),
                 fetch_fields: Some(vec![
                     OpenSearchFieldAndFormatWire {
                         field: "status".to_string(),
@@ -60183,6 +60201,24 @@ mod tests {
             invalid_stats.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "search request source stats",
+                ..
+            })
+        ));
+
+        let invalid_doc_value_fields = OpenSearchSearchRequestWire {
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                doc_value_fields: Some(vec![OpenSearchFieldAndFormatWire {
+                    field: String::new(),
+                    format: None,
+                }]),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        assert!(matches!(
+            invalid_doc_value_fields.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source doc value fields",
                 ..
             })
         ));
