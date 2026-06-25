@@ -990,6 +990,19 @@ impl IndexEngine for TantivyEngine {
         })
     }
 
+    fn delete_index(&self, index: &str) -> EngineResult<()> {
+        let mut store = self
+            .store
+            .write()
+            .expect("tantivy engine store rwlock poisoned");
+        if store.indices.remove(index).is_none() {
+            return Err(EngineError::IndexNotFound {
+                index: index.to_string(),
+            });
+        }
+        Ok(())
+    }
+
     fn index_document(&self, request: IndexDocumentRequest) -> EngineResult<IndexDocumentResponse> {
         let mut store = self
             .store

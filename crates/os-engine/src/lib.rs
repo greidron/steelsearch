@@ -1272,6 +1272,7 @@ impl SearchHit {
 
 pub trait IndexEngine: Send + Sync {
     fn create_index(&self, request: CreateIndexRequest) -> EngineResult<CreateIndexResponse>;
+    fn delete_index(&self, index: &str) -> EngineResult<()>;
     fn index_document(&self, request: IndexDocumentRequest) -> EngineResult<IndexDocumentResponse>;
     fn index_document_with_refresh(
         &self,
@@ -1521,6 +1522,10 @@ mod tests {
                 index: request.index,
                 acknowledged: true,
             })
+        }
+
+        fn delete_index(&self, _index: &str) -> EngineResult<()> {
+            Ok(())
         }
 
         fn index_document(

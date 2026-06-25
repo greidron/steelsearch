@@ -5828,6 +5828,7 @@ impl SteelNode {
                 .lock()
                 .expect("metadata manifest state lock poisoned");
             for index in matched {
+                let _ = self.native_engine.delete_index(&index);
                 created.remove(&index);
                 docs.retain(|key, _| !key.starts_with(&format!("{index}:")));
                 manifest["indices"]
@@ -31288,6 +31289,67 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 ["is_write_index"],
             Value::Bool(true)
         );
+    }
+
+    #[test]
+    fn rollover_named_target_resolves_create_index_body_write_alias_after_cleanup() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        let initial_create = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/rollover-logs-000001").with_json_body(
+                serde_json::json!({
+                    "aliases": {
+                        "rollover-write": {
+                            "is_write_index": true
+                        }
+                    }
+                }),
+            ),
+        );
+        assert_eq!(initial_create.status, 200);
+
+        let initial_readback =
+            node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_alias/rollover-write"));
+        assert_eq!(initial_readback.status, 200);
+
+        let cleanup = node.handle_rest_request(RestRequest::new(
+            RestMethod::Delete,
+            "/rollover-logs-000001,rollover-logs-000002?ignore_unavailable=true",
+        ));
+        assert_eq!(cleanup.status, 200);
+
+        let create = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/rollover-logs-000001").with_json_body(
+                serde_json::json!({
+                    "aliases": {
+                        "rollover-write": {
+                            "is_write_index": true
+                        }
+                    }
+                }),
+            ),
+        );
+        assert_eq!(create.status, 200);
+
+        let readback =
+            node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_alias/rollover-write"));
+        assert_eq!(readback.status, 200);
+        assert_eq!(
+            readback.body["rollover-logs-000001"]["aliases"]["rollover-write"]["is_write_index"],
+            Value::Bool(true)
+        );
+
+        let rollover = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/rollover-write/_rollover/rollover-logs-000002",
+        ));
+        assert_eq!(rollover.status, 200, "{rollover:?}");
+        assert_eq!(rollover.body["old_index"], "rollover-logs-000001");
+        assert_eq!(rollover.body["new_index"], "rollover-logs-000002");
+        assert_eq!(rollover.body["rolled_over"], Value::Bool(true));
     }
 
     #[test]

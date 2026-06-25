@@ -158,6 +158,16 @@ def compare_targets(case: dict[str, Any], steelsearch: dict[str, Any], opensearc
     return errors
 
 
+def check_setup_response(setup: dict[str, Any], response: dict[str, Any]) -> list[str]:
+    expected_status = setup.get("expected_status")
+    status = response.get("status")
+    if expected_status is not None:
+        return [] if status == expected_status else [f"expected status {expected_status} but got {status}"]
+    if isinstance(status, int) and 200 <= status < 300:
+        return []
+    return [f"expected 2xx setup status but got {status}"]
+
+
 def main() -> int:
     args = parse_args()
     if not args.steelsearch_url or not args.opensearch_url:
@@ -181,13 +191,36 @@ def main() -> int:
 
     exit_code = 0
     for case in fixture.get("cases", []):
+        setup_report: list[dict[str, Any]] = []
+        setup_errors: list[str] = []
         for setup in case.get("setup", []):
-            request_response(args.steelsearch_url, setup, args.timeout)
-            request_response(args.opensearch_url, setup, args.timeout)
+            steelsearch_setup = request_response(args.steelsearch_url, setup, args.timeout)
+            opensearch_setup = request_response(args.opensearch_url, setup, args.timeout)
+            steelsearch_setup_errors = check_setup_response(setup, steelsearch_setup)
+            opensearch_setup_errors = check_setup_response(setup, opensearch_setup)
+            setup_name = setup.get("name") or f"{setup['method']} {setup['path']}"
+            setup_errors.extend(
+                f"setup:{setup_name}:steelsearch: {error}" for error in steelsearch_setup_errors
+            )
+            setup_errors.extend(
+                f"setup:{setup_name}:opensearch: {error}" for error in opensearch_setup_errors
+            )
+            setup_report.append(
+                {
+                    "name": setup_name,
+                    "steelsearch": steelsearch_setup,
+                    "opensearch": opensearch_setup,
+                    "errors": [
+                        *[f"steelsearch: {error}" for error in steelsearch_setup_errors],
+                        *[f"opensearch: {error}" for error in opensearch_setup_errors],
+                    ],
+                }
+            )
         steelsearch = normalize_response(case, request_response(args.steelsearch_url, case, args.timeout))
         opensearch = normalize_response(case, request_response(args.opensearch_url, case, args.timeout))
         errors = (
-            [f"steelsearch: {error}" for error in check_target(case["steelsearch_compare"], steelsearch)]
+            setup_errors
+            + [f"steelsearch: {error}" for error in check_target(case["steelsearch_compare"], steelsearch)]
             + [f"opensearch: {error}" for error in check_target(case["opensearch_compare"], opensearch)]
             + compare_targets(case, steelsearch, opensearch)
         )
@@ -204,6 +237,7 @@ def main() -> int:
                 "steelsearch": steelsearch,
                 "opensearch": opensearch,
                 "errors": errors,
+                "setup": setup_report,
             }
         )
 
