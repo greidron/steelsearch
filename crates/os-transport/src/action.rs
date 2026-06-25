@@ -24926,6 +24926,7 @@ fn validate_search_after_values(values: Option<&[Value]>) -> Result<(), Transpor
 pub enum OpenSearchSortBuilderWire {
     Field(OpenSearchFieldSortBuilderWire),
     Score(OpenSearchScoreSortBuilderWire),
+    ShardDoc(OpenSearchShardDocSortBuilderWire),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -24941,6 +24942,11 @@ pub struct OpenSearchFieldSortBuilderWire {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OpenSearchScoreSortBuilderWire {
+    pub order: OpenSearchSortOrderWire,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchShardDocSortBuilderWire {
     pub order: OpenSearchSortOrderWire,
 }
 
@@ -24982,6 +24988,10 @@ fn write_optional_field_sort_builders(
                 }
                 OpenSearchSortBuilderWire::Score(value) => {
                     output.write_string("_score");
+                    write_sort_order(output, value.order);
+                }
+                OpenSearchSortBuilderWire::ShardDoc(value) => {
+                    output.write_string("_shard_doc");
                     write_sort_order(output, value.order);
                 }
             }
@@ -25040,10 +25050,17 @@ fn read_optional_field_sort_builders(
                     },
                 ));
             }
+            "_shard_doc" => {
+                values.push(OpenSearchSortBuilderWire::ShardDoc(
+                    OpenSearchShardDocSortBuilderWire {
+                        order: read_sort_order(input)?,
+                    },
+                ));
+            }
             _ => {
                 return Err(TransportActionWireError::UnsupportedWireShape {
                     shape: "search request source sorts",
-                    reason: "only OpenSearch field_sort and _score SortBuilder values are decoded by this subset",
+                    reason: "only OpenSearch field_sort, _score, and _shard_doc SortBuilder values are decoded by this subset",
                 });
             }
         }
@@ -25059,7 +25076,9 @@ fn write_sort_order(output: &mut StreamOutput, value: OpenSearchSortOrderWire) {
     });
 }
 
-fn read_sort_order(input: &mut StreamInput) -> Result<OpenSearchSortOrderWire, TransportActionWireError> {
+fn read_sort_order(
+    input: &mut StreamInput,
+) -> Result<OpenSearchSortOrderWire, TransportActionWireError> {
     match input.read_vint()? {
         0 => Ok(OpenSearchSortOrderWire::Asc),
         1 => Ok(OpenSearchSortOrderWire::Desc),
@@ -60787,6 +60806,9 @@ mod tests {
                 sorts: Some(vec![
                     OpenSearchSortBuilderWire::Score(OpenSearchScoreSortBuilderWire {
                         order: OpenSearchSortOrderWire::Desc,
+                    }),
+                    OpenSearchSortBuilderWire::ShardDoc(OpenSearchShardDocSortBuilderWire {
+                        order: OpenSearchSortOrderWire::Asc,
                     }),
                     OpenSearchSortBuilderWire::Field(OpenSearchFieldSortBuilderWire {
                         field_name: "@timestamp".to_string(),
