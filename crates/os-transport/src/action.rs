@@ -24930,6 +24930,7 @@ fn validate_search_after_values(values: Option<&[Value]>) -> Result<(), Transpor
 pub enum OpenSearchQueryBuilderWire {
     Bool(OpenSearchBoolQueryBuilderWire),
     Exists(OpenSearchExistsQueryBuilderWire),
+    Fuzzy(OpenSearchFuzzyQueryBuilderWire),
     Ids(OpenSearchIdsQueryBuilderWire),
     MatchAll(OpenSearchMatchAllQueryBuilderWire),
     Match(OpenSearchMatchQueryBuilderWire),
@@ -24965,6 +24966,31 @@ pub struct OpenSearchIdsQueryBuilderWire {
     pub boost: f32,
     pub query_name: Option<String>,
     pub ids: Vec<String>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct OpenSearchFuzzyQueryBuilderWire {
+    pub boost: f32,
+    pub query_name: Option<String>,
+    pub field_name: String,
+    pub value: Value,
+    pub fuzziness: OpenSearchFuzzinessWire,
+    pub prefix_length: i32,
+    pub max_expansions: i32,
+    pub transpositions: bool,
+    pub rewrite: Option<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchFuzzinessWire {
+    pub value: String,
+    pub custom_auto: Option<OpenSearchFuzzinessAutoBoundsWire>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct OpenSearchFuzzinessAutoBoundsWire {
+    pub low_distance: i32,
+    pub high_distance: i32,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -25114,6 +25140,19 @@ fn write_named_query_builder(output: &mut StreamOutput, query: &OpenSearchQueryB
             output.write_optional_string(query.query_name.as_deref());
             output.write_string(&query.field_name);
         }
+        OpenSearchQueryBuilderWire::Fuzzy(query) => {
+            output.write_string("fuzzy");
+            output.write_f32(query.boost);
+            output.write_optional_string(query.query_name.as_deref());
+            output.write_string(&query.field_name);
+            write_term_query_value(output, &query.value)
+                .expect("validated fuzzy query value must encode as an OpenSearch generic scalar");
+            write_fuzziness(output, &query.fuzziness);
+            output.write_vint(query.prefix_length);
+            output.write_vint(query.max_expansions);
+            output.write_bool(query.transpositions);
+            output.write_optional_string(query.rewrite.as_deref());
+        }
         OpenSearchQueryBuilderWire::Ids(query) => {
             output.write_string("ids");
             output.write_f32(query.boost);
@@ -25242,6 +25281,19 @@ fn read_named_query_builder(
                 boost: input.read_f32()?,
                 query_name: input.read_optional_string()?,
                 field_name: input.read_string()?,
+            },
+        )),
+        "fuzzy" => Ok(OpenSearchQueryBuilderWire::Fuzzy(
+            OpenSearchFuzzyQueryBuilderWire {
+                boost: input.read_f32()?,
+                query_name: input.read_optional_string()?,
+                field_name: input.read_string()?,
+                value: read_term_query_value(input)?,
+                fuzziness: read_fuzziness(input)?,
+                prefix_length: input.read_vint()?,
+                max_expansions: input.read_vint()?,
+                transpositions: input.read_bool()?,
+                rewrite: input.read_optional_string()?,
             },
         )),
         "ids" => Ok(OpenSearchQueryBuilderWire::Ids(
@@ -25390,7 +25442,7 @@ fn read_named_query_builder(
         )),
         _ => Err(TransportActionWireError::UnsupportedWireShape {
             shape: "search request source query",
-            reason: "only OpenSearch bool, exists, ids, match_all, match, prefix, range, regexp, term, terms, and wildcard QueryBuilder values are decoded by this subset",
+            reason: "only OpenSearch bool, exists, fuzzy, ids, match_all, match, prefix, range, regexp, term, terms, and wildcard QueryBuilder values are decoded by this subset",
         }),
     }
 }
@@ -25445,6 +25497,30 @@ fn validate_query_builder(
                     reason: "OpenSearch ExistsQueryBuilder field name must be non-empty",
                 });
             }
+        }
+        OpenSearchQueryBuilderWire::Fuzzy(query) => {
+            validate_query_boost_and_name(query.boost, query.query_name.as_deref())?;
+            if query.field_name.is_empty() {
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "search request source query",
+                    reason: "OpenSearch FuzzyQueryBuilder field name must be non-empty",
+                });
+            }
+            validate_term_query_value(&query.value)?;
+            validate_fuzziness(&query.fuzziness)?;
+            if query.prefix_length < 0 {
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "search request source query",
+                    reason: "OpenSearch FuzzyQueryBuilder prefix length must be non-negative",
+                });
+            }
+            if query.max_expansions <= 0 {
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "search request source query",
+                    reason: "OpenSearch FuzzyQueryBuilder max expansions must be positive",
+                });
+            }
+            validate_optional_non_empty_query_string(query.rewrite.as_deref())?;
         }
         OpenSearchQueryBuilderWire::Ids(query) => {
             validate_query_boost_and_name(query.boost, query.query_name.as_deref())?;
@@ -25601,6 +25677,58 @@ fn validate_match_query_value(value: &Value) -> Result<(), TransportActionWireEr
             reason: "OpenSearch MatchQueryBuilder query value must be scalar",
         }),
     }
+}
+
+fn validate_fuzziness(value: &OpenSearchFuzzinessWire) -> Result<(), TransportActionWireError> {
+    if value.value.is_empty() {
+        return Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "search request source query",
+            reason: "OpenSearch Fuzziness value must be non-empty",
+        });
+    }
+    if let Some(bounds) = value.custom_auto {
+        if bounds.low_distance < 0
+            || bounds.high_distance < 0
+            || bounds.low_distance > bounds.high_distance
+        {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source query",
+                reason: "OpenSearch Fuzziness custom AUTO bounds must be non-negative and ordered",
+            });
+        }
+    }
+    Ok(())
+}
+
+fn write_fuzziness(output: &mut StreamOutput, value: &OpenSearchFuzzinessWire) {
+    output.write_string(&value.value);
+    if let Some(bounds) = value.custom_auto {
+        output.write_bool(true);
+        output.write_vint(bounds.low_distance);
+        output.write_vint(bounds.high_distance);
+    } else {
+        output.write_bool(false);
+    }
+}
+
+fn read_fuzziness(
+    input: &mut StreamInput,
+) -> Result<OpenSearchFuzzinessWire, TransportActionWireError> {
+    let value = input.read_string()?;
+    let custom_auto = if input.read_bool()? {
+        Some(OpenSearchFuzzinessAutoBoundsWire {
+            low_distance: input.read_vint()?,
+            high_distance: input.read_vint()?,
+        })
+    } else {
+        None
+    };
+    let fuzziness = OpenSearchFuzzinessWire {
+        value,
+        custom_auto,
+    };
+    validate_fuzziness(&fuzziness)?;
+    Ok(fuzziness)
 }
 
 fn write_match_operator(output: &mut StreamOutput, value: OpenSearchMatchOperatorWire) {
@@ -62035,6 +62163,37 @@ mod tests {
         let decoded = OpenSearchSearchRequestWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, regexp_query_request);
 
+        let fuzzy_query_request = OpenSearchSearchRequestWire {
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                query: Some(OpenSearchQueryBuilderWire::Fuzzy(
+                    OpenSearchFuzzyQueryBuilderWire {
+                        boost: 1.0,
+                        query_name: Some("tenant-fuzzy".to_string()),
+                        field_name: "tenant".to_string(),
+                        value: json!("tenant-a"),
+                        fuzziness: OpenSearchFuzzinessWire {
+                            value: "AUTO".to_string(),
+                            custom_auto: Some(OpenSearchFuzzinessAutoBoundsWire {
+                                low_distance: 3,
+                                high_distance: 6,
+                            }),
+                        },
+                        prefix_length: 1,
+                        max_expansions: 50,
+                        transpositions: true,
+                        rewrite: Some("constant_score".to_string()),
+                    },
+                )),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        let mut output = StreamOutput::new();
+        fuzzy_query_request.write(&mut output);
+
+        let decoded = OpenSearchSearchRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, fuzzy_query_request);
+
         let match_query_request = OpenSearchSearchRequestWire {
             source: Some(OpenSearchSearchSourceBuilderWire {
                 query: Some(OpenSearchQueryBuilderWire::Match(
@@ -62633,6 +62792,69 @@ mod tests {
         };
         assert!(matches!(
             invalid_regexp_rewrite.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source query",
+                ..
+            })
+        ));
+
+        let invalid_fuzzy_prefix = OpenSearchSearchRequestWire {
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                query: Some(OpenSearchQueryBuilderWire::Fuzzy(
+                    OpenSearchFuzzyQueryBuilderWire {
+                        boost: 1.0,
+                        query_name: None,
+                        field_name: "tenant".to_string(),
+                        value: json!("tenant-a"),
+                        fuzziness: OpenSearchFuzzinessWire {
+                            value: "AUTO".to_string(),
+                            custom_auto: None,
+                        },
+                        prefix_length: -1,
+                        max_expansions: 50,
+                        transpositions: true,
+                        rewrite: None,
+                    },
+                )),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        assert!(matches!(
+            invalid_fuzzy_prefix.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source query",
+                ..
+            })
+        ));
+
+        let invalid_fuzzy_bounds = OpenSearchSearchRequestWire {
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                query: Some(OpenSearchQueryBuilderWire::Fuzzy(
+                    OpenSearchFuzzyQueryBuilderWire {
+                        boost: 1.0,
+                        query_name: None,
+                        field_name: "tenant".to_string(),
+                        value: json!("tenant-a"),
+                        fuzziness: OpenSearchFuzzinessWire {
+                            value: "AUTO".to_string(),
+                            custom_auto: Some(OpenSearchFuzzinessAutoBoundsWire {
+                                low_distance: 6,
+                                high_distance: 3,
+                            }),
+                        },
+                        prefix_length: 0,
+                        max_expansions: 50,
+                        transpositions: true,
+                        rewrite: None,
+                    },
+                )),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        assert!(matches!(
+            invalid_fuzzy_bounds.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "search request source query",
                 ..
