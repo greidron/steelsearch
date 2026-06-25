@@ -9807,6 +9807,9 @@ impl SteelNode {
         let request = standalone_native_search_request(resolved_indices, body).ok()?;
         match self.native_engine.search(request) {
             Ok(response) => {
+                if response.total_hits == 0 {
+                    return None;
+                }
                 let total_shards = resolved_indices
                     .iter()
                     .map(|index| self.index_primary_shard_count(index))
@@ -38448,6 +38451,9 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
 
     #[test]
     fn knn_settings_and_model_state_persist_across_shared_runtime_restart() {
+        let _lock = security_env_lock();
+        let previous_persist_flag = env::var("STEELSEARCH_PERSIST_SHARED_RUNTIME_STATE_PER_WRITE").ok();
+        env::set_var("STEELSEARCH_PERSIST_SHARED_RUNTIME_STATE_PER_WRITE", "1");
         let root = std::env::temp_dir().join(format!(
             "steelsearch-knn-state-{}",
             std::time::SystemTime::now()
@@ -38517,6 +38523,11 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
 
         let _ = std::fs::remove_file(shared_state_path);
         let _ = std::fs::remove_dir_all(root);
+        if let Some(value) = previous_persist_flag {
+            env::set_var("STEELSEARCH_PERSIST_SHARED_RUNTIME_STATE_PER_WRITE", value);
+        } else {
+            env::remove_var("STEELSEARCH_PERSIST_SHARED_RUNTIME_STATE_PER_WRITE");
+        }
     }
 
     #[test]
