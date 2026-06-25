@@ -47,12 +47,17 @@ static SHUTDOWN_REQUESTED: AtomicBool = AtomicBool::new(false);
 static TRANSPORT_REQUEST_SEQUENCE: AtomicI64 = AtomicI64::new(10_000);
 static DEV_TRANSPORT_PIT_BINDINGS: OnceLock<DevTransportPitBindings> = OnceLock::new();
 static DEV_TRANSPORT_SCROLL_BINDINGS: OnceLock<DevTransportScrollBindings> = OnceLock::new();
+const TRANSPORT_PIT_EXPIRY_REAPER_GRACE_MILLIS: u64 = 60_000;
 
 fn now_epoch_ms() -> u128 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis()
+}
+
+fn transport_pit_expires_at_millis(now_millis: u128, keep_alive_millis: u64) -> u128 {
+    now_millis + u128::from(keep_alive_millis.max(TRANSPORT_PIT_EXPIRY_REAPER_GRACE_MILLIS))
 }
 
 fn remote_transport_queue_gate_from_env() -> Arc<RemoteTransportQueueGate> {
@@ -3737,7 +3742,10 @@ fn build_local_create_pit_response(
                     indices: resolved_indices,
                     documents,
                     keep_alive_millis: keep_alive_millis_u64,
-                    expires_at_millis: now_millis + u128::from(keep_alive_millis_u64),
+                    expires_at_millis: transport_pit_expires_at_millis(
+                        now_millis,
+                        keep_alive_millis_u64,
+                    ),
                     creation_time_millis: now_millis,
                 },
             );
@@ -11117,6 +11125,84 @@ mod tests {
             },
         )
         .is_none());
+    }
+
+    #[test]
+    fn create_pit_transport_route_applies_minimum_expiry_grace_for_short_keep_alive() {
+        dev_transport_pit_bindings()
+            .contexts
+            .lock()
+            .expect("dev transport PIT contexts lock poisoned")
+            .clear();
+        *dev_transport_pit_bindings()
+            .next_id
+            .lock()
+            .expect("dev transport next PIT id lock poisoned") = 0;
+        dev_transport_pit_bindings()
+            .created_indices
+            .lock()
+            .expect("dev transport created indices lock poisoned")
+            .clear();
+        dev_transport_pit_bindings()
+            .created_indices
+            .lock()
+            .expect("dev transport created indices lock poisoned")
+            .insert("logs-short-pit-000001".to_string());
+        *dev_transport_pit_bindings()
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned") = serde_json::json!({
+            "indices": {
+                "logs-short-pit-000001": {
+                    "settings": {
+                        "index": {
+                            "number_of_shards": "1"
+                        }
+                    }
+                }
+            }
+        });
+
+        let request = os_transport::action::OpenSearchCreatePitRequestWire {
+            indices: vec!["logs-short-pit-000001".to_string()],
+            keep_alive: os_transport::action::TimeValueWire::millis(1),
+            ..os_transport::action::OpenSearchCreatePitRequestWire::default()
+        };
+        let frame = os_transport::action::build_opensearch_create_pit_request_message(
+            193,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        let create_response = build_local_create_pit_response(
+            193,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &frame[6..],
+        );
+        let mut frame = BytesMut::from(&create_response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected create-PIT response message");
+        };
+        let create_response =
+            os_transport::action::read_opensearch_create_pit_response_message(&message).unwrap();
+        assert_eq!(create_response.pit_id, "pit-1");
+
+        let context = dev_transport_pit_bindings()
+            .contexts
+            .lock()
+            .expect("dev transport PIT contexts lock poisoned")
+            .get("pit-1")
+            .cloned()
+            .expect("short PIT context should be allocated");
+        assert_eq!(context.keep_alive_millis, 1);
+        assert_eq!(
+            context.expires_at_millis,
+            context.creation_time_millis + u128::from(TRANSPORT_PIT_EXPIRY_REAPER_GRACE_MILLIS)
+        );
     }
 
     #[test]
