@@ -9143,7 +9143,7 @@ impl SteelNode {
         let rest_total_hits_as_int =
             query_param_is_true(request.query_params.get("rest_total_hits_as_int"));
         if rest_total_hits_as_int {
-            if let Some(threshold) = body.get("track_total_hits").and_then(Value::as_u64) {
+            if let Some(threshold) = search_track_total_hits_threshold(&body) {
                 return RestResponse::json(
                     400,
                     serde_json::json!({
@@ -9490,8 +9490,8 @@ impl SteelNode {
                 terminated_early = Some(false);
             }
         }
-        let track_total_hits_disabled = body.get("track_total_hits") == Some(&Value::Bool(false));
-        if let Some(threshold) = body.get("track_total_hits").and_then(Value::as_u64) {
+        let track_total_hits_disabled = search_track_total_hits_disabled(&body);
+        if let Some(threshold) = search_track_total_hits_threshold(&body) {
             if total_matches > threshold {
                 total_value = threshold;
                 total_relation = "gte";
@@ -18983,8 +18983,8 @@ fn native_search_response_to_rest_response(
             }
         }
     }
-    let track_total_hits_disabled = body.get("track_total_hits") == Some(&Value::Bool(false));
-    if let Some(threshold) = body.get("track_total_hits").and_then(Value::as_u64) {
+    let track_total_hits_disabled = search_track_total_hits_disabled(body);
+    if let Some(threshold) = search_track_total_hits_threshold(body) {
         if response.total_hits > threshold {
             response_body["hits"]["total"] =
                 serde_json::json!({ "value": threshold, "relation": "gte" });
@@ -19310,7 +19310,7 @@ fn validate_search_request_body(body: &Value, scroll: bool) -> Option<RestRespon
     }
     if let Some(track_total_hits) = body.get("track_total_hits") {
         if !matches!(track_total_hits, Value::Bool(_))
-            && track_total_hits.as_u64().is_none()
+            && search_track_total_hits_value(track_total_hits).is_none()
         {
             return Some(build_unsupported_search_response(
                 "unsupported search option [track_total_hits]",
@@ -19471,10 +19471,8 @@ fn validate_scroll_context_request_body(
     }
     const TRACK_TOTAL_HITS_ACCURATE: u64 = i32::MAX as u64;
     let mut validation_errors = Vec::new();
-    if body.get("track_total_hits") == Some(&Value::Bool(false))
-        || body
-            .get("track_total_hits")
-            .and_then(Value::as_u64)
+    if search_track_total_hits_disabled(body)
+        || search_track_total_hits_threshold(body)
             .is_some_and(|threshold| threshold != TRACK_TOTAL_HITS_ACCURATE)
     {
         validation_errors.push("disabling [track_total_hits] is not allowed in a scroll context");
@@ -19788,6 +19786,7 @@ fn parse_rest_track_total_hits(raw: &str) -> Option<Value> {
     match raw {
         "true" => Some(Value::Bool(true)),
         "false" => Some(Value::Bool(false)),
+        "-1" => Some(Value::from(-1)),
         _ => {
             if raw.starts_with('-') {
                 return None;
@@ -19795,6 +19794,31 @@ fn parse_rest_track_total_hits(raw: &str) -> Option<Value> {
             raw.parse::<u64>().ok().map(Value::from)
         }
     }
+}
+
+fn search_track_total_hits_value(value: &Value) -> Option<i64> {
+    if matches!(value, Value::Bool(_)) {
+        return Some(0);
+    }
+    if value.as_i64() == Some(-1) {
+        return Some(-1);
+    }
+    value
+        .as_u64()
+        .and_then(|threshold| i64::try_from(threshold).ok())
+}
+
+fn search_track_total_hits_disabled(body: &Value) -> bool {
+    body.get("track_total_hits") == Some(&Value::Bool(false))
+        || body
+            .get("track_total_hits")
+            .and_then(Value::as_i64)
+            .is_some_and(|threshold| threshold == -1)
+}
+
+fn search_track_total_hits_threshold(body: &Value) -> Option<u64> {
+    let value = body.get("track_total_hits")?;
+    value.as_u64()
 }
 
 fn track_total_hits_query_param_parse_error(value: &str) -> RestResponse {
