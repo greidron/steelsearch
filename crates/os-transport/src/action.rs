@@ -24953,6 +24953,7 @@ pub enum OpenSearchQueryBuilderWire {
     Regexp(OpenSearchRegexpQueryBuilderWire),
     ScriptScore(OpenSearchScriptScoreQueryBuilderWire),
     SimpleQueryString(OpenSearchSimpleQueryStringQueryBuilderWire),
+    SpanOr(OpenSearchSpanOrQueryBuilderWire),
     SpanTerm(OpenSearchSpanTermQueryBuilderWire),
     Term(OpenSearchTermQueryBuilderWire),
     Terms(OpenSearchTermsQueryBuilderWire),
@@ -25310,6 +25311,13 @@ pub struct OpenSearchSpanTermQueryBuilderWire {
     pub query_name: Option<String>,
     pub field_name: String,
     pub value: Value,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct OpenSearchSpanOrQueryBuilderWire {
+    pub boost: f32,
+    pub query_name: Option<String>,
+    pub clauses: Vec<OpenSearchQueryBuilderWire>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -25808,6 +25816,12 @@ fn write_named_query_builder(output: &mut StreamOutput, query: &OpenSearchQueryB
             output.write_vint(query.fuzzy_prefix_length);
             output.write_vint(query.fuzzy_max_expansions);
             output.write_bool(query.fuzzy_transpositions);
+        }
+        OpenSearchQueryBuilderWire::SpanOr(query) => {
+            output.write_string("span_or");
+            output.write_f32(query.boost);
+            output.write_optional_string(query.query_name.as_deref());
+            write_query_builder_list(output, &query.clauses);
         }
         OpenSearchQueryBuilderWire::SpanTerm(query) => {
             output.write_string("span_term");
@@ -26310,6 +26324,13 @@ fn read_named_query_builder(
                 },
             ))
         }
+        "span_or" => Ok(OpenSearchQueryBuilderWire::SpanOr(
+            OpenSearchSpanOrQueryBuilderWire {
+                boost: input.read_f32()?,
+                query_name: input.read_optional_string()?,
+                clauses: read_query_builder_list(input)?,
+            },
+        )),
         "span_term" => Ok(OpenSearchQueryBuilderWire::SpanTerm(
             OpenSearchSpanTermQueryBuilderWire {
                 boost: input.read_f32()?,
@@ -26391,7 +26412,7 @@ fn read_named_query_builder(
         )),
         _ => Err(TransportActionWireError::UnsupportedWireShape {
             shape: "search request source query",
-            reason: "only OpenSearch bool, boosting, common, combined_fields, constant_score, dis_max, exists, function_score, fuzzy, geo_distance, ids, match_all, match_none, match, match_bool_prefix, match_phrase, match_phrase_prefix, multi_match, nested, prefix, query_string, range, regexp, script_score, simple_query_string, span_term, term, terms, terms_set, wildcard, and wrapper QueryBuilder values are decoded by this subset",
+            reason: "only OpenSearch bool, boosting, common, combined_fields, constant_score, dis_max, exists, function_score, fuzzy, geo_distance, ids, match_all, match_none, match, match_bool_prefix, match_phrase, match_phrase_prefix, multi_match, nested, prefix, query_string, range, regexp, script_score, simple_query_string, span_or, span_term, term, terms, terms_set, wildcard, and wrapper QueryBuilder values are decoded by this subset",
         }),
     }
 }
@@ -27081,6 +27102,24 @@ fn validate_query_builder(
                     shape: "search request source query",
                     reason: "OpenSearch SimpleQueryStringBuilder fuzzy max expansions must be positive",
                 });
+            }
+        }
+        OpenSearchQueryBuilderWire::SpanOr(query) => {
+            validate_query_boost_and_name(query.boost, query.query_name.as_deref())?;
+            if query.clauses.is_empty() {
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "search request source query",
+                    reason: "OpenSearch SpanOrQueryBuilder clauses must be non-empty",
+                });
+            }
+            for clause in &query.clauses {
+                if !matches!(clause, OpenSearchQueryBuilderWire::SpanTerm(_)) {
+                    return Err(TransportActionWireError::UnsupportedWireShape {
+                        shape: "search request source query span_or clauses",
+                        reason: "OpenSearch SpanOrQueryBuilder clauses must be span_term queries in this execution subset",
+                    });
+                }
+                validate_query_builder(Some(clause))?;
             }
         }
         OpenSearchQueryBuilderWire::SpanTerm(query) => {
@@ -64131,6 +64170,42 @@ mod tests {
         let decoded = OpenSearchSearchRequestWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, span_term_query_request);
 
+        let span_or_query_request = OpenSearchSearchRequestWire {
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                query: Some(OpenSearchQueryBuilderWire::SpanOr(
+                    OpenSearchSpanOrQueryBuilderWire {
+                        boost: 1.0,
+                        query_name: Some("span-body-or".to_string()),
+                        clauses: vec![
+                            OpenSearchQueryBuilderWire::SpanTerm(
+                                OpenSearchSpanTermQueryBuilderWire {
+                                    boost: 1.0,
+                                    query_name: None,
+                                    field_name: "body".to_string(),
+                                    value: json!("ready"),
+                                },
+                            ),
+                            OpenSearchQueryBuilderWire::SpanTerm(
+                                OpenSearchSpanTermQueryBuilderWire {
+                                    boost: 1.0,
+                                    query_name: None,
+                                    field_name: "body".to_string(),
+                                    value: json!("steady"),
+                                },
+                            ),
+                        ],
+                    },
+                )),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        let mut output = StreamOutput::new();
+        span_or_query_request.write(&mut output);
+
+        let decoded = OpenSearchSearchRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, span_or_query_request);
+
         let exists_query_request = OpenSearchSearchRequestWire {
             source: Some(OpenSearchSearchSourceBuilderWire {
                 query: Some(OpenSearchQueryBuilderWire::Exists(
@@ -66022,6 +66097,35 @@ mod tests {
             invalid_span_term_value.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "search request source query",
+                ..
+            })
+        ));
+
+        let invalid_span_or_clause = OpenSearchSearchRequestWire {
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                query: Some(OpenSearchQueryBuilderWire::SpanOr(
+                    OpenSearchSpanOrQueryBuilderWire {
+                        boost: 1.0,
+                        query_name: None,
+                        clauses: vec![OpenSearchQueryBuilderWire::Term(
+                            OpenSearchTermQueryBuilderWire {
+                                boost: 1.0,
+                                query_name: None,
+                                field_name: "body".to_string(),
+                                value: json!("ready"),
+                                case_insensitive: false,
+                            },
+                        )],
+                    },
+                )),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        assert!(matches!(
+            invalid_span_or_clause.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source query span_or clauses",
                 ..
             })
         ));
