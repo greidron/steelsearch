@@ -3825,6 +3825,30 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "terminate_after_numeric_string_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "terminate_after": "1",
+        "sort": [
+          {
+            "ts": {
+              "order": "asc"
+            }
+          }
+        ],
+        "size": 2
+      },
+      "extract": "search_summary",
+      "family": "lexical",
+      "description": "[lexical] body terminate_after numeric string coerces like OpenSearch",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "terminate_after_query_param_search",
       "area": "search",
       "method": "POST",
@@ -3958,6 +3982,22 @@
       "extract": "search_hits",
       "family": "ranking",
       "description": "[ranking] top-level min_score search",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "min_score_numeric_string_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "min_score": "1.5"
+      },
+      "extract": "search_hits",
+      "family": "ranking",
+      "description": "[ranking] top-level min_score numeric string coerces like OpenSearch",
       "strict_source_parity_required": true
     },
     {
@@ -4720,6 +4760,30 @@
       "extract": "search_hits",
       "family": "ranking",
       "description": "[ranking] query-param paginated search window overrides body",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "numeric_string_paginated_search_window",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "sort": [
+          {
+            "ts": {
+              "order": "asc"
+            }
+          }
+        ],
+        "from": "1",
+        "size": "2"
+      },
+      "extract": "search_hits",
+      "family": "ranking",
+      "description": "[ranking] body from and size numeric strings coerce like OpenSearch",
       "strict_source_parity_required": true
     },
     {

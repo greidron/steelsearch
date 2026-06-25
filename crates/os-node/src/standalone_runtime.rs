@@ -9084,7 +9084,7 @@ impl SteelNode {
         if let Some(response) = apply_search_source_query_params(&mut body, &request.query_params) {
             return response;
         }
-        if let Some(response) = normalize_search_source_boolean_body_options(&mut body) {
+        if let Some(response) = normalize_search_source_scalar_body_options(&mut body) {
             return response;
         }
         if let Some(response) =
@@ -19708,8 +19708,21 @@ fn apply_search_source_query_params(
     None
 }
 
-fn normalize_search_source_boolean_body_options(body: &mut Value) -> Option<RestResponse> {
+fn normalize_search_source_scalar_body_options(body: &mut Value) -> Option<RestResponse> {
     let object = body.as_object_mut()?;
+    for field in ["from", "size", "terminate_after"] {
+        let Some(value) = object.get(field).cloned() else {
+            continue;
+        };
+        if let Some(parsed) = parse_opensearch_int_body_value(&value) {
+            object.insert(field.to_string(), parsed);
+        }
+    }
+    if let Some(value) = object.get("min_score").cloned() {
+        if let Some(parsed) = parse_opensearch_float_body_value(&value) {
+            object.insert("min_score".to_string(), parsed);
+        }
+    }
     for field in [
         "version",
         "seq_no_primary_term",
@@ -19756,6 +19769,31 @@ fn parse_opensearch_track_total_hits_body_value(value: &Value) -> Option<Value> 
         Value::String(value) => value.parse::<i64>().ok().map(Value::from),
         _ => None,
     }
+}
+
+fn parse_opensearch_int_body_value(value: &Value) -> Option<Value> {
+    let Value::String(value) = value else {
+        return None;
+    };
+    let parsed = value.parse::<f64>().ok()?;
+    if !parsed.is_finite()
+        || parsed < i32::MIN as f64
+        || parsed > i32::MAX as f64
+    {
+        return None;
+    }
+    Some(Value::from(parsed as i64))
+}
+
+fn parse_opensearch_float_body_value(value: &Value) -> Option<Value> {
+    let Value::String(value) = value else {
+        return None;
+    };
+    let parsed = value.parse::<f64>().ok()?;
+    if !parsed.is_finite() {
+        return None;
+    }
+    serde_json::Number::from_f64(parsed).map(Value::Number)
 }
 
 fn split_rest_csv_values(raw: &str) -> Vec<String> {
@@ -44359,11 +44397,24 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             0
         );
 
-        let invalid_min_score_body = node.handle_rest_request(
+        let min_score_string_filters_low_scoring_hits = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/logs-search-params-a/_search")
                 .with_json_body(serde_json::json!({
                     "query": { "match_all": {} },
                     "min_score": "1.5"
+                })),
+        );
+        assert_eq!(min_score_string_filters_low_scoring_hits.status, 200);
+        assert_eq!(
+            min_score_string_filters_low_scoring_hits.body["hits"]["total"]["value"],
+            0
+        );
+
+        let invalid_min_score_body = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-params-a/_search")
+                .with_json_body(serde_json::json!({
+                    "query": { "match_all": {} },
+                    "min_score": "not-a-number"
                 })),
         );
         assert_eq!(invalid_min_score_body.status, 400);
@@ -44619,6 +44670,21 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             body_terminate_after_not_reached.body["hits"]["total"]["value"],
             3
+        );
+
+        let body_string_terminate_after = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-params-*/_search")
+                .with_json_body(serde_json::json!({
+                    "query": { "match_all": {} },
+                    "sort": [{ "tenant": "asc" }],
+                    "terminate_after": "1"
+                })),
+        );
+        assert_eq!(body_string_terminate_after.status, 200);
+        assert_eq!(body_string_terminate_after.body["terminated_early"], true);
+        assert_eq!(
+            body_string_terminate_after.body["hits"]["total"]["value"],
+            1
         );
 
         let zero_query_param_terminate_after_preserves_body = node.handle_rest_request(
