@@ -40792,6 +40792,15 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             "Validation Failed: 1: ifSeqNo is unassigned, but primary term is [1];"
         );
 
+        let delete_missing = node.handle_rest_request(RestRequest::new(
+            RestMethod::Delete,
+            "/logs-write-negatives/_doc/missing-doc",
+        ));
+        assert_eq!(delete_missing.status, 404);
+        assert_eq!(delete_missing.body["_index"], "logs-write-negatives");
+        assert_eq!(delete_missing.body["_id"], "missing-doc");
+        assert_eq!(delete_missing.body["result"], "not_found");
+
         let create_with_occ = node.handle_rest_request(
             RestRequest::new(
                 RestMethod::Put,

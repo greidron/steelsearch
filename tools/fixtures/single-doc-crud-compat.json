@@ -686,6 +686,24 @@
       }
     },
     {
+      "name": "delete_single_doc_missing_not_found",
+      "method": "DELETE",
+      "path": "/single-doc-compat-000001/_doc/doc-1?routing=tenant-a&refresh=wait_for",
+      "compare": {
+        "expected_status": 404,
+        "body_paths_present": [
+          "_index",
+          "_id",
+          "result"
+        ],
+        "body_paths_equal": [
+          "_index",
+          "_id",
+          "result"
+        ]
+      }
+    },
+    {
       "name": "update_single_doc_missing_error",
       "method": "POST",
       "path": "/single-doc-compat-000001/_update/missing-doc?routing=tenant-a",
