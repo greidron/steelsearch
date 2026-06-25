@@ -13,6 +13,20 @@
         },
         "level": {
           "type": "keyword"
+        },
+        "comments": {
+          "type": "nested",
+          "properties": {
+            "author": {
+              "type": "keyword"
+            },
+            "text": {
+              "type": "keyword"
+            }
+          }
+        },
+        "location": {
+          "type": "geo_point"
         }
       }
     }
@@ -23,7 +37,21 @@
       "_source": {
         "service": "api",
         "latency_ms": 90,
-        "level": "info"
+        "level": "info",
+        "comments": [
+          {
+            "author": "ann",
+            "text": "green"
+          },
+          {
+            "author": "bob",
+            "text": "blue"
+          }
+        ],
+        "location": {
+          "lat": 37.7749,
+          "lon": -122.4194
+        }
       }
     },
     {
@@ -31,7 +59,17 @@
       "_source": {
         "service": "api",
         "latency_ms": 210,
-        "level": "warn"
+        "level": "warn",
+        "comments": [
+          {
+            "author": "ann",
+            "text": "blue"
+          }
+        ],
+        "location": {
+          "lat": 40.7128,
+          "lon": -74.006
+        }
       }
     },
     {
@@ -39,7 +77,17 @@
       "_source": {
         "service": "worker",
         "latency_ms": 150,
-        "level": "info"
+        "level": "info",
+        "comments": [
+          {
+            "author": "cara",
+            "text": "green"
+          }
+        ],
+        "location": {
+          "lat": 37.8044,
+          "lon": -122.2712
+        }
       }
     }
   ],
@@ -181,6 +229,65 @@
       "expected_ids": [
         "doc-3",
         "doc-2"
+      ]
+    },
+    {
+      "name": "nested_tuple_search",
+      "body": {
+        "query": {
+          "nested": {
+            "path": "comments",
+            "query": {
+              "bool": {
+                "filter": [
+                  {
+                    "term": {
+                      "comments.author": "ann"
+                    }
+                  },
+                  {
+                    "term": {
+                      "comments.text": "green"
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "sort": [
+          "_id"
+        ],
+        "size": 10,
+        "track_total_hits": true
+      },
+      "expected_total": 1,
+      "expected_ids": [
+        "doc-1"
+      ]
+    },
+    {
+      "name": "geo_distance_search",
+      "body": {
+        "query": {
+          "geo_distance": {
+            "distance": "20km",
+            "location": {
+              "lat": 37.7749,
+              "lon": -122.4194
+            }
+          }
+        },
+        "sort": [
+          "_id"
+        ],
+        "size": 10,
+        "track_total_hits": true
+      },
+      "expected_total": 2,
+      "expected_ids": [
+        "doc-1",
+        "doc-3"
       ]
     }
   ]

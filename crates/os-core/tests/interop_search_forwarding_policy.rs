@@ -42,7 +42,16 @@ fn interop_search_forwarding_policy_fixture_stays_bounded_and_explicit() {
         assert!(rejected.insert(row.family.clone()), "duplicate rejected family {}", row.family);
     }
 
-    for required in ["match_all", "term", "range", "bool.filter", "pit", "search_after"] {
+    for required in [
+        "match_all",
+        "term",
+        "range",
+        "bool.filter",
+        "pit",
+        "search_after",
+        "nested",
+        "geo_distance",
+    ] {
         assert!(accepted.contains(required), "missing accepted family {required}");
     }
     for required in ["scroll", "knn", "hybrid", "aggregations"] {
@@ -55,6 +64,14 @@ fn interop_search_forwarding_policy_fixture_stays_bounded_and_explicit() {
     assert!(
         !rejected.contains("search_after"),
         "search_after must not remain rejected after forwarding profile coverage"
+    );
+    assert!(
+        !rejected.contains("nested"),
+        "nested must not remain rejected after forwarding profile coverage"
+    );
+    assert!(
+        !rejected.contains("geo_distance"),
+        "geo_distance must not remain rejected after forwarding profile coverage"
     );
     for required in ["sort", "from", "size", "track_total_hits", "pit", "search_after"] {
         assert!(
@@ -82,5 +99,19 @@ fn interop_search_forwarding_policy_fixture_stays_bounded_and_explicit() {
                 && case["body"]["search_after"].as_array().is_some()
         }),
         "accepted search_after policy requires an executable search_after forwarding profile case"
+    );
+    assert!(
+        cases.iter().any(|case| {
+            case["name"] == "nested_tuple_search"
+                && case["body"]["query"]["nested"].is_object()
+        }),
+        "accepted nested policy requires an executable nested forwarding profile case"
+    );
+    assert!(
+        cases.iter().any(|case| {
+            case["name"] == "geo_distance_search"
+                && case["body"]["query"]["geo_distance"].is_object()
+        }),
+        "accepted geo_distance policy requires an executable geo_distance forwarding profile case"
     );
 }

@@ -31,6 +31,16 @@
       "family": "search_after",
       "policy": "accepted",
       "reason": "Stateless cursor pagination is validated by the forwarding profile with explicit sort values and deterministic hit order."
+    },
+    {
+      "family": "nested",
+      "policy": "accepted",
+      "reason": "Nested tuple semantics are validated by the forwarding profile with a nested mapped field and deterministic hit ids."
+    },
+    {
+      "family": "geo_distance",
+      "policy": "accepted",
+      "reason": "Geo-distance filtering is validated by the forwarding profile with mapped geo_point data and deterministic hit ids."
     }
   ],
   "accepted_request_options": [
@@ -81,16 +91,6 @@
       "family": "function_score",
       "policy": "rejected",
       "reason": "Score mutation semantics are not yet validated for forwarded search."
-    },
-    {
-      "family": "nested",
-      "policy": "rejected",
-      "reason": "Nested query forwarding is deferred until broader search parity coverage exists."
-    },
-    {
-      "family": "geo_distance",
-      "policy": "rejected",
-      "reason": "Geo query forwarding is deferred until broader search parity coverage exists."
     },
     {
       "family": "knn",
