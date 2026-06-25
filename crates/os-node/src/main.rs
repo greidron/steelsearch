@@ -4355,7 +4355,12 @@ fn delete_transport_pit_contexts(
     let ids = if pit_ids.iter().any(|id| id == "_all") {
         contexts.keys().cloned().collect::<Vec<_>>()
     } else {
-        pit_ids.to_vec()
+        let mut seen_ids = BTreeSet::new();
+        pit_ids
+            .iter()
+            .filter(|id| seen_ids.insert((*id).clone()))
+            .cloned()
+            .collect()
     };
     let results = ids
         .into_iter()
@@ -11898,6 +11903,50 @@ mod tests {
             .lock()
             .expect("dev transport PIT contexts lock poisoned")
             .contains_key("pit-context"));
+    }
+
+    #[test]
+    fn delete_pit_transport_route_deduplicates_explicit_ids_like_rest() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        dev_transport_pit_bindings()
+            .contexts
+            .lock()
+            .expect("dev transport PIT contexts lock poisoned")
+            .clear();
+        let request = os_transport::action::OpenSearchDeletePitRequestWire {
+            pit_ids: vec!["pit-missing".to_string(), "pit-missing".to_string()],
+            ..os_transport::action::OpenSearchDeletePitRequestWire::default()
+        };
+        let frame = os_transport::action::build_opensearch_delete_pit_request_message(
+            201,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(delete_pit_request_supports_local_lifecycle_subset(
+            &frame[6..]
+        ));
+
+        let response = build_local_delete_pit_response(
+            201,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &frame[6..],
+        );
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected delete-PIT response message");
+        };
+        let response =
+            os_transport::action::read_opensearch_delete_pit_response_message(&message).unwrap();
+        assert_eq!(response.results.len(), 1);
+        assert_eq!(response.results[0].pit_id, "pit-missing");
+        assert!(response.results[0].successful);
     }
 
     #[test]
