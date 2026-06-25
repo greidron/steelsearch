@@ -51,6 +51,8 @@ fn interop_search_forwarding_policy_fixture_stays_bounded_and_explicit() {
         "search_after",
         "nested",
         "geo_distance",
+        "script_score",
+        "function_score",
     ] {
         assert!(accepted.contains(required), "missing accepted family {required}");
     }
@@ -72,6 +74,14 @@ fn interop_search_forwarding_policy_fixture_stays_bounded_and_explicit() {
     assert!(
         !rejected.contains("geo_distance"),
         "geo_distance must not remain rejected after forwarding profile coverage"
+    );
+    assert!(
+        !rejected.contains("script_score"),
+        "script_score must not remain rejected after forwarding profile coverage"
+    );
+    assert!(
+        !rejected.contains("function_score"),
+        "function_score must not remain rejected after forwarding profile coverage"
     );
     for required in ["sort", "from", "size", "track_total_hits", "pit", "search_after"] {
         assert!(
@@ -113,5 +123,19 @@ fn interop_search_forwarding_policy_fixture_stays_bounded_and_explicit() {
                 && case["body"]["query"]["geo_distance"].is_object()
         }),
         "accepted geo_distance policy requires an executable geo_distance forwarding profile case"
+    );
+    assert!(
+        cases.iter().any(|case| {
+            case["name"] == "script_score_search"
+                && case["body"]["query"]["script_score"].is_object()
+        }),
+        "accepted script_score policy requires an executable script_score forwarding profile case"
+    );
+    assert!(
+        cases.iter().any(|case| {
+            case["name"] == "function_score_search"
+                && case["body"]["query"]["function_score"].is_object()
+        }),
+        "accepted function_score policy requires an executable function_score forwarding profile case"
     );
 }

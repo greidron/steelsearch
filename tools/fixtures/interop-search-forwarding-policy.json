@@ -41,6 +41,16 @@
       "family": "geo_distance",
       "policy": "accepted",
       "reason": "Geo-distance filtering is validated by the forwarding profile with mapped geo_point data and deterministic hit ids."
+    },
+    {
+      "family": "script_score",
+      "policy": "accepted",
+      "reason": "Script-score ordering is validated by the forwarding profile with a bounded numeric field-value script and deterministic hit ids."
+    },
+    {
+      "family": "function_score",
+      "policy": "accepted",
+      "reason": "Function-score ordering is validated by the forwarding profile with a bounded field-value-factor score and deterministic hit ids."
     }
   ],
   "accepted_request_options": [
@@ -81,16 +91,6 @@
       "family": "collapse",
       "policy": "rejected",
       "reason": "Collapsed hit shaping is not yet covered by forwarding parity tests."
-    },
-    {
-      "family": "script_score",
-      "policy": "rejected",
-      "reason": "Script execution policy is not yet validated for forwarded search."
-    },
-    {
-      "family": "function_score",
-      "policy": "rejected",
-      "reason": "Score mutation semantics are not yet validated for forwarded search."
     },
     {
       "family": "knn",

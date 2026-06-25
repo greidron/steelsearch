@@ -289,6 +289,61 @@
         "doc-1",
         "doc-3"
       ]
+    },
+    {
+      "name": "script_score_search",
+      "body": {
+        "query": {
+          "script_score": {
+            "query": {
+              "match_all": {}
+            },
+            "script": {
+              "source": "doc['latency_ms'].value"
+            }
+          }
+        },
+        "sort": [
+          "_score",
+          "_id"
+        ],
+        "size": 10,
+        "track_total_hits": true
+      },
+      "expected_total": 3,
+      "expected_ids": [
+        "doc-2",
+        "doc-3",
+        "doc-1"
+      ]
+    },
+    {
+      "name": "function_score_search",
+      "body": {
+        "query": {
+          "function_score": {
+            "query": {
+              "match_all": {}
+            },
+            "field_value_factor": {
+              "field": "latency_ms"
+            },
+            "boost_mode": "replace"
+          }
+        },
+        "sort": [
+          "_score",
+          "_id"
+        ],
+        "size": 10,
+        "track_total_hits": true
+      },
+      "expected_total": 3,
+      "expected_ids": [
+        "doc-2",
+        "doc-3",
+        "doc-1"
+      ]
     }
   ]
 }
