@@ -2604,6 +2604,7 @@ fn build_tantivy_query(
                 value: value.clone(),
             },
         ),
+        Query::SpanGap { .. } => Ok(None),
         Query::SpanOr { clauses } => {
             let mut built_clauses = Vec::new();
             for clause in clauses {
@@ -3726,10 +3727,13 @@ fn build_tantivy_span_near_query(
     if !in_order {
         return Ok(None);
     }
-    let Some((field, alternatives)) = span_near_clause_term_alternatives(clauses) else {
+    let Some((field, clause_specs)) = span_near_clause_specs(clauses) else {
         return Ok(None);
     };
-    if alternatives.iter().any(|terms| terms.len() != 1) {
+    if clause_specs
+        .iter()
+        .any(|spec| matches!(spec, SpanNearClauseSpec::Terms(terms) if terms.len() != 1))
+    {
         return Ok(None);
     }
     let Some(indexed_field) = search_state.fields.get(&field) else {
@@ -3741,16 +3745,19 @@ fn build_tantivy_span_near_query(
     let Ok(slop) = u32::try_from(slop) else {
         return Ok(None);
     };
-    let terms = alternatives
-        .into_iter()
-        .enumerate()
-        .map(|(offset, terms)| {
-            (
-                offset,
-                Term::from_field_text(indexed_field.field, &terms[0]),
-            )
-        })
-        .collect::<Vec<_>>();
+    let mut offset = 0usize;
+    let mut terms = Vec::new();
+    for spec in clause_specs {
+        match spec {
+            SpanNearClauseSpec::Terms(spec_terms) => {
+                terms.push((offset, Term::from_field_text(indexed_field.field, &spec_terms[0])));
+                offset = offset.saturating_add(1);
+            }
+            SpanNearClauseSpec::Gap(width) => {
+                offset = offset.saturating_add(width);
+            }
+        }
+    }
     Ok(Some(Box::new(PhraseQuery::new_with_offset_and_slop(
         terms, slop,
     ))))
@@ -16471,7 +16478,7 @@ fn matches_span_near_query(
     slop: usize,
     in_order: bool,
 ) -> bool {
-    let Some((field, alternatives)) = span_near_clause_term_alternatives(clauses) else {
+    let Some((field, specs)) = span_near_clause_specs(clauses) else {
         return false;
     };
     if field == "_id" {
@@ -16480,7 +16487,7 @@ fn matches_span_near_query(
     let Some(field_value) = source_value_for_highlight_field(source, &field) else {
         return false;
     };
-    span_near_value_matches(field_value, &alternatives, slop, in_order)
+    span_near_value_matches(field_value, &specs, slop, in_order)
         || clauses
             .iter()
             .any(|query| document_matches_query(query, id, source) && clauses.len() == 1)
@@ -17805,12 +17812,12 @@ fn span_query_ranges(id: &str, source: &Value, query: &Query) -> Option<(String,
             slop,
             in_order,
         } => {
-            let (field, alternatives) = span_near_clause_term_alternatives(clauses)?;
+            let (field, specs) = span_near_clause_specs(clauses)?;
             if field == "_id" {
                 return None;
             }
             let field_value = source_value_for_highlight_field(source, &field)?;
-            Some((field, span_near_ranges(field_value, &alternatives, *slop, *in_order)))
+            Some((field, span_near_ranges(field_value, &specs, *slop, *in_order)))
         }
         Query::SpanNot { include, exclude } => {
             let (field, include_ranges) = span_query_ranges(id, source, include)?;
@@ -17853,24 +17860,24 @@ fn span_term_ranges(field_value: &Value, value: &Value) -> Vec<(usize, usize)> {
 
 fn span_near_ranges(
     field_value: &Value,
-    alternatives: &[Vec<String>],
+    specs: &[SpanNearClauseSpec],
     slop: usize,
     in_order: bool,
 ) -> Vec<(usize, usize)> {
     match field_value {
         Value::Array(items) => items
             .iter()
-            .flat_map(|item| span_near_ranges(item, alternatives, slop, in_order))
+            .flat_map(|item| span_near_ranges(item, specs, slop, in_order))
             .collect(),
         Value::String(text) => {
             let tokens = tokenize_phrase_text(text);
-            if tokens.is_empty() || alternatives.is_empty() {
+            if tokens.is_empty() || specs.is_empty() {
                 return Vec::new();
             }
             if in_order {
-                span_near_in_order_ranges(&tokens, alternatives, slop)
+                span_near_in_order_ranges(&tokens, specs, slop)
             } else {
-                span_near_unordered_ranges(&tokens, alternatives, slop)
+                span_near_unordered_ranges(&tokens, specs, slop)
             }
         }
         _ => Vec::new(),
@@ -17879,18 +17886,32 @@ fn span_near_ranges(
 
 fn span_near_in_order_ranges(
     tokens: &[String],
-    alternatives: &[Vec<String>],
+    specs: &[SpanNearClauseSpec],
     slop: usize,
 ) -> Vec<(usize, usize)> {
     let mut ranges = Vec::new();
+    let Some((first_terms, rest)) = span_near_first_terms_and_rest(specs) else {
+        return ranges;
+    };
     for start in 0..tokens.len() {
-        if !alternatives[0].iter().any(|term| term == &tokens[start]) {
+        if !first_terms.iter().any(|term| term == &tokens[start]) {
             continue;
         }
         let mut last = start;
         let mut total_gap = 0usize;
         let mut matched = true;
-        for clause_alternatives in &alternatives[1..] {
+        for spec in rest {
+            if let SpanNearClauseSpec::Gap(width) = spec {
+                last = last.saturating_add(*width);
+                if last >= tokens.len() {
+                    matched = false;
+                    break;
+                }
+                continue;
+            }
+            let SpanNearClauseSpec::Terms(clause_alternatives) = spec else {
+                continue;
+            };
             let mut next_match = None;
             for idx in (last + 1)..tokens.len() {
                 if clause_alternatives.iter().any(|term| term == &tokens[idx]) {
@@ -17918,10 +17939,11 @@ fn span_near_in_order_ranges(
 
 fn span_near_unordered_ranges(
     tokens: &[String],
-    alternatives: &[Vec<String>],
+    specs: &[SpanNearClauseSpec],
     slop: usize,
 ) -> Vec<(usize, usize)> {
     let mut ranges = Vec::new();
+    let alternatives = span_near_term_specs(specs);
     let required = alternatives.len();
     if required == 0 {
         return ranges;
@@ -17940,37 +17962,50 @@ fn span_near_unordered_ranges(
     ranges
 }
 
-fn span_near_clause_term_alternatives(clauses: &[Query]) -> Option<(String, Vec<Vec<String>>)> {
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum SpanNearClauseSpec {
+    Terms(Vec<String>),
+    Gap(usize),
+}
+
+fn span_near_clause_specs(clauses: &[Query]) -> Option<(String, Vec<SpanNearClauseSpec>)> {
     let mut field_name: Option<String> = None;
-    let mut alternatives = Vec::new();
+    let mut specs = Vec::new();
     for clause in clauses {
-        let (field, clause_alternatives) = span_near_single_clause_alternatives(clause)?;
+        let (field, clause_spec) = span_near_single_clause_spec(clause)?;
         match &field_name {
             Some(existing) if existing != &field => return None,
             None => field_name = Some(field),
             _ => {}
         }
-        alternatives.push(clause_alternatives);
+        specs.push(clause_spec);
     }
-    Some((field_name?, alternatives))
+    Some((field_name?, specs))
 }
 
-fn span_near_single_clause_alternatives(query: &Query) -> Option<(String, Vec<String>)> {
+fn span_near_single_clause_spec(query: &Query) -> Option<(String, SpanNearClauseSpec)> {
     match query {
-        Query::SpanTerm { field, value } => Some((field.clone(), vec![value.as_str()?.to_string()])),
+        Query::SpanTerm { field, value } => Some((
+            field.clone(),
+            SpanNearClauseSpec::Terms(vec![value.as_str()?.to_string()]),
+        )),
+        Query::SpanGap { field, width } => Some((field.clone(), SpanNearClauseSpec::Gap(*width))),
         Query::SpanOr { clauses } => {
             let mut field_name: Option<String> = None;
             let mut alternatives = Vec::new();
             for clause in clauses {
-                let (field, nested_alternatives) = span_near_single_clause_alternatives(clause)?;
+                let (field, nested_spec) = span_near_single_clause_spec(clause)?;
                 match &field_name {
                     Some(existing) if existing != &field => return None,
                     None => field_name = Some(field),
                     _ => {}
                 }
+                let SpanNearClauseSpec::Terms(nested_alternatives) = nested_spec else {
+                    return None;
+                };
                 alternatives.extend(nested_alternatives);
             }
-            Some((field_name?, alternatives))
+            Some((field_name?, SpanNearClauseSpec::Terms(alternatives)))
         }
         _ => None,
     }
@@ -17978,38 +18013,52 @@ fn span_near_single_clause_alternatives(query: &Query) -> Option<(String, Vec<St
 
 fn span_near_value_matches(
     field_value: &Value,
-    alternatives: &[Vec<String>],
+    specs: &[SpanNearClauseSpec],
     slop: usize,
     in_order: bool,
 ) -> bool {
     match field_value {
         Value::Array(items) => items
             .iter()
-            .any(|item| span_near_value_matches(item, alternatives, slop, in_order)),
+            .any(|item| span_near_value_matches(item, specs, slop, in_order)),
         Value::String(text) => {
             let tokens = tokenize_phrase_text(text);
-            if tokens.is_empty() || alternatives.is_empty() {
+            if tokens.is_empty() || specs.is_empty() {
                 return false;
             }
             if in_order {
-                span_near_in_order_matches(&tokens, alternatives, slop)
+                span_near_in_order_matches(&tokens, specs, slop)
             } else {
-                span_near_unordered_matches(&tokens, alternatives, slop)
+                span_near_unordered_matches(&tokens, specs, slop)
             }
         }
         _ => false,
     }
 }
 
-fn span_near_in_order_matches(tokens: &[String], alternatives: &[Vec<String>], slop: usize) -> bool {
+fn span_near_in_order_matches(tokens: &[String], specs: &[SpanNearClauseSpec], slop: usize) -> bool {
+    let Some((first_terms, rest)) = span_near_first_terms_and_rest(specs) else {
+        return false;
+    };
     for start in 0..tokens.len() {
-        if !alternatives[0].iter().any(|term| term == &tokens[start]) {
+        if !first_terms.iter().any(|term| term == &tokens[start]) {
             continue;
         }
         let mut last = start;
         let mut total_gap = 0usize;
         let mut matched = true;
-        for clause_alternatives in &alternatives[1..] {
+        for spec in rest {
+            if let SpanNearClauseSpec::Gap(width) = spec {
+                last = last.saturating_add(*width);
+                if last >= tokens.len() {
+                    matched = false;
+                    break;
+                }
+                continue;
+            }
+            let SpanNearClauseSpec::Terms(clause_alternatives) = spec else {
+                continue;
+            };
             let mut next_match = None;
             for idx in (last + 1)..tokens.len() {
                 if clause_alternatives.iter().any(|term| term == &tokens[idx]) {
@@ -18035,7 +18084,8 @@ fn span_near_in_order_matches(tokens: &[String], alternatives: &[Vec<String>], s
     false
 }
 
-fn span_near_unordered_matches(tokens: &[String], alternatives: &[Vec<String>], slop: usize) -> bool {
+fn span_near_unordered_matches(tokens: &[String], specs: &[SpanNearClauseSpec], slop: usize) -> bool {
+    let alternatives = span_near_term_specs(specs);
     let required = alternatives.len();
     if required == 0 {
         return false;
@@ -18052,6 +18102,33 @@ fn span_near_unordered_matches(tokens: &[String], alternatives: &[Vec<String>], 
         }
     }
     false
+}
+
+fn span_near_first_terms_and_rest(
+    specs: &[SpanNearClauseSpec],
+) -> Option<(&[String], &[SpanNearClauseSpec])> {
+    let mut first_index = None;
+    for (index, spec) in specs.iter().enumerate() {
+        if matches!(spec, SpanNearClauseSpec::Terms(_)) {
+            first_index = Some(index);
+            break;
+        }
+    }
+    let first_index = first_index?;
+    let SpanNearClauseSpec::Terms(terms) = &specs[first_index] else {
+        return None;
+    };
+    Some((terms.as_slice(), &specs[(first_index + 1)..]))
+}
+
+fn span_near_term_specs(specs: &[SpanNearClauseSpec]) -> Vec<&Vec<String>> {
+    specs
+        .iter()
+        .filter_map(|spec| match spec {
+            SpanNearClauseSpec::Terms(terms) => Some(terms),
+            SpanNearClauseSpec::Gap(_) => None,
+        })
+        .collect()
 }
 
 fn text_tokens_from_value(value: &Value) -> Vec<String> {

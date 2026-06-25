@@ -24,6 +24,10 @@ pub enum Query {
         field: String,
         value: serde_json::Value,
     },
+    SpanGap {
+        field: String,
+        width: usize,
+    },
     SpanOr {
         clauses: Vec<Query>,
     },
@@ -647,6 +651,7 @@ pub fn parse_query(value: &Value) -> QueryDslResult<Query> {
         "term" => parse_term(body),
         "terms" => parse_terms(body),
         "span_term" => parse_span_term(body),
+        "span_gap" => parse_span_gap(body),
         "span_or" => parse_span_or(body),
         "span_first" => parse_span_first(body),
         "span_near" => parse_span_near(body),
@@ -1871,6 +1876,26 @@ fn parse_span_term(body: &Value) -> QueryDslResult<Query> {
     Ok(Query::SpanTerm {
         field: field.clone(),
         value: value.clone(),
+    })
+}
+
+fn parse_span_gap(body: &Value) -> QueryDslResult<Query> {
+    let object = body.as_object().ok_or(QueryDslError::ExpectedObject)?;
+    if object.len() != 1 {
+        return Err(QueryDslError::ExpectedSingleField {
+            clause: "span_gap".to_string(),
+        });
+    }
+
+    let (field, value) = object.iter().next().expect("checked len");
+    let width = value.as_u64().ok_or_else(|| QueryDslError::InvalidValue {
+        clause: "span_gap".to_string(),
+        field: field.clone(),
+        reason: "width must be a non-negative integer".to_string(),
+    })? as usize;
+    Ok(Query::SpanGap {
+        field: field.clone(),
+        width,
     })
 }
 
@@ -3939,6 +3964,44 @@ mod tests {
                     },
                 ],
                 slop: 1,
+                in_order: true,
+            }
+        );
+    }
+
+    #[test]
+    fn parses_span_gap_clause_queries() {
+        let query = parse_query(&serde_json::json!({
+            "span_near": {
+                "clauses": [
+                    { "span_term": { "message": "alpha" } },
+                    { "span_gap": { "message": 2 } },
+                    { "span_term": { "message": "delta" } }
+                ],
+                "slop": 0,
+                "in_order": true
+            }
+        }))
+        .unwrap();
+
+        assert_eq!(
+            query,
+            Query::SpanNear {
+                clauses: vec![
+                    Query::SpanTerm {
+                        field: "message".to_string(),
+                        value: serde_json::json!("alpha"),
+                    },
+                    Query::SpanGap {
+                        field: "message".to_string(),
+                        width: 2,
+                    },
+                    Query::SpanTerm {
+                        field: "message".to_string(),
+                        value: serde_json::json!("delta"),
+                    },
+                ],
+                slop: 0,
                 in_order: true,
             }
         );

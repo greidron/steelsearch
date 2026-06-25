@@ -22375,6 +22375,7 @@ fn validate_search_query_body(query: &Value) -> Option<RestResponse> {
         | "function_score"
         | "script_score"
         | "span_term"
+        | "span_gap"
         | "span_or"
         | "span_near"
         | "span_multi"
@@ -22925,6 +22926,14 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
         };
         if value.as_str().map(str::is_empty).unwrap_or(true) {
             return Some(build_unsupported_search_response("unsupported span_term query shape"));
+        }
+    }
+    if let Some(spec) = query.get("span_gap").and_then(Value::as_object) {
+        let Some((field, value)) = spec.iter().next() else {
+            return Some(build_unsupported_search_response("unsupported span_gap query shape"));
+        };
+        if spec.len() != 1 || field.is_empty() || value.as_u64().is_none() {
+            return Some(build_unsupported_search_response("unsupported span_gap query shape"));
         }
     }
     if let Some(spec) = query.get("span_or").and_then(Value::as_object) {
@@ -25575,35 +25584,64 @@ fn evaluate_span_near_query(source: &Value, span_near: &serde_json::Map<String, 
     if tokens.is_empty() {
         return Some(false);
     }
-    let term_sets = extracted
+    let specs = extracted
         .into_iter()
         .map(|(_, values)| values)
         .collect::<Vec<_>>();
     if in_order {
-        let mut previous_position: Option<usize> = None;
-        for accepted_terms in &term_sets {
-            let start = previous_position.map(|position| position + 1).unwrap_or(0);
-            let mut matched_position = None;
-            for (index, token) in tokens.iter().enumerate().skip(start) {
-                if accepted_terms.iter().any(|term| term == token) {
-                    matched_position = Some(index);
-                    break;
+        let Some((first_terms, rest)) = first_span_near_term_clause(&specs) else {
+            return Some(false);
+        };
+        for start_position in 0..tokens.len() {
+            if !first_terms.iter().any(|term| term == &tokens[start_position]) {
+                continue;
+            }
+            let mut previous_position = start_position;
+            let mut matched = true;
+            for spec in rest {
+                match spec {
+                    RuntimeSpanClause::Gap(width) => {
+                        previous_position = previous_position.saturating_add(*width);
+                        if previous_position >= tokens.len() {
+                            matched = false;
+                            break;
+                        }
+                    }
+                    RuntimeSpanClause::Terms(accepted_terms) => {
+                        let start = previous_position + 1;
+                        let mut matched_position = None;
+                        for (index, token) in tokens.iter().enumerate().skip(start) {
+                            if accepted_terms.iter().any(|term| term == token) {
+                                matched_position = Some(index);
+                                break;
+                            }
+                        }
+                        let Some(position) = matched_position else {
+                            matched = false;
+                            break;
+                        };
+                        let gap = position.saturating_sub(previous_position + 1);
+                        if gap > slop {
+                            matched = false;
+                            break;
+                        }
+                        previous_position = position;
+                    }
                 }
             }
-            let Some(position) = matched_position else {
-                return Some(false);
-            };
-            if let Some(previous) = previous_position {
-                let gap = position.saturating_sub(previous + 1);
-                if gap > slop {
-                    return Some(false);
-                }
+            if matched {
+                return Some(true);
             }
-            previous_position = Some(position);
         }
-        return Some(true);
+        return Some(false);
     }
-    for accepted_terms in &term_sets {
+    if specs.iter().any(|spec| matches!(spec, RuntimeSpanClause::Gap(_))) {
+        return Some(false);
+    }
+    for accepted_terms in specs.iter().filter_map(|spec| match spec {
+        RuntimeSpanClause::Terms(terms) => Some(terms),
+        RuntimeSpanClause::Gap(_) => None,
+    }) {
         if !tokens
             .iter()
             .any(|token| accepted_terms.iter().any(|term| term == token))
@@ -25612,6 +25650,29 @@ fn evaluate_span_near_query(source: &Value, span_near: &serde_json::Map<String, 
         }
     }
     Some(true)
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum RuntimeSpanClause {
+    Terms(Vec<String>),
+    Gap(usize),
+}
+
+fn first_span_near_term_clause(
+    specs: &[RuntimeSpanClause],
+) -> Option<(&[String], &[RuntimeSpanClause])> {
+    let mut first_index = None;
+    for (index, spec) in specs.iter().enumerate() {
+        if matches!(spec, RuntimeSpanClause::Terms(_)) {
+            first_index = Some(index);
+            break;
+        }
+    }
+    let first_index = first_index?;
+    let RuntimeSpanClause::Terms(terms) = &specs[first_index] else {
+        return None;
+    };
+    Some((terms.as_slice(), &specs[(first_index + 1)..]))
 }
 
 fn evaluate_span_multi_query(source: &Value, span_multi: &serde_json::Map<String, Value>) -> Option<bool> {
@@ -25664,11 +25725,18 @@ fn evaluate_span_like_clause(source: &Value, clause: &Value) -> Option<bool> {
 fn extract_span_clause(
     source: &Value,
     clause: &Value,
-) -> Option<(String, Vec<String>)> {
+) -> Option<(String, RuntimeSpanClause)> {
     let object = clause.as_object()?;
     if let Some(span_term) = object.get("span_term").and_then(Value::as_object) {
         let (field, expected) = span_term.iter().next()?;
-        return Some((field.clone(), vec![expected.as_str()?.to_ascii_lowercase()]));
+        return Some((
+            field.clone(),
+            RuntimeSpanClause::Terms(vec![expected.as_str()?.to_ascii_lowercase()]),
+        ));
+    }
+    if let Some(span_gap) = object.get("span_gap").and_then(Value::as_object) {
+        let (field, width) = span_gap.iter().next()?;
+        return Some((field.clone(), RuntimeSpanClause::Gap(width.as_u64()? as usize)));
     }
     if let Some(span_multi) = object.get("span_multi").and_then(Value::as_object) {
         let inner = span_multi.get("match")?;
@@ -25680,7 +25748,7 @@ fn extract_span_clause(
             .into_iter()
             .filter(|token| token.starts_with(&expected_value))
             .collect::<Vec<_>>();
-        return Some((field.clone(), accepted));
+        return Some((field.clone(), RuntimeSpanClause::Terms(accepted)));
     }
     None
 }
@@ -43015,6 +43083,80 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             pit_expires_at_millis(1_000, DEFAULT_MAX_PIT_KEEP_ALIVE_MILLIS),
             1_000 + u128::from(DEFAULT_MAX_PIT_KEEP_ALIVE_MILLIS)
         );
+    }
+
+    #[test]
+    fn search_routes_support_span_gap_inside_span_near_queries() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(RestMethod::Put, "/logs-span-gap-000001"))
+                .status,
+            200
+        );
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, "/logs-span-gap-000001/_doc/doc-1")
+                    .with_json_body(serde_json::json!({
+                        "message": "alpha beta gamma delta"
+                    })),
+            )
+            .status,
+            201
+        );
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, "/logs-span-gap-000001/_doc/doc-2")
+                    .with_json_body(serde_json::json!({
+                        "message": "alpha beta delta"
+                    })),
+            )
+            .status,
+            201
+        );
+
+        let span_gap_match = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-span-gap-000001/_search")
+                .with_json_body(serde_json::json!({
+                    "query": {
+                        "span_near": {
+                            "clauses": [
+                                { "span_term": { "message": "alpha" } },
+                                { "span_gap": { "message": 2 } },
+                                { "span_term": { "message": "delta" } }
+                            ],
+                            "slop": 0,
+                            "in_order": true
+                        }
+                    }
+                })),
+        );
+        assert_eq!(span_gap_match.status, 200);
+        assert_eq!(span_gap_match.body["hits"]["total"]["value"], 1);
+        assert_eq!(span_gap_match.body["hits"]["hits"][0]["_id"], "doc-1");
+
+        let span_gap_width_one_match = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-span-gap-000001/_search")
+                .with_json_body(serde_json::json!({
+                    "query": {
+                        "span_near": {
+                            "clauses": [
+                                { "span_term": { "message": "alpha" } },
+                                { "span_gap": { "message": 1 } },
+                                { "span_term": { "message": "delta" } }
+                            ],
+                            "slop": 0,
+                            "in_order": true
+                        }
+                    }
+                })),
+        );
+        assert_eq!(span_gap_width_one_match.status, 200);
+        assert_eq!(span_gap_width_one_match.body["hits"]["total"]["value"], 1);
+        assert_eq!(span_gap_width_one_match.body["hits"]["hits"][0]["_id"], "doc-2");
     }
 
     #[test]
