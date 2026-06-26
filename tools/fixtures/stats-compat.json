@@ -54,6 +54,58 @@
       }
     },
     {
+      "name": "reject_cluster_stats_mixed_all_metric",
+      "method": "GET",
+      "path": "/_cluster/stats/os,indices,_all/nodes/_all",
+      "compare": {
+        "expected_status": 400,
+        "body_paths_present": [
+          "error.type",
+          "error.reason",
+          "status"
+        ]
+      }
+    },
+    {
+      "name": "reject_cluster_stats_non_indices_index_metric",
+      "method": "GET",
+      "path": "/_cluster/stats/os/docs/nodes/_all",
+      "compare": {
+        "expected_status": 400,
+        "body_paths_present": [
+          "error.type",
+          "error.reason",
+          "status"
+        ]
+      }
+    },
+    {
+      "name": "reject_cluster_stats_unknown_metric",
+      "method": "GET",
+      "path": "/_cluster/stats/bogus/nodes/_all",
+      "compare": {
+        "expected_status": 400,
+        "body_paths_present": [
+          "error.type",
+          "error.reason",
+          "status"
+        ]
+      }
+    },
+    {
+      "name": "reject_cluster_stats_unknown_index_metric",
+      "method": "GET",
+      "path": "/_cluster/stats/indices/bogus/nodes/_all",
+      "compare": {
+        "expected_status": 400,
+        "body_paths_present": [
+          "error.type",
+          "error.reason",
+          "status"
+        ]
+      }
+    },
+    {
       "name": "get_index_stats_shape_and_numeric_subset",
       "method": "GET",
       "path": "/_stats",

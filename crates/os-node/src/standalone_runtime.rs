@@ -3056,6 +3056,9 @@ impl SteelNode {
                 ) {
                     return Some(response);
                 }
+                if let Some(response) = validate_cluster_stats_request(request) {
+                    return Some(response);
+                }
                 Some(RestResponse::json(
                     200,
                     stats_route_registration::invoke_cluster_stats_live_route(
@@ -3283,6 +3286,9 @@ impl SteelNode {
         if request.method == RestMethod::Get
             && self.cluster_stats_variant_path_supported(&request.path)
         {
+            if let Some(response) = validate_cluster_stats_request(request) {
+                return Some(response);
+            }
             return Some(RestResponse::json(
                 200,
                 stats_route_registration::invoke_cluster_stats_live_route(
@@ -22743,6 +22749,153 @@ fn validate_cluster_health_query_params(request: &RestRequest) -> Option<RestRes
     None
 }
 
+fn validate_cluster_stats_request(request: &RestRequest) -> Option<RestResponse> {
+    const METRICS: &[&str] = &[
+        "os",
+        "jvm",
+        "fs",
+        "process",
+        "ingest",
+        "plugins",
+        "network_types",
+        "discovery_types",
+        "packaging_types",
+        "indices",
+    ];
+    const INDEX_METRICS: &[&str] = &[
+        "shards",
+        "docs",
+        "store",
+        "fielddata",
+        "query_cache",
+        "completion",
+        "segments",
+        "analysis",
+        "mappings",
+    ];
+
+    let (path_metric, path_index_metric) = cluster_stats_path_metric_segments(&request.path);
+    let raw_metric = request
+        .query_params
+        .get("metric")
+        .map(String::as_str)
+        .or(path_metric)
+        .unwrap_or("_all");
+    let metrics = split_nonempty_csv(raw_metric);
+    if metrics.len() > 1 && metrics.contains(&"_all") {
+        return Some(RestResponse::opensearch_error_kind(
+            os_rest::RestErrorKind::IllegalArgument,
+            format!(
+                "request [{}] contains _all and individual metrics [{}]",
+                request.path, raw_metric
+            ),
+        ));
+    }
+
+    let raw_index_metric = request
+        .query_params
+        .get("index_metric")
+        .map(String::as_str)
+        .or(path_index_metric)
+        .or_else(|| {
+            if metrics.contains(&"indices") || metrics.contains(&"_all") {
+                Some("_all")
+            } else {
+                None
+            }
+        });
+    let index_metrics = raw_index_metric.map(split_nonempty_csv).unwrap_or_default();
+    if let Some(raw_index_metric) = raw_index_metric {
+        if index_metrics.len() > 1 && index_metrics.contains(&"_all") {
+            return Some(RestResponse::opensearch_error_kind(
+                os_rest::RestErrorKind::IllegalArgument,
+                format!(
+                    "request [{}] contains _all and individual index metrics [{}]",
+                    request.path, raw_index_metric
+                ),
+            ));
+        }
+        if !metrics.contains(&"indices") && !metrics.contains(&"_all") && !index_metrics.is_empty()
+        {
+            return Some(RestResponse::opensearch_error_kind(
+                os_rest::RestErrorKind::IllegalArgument,
+                format!(
+                    "request [{}] contains index metrics [{}] but indices stats not requested",
+                    request.path, raw_index_metric
+                ),
+            ));
+        }
+    }
+
+    let invalid_metrics = metrics
+        .iter()
+        .filter(|metric| **metric != "_all" && !METRICS.contains(metric))
+        .copied()
+        .collect::<Vec<_>>();
+    if !invalid_metrics.is_empty() {
+        return Some(RestResponse::opensearch_error_kind(
+            os_rest::RestErrorKind::IllegalArgument,
+            unrecognized_cluster_stats_values(request, &invalid_metrics, "metric"),
+        ));
+    }
+
+    if metrics.contains(&"indices") || metrics.contains(&"_all") {
+        let invalid_index_metrics = index_metrics
+            .iter()
+            .filter(|metric| **metric != "_all" && !INDEX_METRICS.contains(metric))
+            .copied()
+            .collect::<Vec<_>>();
+        if !invalid_index_metrics.is_empty() {
+            return Some(RestResponse::opensearch_error_kind(
+                os_rest::RestErrorKind::IllegalArgument,
+                unrecognized_cluster_stats_values(request, &invalid_index_metrics, "index metric"),
+            ));
+        }
+    }
+
+    None
+}
+
+fn cluster_stats_path_metric_segments(path: &str) -> (Option<&str>, Option<&str>) {
+    let Some(remainder) = path.strip_prefix("/_cluster/stats/") else {
+        return (None, None);
+    };
+    let segments = remainder
+        .split('/')
+        .filter(|segment| !segment.is_empty())
+        .collect::<Vec<_>>();
+    match segments.as_slice() {
+        ["nodes", _] => (None, None),
+        [metric, "nodes", _] => (Some(*metric), None),
+        [metric, index_metric, "nodes", _] => (Some(*metric), Some(*index_metric)),
+        _ => (None, None),
+    }
+}
+
+fn split_nonempty_csv(raw: &str) -> Vec<&str> {
+    raw.split(',')
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .collect()
+}
+
+fn unrecognized_cluster_stats_values(
+    request: &RestRequest,
+    invalids: &[&str],
+    detail: &str,
+) -> String {
+    let plural = if invalids.len() > 1 { "s" } else { "" };
+    let values = invalids
+        .iter()
+        .map(|value| format!("[{value}]"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!(
+        "request [{}] contains unrecognized {detail}{plural}: {values}",
+        request.path
+    )
+}
+
 fn validate_doc_write_occ_query_params(
     request: &RestRequest,
 ) -> Option<(Option<i64>, Option<i64>)> {
@@ -36481,7 +36634,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             "/_cluster/stats/nodes/os",
             "/_cluster/stats/nodes/steel-node",
             "/_cluster/stats/indices/nodes/_all",
-            "/_cluster/stats/os/indices/nodes/_all",
+            "/_cluster/stats/indices/docs/nodes/_all",
         ] {
             let response = node.handle_rest_request(RestRequest::new(RestMethod::Get, path));
             assert_eq!(response.status, 200, "path {path}");
@@ -36518,6 +36671,34 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 response.body["fs"]["available_in_bytes"].is_number(),
                 "path {path}"
             );
+        }
+
+        for (path, reason) in [
+            (
+                "/_cluster/stats/os,indices,_all/nodes/_all",
+                "request [/_cluster/stats/os,indices,_all/nodes/_all] contains _all and individual metrics [os,indices,_all]",
+            ),
+            (
+                "/_cluster/stats/indices/docs,_all/nodes/_all",
+                "request [/_cluster/stats/indices/docs,_all/nodes/_all] contains _all and individual index metrics [docs,_all]",
+            ),
+            (
+                "/_cluster/stats/os/docs/nodes/_all",
+                "request [/_cluster/stats/os/docs/nodes/_all] contains index metrics [docs] but indices stats not requested",
+            ),
+            (
+                "/_cluster/stats/bogus/nodes/_all",
+                "request [/_cluster/stats/bogus/nodes/_all] contains unrecognized metric: [bogus]",
+            ),
+            (
+                "/_cluster/stats/indices/bogus/nodes/_all",
+                "request [/_cluster/stats/indices/bogus/nodes/_all] contains unrecognized index metric: [bogus]",
+            ),
+        ] {
+            let response = node.handle_rest_request(RestRequest::new(RestMethod::Get, path));
+            assert_eq!(response.status, 400, "path {path}");
+            assert_eq!(response.body["error"]["type"], "illegal_argument_exception");
+            assert_eq!(response.body["error"]["reason"], reason, "path {path}");
         }
     }
 
