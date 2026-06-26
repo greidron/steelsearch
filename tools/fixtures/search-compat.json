@@ -5335,6 +5335,699 @@
       "description": "[lexical] _shard_doc object-form sort without PIT is rejected"
     },
     {
+      "name": "pit_search_extends_keep_alive",
+      "area": "search",
+      "extract": "pit_list_details",
+      "steps": [
+        {
+          "name": "pit-open",
+          "method": "POST",
+          "path": "/logs-compat/_search/point_in_time?keep_alive=1m",
+          "body": null,
+          "expected_status": 200,
+          "extract": "pit_open",
+          "save": {
+            "pit_id": "body.pit_id"
+          }
+        },
+        {
+          "name": "pit-search-extend",
+          "method": "POST",
+          "path": "/_search",
+          "body": {
+            "pit": {
+              "id": "${saved.pit_id}",
+              "keep_alive": "2m"
+            },
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "ts": {
+                  "order": "asc"
+                }
+              }
+            ],
+            "size": 1
+          },
+          "expected_status": 200,
+          "extract": "search_hits"
+        },
+        {
+          "name": "pit-list-after-search",
+          "method": "GET",
+          "path": "/_search/point_in_time/_all",
+          "body": null,
+          "expected_status": 200,
+          "extract": "pit_list_details"
+        }
+      ],
+      "family": "lexical",
+      "description": "[lexical] pit search extends keep_alive for the open context"
+    },
+    {
+      "name": "pit_list_multiple_keep_alive_details_search",
+      "area": "search",
+      "extract": "pit_list_details",
+      "steps": [
+        {
+          "name": "pit-open-one-minute",
+          "method": "POST",
+          "path": "/logs-compat/_search/point_in_time?keep_alive=1m",
+          "body": null,
+          "expected_status": 200,
+          "extract": "pit_open"
+        },
+        {
+          "name": "pit-open-two-minutes",
+          "method": "POST",
+          "path": "/logs-compat/_search/point_in_time?keep_alive=2m",
+          "body": null,
+          "expected_status": 200,
+          "extract": "pit_open"
+        },
+        {
+          "name": "pit-list-multiple",
+          "method": "GET",
+          "path": "/_search/point_in_time/_all",
+          "body": null,
+          "expected_status": 200,
+          "extract": "pit_list_details"
+        }
+      ],
+      "family": "lexical",
+      "description": "[lexical] list PIT preserves multiple context keep_alive values like OpenSearch"
+    },
+    {
+      "name": "pit_search_non_positive_keep_alive_preserves_existing_search",
+      "area": "search",
+      "extract": "pit_list_details",
+      "steps": [
+        {
+          "name": "pit-open",
+          "method": "POST",
+          "path": "/logs-compat/_search/point_in_time?keep_alive=1m",
+          "body": null,
+          "expected_status": 200,
+          "extract": "pit_open",
+          "save": {
+            "pit_id": "body.pit_id"
+          }
+        },
+        {
+          "name": "pit-search-zero-keep-alive",
+          "method": "POST",
+          "path": "/_search",
+          "body": {
+            "pit": {
+              "id": "${saved.pit_id}",
+              "keep_alive": "0ms"
+            },
+            "query": {
+              "match_all": {}
+            },
+            "size": 0
+          },
+          "expected_status": 200,
+          "extract": "search_hits"
+        },
+        {
+          "name": "pit-search-negative-keep-alive",
+          "method": "POST",
+          "path": "/_search",
+          "body": {
+            "pit": {
+              "id": "${saved.pit_id}",
+              "keep_alive": "-1ms"
+            },
+            "query": {
+              "match_all": {}
+            },
+            "size": 0
+          },
+          "expected_status": 200,
+          "extract": "search_hits"
+        },
+        {
+          "name": "pit-list-after-non-positive-search",
+          "method": "GET",
+          "path": "/_search/point_in_time/_all",
+          "body": null,
+          "expected_status": 200,
+          "extract": "pit_list_details"
+        }
+      ],
+      "family": "lexical",
+      "description": "[lexical] PIT search accepts non-positive keep_alive without reducing the existing context keep_alive"
+    },
+    {
+      "name": "pit_search_without_keep_alive_search",
+      "area": "search",
+      "extract": "search_hits",
+      "steps": [
+        {
+          "name": "pit-open",
+          "method": "POST",
+          "path": "/logs-compat/_search/point_in_time?keep_alive=1m",
+          "body": null,
+          "expected_status": 200,
+          "extract": "pit_open",
+          "save": {
+            "pit_id": "body.pit_id"
+          }
+        },
+        {
+          "name": "pit-search-without-keep-alive",
+          "method": "POST",
+          "path": "/_search",
+          "body": {
+            "pit": {
+              "id": "${saved.pit_id}"
+            },
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "ts": {
+                  "order": "asc"
+                }
+              }
+            ],
+            "size": 1
+          },
+          "expected_status": 200,
+          "extract": "search_hits"
+        }
+      ],
+      "family": "lexical",
+      "description": "[lexical] PIT search accepts omitted keep_alive like OpenSearch PointInTimeBuilder"
+    },
+    {
+      "name": "pit_search_with_default_ignore_throttled",
+      "area": "search",
+      "extract": "search_hits",
+      "steps": [
+        {
+          "name": "pit-open",
+          "method": "POST",
+          "path": "/logs-compat/_search/point_in_time?keep_alive=1m",
+          "body": null,
+          "expected_status": 200,
+          "extract": "pit_open"
+        },
+        {
+          "name": "pit-search",
+          "method": "POST",
+          "path": "/_search?ignore_throttled=true",
+          "body": {
+            "pit": {
+              "id": "${last.id}",
+              "keep_alive": "1m"
+            },
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "ts": {
+                  "order": "asc"
+                }
+              }
+            ],
+            "size": 1
+          },
+          "expected_status": 400,
+          "extract": "search_hits"
+        }
+      ],
+      "family": "lexical",
+      "description": "[lexical] pit search with default ignore_throttled search"
+    },
+    {
+      "name": "pit_search_with_order_sensitive_default_wildcards",
+      "area": "search",
+      "extract": "search_hits",
+      "steps": [
+        {
+          "name": "pit-open",
+          "method": "POST",
+          "path": "/logs-compat/_search/point_in_time?keep_alive=1m",
+          "body": null,
+          "expected_status": 200,
+          "extract": "pit_open"
+        },
+        {
+          "name": "pit-search",
+          "method": "POST",
+          "path": "/_search?expand_wildcards=none,open",
+          "body": {
+            "pit": {
+              "id": "${last.id}",
+              "keep_alive": "1m"
+            },
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "ts": {
+                  "order": "asc"
+                }
+              }
+            ],
+            "size": 1
+          },
+          "expected_status": 400,
+          "extract": "search_hits"
+        }
+      ],
+      "family": "lexical",
+      "description": "[lexical] pit search with order-sensitive default wildcards"
+    },
+    {
+      "name": "pit_search_with_default_ccs_minimize_roundtrips",
+      "area": "search",
+      "extract": "search_hits",
+      "steps": [
+        {
+          "name": "pit-open",
+          "method": "POST",
+          "path": "/logs-compat/_search/point_in_time?keep_alive=1m",
+          "body": null,
+          "expected_status": 200,
+          "extract": "pit_open"
+        },
+        {
+          "name": "pit-search",
+          "method": "POST",
+          "path": "/_search?ccs_minimize_roundtrips=false",
+          "body": {
+            "pit": {
+              "id": "${last.id}",
+              "keep_alive": "1m"
+            },
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "ts": {
+                  "order": "asc"
+                }
+              }
+            ],
+            "size": 1
+          },
+          "expected_status": 200,
+          "extract": "search_hits"
+        }
+      ],
+      "family": "lexical",
+      "description": "[lexical] pit search with default ccs_minimize_roundtrips search"
+    },
+    {
+      "name": "pit_search_rejects_explicit_rest_options",
+      "area": "search",
+      "extract": "search_error",
+      "steps": [
+        {
+          "name": "pit-open",
+          "method": "POST",
+          "path": "/logs-compat/_search/point_in_time?keep_alive=1m",
+          "body": null,
+          "expected_status": 200,
+          "extract": "pit_open"
+        },
+        {
+          "name": "pit-search-with-rest-options",
+          "method": "POST",
+          "path": "/logs-compat/_search?ignore_unavailable=true&routing=tenant-a&preference=_local&ccs_minimize_roundtrips=true",
+          "body": {
+            "pit": {
+              "id": "${last.id}",
+              "keep_alive": "1m"
+            },
+            "query": {
+              "match_all": {}
+            }
+          },
+          "expected_status": 400,
+          "extract": "search_error"
+        }
+      ],
+      "family": "lexical",
+      "description": "[lexical] pit search rejects explicit indices, indices options, routing, preference, and ccs options"
+    },
+    {
+      "name": "pit_search_rejects_explicit_default_indices_options",
+      "area": "search",
+      "extract": "search_error",
+      "steps": [
+        {
+          "name": "pit-open",
+          "method": "POST",
+          "path": "/logs-compat/_search/point_in_time?keep_alive=1m",
+          "body": null,
+          "expected_status": 200,
+          "extract": "pit_open"
+        },
+        {
+          "name": "pit-search-with-default-indices-options",
+          "method": "POST",
+          "path": "/_search?ignore_unavailable=false&allow_no_indices=true&expand_wildcards=open",
+          "body": {
+            "pit": {
+              "id": "${last.id}",
+              "keep_alive": "1m"
+            },
+            "query": {
+              "match_all": {}
+            }
+          },
+          "expected_status": 400,
+          "extract": "search_error"
+        }
+      ],
+      "family": "lexical",
+      "description": "[lexical] pit search rejects explicitly provided default indices options"
+    },
+    {
+      "name": "pit_unknown_field_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/_search",
+      "body": {
+        "pit": {
+          "id": "pit-missing",
+          "keep_alive": "1m",
+          "unexpected": true
+        },
+        "query": {
+          "match_all": {}
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] PIT rejects unknown object fields like OpenSearch"
+    },
+    {
+      "name": "pit_unknown_field_without_id_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/_search",
+      "body": {
+        "pit": {
+          "unexpected": true
+        },
+        "query": {
+          "match_all": {}
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] PIT rejects unknown fields before missing id like OpenSearch"
+    },
+    {
+      "name": "pit_non_object_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/_search",
+      "body": {
+        "pit": "pit-missing",
+        "query": {
+          "match_all": {}
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] PIT rejects non-object values like OpenSearch"
+    },
+    {
+      "name": "pit_missing_id_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/_search",
+      "body": {
+        "pit": {
+          "keep_alive": "1m"
+        },
+        "query": {
+          "match_all": {}
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] PIT rejects missing id like OpenSearch"
+    },
+    {
+      "name": "pit_invalid_keep_alive_error_search",
+      "area": "search",
+      "extract": "search_error_root_cause",
+      "steps": [
+        {
+          "name": "pit-open",
+          "method": "POST",
+          "path": "/logs-compat/_search/point_in_time?keep_alive=1m",
+          "body": null,
+          "expected_status": 200,
+          "extract": "pit_open",
+          "save": {
+            "pit_id": "body.pit_id"
+          }
+        },
+        {
+          "name": "pit-search",
+          "method": "POST",
+          "path": "/_search",
+          "body": {
+            "pit": {
+              "id": "${saved.pit_id}",
+              "keep_alive": "not-a-duration"
+            }
+          },
+          "expected_status": 400,
+          "extract": "search_error_root_cause"
+        }
+      ],
+      "family": "lexical",
+      "description": "[lexical] PIT rejects invalid keep_alive strings like OpenSearch"
+    },
+    {
+      "name": "pit_invalid_keep_alive_precedes_unknown_field_error_search",
+      "area": "search",
+      "extract": "search_error_root_cause",
+      "steps": [
+        {
+          "name": "pit-open",
+          "method": "POST",
+          "path": "/logs-compat/_search/point_in_time?keep_alive=1m",
+          "body": null,
+          "expected_status": 200,
+          "extract": "pit_open",
+          "save": {
+            "pit_id": "body.pit_id"
+          }
+        },
+        {
+          "name": "pit-search",
+          "method": "POST",
+          "path": "/_search",
+          "body": {
+            "pit": {
+              "id": "${saved.pit_id}",
+              "keep_alive": 60000,
+              "unexpected": true
+            }
+          },
+          "expected_status": 400,
+          "extract": "search_error_root_cause"
+        }
+      ],
+      "family": "lexical",
+      "description": "[lexical] PIT rejects bad keep_alive before later unknown fields like OpenSearch"
+    },
+    {
+      "name": "pit_numeric_id_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/_search",
+      "body": {
+        "pit": {
+          "id": 7,
+          "keep_alive": "1m"
+        },
+        "query": {
+          "match_all": {}
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] PIT rejects numeric id values like OpenSearch"
+    },
+    {
+      "name": "pit_null_id_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/_search",
+      "body": {
+        "pit": {
+          "id": null,
+          "keep_alive": "1m"
+        },
+        "query": {
+          "match_all": {}
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] PIT rejects null id values like OpenSearch"
+    },
+    {
+      "name": "pit_boolean_id_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/_search",
+      "body": {
+        "pit": {
+          "id": true,
+          "keep_alive": "1m"
+        },
+        "query": {
+          "match_all": {}
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] PIT rejects boolean id values like OpenSearch"
+    },
+    {
+      "name": "pit_object_id_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/_search",
+      "body": {
+        "pit": {
+          "id": {
+            "value": "pit-missing"
+          },
+          "keep_alive": "1m"
+        },
+        "query": {
+          "match_all": {}
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] PIT rejects object id values like OpenSearch"
+    },
+    {
+      "name": "pit_array_id_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/_search",
+      "body": {
+        "pit": {
+          "id": [
+            "pit-missing"
+          ],
+          "keep_alive": "1m"
+        },
+        "query": {
+          "match_all": {}
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] PIT rejects array id values like OpenSearch"
+    },
+    {
+      "name": "pit_empty_id_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/_search",
+      "body": {
+        "pit": {
+          "id": "",
+          "keep_alive": "1m"
+        },
+        "query": {
+          "match_all": {}
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] PIT rejects empty id like OpenSearch"
+    },
+    {
+      "name": "pit_numeric_keep_alive_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/_search",
+      "body": {
+        "pit": {
+          "id": "pit-missing",
+          "keep_alive": 60000
+        },
+        "query": {
+          "match_all": {}
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] PIT rejects numeric keep_alive values like OpenSearch"
+    },
+    {
+      "name": "pit_boolean_keep_alive_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/_search",
+      "body": {
+        "pit": {
+          "id": "pit-missing",
+          "keep_alive": true
+        },
+        "query": {
+          "match_all": {}
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] PIT rejects boolean keep_alive values like OpenSearch"
+    },
+    {
+      "name": "pit_null_keep_alive_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/_search",
+      "body": {
+        "pit": {
+          "id": "pit-missing",
+          "keep_alive": null
+        },
+        "query": {
+          "match_all": {}
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] PIT rejects null keep_alive values like OpenSearch"
+    },
+    {
       "name": "pre_filter_shard_size_search",
       "area": "search",
       "method": "POST",
