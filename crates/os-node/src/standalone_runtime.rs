@@ -5692,6 +5692,9 @@ impl SteelNode {
     }
 
     fn handle_cluster_state_route(&self, request: &RestRequest) -> RestResponse {
+        if let Some(response) = validate_cluster_state_query_params(request) {
+            return response;
+        }
         let mut scoped_request = request.clone();
         if let Some(metric_segment) = request.path.strip_prefix("/_cluster/state/") {
             if !metric_segment.is_empty() {
@@ -5713,7 +5716,17 @@ impl SteelNode {
             &scoped_request,
             &self.cluster_state_body(),
         ) {
-            Ok(response) => response,
+            Ok(mut response) => {
+                if request
+                    .query_params
+                    .contains_key("wait_for_metadata_version")
+                {
+                    if let Some(object) = response.body.as_object_mut() {
+                        object.insert("wait_for_timed_out".to_string(), Value::Bool(false));
+                    }
+                }
+                response
+            }
             Err(response) => response,
         }
     }
@@ -22627,6 +22640,38 @@ fn validate_tasks_time_query_params(
         if parse_time_value_millis(raw_value).is_none() {
             return Some(search_time_query_param_parse_error(field, raw_value));
         }
+    }
+    None
+}
+
+fn validate_cluster_state_query_params(request: &RestRequest) -> Option<RestResponse> {
+    if let Some(response) = validate_tasks_boolean_query_params(request, &["local"]) {
+        return Some(response);
+    }
+    if let Some(response) = validate_tasks_time_query_params(
+        request,
+        &[
+            "cluster_manager_timeout",
+            "master_timeout",
+            "wait_for_timeout",
+        ],
+    ) {
+        return Some(response);
+    }
+    let Some(raw_version) = request.query_params.get("wait_for_metadata_version") else {
+        return None;
+    };
+    if raw_version.parse::<i64>().is_err() {
+        return Some(RestResponse::json(
+            400,
+            serde_json::json!({
+                "error": {
+                    "type": "illegal_argument_exception",
+                    "reason": format!("Failed to parse value [{raw_version}] for [wait_for_metadata_version] as a long")
+                },
+                "status": 400
+            }),
+        ));
     }
     None
 }
@@ -62656,6 +62701,49 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             state.body["routing_nodes"]["nodes"]["node-a"][0]["allocation_id"],
             "logs-cluster-state-000001-p-0"
         );
+    }
+
+    #[test]
+    fn cluster_state_route_validates_wait_and_timeout_params_like_opensearch() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        for (path, expected_reason) in [
+            (
+                "/_cluster/state?local=maybe",
+                "Failed to parse value [maybe] as only [true] or [false] are allowed.",
+            ),
+            (
+                "/_cluster/state?cluster_manager_timeout=soon",
+                "failed to parse setting [cluster_manager_timeout] with value [soon] as a time value",
+            ),
+            (
+                "/_cluster/state?master_timeout=soon",
+                "failed to parse setting [master_timeout] with value [soon] as a time value",
+            ),
+            (
+                "/_cluster/state?wait_for_timeout=soon",
+                "failed to parse setting [wait_for_timeout] with value [soon] as a time value",
+            ),
+            (
+                "/_cluster/state?wait_for_metadata_version=abc",
+                "Failed to parse value [abc] for [wait_for_metadata_version] as a long",
+            ),
+        ] {
+            let response = node.handle_rest_request(RestRequest::new(RestMethod::Get, path));
+            assert_eq!(response.status, 400, "{path}");
+            assert_eq!(response.body["error"]["type"], "illegal_argument_exception");
+            assert_eq!(response.body["error"]["reason"], expected_reason, "{path}");
+        }
+
+        let waited = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_cluster/state?wait_for_metadata_version=1&wait_for_timeout=1s",
+        ));
+        assert_eq!(waited.status, 200);
+        assert_eq!(waited.body["wait_for_timed_out"], Value::Bool(false));
     }
 
     #[test]

@@ -310,6 +310,73 @@
           "routing_table"
         ]
       }
+    },
+    {
+      "name": "reject_cluster_state_invalid_local_boolean",
+      "method": "GET",
+      "path": "/_cluster/state?local=maybe",
+      "compare": {
+        "expected_status": 400,
+        "body_paths_present": [
+          "error.type",
+          "error.reason",
+          "status"
+        ]
+      }
+    },
+    {
+      "name": "reject_cluster_state_invalid_wait_for_timeout",
+      "method": "GET",
+      "path": "/_cluster/state?wait_for_timeout=soon",
+      "compare": {
+        "expected_status": 400,
+        "body_paths_present": [
+          "error.type",
+          "error.reason",
+          "status"
+        ]
+      }
+    },
+    {
+      "name": "reject_cluster_state_invalid_cluster_manager_timeout",
+      "method": "GET",
+      "path": "/_cluster/state?cluster_manager_timeout=soon",
+      "compare": {
+        "expected_status": 400,
+        "body_paths_present": [
+          "error.type",
+          "error.reason",
+          "status"
+        ]
+      }
+    },
+    {
+      "name": "reject_cluster_state_invalid_wait_for_metadata_version",
+      "method": "GET",
+      "path": "/_cluster/state?wait_for_metadata_version=abc",
+      "compare": {
+        "expected_status": 400,
+        "body_paths_present": [
+          "error.type",
+          "error.reason",
+          "status"
+        ]
+      }
+    },
+    {
+      "name": "get_cluster_state_wait_for_metadata_version_shape",
+      "method": "GET",
+      "path": "/_cluster/state?wait_for_metadata_version=1&wait_for_timeout=1s",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "cluster_name",
+          "wait_for_timed_out"
+        ],
+        "body_paths_equal": [
+          "wait_for_timed_out"
+        ]
+      }
     }
   ]
 }
