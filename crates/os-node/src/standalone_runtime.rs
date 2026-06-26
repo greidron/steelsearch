@@ -11025,8 +11025,10 @@ impl SteelNode {
             return Err(search_phase_missing_pit_context_response(pit_id));
         };
         if let Some(keep_alive_millis) = keep_alive_millis {
-            context.keep_alive_millis = keep_alive_millis;
-            context.expires_at_millis = pit_expires_at_millis(now_millis, keep_alive_millis);
+            let effective_keep_alive_millis = context.keep_alive_millis.max(keep_alive_millis);
+            context.keep_alive_millis = effective_keep_alive_millis;
+            context.expires_at_millis =
+                pit_expires_at_millis(now_millis, effective_keep_alive_millis);
         }
         Ok(context.clone())
     }
@@ -46574,6 +46576,115 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             pit_second_page.body["hits"]["hits"][0]["sort"],
             serde_json::json!([20])
         );
+    }
+
+    #[test]
+    fn point_in_time_basic_rest_spec_flow_matches_opensearch() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(RestMethod::Put, "/test_pit"))
+                .status,
+            200
+        );
+        for (id, foo) in [("42", 1), ("43", 2)] {
+            let response = node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, &format!("/test_pit/_doc/{id}"))
+                    .with_json_body(serde_json::json!({ "foo": foo })),
+            );
+            assert_eq!(response.status, 201, "{id}");
+        }
+
+        let open_pit = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/test_pit/_search/point_in_time?allow_partial_pit_creation=true&keep_alive=23h",
+        ));
+        assert_eq!(open_pit.status, 200);
+        assert_eq!(open_pit.body["_shards"]["failed"], 0);
+        let pit_id = open_pit.body["pit_id"].as_str().expect("pit id");
+
+        let pit_search = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/_search?rest_total_hits_as_int=true&size=1&sort=foo",
+            )
+            .with_json_body(serde_json::json!({
+                "query": { "match_all": {} },
+                "pit": { "id": pit_id }
+            })),
+        );
+        assert_eq!(pit_search.status, 200);
+        assert_eq!(pit_search.body["hits"]["total"], 2);
+        assert_eq!(pit_search.body["hits"]["hits"].as_array().unwrap().len(), 1);
+        assert_eq!(pit_search.body["hits"]["hits"][0]["_id"], "42");
+
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, "/test_pit/_doc/44")
+                    .with_json_body(serde_json::json!({ "foo": 3 })),
+            )
+            .status,
+            201
+        );
+
+        let pit_search_after_live_write = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/_search?rest_total_hits_as_int=true&size=1&sort=foo",
+            )
+            .with_json_body(serde_json::json!({
+                "query": { "match_all": {} },
+                "pit": {
+                    "id": pit_id,
+                    "keep_alive": "10m"
+                }
+            })),
+        );
+        assert_eq!(pit_search_after_live_write.status, 200);
+        assert_eq!(pit_search_after_live_write.body["hits"]["total"], 2);
+        assert_eq!(
+            pit_search_after_live_write.body["hits"]["hits"][0]["_id"],
+            "42"
+        );
+
+        let live_search = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/test_pit/_search?rest_total_hits_as_int=true&size=1&sort=foo",
+            )
+            .with_json_body(serde_json::json!({
+                "query": { "match_all": {} }
+            })),
+        );
+        assert_eq!(live_search.status, 200);
+        assert_eq!(live_search.body["hits"]["total"], 3);
+        assert_eq!(live_search.body["hits"]["hits"].as_array().unwrap().len(), 1);
+
+        let listed_pits = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_search/point_in_time/_all",
+        ));
+        assert_eq!(listed_pits.status, 200);
+        assert_eq!(listed_pits.body["pits"][0]["pit_id"], pit_id);
+        assert_eq!(listed_pits.body["pits"][0]["keep_alive"], 82800000);
+
+        let delete_pit = node.handle_rest_request(
+            RestRequest::new(RestMethod::Delete, "/_search/point_in_time")
+                .with_json_body(serde_json::json!({ "pit_id": [pit_id] })),
+        );
+        assert_eq!(delete_pit.status, 200);
+        assert_eq!(delete_pit.body["pits"][0]["pit_id"], pit_id);
+        assert_eq!(delete_pit.body["pits"][0]["successful"], true);
+
+        let delete_all_pits = node.handle_rest_request(RestRequest::new(
+            RestMethod::Delete,
+            "/_search/point_in_time/_all",
+        ));
+        assert_eq!(delete_all_pits.status, 200);
+        assert_eq!(delete_all_pits.body["pits"], serde_json::json!([]));
     }
 
     #[test]
