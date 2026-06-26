@@ -6255,6 +6255,54 @@ fn local_transport_json_query_matches(source: &Value, id: &str, query: &Value) -
     if let Some(fuzzy_query) = query.get("fuzzy").and_then(Value::as_object) {
         return local_transport_json_fuzzy_query_matches(source, id, fuzzy_query);
     }
+    if let Some(terms_set_query) = query.get("terms_set").and_then(Value::as_object) {
+        return local_transport_json_terms_set_query_matches(source, id, terms_set_query);
+    }
+    if let Some(geo_distance_query) = query.get("geo_distance").and_then(Value::as_object) {
+        return local_transport_json_geo_distance_query_matches(source, geo_distance_query);
+    }
+    if let Some(nested_query) = query.get("nested").and_then(Value::as_object) {
+        return local_transport_json_nested_query_matches(source, id, nested_query);
+    }
+    if let Some(constant_score_query) = query.get("constant_score").and_then(Value::as_object) {
+        return constant_score_query
+            .get("filter")
+            .or_else(|| constant_score_query.get("query"))
+            .is_some_and(|inner| local_transport_json_query_matches(source, id, inner));
+    }
+    if let Some(dis_max_query) = query.get("dis_max").and_then(Value::as_object) {
+        return dis_max_query
+            .get("queries")
+            .and_then(Value::as_array)
+            .is_some_and(|queries| {
+                queries
+                    .iter()
+                    .any(|inner| local_transport_json_query_matches(source, id, inner))
+            });
+    }
+    if let Some(boosting_query) = query.get("boosting").and_then(Value::as_object) {
+        return boosting_query
+            .get("positive")
+            .is_some_and(|inner| local_transport_json_query_matches(source, id, inner));
+    }
+    if let Some(function_score_query) = query.get("function_score").and_then(Value::as_object) {
+        return function_score_query.get("query").map_or(true, |inner| {
+            local_transport_json_query_matches(source, id, inner)
+        });
+    }
+    if let Some(script_score_query) = query.get("script_score").and_then(Value::as_object) {
+        return script_score_query
+            .get("query")
+            .is_some_and(|inner| local_transport_json_query_matches(source, id, inner));
+    }
+    if query.get("span_term").is_some()
+        || query.get("span_or").is_some()
+        || query.get("span_multi").is_some()
+        || query.get("span_near").is_some()
+        || query.get("field_masking_span").is_some()
+    {
+        return local_transport_json_span_query_matches(source, id, query);
+    }
     false
 }
 
@@ -6351,11 +6399,8 @@ fn local_transport_json_terms_query_matches(
             .iter()
             .any(|expected| value_matches_transport_term(&actual, expected));
     }
-    lookup_transport_source_value(source, field).is_some_and(|actual| {
-        values
-            .iter()
-            .any(|expected| value_matches_transport_term(actual, expected))
-    })
+    lookup_transport_source_value(source, field)
+        .is_some_and(|actual| transport_actual_matches_any_term(actual, values))
 }
 
 fn local_transport_json_range_query_matches(
@@ -6590,6 +6635,279 @@ fn local_transport_json_fuzzy_query_matches(
     };
     value
         .is_some_and(|value| local_transport_value_matches_fuzzy(&value, expected_value, fuzziness))
+}
+
+fn local_transport_json_terms_set_query_matches(
+    source: &Value,
+    id: &str,
+    query: &serde_json::Map<String, Value>,
+) -> bool {
+    let Some((field, spec)) = query.iter().next() else {
+        return false;
+    };
+    let Some(terms) = spec.get("terms").and_then(Value::as_array) else {
+        return false;
+    };
+    let minimum = spec
+        .get("minimum_should_match")
+        .and_then(|value| {
+            value
+                .as_u64()
+                .or_else(|| value.as_str().and_then(|text| text.parse::<u64>().ok()))
+        })
+        .or_else(|| {
+            spec.get("minimum_should_match_script")
+                .and_then(|script| script.get("source"))
+                .and_then(|value| {
+                    value
+                        .as_u64()
+                        .or_else(|| value.as_str().and_then(|text| text.parse::<u64>().ok()))
+                })
+        })
+        .and_then(|value| usize::try_from(value).ok())
+        .unwrap_or(terms.len());
+    if minimum == 0 {
+        return false;
+    }
+    let actual = if field == "_id" {
+        Some(Value::String(id.to_string()))
+    } else {
+        lookup_transport_source_value(source, field).cloned()
+    };
+    actual.is_some_and(|actual| {
+        terms
+            .iter()
+            .filter(|term| transport_actual_matches_term(&actual, term))
+            .count()
+            >= minimum
+    })
+}
+
+fn local_transport_json_geo_distance_query_matches(
+    source: &Value,
+    query: &serde_json::Map<String, Value>,
+) -> bool {
+    let max_distance = query
+        .get("distance")
+        .and_then(|value| {
+            value
+                .as_f64()
+                .or_else(|| value.as_str().and_then(parse_transport_distance_meters))
+        })
+        .unwrap_or(0.0);
+    let Some((field, point)) = query.iter().find(|(field, _)| {
+        !matches!(
+            field.as_str(),
+            "distance" | "ignore_unmapped" | "validation_method" | "type" | "_name" | "boost"
+        )
+    }) else {
+        return false;
+    };
+    let Some(expected_point) = parse_transport_geo_point_value(point) else {
+        return false;
+    };
+    lookup_transport_source_value(source, field)
+        .and_then(parse_transport_geo_point_value)
+        .is_some_and(|actual_point| {
+            haversine_transport_distance_meters(actual_point, expected_point) <= max_distance
+        })
+}
+
+fn parse_transport_distance_meters(raw: &str) -> Option<f64> {
+    let trimmed = raw.trim();
+    let number_len = trimmed
+        .char_indices()
+        .take_while(|(_, ch)| ch.is_ascii_digit() || matches!(ch, '.' | '+' | '-'))
+        .map(|(index, ch)| index + ch.len_utf8())
+        .last()?;
+    let value = trimmed[..number_len].parse::<f64>().ok()?;
+    let unit = trimmed[number_len..].trim().to_ascii_lowercase();
+    let multiplier = match unit.as_str() {
+        "" | "m" | "meter" | "meters" => 1.0,
+        "km" | "kilometer" | "kilometers" => 1_000.0,
+        "cm" | "centimeter" | "centimeters" => 0.01,
+        "mm" | "millimeter" | "millimeters" => 0.001,
+        "mi" | "mile" | "miles" => 1_609.344,
+        "yd" | "yard" | "yards" => 0.9144,
+        "ft" | "feet" | "foot" => 0.3048,
+        "in" | "inch" | "inches" => 0.0254,
+        "nmi" | "nauticalmile" | "nauticalmiles" => 1_852.0,
+        _ => return None,
+    };
+    Some(value * multiplier)
+}
+
+fn local_transport_json_nested_query_matches(
+    source: &Value,
+    id: &str,
+    query: &serde_json::Map<String, Value>,
+) -> bool {
+    let Some(path) = query.get("path").and_then(Value::as_str) else {
+        return false;
+    };
+    let Some(inner_query) = query.get("query") else {
+        return false;
+    };
+    let Some(nested_value) = lookup_transport_source_value(source, path) else {
+        return query
+            .get("ignore_unmapped")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+    };
+    match nested_value {
+        Value::Array(values) => values
+            .iter()
+            .any(|value| local_transport_json_query_matches(value, id, inner_query)),
+        value => local_transport_json_query_matches(value, id, inner_query),
+    }
+}
+
+fn local_transport_json_span_query_matches(source: &Value, id: &str, query: &Value) -> bool {
+    if let Some(span_term) = query.get("span_term").and_then(Value::as_object) {
+        return local_transport_json_term_query_matches(source, id, span_term);
+    }
+    if let Some(span_or) = query.get("span_or").and_then(Value::as_object) {
+        return span_or
+            .get("clauses")
+            .and_then(Value::as_array)
+            .is_some_and(|clauses| {
+                clauses
+                    .iter()
+                    .any(|clause| local_transport_json_span_query_matches(source, id, clause))
+            });
+    }
+    if let Some(span_multi) = query.get("span_multi").and_then(Value::as_object) {
+        return span_multi
+            .get("match")
+            .is_some_and(|inner| local_transport_json_query_matches(source, id, inner));
+    }
+    if let Some(span_near) = query.get("span_near").and_then(Value::as_object) {
+        return local_transport_json_span_near_query_matches(source, span_near);
+    }
+    if let Some(field_masking_span) = query.get("field_masking_span").and_then(Value::as_object) {
+        return field_masking_span
+            .get("query")
+            .is_some_and(|inner| local_transport_json_span_query_matches(source, id, inner));
+    }
+    false
+}
+
+fn local_transport_json_span_near_query_matches(
+    source: &Value,
+    query: &serde_json::Map<String, Value>,
+) -> bool {
+    let Some(clauses) = query.get("clauses").and_then(Value::as_array) else {
+        return false;
+    };
+    let mut extracted = Vec::new();
+    for clause in clauses {
+        let Some(extracted_clause) = extract_transport_json_span_clause(source, clause) else {
+            return false;
+        };
+        extracted.push(extracted_clause);
+    }
+    let Some((field, _)) = extracted.first() else {
+        return false;
+    };
+    if extracted
+        .iter()
+        .any(|(candidate_field, _)| candidate_field != field)
+    {
+        return false;
+    }
+    let Some(tokens) = lookup_transport_source_value(source, field)
+        .and_then(Value::as_str)
+        .map(tokenize_transport_search_text)
+    else {
+        return false;
+    };
+    if tokens.is_empty() {
+        return false;
+    }
+    let specs = extracted
+        .into_iter()
+        .map(|(_, values)| values)
+        .collect::<Vec<_>>();
+    let in_order = query
+        .get("in_order")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let slop = query.get("slop").and_then(Value::as_u64).unwrap_or(0) as usize;
+    if in_order {
+        let Some((first_terms, rest)) = first_transport_span_near_term_clause(&specs) else {
+            return false;
+        };
+        for start_position in 0..tokens.len() {
+            if !first_terms
+                .iter()
+                .any(|term| term == &tokens[start_position])
+            {
+                continue;
+            }
+            let mut previous_position = start_position;
+            let mut matched = true;
+            for spec in rest {
+                let TransportSpanClause::Terms(accepted_terms) = spec;
+                let start = previous_position + 1;
+                let mut matched_position = None;
+                for (index, token) in tokens.iter().enumerate().skip(start) {
+                    if accepted_terms.iter().any(|term| term == token) {
+                        matched_position = Some(index);
+                        break;
+                    }
+                }
+                let Some(position) = matched_position else {
+                    matched = false;
+                    break;
+                };
+                if position.saturating_sub(previous_position + 1) > slop {
+                    matched = false;
+                    break;
+                }
+                previous_position = position;
+            }
+            if matched {
+                return true;
+            }
+        }
+        return false;
+    }
+    specs.iter().all(|spec| {
+        let TransportSpanClause::Terms(accepted_terms) = spec;
+        tokens
+            .iter()
+            .any(|token| accepted_terms.iter().any(|term| term == token))
+    })
+}
+
+fn extract_transport_json_span_clause(
+    source: &Value,
+    clause: &Value,
+) -> Option<(String, TransportSpanClause)> {
+    if let Some(span_term) = clause.get("span_term").and_then(Value::as_object) {
+        let (field, value) = span_term.iter().next()?;
+        return Some((
+            field.clone(),
+            TransportSpanClause::Terms(vec![value.as_str()?.to_ascii_lowercase()]),
+        ));
+    }
+    if let Some(span_multi) = clause.get("span_multi").and_then(Value::as_object) {
+        let prefix = span_multi.get("match")?.get("prefix")?.as_object()?;
+        let (field, expected) = prefix.iter().next()?;
+        let expected = expected
+            .as_str()
+            .or_else(|| expected.get("value").and_then(Value::as_str))?
+            .to_ascii_lowercase();
+        let tokens = lookup_transport_source_value(source, field)
+            .and_then(Value::as_str)
+            .map(tokenize_transport_search_text)?;
+        let accepted = tokens
+            .into_iter()
+            .filter(|token| token.starts_with(&expected))
+            .collect::<Vec<_>>();
+        return Some((field.clone(), TransportSpanClause::Terms(accepted)));
+    }
+    None
 }
 
 fn local_transport_regexp_query_matches(
@@ -7097,6 +7415,21 @@ fn lookup_transport_source_value<'a>(source: &'a Value, field: &str) -> Option<&
         current = current.as_object()?.get(part)?;
     }
     Some(current)
+}
+
+fn transport_actual_matches_any_term(actual: &Value, expected_values: &[Value]) -> bool {
+    expected_values
+        .iter()
+        .any(|expected| transport_actual_matches_term(actual, expected))
+}
+
+fn transport_actual_matches_term(actual: &Value, expected: &Value) -> bool {
+    match actual {
+        Value::Array(values) => values
+            .iter()
+            .any(|value| value_matches_transport_term(value, expected)),
+        _ => value_matches_transport_term(actual, expected),
+    }
 }
 
 fn value_matches_transport_term(actual: &Value, expected: &Value) -> bool {
@@ -17277,7 +17610,7 @@ mod tests {
                                                                             os_transport::action::OpenSearchWrapperQueryBuilderWire {
                                                                                 boost: 1.0,
                                                                                 query_name: Some("reader-pit-wrapper".to_string()),
-                                                                                source: Bytes::from_static(br#"{"bool":{"filter":[{"term":{"tenant":"a"}},{"range":{"age":{"gte":5,"lte":10}}},{"match":{"message":{"query":"steel pit","operator":"and"}}},{"match_phrase":{"message":"reader pit"}},{"query_string":{"query":"steel AND transport","fields":["title","description"],"default_operator":"and"}},{"regexp":{"category":{"value":"prod-.*","case_insensitive":true}}},{"fuzzy":{"message":{"value":"searh","fuzziness":"AUTO"}}}]}}"#),
+                                                                                source: Bytes::from_static(br#"{"bool":{"filter":[{"term":{"tenant":"a"}},{"range":{"age":{"gte":5,"lte":10}}},{"match":{"message":{"query":"steel pit","operator":"and"}}},{"match_phrase":{"message":"reader pit"}},{"query_string":{"query":"steel AND transport","fields":["title","description"],"default_operator":"and"}},{"regexp":{"category":{"value":"prod-.*","case_insensitive":true}}},{"fuzzy":{"message":{"value":"searh","fuzziness":"AUTO"}}},{"terms_set":{"tags":{"terms":["search","transport"],"minimum_should_match_script":{"source":"2"}}}},{"geo_distance":{"distance":"1000m","location":{"lat":37.7749,"lon":-122.4194}}},{"nested":{"path":"comments","query":{"term":{"author":"ann"}}}},{"span_or":{"clauses":[{"span_term":{"category":"prod-api"}},{"span_multi":{"match":{"prefix":{"path":"/logs/"}}}}]}},{"span_near":{"clauses":[{"span_term":{"message":"reader"}},{"span_multi":{"match":{"prefix":{"message":"pit"}}}}],"slop":0,"in_order":true}},{"constant_score":{"filter":{"term":{"tenant":"a"}}}},{"dis_max":{"queries":[{"term":{"tenant":"missing"}},{"term":{"tenant":"a"}}]}},{"boosting":{"positive":{"term":{"tenant":"a"}},"negative":{"term":{"tenant":"missing"}}}},{"function_score":{"query":{"term":{"tenant":"a"}}}},{"script_score":{"query":{"term":{"tenant":"a"}},"script":{"source":"1"}}}]}}"#),
                                                                             },
                                                                         ),
                                                                         os_transport::action::OpenSearchQueryBuilderWire::Fuzzy(
