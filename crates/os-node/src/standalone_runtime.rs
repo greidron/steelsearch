@@ -5303,7 +5303,7 @@ impl SteelNode {
                     ) {
                         return Some(response);
                     }
-                    Some(self.handle_alias_delete_route(index, alias))
+                    Some(self.handle_alias_delete_route(index, alias, request))
                 }
                 _ => None,
             };
@@ -5347,7 +5347,7 @@ impl SteelNode {
                     ) {
                         return Some(response);
                     }
-                    Some(self.handle_alias_delete_route(index, alias))
+                    Some(self.handle_alias_delete_route(index, alias, request))
                 }
                 _ => None,
             };
@@ -6488,6 +6488,9 @@ impl SteelNode {
         alias: &str,
         request: &RestRequest,
     ) -> RestResponse {
+        if let Some(response) = validate_alias_mutation_query_params(request) {
+            return response;
+        }
         let body = serde_json::from_slice::<Value>(&request.body).unwrap_or(Value::Null);
         let subset = normalize_alias_metadata_for_readback(
             alias_mutation_route_registration::build_alias_metadata_subset(&body),
@@ -6533,6 +6536,9 @@ impl SteelNode {
         alias: &str,
         request: &RestRequest,
     ) -> RestResponse {
+        if let Some(response) = validate_alias_mutation_query_params(request) {
+            return response;
+        }
         let body = serde_json::from_slice::<Value>(&request.body).unwrap_or(Value::Null);
         let subset = normalize_alias_metadata_for_readback(
             alias_mutation_route_registration::build_alias_metadata_subset(&body),
@@ -6561,6 +6567,9 @@ impl SteelNode {
         index: &str,
         request: &RestRequest,
     ) -> RestResponse {
+        if let Some(response) = validate_alias_mutation_query_params(request) {
+            return response;
+        }
         let body = serde_json::from_slice::<Value>(&request.body).unwrap_or(Value::Null);
         let matched = match self.resolve_index_metadata_targets(index, false, false, "open") {
             Ok(matched) => matched,
@@ -6641,6 +6650,9 @@ impl SteelNode {
     }
 
     fn handle_alias_bulk_mutation_route(&self, request: &RestRequest) -> RestResponse {
+        if let Some(response) = validate_alias_mutation_query_params(request) {
+            return response;
+        }
         let body = serde_json::from_slice::<Value>(&request.body).unwrap_or(Value::Null);
         let subset = alias_mutation_route_registration::build_bulk_alias_actions_subset(&body);
         let mut additions = Vec::new();
@@ -6721,7 +6733,15 @@ impl SteelNode {
         )
     }
 
-    fn handle_alias_delete_route(&self, index: &str, alias: &str) -> RestResponse {
+    fn handle_alias_delete_route(
+        &self,
+        index: &str,
+        alias: &str,
+        request: &RestRequest,
+    ) -> RestResponse {
+        if let Some(response) = validate_alias_mutation_query_params(request) {
+            return response;
+        }
         let matched = match self.resolve_index_metadata_targets(index, false, false, "open") {
             Ok(matched) => matched,
             Err(response) => return response,
@@ -31796,6 +31816,35 @@ fn validate_alias_get_query_params(request: &RestRequest) -> Option<RestResponse
     if let Some(expand_wildcards) = request.query_params.get("expand_wildcards") {
         if let Err(response) = parse_index_expand_wildcards(expand_wildcards) {
             return Some(response);
+        }
+    }
+
+    None
+}
+
+fn validate_alias_mutation_query_params(request: &RestRequest) -> Option<RestResponse> {
+    const ALLOWED_PARAMS: &[&str] = &["cluster_manager_timeout", "master_timeout", "timeout"];
+
+    let unrecognized = request
+        .query_params
+        .keys()
+        .filter(|key| !ALLOWED_PARAMS.contains(&key.as_str()))
+        .collect::<Vec<_>>();
+    if let Some(response) = unrecognized_query_param_response_for_keys(request, &unrecognized) {
+        return Some(response);
+    }
+
+    for param in ALLOWED_PARAMS {
+        let Some(raw_value) = request.query_params.get(*param) else {
+            continue;
+        };
+        if parse_time_value_millis(raw_value).is_none() {
+            return Some(RestResponse::opensearch_error_kind(
+                os_rest::RestErrorKind::IllegalArgument,
+                format!(
+                    "failed to parse setting [{param}] with value [{raw_value}] as a time value"
+                ),
+            ));
         }
     }
 
@@ -57180,14 +57229,41 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         );
 
         let named_put = node.handle_rest_request(
-            RestRequest::new(RestMethod::Put, "/_alias/logs-root-write").with_json_body(
+            RestRequest::new(
+                RestMethod::Put,
+                "/_alias/logs-root-write?timeout=30s&cluster_manager_timeout=30s&master_timeout=30s",
+            )
+            .with_json_body(serde_json::json!({
+                "index": "logs-root-alias-000001",
+                "is_write_index": true
+            })),
+        );
+        assert_eq!(named_put.status, 200);
+
+        let named_put_unknown = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/_alias/logs-root-bad?local=true").with_json_body(
                 serde_json::json!({
-                    "index": "logs-root-alias-000001",
-                    "is_write_index": true
+                    "index": "logs-root-alias-000001"
                 }),
             ),
         );
-        assert_eq!(named_put.status, 200);
+        assert_eq!(named_put_unknown.status, 400);
+        assert_eq!(
+            named_put_unknown.body["error"]["reason"],
+            "request [/_alias/logs-root-bad] contains unrecognized parameter: [local]"
+        );
+
+        let named_put_bad_timeout = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/_alias/logs-root-bad?timeout=bogus")
+                .with_json_body(serde_json::json!({
+                    "index": "logs-root-alias-000001"
+                })),
+        );
+        assert_eq!(named_put_bad_timeout.status, 400);
+        assert_eq!(
+            named_put_bad_timeout.body["error"]["reason"],
+            "failed to parse setting [timeout] with value [bogus] as a time value"
+        );
 
         let named_post = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/_aliases/logs-root-search").with_json_body(
@@ -57288,6 +57364,37 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             Value::Bool(true)
         );
 
+        let bulk_alias_timeout = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/_aliases?timeout=30s&cluster_manager_timeout=30s&master_timeout=30s",
+            )
+            .with_json_body(serde_json::json!({
+                "actions": [
+                    {
+                        "add": {
+                            "index": "logs-root-alias-000001",
+                            "alias": "logs-root-bulk-timeout"
+                        }
+                    }
+                ]
+            })),
+        );
+        assert_eq!(bulk_alias_timeout.status, 200);
+
+        let bulk_alias_unknown = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_aliases?local=true").with_json_body(
+                serde_json::json!({
+                    "actions": []
+                }),
+            ),
+        );
+        assert_eq!(bulk_alias_unknown.status, 400);
+        assert_eq!(
+            bulk_alias_unknown.body["error"]["reason"],
+            "request [/_aliases] contains unrecognized parameter: [local]"
+        );
+
         let aliases_get = node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_aliases"));
         assert_eq!(aliases_get.status, 200);
         assert!(aliases_get.body["logs-root-alias-000001"]["aliases"]
@@ -57314,14 +57421,31 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(create_second.status, 200);
 
         let collection_put = node.handle_rest_request(
-            RestRequest::new(RestMethod::Put, "/logs-index-alias-000001/_alias").with_json_body(
-                serde_json::json!({
-                    "alias": "logs-index-collection",
-                    "is_write_index": true
-                }),
-            ),
+            RestRequest::new(
+                RestMethod::Put,
+                "/logs-index-alias-000001/_alias?timeout=30s&cluster_manager_timeout=30s&master_timeout=30s",
+            )
+            .with_json_body(serde_json::json!({
+                "alias": "logs-index-collection",
+                "is_write_index": true
+            })),
         );
         assert_eq!(collection_put.status, 200);
+
+        let collection_put_invalid_timeout = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Put,
+                "/logs-index-alias-000001/_alias?cluster_manager_timeout=bogus",
+            )
+            .with_json_body(serde_json::json!({
+                "alias": "logs-index-bad-timeout"
+            })),
+        );
+        assert_eq!(collection_put_invalid_timeout.status, 400);
+        assert_eq!(
+            collection_put_invalid_timeout.body["error"]["reason"],
+            "failed to parse setting [cluster_manager_timeout] with value [bogus] as a time value"
+        );
 
         let collection_get = node.handle_rest_request(RestRequest::new(
             RestMethod::Get,
@@ -57447,9 +57571,19 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
 
         let alias_delete = node.handle_rest_request(RestRequest::new(
             RestMethod::Delete,
-            "/logs-index-alias-000001/_alias/logs-index-named-put",
+            "/logs-index-alias-000001/_alias/logs-index-named-put?timeout=30s&cluster_manager_timeout=30s&master_timeout=30s",
         ));
         assert_eq!(alias_delete.status, 200);
+
+        let alias_delete_unknown = node.handle_rest_request(RestRequest::new(
+            RestMethod::Delete,
+            "/logs-index-alias-000001/_alias/logs-index-bulk?local=true",
+        ));
+        assert_eq!(alias_delete_unknown.status, 400);
+        assert_eq!(
+            alias_delete_unknown.body["error"]["reason"],
+            "request [/logs-index-alias-000001/_alias/logs-index-bulk] contains unrecognized parameter: [local]"
+        );
 
         let deleted_head = node.handle_rest_request(RestRequest::new(
             RestMethod::Head,
