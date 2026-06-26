@@ -18189,12 +18189,9 @@ impl SteelNode {
                 "pri.search.point_in_time_total": pit_total.to_string()
             }));
         }
-        rows.sort_by(|left, right| {
-            left["index"]
-                .as_str()
-                .unwrap_or_default()
-                .cmp(right["index"].as_str().unwrap_or_default())
-        });
+        if let Err(response) = sort_cat_indices_rows(&mut rows, request.query_params.get("s")) {
+            return response;
+        }
         let display_columns = cat_indices_display_columns(request.query_params.get("h"));
         if request
             .query_params
@@ -30207,6 +30204,73 @@ fn cat_indices_column_aliases(column: &str) -> &'static [&'static str] {
     }
 }
 
+fn cat_indices_resolve_column(column: &str) -> Option<&'static str> {
+    CAT_INDICES_ALL_COLUMNS
+        .iter()
+        .copied()
+        .find(|candidate| *candidate == column)
+        .or_else(|| {
+            CAT_INDICES_ALL_COLUMNS.iter().copied().find(|candidate| {
+                cat_indices_column_aliases(candidate)
+                    .iter()
+                    .any(|alias| *alias == column)
+            })
+        })
+}
+
+fn compare_cat_indices_values(left: &Value, right: &Value) -> std::cmp::Ordering {
+    let left_text = left.as_str().unwrap_or_default();
+    let right_text = right.as_str().unwrap_or_default();
+    match (left_text.parse::<i64>(), right_text.parse::<i64>()) {
+        (Ok(left_number), Ok(right_number)) => left_number.cmp(&right_number),
+        _ => left_text.cmp(right_text),
+    }
+}
+
+fn sort_cat_indices_rows(
+    rows: &mut [Value],
+    s_param: Option<&String>,
+) -> Result<(), RestResponse> {
+    let ordering = match s_param {
+        Some(value) => {
+            let mut ordering = Vec::new();
+            for raw_column in value.split(',').map(str::trim).filter(|value| !value.is_empty()) {
+                let (column_name, reverse) = if let Some(column) = raw_column.strip_suffix(":desc") {
+                    (column, true)
+                } else if let Some(column) = raw_column.strip_suffix(":asc") {
+                    (column, false)
+                } else {
+                    (raw_column, false)
+                };
+                let Some(column) = cat_indices_resolve_column(column_name) else {
+                    return Err(RestResponse::opensearch_error(
+                        500,
+                        "unsupported_operation_exception",
+                        &format!("Unable to sort by unknown sort key `{column_name}`"),
+                    ));
+                };
+                ordering.push((column, reverse));
+            }
+            ordering
+        }
+        None => vec![("index", false)],
+    };
+    rows.sort_by(|left, right| {
+        for (column, reverse) in &ordering {
+            let comparison = compare_cat_indices_values(&left[*column], &right[*column]);
+            if comparison != std::cmp::Ordering::Equal {
+                return if *reverse {
+                    comparison.reverse()
+                } else {
+                    comparison
+                };
+            }
+        }
+        std::cmp::Ordering::Equal
+    });
+    Ok(())
+}
+
 fn cat_indices_display_columns(h_param: Option<&String>) -> Vec<(&'static str, String)> {
     let Some(h_param) = h_param else {
         return CAT_INDICES_DEFAULT_COLUMNS
@@ -35620,6 +35684,46 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             .collect::<Vec<_>>();
         assert_eq!(selected_text_lines[0], "idx dc");
         assert!(selected_text_lines.iter().any(|line| *line == "logs-000001 1"));
+
+        let mut indices_sorted_text_request =
+            RestRequest::new(RestMethod::Get, "/_cat/indices/logs-*");
+        indices_sorted_text_request
+            .query_params
+            .insert("v".to_string(), "true".to_string());
+        indices_sorted_text_request
+            .query_params
+            .insert("h".to_string(), "idx".to_string());
+        indices_sorted_text_request
+            .query_params
+            .insert("s".to_string(), "idx:desc".to_string());
+        let indices_sorted_text_response = node.handle_rest_request(indices_sorted_text_request);
+        let indices_sorted_text = indices_sorted_text_response
+            .body
+            .as_str()
+            .expect("cat indices sorted text body");
+        let sorted_text_lines = indices_sorted_text
+            .lines()
+            .map(str::trim)
+            .collect::<Vec<_>>();
+        assert_eq!(sorted_text_lines[0], "idx");
+        assert_eq!(sorted_text_lines[1], "logs-hidden-000001");
+        assert_eq!(sorted_text_lines[2], "logs-000001");
+
+        let mut indices_unknown_sort_request =
+            RestRequest::new(RestMethod::Get, "/_cat/indices/logs-*");
+        indices_unknown_sort_request
+            .query_params
+            .insert("s".to_string(), "missing_column".to_string());
+        let indices_unknown_sort_response = node.handle_rest_request(indices_unknown_sort_request);
+        assert_eq!(indices_unknown_sort_response.status, 500);
+        assert_eq!(
+            indices_unknown_sort_response.body["error"]["type"],
+            "unsupported_operation_exception"
+        );
+        assert_eq!(
+            indices_unknown_sort_response.body["error"]["reason"],
+            "Unable to sort by unknown sort key `missing_column`"
+        );
 
         let mut indices_json_request = RestRequest::new(RestMethod::Get, "/_cat/indices/logs-*");
         indices_json_request

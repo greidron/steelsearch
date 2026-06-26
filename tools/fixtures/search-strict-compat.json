@@ -846,6 +846,17 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "cat_indices_text_selected_alias_sort_desc",
+      "area": "cat",
+      "method": "GET",
+      "path": "/_cat/indices?v=true&h=idx&s=idx:desc",
+      "accept": "text/plain",
+      "extract": "cat_indices_selected_columns",
+      "family": "admin-cat",
+      "description": "[admin-cat] cat indices text honors s aliases and desc order",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "cat_pending_tasks_json",
       "area": "cat",
       "method": "GET",
