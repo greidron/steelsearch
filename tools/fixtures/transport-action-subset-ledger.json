@@ -32,14 +32,14 @@
       "reason": "bounded bulk write transport parity is declared only for the core bulk action subset"
     },
     {
-      "case": "msearch_planned_reject",
+      "case": "msearch_server_side_subset",
       "action": "MultiSearchAction.INSTANCE",
       "transport_class": "TransportMultiSearchAction.class",
       "family": "search",
-      "bucket": "planned",
-      "disposition": "rejected",
+      "bucket": "server-side",
+      "disposition": "allowed",
       "route_family": "/_msearch",
-      "reason": "multi-search transport dispatch is still planned and must reject before execution"
+      "reason": "bounded multi-search transport parity executes supported sub-search requests in order and returns OpenSearch-shaped success items"
     },
     {
       "case": "stream_search_planned_reject",

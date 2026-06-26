@@ -1603,6 +1603,58 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end_at_ms,
         )?;
     } else if is_request
+        && normalized_action_hint == Some("indices:data/read/search")
+        && search_request_supports_local_execution_subset(&body)
+    {
+        let response = build_local_search_response(request_id, header_version_id, &body);
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("indices:data/read/search"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request
+        && normalized_action_hint == Some("indices:data/read/msearch")
+        && multi_search_request_supports_local_execution_subset(&body)
+    {
+        let response = build_local_multi_search_response(request_id, header_version_id, &body);
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("indices:data/read/msearch"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request
         && normalized_action_hint == Some("indices:data/read/point_in_time/create")
         && create_pit_request_supports_local_lifecycle_subset(&body)
     {
@@ -4135,6 +4187,203 @@ fn split_transport_document_key(key: &str) -> Option<(&str, &str, &str)> {
     Some((parts.next()?, parts.next()?, parts.next()?))
 }
 
+fn build_local_search_response(request_id: i64, header_version_id: u32, body: &[u8]) -> Vec<u8> {
+    let Some(request) = decode_search_request_from_transport_body(body) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    if request.validate_supported_execution_subset().is_err() {
+        return build_empty_transport_response(request_id, header_version_id);
+    }
+    let response = local_transport_search_response_from_request(&request);
+    os_transport::action::build_opensearch_search_response_message(
+        request_id,
+        Version::from_id(header_version_id as i32),
+        &response,
+    )
+    .map(|frame| frame.to_vec())
+    .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
+}
+
+fn search_request_supports_local_execution_subset(body: &[u8]) -> bool {
+    decode_search_request_from_transport_body(body)
+        .and_then(|request| request.validate_supported_execution_subset().ok())
+        .is_some()
+}
+
+fn decode_search_request_from_transport_body(
+    body: &[u8],
+) -> Option<os_transport::action::OpenSearchSearchRequestWire> {
+    let message = decode_transport_message_from_body(body)?;
+    os_transport::action::read_opensearch_search_request_message(&message).ok()
+}
+
+fn build_local_multi_search_response(
+    request_id: i64,
+    header_version_id: u32,
+    body: &[u8],
+) -> Vec<u8> {
+    let Some(request) = decode_multi_search_request_from_transport_body(body) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    if request.validate_supported_execution_subset().is_err() {
+        return build_empty_transport_response(request_id, header_version_id);
+    }
+    let response = os_transport::action::OpenSearchMultiSearchResponseWire::success(
+        request
+            .requests
+            .iter()
+            .map(local_transport_search_response_from_request)
+            .collect(),
+        1,
+    );
+    os_transport::action::build_opensearch_multi_search_response_message(
+        request_id,
+        Version::from_id(header_version_id as i32),
+        &response,
+    )
+    .map(|frame| frame.to_vec())
+    .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
+}
+
+fn multi_search_request_supports_local_execution_subset(body: &[u8]) -> bool {
+    decode_multi_search_request_from_transport_body(body)
+        .and_then(|request| request.validate_supported_execution_subset().ok())
+        .is_some()
+}
+
+fn decode_multi_search_request_from_transport_body(
+    body: &[u8],
+) -> Option<os_transport::action::OpenSearchMultiSearchRequestWire> {
+    let message = decode_transport_message_from_body(body)?;
+    os_transport::action::read_opensearch_multi_search_request_message(&message).ok()
+}
+
+fn local_transport_search_response_from_request(
+    request: &os_transport::action::OpenSearchSearchRequestWire,
+) -> os_transport::action::OpenSearchSearchResponseWire {
+    let source = request.source.as_ref();
+    let from = source
+        .map(|source| source.from.max(0) as usize)
+        .unwrap_or(0);
+    let size = source
+        .map(|source| source.size.max(0) as usize)
+        .unwrap_or(10);
+    let query = source.and_then(|source| source.query.as_ref());
+    let mut matched = dev_transport_pit_bindings()
+        .documents
+        .lock()
+        .expect("dev transport documents lock poisoned")
+        .iter()
+        .filter_map(|(key, record)| {
+            if !record.refreshed {
+                return None;
+            }
+            let (index, id, _) = split_transport_document_key(key)?;
+            local_transport_query_matches(&record.source, id, query).then(|| {
+                (
+                    index.to_string(),
+                    id.to_string(),
+                    record.source.clone(),
+                    record.version,
+                    record.seq_no,
+                    record.primary_term,
+                )
+            })
+        })
+        .collect::<Vec<_>>();
+    matched.sort_by(|left, right| {
+        left.4
+            .cmp(&right.4)
+            .then_with(|| left.0.cmp(&right.0))
+            .then_with(|| left.1.cmp(&right.1))
+    });
+    let total_hits = matched.len() as i64;
+    let hits = matched
+        .into_iter()
+        .skip(from)
+        .take(size)
+        .map(|(index, id, source, version, seq_no, primary_term)| {
+            os_transport::action::OpenSearchSearchHitWire {
+                id: Some(id),
+                score: 1.0,
+                nested_identity: None,
+                version,
+                seq_no,
+                primary_term,
+                source: Some(source),
+                explanation: None,
+                fields: BTreeMap::new(),
+                meta_fields: BTreeMap::new(),
+                highlight_fields: BTreeMap::new(),
+                sort_values: Vec::new(),
+                matched_queries: BTreeMap::new(),
+                shard_target: os_transport::action::OpenSearchSearchShardTargetWire::from_hit_index(
+                    &index,
+                ),
+                inner_hits: BTreeMap::new(),
+            }
+        })
+        .collect::<Vec<_>>();
+    let resolved_indices = dev_transport_pit_bindings()
+        .created_indices
+        .lock()
+        .expect("dev transport created indices lock poisoned")
+        .iter()
+        .cloned()
+        .collect::<Vec<_>>();
+    let total_shards =
+        transport_pit_total_primary_shards(dev_transport_pit_bindings(), &resolved_indices).max(1)
+            as i32;
+    os_transport::action::OpenSearchSearchResponseWire {
+        total_hits: Some(total_hits),
+        total_hits_relation: 0,
+        max_score: if hits.is_empty() { f32::NAN } else { 1.0 },
+        hits,
+        total_shards,
+        successful_shards: total_shards,
+        took_millis: 1,
+        ..os_transport::action::OpenSearchSearchResponseWire::empty_with_total_hits(total_hits)
+    }
+}
+
+fn local_transport_query_matches(
+    source: &Value,
+    id: &str,
+    query: Option<&os_transport::action::OpenSearchQueryBuilderWire>,
+) -> bool {
+    match query {
+        None | Some(os_transport::action::OpenSearchQueryBuilderWire::MatchAll(_)) => true,
+        Some(os_transport::action::OpenSearchQueryBuilderWire::MatchNone(_)) => false,
+        Some(os_transport::action::OpenSearchQueryBuilderWire::Term(term)) => {
+            if term.field_name == "_id" {
+                return value_matches_transport_term(&Value::String(id.to_string()), &term.value);
+            }
+            lookup_transport_source_value(source, &term.field_name)
+                .is_some_and(|value| value_matches_transport_term(value, &term.value))
+        }
+        _ => false,
+    }
+}
+
+fn lookup_transport_source_value<'a>(source: &'a Value, field: &str) -> Option<&'a Value> {
+    let mut current = source;
+    for part in field.split('.') {
+        current = current.as_object()?.get(part)?;
+    }
+    Some(current)
+}
+
+fn value_matches_transport_term(actual: &Value, expected: &Value) -> bool {
+    if actual == expected {
+        return true;
+    }
+    match (actual, expected) {
+        (Value::Number(actual), Value::String(expected)) => actual.to_string() == *expected,
+        (Value::String(actual), Value::Number(expected)) => *actual == expected.to_string(),
+        _ => false,
+    }
+}
+
 fn transport_index_metadata_is_hidden(index_body: &Value) -> bool {
     index_body["settings"]["index"]["hidden"]
         .as_str()
@@ -6455,6 +6704,24 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
                 request_id,
                 header_version_id,
                 transport_identity,
+            ))
+        }
+        Some("indices:data/read/search")
+            if search_request_supports_local_execution_subset(body) =>
+        {
+            Some(build_local_search_response(
+                request_id,
+                header_version_id,
+                body,
+            ))
+        }
+        Some("indices:data/read/msearch")
+            if multi_search_request_supports_local_execution_subset(body) =>
+        {
+            Some(build_local_multi_search_response(
+                request_id,
+                header_version_id,
+                body,
             ))
         }
         Some("indices:data/read/point_in_time/create")
@@ -11246,6 +11513,184 @@ mod tests {
             response,
             os_transport::action::OpenSearchFindDanglingIndexResponseWire::empty("steelsearch-dev")
         );
+    }
+
+    #[test]
+    fn search_transport_route_returns_local_match_all_and_term_hits() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        dev_transport_pit_bindings()
+            .created_indices
+            .lock()
+            .expect("dev transport created indices lock poisoned")
+            .clear();
+        dev_transport_pit_bindings()
+            .documents
+            .lock()
+            .expect("dev transport documents lock poisoned")
+            .clear();
+        *dev_transport_pit_bindings()
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned") = serde_json::json!({
+            "indices": {
+                "logs-search-transport": {
+                    "settings": {
+                        "index": {
+                            "number_of_shards": "1"
+                        }
+                    }
+                }
+            }
+        });
+        dev_transport_pit_bindings()
+            .created_indices
+            .lock()
+            .expect("dev transport created indices lock poisoned")
+            .insert("logs-search-transport".to_string());
+        {
+            let mut documents = dev_transport_pit_bindings()
+                .documents
+                .lock()
+                .expect("dev transport documents lock poisoned");
+            documents.insert(
+                "logs-search-transport:doc-1:".to_string(),
+                StoredDocument {
+                    source: serde_json::json!({ "status": "active", "ordinal": 1 }),
+                    version: 1,
+                    seq_no: 1,
+                    primary_term: 1,
+                    routing: None,
+                    refreshed: true,
+                },
+            );
+            documents.insert(
+                "logs-search-transport:doc-2:".to_string(),
+                StoredDocument {
+                    source: serde_json::json!({ "status": "archived", "ordinal": 2 }),
+                    version: 1,
+                    seq_no: 2,
+                    primary_term: 1,
+                    routing: None,
+                    refreshed: true,
+                },
+            );
+        }
+
+        let match_all_request = os_transport::action::OpenSearchSearchRequestWire::default();
+        let match_all_frame = os_transport::action::build_opensearch_search_request_message(
+            301,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &match_all_request,
+        )
+        .unwrap();
+        assert!(search_request_supports_local_execution_subset(
+            &match_all_frame[6..]
+        ));
+        let match_all_response = build_local_search_response(
+            301,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &match_all_frame[6..],
+        );
+        let mut frame = BytesMut::from(&match_all_response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected search response message");
+        };
+        let response = os_transport::action::read_opensearch_search_response_message(&message)
+            .expect("search response");
+        assert_eq!(response.total_hits, Some(2));
+        assert_eq!(response.hits.len(), 2);
+        assert_eq!(response.hits[0].id.as_deref(), Some("doc-1"));
+        assert_eq!(response.hits[1].id.as_deref(), Some("doc-2"));
+
+        let term_request = os_transport::action::OpenSearchSearchRequestWire {
+            source: Some(os_transport::action::OpenSearchSearchSourceBuilderWire {
+                query: Some(os_transport::action::OpenSearchQueryBuilderWire::Term(
+                    os_transport::action::OpenSearchTermQueryBuilderWire {
+                        boost: 1.0,
+                        query_name: None,
+                        field_name: "status".to_string(),
+                        value: serde_json::json!("active"),
+                        case_insensitive: false,
+                    },
+                )),
+                ..os_transport::action::OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..os_transport::action::OpenSearchSearchRequestWire::default()
+        };
+        let term_frame = os_transport::action::build_opensearch_search_request_message(
+            302,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &term_request,
+        )
+        .unwrap();
+        assert!(search_request_supports_local_execution_subset(
+            &term_frame[6..]
+        ));
+        let term_response = build_local_search_response(
+            302,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &term_frame[6..],
+        );
+        let mut frame = BytesMut::from(&term_response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected term search response message");
+        };
+        let response = os_transport::action::read_opensearch_search_response_message(&message)
+            .expect("term search response");
+        assert_eq!(response.total_hits, Some(1));
+        assert_eq!(response.hits.len(), 1);
+        assert_eq!(response.hits[0].id.as_deref(), Some("doc-1"));
+        assert_eq!(
+            response.hits[0]
+                .source
+                .as_ref()
+                .and_then(|source| source.get("status")),
+            Some(&serde_json::json!("active"))
+        );
+
+        let multi_request = os_transport::action::OpenSearchMultiSearchRequestWire {
+            requests: vec![match_all_request, term_request],
+            ..os_transport::action::OpenSearchMultiSearchRequestWire::default()
+        };
+        let multi_frame = os_transport::action::build_opensearch_multi_search_request_message(
+            303,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &multi_request,
+        )
+        .unwrap();
+        assert!(multi_search_request_supports_local_execution_subset(
+            &multi_frame[6..]
+        ));
+        let multi_response = build_local_multi_search_response(
+            303,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &multi_frame[6..],
+        );
+        let mut frame = BytesMut::from(&multi_response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected multi-search response message");
+        };
+        let response =
+            os_transport::action::read_opensearch_multi_search_response_message(&message)
+                .expect("multi-search response");
+        assert_eq!(response.responses.len(), 2);
+        assert_eq!(response.responses[0].total_hits, Some(2));
+        assert_eq!(response.responses[1].total_hits, Some(1));
+        assert_eq!(response.responses[1].hits[0].id.as_deref(), Some("doc-1"));
     }
 
     #[test]
