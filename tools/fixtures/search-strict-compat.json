@@ -1186,6 +1186,27 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "cat_segments_text_selected_alias_columns",
+      "area": "cat",
+      "method": "GET",
+      "path": "/_cat/segments/logs-compat?v=true&h=idx,sh,p,seg,g,dc,si",
+      "accept": "text/plain",
+      "extract": "cat_indices_selected_columns",
+      "family": "admin-cat",
+      "description": "[admin-cat] cat segments text honors h aliases",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "cat_segments_json_selected_alias_columns",
+      "area": "cat",
+      "method": "GET",
+      "path": "/_cat/segments/logs-compat?format=json&h=idx,sh,p,seg,g,dc,si",
+      "extract": "cat_indices_selected_columns",
+      "family": "admin-cat",
+      "description": "[admin-cat] cat segments json honors h aliases",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "node_stats_shape",
       "area": "operational",
       "method": "GET",

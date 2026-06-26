@@ -18949,10 +18949,17 @@ impl SteelNode {
                     "shard": "0",
                     "prirep": "p",
                     "ip": "0.0.0.0",
+                    "id": self.info.name.clone(),
                     "segment": "_0",
                     "generation": "0",
                     "docs.count": docs.to_string(),
-                    "size": "0b"
+                    "docs.deleted": "0",
+                    "size": "0b",
+                    "size.memory": "0",
+                    "committed": "false",
+                    "searchable": "true",
+                    "version": "10.4.0",
+                    "compound": "true"
                 })
             })
             .collect::<Vec<_>>();
@@ -18967,28 +18974,42 @@ impl SteelNode {
             .get("format")
             .is_some_and(|value| value == "json")
         {
-            return RestResponse::json(200, Value::Array(rows));
+            let display_columns = cat_segments_display_columns(request.query_params.get("h"));
+            let selected_rows = rows
+                .iter()
+                .map(|row| {
+                    let mut object = serde_json::Map::new();
+                    for (column, display) in &display_columns {
+                        object.insert(display.clone(), row[*column].clone());
+                    }
+                    Value::Object(object)
+                })
+                .collect();
+            return RestResponse::json(200, Value::Array(selected_rows));
         }
         let verbose = request
             .query_params
             .get("v")
             .is_some_and(|value| value == "true");
+        let display_columns = cat_segments_display_columns(request.query_params.get("h"));
         let mut lines = Vec::new();
         if verbose {
-            lines.push("index shard prirep ip segment generation docs.count size".to_string());
+            lines.push(
+                display_columns
+                    .iter()
+                    .map(|(_, display)| display.as_str())
+                    .collect::<Vec<_>>()
+                    .join(" "),
+            );
         }
         for row in &rows {
-            lines.push(format!(
-                "{} {} {} {} {} {} {} {}",
-                row["index"].as_str().unwrap_or(""),
-                row["shard"].as_str().unwrap_or("0"),
-                row["prirep"].as_str().unwrap_or("p"),
-                row["ip"].as_str().unwrap_or("0.0.0.0"),
-                row["segment"].as_str().unwrap_or("_0"),
-                row["generation"].as_str().unwrap_or("0"),
-                row["docs.count"].as_str().unwrap_or("0"),
-                row["size"].as_str().unwrap_or("0b"),
-            ));
+            lines.push(
+                display_columns
+                    .iter()
+                    .map(|(column, _)| row[*column].as_str().unwrap_or(""))
+                    .collect::<Vec<_>>()
+                    .join(" "),
+            );
         }
         RestResponse::text(200, lines.join("\n") + "\n")
     }
@@ -30782,6 +30803,86 @@ fn cat_shards_display_columns(h_param: Option<&String>) -> Vec<(&'static str, St
     selected
 }
 
+fn cat_segments_display_columns(h_param: Option<&String>) -> Vec<(&'static str, String)> {
+    let Some(h_param) = h_param else {
+        return vec![
+            ("index", "index".to_string()),
+            ("shard", "shard".to_string()),
+            ("prirep", "prirep".to_string()),
+            ("ip", "ip".to_string()),
+            ("segment", "segment".to_string()),
+            ("generation", "generation".to_string()),
+            ("docs.count", "docs.count".to_string()),
+            ("docs.deleted", "docs.deleted".to_string()),
+            ("size", "size".to_string()),
+            ("size.memory", "size.memory".to_string()),
+            ("committed", "committed".to_string()),
+            ("searchable", "searchable".to_string()),
+            ("version", "version".to_string()),
+            ("compound", "compound".to_string()),
+        ];
+    };
+    let mut selected = Vec::new();
+    for requested in h_param
+        .split(',')
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        if requested.contains('*') {
+            for (column, aliases) in [
+                ("index", &["i", "idx"][..]),
+                ("shard", &["s", "sh"][..]),
+                ("prirep", &["p", "pr", "primaryOrReplica"][..]),
+                ("ip", &[][..]),
+                ("id", &[][..]),
+                ("segment", &["seg"][..]),
+                ("generation", &["g", "gen"][..]),
+                ("docs.count", &["dc", "docsCount"][..]),
+                ("docs.deleted", &["dd", "docsDeleted"][..]),
+                ("size", &["si"][..]),
+                ("size.memory", &["sm", "sizeMemory"][..]),
+                ("committed", &["ic", "isCommitted"][..]),
+                ("searchable", &["is", "isSearchable"][..]),
+                ("version", &["v", "ver"][..]),
+                ("compound", &["ico", "isCompound"][..]),
+            ] {
+                if wildcard_match(requested, column)
+                    || aliases.iter().any(|alias| wildcard_match(requested, alias))
+                {
+                    if !selected.iter().any(|(existing, _)| existing == &column) {
+                        selected.push((column, column.to_string()));
+                    }
+                }
+            }
+            continue;
+        }
+        let column = match requested {
+            "index" | "i" | "idx" => Some("index"),
+            "shard" | "s" | "sh" => Some("shard"),
+            "prirep" | "p" | "pr" | "primaryOrReplica" => Some("prirep"),
+            "ip" => Some("ip"),
+            "id" => Some("id"),
+            "segment" | "seg" => Some("segment"),
+            "generation" | "g" | "gen" => Some("generation"),
+            "docs.count" | "dc" | "docsCount" => Some("docs.count"),
+            "docs.deleted" | "dd" | "docsDeleted" => Some("docs.deleted"),
+            "size" | "si" => Some("size"),
+            "size.memory" | "sm" | "sizeMemory" => Some("size.memory"),
+            "committed" | "ic" | "isCommitted" => Some("committed"),
+            "searchable" | "is" | "isSearchable" => Some("searchable"),
+            "version" | "v" | "ver" => Some("version"),
+            "compound" | "ico" | "isCompound" => Some("compound"),
+            _ => None,
+        };
+        if let Some(column) = column {
+            if !selected.iter().any(|(existing, _)| existing == &column) {
+                selected.push((column, requested.to_string()));
+            }
+        }
+    }
+    selected
+}
+
 fn cat_aliases_display_columns(h_param: Option<&String>) -> Vec<(&'static str, String)> {
     let Some(h_param) = h_param else {
         return vec![
@@ -36756,6 +36857,50 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             .expect("cat segments text body");
         assert!(segments_text.contains("logs-000001"));
         assert!(!segments_text.contains("metrics-000001"));
+
+        let mut selected_segments_json_request =
+            RestRequest::new(RestMethod::Get, "/_cat/segments/logs-*");
+        selected_segments_json_request
+            .query_params
+            .insert("format".to_string(), "json".to_string());
+        selected_segments_json_request
+            .query_params
+            .insert("h".to_string(), "idx,sh,p,seg,g,dc,si".to_string());
+        let selected_segments_json_response =
+            node.handle_rest_request(selected_segments_json_request);
+        assert_eq!(selected_segments_json_response.status, 200);
+        assert_eq!(
+            selected_segments_json_response.body[0]["idx"],
+            "logs-000001"
+        );
+        assert_eq!(selected_segments_json_response.body[0]["sh"], "0");
+        assert_eq!(selected_segments_json_response.body[0]["p"], "p");
+        assert_eq!(selected_segments_json_response.body[0]["seg"], "_0");
+        assert_eq!(selected_segments_json_response.body[0]["g"], "0");
+        assert_eq!(selected_segments_json_response.body[0]["dc"], "1");
+        assert_eq!(selected_segments_json_response.body[0]["si"], "0b");
+        assert!(selected_segments_json_response.body[0]
+            .get("index")
+            .is_none());
+
+        let mut selected_segments_text_request =
+            RestRequest::new(RestMethod::Get, "/_cat/segments/logs-*");
+        selected_segments_text_request
+            .query_params
+            .insert("v".to_string(), "true".to_string());
+        selected_segments_text_request
+            .query_params
+            .insert("h".to_string(), "idx,sh,p,seg,g,dc,si".to_string());
+        let selected_segments_text_response =
+            node.handle_rest_request(selected_segments_text_request);
+        let selected_segments_text = selected_segments_text_response
+            .body
+            .as_str()
+            .expect("selected cat segments text body");
+        assert_eq!(
+            selected_segments_text.lines().collect::<Vec<_>>(),
+            vec!["idx sh p seg g dc si", "logs-000001 0 p _0 0 1 0b"]
+        );
     }
 
     #[test]
