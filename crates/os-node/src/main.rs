@@ -1343,7 +1343,7 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end_at_ms,
         )?;
     } else if is_request && normalized_action_hint == Some("indices:admin/aliases/get") {
-        let response = build_empty_get_aliases_response(request_id, header_version_id);
+        let response = build_get_aliases_response(request_id, header_version_id, &body);
         response_frame = summarize_transport_response_frame_for_action(
             &response,
             Some("indices:admin/aliases/get"),
@@ -3998,14 +3998,60 @@ fn decode_get_pipeline_request_from_transport_body(
     os_transport::action::read_opensearch_get_pipeline_request_message(&message).ok()
 }
 
-fn build_empty_get_aliases_response(request_id: i64, header_version_id: u32) -> Vec<u8> {
+fn build_get_aliases_response(request_id: i64, header_version_id: u32, body: &[u8]) -> Vec<u8> {
+    let request = decode_get_aliases_request_from_transport_body(body)
+        .filter(|request| request.validate_supported_subset().is_ok())
+        .unwrap_or_default();
+    let response = get_aliases_response_from_metadata_manifest(
+        &dev_transport_pit_bindings()
+            .metadata_manifest
+            .lock()
+            .expect("metadata manifest lock poisoned"),
+        &request,
+    );
     os_transport::action::build_opensearch_get_aliases_response_message(
         request_id,
         Version::from_id(header_version_id as i32),
-        &os_transport::action::OpenSearchGetAliasesResponseWire::empty(),
+        &response,
     )
     .map(|frame| frame.to_vec())
     .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
+}
+
+fn decode_get_aliases_request_from_transport_body(
+    body: &[u8],
+) -> Option<os_transport::action::OpenSearchGetAliasesRequestWire> {
+    let message = decode_transport_message_from_body(body)?;
+    os_transport::action::read_opensearch_get_aliases_request_message(&message).ok()
+}
+
+fn get_aliases_response_from_metadata_manifest(
+    metadata_manifest: &Value,
+    request: &os_transport::action::OpenSearchGetAliasesRequestWire,
+) -> os_transport::action::OpenSearchGetAliasesResponseWire {
+    if request.validate_supported_subset().is_err() {
+        return os_transport::action::OpenSearchGetAliasesResponseWire::empty();
+    }
+    let Some(indices) = metadata_manifest["indices"].as_object() else {
+        return os_transport::action::OpenSearchGetAliasesResponseWire::empty();
+    };
+    let empty_alias_indices = indices
+        .iter()
+        .filter_map(|(index, entry)| {
+            let aliases_empty = entry
+                .get("aliases")
+                .and_then(Value::as_object)
+                .map_or(true, |aliases| aliases.is_empty());
+            if aliases_empty {
+                Some(index.clone())
+            } else {
+                None
+            }
+        })
+        .collect();
+    os_transport::action::OpenSearchGetAliasesResponseWire {
+        empty_alias_indices,
+    }
 }
 
 fn build_get_settings_response(request_id: i64, header_version_id: u32, body: &[u8]) -> Vec<u8> {
@@ -7918,9 +7964,10 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
             request_id,
             header_version_id,
         )),
-        Some("indices:admin/aliases/get") => Some(build_empty_get_aliases_response(
+        Some("indices:admin/aliases/get") => Some(build_get_aliases_response(
             request_id,
             header_version_id,
+            body,
         )),
         Some("indices:monitor/settings/get") => Some(build_get_settings_response(
             request_id,
@@ -12474,8 +12521,42 @@ mod tests {
     }
 
     #[test]
-    fn get_aliases_transport_route_builds_opensearch_shaped_empty_response() {
-        let response = build_empty_get_aliases_response(82, OPENSEARCH_3_7_0_TRANSPORT.id() as u32);
+    fn get_aliases_transport_route_builds_opensearch_shaped_empty_alias_index_response() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        *dev_transport_pit_bindings()
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned") = serde_json::json!({
+            "indices": {
+                "logs-no-alias-000001": {
+                    "settings": {},
+                    "mappings": {},
+                    "aliases": {}
+                },
+                "logs-with-alias-000001": {
+                    "settings": {},
+                    "mappings": {},
+                    "aliases": {
+                        "logs-read": {}
+                    }
+                },
+                "metrics-no-alias-000001": {
+                    "settings": {},
+                    "mappings": {}
+                }
+            }
+        });
+        let request = os_transport::action::OpenSearchGetAliasesRequestWire::default();
+        let frame = os_transport::action::build_opensearch_get_aliases_request_message(
+            82,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        let response =
+            build_get_aliases_response(82, OPENSEARCH_3_7_0_TRANSPORT.id() as u32, &frame[6..]);
         let mut frame = BytesMut::from(&response[..]);
         let os_transport::frame::DecodedFrame::Message(message) =
             os_transport::frame::decode_frame(&mut frame)
@@ -12489,7 +12570,10 @@ mod tests {
         assert!(!message.status.is_request());
         let response =
             os_transport::action::read_opensearch_get_aliases_response_message(&message).unwrap();
-        assert!(response.empty_alias_indices.is_empty());
+        assert_eq!(
+            response.empty_alias_indices,
+            vec!["logs-no-alias-000001", "metrics-no-alias-000001"]
+        );
     }
 
     #[test]
