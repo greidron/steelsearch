@@ -1754,8 +1754,8 @@ pub fn classify_opensearch_transport_action(
         },
         CLEAR_VOTING_CONFIG_EXCLUSIONS_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
-            disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "clear-voting-config-exclusions transport execution requires coordination metadata mutation semantics",
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "clear-voting-config-exclusions transport adapter clears local coordination exclusions for the no-wait subset",
         },
         CLUSTER_ALLOCATION_EXPLAIN_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -6008,6 +6008,36 @@ pub fn read_clear_voting_config_exclusions_request_message(
         });
     }
     ClearVotingConfigExclusionsRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_clear_voting_config_exclusions_response_message(
+    request_id: i64,
+    version: Version,
+    response: &ClearVotingConfigExclusionsResponseWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    response.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::response(),
+        version,
+        variable_header: BytesMut::from(&ResponseVariableHeader::default().to_bytes()[..]),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_clear_voting_config_exclusions_response_message(
+    message: &TransportMessage,
+) -> Result<ClearVotingConfigExclusionsResponseWire, TransportActionWireError> {
+    if !message.status.is_response() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "response",
+            actual: message.status.bits(),
+        });
+    }
+    let _header = ResponseVariableHeader::read(message.variable_header.clone().freeze())?;
+    ClearVotingConfigExclusionsResponseWire::read(message.body.clone().freeze())
 }
 
 pub fn build_cluster_allocation_explain_request_message(
@@ -35230,18 +35260,17 @@ impl ClearVotingConfigExclusionsRequestWire {
         Ok(request)
     }
 
-    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+    pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
         if self.cluster_manager_timeout != TimeValueWire::seconds(30) {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "clear voting config exclusions cluster-manager timeout",
                 reason: "custom cluster-manager timeout requires cluster-manager routing semantics",
             });
         }
-        if !self.wait_for_removal {
+        if self.wait_for_removal {
             return Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "clear voting config exclusions no wait",
-                reason:
-                    "no-wait clearing requires explicit coordination metadata mutation semantics",
+                shape: "clear voting config exclusions wait for removal",
+                reason: "wait-for-removal clearing requires cluster-state observer convergence semantics",
             });
         }
         if self.timeout != TimeValueWire::seconds(30) {
@@ -35250,10 +35279,32 @@ impl ClearVotingConfigExclusionsRequestWire {
                 reason: "custom wait timeout requires voting-configuration removal tracking",
             });
         }
+        Ok(())
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        self.validate_supported_subset()?;
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "clear voting config exclusions execution",
             reason: "clearing voting config exclusions requires coordination metadata mutation and removal tracking",
         })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Default)]
+pub struct ClearVotingConfigExclusionsResponseWire {}
+
+impl ClearVotingConfigExclusionsResponseWire {
+    pub fn empty() -> Self {
+        Self::default()
+    }
+
+    pub fn write(&self, _output: &mut StreamOutput) {}
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let input = StreamInput::new(bytes);
+        require_no_trailing_bytes(&input)?;
+        Ok(Self::empty())
     }
 }
 
@@ -49572,6 +49623,7 @@ mod tests {
         let request = ClearVotingConfigExclusionsRequestWire {
             parent_task_node: "coord-node".to_string(),
             parent_task_id: Some(16),
+            wait_for_removal: false,
             ..ClearVotingConfigExclusionsRequestWire::default()
         };
         let mut output = StreamOutput::new();
@@ -49579,6 +49631,7 @@ mod tests {
 
         let decoded = ClearVotingConfigExclusionsRequestWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, request);
+        decoded.validate_supported_subset().unwrap();
         assert!(matches!(
             decoded.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
@@ -49602,19 +49655,17 @@ mod tests {
             })
         ));
 
-        let no_wait = ClearVotingConfigExclusionsRequestWire {
-            wait_for_removal: false,
-            ..ClearVotingConfigExclusionsRequestWire::default()
-        };
+        let wait_for_removal = ClearVotingConfigExclusionsRequestWire::default();
         assert!(matches!(
-            no_wait.reject_unsupported_execution(),
+            wait_for_removal.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "clear voting config exclusions no wait",
+                shape: "clear voting config exclusions wait for removal",
                 ..
             })
         ));
 
         let timeout = ClearVotingConfigExclusionsRequestWire {
+            wait_for_removal: false,
             timeout: TimeValueWire::seconds(10),
             ..ClearVotingConfigExclusionsRequestWire::default()
         };
@@ -49628,8 +49679,24 @@ mod tests {
     }
 
     #[test]
-    fn clear_voting_config_exclusions_transport_messages_bind_rejected_action_frame() {
-        let request = ClearVotingConfigExclusionsRequestWire::default();
+    fn clear_voting_config_exclusions_response_wire_round_trips_empty_body() {
+        let response = ClearVotingConfigExclusionsResponseWire::empty();
+        let mut output = StreamOutput::new();
+        response.write(&mut output);
+
+        assert_eq!(
+            ClearVotingConfigExclusionsResponseWire::read(output.freeze()).unwrap(),
+            response
+        );
+    }
+
+    #[test]
+    fn clear_voting_config_exclusions_transport_messages_bind_supported_action_frame_and_response()
+    {
+        let request = ClearVotingConfigExclusionsRequestWire {
+            wait_for_removal: false,
+            ..ClearVotingConfigExclusionsRequestWire::default()
+        };
         let mut frame = build_clear_voting_config_exclusions_request_message(
             43,
             OPENSEARCH_3_7_0_TRANSPORT,
@@ -49643,6 +49710,16 @@ mod tests {
             read_clear_voting_config_exclusions_request_message(&message).unwrap(),
             request
         );
+        assert_eq!(
+            classify_opensearch_transport_request_message(&message)
+                .unwrap()
+                .disposition,
+            OpenSearchTransportActionDisposition::Implemented
+        );
+        read_clear_voting_config_exclusions_request_message(&message)
+            .unwrap()
+            .validate_supported_subset()
+            .unwrap();
         assert!(matches!(
             read_clear_voting_config_exclusions_request_message(&message)
                 .unwrap()
@@ -49651,6 +49728,28 @@ mod tests {
                 shape: "clear voting config exclusions execution",
                 ..
             })
+        ));
+
+        let response = ClearVotingConfigExclusionsResponseWire::empty();
+        let mut frame = build_clear_voting_config_exclusions_response_message(
+            43,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &response,
+        )
+        .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected clear voting config exclusions response message");
+        };
+        assert_eq!(
+            read_clear_voting_config_exclusions_response_message(&message).unwrap(),
+            response
+        );
+        assert!(matches!(
+            read_clear_voting_config_exclusions_request_message(&message).unwrap_err(),
+            TransportActionWireError::UnexpectedMessageStatus {
+                expected: "request",
+                ..
+            }
         ));
     }
 

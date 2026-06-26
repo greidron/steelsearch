@@ -244,8 +244,8 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `cluster:admin/remote_store/metadata` (rejected fail-closed)
 - `cluster:monitor/nodes/usage` (rejected fail-closed)
 - `cluster:monitor/nodes/hot_threads` (rejected fail-closed)
-- `cluster:admin/voting_config/add_exclusions` (rejected fail-closed)
-- `cluster:admin/voting_config/clear_exclusions` (rejected fail-closed)
+- `cluster:admin/voting_config/add_exclusions` (implemented node_names subset)
+- `cluster:admin/voting_config/clear_exclusions` (implemented no-wait subset)
 - `cluster:monitor/allocation/explain` (rejected fail-closed)
 - `cluster:admin/settings/update` (rejected fail-closed)
 - `cluster:admin/reroute` (rejected fail-closed)
@@ -507,11 +507,11 @@ The clear-voting-config-exclusions boundary covers:
 - OpenSearch `ClearVotingConfigExclusionsRequest` parent task,
   cluster-manager timeout, `waitForRemoval` flag, and wait timeout at the wire
   decode/build layer;
-- explicit fail-closed classification for
-  `cluster:admin/voting_config/clear_exclusions` until coordination metadata
-  mutation and removal tracking are implemented;
-- explicit rejection for custom cluster-manager timeout, no-wait clearing,
-  custom wait timeout, and clear-voting-config-exclusions execution.
+- OpenSearch `ClearVotingConfigExclusionsResponse` empty `ActionResponse`
+  rendering after clearing local transport coordination exclusions for the
+  `wait_for_removal=false` subset;
+- explicit rejection for custom cluster-manager timeout, wait-for-removal
+  convergence tracking, and custom wait timeout.
 
 The cluster-allocation-explain boundary covers:
 
