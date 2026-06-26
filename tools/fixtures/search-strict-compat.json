@@ -2869,6 +2869,20 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "pit_close_empty_array_id_search",
+      "area": "search",
+      "method": "DELETE",
+      "path": "/_search/point_in_time",
+      "body": {
+        "pit_id": []
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] close PIT rejects empty pit_id arrays like OpenSearch validation",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "pit_close_query_param_error_search",
       "area": "search",
       "method": "DELETE",
@@ -3689,6 +3703,40 @@
       ],
       "family": "lexical",
       "description": "[lexical] pit search extends keep_alive for the open context",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "pit_list_multiple_keep_alive_details_search",
+      "area": "search",
+      "extract": "pit_list_details",
+      "steps": [
+        {
+          "name": "pit-open-one-minute",
+          "method": "POST",
+          "path": "/logs-compat/_search/point_in_time?keep_alive=1m",
+          "body": null,
+          "expected_status": 200,
+          "extract": "pit_open"
+        },
+        {
+          "name": "pit-open-two-minutes",
+          "method": "POST",
+          "path": "/logs-compat/_search/point_in_time?keep_alive=2m",
+          "body": null,
+          "expected_status": 200,
+          "extract": "pit_open"
+        },
+        {
+          "name": "pit-list-multiple",
+          "method": "GET",
+          "path": "/_search/point_in_time/_all",
+          "body": null,
+          "expected_status": 200,
+          "extract": "pit_list_details"
+        }
+      ],
+      "family": "lexical",
+      "description": "[lexical] list PIT preserves multiple context keep_alive values like OpenSearch",
       "strict_source_parity_required": true
     },
     {
