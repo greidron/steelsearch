@@ -842,6 +842,16 @@
       "description": "[admin-cat] cat indices text renders byte-size columns using bytes parameter"
     },
     {
+      "name": "cat_indices_text_time_parameter",
+      "area": "cat",
+      "method": "GET",
+      "path": "/_cat/indices/logs-compat?v=true&h=search.point_in_time_time&time=ms",
+      "accept": "text/plain",
+      "extract": "cat_indices_selected_columns",
+      "family": "admin-cat",
+      "description": "[admin-cat] cat indices text renders time-value columns using time parameter"
+    },
+    {
       "name": "cat_pending_tasks_json",
       "area": "cat",
       "method": "GET",

@@ -30281,6 +30281,13 @@ fn cat_indices_cell_text(row: &Value, column: &str, request: &RestRequest) -> St
     {
         return value.trim_end_matches('b').to_string();
     }
+    if matches!(
+        column,
+        "search.point_in_time_time" | "pri.search.point_in_time_time"
+    ) && request.query_params.contains_key("time")
+    {
+        return value.trim_end_matches('s').to_string();
+    }
     value.to_string()
 }
 
@@ -35719,6 +35726,28 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             .map(str::trim)
             .collect::<Vec<_>>();
         assert_eq!(bytes_text_lines, vec!["ss", "0"]);
+
+        let mut indices_time_text_request =
+            RestRequest::new(RestMethod::Get, "/_cat/indices/logs-000001");
+        indices_time_text_request
+            .query_params
+            .insert("v".to_string(), "true".to_string());
+        indices_time_text_request
+            .query_params
+            .insert("h".to_string(), "search.point_in_time_time".to_string());
+        indices_time_text_request
+            .query_params
+            .insert("time".to_string(), "ms".to_string());
+        let indices_time_text_response = node.handle_rest_request(indices_time_text_request);
+        let indices_time_text = indices_time_text_response
+            .body
+            .as_str()
+            .expect("cat indices time text body");
+        let time_text_lines = indices_time_text
+            .lines()
+            .map(str::trim)
+            .collect::<Vec<_>>();
+        assert_eq!(time_text_lines, vec!["search.point_in_time_time", "0"]);
 
         let mut indices_sorted_text_request =
             RestRequest::new(RestMethod::Get, "/_cat/indices/logs-*");
