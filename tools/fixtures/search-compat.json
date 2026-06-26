@@ -4442,6 +4442,90 @@
       "description": "[lexical] open PIT rejects invalid allow_partial_pit_creation like OpenSearch"
     },
     {
+      "name": "pit_open_invalid_expand_wildcards_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search/point_in_time?keep_alive=1m&expand_wildcards=bogus",
+      "body": null,
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] open PIT rejects invalid expand_wildcards like OpenSearch"
+    },
+    {
+      "name": "pit_open_empty_expand_wildcards_token_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search/point_in_time?keep_alive=1m&expand_wildcards=open,,closed",
+      "body": null,
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] open PIT rejects empty expand_wildcards tokens like OpenSearch"
+    },
+    {
+      "name": "pit_open_ignore_unavailable_multi_target_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat,missing-compat/_search/point_in_time?keep_alive=1m&ignore_unavailable=true",
+      "body": null,
+      "extract": "pit_open",
+      "family": "lexical",
+      "description": "[lexical] pit open ignores unavailable multi-target search"
+    },
+    {
+      "name": "pit_open_allow_no_indices_empty_wildcard_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/missing-pit-*/_search/point_in_time?keep_alive=1m&allow_no_indices=true",
+      "body": null,
+      "extract": "pit_open",
+      "family": "lexical",
+      "description": "[lexical] pit open allows empty wildcard search"
+    },
+    {
+      "name": "pit_open_default_allow_no_indices_empty_wildcard_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/missing-pit-default-*/_search/point_in_time?keep_alive=1m",
+      "body": null,
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] create PIT uses OpenSearch default allow_no_indices behavior for empty wildcard targets"
+    },
+    {
+      "name": "pit_open_explicit_disallow_no_indices_empty_wildcard_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/missing-pit-default-*/_search/point_in_time?keep_alive=1m&allow_no_indices=false",
+      "body": null,
+      "expected_status": 404,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] create PIT honors explicit allow_no_indices=false for empty wildcard targets"
+    },
+    {
+      "name": "pit_open_expand_wildcards_none_empty_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-*/_search/point_in_time?keep_alive=1m&expand_wildcards=none&allow_no_indices=true",
+      "body": null,
+      "extract": "pit_open",
+      "family": "lexical",
+      "description": "[lexical] pit open expand wildcards none empty search"
+    },
+    {
+      "name": "pit_open_with_strict_partial_creation_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search/point_in_time?keep_alive=1m&allow_partial_pit_creation=false",
+      "body": null,
+      "extract": "pit_open",
+      "family": "lexical",
+      "description": "[lexical] pit open with strict partial creation search"
+    },
+    {
       "name": "pit_close_get_method_error_search",
       "area": "search",
       "method": "GET",
