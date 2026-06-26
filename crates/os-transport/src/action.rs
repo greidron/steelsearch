@@ -1,5 +1,5 @@
 use bytes::{Bytes, BytesMut};
-use os_core::Version;
+use os_core::{Version, OPENSEARCH_2_12_0, OPENSEARCH_2_7_0, OPENSEARCH_3_7_0_TRANSPORT};
 use os_engine::{
     BulkWriteItemResponse, BulkWriteOperation, BulkWriteRequest, BulkWriteResponse,
     DeleteDocumentRequest, DocumentMetadata, GetDocumentRequest, GetDocumentResponse,
@@ -7684,7 +7684,7 @@ pub fn build_search_model_request_message(
     request: &SearchModelRequestWire,
 ) -> Result<BytesMut, TransportActionWireError> {
     let mut body = StreamOutput::new();
-    request.write(&mut body);
+    request.write_for_version(&mut body, version);
     let message = TransportMessage {
         request_id,
         status: TransportStatus::request(),
@@ -7713,7 +7713,7 @@ pub fn read_search_model_request_message(
             actual: header.action,
         });
     }
-    SearchModelRequestWire::read(message.body.clone().freeze())
+    SearchModelRequestWire::read_for_version(message.body.clone().freeze(), message.version)
 }
 
 pub fn build_search_model_response_message(
@@ -10958,7 +10958,7 @@ pub fn build_opensearch_search_view_request_message(
     request: &OpenSearchSearchViewRequestWire,
 ) -> Result<BytesMut, TransportActionWireError> {
     let mut body = StreamOutput::new();
-    request.write(&mut body);
+    request.write_for_version(&mut body, version);
     let message = TransportMessage {
         request_id,
         status: TransportStatus::request(),
@@ -10987,7 +10987,10 @@ pub fn read_opensearch_search_view_request_message(
             actual: header.action,
         });
     }
-    OpenSearchSearchViewRequestWire::read(message.body.clone().freeze())
+    OpenSearchSearchViewRequestWire::read_for_version(
+        message.body.clone().freeze(),
+        message.version,
+    )
 }
 
 pub fn build_opensearch_start_persistent_task_request_message(
@@ -11735,7 +11738,7 @@ pub fn build_opensearch_search_request_message(
     request: &OpenSearchSearchRequestWire,
 ) -> Result<BytesMut, TransportActionWireError> {
     let mut body = StreamOutput::new();
-    request.write(&mut body);
+    request.write_for_version(&mut body, version);
     let message = TransportMessage {
         request_id,
         status: TransportStatus::request(),
@@ -11764,7 +11767,7 @@ pub fn read_opensearch_search_request_message(
             actual: header.action,
         });
     }
-    OpenSearchSearchRequestWire::read(message.body.clone().freeze())
+    OpenSearchSearchRequestWire::read_for_version(message.body.clone().freeze(), message.version)
 }
 
 pub fn build_opensearch_stream_search_request_message(
@@ -11773,7 +11776,7 @@ pub fn build_opensearch_stream_search_request_message(
     request: &OpenSearchSearchRequestWire,
 ) -> Result<BytesMut, TransportActionWireError> {
     let mut body = StreamOutput::new();
-    request.write(&mut body);
+    request.write_for_version(&mut body, version);
     let message = TransportMessage {
         request_id,
         status: TransportStatus::request(),
@@ -11802,7 +11805,7 @@ pub fn read_opensearch_stream_search_request_message(
             actual: header.action,
         });
     }
-    OpenSearchSearchRequestWire::read(message.body.clone().freeze())
+    OpenSearchSearchRequestWire::read_for_version(message.body.clone().freeze(), message.version)
 }
 
 pub fn build_opensearch_multi_search_request_message(
@@ -11811,7 +11814,7 @@ pub fn build_opensearch_multi_search_request_message(
     request: &OpenSearchMultiSearchRequestWire,
 ) -> Result<BytesMut, TransportActionWireError> {
     let mut body = StreamOutput::new();
-    request.write(&mut body);
+    request.write_for_version(&mut body, version);
     let message = TransportMessage {
         request_id,
         status: TransportStatus::request(),
@@ -11840,7 +11843,10 @@ pub fn read_opensearch_multi_search_request_message(
             actual: header.action,
         });
     }
-    OpenSearchMultiSearchRequestWire::read(message.body.clone().freeze())
+    OpenSearchMultiSearchRequestWire::read_for_version(
+        message.body.clone().freeze(),
+        message.version,
+    )
 }
 
 pub fn build_opensearch_search_scroll_request_message(
@@ -16776,12 +16782,26 @@ impl Default for SearchModelRequestWire {
 
 impl SearchModelRequestWire {
     pub fn write(&self, output: &mut StreamOutput) {
-        self.search.write(output);
+        self.write_for_version(output, OPENSEARCH_3_7_0_TRANSPORT);
+    }
+
+    fn write_for_version(&self, output: &mut StreamOutput, version: Version) {
+        self.search.write_for_version(output, version);
     }
 
     pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        Self::read_for_version(bytes, OPENSEARCH_3_7_0_TRANSPORT)
+    }
+
+    fn read_for_version(
+        bytes: Bytes,
+        version: Version,
+    ) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let search = OpenSearchSearchRequestWire::read_from_for_version(&mut input, version)?;
+        require_no_trailing_bytes(&input)?;
         Ok(Self {
-            search: OpenSearchSearchRequestWire::read(bytes)?,
+            search,
         })
     }
 
@@ -24416,6 +24436,10 @@ impl Default for OpenSearchSearchRequestWire {
 
 impl OpenSearchSearchRequestWire {
     pub fn write(&self, output: &mut StreamOutput) {
+        self.write_for_version(output, OPENSEARCH_3_7_0_TRANSPORT);
+    }
+
+    fn write_for_version(&self, output: &mut StreamOutput, version: Version) {
         write_parent_task_id(output, &self.parent_task_node, self.parent_task_id);
         output.write_byte(self.search_type);
         output.write_string_array(&self.indices);
@@ -24439,18 +24463,32 @@ impl OpenSearchSearchRequestWire {
         }
         output.write_bool(self.ccs_minimize_roundtrips);
         write_optional_time_value(output, self.cancel_after_time_interval.as_ref());
-        output.write_optional_string(self.pipeline.as_deref());
-        write_optional_bool(output, self.phase_took);
+        if version.on_or_after(OPENSEARCH_2_7_0) {
+            output.write_optional_string(self.pipeline.as_deref());
+        }
+        if version.on_or_after(OPENSEARCH_2_12_0) {
+            write_optional_bool(output, self.phase_took);
+        }
     }
 
     pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        Self::read_for_version(bytes, OPENSEARCH_3_7_0_TRANSPORT)
+    }
+
+    fn read_for_version(
+        bytes: Bytes,
+        version: Version,
+    ) -> Result<Self, TransportActionWireError> {
         let mut input = StreamInput::new(bytes);
-        let request = Self::read_from(&mut input)?;
+        let request = Self::read_from_for_version(&mut input, version)?;
         require_no_trailing_bytes(&input)?;
         Ok(request)
     }
 
-    fn read_from(input: &mut StreamInput) -> Result<Self, TransportActionWireError> {
+    fn read_from_for_version(
+        input: &mut StreamInput,
+        version: Version,
+    ) -> Result<Self, TransportActionWireError> {
         let (parent_task_node, parent_task_id) = read_parent_task_id(input)?;
         let search_type = input.read_byte()?;
         if search_type != 0 && search_type != 1 && search_type != 3 {
@@ -24497,8 +24535,16 @@ impl OpenSearchSearchRequestWire {
             local_cluster_alias,
             ccs_minimize_roundtrips: input.read_bool()?,
             cancel_after_time_interval: read_optional_time_value(input)?,
-            pipeline: input.read_optional_string()?,
-            phase_took: read_optional_bool(input)?,
+            pipeline: if version.on_or_after(OPENSEARCH_2_7_0) {
+                input.read_optional_string()?
+            } else {
+                None
+            },
+            phase_took: if version.on_or_after(OPENSEARCH_2_12_0) {
+                read_optional_bool(input)?
+            } else {
+                None
+            },
         };
         Ok(request)
     }
@@ -29479,13 +29525,24 @@ impl Default for OpenSearchSearchViewRequestWire {
 
 impl OpenSearchSearchViewRequestWire {
     pub fn write(&self, output: &mut StreamOutput) {
-        self.search.write(output);
+        self.write_for_version(output, OPENSEARCH_3_7_0_TRANSPORT);
+    }
+
+    fn write_for_version(&self, output: &mut StreamOutput, version: Version) {
+        self.search.write_for_version(output, version);
         output.write_string(&self.view);
     }
 
     pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        Self::read_for_version(bytes, OPENSEARCH_3_7_0_TRANSPORT)
+    }
+
+    fn read_for_version(
+        bytes: Bytes,
+        version: Version,
+    ) -> Result<Self, TransportActionWireError> {
         let mut input = StreamInput::new(bytes);
-        let search = OpenSearchSearchRequestWire::read_from(&mut input)?;
+        let search = OpenSearchSearchRequestWire::read_from_for_version(&mut input, version)?;
         let view = input.read_string()?;
         require_no_trailing_bytes(&input)?;
         Ok(Self { search, view })
@@ -30818,22 +30875,35 @@ impl Default for OpenSearchMultiSearchRequestWire {
 
 impl OpenSearchMultiSearchRequestWire {
     pub fn write(&self, output: &mut StreamOutput) {
+        self.write_for_version(output, OPENSEARCH_3_7_0_TRANSPORT);
+    }
+
+    fn write_for_version(&self, output: &mut StreamOutput, version: Version) {
         write_parent_task_id(output, &self.parent_task_node, self.parent_task_id);
         output.write_vint(self.max_concurrent_search_requests);
         output.write_vint(self.requests.len() as i32);
         for request in &self.requests {
-            request.write(output);
+            request.write_for_version(output, version);
         }
     }
 
     pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        Self::read_for_version(bytes, OPENSEARCH_3_7_0_TRANSPORT)
+    }
+
+    fn read_for_version(
+        bytes: Bytes,
+        version: Version,
+    ) -> Result<Self, TransportActionWireError> {
         let mut input = StreamInput::new(bytes);
         let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
         let max_concurrent_search_requests = input.read_vint()?;
         let request_count = read_len(&mut input)?;
         let mut requests = Vec::with_capacity(request_count);
         for _ in 0..request_count {
-            requests.push(OpenSearchSearchRequestWire::read_from(&mut input)?);
+            requests.push(OpenSearchSearchRequestWire::read_from_for_version(
+                &mut input, version,
+            )?);
         }
         let request = Self {
             parent_task_node,
@@ -68151,6 +68221,111 @@ mod tests {
                 ..
             })
         ));
+    }
+
+    #[test]
+    fn opensearch_search_request_pipeline_and_phase_took_follow_version_gates() {
+        let request = OpenSearchSearchRequestWire {
+            pipeline: Some("search-pipeline".to_string()),
+            phase_took: Some(true),
+            ..OpenSearchSearchRequestWire::default()
+        };
+
+        let before_pipeline = Version::from_id(2_060_099);
+        let mut output = StreamOutput::new();
+        request.write_for_version(&mut output, before_pipeline);
+        let decoded =
+            OpenSearchSearchRequestWire::read_for_version(output.freeze(), before_pipeline)
+                .unwrap();
+        assert_eq!(decoded.pipeline, None);
+        assert_eq!(decoded.phase_took, None);
+
+        let mut output = StreamOutput::new();
+        request.write_for_version(&mut output, OPENSEARCH_2_7_0);
+        let decoded =
+            OpenSearchSearchRequestWire::read_for_version(output.freeze(), OPENSEARCH_2_7_0)
+                .unwrap();
+        assert_eq!(decoded.pipeline, Some("search-pipeline".to_string()));
+        assert_eq!(decoded.phase_took, None);
+
+        let mut output = StreamOutput::new();
+        request.write_for_version(&mut output, OPENSEARCH_2_12_0);
+        let decoded =
+            OpenSearchSearchRequestWire::read_for_version(output.freeze(), OPENSEARCH_2_12_0)
+                .unwrap();
+        assert_eq!(decoded.pipeline, Some("search-pipeline".to_string()));
+        assert_eq!(decoded.phase_took, Some(true));
+    }
+
+    #[test]
+    fn opensearch_search_action_messages_apply_request_version_gates() {
+        let request = OpenSearchSearchRequestWire {
+            pipeline: Some("search-pipeline".to_string()),
+            phase_took: Some(true),
+            ..OpenSearchSearchRequestWire::default()
+        };
+
+        let before_pipeline = Version::from_id(2_060_099);
+        let mut frame =
+            build_opensearch_search_request_message(146, before_pipeline, &request).unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected search request message");
+        };
+        let decoded = read_opensearch_search_request_message(&message).unwrap();
+        assert_eq!(decoded.pipeline, None);
+        assert_eq!(decoded.phase_took, None);
+
+        let mut frame =
+            build_opensearch_stream_search_request_message(148, OPENSEARCH_2_12_0, &request)
+                .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected stream-search request message");
+        };
+        let decoded = read_opensearch_stream_search_request_message(&message).unwrap();
+        assert_eq!(decoded.pipeline, Some("search-pipeline".to_string()));
+        assert_eq!(decoded.phase_took, Some(true));
+
+        let view_request = OpenSearchSearchViewRequestWire {
+            search: request.clone(),
+            view: "logs-view".to_string(),
+        };
+        let mut frame =
+            build_opensearch_search_view_request_message(149, OPENSEARCH_2_7_0, &view_request)
+                .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected search-view request message");
+        };
+        let decoded = read_opensearch_search_view_request_message(&message).unwrap();
+        assert_eq!(decoded.search.pipeline, Some("search-pipeline".to_string()));
+        assert_eq!(decoded.search.phase_took, None);
+        assert_eq!(decoded.view, "logs-view");
+
+        let multi_request = OpenSearchMultiSearchRequestWire {
+            requests: vec![request.clone()],
+            ..OpenSearchMultiSearchRequestWire::default()
+        };
+        let mut frame =
+            build_opensearch_multi_search_request_message(147, OPENSEARCH_2_7_0, &multi_request)
+                .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected multi-search request message");
+        };
+        let decoded = read_opensearch_multi_search_request_message(&message).unwrap();
+        assert_eq!(
+            decoded.requests[0].pipeline,
+            Some("search-pipeline".to_string())
+        );
+        assert_eq!(decoded.requests[0].phase_took, None);
+
+        let model_request = SearchModelRequestWire { search: request };
+        let mut frame =
+            build_search_model_request_message(150, before_pipeline, &model_request).unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected search-model request message");
+        };
+        let decoded = read_search_model_request_message(&message).unwrap();
+        assert_eq!(decoded.search.pipeline, None);
+        assert_eq!(decoded.search.phase_took, None);
     }
 
     #[test]
