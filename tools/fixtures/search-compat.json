@@ -1582,6 +1582,47 @@
       "description": "[admin-cat] cat pit segments text honors h aliases"
     },
     {
+      "name": "cat_pit_segments_all_source_query_param_error",
+      "area": "cat",
+      "method": "GET",
+      "path": "/_cat/pit_segments/_all?source=%7B%22pit_id%22%3A%22pit-missing%22%7D&source_content_type=json",
+      "body": null,
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "admin-cat",
+      "description": "[admin-cat] cat pit segments _all rejects source query body like OpenSearch"
+    },
+    {
+      "name": "cat_pit_segments_explicit_body_json",
+      "area": "cat",
+      "extract": "cat_pit_segments",
+      "steps": [
+        {
+          "name": "pit-open",
+          "method": "POST",
+          "path": "/logs-compat/_search/point_in_time?keep_alive=1m",
+          "body": null,
+          "expected_status": 200,
+          "extract": "pit_open",
+          "save": {
+            "pit_id": "body.pit_id"
+          }
+        },
+        {
+          "name": "cat-pit-segments-body",
+          "method": "GET",
+          "path": "/_cat/pit_segments?format=json",
+          "body": {
+            "pit_id": "${saved.pit_id}"
+          },
+          "expected_status": 200,
+          "extract": "cat_pit_segments"
+        }
+      ],
+      "family": "admin-cat",
+      "description": "[admin-cat] cat pit segments accepts explicit body pit ids like OpenSearch"
+    },
+    {
       "name": "cat_pit_segments_json_selected_alias_columns",
       "area": "cat",
       "extract": "cat_indices_selected_columns",
@@ -1610,6 +1651,62 @@
       ],
       "family": "admin-cat",
       "description": "[admin-cat] cat pit segments json honors h aliases"
+    },
+    {
+      "name": "cat_pit_segments_short_source_content_type_error",
+      "area": "cat",
+      "extract": "search_error_root_cause",
+      "steps": [
+        {
+          "name": "pit-open",
+          "method": "POST",
+          "path": "/logs-compat/_search/point_in_time?keep_alive=1m",
+          "body": null,
+          "expected_status": 200,
+          "extract": "pit_open",
+          "save": {
+            "pit_id": "body.pit_id"
+          }
+        },
+        {
+          "name": "cat-pit-segments-source-short-content-type",
+          "method": "GET",
+          "path": "/_cat/pit_segments?format=json&source=%7B%22pit_id%22%3A%22${saved.pit_id}%22%7D&source_content_type=json",
+          "body": null,
+          "expected_status": 400,
+          "extract": "search_error_root_cause"
+        }
+      ],
+      "family": "admin-cat",
+      "description": "[admin-cat] cat pit segments rejects short json source_content_type like OpenSearch"
+    },
+    {
+      "name": "cat_pit_segments_explicit_source_application_json",
+      "area": "cat",
+      "extract": "cat_pit_segments",
+      "steps": [
+        {
+          "name": "pit-open",
+          "method": "POST",
+          "path": "/logs-compat/_search/point_in_time?keep_alive=1m",
+          "body": null,
+          "expected_status": 200,
+          "extract": "pit_open",
+          "save": {
+            "pit_id": "body.pit_id"
+          }
+        },
+        {
+          "name": "cat-pit-segments-source",
+          "method": "GET",
+          "path": "/_cat/pit_segments?format=json&source=%7B%22pit_id%22%3A%22${saved.pit_id}%22%7D&source_content_type=application%2Fjson",
+          "body": null,
+          "expected_status": 200,
+          "extract": "cat_pit_segments"
+        }
+      ],
+      "family": "admin-cat",
+      "description": "[admin-cat] cat pit segments accepts explicit application/json source pit ids like OpenSearch"
     },
     {
       "name": "cat_pit_segments_wrong_method_error",
