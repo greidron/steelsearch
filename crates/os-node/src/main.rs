@@ -6205,6 +6205,26 @@ fn local_transport_json_query_matches(source: &Value, id: &str, query: &Value) -
     if let Some(terms_query) = query.get("terms").and_then(Value::as_object) {
         return local_transport_json_terms_query_matches(source, id, terms_query);
     }
+    if let Some(range_query) = query.get("range").and_then(Value::as_object) {
+        return local_transport_json_range_query_matches(source, id, range_query);
+    }
+    if let Some(match_query) = query.get("match").and_then(Value::as_object) {
+        return local_transport_json_match_query_matches(source, match_query);
+    }
+    if let Some(match_phrase_query) = query.get("match_phrase").and_then(Value::as_object) {
+        return local_transport_json_phrase_query_matches(source, match_phrase_query, false);
+    }
+    if let Some(match_phrase_prefix_query) =
+        query.get("match_phrase_prefix").and_then(Value::as_object)
+    {
+        return local_transport_json_phrase_query_matches(source, match_phrase_prefix_query, true);
+    }
+    if let Some(query_string) = query.get("query_string").and_then(Value::as_object) {
+        return local_transport_json_text_query_matches(source, query_string, false);
+    }
+    if let Some(simple_query_string) = query.get("simple_query_string").and_then(Value::as_object) {
+        return local_transport_json_text_query_matches(source, simple_query_string, true);
+    }
     if let Some(exists_query) = query.get("exists").and_then(Value::as_object) {
         let field = exists_query
             .get("field")
@@ -6228,6 +6248,12 @@ fn local_transport_json_query_matches(source: &Value, id: &str, query: &Value) -
     }
     if let Some(wildcard_query) = query.get("wildcard").and_then(Value::as_object) {
         return local_transport_json_wildcard_query_matches(source, id, wildcard_query);
+    }
+    if let Some(regexp_query) = query.get("regexp").and_then(Value::as_object) {
+        return local_transport_json_regexp_query_matches(source, id, regexp_query);
+    }
+    if let Some(fuzzy_query) = query.get("fuzzy").and_then(Value::as_object) {
+        return local_transport_json_fuzzy_query_matches(source, id, fuzzy_query);
     }
     false
 }
@@ -6332,6 +6358,128 @@ fn local_transport_json_terms_query_matches(
     })
 }
 
+fn local_transport_json_range_query_matches(
+    source: &Value,
+    id: &str,
+    query: &serde_json::Map<String, Value>,
+) -> bool {
+    let Some((field, bounds)) = query.iter().next() else {
+        return false;
+    };
+    let value = if field == "_id" {
+        Some(Value::String(id.to_string()))
+    } else {
+        lookup_transport_source_value(source, field).cloned()
+    };
+    value.is_some_and(|value| local_transport_json_range_value_matches(&value, bounds))
+}
+
+fn local_transport_json_range_value_matches(actual: &Value, bounds: &Value) -> bool {
+    let Some(bounds) = bounds.as_object() else {
+        return false;
+    };
+    let lower = bounds
+        .get("gte")
+        .or_else(|| bounds.get("from"))
+        .or_else(|| bounds.get("gt"));
+    let upper = bounds
+        .get("lte")
+        .or_else(|| bounds.get("to"))
+        .or_else(|| bounds.get("lt"));
+    let include_lower = bounds.get("gt").is_none()
+        && bounds
+            .get("include_lower")
+            .and_then(Value::as_bool)
+            .unwrap_or(true);
+    let include_upper = bounds.get("lt").is_none()
+        && bounds
+            .get("include_upper")
+            .and_then(Value::as_bool)
+            .unwrap_or(true);
+    let lower_matches = lower.map_or(true, |bound| {
+        local_transport_range_bound_matches(actual, bound, include_lower, true)
+    });
+    let upper_matches = upper.map_or(true, |bound| {
+        local_transport_range_bound_matches(actual, bound, include_upper, false)
+    });
+    lower_matches && upper_matches
+}
+
+fn local_transport_json_match_query_matches(
+    source: &Value,
+    query: &serde_json::Map<String, Value>,
+) -> bool {
+    let Some((field, expected)) = query.iter().next() else {
+        return false;
+    };
+    let query_text = expected
+        .as_str()
+        .or_else(|| expected.get("query").and_then(Value::as_str))
+        .unwrap_or_default();
+    let operator = expected
+        .get("operator")
+        .and_then(Value::as_str)
+        .map(|operator| {
+            if operator.eq_ignore_ascii_case("and") {
+                os_transport::action::OpenSearchMatchOperatorWire::And
+            } else {
+                os_transport::action::OpenSearchMatchOperatorWire::Or
+            }
+        })
+        .unwrap_or(os_transport::action::OpenSearchMatchOperatorWire::Or);
+    let haystacks = lookup_transport_source_value(source, field)
+        .map(collect_transport_string_leaf_values)
+        .unwrap_or_default();
+    local_transport_match_query_matches(&haystacks, query_text, operator)
+}
+
+fn local_transport_json_phrase_query_matches(
+    source: &Value,
+    query: &serde_json::Map<String, Value>,
+    prefix_last_token: bool,
+) -> bool {
+    let Some((field, expected)) = query.iter().next() else {
+        return false;
+    };
+    let query_text = expected
+        .as_str()
+        .or_else(|| expected.get("query").and_then(Value::as_str))
+        .unwrap_or_default();
+    local_transport_value_matches_phrase(
+        lookup_transport_source_value(source, field),
+        query_text,
+        prefix_last_token,
+    )
+}
+
+fn local_transport_json_text_query_matches(
+    source: &Value,
+    query: &serde_json::Map<String, Value>,
+    simple_syntax: bool,
+) -> bool {
+    let query_text = query
+        .get("query")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    let operator = query
+        .get("default_operator")
+        .and_then(Value::as_str)
+        .map(|operator| {
+            if operator.eq_ignore_ascii_case("and") {
+                os_transport::action::OpenSearchMatchOperatorWire::And
+            } else {
+                os_transport::action::OpenSearchMatchOperatorWire::Or
+            }
+        })
+        .unwrap_or(os_transport::action::OpenSearchMatchOperatorWire::Or);
+    let fields = query
+        .get("fields")
+        .and_then(Value::as_array)
+        .map(|fields| fields.iter().filter_map(Value::as_str).collect::<Vec<_>>());
+    let haystacks = collect_transport_searchable_field_values(source, fields.as_deref());
+    local_transport_query_string_matches(&haystacks, query_text, operator, simple_syntax)
+}
+
 fn local_transport_json_prefix_query_matches(
     source: &Value,
     id: &str,
@@ -6376,6 +6524,72 @@ fn local_transport_json_wildcard_query_matches(
     value.is_some_and(|value| {
         local_transport_wildcard_query_matches(value, expected_value, case_insensitive)
     })
+}
+
+fn local_transport_json_regexp_query_matches(
+    source: &Value,
+    id: &str,
+    query: &serde_json::Map<String, Value>,
+) -> bool {
+    let Some((field, expected)) = query.iter().next() else {
+        return false;
+    };
+    let expected_value = expected
+        .as_str()
+        .or_else(|| expected.get("value").and_then(Value::as_str))
+        .unwrap_or_default();
+    let case_insensitive = expected
+        .get("case_insensitive")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let value = if field == "_id" {
+        Some(id)
+    } else {
+        lookup_transport_source_value(source, field).and_then(Value::as_str)
+    };
+    value.is_some_and(|value| {
+        local_transport_regexp_query_matches(value, expected_value, case_insensitive)
+    })
+}
+
+fn local_transport_json_fuzzy_query_matches(
+    source: &Value,
+    id: &str,
+    query: &serde_json::Map<String, Value>,
+) -> bool {
+    let Some((field, expected)) = query.iter().next() else {
+        return false;
+    };
+    let expected_value = expected
+        .as_str()
+        .or_else(|| expected.get("value").and_then(Value::as_str))
+        .unwrap_or_default();
+    let fuzziness = expected
+        .get("fuzziness")
+        .and_then(|value| {
+            value
+                .as_u64()
+                .and_then(|value| usize::try_from(value).ok())
+                .or_else(|| {
+                    value.as_str().map(|value| {
+                        if value.eq_ignore_ascii_case("AUTO") {
+                            auto_transport_fuzziness(expected_value)
+                        } else {
+                            value
+                                .parse::<usize>()
+                                .unwrap_or_else(|_| auto_transport_fuzziness(expected_value))
+                        }
+                    })
+                })
+        })
+        .unwrap_or_else(|| auto_transport_fuzziness(expected_value));
+    let value = if field == "_id" {
+        Some(Value::String(id.to_string()))
+    } else {
+        lookup_transport_source_value(source, field).cloned()
+    };
+    value
+        .is_some_and(|value| local_transport_value_matches_fuzzy(&value, expected_value, fuzziness))
 }
 
 fn local_transport_regexp_query_matches(
@@ -17063,7 +17277,7 @@ mod tests {
                                                                             os_transport::action::OpenSearchWrapperQueryBuilderWire {
                                                                                 boost: 1.0,
                                                                                 query_name: Some("reader-pit-wrapper".to_string()),
-                                                                                source: Bytes::from_static(br#"{"term":{"tenant":"a"}}"#),
+                                                                                source: Bytes::from_static(br#"{"bool":{"filter":[{"term":{"tenant":"a"}},{"range":{"age":{"gte":5,"lte":10}}},{"match":{"message":{"query":"steel pit","operator":"and"}}},{"match_phrase":{"message":"reader pit"}},{"query_string":{"query":"steel AND transport","fields":["title","description"],"default_operator":"and"}},{"regexp":{"category":{"value":"prod-.*","case_insensitive":true}}},{"fuzzy":{"message":{"value":"searh","fuzziness":"AUTO"}}}]}}"#),
                                                                             },
                                                                         ),
                                                                         os_transport::action::OpenSearchQueryBuilderWire::Fuzzy(
