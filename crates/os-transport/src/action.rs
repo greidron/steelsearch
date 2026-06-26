@@ -794,6 +794,24 @@ pub const OPENSEARCH_PRIORITY_TRANSPORT_ACTIONS: &[OpenSearchPriorityTransportAc
         next_step: "expand local PIT listing adapter toward distributed node fanout and failure aggregation",
     },
     OpenSearchPriorityTransportActionSpec {
+        action_name: OPENSEARCH_CREATE_READER_CONTEXT_ACTION_NAME,
+        action_type: "CreateReaderContextRequest",
+        transport_action: "SearchTransportService",
+        request_wire_type: "CreateReaderContextRequest",
+        response_wire_type: "CreateReaderContextResponse",
+        adapter_stage: "search-pit",
+        next_step: "expand local PIT reader-context creation toward distributed shard fanout",
+    },
+    OpenSearchPriorityTransportActionSpec {
+        action_name: OPENSEARCH_UPDATE_READER_CONTEXT_ACTION_NAME,
+        action_type: "UpdatePitContextRequest",
+        transport_action: "SearchTransportService",
+        request_wire_type: "UpdatePitContextRequest",
+        response_wire_type: "UpdatePitContextResponse",
+        adapter_stage: "search-pit",
+        next_step: "expand local PIT reader-context keep-alive updates toward distributed shard fanout",
+    },
+    OpenSearchPriorityTransportActionSpec {
         action_name: OPENSEARCH_FREE_PIT_CONTEXT_ACTION_NAME,
         action_type: "PitFreeContextsRequest",
         transport_action: "SearchTransportService",
@@ -2417,13 +2435,13 @@ pub fn classify_opensearch_transport_action(
         },
         OPENSEARCH_CREATE_READER_CONTEXT_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
-            disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "create-reader-context wire is decoded, but distributed PIT context fanout is not connected to runtime dispatch",
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "create-reader-context transport adapter allocates local PIT reader contexts and renders OpenSearch CreateReaderContextResponse wire",
         },
         OPENSEARCH_UPDATE_READER_CONTEXT_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
-            disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "update-reader-context wire is decoded, but distributed PIT keep-alive updates are not connected to runtime dispatch",
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "update-reader-context transport adapter records local PIT ids and keep-alive metadata and renders OpenSearch UpdatePitContextResponse wire",
         },
         OPENSEARCH_FREE_PIT_CONTEXT_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -43387,6 +43405,24 @@ mod tests {
                     next_step: "expand local PIT listing adapter toward distributed node fanout and failure aggregation",
                 },
                 OpenSearchPriorityTransportActionSpec {
+                    action_name: "indices:data/read/search[create_context]",
+                    action_type: "CreateReaderContextRequest",
+                    transport_action: "SearchTransportService",
+                    request_wire_type: "CreateReaderContextRequest",
+                    response_wire_type: "CreateReaderContextResponse",
+                    adapter_stage: "search-pit",
+                    next_step: "expand local PIT reader-context creation toward distributed shard fanout",
+                },
+                OpenSearchPriorityTransportActionSpec {
+                    action_name: "indices:data/read/search[update_context]",
+                    action_type: "UpdatePitContextRequest",
+                    transport_action: "SearchTransportService",
+                    request_wire_type: "UpdatePitContextRequest",
+                    response_wire_type: "UpdatePitContextResponse",
+                    adapter_stage: "search-pit",
+                    next_step: "expand local PIT reader-context keep-alive updates toward distributed shard fanout",
+                },
+                OpenSearchPriorityTransportActionSpec {
                     action_name: "indices:data/read/search[free_context/pit]",
                     action_type: "PitFreeContextsRequest",
                     transport_action: "SearchTransportService",
@@ -44346,12 +44382,12 @@ mod tests {
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_CREATE_READER_CONTEXT_ACTION_NAME)
                 .disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_UPDATE_READER_CONTEXT_ACTION_NAME)
                 .disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_FREE_PIT_CONTEXT_ACTION_NAME)
