@@ -15,6 +15,11 @@ def parse_args() -> argparse.Namespace:
         nargs="?",
         default="tools/fixtures/snapshot-promotion-gate.json",
     )
+    parser.add_argument(
+        "--snapshot-compat-fixture",
+        default="tools/fixtures/snapshot-lifecycle-compat.json",
+        help="Snapshot lifecycle compatibility fixture whose cases must be promoted.",
+    )
     return parser.parse_args()
 
 
@@ -27,6 +32,8 @@ def ensure_subset(name: str, actual: list[str], required: set[str]) -> None:
 def main() -> int:
     args = parse_args()
     fixture = json.loads(Path(args.fixture).read_text(encoding="utf-8"))
+    snapshot_compat = json.loads(Path(args.snapshot_compat_fixture).read_text(encoding="utf-8"))
+    required_cases = {case["name"] for case in snapshot_compat.get("cases", [])}
 
     if fixture.get("source_area") != "Snapshot and restore":
         raise SystemExit("snapshot promotion gate fixture has the wrong source_area")
@@ -61,23 +68,14 @@ def main() -> int:
     ensure_subset(
         "semantic_parity.required_cases",
         semantic.get("required_cases") or [],
-        {
-            "register_snapshot_repository",
-            "get_snapshot_repository",
-            "verify_snapshot_repository",
-            "create_snapshot_happy_path",
-            "get_snapshot_happy_path",
-            "get_snapshot_status_happy_path",
-            "restore_snapshot_happy_path",
-            "delete_snapshot_happy_path",
-            "cleanup_snapshot_repository_happy_path",
-            "restore_snapshot_stale_metadata_failure",
-            "restore_snapshot_corrupt_metadata_failure",
-            "restore_snapshot_incompatible_metadata_failure",
-            "restore_missing_snapshot_failure",
-            "cleanup_missing_snapshot_repository_failure",
-        },
+        required_cases,
     )
+    stale_required_cases = sorted(set(semantic.get("required_cases") or []) - required_cases)
+    if stale_required_cases:
+        raise SystemExit(
+            "semantic_parity.required_cases contains non-snapshot-compat entries: "
+            f"{stale_required_cases}"
+        )
     ensure_subset(
         "semantic_parity.required_evidence_classes",
         semantic.get("required_evidence_classes") or [],
