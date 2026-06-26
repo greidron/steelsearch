@@ -12584,7 +12584,38 @@ mod tests {
 
     #[test]
     fn get_settings_transport_route_builds_opensearch_shaped_metadata_response() {
-        let request = os_transport::action::OpenSearchGetSettingsRequestWire::default();
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        *dev_transport_pit_bindings()
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned") = serde_json::json!({
+            "indices": {
+                "logs-settings-000001": {
+                    "settings": {
+                        "index": {
+                            "number_of_shards": "3",
+                            "number_of_replicas": "1",
+                            "refresh_interval": "5s"
+                        }
+                    }
+                },
+                "metrics-settings-000001": {
+                    "settings": {
+                        "index": {
+                            "number_of_replicas": "0",
+                            "refresh_interval": "30s"
+                        }
+                    }
+                }
+            }
+        });
+        let request = os_transport::action::OpenSearchGetSettingsRequestWire {
+            indices: vec!["logs-settings-*".to_string()],
+            names: vec!["index.refresh_*".to_string()],
+            ..os_transport::action::OpenSearchGetSettingsRequestWire::default()
+        };
         let frame = os_transport::action::build_opensearch_get_settings_request_message(
             83,
             OPENSEARCH_3_7_0_TRANSPORT,
@@ -12607,6 +12638,16 @@ mod tests {
         let response =
             os_transport::action::read_opensearch_get_settings_response_message(&message).unwrap();
         assert!(response.default_settings.is_empty());
+        assert!(response.index_settings.contains_key("logs-settings-000001"));
+        assert!(!response
+            .index_settings
+            .contains_key("metrics-settings-000001"));
+        assert_eq!(
+            response.index_settings["logs-settings-000001"]["index.refresh_interval"],
+            "5s"
+        );
+        assert!(!response.index_settings["logs-settings-000001"]
+            .contains_key("index.number_of_replicas"));
     }
 
     #[test]
