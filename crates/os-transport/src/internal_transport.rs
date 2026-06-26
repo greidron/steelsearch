@@ -408,7 +408,7 @@ mod tests {
                                     fields: None,
                                     highlight: None,
                                     explanation: None,
-                sort: None,
+                                    sort: None,
                                 }],
                                 json!({}),
                             ),
@@ -721,15 +721,9 @@ mod tests {
                     assert_eq!(request.local_checkpoint, 123);
                     assert_eq!(request.retention_leases.len(), 2);
                     assert_eq!(request.retention_leases[0].id, "node-b");
-                    assert_eq!(
-                        request.retention_leases[0].retaining_sequence_number,
-                        118
-                    );
+                    assert_eq!(request.retention_leases[0].retaining_sequence_number, 118);
                     assert_eq!(request.retention_leases[1].id, "ccr");
-                    assert_eq!(
-                        request.retention_leases[1].retaining_sequence_number,
-                        111
-                    );
+                    assert_eq!(request.retention_leases[1].retaining_sequence_number, 111);
                     Ok(SteelsearchReplicaOperationResponseWire {
                         index: request.index,
                         shard_id: request.shard_id,
@@ -799,10 +793,11 @@ mod tests {
 
     #[test]
     fn mixed_cluster_write_replication_fail_closed_fixture_matches_validation_behavior() {
-        let fixture: MixedClusterWriteReplicationFailClosedFixture = serde_json::from_str(
-            include_str!("../../../tools/fixtures/mixed-cluster-write-replication-fail-closed.json"),
-        )
-        .expect("mixed-cluster write replication fail-closed fixture should deserialize");
+        let fixture: MixedClusterWriteReplicationFailClosedFixture =
+            serde_json::from_str(include_str!(
+                "../../../tools/fixtures/mixed-cluster-write-replication-fail-closed.json"
+            ))
+            .expect("mixed-cluster write replication fail-closed fixture should deserialize");
 
         for case in fixture.cases {
             match case.kind.as_str() {
@@ -822,8 +817,7 @@ mod tests {
                             "stale_primary_term",
                             ReplicaReplicationValidationError::StalePrimaryTerm { .. },
                         ) => {}
-                        ("stale_seq_no", ReplicaReplicationValidationError::StaleSeqNo { .. }) => {
-                        }
+                        ("stale_seq_no", ReplicaReplicationValidationError::StaleSeqNo { .. }) => {}
                         (expected, actual) => {
                             panic!("unexpected request validation outcome: expected {expected}, got {actual:?}")
                         }

@@ -110,6 +110,12 @@ pub const OPENSEARCH_EXPLAIN_ACTION_NAME: &str = "indices:data/read/explain";
 pub const OPENSEARCH_CREATE_PIT_ACTION_NAME: &str = "indices:data/read/point_in_time/create";
 pub const OPENSEARCH_DELETE_PIT_ACTION_NAME: &str = "indices:data/read/point_in_time/delete";
 pub const OPENSEARCH_GET_ALL_PITS_ACTION_NAME: &str = "indices:data/read/point_in_time/readall";
+pub const OPENSEARCH_CREATE_READER_CONTEXT_ACTION_NAME: &str =
+    "indices:data/read/search[create_context]";
+pub const OPENSEARCH_UPDATE_READER_CONTEXT_ACTION_NAME: &str =
+    "indices:data/read/search[update_context]";
+pub const OPENSEARCH_FREE_PIT_CONTEXT_ACTION_NAME: &str =
+    "indices:data/read/search[free_context/pit]";
 pub const OPENSEARCH_GET_MAPPINGS_ACTION_NAME: &str = "indices:admin/mappings/get";
 pub const OPENSEARCH_GET_FIELD_MAPPINGS_ACTION_NAME: &str = "indices:admin/mappings/fields/get";
 pub const OPENSEARCH_PUT_MAPPING_ACTION_NAME: &str = "indices:admin/mapping/put";
@@ -2400,6 +2406,21 @@ pub fn classify_opensearch_transport_action(
             disposition: OpenSearchTransportActionDisposition::Implemented,
             reason: "get-all-PITs transport wire adapter renders OpenSearch-shaped node responses with ListPitInfo entries",
         },
+        OPENSEARCH_CREATE_READER_CONTEXT_ACTION_NAME => OpenSearchTransportDispatchDecision {
+            action_name: action_name.to_string(),
+            disposition: OpenSearchTransportActionDisposition::Rejected,
+            reason: "create-reader-context wire is decoded, but distributed PIT context fanout is not connected to runtime dispatch",
+        },
+        OPENSEARCH_UPDATE_READER_CONTEXT_ACTION_NAME => OpenSearchTransportDispatchDecision {
+            action_name: action_name.to_string(),
+            disposition: OpenSearchTransportActionDisposition::Rejected,
+            reason: "update-reader-context wire is decoded, but distributed PIT keep-alive updates are not connected to runtime dispatch",
+        },
+        OPENSEARCH_FREE_PIT_CONTEXT_ACTION_NAME => OpenSearchTransportDispatchDecision {
+            action_name: action_name.to_string(),
+            disposition: OpenSearchTransportActionDisposition::Rejected,
+            reason: "free-PIT-context wire is decoded, but distributed PIT cleanup fanout is not connected to runtime dispatch",
+        },
         OPENSEARCH_GET_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Implemented,
@@ -3186,10 +3207,7 @@ impl CatShardsRequestWire {
         Self::read_for_version(bytes, OPENSEARCH_3_7_0_TRANSPORT)
     }
 
-    fn read_for_version(
-        bytes: Bytes,
-        version: Version,
-    ) -> Result<Self, TransportActionWireError> {
+    fn read_for_version(bytes: Bytes, version: Version) -> Result<Self, TransportActionWireError> {
         let mut input = StreamInput::new(bytes);
         let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
         let cluster_manager_timeout = TimeValueWire::read(&mut input)?;
@@ -12116,6 +12134,178 @@ pub fn read_opensearch_create_pit_response_message(
     OpenSearchCreatePitResponseWire::read(message.body.clone().freeze())
 }
 
+pub fn build_opensearch_create_reader_context_request_message(
+    request_id: i64,
+    version: Version,
+    request: &OpenSearchCreateReaderContextRequestWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    request.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::request(),
+        version,
+        variable_header: BytesMut::from(
+            &RequestVariableHeader::new(OPENSEARCH_CREATE_READER_CONTEXT_ACTION_NAME).to_bytes()[..],
+        ),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_create_reader_context_request_message(
+    message: &TransportMessage,
+) -> Result<OpenSearchCreateReaderContextRequestWire, TransportActionWireError> {
+    if !message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "request",
+            actual: message.status.bits(),
+        });
+    }
+    let header = RequestVariableHeader::read(message.variable_header.clone().freeze())?;
+    if header.action != OPENSEARCH_CREATE_READER_CONTEXT_ACTION_NAME {
+        return Err(TransportActionWireError::UnexpectedAction {
+            expected: OPENSEARCH_CREATE_READER_CONTEXT_ACTION_NAME,
+            actual: header.action,
+        });
+    }
+    OpenSearchCreateReaderContextRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_opensearch_create_reader_context_response_message(
+    request_id: i64,
+    version: Version,
+    response: &OpenSearchCreateReaderContextResponseWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    response.write(&mut body)?;
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::response(),
+        version,
+        variable_header: BytesMut::new(),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_create_reader_context_response_message(
+    message: &TransportMessage,
+) -> Result<OpenSearchCreateReaderContextResponseWire, TransportActionWireError> {
+    if message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "response",
+            actual: message.status.bits(),
+        });
+    }
+    OpenSearchCreateReaderContextResponseWire::read(message.body.clone().freeze())
+}
+
+pub fn build_opensearch_update_reader_context_request_message(
+    request_id: i64,
+    version: Version,
+    request: &OpenSearchUpdateReaderContextRequestWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    request.write(&mut body)?;
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::request(),
+        version,
+        variable_header: BytesMut::from(
+            &RequestVariableHeader::new(OPENSEARCH_UPDATE_READER_CONTEXT_ACTION_NAME).to_bytes()[..],
+        ),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_update_reader_context_request_message(
+    message: &TransportMessage,
+) -> Result<OpenSearchUpdateReaderContextRequestWire, TransportActionWireError> {
+    if !message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "request",
+            actual: message.status.bits(),
+        });
+    }
+    let header = RequestVariableHeader::read(message.variable_header.clone().freeze())?;
+    if header.action != OPENSEARCH_UPDATE_READER_CONTEXT_ACTION_NAME {
+        return Err(TransportActionWireError::UnexpectedAction {
+            expected: OPENSEARCH_UPDATE_READER_CONTEXT_ACTION_NAME,
+            actual: header.action,
+        });
+    }
+    OpenSearchUpdateReaderContextRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_opensearch_update_reader_context_response_message(
+    request_id: i64,
+    version: Version,
+    response: &OpenSearchUpdateReaderContextResponseWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    response.write(&mut body)?;
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::response(),
+        version,
+        variable_header: BytesMut::new(),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_update_reader_context_response_message(
+    message: &TransportMessage,
+) -> Result<OpenSearchUpdateReaderContextResponseWire, TransportActionWireError> {
+    if message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "response",
+            actual: message.status.bits(),
+        });
+    }
+    OpenSearchUpdateReaderContextResponseWire::read(message.body.clone().freeze())
+}
+
+pub fn build_opensearch_free_pit_context_request_message(
+    request_id: i64,
+    version: Version,
+    request: &OpenSearchFreePitContextRequestWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    request.write(&mut body)?;
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::request(),
+        version,
+        variable_header: BytesMut::from(
+            &RequestVariableHeader::new(OPENSEARCH_FREE_PIT_CONTEXT_ACTION_NAME).to_bytes()[..],
+        ),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_free_pit_context_request_message(
+    message: &TransportMessage,
+) -> Result<OpenSearchFreePitContextRequestWire, TransportActionWireError> {
+    if !message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "request",
+            actual: message.status.bits(),
+        });
+    }
+    let header = RequestVariableHeader::read(message.variable_header.clone().freeze())?;
+    if header.action != OPENSEARCH_FREE_PIT_CONTEXT_ACTION_NAME {
+        return Err(TransportActionWireError::UnexpectedAction {
+            expected: OPENSEARCH_FREE_PIT_CONTEXT_ACTION_NAME,
+            actual: header.action,
+        });
+    }
+    OpenSearchFreePitContextRequestWire::read(message.body.clone().freeze())
+}
+
 pub fn build_opensearch_delete_pit_request_message(
     request_id: i64,
     version: Version,
@@ -16821,16 +17011,11 @@ impl SearchModelRequestWire {
         Self::read_for_version(bytes, OPENSEARCH_3_7_0_TRANSPORT)
     }
 
-    fn read_for_version(
-        bytes: Bytes,
-        version: Version,
-    ) -> Result<Self, TransportActionWireError> {
+    fn read_for_version(bytes: Bytes, version: Version) -> Result<Self, TransportActionWireError> {
         let mut input = StreamInput::new(bytes);
         let search = OpenSearchSearchRequestWire::read_from_for_version(&mut input, version)?;
         require_no_trailing_bytes(&input)?;
-        Ok(Self {
-            search,
-        })
+        Ok(Self { search })
     }
 
     pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
@@ -24503,10 +24688,7 @@ impl OpenSearchSearchRequestWire {
         Self::read_for_version(bytes, OPENSEARCH_3_7_0_TRANSPORT)
     }
 
-    fn read_for_version(
-        bytes: Bytes,
-        version: Version,
-    ) -> Result<Self, TransportActionWireError> {
+    fn read_for_version(bytes: Bytes, version: Version) -> Result<Self, TransportActionWireError> {
         let mut input = StreamInput::new(bytes);
         let request = Self::read_from_for_version(&mut input, version)?;
         require_no_trailing_bytes(&input)?;
@@ -29597,10 +29779,7 @@ impl OpenSearchSearchViewRequestWire {
         Self::read_for_version(bytes, OPENSEARCH_3_7_0_TRANSPORT)
     }
 
-    fn read_for_version(
-        bytes: Bytes,
-        version: Version,
-    ) -> Result<Self, TransportActionWireError> {
+    fn read_for_version(bytes: Bytes, version: Version) -> Result<Self, TransportActionWireError> {
         let mut input = StreamInput::new(bytes);
         let search = OpenSearchSearchRequestWire::read_from_for_version(&mut input, version)?;
         let view = input.read_string()?;
@@ -30951,10 +31130,7 @@ impl OpenSearchMultiSearchRequestWire {
         Self::read_for_version(bytes, OPENSEARCH_3_7_0_TRANSPORT)
     }
 
-    fn read_for_version(
-        bytes: Bytes,
-        version: Version,
-    ) -> Result<Self, TransportActionWireError> {
+    fn read_for_version(bytes: Bytes, version: Version) -> Result<Self, TransportActionWireError> {
         let mut input = StreamInput::new(bytes);
         let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
         let max_concurrent_search_requests = input.read_vint()?;
@@ -32891,6 +33067,330 @@ impl OpenSearchCreatePitResponseWire {
     pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
         for failure in &self.shard_failures {
             failure.validate_supported_subset()?;
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchShardSearchContextIdWire {
+    pub session_id: String,
+    pub id: i64,
+}
+
+impl OpenSearchShardSearchContextIdWire {
+    pub fn new(session_id: impl Into<String>, id: i64) -> Self {
+        Self {
+            session_id: session_id.into(),
+            id,
+        }
+    }
+
+    fn write(&self, output: &mut StreamOutput) -> Result<(), TransportActionWireError> {
+        self.validate_supported_subset()?;
+        output.write_i64(self.id);
+        output.write_string(&self.session_id);
+        Ok(())
+    }
+
+    fn read(input: &mut StreamInput) -> Result<Self, TransportActionWireError> {
+        let context_id = Self {
+            id: input.read_i64()?,
+            session_id: input.read_string()?,
+        };
+        context_id.validate_supported_subset()?;
+        Ok(context_id)
+    }
+
+    pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
+        if self.session_id.is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "shard search context id session",
+                reason: "OpenSearch ShardSearchContextId requires a non-empty session id",
+            });
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchCreateReaderContextRequestWire {
+    pub parent_task_node: String,
+    pub parent_task_id: Option<i64>,
+    pub shard_id: OpenSearchShardIdWire,
+    pub keep_alive: TimeValueWire,
+}
+
+impl OpenSearchCreateReaderContextRequestWire {
+    pub fn new(shard_id: OpenSearchShardIdWire, keep_alive: TimeValueWire) -> Self {
+        Self {
+            parent_task_node: String::new(),
+            parent_task_id: None,
+            shard_id,
+            keep_alive,
+        }
+    }
+
+    pub fn write(&self, output: &mut StreamOutput) {
+        write_parent_task_id(output, &self.parent_task_node, self.parent_task_id);
+        self.shard_id.write(output);
+        self.keep_alive.write(output);
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
+        let request = Self {
+            parent_task_node,
+            parent_task_id,
+            shard_id: OpenSearchShardIdWire::read(&mut input)?,
+            keep_alive: TimeValueWire::read(&mut input)?,
+        };
+        require_no_trailing_bytes(&input)?;
+        request.validate_supported_subset()?;
+        Ok(request)
+    }
+
+    pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
+        self.shard_id
+            .validate_supported_shape("create reader context shard id")?;
+        if self.keep_alive.duration < -1 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "create reader context keep alive",
+                reason: "OpenSearch TimeValue rejects durations below -1",
+            });
+        }
+        if self.keep_alive.time_unit_ordinal > 6 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "create reader context keep alive unit",
+                reason: "OpenSearch create-reader-context keep-alive uses an unknown time unit",
+            });
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchCreateReaderContextResponseWire {
+    pub context_id: OpenSearchShardSearchContextIdWire,
+}
+
+impl OpenSearchCreateReaderContextResponseWire {
+    pub fn new(context_id: OpenSearchShardSearchContextIdWire) -> Self {
+        Self { context_id }
+    }
+
+    pub fn write(&self, output: &mut StreamOutput) -> Result<(), TransportActionWireError> {
+        self.context_id.write(output)
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let response = Self {
+            context_id: OpenSearchShardSearchContextIdWire::read(&mut input)?,
+        };
+        require_no_trailing_bytes(&input)?;
+        Ok(response)
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchUpdateReaderContextRequestWire {
+    pub parent_task_node: String,
+    pub parent_task_id: Option<i64>,
+    pub pit_id: String,
+    pub keep_alive_millis: i64,
+    pub creation_time_millis: i64,
+    pub search_context_id: OpenSearchShardSearchContextIdWire,
+}
+
+impl OpenSearchUpdateReaderContextRequestWire {
+    pub fn write(&self, output: &mut StreamOutput) -> Result<(), TransportActionWireError> {
+        self.validate_supported_subset()?;
+        write_parent_task_id(output, &self.parent_task_node, self.parent_task_id);
+        output.write_string(&self.pit_id);
+        output.write_i64(self.keep_alive_millis);
+        output.write_i64(self.creation_time_millis);
+        self.search_context_id.write(output)?;
+        Ok(())
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
+        let request = Self {
+            parent_task_node,
+            parent_task_id,
+            pit_id: input.read_string()?,
+            keep_alive_millis: input.read_i64()?,
+            creation_time_millis: input.read_i64()?,
+            search_context_id: OpenSearchShardSearchContextIdWire::read(&mut input)?,
+        };
+        require_no_trailing_bytes(&input)?;
+        request.validate_supported_subset()?;
+        Ok(request)
+    }
+
+    pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
+        if self.pit_id.is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "update reader context pit id",
+                reason: "OpenSearch UpdatePitContextRequest requires a non-empty PIT id",
+            });
+        }
+        self.search_context_id.validate_supported_subset()
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchUpdateReaderContextResponseWire {
+    pub pit_id: String,
+    pub creation_time_millis: i64,
+    pub keep_alive_millis: i64,
+}
+
+impl OpenSearchUpdateReaderContextResponseWire {
+    pub fn write(&self, output: &mut StreamOutput) -> Result<(), TransportActionWireError> {
+        self.validate_supported_subset()?;
+        output.write_string(&self.pit_id);
+        output.write_i64(self.creation_time_millis);
+        output.write_i64(self.keep_alive_millis);
+        Ok(())
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let response = Self {
+            pit_id: input.read_string()?,
+            creation_time_millis: input.read_i64()?,
+            keep_alive_millis: input.read_i64()?,
+        };
+        require_no_trailing_bytes(&input)?;
+        response.validate_supported_subset()?;
+        Ok(response)
+    }
+
+    pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
+        if self.pit_id.is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "update reader context response pit id",
+                reason: "OpenSearch UpdatePitContextResponse carries the updated PIT id",
+            });
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchSearchContextIdForNodeWire {
+    pub node: String,
+    pub cluster_alias: Option<String>,
+    pub search_context_id: OpenSearchShardSearchContextIdWire,
+}
+
+impl OpenSearchSearchContextIdForNodeWire {
+    fn write(&self, output: &mut StreamOutput) -> Result<(), TransportActionWireError> {
+        self.validate_supported_subset()?;
+        output.write_string(&self.node);
+        output.write_optional_string(self.cluster_alias.as_deref());
+        self.search_context_id.write(output)?;
+        Ok(())
+    }
+
+    fn read(input: &mut StreamInput) -> Result<Self, TransportActionWireError> {
+        let context = Self {
+            node: input.read_string()?,
+            cluster_alias: input.read_optional_string()?,
+            search_context_id: OpenSearchShardSearchContextIdWire::read(input)?,
+        };
+        context.validate_supported_subset()?;
+        Ok(context)
+    }
+
+    pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
+        if self.node.is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search context node id",
+                reason: "OpenSearch SearchContextIdForNode requires a non-empty node id",
+            });
+        }
+        self.search_context_id.validate_supported_subset()
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchPitSearchContextIdForNodeWire {
+    pub pit_id: String,
+    pub search_context: OpenSearchSearchContextIdForNodeWire,
+}
+
+impl OpenSearchPitSearchContextIdForNodeWire {
+    fn write(&self, output: &mut StreamOutput) -> Result<(), TransportActionWireError> {
+        self.validate_supported_subset()?;
+        output.write_string(&self.pit_id);
+        self.search_context.write(output)?;
+        Ok(())
+    }
+
+    fn read(input: &mut StreamInput) -> Result<Self, TransportActionWireError> {
+        let context = Self {
+            pit_id: input.read_string()?,
+            search_context: OpenSearchSearchContextIdForNodeWire::read(input)?,
+        };
+        context.validate_supported_subset()?;
+        Ok(context)
+    }
+
+    pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
+        if self.pit_id.is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "free pit context pit id",
+                reason: "OpenSearch PitSearchContextIdForNode requires a non-empty PIT id",
+            });
+        }
+        self.search_context.validate_supported_subset()
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchFreePitContextRequestWire {
+    pub parent_task_node: String,
+    pub parent_task_id: Option<i64>,
+    pub context_ids: Vec<OpenSearchPitSearchContextIdForNodeWire>,
+}
+
+impl OpenSearchFreePitContextRequestWire {
+    pub fn write(&self, output: &mut StreamOutput) -> Result<(), TransportActionWireError> {
+        self.validate_supported_subset()?;
+        write_parent_task_id(output, &self.parent_task_node, self.parent_task_id);
+        output.write_vint(self.context_ids.len() as i32);
+        for context_id in &self.context_ids {
+            context_id.write(output)?;
+        }
+        Ok(())
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
+        let count = read_len(&mut input)?;
+        let mut context_ids = Vec::with_capacity(count);
+        for _ in 0..count {
+            context_ids.push(OpenSearchPitSearchContextIdForNodeWire::read(&mut input)?);
+        }
+        require_no_trailing_bytes(&input)?;
+        let request = Self {
+            parent_task_node,
+            parent_task_id,
+            context_ids,
+        };
+        request.validate_supported_subset()?;
+        Ok(request)
+    }
+
+    pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
+        for context_id in &self.context_ids {
+            context_id.validate_supported_subset()?;
         }
         Ok(())
     }
@@ -43011,6 +43511,21 @@ mod tests {
             OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
+            classify_opensearch_transport_action(OPENSEARCH_CREATE_READER_CONTEXT_ACTION_NAME)
+                .disposition,
+            OpenSearchTransportActionDisposition::Rejected
+        );
+        assert_eq!(
+            classify_opensearch_transport_action(OPENSEARCH_UPDATE_READER_CONTEXT_ACTION_NAME)
+                .disposition,
+            OpenSearchTransportActionDisposition::Rejected
+        );
+        assert_eq!(
+            classify_opensearch_transport_action(OPENSEARCH_FREE_PIT_CONTEXT_ACTION_NAME)
+                .disposition,
+            OpenSearchTransportActionDisposition::Rejected
+        );
+        assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_GET_ACTION_NAME).disposition,
             OpenSearchTransportActionDisposition::Implemented
         );
@@ -46219,8 +46734,7 @@ mod tests {
         assert_eq!(decoded.indices, Vec::<String>::new());
         assert!(!decoded.request_limit_check_supported);
 
-        let mut frame =
-            build_cat_shards_request_message(157, OPENSEARCH_2_18_0, &request).unwrap();
+        let mut frame = build_cat_shards_request_message(157, OPENSEARCH_2_18_0, &request).unwrap();
         let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
             panic!("expected cat-shards request message");
         };
@@ -68472,10 +68986,7 @@ mod tests {
                 .unwrap();
         let source = decoded.source.unwrap();
         assert!(source.derived_fields_object.is_some());
-        assert_eq!(
-            source.derived_fields.as_ref().map(Vec::len),
-            Some(1)
-        );
+        assert_eq!(source.derived_fields.as_ref().map(Vec::len), Some(1));
         assert_eq!(source.search_pipeline, None);
 
         let mut output = StreamOutput::new();
@@ -69109,15 +69620,15 @@ mod tests {
 
         let mut output = StreamOutput::new();
         response.write(&mut output, OPENSEARCH_2_12_0).unwrap();
-        let decoded = OpenSearchSearchResponseWire::read(output.freeze(), OPENSEARCH_2_12_0)
-            .unwrap();
+        let decoded =
+            OpenSearchSearchResponseWire::read(output.freeze(), OPENSEARCH_2_12_0).unwrap();
         assert!(decoded.hits[0].matched_queries["named-a"].is_nan());
         assert!(decoded.hits[0].matched_queries["named-b"].is_nan());
 
         let mut output = StreamOutput::new();
         response.write(&mut output, OPENSEARCH_2_13_0).unwrap();
-        let decoded = OpenSearchSearchResponseWire::read(output.freeze(), OPENSEARCH_2_13_0)
-            .unwrap();
+        let decoded =
+            OpenSearchSearchResponseWire::read(output.freeze(), OPENSEARCH_2_13_0).unwrap();
         assert_eq!(decoded.hits[0].matched_queries["named-a"], 0.75);
         assert_eq!(decoded.hits[0].matched_queries["named-b"], 1.25);
     }
@@ -69862,6 +70373,131 @@ mod tests {
             read_opensearch_create_pit_request_message(&message).unwrap_err(),
             TransportActionWireError::UnexpectedMessageStatus {
                 expected: "request",
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn opensearch_pit_reader_context_transport_messages_round_trip() {
+        let shard_context = OpenSearchShardSearchContextIdWire::new("session-a", 42);
+        let create_request = OpenSearchCreateReaderContextRequestWire::new(
+            OpenSearchShardIdWire {
+                index_name: "logs".to_string(),
+                index_uuid: "uuid-logs".to_string(),
+                shard_id: 1,
+            },
+            TimeValueWire::minutes(2),
+        );
+        let mut frame = build_opensearch_create_reader_context_request_message(
+            56,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &create_request,
+        )
+        .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected create-reader-context request message");
+        };
+        assert_eq!(
+            read_opensearch_create_reader_context_request_message(&message).unwrap(),
+            create_request
+        );
+
+        let create_response = OpenSearchCreateReaderContextResponseWire::new(shard_context.clone());
+        let mut frame = build_opensearch_create_reader_context_response_message(
+            56,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &create_response,
+        )
+        .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected create-reader-context response message");
+        };
+        assert_eq!(
+            read_opensearch_create_reader_context_response_message(&message).unwrap(),
+            create_response
+        );
+        assert!(matches!(
+            read_opensearch_create_reader_context_request_message(&message).unwrap_err(),
+            TransportActionWireError::UnexpectedMessageStatus {
+                expected: "request",
+                ..
+            }
+        ));
+
+        let update_request = OpenSearchUpdateReaderContextRequestWire {
+            parent_task_node: String::new(),
+            parent_task_id: None,
+            pit_id: "pit-context".to_string(),
+            keep_alive_millis: 120_000,
+            creation_time_millis: 1_700_000_000_000,
+            search_context_id: shard_context.clone(),
+        };
+        let mut frame = build_opensearch_update_reader_context_request_message(
+            57,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &update_request,
+        )
+        .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected update-reader-context request message");
+        };
+        assert_eq!(
+            read_opensearch_update_reader_context_request_message(&message).unwrap(),
+            update_request
+        );
+
+        let update_response = OpenSearchUpdateReaderContextResponseWire {
+            pit_id: "pit-context".to_string(),
+            creation_time_millis: 1_700_000_000_000,
+            keep_alive_millis: 120_000,
+        };
+        let mut frame = build_opensearch_update_reader_context_response_message(
+            57,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &update_response,
+        )
+        .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected update-reader-context response message");
+        };
+        assert_eq!(
+            read_opensearch_update_reader_context_response_message(&message).unwrap(),
+            update_response
+        );
+    }
+
+    #[test]
+    fn opensearch_free_pit_context_transport_message_round_trips_contexts() {
+        let request = OpenSearchFreePitContextRequestWire {
+            parent_task_node: String::new(),
+            parent_task_id: None,
+            context_ids: vec![OpenSearchPitSearchContextIdForNodeWire {
+                pit_id: "pit-context".to_string(),
+                search_context: OpenSearchSearchContextIdForNodeWire {
+                    node: "node-a".to_string(),
+                    cluster_alias: Some("remote-a".to_string()),
+                    search_context_id: OpenSearchShardSearchContextIdWire::new("session-a", 42),
+                },
+            }],
+        };
+        let mut frame = build_opensearch_free_pit_context_request_message(
+            58,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected free-PIT-context request message");
+        };
+        assert_eq!(
+            read_opensearch_free_pit_context_request_message(&message).unwrap(),
+            request
+        );
+        assert!(matches!(
+            read_opensearch_delete_pit_request_message(&message).unwrap_err(),
+            TransportActionWireError::UnexpectedAction {
+                expected: OPENSEARCH_DELETE_PIT_ACTION_NAME,
                 ..
             }
         ));

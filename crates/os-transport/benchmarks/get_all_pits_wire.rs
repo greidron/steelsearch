@@ -2,9 +2,9 @@ use os_core::OPENSEARCH_3_7_0_TRANSPORT;
 use os_transport::action::{
     build_opensearch_get_all_pits_request_message, build_opensearch_get_all_pits_response_message,
     read_opensearch_get_all_pits_request_message, read_opensearch_get_all_pits_response_message,
-    OpenSearchDiscoveryNodeRoleWire, OpenSearchDiscoveryNodeWire, OpenSearchGetAllPitsNodeResponseWire,
-    OpenSearchGetAllPitsRequestWire, OpenSearchGetAllPitsResponseWire, OpenSearchListPitInfoWire,
-    OpenSearchTransportAddressWire,
+    OpenSearchDiscoveryNodeRoleWire, OpenSearchDiscoveryNodeWire,
+    OpenSearchGetAllPitsNodeResponseWire, OpenSearchGetAllPitsRequestWire,
+    OpenSearchGetAllPitsResponseWire, OpenSearchListPitInfoWire, OpenSearchTransportAddressWire,
 };
 use os_transport::frame::{decode_frame, DecodedFrame};
 use std::collections::BTreeMap;

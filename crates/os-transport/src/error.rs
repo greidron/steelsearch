@@ -275,13 +275,11 @@ mod tests {
             error.class_name,
             "org.opensearch.transport.UnknownTransportException"
         );
-        assert!(
-            error
-                .message
-                .as_deref()
-                .expect("should include fallback message")
-                .contains("unsupported transport exception key 999")
-        );
+        assert!(error
+            .message
+            .as_deref()
+            .expect("should include fallback message")
+            .contains("unsupported transport exception key 999"));
         assert_eq!(error.cause, None);
     }
 

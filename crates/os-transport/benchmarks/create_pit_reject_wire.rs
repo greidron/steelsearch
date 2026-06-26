@@ -12,8 +12,7 @@ const ITERATIONS: usize = 400_000;
 
 fn main() {
     let request = OpenSearchCreatePitRequestWire::default();
-    let response =
-        OpenSearchCreatePitResponseWire::success("pit-context", 1_700_000_000_000, 3);
+    let response = OpenSearchCreatePitResponseWire::success("pit-context", 1_700_000_000_000, 3);
 
     let request_encode = measure("create_pit_request_encode", ITERATIONS, || {
         let frame = build_opensearch_create_pit_request_message(

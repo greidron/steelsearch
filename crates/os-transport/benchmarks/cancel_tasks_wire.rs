@@ -56,15 +56,16 @@ fn main() {
                 .expect("cancel tasks request encode should succeed");
         black_box(frame);
     });
-    let filtered_request_encode = measure("cancel_tasks_filtered_request_encode", ITERATIONS, || {
-        let frame = build_cancel_tasks_request_message(
-            13,
-            OPENSEARCH_3_7_0_TRANSPORT,
-            black_box(&filtered_request),
-        )
-        .expect("filtered cancel tasks request encode should succeed");
-        black_box(frame);
-    });
+    let filtered_request_encode =
+        measure("cancel_tasks_filtered_request_encode", ITERATIONS, || {
+            let frame = build_cancel_tasks_request_message(
+                13,
+                OPENSEARCH_3_7_0_TRANSPORT,
+                black_box(&filtered_request),
+            )
+            .expect("filtered cancel tasks request encode should succeed");
+            black_box(frame);
+        });
     let response_encode = measure("cancel_tasks_response_encode", ITERATIONS, || {
         let frame = build_cancel_tasks_response_message(
             13,
@@ -92,13 +93,14 @@ fn main() {
             .expect("cancel tasks request decode");
         black_box(decoded);
     });
-    let filtered_request_decode = measure("cancel_tasks_filtered_request_decode", ITERATIONS, || {
-        let mut frame = black_box(filtered_request_frame.clone());
-        let message = decode_message(&mut frame);
-        let decoded = read_cancel_tasks_request_message(black_box(&message))
-            .expect("filtered cancel tasks request decode");
-        black_box(decoded);
-    });
+    let filtered_request_decode =
+        measure("cancel_tasks_filtered_request_decode", ITERATIONS, || {
+            let mut frame = black_box(filtered_request_frame.clone());
+            let message = decode_message(&mut frame);
+            let decoded = read_cancel_tasks_request_message(black_box(&message))
+                .expect("filtered cancel tasks request decode");
+            black_box(decoded);
+        });
     let response_decode = measure("cancel_tasks_response_decode", ITERATIONS, || {
         let mut frame = black_box(response_frame.clone());
         let message = decode_message(&mut frame);

@@ -77,9 +77,12 @@ fn main() {
     });
 
     let response_encode = measure("nodes_usage_response_encode", ITERATIONS, || {
-        let frame =
-            build_nodes_usage_response_message(20, OPENSEARCH_3_7_0_TRANSPORT, black_box(&response))
-                .expect("nodes usage response encode should succeed");
+        let frame = build_nodes_usage_response_message(
+            20,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            black_box(&response),
+        )
+        .expect("nodes usage response encode should succeed");
         black_box(frame);
     });
 

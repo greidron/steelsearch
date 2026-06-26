@@ -6,13 +6,13 @@ use flate2::Compression;
 use os_core::Version;
 use os_stream::StreamInput;
 use os_transport::compression::DEFLATE_HEADER;
-use os_transport::TransportMessage;
 use os_transport::frame::{decode_frame, DecodedFrame};
 use os_transport::handshake::{
     build_tcp_handshake_request, build_transport_handshake_request, TCP_HANDSHAKE_ACTION,
     TRANSPORT_HANDSHAKE_ACTION,
 };
 use os_transport::variable_header::RequestVariableHeader;
+use os_transport::TransportMessage;
 use os_wire::{TcpHeader, TransportStatus};
 use std::collections::BTreeMap;
 use std::io::Write;

@@ -1,7 +1,5 @@
 use bytes::{Bytes, BytesMut};
-use os_core::{
-    Version, OPENSEARCH_3_7_0_TRANSPORT, OPENSEARCH_DISCOVERY_NODE_STREAM_ADDRESS,
-};
+use os_core::{Version, OPENSEARCH_3_7_0_TRANSPORT, OPENSEARCH_DISCOVERY_NODE_STREAM_ADDRESS};
 use os_stream::{StreamInput, StreamInputError, StreamOutput};
 use os_wire::TransportStatus;
 use std::collections::{BTreeMap, BTreeSet};
@@ -289,8 +287,8 @@ fn write_version_bytes_reference(output: &mut StreamOutput, version: Version) {
 mod tests {
     use super::{
         build_tcp_handshake_request, build_transport_handshake_request,
-        validate_mixed_cluster_join_admission, DiscoveryNode, DiscoveryNodeRole, JoinAdmissionError,
-        TCP_HANDSHAKE_ACTION, TRANSPORT_HANDSHAKE_ACTION, TransportAddress,
+        validate_mixed_cluster_join_admission, DiscoveryNode, DiscoveryNodeRole,
+        JoinAdmissionError, TransportAddress, TCP_HANDSHAKE_ACTION, TRANSPORT_HANDSHAKE_ACTION,
     };
     use crate::frame::{decode_frame, DecodedFrame};
     use crate::variable_header::RequestVariableHeader;
@@ -531,7 +529,11 @@ mod tests {
                 }
                 JoinAdmissionError::WireVersionMismatch { .. } => "WireVersionMismatch",
             };
-            assert_eq!(actual_class, case.expected_error_class, "case {}", case.name);
+            assert_eq!(
+                actual_class, case.expected_error_class,
+                "case {}",
+                case.name
+            );
         }
     }
 

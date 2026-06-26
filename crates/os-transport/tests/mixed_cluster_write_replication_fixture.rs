@@ -31,7 +31,9 @@ fn mixed_cluster_write_replication_fixture_stays_explicit_and_bounded() {
         vec!["index", "delete", "update"]
     );
     assert_eq!(
-        fixture.replicated_action_family.replica_wire_operation_kinds,
+        fixture
+            .replicated_action_family
+            .replica_wire_operation_kinds,
         vec!["index", "delete", "noop"]
     );
     assert_eq!(

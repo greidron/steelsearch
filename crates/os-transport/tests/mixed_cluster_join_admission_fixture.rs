@@ -69,7 +69,10 @@ fn mixed_cluster_join_admission_fixture_matches_current_join_contract() {
         "f991609d190dfd91c8a09902053a7bbfe0c27b3e"
     );
 
-    assert_eq!(fixture.join_handshake.tcp_handshake_action, TCP_HANDSHAKE_ACTION);
+    assert_eq!(
+        fixture.join_handshake.tcp_handshake_action,
+        TCP_HANDSHAKE_ACTION
+    );
     assert_eq!(
         fixture.join_handshake.transport_handshake_action,
         TRANSPORT_HANDSHAKE_ACTION
@@ -79,7 +82,9 @@ fn mixed_cluster_join_admission_fixture_matches_current_join_contract() {
         vec![OPENSEARCH_3_7_0_TRANSPORT.id()]
     );
     assert_eq!(
-        fixture.join_handshake.minimum_compatible_transport_version_id,
+        fixture
+            .join_handshake
+            .minimum_compatible_transport_version_id,
         OPENSEARCH_3_7_0_MIN_COMPAT_TRANSPORT.id()
     );
     assert_eq!(
@@ -88,7 +93,9 @@ fn mixed_cluster_join_admission_fixture_matches_current_join_contract() {
     );
 
     assert_eq!(
-        fixture.discovery_node_advertisement.required_identity_fields,
+        fixture
+            .discovery_node_advertisement
+            .required_identity_fields,
         vec![
             "name",
             "id",

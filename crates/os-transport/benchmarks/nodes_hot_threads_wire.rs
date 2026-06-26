@@ -109,9 +109,7 @@ fn main() {
         .min(request_validate.ops_per_second)
         .min(response_encode.ops_per_second)
         .min(response_decode.ops_per_second);
-    println!(
-        "nodes_hot_threads_wire_bottleneck_ops_per_second={combined_ops_per_second:.2}"
-    );
+    println!("nodes_hot_threads_wire_bottleneck_ops_per_second={combined_ops_per_second:.2}");
 }
 
 #[derive(Clone, Copy)]
