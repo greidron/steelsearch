@@ -226,6 +226,13 @@ action_status() {
   fi
 
   case "${action}" in
+    ValidateQueryAction.INSTANCE|FlushAction.INSTANCE|ClearIndicesCacheAction.INSTANCE|ForceMergeAction.INSTANCE|UpgradeAction.INSTANCE|UpgradeStatusAction.INSTANCE|SearchAction.INSTANCE|StreamSearchAction.INSTANCE|SearchScrollAction.INSTANCE|MultiSearchAction.INSTANCE|ExplainAction.INSTANCE)
+      echo "implemented"
+      return
+      ;;
+  esac
+
+  case "${action}" in
     MainAction.INSTANCE|NodesInfoAction.INSTANCE|RemoteInfoAction.INSTANCE|NodesStatsAction.INSTANCE|WlmStatsAction.INSTANCE|NodesUsageAction.INSTANCE|NodesHotThreadsAction.INSTANCE|ListTasksAction.INSTANCE|GetTaskAction.INSTANCE|CancelTasksAction.INSTANCE|ClusterStateAction.INSTANCE|GetTermVersionAction.INSTANCE|ClusterHealthAction.INSTANCE|ClusterSearchShardsAction.INSTANCE|PendingClusterTasksAction.INSTANCE|GetRepositoriesAction.INSTANCE|IndicesStatsAction.INSTANCE|IndicesSegmentsAction.INSTANCE|IndicesShardStoresAction.INSTANCE|GetMappingsAction.INSTANCE|GetFieldMappingsAction.INSTANCE|RefreshAction.INSTANCE|GetAliasesAction.INSTANCE|GetSettingsAction.INSTANCE|IndexAction.INSTANCE|GetAction.INSTANCE|DeleteAction.INSTANCE|UpdateAction.INSTANCE|MultiGetAction.INSTANCE|BulkAction.INSTANCE|ClearScrollAction.INSTANCE|RecoveryAction.INSTANCE|SegmentReplicationStatsAction.INSTANCE|GetDataStreamAction.INSTANCE|DataStreamsStatsAction.INSTANCE|ListViewNamesAction.INSTANCE|ListDanglingIndicesAction.INSTANCE|FindDanglingIndexAction.INSTANCE|CreatePitAction.INSTANCE|DeletePitAction.INSTANCE|PitSegmentsAction.INSTANCE|GetAllPitsAction.INSTANCE)
       echo "implemented"
       ;;

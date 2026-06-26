@@ -116,13 +116,36 @@ class TransportActionCoverageTests(unittest.TestCase):
             payload = json.loads(output.read_text(encoding="utf-8"))
             self.assertEqual(result, 0)
             self.assertEqual(payload["summary"]["transport_action_count"], 160)
-            self.assertEqual(payload["summary"]["implemented_action_count"], 42)
-            self.assertEqual(payload["summary"]["partial_action_count"], 118)
+            self.assertEqual(payload["summary"]["implemented_action_count"], 53)
+            self.assertEqual(payload["summary"]["partial_action_count"], 107)
             self.assertEqual(payload["summary"]["planned_action_count"], 0)
             self.assertEqual(len(payload["actions"]), 160)
-            self.assertEqual(len(payload["implemented_actions"]), 42)
-            self.assertEqual(len(payload["partial_actions"]), 118)
+            self.assertEqual(len(payload["implemented_actions"]), 53)
+            self.assertEqual(len(payload["partial_actions"]), 107)
             self.assertEqual(payload["planned_actions"], [])
+
+    def test_locally_handled_transport_actions_are_implemented_in_source_tsv(self):
+        implemented_actions = {
+            action["action"]
+            for action in self.report.load_actions(SOURCE_TRANSPORT_ACTIONS)
+            if action["status"] == "implemented"
+        }
+
+        expected = {
+            "ValidateQueryAction.INSTANCE",
+            "FlushAction.INSTANCE",
+            "ClearIndicesCacheAction.INSTANCE",
+            "ForceMergeAction.INSTANCE",
+            "UpgradeAction.INSTANCE",
+            "UpgradeStatusAction.INSTANCE",
+            "SearchAction.INSTANCE",
+            "StreamSearchAction.INSTANCE",
+            "SearchScrollAction.INSTANCE",
+            "MultiSearchAction.INSTANCE",
+            "ExplainAction.INSTANCE",
+        }
+
+        self.assertEqual(expected - implemented_actions, set())
 
     def test_cli_rejects_stale_peer_backpressure_when_age_gate_is_set(self):
         with tempfile.TemporaryDirectory() as temp_dir_value:
