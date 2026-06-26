@@ -2357,6 +2357,10 @@ The create-PIT boundary covers:
   allocating a reader context, matching the OpenSearch
   `indicesService.indexServiceSafe(...).getShard(...)` admission boundary for
   the local-node subset.
+- local transport create-reader-context now applies the OpenSearch default
+  `search.max_open_pit_context` limit of `300` before allocating a reader
+  context, matching the `SearchService.createPitReaderContext` open-context
+  admission boundary for the local-node subset.
 - local transport update-reader-context now requires a reader context id
   previously allocated by the local create-reader-context route before updating
   PIT state, matching OpenSearch `getPitReaderContext(...)` missing-context
