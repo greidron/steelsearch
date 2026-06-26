@@ -12795,6 +12795,52 @@ mod tests {
     }
 
     #[test]
+    fn search_transport_route_rejects_slice_without_pit_context() {
+        let request = os_transport::action::OpenSearchSearchRequestWire {
+            source: Some(os_transport::action::OpenSearchSearchSourceBuilderWire {
+                slice: Some(os_transport::action::OpenSearchSliceBuilderWire {
+                    field: "_id".to_string(),
+                    id: 0,
+                    max: 2,
+                }),
+                ..os_transport::action::OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..os_transport::action::OpenSearchSearchRequestWire::default()
+        };
+        let frame = os_transport::action::build_opensearch_search_request_message(
+            305,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(!search_request_supports_local_execution_subset(&frame[6..]));
+
+        let stream_frame = os_transport::action::build_opensearch_stream_search_request_message(
+            306,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(!stream_search_request_supports_local_execution_subset(
+            &stream_frame[6..]
+        ));
+
+        let multi_request = os_transport::action::OpenSearchMultiSearchRequestWire {
+            requests: vec![request],
+            ..os_transport::action::OpenSearchMultiSearchRequestWire::default()
+        };
+        let multi_frame = os_transport::action::build_opensearch_multi_search_request_message(
+            307,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &multi_request,
+        )
+        .unwrap();
+        assert!(!multi_search_request_supports_local_execution_subset(
+            &multi_frame[6..]
+        ));
+    }
+
+    #[test]
     fn search_transport_route_uses_pit_snapshot_and_extends_keep_alive() {
         let _lock = dev_transport_pit_test_lock()
             .lock()

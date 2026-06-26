@@ -24918,6 +24918,12 @@ impl OpenSearchSearchRequestWire {
         }
         if let Some(source) = &self.source {
             let shard_doc_sort_count = shard_doc_sort_count(source.sorts.as_deref());
+            if source.slice.is_some() && source.point_in_time.is_none() {
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "search request source slice context",
+                    reason: "OpenSearch sliced search requires a scroll or point-in-time context",
+                });
+            }
             if shard_doc_sort_count > 0 && source.point_in_time.is_none() {
                 return Err(TransportActionWireError::UnsupportedWireShape {
                     shape: "search request source shard doc sort",
@@ -69360,6 +69366,48 @@ mod tests {
             invalid_slice.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "search request source slice",
+                ..
+            })
+        ));
+
+        let slice_without_context = OpenSearchSearchRequestWire {
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                slice: Some(OpenSearchSliceBuilderWire {
+                    field: "_id".to_string(),
+                    id: 0,
+                    max: 2,
+                }),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        assert!(matches!(
+            slice_without_context.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source slice context",
+                ..
+            })
+        ));
+
+        let pit_slice_context = OpenSearchSearchRequestWire {
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                point_in_time: Some(OpenSearchPointInTimeBuilderWire {
+                    id: "pit-context".to_string(),
+                    keep_alive: Some(TimeValueWire::minutes(1)),
+                }),
+                slice: Some(OpenSearchSliceBuilderWire {
+                    field: "_id".to_string(),
+                    id: 0,
+                    max: 2,
+                }),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        assert!(matches!(
+            pit_slice_context.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request execution",
                 ..
             })
         ));
