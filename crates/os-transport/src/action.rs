@@ -2003,12 +2003,12 @@ pub fn classify_opensearch_transport_action(
         OPENSEARCH_GET_MAPPINGS_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Implemented,
-            reason: "get-mappings transport adapter returns an OpenSearch-shaped empty mappings response for the default all-indices request",
+            reason: "get-mappings transport adapter renders OpenSearch-shaped empty mapping entries from the local metadata manifest for the default all-indices request",
         },
         OPENSEARCH_GET_FIELD_MAPPINGS_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Implemented,
-            reason: "get-field-mappings transport adapter returns an OpenSearch-shaped empty field mappings response for the default all-indices request",
+            reason: "get-field-mappings transport adapter renders OpenSearch-shaped empty field-mapping entries from the local metadata manifest for the default all-indices/no-fields request",
         },
         OPENSEARCH_PUT_MAPPING_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -2234,7 +2234,7 @@ pub fn classify_opensearch_transport_action(
         OPENSEARCH_GET_ALIASES_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Implemented,
-            reason: "get-aliases transport adapter returns an OpenSearch-shaped empty alias metadata response for the default all-aliases request",
+            reason: "get-aliases transport adapter renders OpenSearch-shaped empty alias-list entries from the local metadata manifest for the default all-indices/all-aliases request",
         },
         OPENSEARCH_GET_SETTINGS_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),

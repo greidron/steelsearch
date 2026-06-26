@@ -265,8 +265,8 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `cluster:admin/routing/awareness/weights/put` (rejected fail-closed)
 - `cluster:admin/routing/awareness/weights/get` (rejected fail-closed)
 - `cluster:admin/routing/awareness/weights/delete` (rejected fail-closed)
-- `indices:admin/mappings/get` (implemented empty-mapping metadata subset)
-- `indices:admin/mappings/fields/get` (implemented empty field-mapping subset)
+- `indices:admin/mappings/get` (implemented manifest-backed empty-mapping metadata subset)
+- `indices:admin/mappings/fields/get` (implemented manifest-backed empty field-mapping subset)
 - `indices:admin/get` (rejected fail-closed)
 - `indices:admin/exists` (rejected fail-closed)
 - `indices:admin/template/get` (rejected fail-closed)
@@ -1156,7 +1156,8 @@ The get-mappings boundary covers:
   array, `local` flag, and `IndicesOptions.strictExpandOpen()` at the wire
   decode/build layer;
 - implemented classification for `indices:admin/mappings/get` default
-  all-indices request admission and empty mappings response rendering;
+  all-indices request admission and local metadata manifest-backed empty
+  mapping entry response rendering;
 - explicit rejection for custom cluster-manager timeout, index filters, local
   reads, custom indices options, and non-empty mapping metadata payloads.
 
@@ -1166,8 +1167,8 @@ The get-field-mappings boundary covers:
   `IndicesOptions.strictExpandOpen()`, `local`, fields array, and
   `includeDefaults` at the OpenSearch 3.x wire decode/build layer;
 - implemented classification for `indices:admin/mappings/fields/get` default
-  all-indices/no-fields request admission and empty field-mappings response
-  rendering;
+  all-indices/no-fields request admission and local metadata manifest-backed
+  empty field-mapping entry response rendering;
 - explicit rejection for index filters, custom indices options, local reads,
   field filters, include-default expansion, and non-empty field mapping
   metadata payloads.
@@ -1761,8 +1762,8 @@ The get-aliases boundary covers:
   array, `local` flag, aliases array, `IndicesOptions.strictExpandHidden()`,
   and original aliases array at the wire decode/build layer;
 - implemented classification for `indices:admin/aliases/get` default
-  all-indices/all-aliases requests, returning an OpenSearch-shaped empty alias
-  metadata map response;
+  all-indices/all-aliases requests, rendering OpenSearch-shaped empty
+  alias-list entries from the local metadata manifest;
 - explicit rejection for custom cluster-manager timeout, index filters, local
   reads, alias filters, custom indices options, and original alias filters.
 
