@@ -1503,6 +1503,7 @@ def extract(kind: str, response: dict[str, Any]) -> Any:
             "batches": body.get("batches"),
             "version_conflicts": body.get("version_conflicts"),
             "noops": body.get("noops"),
+            "requests_per_second": body.get("requests_per_second"),
             "failures_count": len(failures) if isinstance(failures, list) else None,
         }
     if kind == "task_submit":
@@ -1527,6 +1528,9 @@ def extract(kind: str, response: dict[str, Any]) -> Any:
             "response_created": task_response.get("created") if isinstance(task_response, dict) else None,
             "response_updated": task_response.get("updated") if isinstance(task_response, dict) else None,
             "response_deleted": task_response.get("deleted") if isinstance(task_response, dict) else None,
+            "response_requests_per_second": task_response.get("requests_per_second")
+            if isinstance(task_response, dict)
+            else None,
             "response_version_conflicts": task_response.get("version_conflicts")
             if isinstance(task_response, dict)
             else None,

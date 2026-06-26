@@ -12732,6 +12732,10 @@ impl SteelNode {
             .query_params
             .get("wait_for_completion")
             .is_some_and(|value| value == "false");
+        let requests_per_second = match Self::bulk_by_scroll_requests_per_second(request) {
+            Ok(rate) => rate,
+            Err(response) => return response,
+        };
         if request
             .query_params
             .get("require_alias")
@@ -12855,7 +12859,7 @@ impl SteelNode {
                 "search": 0
             },
             "throttled_millis": 0,
-            "requests_per_second": -1.0,
+            "requests_per_second": requests_per_second,
             "throttled_until_millis": 0,
             "failures": []
         });
@@ -12882,6 +12886,10 @@ impl SteelNode {
             .query_params
             .get("wait_for_completion")
             .is_some_and(|value| value == "false");
+        let requests_per_second = match Self::bulk_by_scroll_requests_per_second(request) {
+            Ok(rate) => rate,
+            Err(response) => return response,
+        };
         if let Some(response) = self.refuse_task_submission_if_unavailable() {
             return response;
         }
@@ -12945,7 +12953,7 @@ impl SteelNode {
                 "search": 0
             },
             "throttled_millis": 0,
-            "requests_per_second": -1.0,
+            "requests_per_second": requests_per_second,
             "throttled_until_millis": 0,
             "failures": []
         });
@@ -12975,6 +12983,10 @@ impl SteelNode {
             .query_params
             .get("wait_for_completion")
             .is_some_and(|value| value == "false");
+        let requests_per_second = match Self::bulk_by_scroll_requests_per_second(request) {
+            Ok(rate) => rate,
+            Err(response) => return response,
+        };
         if let Some(response) = self.refuse_task_submission_if_unavailable() {
             return response;
         }
@@ -13042,7 +13054,7 @@ impl SteelNode {
                 "search": 0
             },
             "throttled_millis": 0,
-            "requests_per_second": -1.0,
+            "requests_per_second": requests_per_second,
             "throttled_until_millis": 0,
             "failures": []
         });
@@ -15625,6 +15637,35 @@ impl SteelNode {
             );
         }
         Ok(Some(rate))
+    }
+
+    fn bulk_by_scroll_requests_per_second(request: &RestRequest) -> Result<f64, RestResponse> {
+        let Some(raw) = request.query_params.get("requests_per_second") else {
+            return Ok(-1.0);
+        };
+        let Ok(rate) = raw.parse::<f64>() else {
+            return Err(Self::bulk_by_scroll_requests_per_second_error());
+        };
+        if rate == -1.0 {
+            return Ok(-1.0);
+        }
+        if !rate.is_finite() || rate <= 0.0 {
+            return Err(Self::bulk_by_scroll_requests_per_second_error());
+        }
+        Ok(rate)
+    }
+
+    fn bulk_by_scroll_requests_per_second_error() -> RestResponse {
+        RestResponse::json(
+            400,
+            serde_json::json!({
+                "error": {
+                    "type": "illegal_argument_exception",
+                    "reason": "[requests_per_second] must be a float greater than 0. Use -1 to disable throttling."
+                },
+                "status": 400
+            }),
+        )
     }
 
     fn unknown_task_cancel_body(&self, task_id: &str) -> Value {

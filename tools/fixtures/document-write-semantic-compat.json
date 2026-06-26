@@ -26,6 +26,14 @@
       "body": {}
     },
     {
+      "name": "logs-write-dest-throttle",
+      "body": {}
+    },
+    {
+      "name": "logs-write-dest-task-throttle",
+      "body": {}
+    },
+    {
       "name": "logs-write-overwrite",
       "body": {}
     },
@@ -143,6 +151,30 @@
     },
     {
       "name": "logs-delete-query-task",
+      "body": {
+        "mappings": {
+          "properties": {
+            "tenant": {
+              "type": "keyword"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "logs-update-query-throttle",
+      "body": {
+        "mappings": {
+          "properties": {
+            "tenant": {
+              "type": "keyword"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "logs-delete-query-throttle",
       "body": {
         "mappings": {
           "properties": {
@@ -340,6 +372,30 @@
       ]
     },
     {
+      "index": "logs-update-query-throttle",
+      "documents": [
+        {
+          "_id": "doc-1",
+          "_source": {
+            "tenant": "tenant-a",
+            "processed": false
+          }
+        }
+      ]
+    },
+    {
+      "index": "logs-delete-query-throttle",
+      "documents": [
+        {
+          "_id": "doc-1",
+          "_source": {
+            "tenant": "tenant-a",
+            "message": "delete query throttle"
+          }
+        }
+      ]
+    },
+    {
       "index": "logs-bulk-metadata-000001",
       "documents": [
         {
@@ -473,6 +529,51 @@
         },
         {
           "name": "reindex-task-get",
+          "method": "GET",
+          "path": "/_tasks/${last.task}?wait_for_completion=true",
+          "expected_status": 200,
+          "extract": "bulk_by_scroll_task_result"
+        }
+      ]
+    },
+    {
+      "name": "reindex_requests_per_second_summary",
+      "area": "document-write",
+      "method": "POST",
+      "path": "/_reindex?requests_per_second=4.5&refresh=true",
+      "body": {
+        "source": {
+          "index": "logs-write-source-a"
+        },
+        "dest": {
+          "index": "logs-write-dest-throttle"
+        }
+      },
+      "expected_status": 200,
+      "extract": "reindex_summary"
+    },
+    {
+      "name": "reindex_task_mode_requests_per_second_result",
+      "area": "document-write",
+      "extract": "bulk_by_scroll_task_result",
+      "steps": [
+        {
+          "name": "reindex-task-throttle-submit",
+          "method": "POST",
+          "path": "/_reindex?wait_for_completion=false&requests_per_second=4.5",
+          "body": {
+            "source": {
+              "index": "logs-write-source-a"
+            },
+            "dest": {
+              "index": "logs-write-dest-task-throttle"
+            }
+          },
+          "expected_status": 200,
+          "extract": "task_submit"
+        },
+        {
+          "name": "reindex-task-throttle-get",
           "method": "GET",
           "path": "/_tasks/${last.task}?wait_for_completion=true",
           "expected_status": 200,
@@ -842,6 +943,42 @@
           "extract": "bulk_by_scroll_task_result"
         }
       ]
+    },
+    {
+      "name": "update_by_query_requests_per_second_summary",
+      "area": "document-write",
+      "method": "POST",
+      "path": "/logs-update-query-throttle/_update_by_query?requests_per_second=4.5&refresh=true",
+      "body": {
+        "query": {
+          "term": {
+            "tenant": "tenant-a"
+          }
+        },
+        "script": {
+          "source": "ctx._source.processed = params.processed",
+          "params": {
+            "processed": true
+          }
+        }
+      },
+      "expected_status": 200,
+      "extract": "reindex_summary"
+    },
+    {
+      "name": "delete_by_query_requests_per_second_summary",
+      "area": "document-write",
+      "method": "POST",
+      "path": "/logs-delete-query-throttle/_delete_by_query?requests_per_second=4.5&refresh=true",
+      "body": {
+        "query": {
+          "term": {
+            "tenant": "tenant-a"
+          }
+        }
+      },
+      "expected_status": 200,
+      "extract": "reindex_summary"
     },
     {
       "name": "single_doc_update_missing_error",
