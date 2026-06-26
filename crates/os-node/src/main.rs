@@ -4971,6 +4971,7 @@ fn local_transport_search_response_from_request(
         .map(|source| source.size.max(0) as usize)
         .unwrap_or(10);
     let query = source.and_then(|source| source.query.as_ref());
+    let slice = source.and_then(|source| source.slice.as_ref());
     let Some((documents, resolved_indices, point_in_time_id)) =
         transport_search_documents_for_request(request)
     else {
@@ -4991,6 +4992,11 @@ fn local_transport_search_response_from_request(
                     .any(|candidate| candidate.as_str() == index)
             {
                 return None;
+            }
+            if let Some(slice) = slice {
+                if !transport_document_matches_search_slice(id, &record.source, slice) {
+                    return None;
+                }
             }
             local_transport_query_matches(&record.source, id, query).then(|| {
                 (
@@ -5187,6 +5193,90 @@ fn compare_transport_search_sort_json(left: &Value, right: &Value) -> std::cmp::
             .unwrap_or_default()
             .cmp(right.as_str().unwrap_or_default()),
     }
+}
+
+fn transport_document_matches_search_slice(
+    doc_id: &str,
+    source: &Value,
+    slice: &os_transport::action::OpenSearchSliceBuilderWire,
+) -> bool {
+    if slice.max <= 1 {
+        return true;
+    }
+    let hash = if slice.field == "_id" {
+        opensearch_transport_terms_slice_hash(&opensearch_transport_uid_encoded_utf8_id(doc_id))
+    } else {
+        let key = lookup_transport_source_value(source, &slice.field)
+            .map(transport_search_slice_value_key)
+            .unwrap_or_default();
+        opensearch_transport_terms_slice_hash(key.as_bytes())
+    };
+    hash.rem_euclid(slice.max as i64) == slice.id as i64
+}
+
+fn transport_search_slice_value_key(value: &Value) -> String {
+    match value {
+        Value::String(value) => format!("s:{value}"),
+        Value::Number(value) => format!("n:{value}"),
+        Value::Bool(value) => format!("b:{value}"),
+        Value::Null => "null".to_string(),
+        _ => value.to_string(),
+    }
+}
+
+fn opensearch_transport_uid_encoded_utf8_id(id: &str) -> Vec<u8> {
+    let mut encoded = Vec::with_capacity(id.len() + 1);
+    encoded.push(0xff);
+    encoded.extend_from_slice(id.as_bytes());
+    encoded
+}
+
+fn opensearch_transport_terms_slice_hash(value: &[u8]) -> i64 {
+    const SEED: u32 = 7919;
+    let mut hash = SEED;
+    let mut chunks = value.chunks_exact(4);
+    for chunk in &mut chunks {
+        let mut k = u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
+        k = k.wrapping_mul(0xcc9e2d51);
+        k = k.rotate_left(15);
+        k = k.wrapping_mul(0x1b873593);
+
+        hash ^= k;
+        hash = hash.rotate_left(13);
+        hash = hash.wrapping_mul(5).wrapping_add(0xe6546b64);
+    }
+
+    let tail = chunks.remainder();
+    let mut k = 0_u32;
+    match tail.len() {
+        3 => {
+            k ^= u32::from(tail[2]) << 16;
+            k ^= u32::from(tail[1]) << 8;
+            k ^= u32::from(tail[0]);
+        }
+        2 => {
+            k ^= u32::from(tail[1]) << 8;
+            k ^= u32::from(tail[0]);
+        }
+        1 => {
+            k ^= u32::from(tail[0]);
+        }
+        _ => {}
+    }
+    if !tail.is_empty() {
+        k = k.wrapping_mul(0xcc9e2d51);
+        k = k.rotate_left(15);
+        k = k.wrapping_mul(0x1b873593);
+        hash ^= k;
+    }
+
+    hash ^= value.len() as u32;
+    hash ^= hash >> 16;
+    hash = hash.wrapping_mul(0x85ebca6b);
+    hash ^= hash >> 13;
+    hash = hash.wrapping_mul(0xc2b2ae35);
+    hash ^= hash >> 16;
+    i32::from_ne_bytes(hash.to_ne_bytes()) as i64
 }
 
 fn transport_search_documents_for_request(
@@ -13213,6 +13303,179 @@ mod tests {
         assert_eq!(
             second_page.hits[0].sort_values,
             vec![serde_json::json!(123), serde_json::json!(3)]
+        );
+    }
+
+    #[test]
+    fn search_transport_route_applies_pit_slice_partitioning() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        let bindings = dev_transport_pit_bindings();
+        bindings
+            .contexts
+            .lock()
+            .expect("dev transport PIT contexts lock poisoned")
+            .clear();
+        bindings
+            .created_indices
+            .lock()
+            .expect("dev transport created indices lock poisoned")
+            .clear();
+        bindings
+            .documents
+            .lock()
+            .expect("dev transport documents lock poisoned")
+            .clear();
+        *bindings
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned") = serde_json::json!({
+            "indices": {
+                "logs-search-pit-slice": {
+                    "settings": {
+                        "index": {
+                            "number_of_shards": "1"
+                        }
+                    }
+                }
+            }
+        });
+        bindings
+            .created_indices
+            .lock()
+            .expect("dev transport created indices lock poisoned")
+            .insert("logs-search-pit-slice".to_string());
+
+        let pit_id = build_local_pit_id(703);
+        let pit_documents = (1..=4)
+            .map(|seq_no| {
+                (
+                    format!("logs-search-pit-slice:doc-{seq_no}:"),
+                    StoredDocument {
+                        source: serde_json::json!({ "bucket": seq_no }),
+                        version: 1,
+                        seq_no,
+                        primary_term: 1,
+                        routing: None,
+                        refreshed: true,
+                    },
+                )
+            })
+            .collect::<BTreeMap<_, _>>();
+        bindings
+            .contexts
+            .lock()
+            .expect("dev transport PIT contexts lock poisoned")
+            .insert(
+                pit_id.clone(),
+                PitContext {
+                    indices: vec!["logs-search-pit-slice".to_string()],
+                    documents: pit_documents.clone(),
+                    keep_alive_millis: 60_000,
+                    expires_at_millis: transport_pit_expires_at_millis(now_epoch_ms(), 60_000),
+                    creation_time_millis: now_epoch_ms(),
+                },
+            );
+        {
+            let mut documents = bindings
+                .documents
+                .lock()
+                .expect("dev transport documents lock poisoned");
+            documents.extend(pit_documents);
+            documents.insert(
+                "logs-search-pit-slice:doc-5:".to_string(),
+                StoredDocument {
+                    source: serde_json::json!({ "bucket": 5 }),
+                    version: 1,
+                    seq_no: 5,
+                    primary_term: 1,
+                    routing: None,
+                    refreshed: true,
+                },
+            );
+        }
+
+        let read_slice = |slice_id| {
+            let request = os_transport::action::OpenSearchSearchRequestWire {
+                source: Some(os_transport::action::OpenSearchSearchSourceBuilderWire {
+                    size: 10,
+                    point_in_time: Some(os_transport::action::OpenSearchPointInTimeBuilderWire {
+                        id: pit_id.clone(),
+                        keep_alive: Some(os_transport::action::TimeValueWire::minutes(1)),
+                    }),
+                    slice: Some(os_transport::action::OpenSearchSliceBuilderWire {
+                        field: "bucket".to_string(),
+                        id: slice_id,
+                        max: 2,
+                    }),
+                    sorts: Some(vec![
+                        os_transport::action::OpenSearchSortBuilderWire::Field(
+                            os_transport::action::OpenSearchFieldSortBuilderWire {
+                                field_name: "_id".to_string(),
+                                nested_path: None,
+                                missing: serde_json::Value::Null,
+                                order: Some(os_transport::action::OpenSearchSortOrderWire::Asc),
+                                sort_mode: None,
+                                unmapped_type: None,
+                                numeric_type: None,
+                            },
+                        ),
+                    ]),
+                    ..os_transport::action::OpenSearchSearchSourceBuilderWire::default()
+                }),
+                ..os_transport::action::OpenSearchSearchRequestWire::default()
+            };
+            let frame = os_transport::action::build_opensearch_search_request_message(
+                311 + i64::from(slice_id),
+                OPENSEARCH_3_7_0_TRANSPORT,
+                &request,
+            )
+            .unwrap();
+            assert!(search_request_supports_local_execution_subset(&frame[6..]));
+            let response = build_local_search_response(
+                311 + i64::from(slice_id),
+                OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+                &frame[6..],
+            );
+            let mut frame = BytesMut::from(&response[..]);
+            let os_transport::frame::DecodedFrame::Message(message) =
+                os_transport::frame::decode_frame(&mut frame)
+                    .unwrap()
+                    .unwrap()
+            else {
+                panic!("expected sliced PIT response message");
+            };
+            os_transport::action::read_opensearch_search_response_message(&message)
+                .expect("sliced PIT response")
+        };
+
+        let first_slice = read_slice(0);
+        let second_slice = read_slice(1);
+        let first_ids = first_slice
+            .hits
+            .iter()
+            .map(|hit| hit.id.as_deref().unwrap().to_string())
+            .collect::<BTreeSet<_>>();
+        let second_ids = second_slice
+            .hits
+            .iter()
+            .map(|hit| hit.id.as_deref().unwrap().to_string())
+            .collect::<BTreeSet<_>>();
+        assert_eq!(first_slice.total_hits, Some(first_ids.len() as i64));
+        assert_eq!(second_slice.total_hits, Some(second_ids.len() as i64));
+        assert!(first_ids.is_disjoint(&second_ids));
+        assert_eq!(
+            first_ids
+                .union(&second_ids)
+                .cloned()
+                .collect::<BTreeSet<_>>(),
+            BTreeSet::from([
+                "doc-1".to_string(),
+                "doc-2".to_string(),
+                "doc-3".to_string(),
+                "doc-4".to_string()
+            ])
         );
     }
 
