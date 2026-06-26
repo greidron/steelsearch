@@ -7321,6 +7321,210 @@
       "description": "[lexical] string boolean body options search"
     },
     {
+      "name": "post_filter_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "post_filter": {
+          "term": {
+            "tag": "cache"
+          }
+        },
+        "sort": [
+          {
+            "ts": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "extract": "search_hits",
+      "family": "fetch",
+      "description": "[fetch] post filter search"
+    },
+    {
+      "name": "post_filter_preserves_aggregation_input_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "post_filter": {
+          "term": {
+            "tag": "cache"
+          }
+        },
+        "aggs": {
+          "tags": {
+            "terms": {
+              "field": "tag",
+              "order": {
+                "_key": "asc"
+              }
+            }
+          }
+        },
+        "sort": [
+          {
+            "ts": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "extract": "post_filter_aggregation",
+      "family": "fetch",
+      "description": "[fetch] post filter preserves aggregation input search"
+    },
+    {
+      "name": "hit_metadata_projection_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search?version=true&seq_no_primary_term=true",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "sort": [
+          {
+            "ts": {
+              "order": "asc"
+            }
+          }
+        ],
+        "size": 2
+      },
+      "extract": "search_hit_metadata",
+      "family": "fetch",
+      "description": "[fetch] hit metadata projection search"
+    },
+    {
+      "name": "hit_metadata_projection_body_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "version": true,
+        "seq_no_primary_term": true,
+        "sort": [
+          {
+            "ts": {
+              "order": "asc"
+            }
+          }
+        ],
+        "size": 2
+      },
+      "extract": "search_hit_metadata",
+      "family": "fetch",
+      "description": "[fetch] body hit metadata projection search"
+    },
+    {
+      "name": "hit_metadata_query_params_override_body_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search?version=false&seq_no_primary_term=false",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "version": true,
+        "seq_no_primary_term": true,
+        "sort": [
+          {
+            "ts": {
+              "order": "asc"
+            }
+          }
+        ],
+        "size": 2
+      },
+      "extract": "search_hit_metadata",
+      "family": "fetch",
+      "description": "[fetch] query params override body hit metadata projection search"
+    },
+    {
+      "name": "hit_metadata_query_params_enable_body_false_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search?version=true&seq_no_primary_term=true",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "version": false,
+        "seq_no_primary_term": false,
+        "sort": [
+          {
+            "ts": {
+              "order": "asc"
+            }
+          }
+        ],
+        "size": 2
+      },
+      "extract": "search_hit_metadata",
+      "family": "fetch",
+      "description": "[fetch] query params enable body-disabled hit metadata projection search"
+    },
+    {
+      "name": "hit_metadata_version_query_param_overrides_body_only_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search?version=false",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "version": true,
+        "seq_no_primary_term": true,
+        "sort": [
+          {
+            "ts": {
+              "order": "asc"
+            }
+          }
+        ],
+        "size": 2
+      },
+      "extract": "search_hit_metadata",
+      "family": "fetch",
+      "description": "[fetch] version query param overrides body without changing seq metadata search"
+    },
+    {
+      "name": "hit_metadata_seq_query_param_overrides_body_only_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search?seq_no_primary_term=false",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "version": true,
+        "seq_no_primary_term": true,
+        "sort": [
+          {
+            "ts": {
+              "order": "asc"
+            }
+          }
+        ],
+        "size": 2
+      },
+      "extract": "search_hit_metadata",
+      "family": "fetch",
+      "description": "[fetch] seq metadata query param overrides body without changing version search"
+    },
+    {
       "name": "simple_query_string_search",
       "area": "search",
       "method": "POST",
