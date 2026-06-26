@@ -18354,15 +18354,15 @@ impl SteelNode {
             }
         }
         rows.sort_by(|left, right| {
-            left["alias"]
+            right["index"]
                 .as_str()
                 .unwrap_or_default()
-                .cmp(right["alias"].as_str().unwrap_or_default())
+                .cmp(left["index"].as_str().unwrap_or_default())
                 .then_with(|| {
-                    left["index"]
+                    left["alias"]
                         .as_str()
                         .unwrap_or_default()
-                        .cmp(right["index"].as_str().unwrap_or_default())
+                        .cmp(right["alias"].as_str().unwrap_or_default())
                 })
         });
         if request
