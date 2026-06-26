@@ -2971,6 +2971,7 @@
         ]
       },
       "expected_status": 500,
+      "expected_steelsearch_status": 500,
       "extract": "search_error_root_cause",
       "family": "lexical",
       "description": "[lexical] close PIT rejects mixed _all array entries like OpenSearch",
@@ -7162,6 +7163,7 @@
         }
       },
       "expected_status": 500,
+      "expected_steelsearch_status": 500,
       "extract": "search_error_root_cause",
       "family": "ranking",
       "description": "[ranking] slice without scroll or PIT is rejected",
