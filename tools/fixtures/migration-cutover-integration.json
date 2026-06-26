@@ -440,6 +440,7 @@
     },
     {
       "name": "vector_knn_ranking",
+      "source_capabilities": ["knn"],
       "method": "POST",
       "path": "/migration-cutover-vectors-000001/_search",
       "body": {

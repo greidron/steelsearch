@@ -74,6 +74,60 @@ def decode_response(status: int, payload: bytes) -> dict[str, Any]:
     }
 
 
+def missing_knn_plugin_response(response: dict[str, Any]) -> bool:
+    body = response.get("body") or {}
+    error = body.get("error") or {}
+    reason = str(error.get("reason") or "")
+    caused_by_reason = str((error.get("caused_by") or {}).get("reason") or "")
+    return (
+        response.get("status") == 400
+        and (
+            (
+                error.get("type") == "settings_exception"
+                and "unknown setting [index.knn]" in reason
+            )
+            or (
+                error.get("type") == "mapper_parsing_exception"
+                and "No handler for type [knn_vector]" in f"{reason} {caused_by_reason}"
+            )
+        )
+    )
+
+
+def source_capability_summary(source_steps: list[dict[str, Any]]) -> dict[str, Any]:
+    missing: set[str] = set()
+    evidence: list[dict[str, Any]] = []
+    for step in source_steps:
+        if step.get("name") != "create_vector_index":
+            continue
+        if missing_knn_plugin_response(step):
+            missing.add("knn")
+            body = step.get("body") or {}
+            error = body.get("error") or {}
+            evidence.append(
+                {
+                    "capability": "knn",
+                    "operation": step.get("name"),
+                    "status": step.get("status"),
+                    "error_type": error.get("type"),
+                    "reason": error.get("reason"),
+                }
+            )
+    return {
+        "missing": sorted(missing),
+        "evidence": evidence,
+    }
+
+
+def missing_required_source_capabilities(
+    check: dict[str, Any],
+    capabilities: dict[str, Any],
+) -> list[str]:
+    required = check.get("source_capabilities") or []
+    missing = set(capabilities.get("missing") or [])
+    return [capability for capability in required if capability in missing]
+
+
 def load_checkpoint(path: Path) -> dict[str, Any]:
     if not path.exists():
         return {
@@ -716,6 +770,9 @@ def main() -> int:
         report["steps"].append(source_step)
         save_checkpoint(checkpoint_path, checkpoint)
 
+    source_steps = [step for step in report["steps"] if step.get("target") == "source"]
+    report["source_capabilities"] = source_capability_summary(source_steps)
+
     preflight_blocked = False
     for check in preflight_checks:
         source_summary = run_check(args.opensearch_url, check, args.timeout)
@@ -759,6 +816,27 @@ def main() -> int:
         save_checkpoint(checkpoint_path, checkpoint)
 
     for check in checks:
+        missing_capabilities = missing_required_source_capabilities(
+            check,
+            report["source_capabilities"],
+        )
+        if missing_capabilities:
+            report["checks"].append(
+                {
+                    "name": check["name"],
+                    "source": None,
+                    "target": None,
+                    "match": True,
+                    "skipped": True,
+                    "skip_scope": "source-capability",
+                    "skipped_reason": (
+                        "source OpenSearch profile is missing required capabilities: "
+                        + ", ".join(missing_capabilities)
+                    ),
+                    "missing_source_capabilities": missing_capabilities,
+                }
+            )
+            continue
         source_summary = run_check(args.opensearch_url, check, args.timeout)
         target_summary = run_check(args.steelsearch_url, check, args.timeout)
         report["checks"].append(
@@ -767,12 +845,29 @@ def main() -> int:
                 "source": source_summary,
                 "target": target_summary,
                 "match": source_summary == target_summary,
+                "skipped": False,
             }
         )
 
-    overall_match = all(check["match"] for check in report["checks"])
+    failed_checks = [
+        check
+        for check in report["checks"]
+        if not check.get("skipped") and not check.get("match")
+    ]
+    skipped_checks = [check for check in report["checks"] if check.get("skipped")]
+    passed_checks = [
+        check
+        for check in report["checks"]
+        if not check.get("skipped") and check.get("match")
+    ]
+    overall_match = not failed_checks
     report["comparison"] = {
         "match": overall_match,
+        "summary": {
+            "passed": len(passed_checks),
+            "failed": len(failed_checks),
+            "skipped": len(skipped_checks),
+        },
         "checks": report["checks"],
     }
     if report["checks"]:

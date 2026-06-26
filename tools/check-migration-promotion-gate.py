@@ -11,7 +11,6 @@ EXPECTED_CASES = {
     "scroll_export_sequence",
     "pit_export_sequence",
     "vector_payload_summary_doc",
-    "vector_knn_ranking",
 }
 
 EXPECTED_SEMANTIC_EVIDENCE = {
@@ -20,7 +19,6 @@ EXPECTED_SEMANTIC_EVIDENCE = {
     "pit-export",
     "resumability-checkpoint",
     "vector-payload-equivalence",
-    "vector-ranking-equivalence",
 }
 
 EXPECTED_DURABILITY_EVIDENCE = {

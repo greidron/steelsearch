@@ -611,7 +611,6 @@ Required semantic migration cases:
 - `scroll_export_sequence`
 - `pit_export_sequence`
 - `vector_payload_summary_doc`
-- `vector_knn_ranking`
 
 Required migration evidence classes:
 
@@ -624,7 +623,10 @@ Required migration evidence classes:
 - `rollback-divergence-two-dataset`
 - `unsupported-feature-preflight`
 - `vector-payload-equivalence`
-- `vector-ranking-equivalence`
+
+Vector k-NN ranking parity is owned by the `vector-ml` validation profile and
+its promotion gates; migration cutover evidence only requires vector payload
+preservation unless the source OpenSearch profile explicitly exposes k-NN.
 
 Required final cutover go/no-go report fields:
 
