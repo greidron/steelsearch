@@ -842,6 +842,16 @@
       "description": "[admin-cat] cat indices text renders byte-size columns using bytes parameter"
     },
     {
+      "name": "cat_indices_text_primary_sibling_parameter",
+      "area": "cat",
+      "method": "GET",
+      "path": "/_cat/indices/logs-compat?v=true&h=ss&pri=true&bytes=b",
+      "accept": "text/plain",
+      "extract": "cat_indices_selected_columns",
+      "family": "admin-cat",
+      "description": "[admin-cat] cat indices text includes pri sibling columns when requested"
+    },
+    {
       "name": "cat_indices_text_time_parameter",
       "area": "cat",
       "method": "GET",

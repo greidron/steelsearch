@@ -18192,7 +18192,7 @@ impl SteelNode {
         if let Err(response) = sort_cat_indices_rows(&mut rows, request.query_params.get("s")) {
             return response;
         }
-        let display_columns = cat_indices_display_columns(request.query_params.get("h"));
+        let display_columns = cat_indices_display_columns(&request.query_params);
         if request
             .query_params
             .get("format")
@@ -30206,7 +30206,22 @@ fn cat_indices_column_aliases(column: &str) -> &'static [&'static str] {
         "docs.count" => &["dc", "docsCount"],
         "docs.deleted" => &["dd", "docsDeleted"],
         "store.size" => &["ss", "storeSize"],
+        "search.open_contexts" => &["so", "searchOpenContexts"],
+        "search.point_in_time_current" => &["searchPointInTimeCurrent"],
+        "search.point_in_time_time" => &["searchPointInTimeTime"],
+        "search.point_in_time_total" => &["searchPointInTimeTotal"],
         _ => &[],
+    }
+}
+
+fn cat_indices_sibling_column(column: &str) -> Option<&'static str> {
+    match column {
+        "store.size" => Some("pri.store.size"),
+        "search.open_contexts" => Some("pri.search.open_contexts"),
+        "search.point_in_time_current" => Some("pri.search.point_in_time_current"),
+        "search.point_in_time_time" => Some("pri.search.point_in_time_time"),
+        "search.point_in_time_total" => Some("pri.search.point_in_time_total"),
+        _ => None,
     }
 }
 
@@ -30358,13 +30373,19 @@ fn cat_indices_format_text_cells(
     output
 }
 
-fn cat_indices_display_columns(h_param: Option<&String>) -> Vec<(&'static str, String)> {
+fn cat_indices_display_columns(
+    query_params: &BTreeMap<String, String>,
+) -> Vec<(&'static str, String)> {
+    let h_param = query_params.get("h");
     let Some(h_param) = h_param else {
         return CAT_INDICES_DEFAULT_COLUMNS
             .iter()
             .map(|column| (*column, (*column).to_string()))
             .collect();
     };
+    let include_primary_sibling = query_params
+        .get("pri")
+        .is_some_and(|value| value == "true");
     let mut selected = Vec::new();
     for requested in h_param.split(',').map(str::trim).filter(|value| !value.is_empty()) {
         if requested.contains('*') {
@@ -30376,6 +30397,11 @@ fn cat_indices_display_columns(h_param: Option<&String>) -> Vec<(&'static str, S
                 {
                     if !selected.iter().any(|(existing, _)| existing == column) {
                         selected.push((*column, (*column).to_string()));
+                        if include_primary_sibling {
+                            if let Some(sibling) = cat_indices_sibling_column(column) {
+                                selected.push((sibling, format!("pri.{column}")));
+                            }
+                        }
                     }
                 }
             }
@@ -30388,6 +30414,11 @@ fn cat_indices_display_columns(h_param: Option<&String>) -> Vec<(&'static str, S
         {
             if !selected.iter().any(|(existing, _)| existing == &column) {
                 selected.push((column, column.to_string()));
+                if include_primary_sibling {
+                    if let Some(sibling) = cat_indices_sibling_column(column) {
+                        selected.push((sibling, format!("pri.{column}")));
+                    }
+                }
             }
             continue;
         }
@@ -30395,6 +30426,11 @@ fn cat_indices_display_columns(h_param: Option<&String>) -> Vec<(&'static str, S
             if cat_indices_column_aliases(column).contains(&requested) {
                 if !selected.iter().any(|(existing, _)| existing == column) {
                     selected.push((*column, requested.to_string()));
+                    if include_primary_sibling {
+                        if let Some(sibling) = cat_indices_sibling_column(column) {
+                            selected.push((sibling, format!("pri.{requested}")));
+                        }
+                    }
                 }
                 break;
             }
@@ -35794,6 +35830,41 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             .map(str::trim)
             .collect::<Vec<_>>();
         assert_eq!(bytes_text_lines, vec!["ss", "0"]);
+
+        let mut indices_primary_bytes_text_request =
+            RestRequest::new(RestMethod::Get, "/_cat/indices/logs-000001");
+        indices_primary_bytes_text_request
+            .query_params
+            .insert("v".to_string(), "true".to_string());
+        indices_primary_bytes_text_request
+            .query_params
+            .insert("h".to_string(), "ss".to_string());
+        indices_primary_bytes_text_request
+            .query_params
+            .insert("pri".to_string(), "true".to_string());
+        indices_primary_bytes_text_request
+            .query_params
+            .insert("bytes".to_string(), "b".to_string());
+        let indices_primary_bytes_text_response =
+            node.handle_rest_request(indices_primary_bytes_text_request);
+        let indices_primary_bytes_text = indices_primary_bytes_text_response
+            .body
+            .as_str()
+            .expect("cat indices primary bytes text body");
+        let primary_bytes_text_fields = indices_primary_bytes_text
+            .lines()
+            .next()
+            .unwrap_or_default()
+            .split_whitespace()
+            .collect::<Vec<_>>();
+        let primary_bytes_text_values = indices_primary_bytes_text
+            .lines()
+            .nth(1)
+            .unwrap_or_default()
+            .split_whitespace()
+            .collect::<Vec<_>>();
+        assert_eq!(primary_bytes_text_fields, vec!["ss", "pri.ss"]);
+        assert_eq!(primary_bytes_text_values, vec!["0", "0"]);
 
         let mut indices_time_text_request =
             RestRequest::new(RestMethod::Get, "/_cat/indices/logs-000001");
