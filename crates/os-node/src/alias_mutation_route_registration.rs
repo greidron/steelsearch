@@ -8,12 +8,13 @@ pub const BULK_ALIASES_ROUTE_PATH: &str = "/_aliases";
 pub const ALIAS_MUTATION_ROUTE_FAMILY: &str = "alias_mutation";
 pub const ALIAS_DELETE_ROUTE_FAMILY: &str = "alias_delete";
 
-pub const BOUNDED_ALIAS_METADATA_FIELDS: [&str; 5] = [
+pub const BOUNDED_ALIAS_METADATA_FIELDS: [&str; 6] = [
     "filter",
     "routing",
     "index_routing",
     "search_routing",
     "is_write_index",
+    "is_hidden",
 ];
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -179,12 +180,14 @@ mod tests {
             "filter": { "term": { "service": "logs" } },
             "routing": "r1",
             "is_write_index": true,
+            "is_hidden": true,
             "hidden": true
         }));
 
         assert!(subset.get("filter").is_some());
         assert!(subset.get("routing").is_some());
         assert!(subset.get("is_write_index").is_some());
+        assert!(subset.get("is_hidden").is_some());
         assert!(subset.get("hidden").is_none());
     }
 

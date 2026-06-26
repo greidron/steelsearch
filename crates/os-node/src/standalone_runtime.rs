@@ -6492,6 +6492,10 @@ impl SteelNode {
             return response;
         }
         let body = serde_json::from_slice::<Value>(&request.body).unwrap_or(Value::Null);
+        if let Some(response) = validate_single_alias_mutation_body(&body) {
+            return response;
+        }
+        let body = normalize_single_alias_mutation_body(body);
         let subset = normalize_alias_metadata_for_readback(
             alias_mutation_route_registration::build_alias_metadata_subset(&body),
         );
@@ -6540,6 +6544,10 @@ impl SteelNode {
             return response;
         }
         let body = serde_json::from_slice::<Value>(&request.body).unwrap_or(Value::Null);
+        if let Some(response) = validate_single_alias_mutation_body(&body) {
+            return response;
+        }
+        let body = normalize_single_alias_mutation_body(body);
         let subset = normalize_alias_metadata_for_readback(
             alias_mutation_route_registration::build_alias_metadata_subset(&body),
         );
@@ -6612,6 +6620,10 @@ impl SteelNode {
             );
         }
 
+        if let Some(response) = validate_single_alias_mutation_body(&body) {
+            return response;
+        }
+        let body = normalize_single_alias_mutation_body(body);
         let alias_names = extract_alias_names_from_body(&body);
         if alias_names.is_empty() {
             return RestResponse::json(
@@ -30792,6 +30804,45 @@ fn normalize_alias_metadata_for_readback(metadata: Value) -> Value {
         }
     }
     metadata
+}
+
+fn validate_single_alias_mutation_body(body: &Value) -> Option<RestResponse> {
+    let Some(object) = body.as_object() else {
+        return None;
+    };
+    for (field, value) in object {
+        match field.as_str() {
+            "index" | "alias" | "routing" | "indexRouting" | "index-routing" | "index_routing"
+            | "searchRouting" | "search-routing" | "search_routing" | "is_write_index"
+            | "is_hidden" => {}
+            "filter" if value.is_object() => {}
+            _ => {
+                return Some(RestResponse::opensearch_error(
+                    400,
+                    "illegal_argument_exception",
+                    format!("unknown field [{field}]"),
+                ));
+            }
+        }
+    }
+    None
+}
+
+fn normalize_single_alias_mutation_body(body: Value) -> Value {
+    let Value::Object(mut object) = body else {
+        return body;
+    };
+    for (source, target) in [
+        ("indexRouting", "index_routing"),
+        ("index-routing", "index_routing"),
+        ("searchRouting", "search_routing"),
+        ("search-routing", "search_routing"),
+    ] {
+        if let Some(value) = object.remove(source) {
+            object.entry(target.to_string()).or_insert(value);
+        }
+    }
+    Value::Object(object)
 }
 
 fn extract_alias_named_mutation_targets(body: &Value) -> Vec<String> {
@@ -57268,11 +57319,27 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         let named_post = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/_aliases/logs-root-search").with_json_body(
                 serde_json::json!({
-                    "indices": ["logs-root-alias-000001"]
+                    "index": "logs-root-alias-000001",
+                    "searchRouting": "tenant-a",
+                    "is_hidden": true
                 }),
             ),
         );
         assert_eq!(named_post.status, 200);
+
+        let named_post_unknown_body = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_aliases/logs-root-body-bad").with_json_body(
+                serde_json::json!({
+                    "index": "logs-root-alias-000001",
+                    "indices": ["logs-root-alias-000001"]
+                }),
+            ),
+        );
+        assert_eq!(named_post_unknown_body.status, 400);
+        assert_eq!(
+            named_post_unknown_body.body["error"]["reason"],
+            "unknown field [indices]"
+        );
 
         let named_get =
             node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_alias/logs-root-write"));
@@ -57400,6 +57467,15 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert!(aliases_get.body["logs-root-alias-000001"]["aliases"]
             .get("logs-root-search")
             .is_some());
+        assert_eq!(
+            aliases_get.body["logs-root-alias-000001"]["aliases"]["logs-root-search"]
+                ["search_routing"],
+            "tenant-a"
+        );
+        assert_eq!(
+            aliases_get.body["logs-root-alias-000001"]["aliases"]["logs-root-search"]["is_hidden"],
+            Value::Bool(true)
+        );
     }
 
     #[test]
@@ -57427,7 +57503,8 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             )
             .with_json_body(serde_json::json!({
                 "alias": "logs-index-collection",
-                "is_write_index": true
+                "is_write_index": true,
+                "index-routing": "tenant-b"
             })),
         );
         assert_eq!(collection_put.status, 200);
@@ -57447,6 +57524,20 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             "failed to parse setting [cluster_manager_timeout] with value [bogus] as a time value"
         );
 
+        let collection_put_unknown_body = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/logs-index-alias-000001/_alias").with_json_body(
+                serde_json::json!({
+                    "alias": "logs-index-bad-body",
+                    "unknown": true
+                }),
+            ),
+        );
+        assert_eq!(collection_put_unknown_body.status, 400);
+        assert_eq!(
+            collection_put_unknown_body.body["error"]["reason"],
+            "unknown field [unknown]"
+        );
+
         let collection_get = node.handle_rest_request(RestRequest::new(
             RestMethod::Get,
             "/logs-index-alias-000001/_alias",
@@ -57456,6 +57547,11 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             collection_get.body["logs-index-alias-000001"]["aliases"]["logs-index-collection"]
                 ["is_write_index"],
             Value::Bool(true)
+        );
+        assert_eq!(
+            collection_get.body["logs-index-alias-000001"]["aliases"]["logs-index-collection"]
+                ["index_routing"],
+            "tenant-b"
         );
 
         let collection_head = node.handle_rest_request(RestRequest::new(
