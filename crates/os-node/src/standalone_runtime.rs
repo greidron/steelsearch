@@ -47880,6 +47880,76 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
     }
 
     #[test]
+    fn point_in_time_get_all_and_delete_routes_are_concurrent_safe_like_opensearch() {
+        let node = std::sync::Arc::new(SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        }));
+
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(RestMethod::Put, "/logs-pit-get-delete"))
+                .status,
+            200
+        );
+        let open_pit = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/logs-pit-get-delete/_search/point_in_time?keep_alive=1m",
+        ));
+        assert_eq!(open_pit.status, 200);
+        let pit_id = open_pit.body["pit_id"].as_str().unwrap().to_string();
+
+        let workers = 32;
+        let delete_workers = workers - 1;
+        let barrier = std::sync::Arc::new(std::sync::Barrier::new(workers));
+        let get_successes = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let delete_successes = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let mut handles = Vec::new();
+        for worker in 0..workers {
+            let node = node.clone();
+            let barrier = barrier.clone();
+            let pit_id = pit_id.clone();
+            let get_successes = get_successes.clone();
+            let delete_successes = delete_successes.clone();
+            handles.push(std::thread::spawn(move || {
+                barrier.wait();
+                if worker == 0 {
+                    let response = node.handle_rest_request(RestRequest::new(
+                        RestMethod::Get,
+                        "/_search/point_in_time/_all",
+                    ));
+                    assert_eq!(response.status, 200);
+                    assert!(response.body["pits"].is_array());
+                    get_successes.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                } else {
+                    let response = node.handle_rest_request(
+                        RestRequest::new(RestMethod::Delete, "/_search/point_in_time")
+                            .with_json_body(serde_json::json!({ "pit_id": pit_id })),
+                    );
+                    assert_eq!(response.status, 200);
+                    assert_eq!(response.body["pits"][0]["successful"], true);
+                    assert_eq!(response.body["pits"][0]["pit_id"], pit_id);
+                    delete_successes.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                }
+            }));
+        }
+        for handle in handles {
+            handle.join().expect("PIT get/delete worker panicked");
+        }
+        assert_eq!(get_successes.load(std::sync::atomic::Ordering::SeqCst), 1);
+        assert_eq!(
+            delete_successes.load(std::sync::atomic::Ordering::SeqCst),
+            delete_workers
+        );
+
+        let list_pits = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_search/point_in_time/_all",
+        ));
+        assert_eq!(list_pits.status, 200);
+        assert_eq!(list_pits.body, serde_json::json!({ "pits": [] }));
+    }
+
+    #[test]
     fn point_in_time_short_keep_alive_uses_reaper_grace_like_opensearch() {
         assert_eq!(
             pit_expires_at_millis(1_000, 1),
