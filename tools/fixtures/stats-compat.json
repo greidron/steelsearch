@@ -32,6 +32,71 @@
       }
     },
     {
+      "name": "reject_nodes_stats_all_with_index_metric",
+      "method": "GET",
+      "path": "/_nodes/stats/_all/docs",
+      "compare": {
+        "expected_status": 400,
+        "body_paths_present": [
+          "error.type",
+          "error.reason",
+          "status"
+        ]
+      }
+    },
+    {
+      "name": "reject_nodes_stats_mixed_all_metric",
+      "method": "GET",
+      "path": "/_nodes/stats/os,_all",
+      "compare": {
+        "expected_status": 400,
+        "body_paths_present": [
+          "error.type",
+          "error.reason",
+          "status"
+        ]
+      }
+    },
+    {
+      "name": "reject_nodes_stats_non_indices_index_metric",
+      "method": "GET",
+      "path": "/_nodes/stats/os/docs",
+      "compare": {
+        "expected_status": 400,
+        "body_paths_present": [
+          "error.type",
+          "error.reason",
+          "status"
+        ]
+      }
+    },
+    {
+      "name": "reject_nodes_stats_unknown_metric",
+      "method": "GET",
+      "path": "/_nodes/stats/bogus",
+      "compare": {
+        "expected_status": 400,
+        "body_paths_present": [
+          "error.type",
+          "error.reason",
+          "status"
+        ]
+      }
+    },
+    {
+      "name": "reject_nodes_stats_unknown_index_metric",
+      "method": "GET",
+      "path": "/_nodes/stats/indices/bogus",
+      "compare": {
+        "expected_status": 400,
+        "body_paths_present": [
+          "error.type",
+          "error.reason",
+          "status"
+        ]
+      }
+    },
+    {
       "name": "get_cluster_stats_shape_and_numeric_subset",
       "method": "GET",
       "path": "/_cluster/stats",
