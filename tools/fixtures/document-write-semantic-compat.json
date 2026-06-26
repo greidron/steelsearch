@@ -14,6 +14,10 @@
       "body": {}
     },
     {
+      "name": "logs-write-dest-params",
+      "body": {}
+    },
+    {
       "name": "logs-write-overwrite",
       "body": {}
     },
@@ -143,6 +147,41 @@
           "name": "reindex-script-readback",
           "method": "GET",
           "path": "/logs-write-dest/_doc/doc-1",
+          "expected_status": 200,
+          "extract": "get_document"
+        }
+      ]
+    },
+    {
+      "name": "reindex_script_params_transform_readback",
+      "area": "document-write",
+      "extract": "get_document",
+      "steps": [
+        {
+          "name": "reindex-script-params-transform",
+          "method": "POST",
+          "path": "/_reindex",
+          "body": {
+            "source": {
+              "index": "logs-write-source-a"
+            },
+            "dest": {
+              "index": "logs-write-dest-params"
+            },
+            "script": {
+              "source": "ctx._source.processed = params.processed",
+              "params": {
+                "processed": true
+              }
+            }
+          },
+          "expected_status": 200,
+          "extract": "reindex_summary"
+        },
+        {
+          "name": "reindex-script-params-readback",
+          "method": "GET",
+          "path": "/logs-write-dest-params/_doc/doc-1",
           "expected_status": 200,
           "extract": "get_document"
         }

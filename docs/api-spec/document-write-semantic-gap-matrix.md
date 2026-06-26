@@ -95,7 +95,7 @@ replacement readiness.
 | missing destination | partial | same as above | Missing `dest.index` fail-closed behavior is pinned. |
 | overwrite vs create counters | partial | same as above | Overwrite increments `updated`, new target docs increment `created`. |
 | retry / task-mode semantics | partial | rethrottle probes and route coverage | Task path exists, but slice/task/retry semantics are not yet summarized as replacement-ready. |
-| destination routing / script transforms | partial | `reindex_route_honors_destination_routing_and_require_alias` in [standalone_runtime.rs](/home/ubuntu/steelsearch/crates/os-node/src/standalone_runtime.rs), `reindex_script_transform_readback` in [document-write-semantic-compat.json](/home/ubuntu/steelsearch/tools/fixtures/document-write-semantic-compat.json) | Destination routing supports unset/`keep`, `discard`, and `=<value>` with validation; bounded `ctx._source.<field> = ...` script transforms are OpenSearch-compared. |
+| destination routing / script transforms | partial | `reindex_route_honors_destination_routing_and_require_alias` in [standalone_runtime.rs](/home/ubuntu/steelsearch/crates/os-node/src/standalone_runtime.rs), `reindex_script_transform_readback` and `reindex_script_params_transform_readback` in [document-write-semantic-compat.json](/home/ubuntu/steelsearch/tools/fixtures/document-write-semantic-compat.json) | Destination routing supports unset/`keep`, `discard`, and `=<value>` with validation; bounded `ctx._source.<field> = ...` script transforms are OpenSearch-compared for literal and `params` values. |
 
 #### `/_reindex` semantics matrix
 
@@ -105,7 +105,7 @@ replacement readiness.
 | destination overwrite | partial | `reindex_overwrite_summary` in [document-write-semantic-compat.json](/home/ubuntu/steelsearch/tools/fixtures/document-write-semantic-compat.json) | Existing destination docs are overwritten and counted as `updated`; broader conflict modes are not yet documented. |
 | missing destination | partial | `reindex_missing_dest_error` in [document-write-semantic-compat.json](/home/ubuntu/steelsearch/tools/fixtures/document-write-semantic-compat.json) | Missing `dest.index` is fail-closed with a bounded validation error. |
 | destination routing | partial | `reindex_route_honors_destination_routing_and_require_alias` in [standalone_runtime.rs](/home/ubuntu/steelsearch/crates/os-node/src/standalone_runtime.rs) | Unset/`keep` preserves source routing, `discard` clears routing, and `=<value>` forces routing. |
-| source assignment script transform | partial | `reindex_script_transform_readback` in [document-write-semantic-compat.json](/home/ubuntu/steelsearch/tools/fixtures/document-write-semantic-compat.json) | Bounded `ctx._source.<field> = ...` transforms are applied during reindex and read back against OpenSearch; broader script-language parity remains bounded. |
+| source assignment script transform | partial | `reindex_script_transform_readback` and `reindex_script_params_transform_readback` in [document-write-semantic-compat.json](/home/ubuntu/steelsearch/tools/fixtures/document-write-semantic-compat.json) | Bounded `ctx._source.<field> = ...` transforms are applied during reindex and read back against OpenSearch for literal and `params` values; broader script-language parity remains bounded. |
 
 ## Write-Path Metadata Field Status
 

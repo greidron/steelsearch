@@ -40549,6 +40549,31 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             Value::String("scripted reindex".to_string())
         );
 
+        let scripted_param_reindex = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_reindex").with_json_body(serde_json::json!({
+                "source": { "index": "logs-reindex-source-a" },
+                "dest": { "index": "logs-reindex-script-params-dest" },
+                "script": {
+                    "source": "ctx._source.processed = params.processed",
+                    "params": {
+                        "processed": true
+                    }
+                }
+            })),
+        );
+        assert_eq!(scripted_param_reindex.status, 200);
+        assert_eq!(scripted_param_reindex.body["total"], 1);
+        assert_eq!(scripted_param_reindex.body["created"], 1);
+        let scripted_param_doc = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/logs-reindex-script-params-dest/_doc/doc-1",
+        ));
+        assert_eq!(scripted_param_doc.status, 200);
+        assert_eq!(
+            scripted_param_doc.body["_source"]["processed"],
+            Value::Bool(true)
+        );
+
         let wildcard_reindex = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/_reindex").with_json_body(serde_json::json!({
                 "source": { "index": "logs-reindex-source-*" },
