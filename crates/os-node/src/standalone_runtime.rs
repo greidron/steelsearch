@@ -3637,7 +3637,9 @@ impl SteelNode {
             return Some(self.handle_alias_bulk_mutation_route(request));
         }
         if request.method == RestMethod::Head && request.path.starts_with("/_alias/") {
-            return Some(self.handle_alias_head_route(request.path.trim_start_matches("/_alias/")));
+            return Some(
+                self.handle_alias_head_route(request.path.trim_start_matches("/_alias/"), request),
+            );
         }
         if request.method == RestMethod::Get && request.path.starts_with("/_alias/") {
             return Some(self.handle_alias_read_route(
@@ -5280,7 +5282,9 @@ impl SteelNode {
                 RestMethod::Get => {
                     Some(self.handle_alias_read_route(Some(index), Some(alias), request))
                 }
-                RestMethod::Head => Some(self.handle_index_alias_named_head_route(index, alias)),
+                RestMethod::Head => {
+                    Some(self.handle_index_alias_named_head_route(index, alias, request))
+                }
                 RestMethod::Put | RestMethod::Post => {
                     if let Err(response) = require_security_permission(
                         request,
@@ -5307,7 +5311,9 @@ impl SteelNode {
         if let Some(index) = request.path.trim_matches('/').strip_suffix("/_alias") {
             return match request.method {
                 RestMethod::Get => Some(self.handle_alias_read_route(Some(index), None, request)),
-                RestMethod::Head => Some(self.handle_index_alias_collection_head_route(index)),
+                RestMethod::Head => {
+                    Some(self.handle_index_alias_collection_head_route(index, request))
+                }
                 RestMethod::Put => {
                     if let Err(response) = require_security_permission(
                         request,
@@ -6396,7 +6402,10 @@ impl SteelNode {
         )
     }
 
-    fn handle_alias_head_route(&self, alias: &str) -> RestResponse {
+    fn handle_alias_head_route(&self, alias: &str, request: &RestRequest) -> RestResponse {
+        if let Some(response) = validate_alias_get_query_params(request) {
+            return response;
+        }
         let manifest = self
             .metadata_manifest_state
             .lock()
@@ -6417,7 +6426,14 @@ impl SteelNode {
         }
     }
 
-    fn handle_index_alias_collection_head_route(&self, index: &str) -> RestResponse {
+    fn handle_index_alias_collection_head_route(
+        &self,
+        index: &str,
+        request: &RestRequest,
+    ) -> RestResponse {
+        if let Some(response) = validate_alias_get_query_params(request) {
+            return response;
+        }
         let matched = match self.resolve_index_metadata_targets(index, false, false, "open") {
             Ok(matched) => matched,
             Err(response) => return response,
@@ -6438,7 +6454,15 @@ impl SteelNode {
         }
     }
 
-    fn handle_index_alias_named_head_route(&self, index: &str, alias: &str) -> RestResponse {
+    fn handle_index_alias_named_head_route(
+        &self,
+        index: &str,
+        alias: &str,
+        request: &RestRequest,
+    ) -> RestResponse {
+        if let Some(response) = validate_alias_get_query_params(request) {
+            return response;
+        }
         let matched = match self.resolve_index_metadata_targets(index, false, false, "open") {
             Ok(matched) => matched,
             Err(response) => return response,
@@ -57189,6 +57213,32 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         ));
         assert_eq!(named_head.status, 200);
 
+        let named_head_with_options = node.handle_rest_request(RestRequest::new(
+            RestMethod::Head,
+            "/_alias/logs-root-write?local=true&ignore_unavailable=false&allow_no_indices=true&ignore_throttled=false&expand_wildcards=open&cluster_manager_timeout=30s&master_timeout=30s",
+        ));
+        assert_eq!(named_head_with_options.status, 200);
+
+        let named_head_unknown = node.handle_rest_request(RestRequest::new(
+            RestMethod::Head,
+            "/_alias/logs-root-write?foo=bar",
+        ));
+        assert_eq!(named_head_unknown.status, 400);
+        assert_eq!(
+            named_head_unknown.body["error"]["reason"],
+            "request [/_alias/logs-root-write] contains unrecognized parameter: [foo]"
+        );
+
+        let named_head_invalid_bool = node.handle_rest_request(RestRequest::new(
+            RestMethod::Head,
+            "/_alias/logs-root-write?local=maybe",
+        ));
+        assert_eq!(named_head_invalid_bool.status, 400);
+        assert_eq!(
+            named_head_invalid_bool.body["error"]["reason"],
+            "Failed to parse value [maybe] as only [true] or [false] are allowed."
+        );
+
         let wildcard_named_put = node.handle_rest_request(
             RestRequest::new(RestMethod::Put, "/_alias/logs-root-wildcard").with_json_body(
                 serde_json::json!({
@@ -57290,6 +57340,22 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         ));
         assert_eq!(collection_head.status, 200);
 
+        let collection_head_with_options = node.handle_rest_request(RestRequest::new(
+            RestMethod::Head,
+            "/logs-index-alias-000001/_alias?local=true&ignore_unavailable=false&allow_no_indices=true&ignore_throttled=false&expand_wildcards=open&cluster_manager_timeout=30s&master_timeout=30s",
+        ));
+        assert_eq!(collection_head_with_options.status, 200);
+
+        let collection_head_invalid_timeout = node.handle_rest_request(RestRequest::new(
+            RestMethod::Head,
+            "/logs-index-alias-000001/_alias?master_timeout=bogus",
+        ));
+        assert_eq!(collection_head_invalid_timeout.status, 400);
+        assert_eq!(
+            collection_head_invalid_timeout.body["error"]["reason"],
+            "failed to parse setting [master_timeout] with value [bogus] as a time value"
+        );
+
         let wildcard_collection_put = node.handle_rest_request(
             RestRequest::new(RestMethod::Put, "/logs-index-alias-*/_alias").with_json_body(
                 serde_json::json!({
@@ -57335,6 +57401,16 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             "/logs-index-alias-000001/_alias/logs-index-named-put",
         ));
         assert_eq!(named_head.status, 200);
+
+        let named_head_invalid_expand = node.handle_rest_request(RestRequest::new(
+            RestMethod::Head,
+            "/logs-index-alias-000001/_alias/logs-index-named-put?expand_wildcards=bogus",
+        ));
+        assert_eq!(named_head_invalid_expand.status, 400);
+        assert_eq!(
+            named_head_invalid_expand.body["error"]["reason"],
+            "No valid expand wildcard value [bogus]"
+        );
 
         let aliases_put = node.handle_rest_request(
             RestRequest::new(RestMethod::Put, "/logs-index-alias-000001/_aliases").with_json_body(
