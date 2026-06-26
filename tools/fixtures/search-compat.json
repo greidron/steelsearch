@@ -3198,6 +3198,197 @@
       "description": "[lexical] docvalue fields search"
     },
     {
+      "name": "docvalue_fields_epoch_millis_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "sort": [
+          {
+            "ts": "asc"
+          }
+        ],
+        "docvalue_fields": [
+          {
+            "field": "ts",
+            "format": "epoch_millis"
+          }
+        ],
+        "size": 2
+      },
+      "extract": "search_fields",
+      "family": "fetch",
+      "description": "[fetch] docvalue fields epoch millis search"
+    },
+    {
+      "name": "fields_top_level_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "fields": [
+          "service",
+          {
+            "field": "bytes"
+          }
+        ],
+        "sort": [
+          {
+            "ts": {
+              "order": "asc"
+            }
+          }
+        ],
+        "size": 2
+      },
+      "extract": "search_fields",
+      "family": "fetch",
+      "description": "[fetch] top-level fields search"
+    },
+    {
+      "name": "fields_dot_path_array_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "fields": [
+          "events.status"
+        ],
+        "sort": [
+          {
+            "ts": {
+              "order": "asc"
+            }
+          }
+        ],
+        "size": 2
+      },
+      "extract": "search_fields",
+      "family": "fetch",
+      "description": "[fetch] dot-path array fields search"
+    },
+    {
+      "name": "fields_date_epoch_millis_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "fields": [
+          {
+            "field": "ts",
+            "format": "epoch_millis"
+          }
+        ],
+        "sort": [
+          {
+            "ts": {
+              "order": "asc"
+            }
+          }
+        ],
+        "size": 2
+      },
+      "extract": "search_fields",
+      "family": "fetch",
+      "description": "[fetch] fields date epoch millis search"
+    },
+    {
+      "name": "fields_unmapped_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "fields": [
+          "missing_field"
+        ],
+        "sort": [
+          {
+            "ts": {
+              "order": "asc"
+            }
+          }
+        ],
+        "size": 2
+      },
+      "extract": "search_fields",
+      "family": "fetch",
+      "description": "[fetch] unmapped fields search"
+    },
+    {
+      "name": "script_fields_projection_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "script_fields": {
+          "service_copy": {
+            "script": {
+              "source": "params._source[\"service\"]"
+            }
+          },
+          "bytes_copy": {
+            "script": "doc[\"bytes\"].value",
+            "ignore_failure": false
+          }
+        },
+        "sort": [
+          {
+            "ts": {
+              "order": "asc"
+            }
+          }
+        ],
+        "size": 2
+      },
+      "extract": "search_fields",
+      "family": "fetch",
+      "description": "[fetch] script fields projection search"
+    },
+    {
+      "name": "source_filtering_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "_source": [
+          "service",
+          "level"
+        ],
+        "sort": [
+          {
+            "ts": {
+              "order": "asc"
+            }
+          }
+        ],
+        "size": 2
+      },
+      "extract": "search_hits",
+      "family": "fetch",
+      "description": "[fetch] source filtering search"
+    },
+    {
       "name": "exists_query_search",
       "area": "search",
       "method": "POST",
