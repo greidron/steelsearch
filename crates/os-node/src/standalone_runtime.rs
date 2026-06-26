@@ -2289,7 +2289,7 @@ pub struct SteelNode {
     remote_transport_queue_counters: Arc<Mutex<BTreeMap<String, RemoteTransportQueueSnapshot>>>,
     remote_transport_queue_gate: Option<Arc<RemoteTransportQueueGate>>,
     runtime_thread_pool_condvar: Arc<Condvar>,
-    pub documents_state: Arc<Mutex<BTreeMap<String, StoredDocument>>>,
+    pub documents_state: Arc<Mutex<DocumentMap>>,
     pub native_engine: Arc<TantivyEngine>,
     pub next_seq_no: Arc<Mutex<u64>>,
     pub next_seq_no_by_index: Arc<Mutex<BTreeMap<String, u64>>>,
@@ -2359,6 +2359,23 @@ pub struct StoredDocument {
     pub primary_term: i64,
     pub routing: Option<String>,
     pub refreshed: bool,
+}
+
+pub type SharedStoredDocument = Arc<StoredDocument>;
+pub type DocumentMap = BTreeMap<String, SharedStoredDocument>;
+
+fn runtime_documents_from_persisted(documents: BTreeMap<String, StoredDocument>) -> DocumentMap {
+    documents
+        .into_iter()
+        .map(|(key, document)| (key, Arc::new(document)))
+        .collect()
+}
+
+fn persisted_documents_from_runtime(documents: &DocumentMap) -> BTreeMap<String, StoredDocument> {
+    documents
+        .iter()
+        .map(|(key, document)| (key.clone(), document.as_ref().clone()))
+        .collect()
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
@@ -2479,7 +2496,7 @@ pub struct ScrollContext {
 #[derive(Clone, Debug)]
 pub struct PitContext {
     pub indices: Vec<String>,
-    pub documents: Arc<BTreeMap<String, StoredDocument>>,
+    pub documents: Arc<DocumentMap>,
     pub keep_alive_millis: u64,
     pub expires_at_millis: u128,
     pub creation_time_millis: u128,
@@ -8018,7 +8035,11 @@ impl SteelNode {
             .lock()
             .expect("documents state lock poisoned")
             .values_mut()
-            .for_each(|record| record.refreshed = true);
+            .for_each(|record| {
+                let mut refreshed_record = record.as_ref().clone();
+                refreshed_record.refreshed = true;
+                *record = Arc::new(refreshed_record);
+            });
         let total = self
             .created_indices_state
             .lock()
@@ -8070,7 +8091,11 @@ impl SteelNode {
                     .iter()
                     .any(|candidate| key.starts_with(&format!("{candidate}:")))
             })
-            .for_each(|(_, record)| record.refreshed = true);
+            .for_each(|(_, record)| {
+                let mut refreshed_record = record.as_ref().clone();
+                refreshed_record.refreshed = true;
+                *record = Arc::new(refreshed_record);
+            });
         RestResponse::json(
             200,
             serde_json::json!({
@@ -8151,7 +8176,7 @@ impl SteelNode {
 
     fn mget_doc_response(
         &self,
-        docs: &BTreeMap<String, StoredDocument>,
+        docs: &DocumentMap,
         requested_index: &str,
         id: &str,
         routing: &str,
@@ -8259,7 +8284,7 @@ impl SteelNode {
 
     fn mtermvectors_doc_response(
         &self,
-        docs: &BTreeMap<String, StoredDocument>,
+        docs: &DocumentMap,
         requested_index: &str,
         id: &str,
         routing: &str,
@@ -11462,7 +11487,7 @@ impl SteelNode {
                     routing: routing.map(ToOwned::to_owned),
                     refreshed: forced_refresh,
                 };
-                docs.insert(key, record.clone());
+                docs.insert(key, Arc::new(record.clone()));
                 drop(docs);
                 self.sync_native_bulk_index_document(
                     &resolved_index,
@@ -11514,7 +11539,7 @@ impl SteelNode {
                     routing: routing.map(ToOwned::to_owned),
                     refreshed: forced_refresh,
                 };
-                docs.insert(key, record.clone());
+                docs.insert(key, Arc::new(record.clone()));
                 drop(docs);
                 self.sync_native_bulk_index_document(
                     &resolved_index,
@@ -11642,19 +11667,21 @@ impl SteelNode {
                 }
                 let assigned_seq_no = self.allocate_seq_no(&resolved_index);
                 if let Some(record) = docs.get_mut(&key) {
-                    merge_json_object(&mut record.source, &doc_patch);
-                    let native_source = record.source.clone();
-                    record.version += 1;
-                    record.seq_no = assigned_seq_no as i64;
-                    record.refreshed = forced_refresh;
+                    let mut updated_record = record.as_ref().clone();
+                    merge_json_object(&mut updated_record.source, &doc_patch);
+                    let native_source = updated_record.source.clone();
+                    updated_record.version += 1;
+                    updated_record.seq_no = assigned_seq_no as i64;
+                    updated_record.refreshed = forced_refresh;
+                    *record = Arc::new(updated_record.clone());
                     let mut response = serde_json::json!({
                         "update": {
                             "_index": resolved_index,
                             "_id": id,
-                            "_version": record.version,
+                            "_version": updated_record.version,
                             "result": "updated",
-                            "_seq_no": record.seq_no,
-                            "_primary_term": record.primary_term,
+                            "_seq_no": updated_record.seq_no,
+                            "_primary_term": updated_record.primary_term,
                             "status": 200,
                         }
                     });
@@ -11681,7 +11708,7 @@ impl SteelNode {
                         routing: routing.map(ToOwned::to_owned),
                         refreshed: forced_refresh,
                     };
-                    docs.insert(key, record.clone());
+                    docs.insert(key, Arc::new(record.clone()));
                     let mut response = serde_json::json!({
                         "update": {
                             "_index": resolved_index,
@@ -12998,7 +13025,7 @@ impl SteelNode {
             }
         };
 
-        let source_docs: Vec<(String, String, StoredDocument)> = self
+        let source_docs: Vec<(String, String, SharedStoredDocument)> = self
             .documents_state
             .lock()
             .expect("documents state lock poisoned")
@@ -13031,7 +13058,7 @@ impl SteelNode {
                     Some(forced) if forced.starts_with('=') => forced[1..].to_string(),
                     Some(_) => unreachable!("destination routing was validated above"),
                 };
-                let mut dest_doc = doc;
+                let mut dest_doc = doc.as_ref().clone();
                 if let Some(script) = script {
                     if let Err(response) =
                         apply_source_assignment_script(&mut dest_doc.source, script)
@@ -13045,7 +13072,7 @@ impl SteelNode {
                     Some(resolved_routing.clone())
                 };
                 let key = format!("{resolved_dest}:{id}:{resolved_routing}");
-                if docs.insert(key, dest_doc).is_some() {
+                if docs.insert(key, Arc::new(dest_doc)).is_some() {
                     updated += 1;
                 } else {
                     created += 1;
@@ -13250,8 +13277,14 @@ impl SteelNode {
                 total += 1;
                 let original_source = doc.source.clone();
                 if let Some(script) = body.get("script") {
-                    apply_update_by_query_script(&mut doc.source, script);
-                    updated += 1;
+                    let mut updated_doc = doc.as_ref().clone();
+                    apply_update_by_query_script(&mut updated_doc.source, script);
+                    if updated_doc.source == original_source {
+                        noops += 1;
+                    } else {
+                        updated += 1;
+                        *doc = Arc::new(updated_doc);
+                    }
                 } else if doc.source == original_source {
                     noops += 1;
                 } else {
@@ -16137,7 +16170,7 @@ impl SteelNode {
         if forced_refresh {
             response["forced_refresh"] = Value::Bool(true);
         }
-        docs.insert(key, record);
+        docs.insert(key, Arc::new(record));
         drop(docs);
         let _ = self.native_engine.index_document(IndexDocumentRequest {
             index: resolved_index.clone(),
@@ -16247,7 +16280,7 @@ impl SteelNode {
         if forced_refresh {
             response["forced_refresh"] = Value::Bool(true);
         }
-        docs.insert(key, record);
+        docs.insert(key, Arc::new(record));
         drop(docs);
         let _ = self.native_engine.index_document(IndexDocumentRequest {
             index: resolved_index.clone(),
@@ -16672,41 +16705,45 @@ impl SteelNode {
             }
         }
         if let Some(record) = docs.get_mut(&key) {
-            let original_source = record.source.clone();
+            let mut updated_record = record.as_ref().clone();
+            let original_source = updated_record.source.clone();
             if let Some(script) = script.as_ref() {
-                if let Err(response) = apply_supported_update_script(&mut record.source, script) {
+                if let Err(response) =
+                    apply_supported_update_script(&mut updated_record.source, script)
+                {
                     return response;
                 }
             } else {
-                merge_json_object(&mut record.source, &doc_patch);
+                merge_json_object(&mut updated_record.source, &doc_patch);
             }
-            if detect_noop && record.source == original_source {
+            if detect_noop && updated_record.source == original_source {
                 return RestResponse::json(
                     200,
                     serde_json::json!({
                         "_index": self.write_response_index(index, &resolved_index),
                         "_id": id,
-                        "_version": record.version,
+                        "_version": updated_record.version,
                         "result": "noop",
-                        "_seq_no": record.seq_no,
-                        "_primary_term": record.primary_term,
+                        "_seq_no": updated_record.seq_no,
+                        "_primary_term": updated_record.primary_term,
                         "forced_refresh": forced_refresh,
                     }),
                 );
             }
             let assigned_seq_no = self.allocate_seq_no(&resolved_index);
-            record.version += 1;
-            record.seq_no = assigned_seq_no as i64;
-            record.refreshed = forced_refresh;
+            updated_record.version += 1;
+            updated_record.seq_no = assigned_seq_no as i64;
+            updated_record.refreshed = forced_refresh;
+            *record = Arc::new(updated_record.clone());
             let response = RestResponse::json(
                 200,
                 serde_json::json!({
                     "_index": self.write_response_index(index, &resolved_index),
                     "_id": id,
-                    "_version": record.version,
+                    "_version": updated_record.version,
                     "result": "updated",
-                    "_seq_no": record.seq_no,
-                    "_primary_term": record.primary_term,
+                    "_seq_no": updated_record.seq_no,
+                    "_primary_term": updated_record.primary_term,
                     "forced_refresh": forced_refresh,
                 }),
             );
@@ -16744,7 +16781,7 @@ impl SteelNode {
                 "_primary_term": 1,
                 "forced_refresh": forced_refresh,
             });
-            docs.insert(key, record);
+            docs.insert(key, Arc::new(record));
             drop(docs);
             self.persist_shared_runtime_state_to_disk();
             return RestResponse::json(201, response);
@@ -16769,7 +16806,7 @@ impl SteelNode {
                 "_primary_term": 1,
                 "forced_refresh": forced_refresh,
             });
-            docs.insert(key, record);
+            docs.insert(key, Arc::new(record));
             drop(docs);
             self.persist_shared_runtime_state_to_disk();
             return RestResponse::json(201, response);
@@ -19968,8 +20005,9 @@ impl SteelNode {
                 return;
             }
         };
+        let runtime_documents = runtime_documents_from_persisted(state.documents);
         let next_seq_no_by_index = if state.next_seq_no_by_index.is_empty() {
-            next_seq_no_by_index_from_documents(&state.documents)
+            next_seq_no_by_index_from_documents(&runtime_documents)
         } else {
             state.next_seq_no_by_index.clone()
         };
@@ -19985,7 +20023,7 @@ impl SteelNode {
         *self
             .documents_state
             .lock()
-            .expect("documents state lock poisoned") = state.documents;
+            .expect("documents state lock poisoned") = runtime_documents;
         *self.next_seq_no.lock().expect("seq_no lock poisoned") = state.next_seq_no;
         *self
             .next_seq_no_by_index
@@ -20175,11 +20213,12 @@ impl SteelNode {
                 .lock()
                 .expect("metadata manifest state lock poisoned")
                 .clone(),
-            documents: self
-                .documents_state
-                .lock()
-                .expect("documents state lock poisoned")
-                .clone(),
+            documents: persisted_documents_from_runtime(
+                &self
+                    .documents_state
+                    .lock()
+                    .expect("documents state lock poisoned"),
+            ),
             next_seq_no: *self.next_seq_no.lock().expect("seq_no lock poisoned"),
             next_seq_no_by_index: self
                 .next_seq_no_by_index
@@ -25652,9 +25691,7 @@ fn split_document_key(key: &str) -> Option<(&str, &str, &str)> {
     Some((parts.next()?, parts.next()?, parts.next()?))
 }
 
-fn next_seq_no_by_index_from_documents(
-    documents: &BTreeMap<String, StoredDocument>,
-) -> BTreeMap<String, u64> {
+fn next_seq_no_by_index_from_documents(documents: &DocumentMap) -> BTreeMap<String, u64> {
     let mut next_by_index: BTreeMap<String, u64> = BTreeMap::new();
     for (key, document) in documents {
         let Some((index, _, _)) = split_document_key(key) else {
@@ -27723,7 +27760,7 @@ fn render_highlight_text(input: &str, terms: &[String], pre_tag: &str, post_tag:
 fn build_suggest_response_body(
     suggest: &Value,
     resolved_indices: &[String],
-    docs: &BTreeMap<String, StoredDocument>,
+    docs: &DocumentMap,
 ) -> Value {
     let mut suggest_body = serde_json::Map::new();
     let Some(suggest_object) = suggest.as_object() else {
@@ -27805,7 +27842,7 @@ fn build_suggest_response_body(
 }
 
 fn collect_term_suggest_candidates(
-    docs: &BTreeMap<String, StoredDocument>,
+    docs: &DocumentMap,
     resolved_indices: &[String],
     field: &str,
 ) -> BTreeMap<String, u64> {
@@ -27874,7 +27911,7 @@ fn build_term_suggest_options(
 }
 
 fn collect_completion_suggest_candidates(
-    docs: &BTreeMap<String, StoredDocument>,
+    docs: &DocumentMap,
     resolved_indices: &[String],
     field: &str,
 ) -> BTreeMap<String, u64> {
@@ -34506,36 +34543,36 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 .expect("documents state lock poisoned");
             documents.insert(
                 "logs-000001:doc-1".to_string(),
-                StoredDocument {
+                Arc::new(StoredDocument {
                     source: serde_json::json!({"message": "log doc"}),
                     version: 1,
                     seq_no: 0,
                     primary_term: 1,
                     routing: None,
                     refreshed: true,
-                },
+                }),
             );
             documents.insert(
                 "logs-hidden-000001:doc-1".to_string(),
-                StoredDocument {
+                Arc::new(StoredDocument {
                     source: serde_json::json!({"message": "hidden log doc"}),
                     version: 1,
                     seq_no: 0,
                     primary_term: 1,
                     routing: None,
                     refreshed: true,
-                },
+                }),
             );
             documents.insert(
                 "metrics-000001:doc-1".to_string(),
-                StoredDocument {
+                Arc::new(StoredDocument {
                     source: serde_json::json!({"message": "metric doc"}),
                     version: 1,
                     seq_no: 0,
                     primary_term: 1,
                     routing: None,
                     refreshed: true,
-                },
+                }),
             );
         }
         node.pit_contexts
@@ -34664,14 +34701,14 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 .expect("documents state lock poisoned");
             documents.insert(
                 "logs-000001:doc-1".to_string(),
-                StoredDocument {
+                Arc::new(StoredDocument {
                     source: serde_json::json!({"message": "log doc"}),
                     version: 1,
                     seq_no: 0,
                     primary_term: 1,
                     routing: None,
                     refreshed: true,
-                },
+                }),
             );
         }
         node.pit_contexts

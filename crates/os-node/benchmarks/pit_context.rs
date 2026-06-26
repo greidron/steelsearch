@@ -1,4 +1,4 @@
-use os_node::standalone_runtime::{PitContext, StoredDocument};
+use os_node::standalone_runtime::{DocumentMap, PitContext, StoredDocument};
 use serde_json::json;
 use std::collections::BTreeMap;
 use std::hint::black_box;
@@ -27,19 +27,19 @@ fn main() {
     println!("pit_snapshot_estimated_payload_bytes={estimated_payload_bytes}");
 }
 
-fn build_documents(count: usize) -> BTreeMap<String, StoredDocument> {
+fn build_documents(count: usize) -> DocumentMap {
     let mut documents = BTreeMap::new();
     for id in 0..count {
         documents.insert(
             format!("pit-bench:{id}:_doc"),
-            StoredDocument {
+            Arc::new(StoredDocument {
                 source: json!({ "tenant": "a", "rank": id }),
                 version: 1,
                 seq_no: id as i64,
                 primary_term: 1,
                 routing: None,
                 refreshed: true,
-            },
+            }),
         );
     }
     documents
@@ -64,7 +64,7 @@ fn bench_context_clone(context: &PitContext) {
     );
 }
 
-fn bench_open_snapshot_build(documents: &BTreeMap<String, StoredDocument>) {
+fn bench_open_snapshot_build(documents: &DocumentMap) {
     let start = Instant::now();
     for _ in 0..SNAPSHOT_ITERATIONS {
         let snapshot = documents
@@ -87,12 +87,12 @@ fn bench_open_snapshot_build(documents: &BTreeMap<String, StoredDocument>) {
     println!("pit_open_snapshot_documents_per_second={documents_per_second:.2}");
 }
 
-fn estimate_snapshot_payload_bytes(documents: &BTreeMap<String, StoredDocument>) -> usize {
+fn estimate_snapshot_payload_bytes(documents: &DocumentMap) -> usize {
     documents
         .iter()
         .map(|(key, record)| {
             key.len()
-                + serde_json::to_vec(record)
+                + serde_json::to_vec(record.as_ref())
                     .map(|body| body.len())
                     .unwrap_or(0)
         })
