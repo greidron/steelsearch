@@ -45270,6 +45270,26 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             .unwrap()
             .contains("_shard_doc is only supported with point-in-time (PIT). Add a PIT or remove _shard_doc."));
 
+        let shard_doc_object_without_pit = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-session-000001/_search").with_json_body(
+                serde_json::json!({
+                    "sort": [
+                        { "_shard_doc": {} }
+                    ],
+                    "query": { "match_all": {} }
+                }),
+            ),
+        );
+        assert_eq!(shard_doc_object_without_pit.status, 400);
+        assert_eq!(
+            shard_doc_object_without_pit.body["error"]["type"],
+            "action_request_validation_exception"
+        );
+        assert!(shard_doc_object_without_pit.body["error"]["reason"]
+            .as_str()
+            .unwrap()
+            .contains("_shard_doc is only supported with point-in-time (PIT). Add a PIT or remove _shard_doc."));
+
         let scrolled_pit_search = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/_search?scroll=1m").with_json_body(
                 serde_json::json!({
