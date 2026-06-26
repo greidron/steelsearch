@@ -474,12 +474,20 @@ def apply_runtime_route_status(rows: list[dict[str, str]]) -> list[dict[str, str
         runtime_status = ledger.get((row["method"], row["path_or_expression"]))
         if runtime_status is None and normalized_path is not None:
             runtime_status = ledger.get((row["method"], normalized_path))
-        if runtime_status == "implemented-read" and row["status"] in {"planned", "stubbed"}:
+        if runtime_status == "implemented-read" and row["status"] in {
+            "implemented",
+            "planned",
+            "stubbed",
+        }:
             next_row["status"] = "implemented-read"
         stateful_status = stateful_report.get((row["method"], row["path_or_expression"]))
         if stateful_status is None and normalized_path is not None:
             stateful_status = stateful_report.get((row["method"], normalized_path))
-        if stateful_status == "stateful-route-present" and row["status"] in {"planned", "stubbed"}:
+        if stateful_status == "stateful-route-present" and row["status"] in {
+            "implemented",
+            "planned",
+            "stubbed",
+        }:
             next_row["status"] = "implemented-stateful"
         updated.append(next_row)
     return updated
