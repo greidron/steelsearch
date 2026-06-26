@@ -4976,6 +4976,8 @@ fn local_transport_search_response_from_request(
     else {
         return os_transport::action::OpenSearchSearchResponseWire::empty_with_total_hits(0);
     };
+    let sorts = source.and_then(|source| source.sorts.as_deref());
+    let search_after = source.and_then(|source| source.search_after.as_deref());
     let mut matched = documents
         .iter()
         .filter_map(|(key, record)| {
@@ -5002,18 +5004,25 @@ fn local_transport_search_response_from_request(
             })
         })
         .collect::<Vec<_>>();
-    matched.sort_by(|left, right| {
-        left.4
-            .cmp(&right.4)
-            .then_with(|| left.0.cmp(&right.0))
-            .then_with(|| left.1.cmp(&right.1))
-    });
+    sort_transport_search_matches(&mut matched, sorts);
+    if let (Some(sorts), Some(search_after)) = (sorts, search_after) {
+        matched = matched
+            .into_iter()
+            .filter(|candidate| transport_search_match_after(candidate, sorts, search_after))
+            .collect();
+    }
     let total_hits = matched.len() as i64;
     let hits = matched
         .into_iter()
         .skip(from)
         .take(size)
-        .map(|(index, id, source, version, seq_no, primary_term)| {
+        .map(|candidate| {
+            let (index, id, source, version, seq_no, primary_term) = candidate;
+            let sort_values = sorts
+                .map(|sorts| {
+                    transport_search_sort_values_for_match(&index, &id, &source, seq_no, sorts)
+                })
+                .unwrap_or_default();
             os_transport::action::OpenSearchSearchHitWire {
                 id: Some(id),
                 score: 1.0,
@@ -5026,7 +5035,7 @@ fn local_transport_search_response_from_request(
                 fields: BTreeMap::new(),
                 meta_fields: BTreeMap::new(),
                 highlight_fields: BTreeMap::new(),
-                sort_values: Vec::new(),
+                sort_values,
                 matched_queries: BTreeMap::new(),
                 shard_target: os_transport::action::OpenSearchSearchShardTargetWire::from_hit_index(
                     &index,
@@ -5048,6 +5057,135 @@ fn local_transport_search_response_from_request(
         took_millis: 1,
         point_in_time_id,
         ..os_transport::action::OpenSearchSearchResponseWire::empty_with_total_hits(total_hits)
+    }
+}
+
+fn sort_transport_search_matches(
+    matches: &mut [(String, String, Value, i64, i64, i64)],
+    sorts: Option<&[os_transport::action::OpenSearchSortBuilderWire]>,
+) {
+    matches.sort_by(|left, right| {
+        if let Some(sorts) = sorts {
+            for sort in sorts {
+                let ordering = compare_transport_search_sort_values(left, right, sort);
+                if ordering != std::cmp::Ordering::Equal {
+                    return ordering;
+                }
+            }
+        }
+        left.4
+            .cmp(&right.4)
+            .then_with(|| left.0.cmp(&right.0))
+            .then_with(|| left.1.cmp(&right.1))
+    });
+}
+
+fn compare_transport_search_sort_values(
+    left: &(String, String, Value, i64, i64, i64),
+    right: &(String, String, Value, i64, i64, i64),
+    sort: &os_transport::action::OpenSearchSortBuilderWire,
+) -> std::cmp::Ordering {
+    let descending = transport_search_sort_descending(sort);
+    let left_value = transport_search_sort_value_for_match(&left.0, &left.1, &left.2, left.4, sort);
+    let right_value =
+        transport_search_sort_value_for_match(&right.0, &right.1, &right.2, right.4, sort);
+    let ordering = compare_transport_search_sort_json(&left_value, &right_value);
+    if descending {
+        ordering.reverse()
+    } else {
+        ordering
+    }
+}
+
+fn transport_search_match_after(
+    candidate: &(String, String, Value, i64, i64, i64),
+    sorts: &[os_transport::action::OpenSearchSortBuilderWire],
+    search_after: &[Value],
+) -> bool {
+    if sorts.is_empty() || sorts.len() != search_after.len() {
+        return true;
+    }
+    for (sort, after_value) in sorts.iter().zip(search_after.iter()) {
+        let value = transport_search_sort_value_for_match(
+            &candidate.0,
+            &candidate.1,
+            &candidate.2,
+            candidate.4,
+            sort,
+        );
+        let mut ordering = compare_transport_search_sort_json(&value, after_value);
+        if transport_search_sort_descending(sort) {
+            ordering = ordering.reverse();
+        }
+        if ordering == std::cmp::Ordering::Equal {
+            continue;
+        }
+        return ordering == std::cmp::Ordering::Greater;
+    }
+    false
+}
+
+fn transport_search_sort_values_for_match(
+    index: &str,
+    id: &str,
+    source: &Value,
+    seq_no: i64,
+    sorts: &[os_transport::action::OpenSearchSortBuilderWire],
+) -> Vec<Value> {
+    sorts
+        .iter()
+        .map(|sort| transport_search_sort_value_for_match(index, id, source, seq_no, sort))
+        .collect()
+}
+
+fn transport_search_sort_value_for_match(
+    index: &str,
+    id: &str,
+    source: &Value,
+    seq_no: i64,
+    sort: &os_transport::action::OpenSearchSortBuilderWire,
+) -> Value {
+    match sort {
+        os_transport::action::OpenSearchSortBuilderWire::ShardDoc(_) => Value::from(seq_no),
+        os_transport::action::OpenSearchSortBuilderWire::Score(_) => serde_json::json!(1.0),
+        os_transport::action::OpenSearchSortBuilderWire::Field(field) => {
+            match field.field_name.as_str() {
+                "_shard_doc" => Value::from(seq_no),
+                "_id" => Value::String(id.to_string()),
+                "_index" => Value::String(index.to_string()),
+                field_name => lookup_transport_source_value(source, field_name)
+                    .cloned()
+                    .unwrap_or_else(|| field.missing.clone()),
+            }
+        }
+    }
+}
+
+fn transport_search_sort_descending(
+    sort: &os_transport::action::OpenSearchSortBuilderWire,
+) -> bool {
+    match sort {
+        os_transport::action::OpenSearchSortBuilderWire::Score(score) => {
+            score.order == os_transport::action::OpenSearchSortOrderWire::Desc
+        }
+        os_transport::action::OpenSearchSortBuilderWire::ShardDoc(shard_doc) => {
+            shard_doc.order == os_transport::action::OpenSearchSortOrderWire::Desc
+        }
+        os_transport::action::OpenSearchSortBuilderWire::Field(field) => {
+            field.order == Some(os_transport::action::OpenSearchSortOrderWire::Desc)
+        }
+    }
+}
+
+fn compare_transport_search_sort_json(left: &Value, right: &Value) -> std::cmp::Ordering {
+    match (left.as_f64(), right.as_f64()) {
+        (Some(left), Some(right)) => left
+            .partial_cmp(&right)
+            .unwrap_or(std::cmp::Ordering::Equal),
+        _ => left
+            .as_str()
+            .unwrap_or_default()
+            .cmp(right.as_str().unwrap_or_default()),
     }
 }
 
@@ -12695,6 +12833,189 @@ mod tests {
                 .keep_alive_millis,
             120_000
         );
+    }
+
+    #[test]
+    fn search_transport_route_paginates_pit_with_shard_doc_search_after() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        let bindings = dev_transport_pit_bindings();
+        bindings
+            .contexts
+            .lock()
+            .expect("dev transport PIT contexts lock poisoned")
+            .clear();
+        bindings
+            .created_indices
+            .lock()
+            .expect("dev transport created indices lock poisoned")
+            .clear();
+        bindings
+            .documents
+            .lock()
+            .expect("dev transport documents lock poisoned")
+            .clear();
+        *bindings
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned") = serde_json::json!({
+            "indices": {
+                "logs-search-pit-page": {
+                    "settings": {
+                        "index": {
+                            "number_of_shards": "1"
+                        }
+                    }
+                }
+            }
+        });
+        bindings
+            .created_indices
+            .lock()
+            .expect("dev transport created indices lock poisoned")
+            .insert("logs-search-pit-page".to_string());
+
+        let pit_id = build_local_pit_id(701);
+        let pit_documents = (1..=3)
+            .map(|seq_no| {
+                (
+                    format!("logs-search-pit-page:doc-{seq_no}:"),
+                    StoredDocument {
+                        source: serde_json::json!({ "ordinal": seq_no }),
+                        version: 1,
+                        seq_no,
+                        primary_term: 1,
+                        routing: None,
+                        refreshed: true,
+                    },
+                )
+            })
+            .collect::<BTreeMap<_, _>>();
+        bindings
+            .contexts
+            .lock()
+            .expect("dev transport PIT contexts lock poisoned")
+            .insert(
+                pit_id.clone(),
+                PitContext {
+                    indices: vec!["logs-search-pit-page".to_string()],
+                    documents: pit_documents.clone(),
+                    keep_alive_millis: 60_000,
+                    expires_at_millis: transport_pit_expires_at_millis(now_epoch_ms(), 60_000),
+                    creation_time_millis: now_epoch_ms(),
+                },
+            );
+        {
+            let mut documents = bindings
+                .documents
+                .lock()
+                .expect("dev transport documents lock poisoned");
+            documents.extend(pit_documents);
+            documents.insert(
+                "logs-search-pit-page:doc-4:".to_string(),
+                StoredDocument {
+                    source: serde_json::json!({ "ordinal": 4 }),
+                    version: 1,
+                    seq_no: 4,
+                    primary_term: 1,
+                    routing: None,
+                    refreshed: true,
+                },
+            );
+        }
+
+        let first_page_request = os_transport::action::OpenSearchSearchRequestWire {
+            source: Some(os_transport::action::OpenSearchSearchSourceBuilderWire {
+                size: 2,
+                point_in_time: Some(os_transport::action::OpenSearchPointInTimeBuilderWire {
+                    id: pit_id.clone(),
+                    keep_alive: Some(os_transport::action::TimeValueWire::minutes(1)),
+                }),
+                sorts: Some(vec![
+                    os_transport::action::OpenSearchSortBuilderWire::ShardDoc(
+                        os_transport::action::OpenSearchShardDocSortBuilderWire {
+                            order: os_transport::action::OpenSearchSortOrderWire::Asc,
+                        },
+                    ),
+                ]),
+                ..os_transport::action::OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..os_transport::action::OpenSearchSearchRequestWire::default()
+        };
+        let frame = os_transport::action::build_opensearch_search_request_message(
+            307,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &first_page_request,
+        )
+        .unwrap();
+        assert!(search_request_supports_local_execution_subset(&frame[6..]));
+        let response =
+            build_local_search_response(307, OPENSEARCH_3_7_0_TRANSPORT.id() as u32, &frame[6..]);
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected first PIT page response message");
+        };
+        let first_page = os_transport::action::read_opensearch_search_response_message(&message)
+            .expect("first PIT page response");
+        assert_eq!(first_page.total_hits, Some(3));
+        assert_eq!(
+            first_page
+                .hits
+                .iter()
+                .map(|hit| hit.id.as_deref().unwrap())
+                .collect::<Vec<_>>(),
+            vec!["doc-1", "doc-2"]
+        );
+        assert_eq!(first_page.hits[0].sort_values, vec![serde_json::json!(1)]);
+        assert_eq!(first_page.hits[1].sort_values, vec![serde_json::json!(2)]);
+
+        let second_page_request = os_transport::action::OpenSearchSearchRequestWire {
+            source: Some(os_transport::action::OpenSearchSearchSourceBuilderWire {
+                size: 2,
+                search_after: Some(first_page.hits[1].sort_values.clone()),
+                point_in_time: Some(os_transport::action::OpenSearchPointInTimeBuilderWire {
+                    id: pit_id.clone(),
+                    keep_alive: Some(os_transport::action::TimeValueWire::minutes(1)),
+                }),
+                sorts: Some(vec![
+                    os_transport::action::OpenSearchSortBuilderWire::ShardDoc(
+                        os_transport::action::OpenSearchShardDocSortBuilderWire {
+                            order: os_transport::action::OpenSearchSortOrderWire::Asc,
+                        },
+                    ),
+                ]),
+                ..os_transport::action::OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..os_transport::action::OpenSearchSearchRequestWire::default()
+        };
+        let frame = os_transport::action::build_opensearch_search_request_message(
+            308,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &second_page_request,
+        )
+        .unwrap();
+        assert!(search_request_supports_local_execution_subset(&frame[6..]));
+        let response =
+            build_local_search_response(308, OPENSEARCH_3_7_0_TRANSPORT.id() as u32, &frame[6..]);
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected second PIT page response message");
+        };
+        let second_page = os_transport::action::read_opensearch_search_response_message(&message)
+            .expect("second PIT page response");
+        assert_eq!(second_page.total_hits, Some(1));
+        assert_eq!(second_page.hits.len(), 1);
+        assert_eq!(second_page.hits[0].id.as_deref(), Some("doc-3"));
+        assert_eq!(second_page.hits[0].sort_values, vec![serde_json::json!(3)]);
     }
 
     #[test]
