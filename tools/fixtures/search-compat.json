@@ -43,6 +43,32 @@
           "knn_vector",
           "innerproduct"
         ]
+      },
+      {
+        "index": "search-after-compat",
+        "features": [
+          "single_shard",
+          "no_replicas",
+          "keyword",
+          "long"
+        ]
+      },
+      {
+        "index": "sort-unmapped-a",
+        "features": [
+          "single_shard",
+          "no_replicas",
+          "keyword",
+          "long"
+        ]
+      },
+      {
+        "index": "sort-unmapped-b",
+        "features": [
+          "single_shard",
+          "no_replicas",
+          "keyword"
+        ]
       }
     ],
     "mappings": [
@@ -81,6 +107,27 @@
           "title": "text",
           "category": "keyword",
           "embedding": "knn_vector:3:innerproduct"
+        }
+      },
+      {
+        "index": "search-after-compat",
+        "fields": {
+          "foo": "keyword",
+          "age": "long",
+          "rank_id": "long"
+        }
+      },
+      {
+        "index": "sort-unmapped-a",
+        "fields": {
+          "tenant": "keyword",
+          "rank": "long"
+        }
+      },
+      {
+        "index": "sort-unmapped-b",
+        "fields": {
+          "tenant": "keyword"
         }
       }
     ],
@@ -143,6 +190,27 @@
           "vec-b",
           "vec-c"
         ]
+      },
+      {
+        "index": "search-after-compat",
+        "ids": [
+          "1",
+          "42",
+          "172",
+          "missing-age"
+        ]
+      },
+      {
+        "index": "sort-unmapped-a",
+        "ids": [
+          "doc-a"
+        ]
+      },
+      {
+        "index": "sort-unmapped-b",
+        "ids": [
+          "doc-b"
+        ]
       }
     ],
     "bulk_payloads": [
@@ -185,6 +253,33 @@
           "vec-a",
           "vec-b",
           "vec-c"
+        ]
+      },
+      {
+        "name": "search_after_bulk",
+        "index": "search-after-compat",
+        "format": "application/x-ndjson index actions with explicit _id values",
+        "document_ids": [
+          "1",
+          "42",
+          "172",
+          "missing-age"
+        ]
+      },
+      {
+        "name": "sort_unmapped_a_bulk",
+        "index": "sort-unmapped-a",
+        "format": "application/x-ndjson index actions with explicit _id values",
+        "document_ids": [
+          "doc-a"
+        ]
+      },
+      {
+        "name": "sort_unmapped_b_bulk",
+        "index": "sort-unmapped-b",
+        "format": "application/x-ndjson index actions with explicit _id values",
+        "document_ids": [
+          "doc-b"
         ]
       }
     ],
@@ -471,6 +566,69 @@
           }
         }
       }
+    },
+    {
+      "name": "search-after-compat",
+      "body": {
+        "settings": {
+          "index": {
+            "number_of_shards": 1,
+            "number_of_replicas": 0
+          }
+        },
+        "mappings": {
+          "properties": {
+            "foo": {
+              "type": "keyword"
+            },
+            "age": {
+              "type": "long"
+            },
+            "rank_id": {
+              "type": "long"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "sort-unmapped-a",
+      "body": {
+        "settings": {
+          "index": {
+            "number_of_shards": 1,
+            "number_of_replicas": 0
+          }
+        },
+        "mappings": {
+          "properties": {
+            "tenant": {
+              "type": "keyword"
+            },
+            "rank": {
+              "type": "long"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "sort-unmapped-b",
+      "body": {
+        "settings": {
+          "index": {
+            "number_of_shards": 1,
+            "number_of_replicas": 0
+          }
+        },
+        "mappings": {
+          "properties": {
+            "tenant": {
+              "type": "keyword"
+            }
+          }
+        }
+      }
     }
   ],
   "aliases": [
@@ -729,6 +887,65 @@
               1.0,
               0.0
             ]
+          }
+        }
+      ]
+    },
+    {
+      "index": "search-after-compat",
+      "documents": [
+        {
+          "_id": "1",
+          "_source": {
+            "foo": "bar",
+            "age": 18,
+            "rank_id": 1
+          }
+        },
+        {
+          "_id": "42",
+          "_source": {
+            "foo": "bar",
+            "age": 18,
+            "rank_id": 42
+          }
+        },
+        {
+          "_id": "172",
+          "_source": {
+            "foo": "bar",
+            "age": 24,
+            "rank_id": 172
+          }
+        },
+        {
+          "_id": "missing-age",
+          "_source": {
+            "foo": "bar",
+            "rank_id": 999
+          }
+        }
+      ]
+    },
+    {
+      "index": "sort-unmapped-a",
+      "documents": [
+        {
+          "_id": "doc-a",
+          "_source": {
+            "tenant": "tenant-a",
+            "rank": 10
+          }
+        }
+      ]
+    },
+    {
+      "index": "sort-unmapped-b",
+      "documents": [
+        {
+          "_id": "doc-b",
+          "_source": {
+            "tenant": "tenant-b"
           }
         }
       ]
@@ -7523,6 +7740,419 @@
       "extract": "search_hit_metadata",
       "family": "fetch",
       "description": "[fetch] seq metadata query param overrides body without changing version search"
+    },
+    {
+      "name": "min_score_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "min_score": 1.5
+      },
+      "extract": "search_hits",
+      "family": "ranking",
+      "description": "[ranking] top-level min_score search"
+    },
+    {
+      "name": "min_score_numeric_string_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "min_score": "1.5"
+      },
+      "extract": "search_hits",
+      "family": "ranking",
+      "description": "[ranking] top-level min_score numeric string coerces like OpenSearch"
+    },
+    {
+      "name": "collapse_with_search_after_same_sort_field_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "sort": [
+          {
+            "service": {
+              "order": "asc"
+            }
+          }
+        ],
+        "collapse": {
+          "field": "service"
+        },
+        "search_after": [
+          "catalog"
+        ]
+      },
+      "extract": "search_hits",
+      "family": "ranking",
+      "description": "[ranking] collapse with search_after is allowed when sort field matches collapse field"
+    },
+    {
+      "name": "collapse_with_search_after_different_sort_field_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "sort": [
+          {
+            "ts": {
+              "order": "asc"
+            }
+          }
+        ],
+        "collapse": {
+          "field": "service"
+        },
+        "search_after": [
+          "2026-04-22T00:00:00Z"
+        ]
+      },
+      "expected_status": 500,
+      "expected_steelsearch_status": 500,
+      "extract": "search_error_root_cause",
+      "family": "ranking",
+      "description": "[ranking] collapse with search_after requires matching sort and collapse fields"
+    },
+    {
+      "name": "search_after_multi_sort_search",
+      "area": "search",
+      "extract": "search_hits",
+      "steps": [
+        {
+          "name": "search-after-first-page",
+          "method": "POST",
+          "path": "/search-after-compat/_search",
+          "body": {
+            "query": {
+              "term": {
+                "foo": "bar"
+              }
+            },
+            "sort": [
+              {
+                "age": {
+                  "order": "desc"
+                }
+              },
+              {
+                "rank_id": {
+                  "order": "desc"
+                }
+              }
+            ],
+            "size": 1
+          },
+          "expected_status": 200,
+          "extract": "search_hits",
+          "save": {
+            "search_after": "body.hits.hits.0.sort"
+          }
+        },
+        {
+          "name": "search-after-second-page",
+          "method": "POST",
+          "path": "/search-after-compat/_search",
+          "body": {
+            "query": {
+              "term": {
+                "foo": "bar"
+              }
+            },
+            "sort": [
+              {
+                "age": {
+                  "order": "desc"
+                }
+              },
+              {
+                "rank_id": {
+                  "order": "desc"
+                }
+              }
+            ],
+            "search_after": "${saved.search_after}",
+            "size": 1
+          },
+          "expected_status": 200,
+          "extract": "search_hits"
+        }
+      ],
+      "family": "ranking",
+      "description": "[ranking] multi-sort search_after follows OpenSearch tie-break pagination"
+    },
+    {
+      "name": "search_after_missing_sort_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/search-after-compat/_search",
+      "body": {
+        "query": {
+          "term": {
+            "foo": "bar"
+          }
+        },
+        "sort": [
+          {
+            "age": {
+              "order": "asc",
+              "missing": "_last"
+            }
+          }
+        ],
+        "search_after": [
+          100
+        ],
+        "size": 5
+      },
+      "expected_status": 200,
+      "extract": "search_hits",
+      "family": "ranking",
+      "description": "[ranking] search_after with missing _last sort follows OpenSearch"
+    },
+    {
+      "name": "sort_unmapped_without_type_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/sort-unmapped-*/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "sort": [
+          {
+            "rank": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "expected_status": 200,
+      "extract": "search_summary",
+      "family": "ranking",
+      "description": "[ranking] sort on unmapped wildcard target without unmapped_type returns partial shard failure like OpenSearch"
+    },
+    {
+      "name": "sort_unmapped_with_type_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/sort-unmapped-*/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "sort": [
+          {
+            "rank": {
+              "order": "asc",
+              "unmapped_type": "long"
+            }
+          }
+        ],
+        "size": 2
+      },
+      "expected_status": 200,
+      "extract": "search_hits",
+      "family": "ranking",
+      "description": "[ranking] sort with unmapped_type admits wildcard targets with unmapped fields"
+    },
+    {
+      "name": "result_window_too_large_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "from": 10000,
+        "size": 1
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "ranking",
+      "description": "[ranking] from + size is bounded by index.max_result_window"
+    },
+    {
+      "name": "search_after_without_sort_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "search_after": [
+          "2026-04-22T00:00:00Z"
+        ]
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "ranking",
+      "description": "[ranking] search_after without sort is rejected"
+    },
+    {
+      "name": "search_after_empty_array_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "sort": [
+          {
+            "ts": {
+              "order": "asc"
+            }
+          }
+        ],
+        "search_after": []
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "ranking",
+      "description": "[ranking] empty search_after array is rejected like OpenSearch"
+    },
+    {
+      "name": "search_after_non_array_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "sort": [
+          {
+            "ts": {
+              "order": "asc"
+            }
+          }
+        ],
+        "search_after": "2026-04-22T00:00:00Z"
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "ranking",
+      "description": "[ranking] non-array search_after is rejected like OpenSearch"
+    },
+    {
+      "name": "search_after_with_from_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search?from=1",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "sort": [
+          {
+            "ts": {
+              "order": "asc"
+            }
+          }
+        ],
+        "search_after": [
+          "2026-04-22T00:00:00Z"
+        ]
+      },
+      "expected_status": 500,
+      "expected_steelsearch_status": 500,
+      "extract": "search_error_root_cause",
+      "family": "ranking",
+      "description": "[ranking] search_after with from is rejected"
+    },
+    {
+      "name": "query_param_paginated_search_window",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search?from=2&size=1",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "sort": [
+          {
+            "ts": {
+              "order": "asc"
+            }
+          }
+        ],
+        "from": 0,
+        "size": 3
+      },
+      "extract": "search_hits",
+      "family": "ranking",
+      "description": "[ranking] query-param paginated search window overrides body"
+    },
+    {
+      "name": "numeric_string_paginated_search_window",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "sort": [
+          {
+            "ts": {
+              "order": "asc"
+            }
+          }
+        ],
+        "from": "1",
+        "size": "2"
+      },
+      "extract": "search_hits",
+      "family": "ranking",
+      "description": "[ranking] body from and size numeric strings coerce like OpenSearch"
+    },
+    {
+      "name": "negative_from_body_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "from": -1
+      },
+      "expected_status": 400,
+      "extract": "search_error",
+      "family": "ranking",
+      "description": "[ranking] body from cannot be negative"
+    },
+    {
+      "name": "negative_size_body_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "size": -1
+      },
+      "expected_status": 400,
+      "extract": "search_error",
+      "family": "ranking",
+      "description": "[ranking] body size cannot be negative"
     },
     {
       "name": "simple_query_string_search",
