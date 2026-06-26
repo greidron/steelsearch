@@ -5355,6 +5355,12 @@ fn local_transport_search_response_from_request(
     let include_seq_no_and_primary_term = request_source
         .and_then(|source| source.seq_no_and_primary_term)
         .unwrap_or(false);
+    let include_explanation = request_source
+        .and_then(|source| source.explain)
+        .unwrap_or(false);
+    let include_named_query_scores = request_source
+        .and_then(|source| source.include_named_queries_score)
+        .unwrap_or(false);
     let mut terminated_early = false;
     let mut matched = Vec::new();
     for (key, record) in documents.iter() {
@@ -5425,6 +5431,14 @@ fn local_transport_search_response_from_request(
                 })
                 .unwrap_or_default();
             let fields = local_transport_hit_fields(&source, request_source);
+            let explanation =
+                include_explanation.then(|| local_transport_hit_explanation(id.as_str(), query));
+            let matched_queries = local_transport_matched_queries(
+                &source,
+                id.as_str(),
+                query,
+                include_named_query_scores,
+            );
             let source = local_transport_filter_hit_source(&source, fetch_source);
             os_transport::action::OpenSearchSearchHitWire {
                 id: Some(id),
@@ -5442,12 +5456,12 @@ fn local_transport_search_response_from_request(
                     0
                 },
                 source,
-                explanation: None,
+                explanation,
                 fields,
                 meta_fields: BTreeMap::new(),
                 highlight_fields: BTreeMap::new(),
                 sort_values,
-                matched_queries: BTreeMap::new(),
+                matched_queries,
                 shard_target: os_transport::action::OpenSearchSearchShardTargetWire::from_hit_index(
                     &index,
                 ),
@@ -5573,6 +5587,219 @@ fn local_transport_total_hits(
         Some(-1) => (None, 0),
         Some(limit) if actual_total_hits > i64::from(limit) => (Some(i64::from(limit)), 1),
         _ => (Some(actual_total_hits), 0),
+    }
+}
+
+fn local_transport_hit_explanation(
+    id: &str,
+    query: Option<&os_transport::action::OpenSearchQueryBuilderWire>,
+) -> Value {
+    serde_json::json!({
+        "value": 1.0,
+        "description": match query {
+            Some(_) => format!("local transport score for document [{id}]"),
+            None => format!("local transport match_all score for document [{id}]"),
+        },
+        "details": []
+    })
+}
+
+fn local_transport_matched_queries(
+    source: &Value,
+    id: &str,
+    query: Option<&os_transport::action::OpenSearchQueryBuilderWire>,
+    include_scores: bool,
+) -> BTreeMap<String, f32> {
+    let mut matched = BTreeMap::new();
+    if let Some(query) = query {
+        collect_local_transport_matched_queries(source, id, query, include_scores, &mut matched);
+    }
+    matched
+}
+
+fn collect_local_transport_matched_queries(
+    source: &Value,
+    id: &str,
+    query: &os_transport::action::OpenSearchQueryBuilderWire,
+    include_scores: bool,
+    matched: &mut BTreeMap<String, f32>,
+) {
+    if !local_transport_query_matches(source, id, Some(query)) {
+        return;
+    }
+    if let Some(query_name) = local_transport_query_name(query) {
+        matched.insert(
+            query_name.to_string(),
+            if include_scores { 1.0 } else { f32::NAN },
+        );
+    }
+    for child in local_transport_query_children(query) {
+        collect_local_transport_matched_queries(source, id, child, include_scores, matched);
+    }
+}
+
+fn local_transport_query_name(
+    query: &os_transport::action::OpenSearchQueryBuilderWire,
+) -> Option<&str> {
+    match query {
+        os_transport::action::OpenSearchQueryBuilderWire::Bool(query) => {
+            query.query_name.as_deref()
+        }
+        os_transport::action::OpenSearchQueryBuilderWire::Boosting(query) => {
+            query.query_name.as_deref()
+        }
+        os_transport::action::OpenSearchQueryBuilderWire::Common(query) => {
+            query.query_name.as_deref()
+        }
+        os_transport::action::OpenSearchQueryBuilderWire::CombinedFields(query) => {
+            query.query_name.as_deref()
+        }
+        os_transport::action::OpenSearchQueryBuilderWire::ConstantScore(query) => {
+            query.query_name.as_deref()
+        }
+        os_transport::action::OpenSearchQueryBuilderWire::DisMax(query) => {
+            query.query_name.as_deref()
+        }
+        os_transport::action::OpenSearchQueryBuilderWire::Exists(query) => {
+            query.query_name.as_deref()
+        }
+        os_transport::action::OpenSearchQueryBuilderWire::FieldMaskingSpan(query) => {
+            query.query_name.as_deref()
+        }
+        os_transport::action::OpenSearchQueryBuilderWire::FunctionScore(query) => {
+            query.query_name.as_deref()
+        }
+        os_transport::action::OpenSearchQueryBuilderWire::Fuzzy(query) => {
+            query.query_name.as_deref()
+        }
+        os_transport::action::OpenSearchQueryBuilderWire::GeoDistance(query) => {
+            query.query_name.as_deref()
+        }
+        os_transport::action::OpenSearchQueryBuilderWire::Ids(query) => query.query_name.as_deref(),
+        os_transport::action::OpenSearchQueryBuilderWire::MatchAll(query) => {
+            query.query_name.as_deref()
+        }
+        os_transport::action::OpenSearchQueryBuilderWire::Match(query) => {
+            query.query_name.as_deref()
+        }
+        os_transport::action::OpenSearchQueryBuilderWire::MatchBoolPrefix(query) => {
+            query.query_name.as_deref()
+        }
+        os_transport::action::OpenSearchQueryBuilderWire::MatchNone(query) => {
+            query.query_name.as_deref()
+        }
+        os_transport::action::OpenSearchQueryBuilderWire::MatchPhrase(query) => {
+            query.query_name.as_deref()
+        }
+        os_transport::action::OpenSearchQueryBuilderWire::MatchPhrasePrefix(query) => {
+            query.query_name.as_deref()
+        }
+        os_transport::action::OpenSearchQueryBuilderWire::MoreLikeThis(query) => {
+            query.query_name.as_deref()
+        }
+        os_transport::action::OpenSearchQueryBuilderWire::MultiMatch(query) => {
+            query.query_name.as_deref()
+        }
+        os_transport::action::OpenSearchQueryBuilderWire::Nested(query) => {
+            query.query_name.as_deref()
+        }
+        os_transport::action::OpenSearchQueryBuilderWire::Prefix(query) => {
+            query.query_name.as_deref()
+        }
+        os_transport::action::OpenSearchQueryBuilderWire::QueryString(query) => {
+            query.query_name.as_deref()
+        }
+        os_transport::action::OpenSearchQueryBuilderWire::Range(query) => {
+            query.query_name.as_deref()
+        }
+        os_transport::action::OpenSearchQueryBuilderWire::Regexp(query) => {
+            query.query_name.as_deref()
+        }
+        os_transport::action::OpenSearchQueryBuilderWire::ScriptScore(query) => {
+            query.query_name.as_deref()
+        }
+        os_transport::action::OpenSearchQueryBuilderWire::SimpleQueryString(query) => {
+            query.query_name.as_deref()
+        }
+        os_transport::action::OpenSearchQueryBuilderWire::SpanMulti(query) => {
+            query.query_name.as_deref()
+        }
+        os_transport::action::OpenSearchQueryBuilderWire::SpanNear(query) => {
+            query.query_name.as_deref()
+        }
+        os_transport::action::OpenSearchQueryBuilderWire::SpanOr(query) => {
+            query.query_name.as_deref()
+        }
+        os_transport::action::OpenSearchQueryBuilderWire::SpanTerm(query) => {
+            query.query_name.as_deref()
+        }
+        os_transport::action::OpenSearchQueryBuilderWire::Term(query) => {
+            query.query_name.as_deref()
+        }
+        os_transport::action::OpenSearchQueryBuilderWire::Terms(query) => {
+            query.query_name.as_deref()
+        }
+        os_transport::action::OpenSearchQueryBuilderWire::TermsSet(query) => {
+            query.query_name.as_deref()
+        }
+        os_transport::action::OpenSearchQueryBuilderWire::Wildcard(query) => {
+            query.query_name.as_deref()
+        }
+        os_transport::action::OpenSearchQueryBuilderWire::Wrapper(query) => {
+            query.query_name.as_deref()
+        }
+    }
+}
+
+fn local_transport_query_children(
+    query: &os_transport::action::OpenSearchQueryBuilderWire,
+) -> Vec<&os_transport::action::OpenSearchQueryBuilderWire> {
+    match query {
+        os_transport::action::OpenSearchQueryBuilderWire::Bool(query) => query
+            .must
+            .iter()
+            .chain(query.must_not.iter())
+            .chain(query.should.iter())
+            .chain(query.filter.iter())
+            .collect(),
+        os_transport::action::OpenSearchQueryBuilderWire::Boosting(query) => {
+            vec![query.positive.as_ref(), query.negative.as_ref()]
+        }
+        os_transport::action::OpenSearchQueryBuilderWire::ConstantScore(query) => {
+            vec![query.filter.as_ref()]
+        }
+        os_transport::action::OpenSearchQueryBuilderWire::DisMax(query) => {
+            query.queries.iter().collect()
+        }
+        os_transport::action::OpenSearchQueryBuilderWire::FieldMaskingSpan(query) => {
+            vec![query.query.as_ref()]
+        }
+        os_transport::action::OpenSearchQueryBuilderWire::FunctionScore(query) => {
+            let mut children = vec![query.query.as_ref()];
+            children.extend(
+                query
+                    .filter_functions
+                    .iter()
+                    .map(|function| function.filter.as_ref()),
+            );
+            children
+        }
+        os_transport::action::OpenSearchQueryBuilderWire::Nested(query) => {
+            vec![query.query.as_ref()]
+        }
+        os_transport::action::OpenSearchQueryBuilderWire::ScriptScore(query) => {
+            vec![query.query.as_ref()]
+        }
+        os_transport::action::OpenSearchQueryBuilderWire::SpanMulti(query) => {
+            vec![query.query.as_ref()]
+        }
+        os_transport::action::OpenSearchQueryBuilderWire::SpanNear(query) => {
+            query.clauses.iter().collect()
+        }
+        os_transport::action::OpenSearchQueryBuilderWire::SpanOr(query) => {
+            query.clauses.iter().collect()
+        }
+        _ => Vec::new(),
     }
 }
 
@@ -18329,6 +18556,8 @@ mod tests {
                         ignore_failure: false,
                     },
                 ]),
+                explain: Some(true),
+                include_named_queries_score: Some(true),
                 ..os_transport::action::OpenSearchSearchSourceBuilderWire::default()
             }),
             indices_options:
@@ -18391,6 +18620,39 @@ mod tests {
                 ("status".to_string(), vec![serde_json::json!("reader-pit")]),
                 ("tenant_copy".to_string(), vec![serde_json::json!("a")]),
             ])
+        );
+        assert_eq!(
+            search_response.hits[0]
+                .explanation
+                .as_ref()
+                .and_then(|explanation| explanation.get("value")),
+            Some(&serde_json::json!(1.0))
+        );
+        assert_eq!(
+            search_response.hits[0]
+                .explanation
+                .as_ref()
+                .and_then(|explanation| explanation.get("description"))
+                .and_then(serde_json::Value::as_str),
+            Some("local transport score for document [doc-1]")
+        );
+        assert_eq!(
+            search_response.hits[0]
+                .matched_queries
+                .get("reader-pit-dismax"),
+            Some(&1.0)
+        );
+        assert_eq!(
+            search_response.hits[0]
+                .matched_queries
+                .get("reader-pit-wrapper"),
+            Some(&1.0)
+        );
+        assert_eq!(
+            search_response.hits[0]
+                .matched_queries
+                .get("reader-pit-span-or"),
+            Some(&1.0)
         );
 
         let metadata_request = os_transport::action::OpenSearchSearchRequestWire {
