@@ -2352,6 +2352,11 @@ The create-PIT boundary covers:
   `SearchService.createPitReaderContext` and
   `SearchService.updatePitIdAndKeepAlive` boundaries before allocating or
   updating local PIT reader state.
+- local transport create-reader-context now verifies the target index and shard
+  against local created-index state or manifest shard metadata before
+  allocating a reader context, matching the OpenSearch
+  `indicesService.indexServiceSafe(...).getShard(...)` admission boundary for
+  the local-node subset.
 
 The indices-stats boundary covers:
 

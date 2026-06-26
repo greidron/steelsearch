@@ -5882,6 +5882,9 @@ fn build_local_create_reader_context_response(
     if time_value_wire_to_millis(&request.keep_alive) > DEV_TRANSPORT_MAX_PIT_KEEP_ALIVE_MILLIS {
         return build_empty_transport_response(request_id, header_version_id);
     }
+    if !create_reader_context_shard_exists(dev_transport_pit_bindings(), &request.shard_id) {
+        return build_empty_transport_response(request_id, header_version_id);
+    }
     let context_id = {
         let mut next_id = dev_transport_pit_bindings()
             .next_id
@@ -5908,6 +5911,9 @@ fn create_reader_context_request_supports_local_subset(body: &[u8]) -> bool {
             time_value_wire_to_millis(&request.keep_alive)
                 <= DEV_TRANSPORT_MAX_PIT_KEEP_ALIVE_MILLIS
         })
+        .filter(|request| {
+            create_reader_context_shard_exists(dev_transport_pit_bindings(), &request.shard_id)
+        })
         .and_then(|request| request.validate_supported_subset().ok())
         .is_some()
 }
@@ -5917,6 +5923,33 @@ fn decode_create_reader_context_request_from_transport_body(
 ) -> Option<os_transport::action::OpenSearchCreateReaderContextRequestWire> {
     let message = decode_transport_message_from_body(body)?;
     os_transport::action::read_opensearch_create_reader_context_request_message(&message).ok()
+}
+
+fn create_reader_context_shard_exists(
+    bindings: &DevTransportPitBindings,
+    shard_id: &os_transport::action::OpenSearchShardIdWire,
+) -> bool {
+    let manifest = bindings
+        .metadata_manifest
+        .lock()
+        .expect("dev transport metadata manifest lock poisoned");
+    if let Some(index_body) = manifest["indices"].get(&shard_id.index_name) {
+        let settings = &index_body["settings"];
+        let shard_count = settings["index"]["number_of_shards"]
+            .as_str()
+            .or_else(|| settings["number_of_shards"].as_str())
+            .and_then(|value| value.parse::<i32>().ok())
+            .unwrap_or(1);
+        return shard_id.shard_id >= 0 && shard_id.shard_id < shard_count;
+    }
+    drop(manifest);
+
+    bindings
+        .created_indices
+        .lock()
+        .expect("dev transport created indices lock poisoned")
+        .contains(&shard_id.index_name)
+        && shard_id.shard_id == 0
 }
 
 fn build_local_update_reader_context_response(
@@ -15296,6 +15329,16 @@ mod tests {
             .lock()
             .expect("dev transport PIT contexts lock poisoned")
             .clear();
+        bindings
+            .created_indices
+            .lock()
+            .expect("dev transport created indices lock poisoned")
+            .clear();
+        bindings
+            .created_indices
+            .lock()
+            .expect("dev transport created indices lock poisoned")
+            .insert("logs-reader-pit".to_string());
         *bindings
             .next_id
             .lock()
@@ -15473,6 +15516,95 @@ mod tests {
     }
 
     #[test]
+    fn create_reader_context_transport_route_rejects_missing_index_or_shard() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        let bindings = dev_transport_pit_bindings();
+        bindings
+            .created_indices
+            .lock()
+            .expect("dev transport created indices lock poisoned")
+            .clear();
+        *bindings
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned") = serde_json::json!({
+            "indices": {
+                "logs-reader-manifest": {
+                    "settings": {
+                        "index": {
+                            "number_of_shards": "2"
+                        }
+                    }
+                }
+            }
+        });
+        *bindings
+            .next_id
+            .lock()
+            .expect("dev transport next PIT id lock poisoned") = 17;
+
+        for (request_id, shard_id) in [
+            (
+                299,
+                os_transport::action::OpenSearchShardIdWire {
+                    index_name: "logs-reader-missing".to_string(),
+                    index_uuid: "uuid-reader-missing".to_string(),
+                    shard_id: 0,
+                },
+            ),
+            (
+                300,
+                os_transport::action::OpenSearchShardIdWire {
+                    index_name: "logs-reader-manifest".to_string(),
+                    index_uuid: "uuid-reader-manifest".to_string(),
+                    shard_id: 2,
+                },
+            ),
+        ] {
+            let request = os_transport::action::OpenSearchCreateReaderContextRequestWire::new(
+                shard_id,
+                os_transport::action::TimeValueWire::minutes(1),
+            );
+            let frame =
+                os_transport::action::build_opensearch_create_reader_context_request_message(
+                    request_id,
+                    OPENSEARCH_3_7_0_TRANSPORT,
+                    &request,
+                )
+                .unwrap();
+            assert!(!create_reader_context_request_supports_local_subset(
+                &frame[6..]
+            ));
+
+            let response = build_local_create_reader_context_response(
+                request_id,
+                OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+                &frame[6..],
+            );
+            let mut frame = BytesMut::from(&response[..]);
+            let os_transport::frame::DecodedFrame::Message(message) =
+                os_transport::frame::decode_frame(&mut frame)
+                    .unwrap()
+                    .unwrap()
+            else {
+                panic!("expected create-reader-context fallback response frame");
+            };
+            assert_eq!(message.request_id, request_id);
+            assert!(message.body.is_empty());
+        }
+
+        assert_eq!(
+            *bindings
+                .next_id
+                .lock()
+                .expect("dev transport next PIT id lock poisoned"),
+            17
+        );
+    }
+
+    #[test]
     fn create_reader_context_transport_route_rejects_keep_alive_above_default_max() {
         let _lock = dev_transport_pit_test_lock()
             .lock()
@@ -15483,6 +15615,16 @@ mod tests {
             .lock()
             .expect("dev transport PIT contexts lock poisoned")
             .clear();
+        bindings
+            .created_indices
+            .lock()
+            .expect("dev transport created indices lock poisoned")
+            .clear();
+        bindings
+            .created_indices
+            .lock()
+            .expect("dev transport created indices lock poisoned")
+            .insert("logs-reader-too-long".to_string());
         *bindings
             .next_id
             .lock()
