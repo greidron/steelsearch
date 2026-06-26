@@ -3389,6 +3389,153 @@
       "description": "[fetch] source filtering search"
     },
     {
+      "name": "validate_query_empty_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/_validate/query",
+      "body": {
+        "query": {}
+      },
+      "extract": "validate_query_result",
+      "family": "failure-path",
+      "description": "[failure-path] validate query empty body query"
+    },
+    {
+      "name": "validate_query_target_rewrite_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_validate/query?rewrite=true",
+      "body": {
+        "query": {
+          "term": {
+            "service": "catalog"
+          }
+        }
+      },
+      "extract": "validate_query_semantic",
+      "family": "lexical",
+      "description": "[lexical] validate query target rewrite explanation"
+    },
+    {
+      "name": "encoded_hyphen_index_path_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs%2Dcompat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "size": 0
+      },
+      "extract": "search_total",
+      "family": "lexical",
+      "description": "[lexical] search decodes encoded hyphen in index path like OpenSearch"
+    },
+    {
+      "name": "encoded_slash_index_path_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs%2Fcompat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        }
+      },
+      "expected_status": 404,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] search decodes encoded slash in index path errors like OpenSearch"
+    },
+    {
+      "name": "explain_query_param_overrides_body_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search?explain=false",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "explain": true,
+        "sort": [
+          {
+            "ts": {
+              "order": "asc"
+            }
+          }
+        ],
+        "size": 2
+      },
+      "extract": "search_explain",
+      "family": "lexical",
+      "description": "[lexical] explain query param overrides body search"
+    },
+    {
+      "name": "rank_eval_precision_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_rank_eval",
+      "body": {
+        "requests": [
+          {
+            "id": "catalog_query",
+            "request": {
+              "query": {
+                "term": {
+                  "service": "catalog"
+                }
+              }
+            },
+            "ratings": [
+              {
+                "_index": "logs-compat",
+                "_id": "log-3",
+                "rating": 1
+              }
+            ]
+          },
+          {
+            "id": "checkout_query",
+            "request": {
+              "query": {
+                "term": {
+                  "service": "checkout"
+                }
+              },
+              "sort": [
+                {
+                  "bytes": {
+                    "order": "asc"
+                  }
+                }
+              ]
+            },
+            "ratings": [
+              {
+                "_index": "logs-compat",
+                "_id": "log-1",
+                "rating": 1
+              },
+              {
+                "_index": "logs-compat",
+                "_id": "log-2",
+                "rating": 0
+              }
+            ]
+          }
+        ],
+        "metric": {
+          "precision": {
+            "ignore_unlabeled": true,
+            "k": 3,
+            "relevant_rating_threshold": 1
+          }
+        }
+      },
+      "extract": "rank_eval_precision",
+      "family": "lexical",
+      "description": "[lexical] rank_eval precision search"
+    },
+    {
       "name": "exists_query_search",
       "area": "search",
       "method": "POST",
