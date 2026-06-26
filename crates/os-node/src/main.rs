@@ -6068,7 +6068,11 @@ fn local_transport_query_matches(
                 )
             })
         }
-        _ => false,
+        Some(os_transport::action::OpenSearchQueryBuilderWire::Wrapper(wrapper)) => {
+            serde_json::from_slice::<Value>(wrapper.source.as_ref())
+                .ok()
+                .is_some_and(|query| local_transport_json_query_matches(source, id, &query))
+        }
     }
 }
 
@@ -6180,6 +6184,198 @@ fn local_transport_wildcard_query_matches(
     } else {
         wildcard_match(pattern, value)
     }
+}
+
+fn local_transport_json_query_matches(source: &Value, id: &str, query: &Value) -> bool {
+    if let Some(inner) = query.get("query") {
+        return local_transport_json_query_matches(source, id, inner);
+    }
+    if query.get("match_all").is_some() {
+        return true;
+    }
+    if query.get("match_none").is_some() {
+        return false;
+    }
+    if let Some(bool_query) = query.get("bool").and_then(Value::as_object) {
+        return local_transport_json_bool_query_matches(source, id, bool_query);
+    }
+    if let Some(term_query) = query.get("term").and_then(Value::as_object) {
+        return local_transport_json_term_query_matches(source, id, term_query);
+    }
+    if let Some(terms_query) = query.get("terms").and_then(Value::as_object) {
+        return local_transport_json_terms_query_matches(source, id, terms_query);
+    }
+    if let Some(exists_query) = query.get("exists").and_then(Value::as_object) {
+        let field = exists_query
+            .get("field")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        return field == "_id" || lookup_transport_source_value(source, field).is_some();
+    }
+    if let Some(ids_query) = query.get("ids").and_then(Value::as_object) {
+        return ids_query
+            .get("values")
+            .or_else(|| ids_query.get("ids"))
+            .and_then(Value::as_array)
+            .is_some_and(|values| {
+                values
+                    .iter()
+                    .any(|candidate| candidate.as_str() == Some(id))
+            });
+    }
+    if let Some(prefix_query) = query.get("prefix").and_then(Value::as_object) {
+        return local_transport_json_prefix_query_matches(source, id, prefix_query);
+    }
+    if let Some(wildcard_query) = query.get("wildcard").and_then(Value::as_object) {
+        return local_transport_json_wildcard_query_matches(source, id, wildcard_query);
+    }
+    false
+}
+
+fn local_transport_json_bool_query_matches(
+    source: &Value,
+    id: &str,
+    query: &serde_json::Map<String, Value>,
+) -> bool {
+    if json_query_clauses(query.get("must"))
+        .into_iter()
+        .any(|clause| !local_transport_json_query_matches(source, id, clause))
+    {
+        return false;
+    }
+    if json_query_clauses(query.get("filter"))
+        .into_iter()
+        .any(|clause| !local_transport_json_query_matches(source, id, clause))
+    {
+        return false;
+    }
+    if json_query_clauses(query.get("must_not"))
+        .into_iter()
+        .any(|clause| local_transport_json_query_matches(source, id, clause))
+    {
+        return false;
+    }
+    let should = json_query_clauses(query.get("should"));
+    if should.is_empty() {
+        return true;
+    }
+    let should_matches = should
+        .iter()
+        .filter(|clause| local_transport_json_query_matches(source, id, clause))
+        .count();
+    let minimum_should_match = query
+        .get("minimum_should_match")
+        .and_then(|value| {
+            value
+                .as_u64()
+                .or_else(|| value.as_str().and_then(|text| text.parse::<u64>().ok()))
+        })
+        .and_then(|value| usize::try_from(value).ok())
+        .unwrap_or_else(|| {
+            usize::from(
+                !should.is_empty()
+                    && json_query_clauses(query.get("must")).is_empty()
+                    && json_query_clauses(query.get("filter")).is_empty(),
+            )
+        });
+    should_matches >= minimum_should_match.min(should.len())
+}
+
+fn json_query_clauses(value: Option<&Value>) -> Vec<&Value> {
+    match value {
+        Some(Value::Array(values)) => values.iter().collect(),
+        Some(value) => vec![value],
+        None => Vec::new(),
+    }
+}
+
+fn local_transport_json_term_query_matches(
+    source: &Value,
+    id: &str,
+    query: &serde_json::Map<String, Value>,
+) -> bool {
+    let Some((field, expected)) = query.iter().next() else {
+        return false;
+    };
+    let expected = expected.get("value").unwrap_or(expected);
+    if field == "_id" {
+        return value_matches_transport_term(&Value::String(id.to_string()), expected);
+    }
+    lookup_transport_source_value(source, field)
+        .is_some_and(|value| value_matches_transport_term(value, expected))
+}
+
+fn local_transport_json_terms_query_matches(
+    source: &Value,
+    id: &str,
+    query: &serde_json::Map<String, Value>,
+) -> bool {
+    let Some((field, expected)) = query.iter().next() else {
+        return false;
+    };
+    let Some(values) = expected
+        .as_array()
+        .or_else(|| expected.get("terms").and_then(Value::as_array))
+    else {
+        return false;
+    };
+    if field == "_id" {
+        let actual = Value::String(id.to_string());
+        return values
+            .iter()
+            .any(|expected| value_matches_transport_term(&actual, expected));
+    }
+    lookup_transport_source_value(source, field).is_some_and(|actual| {
+        values
+            .iter()
+            .any(|expected| value_matches_transport_term(actual, expected))
+    })
+}
+
+fn local_transport_json_prefix_query_matches(
+    source: &Value,
+    id: &str,
+    query: &serde_json::Map<String, Value>,
+) -> bool {
+    let Some((field, expected)) = query.iter().next() else {
+        return false;
+    };
+    let expected = expected
+        .as_str()
+        .or_else(|| expected.get("value").and_then(Value::as_str))
+        .unwrap_or_default();
+    let value = if field == "_id" {
+        Some(id)
+    } else {
+        lookup_transport_source_value(source, field).and_then(Value::as_str)
+    };
+    value.is_some_and(|value| local_transport_string_has_prefix(value, expected, false))
+}
+
+fn local_transport_json_wildcard_query_matches(
+    source: &Value,
+    id: &str,
+    query: &serde_json::Map<String, Value>,
+) -> bool {
+    let Some((field, expected)) = query.iter().next() else {
+        return false;
+    };
+    let expected_value = expected
+        .as_str()
+        .or_else(|| expected.get("value").and_then(Value::as_str))
+        .unwrap_or_default();
+    let case_insensitive = expected
+        .get("case_insensitive")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let value = if field == "_id" {
+        Some(id)
+    } else {
+        lookup_transport_source_value(source, field).and_then(Value::as_str)
+    };
+    value.is_some_and(|value| {
+        local_transport_wildcard_query_matches(value, expected_value, case_insensitive)
+    })
 }
 
 fn local_transport_regexp_query_matches(
@@ -16861,6 +17057,13 @@ mod tests {
                                                                                     ),
                                                                                 ),
                                                                                 field_name: "category.masked".to_string(),
+                                                                            },
+                                                                        ),
+                                                                        os_transport::action::OpenSearchQueryBuilderWire::Wrapper(
+                                                                            os_transport::action::OpenSearchWrapperQueryBuilderWire {
+                                                                                boost: 1.0,
+                                                                                query_name: Some("reader-pit-wrapper".to_string()),
+                                                                                source: Bytes::from_static(br#"{"term":{"tenant":"a"}}"#),
                                                                             },
                                                                         ),
                                                                         os_transport::action::OpenSearchQueryBuilderWire::Fuzzy(
