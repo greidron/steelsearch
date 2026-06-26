@@ -9759,8 +9759,11 @@ impl SteelNode {
             let keep_alive_millis = match keep_alive {
                 Some(keep_alive) => match parse_time_value_millis(keep_alive) {
                     Some(millis) => {
-                        if let Some(response) = validate_pit_keep_alive_limit(millis) {
-                            return response;
+                        if millis > DEFAULT_MAX_PIT_KEEP_ALIVE_MILLIS {
+                            return pit_search_keep_alive_limit_response(
+                                millis,
+                                self.pit_context_first_index(pit_id),
+                            );
                         }
                         if millis == 0 {
                             None
@@ -11033,6 +11036,14 @@ impl SteelNode {
             .lock()
             .expect("pit contexts lock poisoned")
             .remove(pit_id);
+    }
+
+    fn pit_context_first_index(&self, pit_id: &str) -> Option<String> {
+        self.pit_contexts
+            .lock()
+            .expect("pit contexts lock poisoned")
+            .get(pit_id)
+            .and_then(|context| context.indices.first().cloned())
     }
 
     fn handle_close_point_in_time_route(&self, request: &RestRequest) -> RestResponse {
@@ -24920,20 +24931,73 @@ fn validate_pit_keep_alive_limit(keep_alive_millis: u64) -> Option<RestResponse>
     if keep_alive_millis <= DEFAULT_MAX_PIT_KEEP_ALIVE_MILLIS {
         return None;
     }
+    let reason = pit_keep_alive_limit_reason(keep_alive_millis);
     Some(RestResponse::json(
         400,
         serde_json::json!({
             "error": {
                 "type": "illegal_argument_exception",
-                "reason": format!(
-                    "Keep alive for request ({}) is too large. It must be less than ({}). This limit can be set by changing the [point_in_time.max_keep_alive] cluster level setting.",
-                    format_time_value_millis(keep_alive_millis),
-                    format_time_value_millis(DEFAULT_MAX_PIT_KEEP_ALIVE_MILLIS)
-                )
+                "reason": reason,
+                "root_cause": [
+                    {
+                        "type": "illegal_argument_exception",
+                        "reason": reason
+                    }
+                ]
             },
             "status": 400
         }),
     ))
+}
+
+fn pit_search_keep_alive_limit_response(
+    keep_alive_millis: u64,
+    index_name: Option<String>,
+) -> RestResponse {
+    let reason = pit_keep_alive_limit_reason(keep_alive_millis);
+    let mut failed_shard = serde_json::json!({
+        "shard": 0,
+        "reason": {
+            "type": "illegal_argument_exception",
+            "reason": reason
+        }
+    });
+    if let (Value::Object(object), Some(index_name)) = (&mut failed_shard, index_name) {
+        object.insert("index".to_string(), Value::String(index_name));
+    }
+    RestResponse::json(
+        400,
+        serde_json::json!({
+            "error": {
+                "type": "search_phase_execution_exception",
+                "reason": "all shards failed",
+                "root_cause": [
+                    {
+                        "type": "illegal_argument_exception",
+                        "reason": reason
+                    }
+                ],
+                "caused_by": {
+                    "type": "illegal_argument_exception",
+                    "reason": reason,
+                    "caused_by": {
+                        "type": "illegal_argument_exception",
+                        "reason": reason
+                    }
+                },
+                "failed_shards": [failed_shard]
+            },
+            "status": 400
+        }),
+    )
+}
+
+fn pit_keep_alive_limit_reason(keep_alive_millis: u64) -> String {
+    format!(
+        "Keep alive for request ({}) is too large. It must be less than ({}). This limit can be set by changing the [point_in_time.max_keep_alive] cluster level setting.",
+        format_time_value_millis(keep_alive_millis),
+        format_time_value_millis(DEFAULT_MAX_PIT_KEEP_ALIVE_MILLIS)
+    )
 }
 
 fn normalize_pit_keep_alive_millis(keep_alive_millis: u64) -> u64 {
@@ -24953,10 +25017,13 @@ fn prune_expired_pit_contexts(contexts: &mut BTreeMap<String, PitContext>, now_m
 }
 
 fn format_time_value_millis(value: u64) -> String {
+    const DAY: u64 = 86_400_000;
     const HOUR: u64 = 3_600_000;
     const MINUTE: u64 = 60_000;
     const SECOND: u64 = 1_000;
-    if value % HOUR == 0 {
+    if value >= DAY {
+        format!("{}d", value / DAY)
+    } else if value % HOUR == 0 {
         format!("{}h", value / HOUR)
     } else if value % MINUTE == 0 {
         format!("{}m", value / MINUTE)
@@ -44836,7 +44903,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         );
         assert_eq!(
             too_large_open_pit.body["error"]["reason"],
-            "Keep alive for request (25h) is too large. It must be less than (24h). This limit can be set by changing the [point_in_time.max_keep_alive] cluster level setting."
+            "Keep alive for request (1d) is too large. It must be less than (1d). This limit can be set by changing the [point_in_time.max_keep_alive] cluster level setting."
         );
 
         let open_pit = node.handle_rest_request(RestRequest::new(
@@ -45469,7 +45536,11 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(too_large_pit_keep_alive.status, 400);
         assert_eq!(
             too_large_pit_keep_alive.body["error"]["reason"],
-            "Keep alive for request (25h) is too large. It must be less than (24h). This limit can be set by changing the [point_in_time.max_keep_alive] cluster level setting."
+            "all shards failed"
+        );
+        assert_eq!(
+            too_large_pit_keep_alive.body["error"]["root_cause"][0]["reason"],
+            "Keep alive for request (1d) is too large. It must be less than (1d). This limit can be set by changing the [point_in_time.max_keep_alive] cluster level setting."
         );
 
         let numeric_pit_keep_alive = node.handle_rest_request(
