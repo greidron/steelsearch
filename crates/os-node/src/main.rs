@@ -5321,6 +5321,8 @@ fn local_transport_global_index_count() -> i32 {
         .len() as i32
 }
 
+type LocalTransportSearchMatch = (String, String, Value, i64, i64, i64);
+
 fn local_transport_search_response_from_request(
     request: &os_transport::action::OpenSearchSearchRequestWire,
 ) -> os_transport::action::OpenSearchSearchResponseWire {
@@ -5348,6 +5350,7 @@ fn local_transport_search_response_from_request(
     });
     let sorts = request_source.and_then(|source| source.sorts.as_deref());
     let search_after = request_source.and_then(|source| source.search_after.as_deref());
+    let collapse = request_source.and_then(|source| source.collapse.as_ref());
     let fetch_source = request_source.and_then(|source| source.fetch_source.as_ref());
     let include_version = request_source
         .and_then(|source| source.version)
@@ -5419,10 +5422,22 @@ fn local_transport_search_response_from_request(
     let actual_total_hits = matched.len() as i64;
     let (total_hits, total_hits_relation) =
         local_transport_total_hits(actual_total_hits, track_total_hits_up_to);
-    let hits = matched
+    if let Some(collapse) = collapse {
+        matched = local_transport_collapse_matches(matched, &collapse.field);
+    }
+    let page_matches = matched
         .into_iter()
         .skip(from)
         .take(size)
+        .collect::<Vec<_>>();
+    let collapse_values = collapse.map(|collapse| {
+        page_matches
+            .iter()
+            .map(|candidate| local_transport_collapse_value(&candidate.2, &collapse.field))
+            .collect::<Vec<_>>()
+    });
+    let hits = page_matches
+        .into_iter()
         .map(|candidate| {
             let (index, id, source, version, seq_no, primary_term) = candidate;
             let sort_values = sorts
@@ -5483,10 +5498,38 @@ fn local_transport_search_response_from_request(
         terminated_early: terminated_early.then_some(true),
         took_millis: 1,
         point_in_time_id,
+        collapse_field: collapse.map(|collapse| collapse.field.clone()),
+        collapse_values,
         ..os_transport::action::OpenSearchSearchResponseWire::empty_with_total_hits(
             actual_total_hits,
         )
     }
+}
+
+fn local_transport_collapse_matches(
+    matches: Vec<LocalTransportSearchMatch>,
+    field: &str,
+) -> Vec<LocalTransportSearchMatch> {
+    let mut seen = BTreeSet::new();
+    matches
+        .into_iter()
+        .filter(|candidate| {
+            let value = local_transport_collapse_value(&candidate.2, field);
+            seen.insert(local_transport_collapse_key(&value))
+        })
+        .collect()
+}
+
+fn local_transport_collapse_value(source: &Value, field: &str) -> Value {
+    match lookup_transport_source_value(source, field) {
+        Some(Value::Array(values)) => values.first().cloned().unwrap_or(Value::Null),
+        Some(value) => value.clone(),
+        None => Value::Null,
+    }
+}
+
+fn local_transport_collapse_key(value: &Value) -> String {
+    serde_json::to_string(value).unwrap_or_else(|_| value.to_string())
 }
 
 fn local_transport_sort_fields_for_response<'a>(
@@ -15959,6 +16002,140 @@ mod tests {
                 true,
                 None,
             )])
+        );
+    }
+
+    #[test]
+    fn search_transport_route_collapses_local_hits_by_field() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        dev_transport_pit_bindings()
+            .created_indices
+            .lock()
+            .expect("dev transport created indices lock poisoned")
+            .clear();
+        dev_transport_pit_bindings()
+            .documents
+            .lock()
+            .expect("dev transport documents lock poisoned")
+            .clear();
+        *dev_transport_pit_bindings()
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned") = serde_json::json!({
+            "indices": {
+                "logs-collapse-transport": {
+                    "settings": {
+                        "index": {
+                            "number_of_shards": "1"
+                        }
+                    }
+                }
+            }
+        });
+        dev_transport_pit_bindings()
+            .created_indices
+            .lock()
+            .expect("dev transport created indices lock poisoned")
+            .insert("logs-collapse-transport".to_string());
+        {
+            let mut documents = dev_transport_pit_bindings()
+                .documents
+                .lock()
+                .expect("dev transport documents lock poisoned");
+            documents.insert(
+                "logs-collapse-transport:doc-1:".to_string(),
+                StoredDocument {
+                    source: serde_json::json!({ "tenant": "tenant-a", "ordinal": 1 }),
+                    version: 1,
+                    seq_no: 1,
+                    primary_term: 1,
+                    routing: None,
+                    refreshed: true,
+                },
+            );
+            documents.insert(
+                "logs-collapse-transport:doc-2:".to_string(),
+                StoredDocument {
+                    source: serde_json::json!({ "tenant": "tenant-a", "ordinal": 2 }),
+                    version: 1,
+                    seq_no: 2,
+                    primary_term: 1,
+                    routing: None,
+                    refreshed: true,
+                },
+            );
+            documents.insert(
+                "logs-collapse-transport:doc-3:".to_string(),
+                StoredDocument {
+                    source: serde_json::json!({ "tenant": "tenant-b", "ordinal": 3 }),
+                    version: 1,
+                    seq_no: 3,
+                    primary_term: 1,
+                    routing: None,
+                    refreshed: true,
+                },
+            );
+        }
+
+        let request = os_transport::action::OpenSearchSearchRequestWire {
+            source: Some(os_transport::action::OpenSearchSearchSourceBuilderWire {
+                size: 10,
+                collapse: Some(os_transport::action::OpenSearchCollapseBuilderWire {
+                    field: "tenant".to_string(),
+                    max_concurrent_group_requests: 0,
+                }),
+                sorts: Some(vec![
+                    os_transport::action::OpenSearchSortBuilderWire::Field(
+                        os_transport::action::OpenSearchFieldSortBuilderWire {
+                            field_name: "ordinal".to_string(),
+                            nested_path: None,
+                            missing: serde_json::Value::Null,
+                            order: Some(os_transport::action::OpenSearchSortOrderWire::Asc),
+                            sort_mode: None,
+                            unmapped_type: None,
+                            numeric_type: Some("long".to_string()),
+                        },
+                    ),
+                ]),
+                ..os_transport::action::OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..os_transport::action::OpenSearchSearchRequestWire::default()
+        };
+        let frame = os_transport::action::build_opensearch_search_request_message(
+            306,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(search_request_supports_local_execution_subset(&frame[6..]));
+        let response =
+            build_local_search_response(306, OPENSEARCH_3_7_0_TRANSPORT.id() as u32, &frame[6..]);
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected collapsed search response message");
+        };
+        let response = os_transport::action::read_opensearch_search_response_message(&message)
+            .expect("collapsed search response");
+
+        assert_eq!(response.total_hits, Some(3));
+        assert_eq!(response.hits.len(), 2);
+        assert_eq!(response.hits[0].id.as_deref(), Some("doc-1"));
+        assert_eq!(response.hits[1].id.as_deref(), Some("doc-3"));
+        assert_eq!(response.hits[0].sort_values, vec![serde_json::json!(1)]);
+        assert_eq!(response.hits[1].sort_values, vec![serde_json::json!(3)]);
+        assert_eq!(response.collapse_field.as_deref(), Some("tenant"));
+        assert_eq!(
+            response.collapse_values,
+            Some(vec![
+                serde_json::json!("tenant-a"),
+                serde_json::json!("tenant-b")
+            ])
         );
     }
 
