@@ -3308,6 +3308,18 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "pit_open_invalid_allow_partial_creation_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search/point_in_time?keep_alive=1m&allow_partial_pit_creation=maybe",
+      "body": null,
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] open PIT rejects invalid allow_partial_pit_creation like OpenSearch",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "pit_open_invalid_expand_wildcards_error_search",
       "area": "search",
       "method": "POST",

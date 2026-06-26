@@ -22270,14 +22270,19 @@ fn validate_opensearch_boolean_query_param(raw: Option<&String>) -> Option<RestR
 }
 
 fn opensearch_boolean_parse_error(value: &str) -> RestResponse {
+    let reason = format!("Failed to parse value [{value}] as only [true] or [false] are allowed.");
     RestResponse::json(
         400,
         serde_json::json!({
             "error": {
                 "type": "illegal_argument_exception",
-                "reason": format!(
-                    "Failed to parse value [{value}] as only [true] or [false] are allowed."
-                )
+                "reason": reason,
+                "root_cause": [
+                    {
+                        "type": "illegal_argument_exception",
+                        "reason": reason
+                    }
+                ]
             },
             "status": 400
         }),
