@@ -8155,6 +8155,391 @@
       "description": "[ranking] body size cannot be negative"
     },
     {
+      "name": "collapse_with_rescore_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "collapse": {
+          "field": "service"
+        },
+        "rescore": {
+          "window_size": 2,
+          "query": {
+            "rescore_query": {
+              "match": {
+                "message": "timeout"
+              }
+            }
+          }
+        }
+      },
+      "expected_status": 500,
+      "expected_steelsearch_status": 500,
+      "extract": "search_error_root_cause",
+      "family": "ranking",
+      "description": "[ranking] collapse with rescore is rejected"
+    },
+    {
+      "name": "profile_string_boolean_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "profile": "true"
+      },
+      "extract": "search_profile",
+      "family": "ranking",
+      "description": "[ranking] profile string boolean search"
+    },
+    {
+      "name": "profile_disabled_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "profile": false
+      },
+      "extract": "search_profile",
+      "family": "ranking",
+      "description": "[ranking] profile disabled search"
+    },
+    {
+      "name": "rescore_with_sort_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "sort": [
+          {
+            "ts": {
+              "order": "asc"
+            }
+          }
+        ],
+        "rescore": {
+          "window_size": 2,
+          "query": {
+            "rescore_query": {
+              "match": {
+                "message": "timeout"
+              }
+            },
+            "query_weight": 1.0,
+            "rescore_query_weight": 10.0
+          }
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "ranking",
+      "description": "[ranking] rescore rejects explicit sort"
+    },
+    {
+      "name": "rescore_window_too_large_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "rescore": {
+          "window_size": 10001,
+          "query": {
+            "rescore_query": {
+              "match": {
+                "message": "timeout"
+              }
+            }
+          }
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "ranking",
+      "description": "[ranking] rescore window is bounded by index.max_rescore_window"
+    },
+    {
+      "name": "slice_invalid_id_max_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search?scroll=1m",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "slice": {
+          "id": 2,
+          "max": 2
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error",
+      "family": "ranking",
+      "description": "[ranking] slice id must be less than max"
+    },
+    {
+      "name": "slice_string_int_values_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search?scroll=1m",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "slice": {
+          "id": "0",
+          "max": "2"
+        }
+      },
+      "expected_status": 200,
+      "extract": "search_hits",
+      "family": "ranking",
+      "description": "[ranking] slice id and max string integers are coerced like OpenSearch"
+    },
+    {
+      "name": "track_total_hits_string_threshold_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "track_total_hits": "1",
+        "sort": [
+          {
+            "ts": {
+              "order": "asc"
+            }
+          }
+        ],
+        "size": 2
+      },
+      "extract": "search_summary",
+      "family": "ranking",
+      "description": "[ranking] string numeric track_total_hits threshold search"
+    },
+    {
+      "name": "track_total_hits_fractional_string_threshold_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "track_total_hits": "1.9",
+        "sort": [
+          {
+            "ts": {
+              "order": "asc"
+            }
+          }
+        ],
+        "size": 2
+      },
+      "extract": "search_summary",
+      "family": "ranking",
+      "description": "[ranking] fractional string track_total_hits threshold coerces like OpenSearch"
+    },
+    {
+      "name": "track_total_hits_disabled_numeric_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "track_total_hits": -1,
+        "sort": [
+          {
+            "ts": {
+              "order": "asc"
+            }
+          }
+        ],
+        "size": 2
+      },
+      "extract": "search_summary",
+      "family": "ranking",
+      "description": "[ranking] numeric -1 disables track_total_hits"
+    },
+    {
+      "name": "track_total_hits_negative_threshold_body_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "track_total_hits": -2
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "ranking",
+      "description": "[ranking] track_total_hits below -1 is rejected"
+    },
+    {
+      "name": "track_total_hits_query_param_threshold_overrides_body_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search?track_total_hits=1",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "track_total_hits": true,
+        "sort": [
+          {
+            "ts": {
+              "order": "asc"
+            }
+          }
+        ],
+        "size": 2
+      },
+      "extract": "search_summary",
+      "family": "ranking",
+      "description": "[ranking] query-param track total hits threshold overrides body search"
+    },
+    {
+      "name": "track_total_hits_query_param_disabled_numeric_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search?track_total_hits=-1",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "sort": [
+          {
+            "ts": {
+              "order": "asc"
+            }
+          }
+        ],
+        "size": 2
+      },
+      "extract": "search_summary",
+      "family": "ranking",
+      "description": "[ranking] query-param numeric -1 disables track_total_hits"
+    },
+    {
+      "name": "track_total_hits_query_param_negative_threshold_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search?track_total_hits=-2",
+      "body": {
+        "query": {
+          "match_all": {}
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error",
+      "family": "ranking",
+      "description": "[ranking] query-param track_total_hits below -1 is rejected"
+    },
+    {
+      "name": "track_total_hits_query_param_disabled_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search?track_total_hits=false",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "sort": [
+          {
+            "ts": {
+              "order": "asc"
+            }
+          }
+        ],
+        "size": 2
+      },
+      "extract": "search_summary",
+      "family": "ranking",
+      "description": "[ranking] query-param track total hits disabled search"
+    },
+    {
+      "name": "rest_total_hits_as_int_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search?rest_total_hits_as_int=true",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "track_total_hits": true,
+        "sort": [
+          {
+            "ts": {
+              "order": "asc"
+            }
+          }
+        ],
+        "size": 2
+      },
+      "extract": "search_summary",
+      "family": "ranking",
+      "description": "[ranking] rest total hits as int search"
+    },
+    {
+      "name": "rest_total_hits_as_int_disabled_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search?track_total_hits=false&rest_total_hits_as_int=true",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "sort": [
+          {
+            "ts": {
+              "order": "asc"
+            }
+          }
+        ],
+        "size": 2
+      },
+      "extract": "search_summary",
+      "family": "ranking",
+      "description": "[ranking] rest total hits as int disabled search"
+    },
+    {
+      "name": "rest_total_hits_as_int_inaccurate_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search?rest_total_hits_as_int=true",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "track_total_hits": 1,
+        "size": 2
+      },
+      "expected_status": 400,
+      "extract": "search_error",
+      "family": "ranking",
+      "description": "[ranking] rest total hits as int rejects inaccurate total search"
+    },
+    {
       "name": "simple_query_string_search",
       "area": "search",
       "method": "POST",
