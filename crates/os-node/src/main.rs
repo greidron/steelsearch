@@ -5834,6 +5834,16 @@ fn local_transport_query_matches(
         Some(os_transport::action::OpenSearchQueryBuilderWire::Ids(ids)) => {
             ids.ids.iter().any(|candidate| candidate == id)
         }
+        Some(os_transport::action::OpenSearchQueryBuilderWire::GeoDistance(query)) => {
+            let Some(candidate_point) = lookup_transport_source_value(source, &query.field_name)
+                .and_then(parse_transport_geo_point_value)
+            else {
+                return query.ignore_unmapped;
+            };
+            let query_point = (query.center.lat, query.center.lon);
+            haversine_transport_distance_meters(candidate_point, query_point)
+                <= query.distance_meters
+        }
         Some(os_transport::action::OpenSearchQueryBuilderWire::CombinedFields(query)) => {
             let fields = query
                 .fields
@@ -5896,6 +5906,16 @@ fn local_transport_query_matches(
                 || (query_text.trim().is_empty()
                     && query.zero_terms_query
                         == os_transport::action::OpenSearchZeroTermsQueryWire::All)
+        }
+        Some(os_transport::action::OpenSearchQueryBuilderWire::Nested(query)) => {
+            let Some(candidates) =
+                lookup_transport_source_value(source, &query.path).and_then(Value::as_array)
+            else {
+                return query.ignore_unmapped;
+            };
+            candidates
+                .iter()
+                .any(|candidate| local_transport_query_matches(candidate, id, Some(&query.query)))
         }
         Some(os_transport::action::OpenSearchQueryBuilderWire::Prefix(prefix)) => {
             let value = if prefix.field_name == "_id" {
@@ -6209,6 +6229,29 @@ fn local_transport_terms_set_query_matches(
         })
         .count();
     matched_terms >= minimum
+}
+
+fn parse_transport_geo_point_value(value: &Value) -> Option<(f64, f64)> {
+    if let Some(object) = value.as_object() {
+        return Some((object.get("lat")?.as_f64()?, object.get("lon")?.as_f64()?));
+    }
+    let array = value.as_array()?;
+    if array.len() != 2 {
+        return None;
+    }
+    Some((array[1].as_f64()?, array[0].as_f64()?))
+}
+
+fn haversine_transport_distance_meters(left: (f64, f64), right: (f64, f64)) -> f64 {
+    let earth_radius_m = 6_371_000.0_f64;
+    let (left_lat, left_lon) = (left.0.to_radians(), left.1.to_radians());
+    let (right_lat, right_lon) = (right.0.to_radians(), right.1.to_radians());
+    let delta_lat = right_lat - left_lat;
+    let delta_lon = right_lon - left_lon;
+    let a = (delta_lat / 2.0).sin().powi(2)
+        + left_lat.cos() * right_lat.cos() * (delta_lon / 2.0).sin().powi(2);
+    let c = 2.0 * a.sqrt().atan2((1.0 - a).sqrt());
+    earth_radius_m * c
 }
 
 fn local_transport_text_query_matches(
@@ -16141,6 +16184,10 @@ mod tests {
                         "title": "steel search",
                         "description": "reader context transport filters",
                         "tags": ["search", "transport"],
+                        "location": { "lat": 37.7749, "lon": -122.4194 },
+                        "comments": [
+                            { "author": "ann", "text": "nested transport" }
+                        ],
                         "age": 7
                     }),
                     version: 1,
@@ -16166,6 +16213,10 @@ mod tests {
                         "title": "steel search",
                         "description": "reader context transport filters",
                         "tags": ["search", "transport"],
+                        "location": { "lat": 37.7750, "lon": -122.4195 },
+                        "comments": [
+                            { "author": "ann", "text": "nested transport" }
+                        ],
                         "age": 7
                     }),
                     version: 1,
@@ -16520,6 +16571,41 @@ mod tests {
                                                                                         params: serde_json::json!({}),
                                                                                     },
                                                                                 ),
+                                                                            },
+                                                                        ),
+                                                                        os_transport::action::OpenSearchQueryBuilderWire::GeoDistance(
+                                                                            os_transport::action::OpenSearchGeoDistanceQueryBuilderWire {
+                                                                                boost: 1.0,
+                                                                                query_name: None,
+                                                                                field_name: "location".to_string(),
+                                                                                distance_meters: 1_000.0,
+                                                                                validation_method: os_transport::action::OpenSearchGeoValidationMethodWire::Strict,
+                                                                                center: os_transport::action::OpenSearchGeoPointWire {
+                                                                                    lat: 37.7749,
+                                                                                    lon: -122.4194,
+                                                                                },
+                                                                                geo_distance: os_transport::action::OpenSearchGeoDistanceWire::Arc,
+                                                                                ignore_unmapped: false,
+                                                                            },
+                                                                        ),
+                                                                        os_transport::action::OpenSearchQueryBuilderWire::Nested(
+                                                                            os_transport::action::OpenSearchNestedQueryBuilderWire {
+                                                                                boost: 1.0,
+                                                                                query_name: None,
+                                                                                path: "comments".to_string(),
+                                                                                score_mode: os_transport::action::OpenSearchNestedScoreModeWire::Avg,
+                                                                                query: Box::new(
+                                                                                    os_transport::action::OpenSearchQueryBuilderWire::Term(
+                                                                                        os_transport::action::OpenSearchTermQueryBuilderWire {
+                                                                                            boost: 1.0,
+                                                                                            query_name: None,
+                                                                                            field_name: "author".to_string(),
+                                                                                            value: serde_json::json!("ann"),
+                                                                                            case_insensitive: false,
+                                                                                        },
+                                                                                    ),
+                                                                                ),
+                                                                                ignore_unmapped: false,
                                                                             },
                                                                         ),
                                                                         os_transport::action::OpenSearchQueryBuilderWire::SpanOr(
