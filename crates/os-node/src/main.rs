@@ -5370,18 +5370,34 @@ fn remove_transport_pit_if_indices_missing(
     pit_id: &str,
 ) -> Option<()> {
     let context = contexts.get(pit_id)?;
-    let created_indices = dev_transport_pit_bindings()
+    let bindings = dev_transport_pit_bindings();
+    let created_indices = bindings
         .created_indices
         .lock()
         .expect("dev transport created indices lock poisoned");
-    if context
+    let all_indices_exist = context
         .indices
         .iter()
-        .all(|index| created_indices.contains(index))
-    {
+        .all(|index| created_indices.contains(index));
+    drop(created_indices);
+    if !all_indices_exist {
+        contexts.remove(pit_id);
+        return None;
+    }
+
+    let metadata_manifest = bindings
+        .metadata_manifest
+        .lock()
+        .expect("dev transport metadata manifest lock poisoned");
+    let all_indices_open = context.indices.iter().all(|index| {
+        metadata_manifest["indices"][index]["state"]
+            .as_str()
+            .map_or(true, |state| state != "close")
+    });
+    drop(metadata_manifest);
+    if all_indices_open {
         return Some(());
     }
-    drop(created_indices);
     contexts.remove(pit_id);
     None
 }
@@ -13163,6 +13179,98 @@ mod tests {
         };
         let frame = os_transport::action::build_opensearch_search_request_message(
             314,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(!search_request_supports_local_execution_subset(&frame[6..]));
+        assert!(!bindings
+            .contexts
+            .lock()
+            .expect("dev transport PIT contexts lock poisoned")
+            .contains_key(&pit_id));
+    }
+
+    #[test]
+    fn search_transport_route_removes_pit_when_backing_index_is_closed() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        let bindings = dev_transport_pit_bindings();
+        bindings
+            .contexts
+            .lock()
+            .expect("dev transport PIT contexts lock poisoned")
+            .clear();
+        bindings
+            .created_indices
+            .lock()
+            .expect("dev transport created indices lock poisoned")
+            .clear();
+        bindings
+            .documents
+            .lock()
+            .expect("dev transport documents lock poisoned")
+            .clear();
+        bindings
+            .created_indices
+            .lock()
+            .expect("dev transport created indices lock poisoned")
+            .insert("logs-search-pit-closed-index".to_string());
+        *bindings
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned") = serde_json::json!({
+            "indices": {
+                "logs-search-pit-closed-index": {
+                    "state": "close",
+                    "settings": {
+                        "index": {
+                            "number_of_shards": "1"
+                        }
+                    }
+                }
+            }
+        });
+
+        let pit_id = build_local_pit_id(706);
+        bindings
+            .contexts
+            .lock()
+            .expect("dev transport PIT contexts lock poisoned")
+            .insert(
+                pit_id.clone(),
+                PitContext {
+                    indices: vec!["logs-search-pit-closed-index".to_string()],
+                    documents: BTreeMap::from([(
+                        "logs-search-pit-closed-index:doc-1:".to_string(),
+                        StoredDocument {
+                            source: serde_json::json!({ "status": "active" }),
+                            version: 1,
+                            seq_no: 1,
+                            primary_term: 1,
+                            routing: None,
+                            refreshed: true,
+                        },
+                    )]),
+                    keep_alive_millis: 60_000,
+                    expires_at_millis: transport_pit_expires_at_millis(now_epoch_ms(), 60_000),
+                    creation_time_millis: now_epoch_ms(),
+                },
+            );
+
+        let request = os_transport::action::OpenSearchSearchRequestWire {
+            source: Some(os_transport::action::OpenSearchSearchSourceBuilderWire {
+                point_in_time: Some(os_transport::action::OpenSearchPointInTimeBuilderWire {
+                    id: pit_id.clone(),
+                    keep_alive: Some(os_transport::action::TimeValueWire::minutes(1)),
+                }),
+                ..os_transport::action::OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..os_transport::action::OpenSearchSearchRequestWire::default()
+        };
+        let frame = os_transport::action::build_opensearch_search_request_message(
+            315,
             OPENSEARCH_3_7_0_TRANSPORT,
             &request,
         )
