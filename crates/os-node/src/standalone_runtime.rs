@@ -47242,6 +47242,103 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
     }
 
     #[test]
+    fn point_in_time_field_sort_search_after_keeps_snapshot_after_live_write_like_opensearch() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        let create = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/pit-search-after").with_json_body(
+                serde_json::json!({
+                    "mappings": {
+                        "properties": {
+                            "field1": { "type": "long" },
+                            "field2": { "type": "keyword" }
+                        }
+                    }
+                }),
+            ),
+        );
+        assert_eq!(create.status, 200);
+        for (id, source) in [
+            ("0", serde_json::json!({ "field1": 0 })),
+            ("1", serde_json::json!({ "field1": 100, "field2": "toto" })),
+            ("2", serde_json::json!({ "field1": 101 })),
+            ("3", serde_json::json!({ "field1": 99 })),
+        ] {
+            let index = node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, &format!("/pit-search-after/_doc/{id}"))
+                    .with_json_body(source),
+            );
+            assert_eq!(index.status, 201, "{id}");
+        }
+
+        let open_pit = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/pit-search-after/_search/point_in_time?keep_alive=1m",
+        ));
+        assert_eq!(open_pit.status, 200);
+        let pit_id = open_pit.body["pit_id"].as_str().expect("pit id");
+
+        for (after, expected_hits) in [(99, 2), (100, 1), (0, 3)] {
+            let response = node.handle_rest_request(
+                RestRequest::new(RestMethod::Post, "/_search").with_json_body(serde_json::json!({
+                    "pit": { "id": pit_id, "keep_alive": "1m" },
+                    "query": { "match_all": {} },
+                    "sort": [{ "field1": "asc" }],
+                    "search_after": [after]
+                })),
+            );
+            assert_eq!(response.status, 200, "{after}");
+            assert_eq!(
+                response.body["hits"]["hits"].as_array().map(Vec::len),
+                Some(expected_hits),
+                "{after}"
+            );
+        }
+
+        let new_doc = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/pit-search-after/_doc/4")
+                .with_json_body(serde_json::json!({ "field1": 102 })),
+        );
+        assert_eq!(new_doc.status, 201);
+
+        let pit_after_live_write = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_search").with_json_body(serde_json::json!({
+                "pit": { "id": pit_id, "keep_alive": "1m" },
+                "query": { "match_all": {} },
+                "sort": [{ "field1": "asc" }],
+                "search_after": [0]
+            })),
+        );
+        assert_eq!(pit_after_live_write.status, 200);
+        assert_eq!(
+            pit_after_live_write.body["hits"]["hits"]
+                .as_array()
+                .map(Vec::len),
+            Some(3)
+        );
+
+        let live_after_write = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/pit-search-after/_search").with_json_body(
+                serde_json::json!({
+                    "query": { "match_all": {} },
+                    "sort": [{ "field1": "asc" }],
+                    "search_after": [0]
+                }),
+            ),
+        );
+        assert_eq!(live_after_write.status, 200);
+        assert_eq!(
+            live_after_write.body["hits"]["hits"]
+                .as_array()
+                .map(Vec::len),
+            Some(4)
+        );
+    }
+
+    #[test]
     fn point_in_time_index_stats_track_open_contexts_per_shard_like_opensearch() {
         let node = SteelNode::new(NodeInfo {
             name: "steel-node".to_string(),
