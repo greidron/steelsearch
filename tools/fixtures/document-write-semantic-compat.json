@@ -38,6 +38,10 @@
       "body": {}
     },
     {
+      "name": "logs-update-query-compat",
+      "body": {}
+    },
+    {
       "name": "logs-bulk-metadata-000001",
       "body": {}
     }
@@ -87,6 +91,18 @@
           "_source": {
             "message": "single doc baseline",
             "tenant": "tenant-a"
+          }
+        }
+      ]
+    },
+    {
+      "index": "logs-update-query-compat",
+      "documents": [
+        {
+          "_id": "doc-1",
+          "_source": {
+            "tenant": "tenant-a",
+            "processed": false
           }
         }
       ]
@@ -278,6 +294,49 @@
       "method": "GET",
       "path": "/logs-write-single-doc/_doc/doc-1?realtime=false",
       "extract": "get_document"
+    },
+    {
+      "name": "update_by_query_repeated_update_summary",
+      "area": "document-write",
+      "extract": "reindex_summary",
+      "steps": [
+        {
+          "name": "update-by-query-set-processed",
+          "method": "POST",
+          "path": "/logs-update-query-compat/_update_by_query?refresh=true",
+          "body": {
+            "query": {
+              "match_all": {}
+            },
+            "script": {
+              "source": "ctx._source.processed = params.processed",
+              "params": {
+                "processed": true
+              }
+            }
+          },
+          "expected_status": 200,
+          "extract": "reindex_summary"
+        },
+        {
+          "name": "update-by-query-repeat-update",
+          "method": "POST",
+          "path": "/logs-update-query-compat/_update_by_query",
+          "body": {
+            "query": {
+              "match_all": {}
+            },
+            "script": {
+              "source": "ctx._source.processed = params.processed",
+              "params": {
+                "processed": true
+              }
+            }
+          },
+          "expected_status": 200,
+          "extract": "reindex_summary"
+        }
+      ]
     },
     {
       "name": "single_doc_update_missing_error",

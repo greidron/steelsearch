@@ -12972,8 +12972,8 @@ impl SteelNode {
                 let original_source = doc.source.clone();
                 if let Some(script) = body.get("script") {
                     apply_update_by_query_script(&mut doc.source, script);
-                }
-                if doc.source == original_source {
+                    updated += 1;
+                } else if doc.source == original_source {
                     noops += 1;
                 } else {
                     updated += 1;
@@ -41065,7 +41065,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(unmatched.body["noops"], 0);
         assert_eq!(unmatched.body["batches"], 0);
 
-        let noop = node.handle_rest_request(
+        let repeated = node.handle_rest_request(
             RestRequest::new(
                 RestMethod::Post,
                 "/logs-update-query-probe/_update_by_query",
@@ -41079,10 +41079,10 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 }
             })),
         );
-        assert_eq!(noop.status, 200);
-        assert_eq!(noop.body["total"], 1);
-        assert_eq!(noop.body["updated"], 0);
-        assert_eq!(noop.body["noops"], 1);
+        assert_eq!(repeated.status, 200);
+        assert_eq!(repeated.body["total"], 1);
+        assert_eq!(repeated.body["updated"], 1);
+        assert_eq!(repeated.body["noops"], 0);
 
         let updated = node.handle_rest_request(RestRequest::new(
             RestMethod::Get,
