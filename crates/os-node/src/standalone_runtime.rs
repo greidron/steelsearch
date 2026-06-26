@@ -3011,12 +3011,7 @@ impl SteelNode {
                 ) {
                     return Some(response);
                 }
-                Some(RestResponse::json(
-                    200,
-                    pending_tasks_route_registration::invoke_pending_tasks_live_route(
-                        &self.pending_tasks_body(),
-                    ),
-                ))
+                Some(self.handle_cluster_pending_tasks_route(request))
             }
             (RestMethod::Get, "/_tasks") => {
                 if let Err(response) = require_security_permission(
@@ -12743,6 +12738,9 @@ impl SteelNode {
         {
             return response;
         }
+        if let Some(response) = validate_tasks_time_query_params(request, &["timeout"]) {
+            return response;
+        }
         if let Some(task) = self.find_task(task_id) {
             return RestResponse::json(
                 200,
@@ -12766,6 +12764,9 @@ impl SteelNode {
         {
             return response;
         }
+        if let Some(response) = validate_tasks_time_query_params(request, &["timeout"]) {
+            return response;
+        }
         let body = self.tasks_body();
         let response = match request.query_params.get("group_by").map(String::as_str) {
             Some("nodes") | None => tasks_route_registration::invoke_tasks_list_live_route(&body),
@@ -12776,6 +12777,24 @@ impl SteelNode {
             Some(_) => unreachable!("invalid task group_by is rejected before response shaping"),
         };
         RestResponse::json(200, response)
+    }
+
+    fn handle_cluster_pending_tasks_route(&self, request: &RestRequest) -> RestResponse {
+        if let Some(response) = validate_tasks_boolean_query_params(request, &["local"]) {
+            return response;
+        }
+        if let Some(response) = validate_tasks_time_query_params(
+            request,
+            &["cluster_manager_timeout", "master_timeout"],
+        ) {
+            return response;
+        }
+        RestResponse::json(
+            200,
+            pending_tasks_route_registration::invoke_pending_tasks_live_route(
+                &self.pending_tasks_body(),
+            ),
+        )
     }
 
     fn handle_tasks_cancel_route(&self, request: &RestRequest) -> RestResponse {
@@ -18599,6 +18618,15 @@ impl SteelNode {
     }
 
     fn handle_cat_pending_tasks_route(&self, request: &RestRequest) -> RestResponse {
+        if let Some(response) = validate_tasks_boolean_query_params(request, &["local"]) {
+            return response;
+        }
+        if let Some(response) = validate_tasks_time_query_params(
+            request,
+            &["cluster_manager_timeout", "master_timeout"],
+        ) {
+            return response;
+        }
         let mut rows = self
             .active_task_records()
             .into_iter()
@@ -22583,6 +22611,21 @@ fn validate_tasks_boolean_query_params(
             validate_opensearch_boolean_query_param(request.query_params.get(*field))
         {
             return Some(response);
+        }
+    }
+    None
+}
+
+fn validate_tasks_time_query_params(
+    request: &RestRequest,
+    fields: &[&str],
+) -> Option<RestResponse> {
+    for field in fields {
+        let Some(raw_value) = request.query_params.get(*field) else {
+            continue;
+        };
+        if parse_time_value_millis(raw_value).is_none() {
+            return Some(search_time_query_param_parse_error(field, raw_value));
         }
     }
     None
@@ -38078,6 +38121,8 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 RestMethod::Post,
                 "/_tasks/_cancel?wait_for_completion=maybe",
             ),
+            (RestMethod::Get, "/_cluster/pending_tasks?local=maybe"),
+            (RestMethod::Get, "/_cat/pending_tasks?local=maybe"),
         ] {
             let response = node.handle_rest_request(RestRequest::new(method, path));
             assert_eq!(response.status, 400, "{path}");
@@ -38085,6 +38130,42 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             assert_eq!(
                 response.body["error"]["reason"],
                 "Failed to parse value [maybe] as only [true] or [false] are allowed.",
+                "{path}"
+            );
+        }
+    }
+
+    #[test]
+    fn tasks_routes_reject_invalid_timeout_query_params_like_opensearch() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        for (method, path, param) in [
+            (RestMethod::Get, "/_tasks?timeout=soon", "timeout"),
+            (
+                RestMethod::Get,
+                "/_tasks/node-a:999?timeout=soon",
+                "timeout",
+            ),
+            (
+                RestMethod::Get,
+                "/_cluster/pending_tasks?cluster_manager_timeout=soon",
+                "cluster_manager_timeout",
+            ),
+            (
+                RestMethod::Get,
+                "/_cat/pending_tasks?master_timeout=soon",
+                "master_timeout",
+            ),
+        ] {
+            let response = node.handle_rest_request(RestRequest::new(method, path));
+            assert_eq!(response.status, 400, "{path}");
+            assert_eq!(response.body["error"]["type"], "illegal_argument_exception");
+            assert_eq!(
+                response.body["error"]["reason"],
+                format!("failed to parse setting [{param}] with value [soon] as a time value"),
                 "{path}"
             );
         }
