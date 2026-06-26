@@ -5830,6 +5830,7 @@
         "_source": true
       },
       "expected_status": 500,
+      "expected_steelsearch_status": 500,
       "extract": "search_error_root_cause",
       "family": "lexical",
       "description": "[lexical] stored_fields _none_ rejects explicit source fetch",
@@ -5852,6 +5853,7 @@
         ]
       },
       "expected_status": 500,
+      "expected_steelsearch_status": 500,
       "extract": "search_error_root_cause",
       "family": "lexical",
       "description": "[lexical] stored_fields _none_ rejects fields fetch",
@@ -6633,6 +6635,7 @@
         ]
       },
       "expected_status": 500,
+      "expected_steelsearch_status": 500,
       "extract": "search_error_root_cause",
       "family": "ranking",
       "description": "[ranking] collapse with search_after requires matching sort and collapse fields",
@@ -6652,6 +6655,7 @@
         }
       },
       "expected_status": 500,
+      "expected_steelsearch_status": 500,
       "extract": "search_error_root_cause",
       "family": "ranking",
       "description": "[ranking] collapse with scroll is rejected",
@@ -6681,6 +6685,7 @@
         }
       },
       "expected_status": 500,
+      "expected_steelsearch_status": 500,
       "extract": "search_error_root_cause",
       "family": "ranking",
       "description": "[ranking] collapse with rescore is rejected",
@@ -7117,6 +7122,7 @@
         ]
       },
       "expected_status": 500,
+      "expected_steelsearch_status": 500,
       "extract": "search_error_root_cause",
       "family": "ranking",
       "description": "[ranking] search_after with from is rejected",
@@ -7143,6 +7149,7 @@
         ]
       },
       "expected_status": 500,
+      "expected_steelsearch_status": 500,
       "extract": "search_error_root_cause",
       "family": "ranking",
       "description": "[ranking] search_after with scroll is rejected",
