@@ -2288,6 +2288,7 @@ pub struct SteelNode {
     pub documents_state: Arc<Mutex<BTreeMap<String, StoredDocument>>>,
     pub native_engine: Arc<TantivyEngine>,
     pub next_seq_no: Arc<Mutex<u64>>,
+    pub next_seq_no_by_index: Arc<Mutex<BTreeMap<String, u64>>>,
     pub shared_runtime_state_path: Option<PathBuf>,
     shared_runtime_state_recovery_failed: Arc<Mutex<bool>>,
     live_shutdown_in_progress: Arc<Mutex<bool>>,
@@ -2361,6 +2362,8 @@ pub struct SharedRuntimeState {
     pub metadata_manifest: Value,
     pub documents: BTreeMap<String, StoredDocument>,
     pub next_seq_no: u64,
+    #[serde(default)]
+    pub next_seq_no_by_index: BTreeMap<String, u64>,
     #[serde(default)]
     pub task_queue_state: Option<PersistedClusterManagerTaskQueueState>,
     #[serde(default)]
@@ -2547,6 +2550,7 @@ impl SteelNode {
             documents_state: Arc::new(Mutex::new(BTreeMap::new())),
             native_engine: Arc::new(TantivyEngine::default()),
             next_seq_no: Arc::new(Mutex::new(0)),
+            next_seq_no_by_index: Arc::new(Mutex::new(BTreeMap::new())),
             shared_runtime_state_path: None,
             shared_runtime_state_recovery_failed: Arc::new(Mutex::new(false)),
             live_shutdown_in_progress: Arc::new(Mutex::new(false)),
@@ -5788,6 +5792,10 @@ impl SteelNode {
             .expect("documents state lock poisoned")
             .retain(|key, _| !key.starts_with(&format!("{index}:")));
         *self.next_seq_no.lock().expect("seq_no lock poisoned") = 0;
+        self.next_seq_no_by_index
+            .lock()
+            .expect("per-index seq_no lock poisoned")
+            .insert(index.to_string(), 0);
         let indices = manifest
             .as_object_mut()
             .expect("metadata manifest object expected")
@@ -10579,14 +10587,23 @@ impl SteelNode {
                     forced_refresh,
                 )
             };
-            if item
+            let item_payload = item
                 .as_object()
                 .and_then(|object| object.values().next())
-                .and_then(Value::as_object)
+                .and_then(Value::as_object);
+            let item_action = item.as_object().and_then(|object| object.keys().next());
+            let item_status = item_payload
                 .and_then(|payload| payload.get("status"))
-                .and_then(Value::as_u64)
-                .is_some_and(|status| status >= 400)
-            {
+                .and_then(Value::as_u64);
+            let item_result = item_payload
+                .and_then(|payload| payload.get("result"))
+                .and_then(Value::as_str);
+            if item_status.is_some_and(|status| {
+                status >= 400
+                    && !(item_action.is_some_and(|action| action == "delete")
+                        && status == 404
+                        && item_result == Some("not_found"))
+            }) {
                 had_errors = true;
             }
             items.push(item);
@@ -11091,6 +11108,19 @@ impl SteelNode {
         }
     }
 
+    fn allocate_seq_no(&self, index: &str) -> u64 {
+        let mut by_index = self
+            .next_seq_no_by_index
+            .lock()
+            .expect("per-index seq_no lock poisoned");
+        let entry = by_index.entry(index.to_string()).or_insert(0);
+        let assigned = *entry;
+        *entry += 1;
+        let mut global = self.next_seq_no.lock().expect("seq_no lock poisoned");
+        *global = (*global).max(*entry);
+        assigned
+    }
+
     fn execute_bulk_action(
         &self,
         action: &str,
@@ -11231,9 +11261,7 @@ impl SteelNode {
                         });
                     }
                 }
-                let mut next_seq_no = self.next_seq_no.lock().expect("seq_no lock poisoned");
-                let assigned_seq_no = *next_seq_no;
-                *next_seq_no += 1;
+                let assigned_seq_no = self.allocate_seq_no(&resolved_index);
                 let version = external_version
                     .or_else(|| docs.get(&key).map(|doc| doc.version + 1))
                     .unwrap_or(1);
@@ -11248,14 +11276,13 @@ impl SteelNode {
                 };
                 docs.insert(key, record.clone());
                 drop(docs);
-                drop(next_seq_no);
                 self.sync_native_bulk_index_document(
                     &resolved_index,
                     id,
                     native_source,
                     forced_refresh,
                 );
-                serde_json::json!({
+                let mut response = serde_json::json!({
                     "index": {
                         "_index": resolved_index,
                         "_id": id,
@@ -11264,9 +11291,12 @@ impl SteelNode {
                         "_seq_no": record.seq_no,
                         "_primary_term": record.primary_term,
                         "status": if doc_existed { 200 } else { 201 },
-                        "forced_refresh": forced_refresh,
                     }
-                })
+                });
+                if forced_refresh {
+                    response["index"]["forced_refresh"] = Value::Bool(true);
+                }
+                response
             }
             "create" => {
                 let native_source = payload.clone();
@@ -11287,9 +11317,7 @@ impl SteelNode {
                         }
                     });
                 }
-                let mut next_seq_no = self.next_seq_no.lock().expect("seq_no lock poisoned");
-                let assigned_seq_no = *next_seq_no;
-                *next_seq_no += 1;
+                let assigned_seq_no = self.allocate_seq_no(&resolved_index);
                 let record = StoredDocument {
                     source: payload,
                     version: external_version.unwrap_or(1),
@@ -11300,14 +11328,13 @@ impl SteelNode {
                 };
                 docs.insert(key, record.clone());
                 drop(docs);
-                drop(next_seq_no);
                 self.sync_native_bulk_index_document(
                     &resolved_index,
                     id,
                     native_source,
                     forced_refresh,
                 );
-                serde_json::json!({
+                let mut response = serde_json::json!({
                     "create": {
                         "_index": resolved_index,
                         "_id": id,
@@ -11316,9 +11343,12 @@ impl SteelNode {
                         "_seq_no": record.seq_no,
                         "_primary_term": 1,
                         "status": 201,
-                        "forced_refresh": forced_refresh,
                     }
-                })
+                });
+                if forced_refresh {
+                    response["create"]["forced_refresh"] = Value::Bool(true);
+                }
+                response
             }
             "delete" => {
                 let mut docs = self
@@ -11348,14 +11378,11 @@ impl SteelNode {
                         });
                     }
                 }
-                let mut next_seq_no = self.next_seq_no.lock().expect("seq_no lock poisoned");
-                let assigned_seq_no = *next_seq_no;
-                *next_seq_no += 1;
+                let assigned_seq_no = self.allocate_seq_no(&resolved_index);
                 if let Some(record) = docs.remove(&key) {
                     drop(docs);
-                    drop(next_seq_no);
                     self.sync_native_bulk_delete_document(&resolved_index, id, forced_refresh);
-                    serde_json::json!({
+                    let mut response = serde_json::json!({
                         "delete": {
                             "_index": resolved_index,
                             "_id": id,
@@ -11364,11 +11391,14 @@ impl SteelNode {
                             "_seq_no": assigned_seq_no,
                             "_primary_term": record.primary_term,
                             "status": 200,
-                            "forced_refresh": forced_refresh,
                         }
-                    })
+                    });
+                    if forced_refresh {
+                        response["delete"]["forced_refresh"] = Value::Bool(true);
+                    }
+                    response
                 } else {
-                    serde_json::json!({
+                    let mut response = serde_json::json!({
                         "delete": {
                             "_index": resolved_index,
                             "_id": id,
@@ -11377,9 +11407,12 @@ impl SteelNode {
                             "_seq_no": assigned_seq_no,
                             "_primary_term": 1,
                             "status": 404,
-                            "forced_refresh": forced_refresh,
                         }
-                    })
+                    });
+                    if forced_refresh {
+                        response["delete"]["forced_refresh"] = Value::Bool(true);
+                    }
+                    response
                 }
             }
             "update" => {
@@ -11419,16 +11452,14 @@ impl SteelNode {
                         });
                     }
                 }
-                let mut next_seq_no = self.next_seq_no.lock().expect("seq_no lock poisoned");
-                let assigned_seq_no = *next_seq_no;
-                *next_seq_no += 1;
+                let assigned_seq_no = self.allocate_seq_no(&resolved_index);
                 if let Some(record) = docs.get_mut(&key) {
                     merge_json_object(&mut record.source, &doc_patch);
                     let native_source = record.source.clone();
                     record.version += 1;
                     record.seq_no = assigned_seq_no as i64;
                     record.refreshed = forced_refresh;
-                    let response = serde_json::json!({
+                    let mut response = serde_json::json!({
                         "update": {
                             "_index": resolved_index,
                             "_id": id,
@@ -11437,11 +11468,12 @@ impl SteelNode {
                             "_seq_no": record.seq_no,
                             "_primary_term": record.primary_term,
                             "status": 200,
-                            "forced_refresh": forced_refresh,
                         }
                     });
+                    if forced_refresh {
+                        response["update"]["forced_refresh"] = Value::Bool(true);
+                    }
                     drop(docs);
-                    drop(next_seq_no);
                     self.sync_native_bulk_index_document(
                         &resolved_index,
                         id,
@@ -11462,7 +11494,7 @@ impl SteelNode {
                         refreshed: forced_refresh,
                     };
                     docs.insert(key, record.clone());
-                    let response = serde_json::json!({
+                    let mut response = serde_json::json!({
                         "update": {
                             "_index": resolved_index,
                             "_id": id,
@@ -11471,11 +11503,12 @@ impl SteelNode {
                             "_seq_no": record.seq_no,
                             "_primary_term": 1,
                             "status": 201,
-                            "forced_refresh": forced_refresh,
                         }
                     });
+                    if forced_refresh {
+                        response["update"]["forced_refresh"] = Value::Bool(true);
+                    }
                     drop(docs);
-                    drop(next_seq_no);
                     self.sync_native_bulk_index_document(
                         &resolved_index,
                         id,
@@ -15614,9 +15647,7 @@ impl SteelNode {
                 );
             }
         }
-        let mut next_seq_no = self.next_seq_no.lock().expect("seq_no lock poisoned");
-        let assigned_seq_no = *next_seq_no;
-        *next_seq_no += 1;
+        let assigned_seq_no = self.allocate_seq_no(&resolved_index);
         let version = external_version
             .or_else(|| docs.get(&key).map(|doc| doc.version + 1))
             .unwrap_or(1);
@@ -15647,7 +15678,6 @@ impl SteelNode {
         }
         docs.insert(key, record);
         drop(docs);
-        drop(next_seq_no);
         let _ = self.native_engine.index_document(IndexDocumentRequest {
             index: resolved_index.clone(),
             id: id.to_string(),
@@ -15730,9 +15760,7 @@ impl SteelNode {
                 }),
             );
         }
-        let mut next_seq_no = self.next_seq_no.lock().expect("seq_no lock poisoned");
-        let assigned_seq_no = *next_seq_no;
-        *next_seq_no += 1;
+        let assigned_seq_no = self.allocate_seq_no(&resolved_index);
         let forced_refresh = request
             .query_params
             .get("refresh")
@@ -15760,7 +15788,6 @@ impl SteelNode {
         }
         docs.insert(key, record);
         drop(docs);
-        drop(next_seq_no);
         let _ = self.native_engine.index_document(IndexDocumentRequest {
             index: resolved_index.clone(),
             id: id.to_string(),
@@ -15988,32 +16015,30 @@ impl SteelNode {
             }
         }
         if let Some(record) = docs.remove(&key) {
-            let mut next_seq_no = self.next_seq_no.lock().expect("seq_no lock poisoned");
-            let assigned_seq_no = *next_seq_no;
-            *next_seq_no += 1;
+            let assigned_seq_no = self.allocate_seq_no(&resolved_index);
             let response_index =
                 if resolved_index != index && self.resolve_alias_read_routing(index).is_some() {
                     resolved_index.clone()
                 } else {
                     resolved_index.clone()
                 };
-            let response = RestResponse::json(
-                200,
-                serde_json::json!({
+            let forced_refresh = request
+                .query_params
+                .get("refresh")
+                .is_some_and(|value| value == "wait_for" || value == "true");
+            let mut body = serde_json::json!({
                     "_index": response_index,
                     "_id": id,
                     "_version": record.version + 1,
                     "result": "deleted",
                     "_seq_no": assigned_seq_no,
                     "_primary_term": record.primary_term,
-                    "forced_refresh": request
-                        .query_params
-                        .get("refresh")
-                        .is_some_and(|value| value == "wait_for" || value == "true"),
-                }),
-            );
+            });
+            if forced_refresh {
+                body["forced_refresh"] = Value::Bool(true);
+            }
+            let response = RestResponse::json(200, body);
             drop(docs);
-            drop(next_seq_no);
             self.persist_shared_runtime_state_to_disk();
             return response;
         }
@@ -16138,9 +16163,6 @@ impl SteelNode {
                 );
             }
         }
-        let mut next_seq_no = self.next_seq_no.lock().expect("seq_no lock poisoned");
-        let assigned_seq_no = *next_seq_no;
-        *next_seq_no += 1;
         if let Some(record) = docs.get_mut(&key) {
             let original_source = record.source.clone();
             if let Some(script) = script.as_ref() {
@@ -16164,6 +16186,7 @@ impl SteelNode {
                     }),
                 );
             }
+            let assigned_seq_no = self.allocate_seq_no(&resolved_index);
             record.version += 1;
             record.seq_no = assigned_seq_no as i64;
             record.refreshed = forced_refresh;
@@ -16180,11 +16203,11 @@ impl SteelNode {
                 }),
             );
             drop(docs);
-            drop(next_seq_no);
             self.persist_shared_runtime_state_to_disk();
             return response;
         }
         if scripted_upsert && script.is_some() {
+            let assigned_seq_no = self.allocate_seq_no(&resolved_index);
             let mut source = if upsert.is_null() {
                 serde_json::json!({})
             } else {
@@ -16215,11 +16238,11 @@ impl SteelNode {
             });
             docs.insert(key, record);
             drop(docs);
-            drop(next_seq_no);
             self.persist_shared_runtime_state_to_disk();
             return RestResponse::json(201, response);
         }
         if doc_as_upsert || !upsert.is_null() {
+            let assigned_seq_no = self.allocate_seq_no(&resolved_index);
             let source = if doc_as_upsert { doc_patch } else { upsert };
             let record = StoredDocument {
                 source,
@@ -16240,7 +16263,6 @@ impl SteelNode {
             });
             docs.insert(key, record);
             drop(docs);
-            drop(next_seq_no);
             self.persist_shared_runtime_state_to_disk();
             return RestResponse::json(201, response);
         }
@@ -19360,6 +19382,11 @@ impl SteelNode {
                 return;
             }
         };
+        let next_seq_no_by_index = if state.next_seq_no_by_index.is_empty() {
+            next_seq_no_by_index_from_documents(&state.documents)
+        } else {
+            state.next_seq_no_by_index.clone()
+        };
         self.set_shared_runtime_state_recovery_failed(false);
         *self
             .created_indices_state
@@ -19374,6 +19401,10 @@ impl SteelNode {
             .lock()
             .expect("documents state lock poisoned") = state.documents;
         *self.next_seq_no.lock().expect("seq_no lock poisoned") = state.next_seq_no;
+        *self
+            .next_seq_no_by_index
+            .lock()
+            .expect("per-index seq_no lock poisoned") = next_seq_no_by_index;
         *self
             .knn_operational_state
             .lock()
@@ -19564,6 +19595,11 @@ impl SteelNode {
                 .expect("documents state lock poisoned")
                 .clone(),
             next_seq_no: *self.next_seq_no.lock().expect("seq_no lock poisoned"),
+            next_seq_no_by_index: self
+                .next_seq_no_by_index
+                .lock()
+                .expect("per-index seq_no lock poisoned")
+                .clone(),
             task_queue_state,
             cancelled_task_ids,
             rethrottled_task_rates: self
@@ -24593,6 +24629,23 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
 fn split_document_key(key: &str) -> Option<(&str, &str, &str)> {
     let mut parts = key.splitn(3, ':');
     Some((parts.next()?, parts.next()?, parts.next()?))
+}
+
+fn next_seq_no_by_index_from_documents(
+    documents: &BTreeMap<String, StoredDocument>,
+) -> BTreeMap<String, u64> {
+    let mut next_by_index: BTreeMap<String, u64> = BTreeMap::new();
+    for (key, document) in documents {
+        let Some((index, _, _)) = split_document_key(key) else {
+            continue;
+        };
+        let next = document.seq_no.saturating_add(1).max(0) as u64;
+        next_by_index
+            .entry(index.to_string())
+            .and_modify(|current| *current = (*current).max(next))
+            .or_insert(next);
+    }
+    next_by_index
 }
 
 fn current_epoch_millis() -> u128 {
@@ -56696,10 +56749,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 .with_body(refresh_false.as_bytes().to_vec()),
         );
         assert_eq!(refresh_false_response.status, 200);
-        assert_eq!(
-            refresh_false_response.body["items"][0]["index"]["forced_refresh"],
-            false
-        );
+        assert!(refresh_false_response.body["items"][0]["index"]["forced_refresh"].is_null());
         let refresh_false_readback = node.handle_rest_request(RestRequest::new(
             RestMethod::Get,
             "/logs-bulk-refresh-000001/_doc/doc-false?realtime=false",

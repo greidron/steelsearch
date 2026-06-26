@@ -693,6 +693,32 @@
       "reason": "Steelsearch explicit fail-closed fixture for non-object bulk action metadata."
     },
     {
+      "name": "bulk_delete_existing_and_missing_items",
+      "area": "document-write",
+      "extract": "bulk_items",
+      "steps": [
+        {
+          "name": "seed-bulk-delete-doc",
+          "method": "PUT",
+          "path": "/logs-bulk-metadata-000001/_doc/doc-delete",
+          "body": {
+            "message": "bulk delete baseline"
+          },
+          "expected_status": 201,
+          "extract": "single_doc_write_result"
+        },
+        {
+          "name": "bulk-delete-existing-and-missing",
+          "method": "POST",
+          "path": "/_bulk",
+          "body": "{\"delete\":{\"_index\":\"logs-bulk-metadata-000001\",\"_id\":\"doc-delete\"}}\n{\"delete\":{\"_index\":\"logs-bulk-metadata-000001\",\"_id\":\"doc-delete-missing\"}}\n",
+          "raw": true,
+          "expected_status": 200,
+          "extract": "bulk_items"
+        }
+      ]
+    },
+    {
       "name": "bulk_create_external_version_success_item",
       "area": "document-write",
       "method": "POST",
