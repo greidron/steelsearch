@@ -1313,6 +1313,16 @@
       "description": "[admin-cat] cat nodeattrs text honors h aliases"
     },
     {
+      "name": "cat_nodeattrs_text_selected_identity_columns",
+      "area": "cat",
+      "method": "GET",
+      "path": "/_cat/nodeattrs?v=true&h=name,nodeId,p,h,i,po,attr.name,attr.value",
+      "accept": "text/plain",
+      "extract": "cat_indices_selected_columns",
+      "family": "admin-cat",
+      "description": "[admin-cat] cat nodeattrs text honors identity aliases"
+    },
+    {
       "name": "cat_nodeattrs_json_selected_alias_columns",
       "area": "cat",
       "method": "GET",
@@ -1320,6 +1330,15 @@
       "extract": "cat_nodeattrs",
       "family": "admin-cat",
       "description": "[admin-cat] cat nodeattrs json honors h aliases"
+    },
+    {
+      "name": "cat_nodeattrs_json_selected_identity_columns",
+      "area": "cat",
+      "method": "GET",
+      "path": "/_cat/nodeattrs?format=json&h=name,nodeId,p,h,i,po,attr.name,attr.value",
+      "extract": "cat_nodeattrs",
+      "family": "admin-cat",
+      "description": "[admin-cat] cat nodeattrs json honors identity aliases"
     },
     {
       "name": "cat_nodes_json",
