@@ -12738,6 +12738,11 @@ impl SteelNode {
         if task_id.is_empty() || task_id == "_cancel" {
             return RestResponse::not_found_for(request.method, &request.path);
         }
+        if let Some(response) =
+            validate_tasks_boolean_query_params(request, &["wait_for_completion"])
+        {
+            return response;
+        }
         if let Some(task) = self.find_task(task_id) {
             return RestResponse::json(
                 200,
@@ -38065,6 +38070,10 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
 
         for (method, path) in [
             (RestMethod::Get, "/_tasks?detailed=maybe"),
+            (
+                RestMethod::Get,
+                "/_tasks/node-a:999?wait_for_completion=maybe",
+            ),
             (
                 RestMethod::Post,
                 "/_tasks/_cancel?wait_for_completion=maybe",

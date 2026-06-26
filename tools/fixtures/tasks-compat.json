@@ -76,6 +76,19 @@
       }
     },
     {
+      "name": "reject_tasks_get_invalid_wait_for_completion_boolean",
+      "method": "GET",
+      "path": "/_tasks/node-a:999?wait_for_completion=maybe",
+      "compare": {
+        "expected_status": 400,
+        "body_paths_present": [
+          "error.type",
+          "error.reason",
+          "status"
+        ]
+      }
+    },
+    {
       "name": "reject_unknown_task_cancel_shape",
       "method": "POST",
       "path": "/_tasks/_cancel?task_id=node-a:999",
