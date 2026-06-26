@@ -5344,6 +5344,12 @@ fn local_transport_search_response_from_request(
     let sorts = request_source.and_then(|source| source.sorts.as_deref());
     let search_after = request_source.and_then(|source| source.search_after.as_deref());
     let fetch_source = request_source.and_then(|source| source.fetch_source.as_ref());
+    let include_version = request_source
+        .and_then(|source| source.version)
+        .unwrap_or(false);
+    let include_seq_no_and_primary_term = request_source
+        .and_then(|source| source.seq_no_and_primary_term)
+        .unwrap_or(false);
     let mut matched = documents
         .iter()
         .filter_map(|(key, record)| {
@@ -5407,9 +5413,17 @@ fn local_transport_search_response_from_request(
                 id: Some(id),
                 score: 1.0,
                 nested_identity: None,
-                version,
-                seq_no,
-                primary_term,
+                version: if include_version { version } else { -1 },
+                seq_no: if include_seq_no_and_primary_term {
+                    seq_no
+                } else {
+                    -2
+                },
+                primary_term: if include_seq_no_and_primary_term {
+                    primary_term
+                } else {
+                    0
+                },
                 source,
                 explanation: None,
                 fields: BTreeMap::new(),
@@ -18091,6 +18105,9 @@ mod tests {
         assert_eq!(search_response.total_hits, Some(1));
         assert_eq!(search_response.hits.len(), 1);
         assert_eq!(search_response.hits[0].id.as_deref(), Some("doc-1"));
+        assert_eq!(search_response.hits[0].version, -1);
+        assert_eq!(search_response.hits[0].seq_no, -2);
+        assert_eq!(search_response.hits[0].primary_term, 0);
         assert_eq!(
             search_response.hits[0].source.as_ref(),
             Some(&serde_json::json!({
@@ -18100,6 +18117,61 @@ mod tests {
                 ]
             }))
         );
+
+        let metadata_request = os_transport::action::OpenSearchSearchRequestWire {
+            source: Some(os_transport::action::OpenSearchSearchSourceBuilderWire {
+                point_in_time: Some(os_transport::action::OpenSearchPointInTimeBuilderWire {
+                    id: encoded_pit_id.clone(),
+                    keep_alive: Some(os_transport::action::TimeValueWire::minutes(1)),
+                }),
+                query: Some(os_transport::action::OpenSearchQueryBuilderWire::MatchAll(
+                    os_transport::action::OpenSearchMatchAllQueryBuilderWire::default(),
+                )),
+                fetch_source: Some(os_transport::action::OpenSearchFetchSourceContextWire {
+                    fetch_source: false,
+                    includes: Vec::new(),
+                    excludes: Vec::new(),
+                }),
+                version: Some(true),
+                seq_no_and_primary_term: Some(true),
+                ..os_transport::action::OpenSearchSearchSourceBuilderWire::default()
+            }),
+            indices_options:
+                os_transport::action::OpenSearchIndicesOptionsWire::point_in_time_search_prepared(),
+            ccs_minimize_roundtrips: false,
+            ..os_transport::action::OpenSearchSearchRequestWire::default()
+        };
+        let metadata_frame = os_transport::action::build_opensearch_search_request_message(
+            298,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &metadata_request,
+        )
+        .unwrap();
+        assert!(search_request_supports_local_execution_subset(
+            &metadata_frame[6..]
+        ));
+        let metadata_response = build_local_search_response(
+            298,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &metadata_frame[6..],
+        );
+        let mut frame = BytesMut::from(&metadata_response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected encoded-PIT metadata search response");
+        };
+        let metadata_response =
+            os_transport::action::read_opensearch_search_response_message(&message).unwrap();
+        assert_eq!(metadata_response.total_hits, Some(1));
+        assert_eq!(metadata_response.hits.len(), 1);
+        assert_eq!(metadata_response.hits[0].id.as_deref(), Some("doc-1"));
+        assert_eq!(metadata_response.hits[0].version, 1);
+        assert_eq!(metadata_response.hits[0].seq_no, 1);
+        assert_eq!(metadata_response.hits[0].primary_term, 1);
+        assert_eq!(metadata_response.hits[0].source, None);
 
         let list_response = build_local_get_all_pits_response(
             295,
