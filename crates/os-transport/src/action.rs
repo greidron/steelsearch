@@ -2176,8 +2176,8 @@ pub fn classify_opensearch_transport_action(
         },
         OPENSEARCH_FLUSH_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
-            disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "flush transport execution requires shard translog flush execution, wait-if-ongoing semantics, and shard status response rendering",
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "flush transport adapter validates the bounded global default subset and renders OpenSearch-shaped shard counters",
         },
         OPENSEARCH_FORCE_MERGE_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -38846,7 +38846,7 @@ impl OpenSearchFlushRequestWire {
         Ok(request)
     }
 
-    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+    pub fn validate_supported_execution_subset(&self) -> Result<(), TransportActionWireError> {
         if !self.indices.is_empty() {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "flush indices",
@@ -38878,13 +38878,19 @@ impl OpenSearchFlushRequestWire {
                 reason: "wait_if_ongoing=false requires concurrent flush state mapping",
             });
         }
+        Ok(())
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        self.validate_supported_execution_subset()?;
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "flush execution",
-            reason:
-                "flush transport execution requires shard translog flush execution and response rendering",
+            reason: "use validate_supported_execution_subset for the implemented flush adapter",
         })
     }
 }
+
+pub type OpenSearchFlushResponseWire = OpenSearchRefreshResponseWire;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OpenSearchForceMergeRequestWire {
@@ -39793,6 +39799,36 @@ pub fn read_opensearch_flush_request_message(
         });
     }
     OpenSearchFlushRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_opensearch_flush_response_message(
+    request_id: i64,
+    version: Version,
+    response: &OpenSearchFlushResponseWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    response.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::response(),
+        version,
+        variable_header: BytesMut::from(&ResponseVariableHeader::default().to_bytes()[..]),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_flush_response_message(
+    message: &TransportMessage,
+) -> Result<OpenSearchFlushResponseWire, TransportActionWireError> {
+    if !message.status.is_response() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "response",
+            actual: message.status.bits(),
+        });
+    }
+    let _header = ResponseVariableHeader::read(message.variable_header.clone().freeze())?;
+    OpenSearchFlushResponseWire::read(message.body.clone().freeze())
 }
 
 pub fn build_opensearch_force_merge_request_message(
@@ -44212,7 +44248,7 @@ mod tests {
         );
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_FLUSH_ACTION_NAME).disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_FORCE_MERGE_ACTION_NAME).disposition,
@@ -44427,6 +44463,7 @@ mod tests {
                 || spec.action_name == OPENSEARCH_SEARCH_SCROLL_ACTION_NAME
                 || spec.action_name == OPENSEARCH_EXPLAIN_ACTION_NAME
                 || spec.action_name == OPENSEARCH_VALIDATE_QUERY_ACTION_NAME
+                || spec.action_name == OPENSEARCH_FLUSH_ACTION_NAME
             {
                 assert_eq!(
                     decision.disposition,
@@ -44474,7 +44511,6 @@ mod tests {
                 || spec.action_name == OPENSEARCH_DELETE_COMPOSABLE_INDEX_TEMPLATE_ACTION_NAME
                 || spec.action_name == OPENSEARCH_SIMULATE_INDEX_TEMPLATE_ACTION_NAME
                 || spec.action_name == OPENSEARCH_SIMULATE_TEMPLATE_ACTION_NAME
-                || spec.action_name == OPENSEARCH_FLUSH_ACTION_NAME
                 || spec.action_name == OPENSEARCH_FORCE_MERGE_ACTION_NAME
                 || spec.action_name == OPENSEARCH_UPGRADE_ACTION_NAME
                 || spec.action_name == OPENSEARCH_UPGRADE_STATUS_ACTION_NAME
@@ -60428,7 +60464,7 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_flush_request_wire_round_trips_and_rejects_execution_boundary() {
+    fn opensearch_flush_request_wire_round_trips_and_validates_supported_default() {
         let request = OpenSearchFlushRequestWire {
             parent_task_node: "node-a".into(),
             parent_task_id: Some(42),
@@ -60441,13 +60477,7 @@ mod tests {
         assert_eq!(decoded, request);
         assert!(!decoded.force);
         assert!(decoded.wait_if_ongoing);
-        assert!(matches!(
-            decoded.reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "flush execution",
-                ..
-            })
-        ));
+        decoded.validate_supported_execution_subset().unwrap();
     }
 
     #[test]
@@ -60518,7 +60548,7 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_flush_transport_messages_bind_rejected_action_frame() {
+    fn opensearch_flush_transport_messages_bind_supported_action_frame_and_response() {
         let request = OpenSearchFlushRequestWire::default();
         let mut frame =
             build_opensearch_flush_request_message(69, OPENSEARCH_3_7_0_TRANSPORT, &request)
@@ -60534,17 +60564,24 @@ mod tests {
             classify_opensearch_transport_request_message(&message)
                 .unwrap()
                 .disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
-        assert!(matches!(
-            read_opensearch_flush_request_message(&message)
-                .unwrap()
-                .reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "flush execution",
-                ..
-            })
-        ));
+        read_opensearch_flush_request_message(&message)
+            .unwrap()
+            .validate_supported_execution_subset()
+            .unwrap();
+
+        let response = OpenSearchFlushResponseWire::success(2);
+        let mut frame =
+            build_opensearch_flush_response_message(69, OPENSEARCH_3_7_0_TRANSPORT, &response)
+                .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected flush response message");
+        };
+        assert_eq!(
+            read_opensearch_flush_response_message(&message).unwrap(),
+            response
+        );
     }
 
     #[test]
