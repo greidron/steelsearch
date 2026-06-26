@@ -47667,6 +47667,96 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
     }
 
     #[test]
+    fn point_in_time_shard_doc_scan_with_replicas_setting_stays_unique_like_opensearch() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        let create = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/sharddoc-replicas").with_json_body(
+                serde_json::json!({
+                    "settings": {
+                        "number_of_shards": 3,
+                        "number_of_replicas": 1
+                    },
+                    "mappings": {
+                        "properties": {
+                            "v": { "type": "long" }
+                        }
+                    }
+                }),
+            ),
+        );
+        assert_eq!(create.status, 200);
+
+        for id in 1..=100 {
+            let doc = node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, &format!("/sharddoc-replicas/_doc/{id}"))
+                    .with_json_body(serde_json::json!({ "v": id })),
+            );
+            assert_eq!(doc.status, 201, "{id}");
+        }
+
+        let open_pit = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/sharddoc-replicas/_search/point_in_time?keep_alive=1m",
+        ));
+        assert_eq!(open_pit.status, 200);
+        let pit_id = open_pit.body["pit_id"]
+            .as_str()
+            .expect("pit id")
+            .to_string();
+
+        let mut search_after = None;
+        let mut shard_doc_keys = Vec::new();
+        let mut seen_ids = BTreeSet::new();
+
+        loop {
+            let mut body = serde_json::json!({
+                "size": 11,
+                "pit": {
+                    "id": pit_id,
+                    "keep_alive": "1m"
+                },
+                "sort": [
+                    { "_shard_doc": "asc" }
+                ]
+            });
+            if let Some(after) = search_after.take() {
+                body["search_after"] = after;
+            }
+
+            let page = node.handle_rest_request(
+                RestRequest::new(RestMethod::Post, "/_search").with_json_body(body),
+            );
+            assert_eq!(page.status, 200, "{page:?}");
+            let hits = page.body["hits"]["hits"].as_array().expect("hits");
+            for hit in hits {
+                let id = hit["_id"].as_str().expect("id").to_string();
+                assert!(seen_ids.insert(id.clone()), "duplicate hit {id}");
+                shard_doc_keys.push(hit["sort"][0].as_i64().expect("_shard_doc sort"));
+            }
+            if hits.len() < 11 {
+                break;
+            }
+            search_after = Some(hits[hits.len() - 1]["sort"].clone());
+        }
+
+        assert_eq!(seen_ids.len(), 100);
+        assert_eq!(shard_doc_keys.len(), 100);
+        for window in shard_doc_keys.windows(2) {
+            assert!(window[0] < window[1], "{window:?}");
+        }
+
+        let close_pit = node.handle_rest_request(
+            RestRequest::new(RestMethod::Delete, "/_search/point_in_time")
+                .with_json_body(serde_json::json!({ "pit_id": [pit_id] })),
+        );
+        assert_eq!(close_pit.status, 200);
+    }
+
+    #[test]
     fn point_in_time_field_sort_uses_shard_doc_as_tie_breaker() {
         let node = SteelNode::new(NodeInfo {
             name: "steel-node".to_string(),
