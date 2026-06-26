@@ -9503,11 +9503,22 @@ impl SteelNode {
             .documents_state
             .lock()
             .expect("documents state lock poisoned");
+        let routing = request
+            .query_params
+            .get("routing")
+            .cloned()
+            .or_else(|| self.resolve_alias_read_routing(index));
         let found = resolved_indices.iter().find_map(|resolved_index| {
-            let key_prefix = format!("{resolved_index}:{id}:");
-            docs.iter()
-                .find(|(key, _)| key.starts_with(&key_prefix))
-                .map(|(_, record)| (resolved_index.clone(), record))
+            if let Some(routing) = routing.as_deref() {
+                let key = format!("{resolved_index}:{id}:{routing}");
+                docs.get(&key)
+                    .map(|record| (resolved_index.clone(), record))
+            } else {
+                let key_prefix = format!("{resolved_index}:{id}:");
+                docs.iter()
+                    .find(|(key, _)| key.starts_with(&key_prefix))
+                    .map(|(_, record)| (resolved_index.clone(), record))
+            }
         });
         let Some((resolved_index, record)) = found else {
             return RestResponse::json(
@@ -53259,6 +53270,60 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(explain_get.status, 200);
         assert_eq!(explain_get.body["get"]["found"], true);
 
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(RestMethod::Put, "/logs-explain-routing"))
+                .status,
+            200
+        );
+        for (routing, tenant) in [("tenant-a", "tenant-a"), ("tenant-b", "tenant-b")] {
+            assert_eq!(
+                node.handle_rest_request(
+                    RestRequest::new(
+                        RestMethod::Put,
+                        &format!("/logs-explain-routing/_doc/doc-shared?routing={routing}"),
+                    )
+                    .with_json_body(serde_json::json!({ "tenant": tenant })),
+                )
+                .status,
+                201
+            );
+        }
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(
+                RestMethod::Post,
+                "/logs-explain-routing/_refresh"
+            ))
+            .status,
+            200
+        );
+        let routed_explain = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/logs-explain-routing/_explain/doc-shared?routing=tenant-b",
+            )
+            .with_json_body(serde_json::json!({
+                "query": {
+                    "term": { "tenant": "tenant-b" }
+                }
+            })),
+        );
+        assert_eq!(routed_explain.status, 200);
+        assert_eq!(routed_explain.body["matched"], true);
+
+        let wrong_routing_explain = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/logs-explain-routing/_explain/doc-shared?routing=tenant-missing",
+            )
+            .with_json_body(serde_json::json!({
+                "query": {
+                    "term": { "tenant": "tenant-b" }
+                }
+            })),
+        );
+        assert_eq!(wrong_routing_explain.status, 404);
+        assert_eq!(wrong_routing_explain.body["matched"], false);
+
         let root_multi = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/_msearch")
                 .with_header("content-type", "application/x-ndjson")
@@ -53287,12 +53352,15 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(routed_header_multi.body["responses"][0]["status"], 200);
         assert_eq!(
             routed_header_multi.body["responses"][0]["hits"]["total"]["value"],
-            1
+            2
         );
-        assert_eq!(
-            routed_header_multi.body["responses"][0]["hits"]["hits"][0]["_id"],
-            "doc-routed"
-        );
+        let routed_header_ids = routed_header_multi.body["responses"][0]["hits"]["hits"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|hit| hit["_id"].as_str().unwrap())
+            .collect::<Vec<_>>();
+        assert!(routed_header_ids.contains(&"doc-routed"));
 
         let targeted_multi = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/logs-msearch-*/_msearch")
