@@ -116,6 +116,15 @@
       }
     },
     {
+      "name": "get_nodes_usage_rest_actions_only",
+      "method": "GET",
+      "path": "/_nodes/usage/rest_actions",
+      "compare": {
+        "expected_status": 200,
+        "compare_mode": "nodes_usage_rest_actions_only"
+      }
+    },
+    {
       "name": "get_cat_pit_segments_all_text_shape",
       "method": "GET",
       "path": "/_cat/pit_segments/_all?v=true",

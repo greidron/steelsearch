@@ -3313,7 +3313,7 @@ impl SteelNode {
         if request.method == RestMethod::Get
             && self.nodes_usage_variant_path_supported(&request.path)
         {
-            return Some(RestResponse::json(200, self.nodes_usage_body()));
+            return Some(self.handle_nodes_usage_route(request));
         }
         if request.method == RestMethod::Get
             && self.index_stats_variant_path_supported(&request.path)
@@ -13959,26 +13959,73 @@ impl SteelNode {
         pit_count.saturating_add(scroll_count) as u64
     }
 
-    fn nodes_usage_body(&self) -> Value {
+    fn handle_nodes_usage_route(&self, request: &RestRequest) -> RestResponse {
+        let Some((node_selector, requested_metrics)) = parse_nodes_usage_path(&request.path) else {
+            return RestResponse::opensearch_error_kind(
+                os_rest::RestErrorKind::IllegalArgument,
+                format!("no handler found for uri [{}]", request.path),
+            );
+        };
+        if requested_metrics.contains("_all") && requested_metrics.len() > 1 {
+            return RestResponse::opensearch_error_kind(
+                os_rest::RestErrorKind::IllegalArgument,
+                format!(
+                    "request [{}] contains _all and individual metrics [{}]",
+                    request.path,
+                    nodes_usage_raw_metric(&request.path).unwrap_or("_all")
+                ),
+            );
+        }
+        RestResponse::json(
+            200,
+            self.nodes_usage_body_for(&node_selector, &requested_metrics),
+        )
+    }
+
+    fn nodes_usage_body_for(
+        &self,
+        node_selector: &str,
+        requested_metrics: &BTreeSet<String>,
+    ) -> Value {
         let view = self.cluster_view.clone().unwrap_or_default();
         let mut nodes = serde_json::Map::new();
         for node in &view.nodes {
-            nodes.insert(
-                node.node_id.clone(),
-                serde_json::json!({
-                    "timestamp": 1,
-                    "since": 1,
-                    "rest_actions": {
+            if !node_matches_nodes_info_selector(&view, node, node_selector) {
+                continue;
+            }
+            let include_all = requested_metrics.contains("_all");
+            let mut node_body = serde_json::Map::new();
+            node_body.insert("timestamp".to_string(), serde_json::json!(1));
+            node_body.insert("since".to_string(), serde_json::json!(1));
+            if include_all || requested_metrics.contains("rest_actions") {
+                node_body.insert(
+                    "rest_actions".to_string(),
+                    serde_json::json!({
                         "nodes_usage": 1,
                         "cluster_stats": 1
-                    },
-                    "aggregations": {
+                    }),
+                );
+            }
+            if include_all || requested_metrics.contains("aggregations") {
+                node_body.insert(
+                    "aggregations".to_string(),
+                    serde_json::json!({
                         "terms": 1
-                    }
-                }),
-            );
+                    }),
+                );
+            }
+            nodes.insert(node.node_id.clone(), Value::Object(node_body));
         }
-        serde_json::json!({ "nodes": nodes })
+        let total = nodes.len();
+        serde_json::json!({
+            "_nodes": {
+                "total": total,
+                "successful": total,
+                "failed": 0
+            },
+            "cluster_name": view.cluster_name,
+            "nodes": nodes
+        })
     }
 
     fn handle_nodes_info_route(&self, request: &RestRequest) -> RestResponse {
@@ -23214,6 +23261,45 @@ fn node_matches_nodes_info_selector(
             || wildcard_match(pattern, &node.node_name)
             || wildcard_match(pattern, &node.transport_address)
     })
+}
+
+fn parse_nodes_usage_path(path: &str) -> Option<(String, BTreeSet<String>)> {
+    let remainder = path.strip_prefix("/_nodes/")?;
+    let segments = remainder
+        .split('/')
+        .filter(|segment| !segment.is_empty())
+        .collect::<Vec<_>>();
+    match segments.as_slice() {
+        ["usage"] => Some(("_all".to_string(), BTreeSet::from(["_all".to_string()]))),
+        ["usage", metric] => Some((
+            "_all".to_string(),
+            split_nonempty_csv(metric)
+                .into_iter()
+                .map(str::to_string)
+                .collect(),
+        )),
+        [node_id, "usage"] => Some(((*node_id).to_string(), BTreeSet::from(["_all".to_string()]))),
+        [node_id, "usage", metric] => Some((
+            (*node_id).to_string(),
+            split_nonempty_csv(metric)
+                .into_iter()
+                .map(str::to_string)
+                .collect(),
+        )),
+        _ => None,
+    }
+}
+
+fn nodes_usage_raw_metric(path: &str) -> Option<&str> {
+    let remainder = path.strip_prefix("/_nodes/")?;
+    let segments = remainder
+        .split('/')
+        .filter(|segment| !segment.is_empty())
+        .collect::<Vec<_>>();
+    match segments.as_slice() {
+        ["usage", metric] | [_, "usage", metric] => Some(*metric),
+        _ => None,
+    }
 }
 
 fn validate_doc_write_occ_query_params(
@@ -37301,9 +37387,23 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
 
     #[test]
     fn nodes_usage_variant_routes_serve_node_usage_shape() {
-        let node = SteelNode::new(NodeInfo {
+        let mut node = SteelNode::new(NodeInfo {
             name: "steel-node".to_string(),
             version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        node.cluster_view = Some(DevelopmentClusterView {
+            cluster_name: "steel-cluster".to_string(),
+            cluster_uuid: "cluster-uuid".to_string(),
+            local_node_id: "steel-node".to_string(),
+            nodes: vec![DevelopmentClusterNode {
+                node_id: "steel-node".to_string(),
+                node_name: "steel-node".to_string(),
+                http_address: Some("127.0.0.1:9200".to_string()),
+                transport_address: "127.0.0.1:9300".to_string(),
+                roles: vec!["cluster_manager".to_string(), "data".to_string()],
+                local: true,
+            }],
+            coordination: None,
         });
 
         for path in [
@@ -37311,11 +37411,46 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             "/_nodes/usage/rest_actions",
             "/_nodes/_all/usage",
             "/_nodes/_all/usage/rest_actions",
+            "/_nodes/usage/unknown_metric",
         ] {
             let response = node.handle_rest_request(RestRequest::new(RestMethod::Get, path));
             assert_eq!(response.status, 200, "path {path}");
             assert!(response.body["nodes"].is_object(), "path {path}");
         }
+
+        let rest_actions_only = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_nodes/usage/rest_actions",
+        ));
+        let first_node = rest_actions_only.body["nodes"]
+            .as_object()
+            .and_then(|nodes| nodes.values().next())
+            .expect("usage response should contain a node");
+        assert!(first_node["rest_actions"].is_object());
+        assert!(first_node.get("aggregations").is_none());
+        assert!(rest_actions_only.body["_nodes"]["successful"].is_number());
+        assert!(rest_actions_only.body["cluster_name"].is_string());
+
+        let unknown_metric = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_nodes/usage/unknown_metric",
+        ));
+        let first_node = unknown_metric.body["nodes"]
+            .as_object()
+            .and_then(|nodes| nodes.values().next())
+            .expect("usage response should contain a node");
+        assert!(first_node.get("rest_actions").is_none());
+        assert!(first_node.get("aggregations").is_none());
+
+        let mixed_all = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_nodes/usage/_all,rest_actions",
+        ));
+        assert_eq!(mixed_all.status, 400);
+        assert!(mixed_all.body["error"]["reason"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("contains _all and individual metrics"));
     }
 
     #[test]

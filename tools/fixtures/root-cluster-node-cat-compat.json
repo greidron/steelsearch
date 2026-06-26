@@ -805,6 +805,20 @@
       "extract": "node_usage"
     },
     {
+      "name": "nodes_usage_unknown_metric_shape",
+      "area": "operational",
+      "method": "GET",
+      "path": "/_nodes/usage/unknown_metric",
+      "extract": "node_usage"
+    },
+    {
+      "name": "nodes_usage_reject_mixed_all_metric",
+      "area": "operational",
+      "method": "GET",
+      "path": "/_nodes/usage/_all,rest_actions",
+      "expected_status": 400
+    },
+    {
       "name": "nodes_usage_target_shape",
       "area": "operational",
       "method": "GET",
