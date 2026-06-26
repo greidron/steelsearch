@@ -2491,6 +2491,7 @@ pub struct KnnOperationalState {
 pub struct ScrollContext {
     pub remaining_hits: Vec<Value>,
     pub page_size: usize,
+    pub total_hits: u64,
 }
 
 #[derive(Clone, Debug)]
@@ -10377,7 +10378,9 @@ impl SteelNode {
         let scroll_id = request
             .query_params
             .get("scroll")
-            .map(|keep_alive| self.store_scroll_context(remaining_hits.clone(), size, keep_alive));
+            .map(|keep_alive| {
+                self.store_scroll_context(remaining_hits.clone(), size, total_value, keep_alive)
+            });
         if let Some(highlight) = body.get("highlight") {
             for hit in &mut paged_hits {
                 let Some(hit_object) = hit.as_object_mut() else {
@@ -10828,6 +10831,7 @@ impl SteelNode {
         &self,
         remaining_hits: Vec<Value>,
         page_size: usize,
+        total_hits: u64,
         _keep_alive: &str,
     ) -> String {
         let mut next_id = self
@@ -10844,6 +10848,7 @@ impl SteelNode {
                 ScrollContext {
                     remaining_hits,
                     page_size,
+                    total_hits,
                 },
             );
         scroll_id
@@ -10927,7 +10932,7 @@ impl SteelNode {
                 },
                 "hits": {
                     "total": {
-                        "value": page.len(),
+                        "value": context.total_hits,
                         "relation": "eq"
                     },
                     "max_score": page
@@ -37292,6 +37297,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 ScrollContext {
                     remaining_hits: Vec::new(),
                     page_size: 10,
+                    total_hits: 0,
                 },
             );
         node.pit_total_contexts_by_index
@@ -40274,6 +40280,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 ScrollContext {
                     remaining_hits: Vec::new(),
                     page_size: 10,
+                    total_hits: 0,
                 },
             );
         node.pit_total_contexts_by_index

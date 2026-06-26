@@ -29,10 +29,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--checkpoint",
-        default=os.environ.get(
-            "MIGRATION_CUTOVER_CHECKPOINT",
-            str(DEFAULT_OUTPUT.with_suffix(".checkpoint.json")),
-        ),
+        default=os.environ.get("MIGRATION_CUTOVER_CHECKPOINT"),
     )
     parser.add_argument("--timeout", type=float, default=30.0)
     return parser.parse_args()
@@ -176,6 +173,8 @@ def index_metadata_summary(response: dict[str, Any]) -> dict[str, Any]:
     indices: list[dict[str, Any]] = []
     for index_name in sorted(body.keys()):
         index_body = body.get(index_name) or {}
+        if not isinstance(index_body, dict):
+            continue
         settings = (((index_body.get("settings") or {}).get("index")) or {})
         mappings = (((index_body.get("mappings") or {}).get("properties")) or {})
         aliases = (index_body.get("aliases") or {})
@@ -199,7 +198,10 @@ def alias_metadata_summary(response: dict[str, Any]) -> dict[str, Any]:
     body = response.get("body") or {}
     aliases: list[dict[str, Any]] = []
     for index_name in sorted(body.keys()):
-        alias_map = ((body.get(index_name) or {}).get("aliases") or {})
+        index_body = body.get(index_name) or {}
+        if not isinstance(index_body, dict):
+            continue
+        alias_map = ((index_body or {}).get("aliases") or {})
         for alias_name in sorted(alias_map.keys()):
             alias_body = alias_map.get(alias_name) or {}
             aliases.append(
@@ -361,16 +363,16 @@ def pit_open_summary(response: dict[str, Any]) -> dict[str, Any]:
 def pit_clear_summary(response: dict[str, Any]) -> dict[str, Any]:
     body = response.get("body") or {}
     pits = body.get("pits")
+    pit_ids = [
+        (item or {}).get("pit_id")
+        for item in pits
+        if isinstance(item, dict)
+    ] if isinstance(pits, list) else []
     return {
         "status": response.get("status"),
         "succeeded": body.get("succeeded"),
-        "pit_ids": [
-            (item or {}).get("pit_id")
-            for item in pits
-            if isinstance(item, dict)
-        ]
-        if isinstance(pits, list)
-        else [],
+        "pit_id_count": len(pit_ids),
+        "pit_ids_present": all(bool(pit_id) for pit_id in pit_ids),
         "num_freed": body.get("num_freed"),
     }
 
@@ -440,6 +442,8 @@ def index_metadata_summary(response: dict[str, Any]) -> dict[str, Any]:
     indices: list[dict[str, Any]] = []
     for index_name in sorted(body.keys()):
         index_body = body.get(index_name) or {}
+        if not isinstance(index_body, dict):
+            continue
         settings = (((index_body.get("settings") or {}).get("index")) or {})
         mappings = (((index_body.get("mappings") or {}).get("properties")) or {})
         aliases = (index_body.get("aliases") or {})
@@ -463,7 +467,10 @@ def alias_metadata_summary(response: dict[str, Any]) -> dict[str, Any]:
     body = response.get("body") or {}
     aliases: list[dict[str, Any]] = []
     for index_name in sorted(body.keys()):
-        alias_map = ((body.get(index_name) or {}).get("aliases") or {})
+        index_body = body.get(index_name) or {}
+        if not isinstance(index_body, dict):
+            continue
+        alias_map = ((index_body or {}).get("aliases") or {})
         for alias_name in sorted(alias_map.keys()):
             alias_body = alias_map.get(alias_name) or {}
             aliases.append(
@@ -669,6 +676,8 @@ def main() -> int:
     if not args.steelsearch_url or not args.opensearch_url:
         print("Both STEELSEARCH_URL and OPENSEARCH_URL are required", file=sys.stderr)
         return 2
+    if not args.checkpoint:
+        args.checkpoint = str(Path(args.output).with_suffix(".checkpoint.json"))
 
     fixture = json.loads(Path(args.fixture).read_text(encoding="utf-8"))
     operations = fixture.get("operations")
