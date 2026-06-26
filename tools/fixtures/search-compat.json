@@ -3198,6 +3198,103 @@
       "description": "[lexical] docvalue fields search"
     },
     {
+      "name": "derived_field_request_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "derived": {
+          "derived_level": {
+            "type": "keyword",
+            "script": {
+              "source": "emit(doc[\"level\"].value)"
+            }
+          }
+        },
+        "query": {
+          "term": {
+            "derived_level": "error"
+          }
+        },
+        "fields": [
+          "derived_level"
+        ],
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "extract": "search_fields",
+      "family": "lexical",
+      "description": "[lexical] request-scoped derived field search"
+    },
+    {
+      "name": "derived_field_string_script_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "derived": {
+          "derived_level": {
+            "type": "keyword",
+            "script": "emit(params._source[\"level\"])"
+          }
+        },
+        "query": {
+          "term": {
+            "derived_level": "warn"
+          }
+        },
+        "fields": [
+          "derived_level"
+        ],
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "extract": "search_fields",
+      "family": "lexical",
+      "description": "[lexical] request-scoped derived field string script search"
+    },
+    {
+      "name": "derived_field_definition_options_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "derived": {
+          "derived_service_with_options": {
+            "type": "keyword",
+            "script": {
+              "source": "emit(doc[\"service\"].value)"
+            },
+            "prefilter_field": "message",
+            "format": "strict_date_optional_time",
+            "ignore_malformed": false,
+            "properties": {}
+          }
+        },
+        "query": {
+          "term": {
+            "derived_service_with_options": "catalog"
+          }
+        },
+        "fields": [
+          "derived_service_with_options"
+        ]
+      },
+      "extract": "search_fields",
+      "family": "lexical",
+      "description": "[lexical] request-scoped derived field definition options search"
+    },
+    {
       "name": "docvalue_fields_epoch_millis_search",
       "area": "search",
       "method": "POST",
