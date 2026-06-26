@@ -1457,7 +1457,7 @@
       "name": "cat_shards_text_selected_alias_columns",
       "area": "cat",
       "method": "GET",
-      "path": "/_cat/shards/logs-compat?v=true&h=idx,sh,p,st,dc,sto,n",
+      "path": "/_cat/shards/logs-compat?v=true&h=idx,sh,p,st,dc,sto,id,n",
       "accept": "text/plain",
       "extract": "cat_indices_selected_columns",
       "family": "admin-cat",
@@ -1467,7 +1467,7 @@
       "name": "cat_shards_json_selected_alias_columns",
       "area": "cat",
       "method": "GET",
-      "path": "/_cat/shards/logs-compat?format=json&h=idx,sh,p,st,dc,sto,n",
+      "path": "/_cat/shards/logs-compat?format=json&h=idx,sh,p,st,dc,sto,id,n",
       "extract": "cat_indices_selected_columns",
       "family": "admin-cat",
       "description": "[admin-cat] cat shards json honors h aliases"

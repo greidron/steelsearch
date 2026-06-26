@@ -20093,6 +20093,7 @@ impl SteelNode {
                 "docs": docs.to_string(),
                 "store": "0b",
                 "ip": "0.0.0.0",
+                "id": self.info.name.clone(),
                 "node": self.info.name.clone(),
                 "search.open_contexts": pit_current.to_string(),
                 "search.point_in_time_current": pit_current.to_string(),
@@ -20108,6 +20109,7 @@ impl SteelNode {
                     "docs": "0",
                     "store": "0b",
                     "ip": "",
+                    "id": "",
                     "node": "",
                     "search.open_contexts": "0",
                     "search.point_in_time_current": "0",
@@ -31699,6 +31701,7 @@ fn cat_shards_display_columns(h_param: Option<&String>) -> Vec<(&'static str, St
                 ("docs", &["d", "dc"][..]),
                 ("store", &["sto"][..]),
                 ("ip", &[][..]),
+                ("id", &[][..]),
                 ("node", &["n"][..]),
                 ("search.open_contexts", &["so", "searchOpenContexts"][..]),
                 (
@@ -31729,6 +31732,7 @@ fn cat_shards_display_columns(h_param: Option<&String>) -> Vec<(&'static str, St
             "docs" | "d" | "dc" => Some("docs"),
             "store" | "sto" => Some("store"),
             "ip" => Some("ip"),
+            "id" => Some("id"),
             "node" | "n" => Some("node"),
             "search.open_contexts" | "so" | "searchOpenContexts" => Some("search.open_contexts"),
             "search.point_in_time_current" | "searchPointInTimeCurrent" => {
@@ -38045,7 +38049,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             .insert("format".to_string(), "json".to_string());
         selected_shards_json_request
             .query_params
-            .insert("h".to_string(), "idx,sh,p,st,dc,sto,n".to_string());
+            .insert("h".to_string(), "idx,sh,p,st,dc,sto,id,n".to_string());
         let selected_shards_json_response = node.handle_rest_request(selected_shards_json_request);
         assert_eq!(selected_shards_json_response.status, 200);
         assert_eq!(selected_shards_json_response.body[0]["idx"], "logs-000001");
@@ -38054,6 +38058,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(selected_shards_json_response.body[0]["st"], "STARTED");
         assert_eq!(selected_shards_json_response.body[0]["dc"], "1");
         assert_eq!(selected_shards_json_response.body[0]["sto"], "0b");
+        assert_eq!(selected_shards_json_response.body[0]["id"], "steel-node");
         assert_eq!(selected_shards_json_response.body[0]["n"], "steel-node");
         assert!(selected_shards_json_response.body[0].get("index").is_none());
         assert!(selected_shards_json_response.body[0].get("shard").is_none());
@@ -38086,7 +38091,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             .insert("v".to_string(), "true".to_string());
         selected_shards_text_request
             .query_params
-            .insert("h".to_string(), "idx,sh,p,st,dc,sto,n".to_string());
+            .insert("h".to_string(), "idx,sh,p,st,dc,sto,id,n".to_string());
         let selected_shards_text_response = node.handle_rest_request(selected_shards_text_request);
         let selected_shards_text = selected_shards_text_response
             .body
@@ -38095,8 +38100,8 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             selected_shards_text.lines().collect::<Vec<_>>(),
             vec![
-                "idx sh p st dc sto n",
-                "logs-000001 0 p STARTED 1 0b steel-node"
+                "idx sh p st dc sto id n",
+                "logs-000001 0 p STARTED 1 0b steel-node steel-node"
             ]
         );
 
