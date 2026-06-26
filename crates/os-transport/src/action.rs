@@ -11895,6 +11895,49 @@ pub fn read_opensearch_multi_search_request_message(
     )
 }
 
+pub fn build_opensearch_search_response_message(
+    request_id: i64,
+    version: Version,
+    response: &OpenSearchSearchResponseWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    build_opensearch_search_scroll_response_message(request_id, version, response)
+}
+
+pub fn read_opensearch_search_response_message(
+    message: &TransportMessage,
+) -> Result<OpenSearchSearchResponseWire, TransportActionWireError> {
+    read_opensearch_search_scroll_response_message(message)
+}
+
+pub fn build_opensearch_multi_search_response_message(
+    request_id: i64,
+    version: Version,
+    response: &OpenSearchMultiSearchResponseWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    response.write(&mut body, version)?;
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::response(),
+        version,
+        variable_header: BytesMut::new(),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_multi_search_response_message(
+    message: &TransportMessage,
+) -> Result<OpenSearchMultiSearchResponseWire, TransportActionWireError> {
+    if message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "response",
+            actual: message.status.bits(),
+        });
+    }
+    OpenSearchMultiSearchResponseWire::read(message.body.clone().freeze(), message.version)
+}
+
 pub fn build_opensearch_search_scroll_request_message(
     request_id: i64,
     version: Version,
@@ -24760,7 +24803,7 @@ impl OpenSearchSearchRequestWire {
     }
 
     pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
-        self.validate_supported_shape()?;
+        self.validate_supported_execution_subset()?;
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "search request execution",
             reason:
@@ -24768,7 +24811,7 @@ impl OpenSearchSearchRequestWire {
         })
     }
 
-    fn validate_supported_shape(&self) -> Result<(), TransportActionWireError> {
+    pub fn validate_supported_execution_subset(&self) -> Result<(), TransportActionWireError> {
         if self.search_type != 1 {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "search request search type",
@@ -24928,6 +24971,10 @@ impl OpenSearchSearchRequestWire {
             });
         }
         Ok(())
+    }
+
+    fn validate_supported_shape(&self) -> Result<(), TransportActionWireError> {
+        self.validate_supported_execution_subset()
     }
 }
 
@@ -31152,6 +31199,15 @@ impl OpenSearchMultiSearchRequestWire {
     }
 
     pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        self.validate_supported_execution_subset()?;
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "multi-search execution",
+            reason:
+                "multi-search transport execution requires batched search source and response rendering mapping",
+        })
+    }
+
+    pub fn validate_supported_execution_subset(&self) -> Result<(), TransportActionWireError> {
         if self.max_concurrent_search_requests != 0 {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "multi-search max concurrent search requests",
@@ -31165,13 +31221,76 @@ impl OpenSearchMultiSearchRequestWire {
             });
         }
         for request in &self.requests {
-            request.validate_supported_shape()?;
+            request.validate_supported_execution_subset()?;
         }
-        Err(TransportActionWireError::UnsupportedWireShape {
-            shape: "multi-search execution",
-            reason:
-                "multi-search transport execution requires batched search source and response rendering mapping",
-        })
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct OpenSearchMultiSearchResponseWire {
+    pub responses: Vec<OpenSearchSearchResponseWire>,
+    pub took_millis: i64,
+}
+
+impl OpenSearchMultiSearchResponseWire {
+    pub fn success(responses: Vec<OpenSearchSearchResponseWire>, took_millis: i64) -> Self {
+        Self {
+            responses,
+            took_millis,
+        }
+    }
+
+    pub fn write(
+        &self,
+        output: &mut StreamOutput,
+        version: Version,
+    ) -> Result<(), TransportActionWireError> {
+        self.validate_supported_subset()?;
+        output.write_vint(self.responses.len() as i32);
+        for response in &self.responses {
+            output.write_bool(true);
+            response.write(output, version)?;
+        }
+        output.write_vlong(self.took_millis);
+        Ok(())
+    }
+
+    pub fn read(bytes: Bytes, version: Version) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let response_count = read_len(&mut input)?;
+        let mut responses = Vec::with_capacity(response_count);
+        for _ in 0..response_count {
+            if !input.read_bool()? {
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "multi-search response failure item",
+                    reason: "MultiSearchResponse failure items require OpenSearch exception wire decoding",
+                });
+            }
+            responses.push(OpenSearchSearchResponseWire::read_from_stream(
+                &mut input, version,
+            )?);
+        }
+        let response = Self {
+            responses,
+            took_millis: input.read_vlong()?,
+        };
+        require_no_trailing_bytes(&input)?;
+        response.validate_supported_subset()?;
+        Ok(response)
+    }
+
+    pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
+        if self.took_millis < 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "multi-search response took",
+                reason: "OpenSearch MultiSearchResponse took must be non-negative",
+            });
+        }
+        for response in &self.responses {
+            response.validate_supported_subset()?;
+        }
+        Ok(())
     }
 }
 
@@ -31337,6 +31456,15 @@ impl OpenSearchSearchResponseWire {
 
     pub fn read(bytes: Bytes, version: Version) -> Result<Self, TransportActionWireError> {
         let mut input = StreamInput::new(bytes);
+        let response = Self::read_from_stream(&mut input, version)?;
+        require_no_trailing_bytes(&input)?;
+        Ok(response)
+    }
+
+    fn read_from_stream(
+        input: &mut StreamInput,
+        version: Version,
+    ) -> Result<Self, TransportActionWireError> {
         let total_hits = if input.read_bool()? {
             let value = input.read_vlong()?;
             let relation = input.read_vint()?;
@@ -31345,22 +31473,20 @@ impl OpenSearchSearchResponseWire {
             None
         };
         let max_score = input.read_f32()?;
-        let hit_count = read_len(&mut input)?;
+        let hit_count = read_len(input)?;
         let mut hits = Vec::with_capacity(hit_count);
         for _ in 0..hit_count {
-            hits.push(OpenSearchSearchHitWire::read_at_depth(
-                &mut input, version, 0,
-            )?);
+            hits.push(OpenSearchSearchHitWire::read_at_depth(input, version, 0)?);
         }
-        let sort_fields = read_optional_sort_fields(&mut input, "search response sort fields")?;
+        let sort_fields = read_optional_sort_fields(input, "search response sort fields")?;
         let collapse_field = input.read_optional_string()?;
         let collapse_values =
-            read_optional_search_sort_values(&mut input, "search response collapse values")?;
-        let aggregations_empty = read_optional_empty_aggregations(&mut input)?;
-        let suggest_empty = read_optional_empty_suggest(&mut input)?;
+            read_optional_search_sort_values(input, "search response collapse values")?;
+        let aggregations_empty = read_optional_empty_aggregations(input)?;
+        let suggest_empty = read_optional_empty_suggest(input)?;
         let timed_out = input.read_bool()?;
-        let terminated_early = read_optional_bool(&mut input)?;
-        let profile_results_empty = read_optional_empty_profile_results(&mut input)?;
+        let terminated_early = read_optional_bool(input)?;
+        let profile_results_empty = read_optional_empty_profile_results(input)?;
         let num_reduce_phases = input.read_vint()?;
         if num_reduce_phases != 1 {
             return Err(TransportActionWireError::UnsupportedWireShape {
@@ -31369,12 +31495,12 @@ impl OpenSearchSearchResponseWire {
             });
         }
         let search_ext_builders = if version.on_or_after(OPENSEARCH_2_10_0) {
-            read_search_ext_builders(&mut input)?
+            read_search_ext_builders(input)?
         } else {
             Vec::new()
         };
         let processor_results = if version.on_or_after(OPENSEARCH_2_19_0) {
-            read_processor_results(&mut input)?
+            read_processor_results(input)?
         } else {
             Vec::new()
         };
@@ -31403,7 +31529,7 @@ impl OpenSearchSearchResponseWire {
             point_in_time_id: None,
         };
         let response = Self {
-            shard_failures: read_shard_search_failures(&mut input)?,
+            shard_failures: read_shard_search_failures(input)?,
             ..response
         };
         let cluster_total = input.read_vint()?;
@@ -31422,11 +31548,10 @@ impl OpenSearchSearchResponseWire {
             ..response
         };
         if version.on_or_after(OPENSEARCH_2_12_0) {
-            response.phase_took = read_optional_phase_took(&mut input)?;
+            response.phase_took = read_optional_phase_took(input)?;
         }
         response.skipped_shards = input.read_vint()?;
         response.point_in_time_id = input.read_optional_string()?;
-        require_no_trailing_bytes(&input)?;
         response.validate_supported_subset()?;
         Ok(response)
     }
@@ -69187,6 +69312,51 @@ mod tests {
                 ..
             })
         ));
+    }
+
+    #[test]
+    fn opensearch_search_response_transport_message_round_trips_default_subset() {
+        let response = OpenSearchSearchResponseWire::empty_with_total_hits(3);
+        let mut frame =
+            build_opensearch_search_response_message(151, OPENSEARCH_3_7_0_TRANSPORT, &response)
+                .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected search response message");
+        };
+        assert_eq!(message.request_id, 151);
+        assert!(!message.status.is_request());
+        let decoded = read_opensearch_search_response_message(&message).unwrap();
+        assert_eq!(decoded.total_hits, response.total_hits);
+        assert_eq!(decoded.total_shards, response.total_shards);
+        assert_eq!(decoded.successful_shards, response.successful_shards);
+        assert_eq!(decoded.hits.len(), response.hits.len());
+    }
+
+    #[test]
+    fn opensearch_multi_search_response_transport_message_round_trips_success_items() {
+        let response = OpenSearchMultiSearchResponseWire::success(
+            vec![
+                OpenSearchSearchResponseWire::empty_with_total_hits(2),
+                OpenSearchSearchResponseWire::empty_with_total_hits(5),
+            ],
+            17,
+        );
+        let mut frame = build_opensearch_multi_search_response_message(
+            152,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &response,
+        )
+        .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected multi-search response message");
+        };
+        assert_eq!(message.request_id, 152);
+        assert!(!message.status.is_request());
+        let decoded = read_opensearch_multi_search_response_message(&message).unwrap();
+        assert_eq!(decoded.took_millis, 17);
+        assert_eq!(decoded.responses.len(), 2);
+        assert_eq!(decoded.responses[0].total_hits, Some(2));
+        assert_eq!(decoded.responses[1].total_hits, Some(5));
     }
 
     #[test]
