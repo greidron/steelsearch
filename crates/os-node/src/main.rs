@@ -8857,7 +8857,6 @@ fn get_all_pits_request_supports_local_lifecycle_subset(
     };
     if request.validate_supported_subset().is_err()
         || !get_all_pits_node_ids_match_local(request.node_ids.as_deref(), transport_identity)
-        || request.timeout.is_some()
     {
         return false;
     }
@@ -22658,7 +22657,7 @@ mod tests {
             &timeout_request,
         )
         .unwrap();
-        assert!(!get_all_pits_request_supports_local_lifecycle_subset(
+        assert!(get_all_pits_request_supports_local_lifecycle_subset(
             &timeout_frame[6..],
             &transport_identity
         ));

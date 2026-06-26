@@ -2415,6 +2415,10 @@ The create-PIT boundary covers:
   `ShardSearchContextId`, and update-PIT context request/response wire classes
   also round-trip raw strings without validation; local execution still rejects
   unknown reader contexts before mutating local PIT state.
+- local transport get-all-PIT admission now accepts decoded `BaseNodesRequest`
+  timeout values for the single-node subset, matching OpenSearch
+  `TransportGetAllPitsAction` request shape while still restricting execution
+  to local node selectors or the local concrete node.
 
 The indices-stats boundary covers:
 

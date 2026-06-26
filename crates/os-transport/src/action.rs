@@ -34759,12 +34759,6 @@ impl OpenSearchGetAllPitsRequestWire {
                 reason: "concrete-node PIT listing requires runtime node fanout semantics",
             });
         }
-        if self.timeout.is_some() {
-            return Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "get all pits timeout",
-                reason: "get-all-PITs timeout semantics require runtime PIT listing fanout",
-            });
-        }
         Ok(())
     }
 
@@ -73195,10 +73189,11 @@ mod tests {
             ..OpenSearchGetAllPitsRequestWire::default()
         };
         timeout.validate_supported_subset().unwrap();
+        timeout.supports_local_lifecycle_subset().unwrap();
         assert!(matches!(
             timeout.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "get all pits timeout",
+                shape: "get all pits execution",
                 ..
             })
         ));
