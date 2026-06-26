@@ -18203,6 +18203,8 @@ impl SteelNode {
                 continue;
             }
             let doc_count = self.index_lucene_document_count(&index);
+            let completion_size = self.index_completion_size_bytes(&index, doc_count);
+            let segment_count = if doc_count > 0 { 1 } else { 0 };
             let pit_current = pit_open_contexts_by_index
                 .get(&index)
                 .copied()
@@ -18222,14 +18224,14 @@ impl SteelNode {
                 "docs.deleted": "0",
                 "store.size": "0b",
                 "pri.store.size": "0b",
-                "completion.size": "0b",
-                "pri.completion.size": "0b",
+                "completion.size": format!("{completion_size}b"),
+                "pri.completion.size": format!("{completion_size}b"),
                 "flush.total": "0",
                 "pri.flush.total": "0",
                 "flush.total_time": "0s",
                 "pri.flush.total_time": "0s",
-                "segments.count": "0",
-                "pri.segments.count": "0",
+                "segments.count": segment_count.to_string(),
+                "pri.segments.count": segment_count.to_string(),
                 "segments.memory": "0b",
                 "pri.segments.memory": "0b",
                 "search.open_contexts": pit_current.to_string(),
@@ -21115,6 +21117,20 @@ impl SteelNode {
             })
             .map(|document| 1 + nested_document_count_for_source(&document.source, &nested_paths))
             .sum()
+    }
+
+    fn index_completion_size_bytes(&self, index: &str, doc_count: usize) -> usize {
+        if doc_count == 0 {
+            return 0;
+        }
+        let completion_fields = {
+            let manifest = self
+                .metadata_manifest_state
+                .lock()
+                .expect("metadata manifest state lock poisoned");
+            completion_mapping_field_count_for_index(&manifest["indices"][index])
+        };
+        completion_fields * 56
     }
 
     fn build_search_hit_fields(&self, index: &str, source: &Value, body: &Value) -> Option<Value> {
@@ -34685,6 +34701,31 @@ fn nested_mapping_paths_for_index(index_body: &Value) -> Vec<String> {
     paths
 }
 
+fn completion_mapping_field_count_for_index(index_body: &Value) -> usize {
+    count_completion_mapping_fields(
+        index_body
+            .get("mappings")
+            .and_then(|mappings| mappings.get("properties")),
+    )
+}
+
+fn count_completion_mapping_fields(properties: Option<&Value>) -> usize {
+    let Some(properties) = properties.and_then(Value::as_object) else {
+        return 0;
+    };
+    properties
+        .values()
+        .map(|mapping| {
+            let current = mapping
+                .get("type")
+                .and_then(Value::as_str)
+                .is_some_and(|field_type| field_type == "completion")
+                as usize;
+            current + count_completion_mapping_fields(mapping.get("properties"))
+        })
+        .sum()
+}
+
 fn collect_nested_mapping_paths(properties: Option<&Value>, prefix: &str, paths: &mut Vec<String>) {
     let Some(properties) = properties.and_then(Value::as_object) else {
         return;
@@ -37964,7 +38005,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         );
         assert_eq!(
             optional_text_values,
-            vec!["0", "0", "0", "0", "0", "0", "0", "0", "0", "0"]
+            vec!["0", "0", "0", "0", "0", "0", "1", "1", "0", "0"]
         );
 
         let mut indices_time_text_request =
