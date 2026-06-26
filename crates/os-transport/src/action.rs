@@ -25212,7 +25212,7 @@ impl Default for OpenSearchSearchSourceBuilderWire {
 }
 
 impl OpenSearchSearchSourceBuilderWire {
-    fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
+    fn validate_supported_wire_subset(&self) -> Result<(), TransportActionWireError> {
         if self.from < 0 {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "search request source from",
@@ -25248,7 +25248,7 @@ impl OpenSearchSearchSourceBuilderWire {
         validate_search_after_values(self.search_after.as_deref())?;
         validate_sort_builders(self.sorts.as_deref())?;
         if let Some(point_in_time) = &self.point_in_time {
-            point_in_time.validate_supported_subset()?;
+            point_in_time.validate_supported_wire_subset()?;
         }
         if let Some(slice) = &self.slice {
             slice.validate_supported_subset()?;
@@ -25293,6 +25293,14 @@ impl OpenSearchSearchSourceBuilderWire {
                 reason:
                     "OpenSearch SearchSourceBuilder search pipeline must be non-empty when present",
             });
+        }
+        Ok(())
+    }
+
+    fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
+        self.validate_supported_wire_subset()?;
+        if let Some(point_in_time) = &self.point_in_time {
+            point_in_time.validate_supported_subset()?;
         }
         Ok(())
     }
@@ -25489,7 +25497,7 @@ fn read_search_source_builder(
         search_pipeline,
         verbose_pipeline,
     };
-    source.validate_supported_subset()?;
+    source.validate_supported_wire_subset()?;
     Ok(source)
 }
 
@@ -29145,13 +29153,7 @@ pub struct OpenSearchPointInTimeBuilderWire {
 }
 
 impl OpenSearchPointInTimeBuilderWire {
-    fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
-        if self.id.is_empty() {
-            return Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "search request source point in time",
-                reason: "OpenSearch PointInTimeBuilder id must be non-empty",
-            });
-        }
+    fn validate_supported_wire_subset(&self) -> Result<(), TransportActionWireError> {
         if let Some(keep_alive) = &self.keep_alive {
             if keep_alive.duration < -1 {
                 return Err(TransportActionWireError::UnsupportedWireShape {
@@ -29165,6 +29167,17 @@ impl OpenSearchPointInTimeBuilderWire {
                     reason: "OpenSearch point-in-time keep-alive uses an unknown time unit",
                 });
             }
+        }
+        Ok(())
+    }
+
+    fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
+        self.validate_supported_wire_subset()?;
+        if self.id.is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source point in time",
+                reason: "local PIT search execution requires a non-empty point-in-time id",
+            });
         }
         Ok(())
     }
@@ -29193,7 +29206,7 @@ fn read_optional_point_in_time_builder(
         id: input.read_string()?,
         keep_alive: read_optional_time_value(input)?,
     };
-    point_in_time.validate_supported_subset()?;
+    point_in_time.validate_supported_wire_subset()?;
     Ok(Some(point_in_time))
 }
 
@@ -69371,6 +69384,11 @@ mod tests {
             }),
             ..OpenSearchSearchRequestWire::default()
         };
+        let mut empty_pit_id_output = StreamOutput::new();
+        empty_pit_id.write(&mut empty_pit_id_output);
+        let decoded_empty_pit_id =
+            OpenSearchSearchRequestWire::read(empty_pit_id_output.freeze()).unwrap();
+        assert_eq!(decoded_empty_pit_id, empty_pit_id);
         assert!(matches!(
             empty_pit_id.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {

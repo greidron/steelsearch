@@ -2339,6 +2339,9 @@ The create-PIT boundary covers:
 - PIT searches invalidate the local PIT context when its backing index has been
   deleted or closed, matching OpenSearch deleted-index and missing-context
   failure semantics;
+- search request PIT builders now decode empty PIT ids at the wire layer like
+  OpenSearch `PointInTimeBuilder`, while local PIT search execution still
+  rejects empty ids before context lookup;
 - PIT searches reject malformed local opaque PIT ids with the OpenSearch
   `invalid id` error while preserving missing-context handling for well-formed
   local ids;
