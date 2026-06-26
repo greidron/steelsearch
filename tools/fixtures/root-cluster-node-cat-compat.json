@@ -756,6 +756,37 @@
       "extract": "hot_threads_text"
     },
     {
+      "name": "nodes_hotthreads_deprecated_alias_text",
+      "area": "operational",
+      "method": "GET",
+      "path": "/_nodes/hotthreads",
+      "accept": "text/plain",
+      "extract": "hot_threads_text"
+    },
+    {
+      "name": "cluster_nodes_hot_threads_deprecated_alias_text",
+      "area": "operational",
+      "method": "GET",
+      "path": "/_cluster/nodes/hot_threads",
+      "accept": "text/plain",
+      "extract": "hot_threads_text"
+    },
+    {
+      "name": "nodes_hot_threads_parameterized_text",
+      "area": "operational",
+      "method": "GET",
+      "path": "/_nodes/hot_threads?threads=7&snapshots=2&ignore_idle_threads=false&type=wait&interval=1s",
+      "accept": "text/plain",
+      "extract": "hot_threads_text"
+    },
+    {
+      "name": "nodes_hot_threads_reject_invalid_type",
+      "area": "operational",
+      "method": "GET",
+      "path": "/_nodes/hot_threads?type=memory",
+      "expected_status": 400
+    },
+    {
       "name": "nodes_stats_metric_shape",
       "area": "operational",
       "method": "GET",

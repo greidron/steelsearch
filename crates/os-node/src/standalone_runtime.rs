@@ -3560,19 +3560,10 @@ impl SteelNode {
                 .trim_end_matches('/');
             return Some(self.handle_nodes_reload_secure_settings_route(Some(node_id)));
         }
-        if request.method == RestMethod::Get && request.path == "/_nodes/hot_threads" {
-            return Some(self.handle_nodes_hot_threads_route(None));
-        }
-        if request.method == RestMethod::Get
-            && request.path.starts_with("/_nodes/")
-            && request.path.ends_with("/hot_threads")
-        {
-            let node_id = request
-                .path
-                .trim_start_matches("/_nodes/")
-                .trim_end_matches("/hot_threads")
-                .trim_end_matches('/');
-            return Some(self.handle_nodes_hot_threads_route(Some(node_id)));
+        if request.method == RestMethod::Get {
+            if let Some(node_id) = parse_nodes_hot_threads_path(&request.path) {
+                return Some(self.handle_nodes_hot_threads_route(request, node_id));
+            }
         }
         if request.method == RestMethod::Get
             && self.nodes_info_variant_path_supported(&request.path)
@@ -14864,7 +14855,53 @@ impl SteelNode {
         }
     }
 
-    fn handle_nodes_hot_threads_route(&self, requested_node: Option<&str>) -> RestResponse {
+    fn handle_nodes_hot_threads_route(
+        &self,
+        request: &RestRequest,
+        requested_node: Option<&str>,
+    ) -> RestResponse {
+        let threads = match parse_hot_threads_int_query_param(request, "threads", 3) {
+            Ok(value) => value,
+            Err(response) => return response,
+        };
+        let snapshots = match parse_hot_threads_int_query_param(request, "snapshots", 10) {
+            Ok(value) => value,
+            Err(response) => return response,
+        };
+        if let Some(response) =
+            validate_opensearch_boolean_query_param(request.query_params.get("ignore_idle_threads"))
+        {
+            return response;
+        }
+        let ignore_idle_threads = request
+            .query_params
+            .get("ignore_idle_threads")
+            .map(|raw| query_param_is_true(Some(raw)))
+            .unwrap_or(true);
+        let hot_threads_type = request
+            .query_params
+            .get("type")
+            .map(String::as_str)
+            .unwrap_or("cpu");
+        if !matches!(hot_threads_type, "cpu" | "wait" | "block") {
+            return RestResponse::opensearch_error_kind(
+                os_rest::RestErrorKind::IllegalArgument,
+                format!("type not supported [{hot_threads_type}]"),
+            );
+        }
+        let interval = request
+            .query_params
+            .get("interval")
+            .map(String::as_str)
+            .unwrap_or("500ms");
+        if parse_time_value_millis(interval).is_none() {
+            return RestResponse::opensearch_error_kind(
+                os_rest::RestErrorKind::IllegalArgument,
+                format!(
+                    "failed to parse setting [interval] with value [{interval}] as a time value: unit is missing or unrecognized"
+                ),
+            );
+        }
         let cluster_name = self
             .cluster_view
             .as_ref()
@@ -14874,7 +14911,7 @@ impl SteelNode {
             .filter(|node| !node.is_empty() && *node != "_all")
             .unwrap_or(self.info.name.as_str());
         let body = format!(
-            "::: {node_name}\nHot threads at 2026-05-01T00:00:00Z, interval=500ms, busiestThreads=3, ignoreIdleThreads=true:\n   0.0% (0ms out of 500ms) cpu usage by thread '{cluster_name}[{node_name}][generic][T#1]'\n    1/1 snapshots sharing following 1 elements\n      java.base@21/java.lang.Thread.sleep(Native Method)\n"
+            "::: {node_name}\nHot threads at 2026-05-01T00:00:00Z, interval={interval}, busiestThreads={threads}, ignoreIdleThreads={ignore_idle_threads}:\n   0.0% (0ms out of 500ms) {hot_threads_type} usage by thread '{cluster_name}[{node_name}][generic][T#1]'\n    1/{snapshots} snapshots sharing following 1 elements\n      java.base@21/java.lang.Thread.sleep(Native Method)\n"
         );
         RestResponse::text(200, body)
     }
@@ -23288,6 +23325,47 @@ fn parse_nodes_usage_path(path: &str) -> Option<(String, BTreeSet<String>)> {
         )),
         _ => None,
     }
+}
+
+fn parse_nodes_hot_threads_path(path: &str) -> Option<Option<&str>> {
+    match path {
+        "/_nodes/hot_threads"
+        | "/_nodes/hotthreads"
+        | "/_cluster/nodes/hot_threads"
+        | "/_cluster/nodes/hotthreads" => return Some(None),
+        _ => {}
+    }
+    for (prefix, suffix) in [
+        ("/_nodes/", "/hot_threads"),
+        ("/_nodes/", "/hotthreads"),
+        ("/_cluster/nodes/", "/hot_threads"),
+        ("/_cluster/nodes/", "/hotthreads"),
+    ] {
+        if let Some(node_id) = path
+            .strip_prefix(prefix)
+            .and_then(|remainder| remainder.strip_suffix(suffix))
+            .filter(|node_id| !node_id.is_empty() && !node_id.contains('/'))
+        {
+            return Some(Some(node_id));
+        }
+    }
+    None
+}
+
+fn parse_hot_threads_int_query_param(
+    request: &RestRequest,
+    param: &str,
+    default_value: i64,
+) -> Result<i64, RestResponse> {
+    let Some(raw) = request.query_params.get(param).map(String::as_str) else {
+        return Ok(default_value);
+    };
+    raw.parse::<i64>().map_err(|_| {
+        RestResponse::opensearch_error_kind(
+            os_rest::RestErrorKind::IllegalArgument,
+            format!("Failed to parse value [{raw}] for [{param}] as an integer"),
+        )
+    })
 }
 
 fn nodes_usage_raw_metric(path: &str) -> Option<&str> {
@@ -37115,12 +37193,58 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             version: OPENSEARCH_3_7_0_TRANSPORT,
         });
 
-        for path in ["/_nodes/hot_threads", "/_nodes/_all/hot_threads"] {
+        for path in [
+            "/_nodes/hot_threads",
+            "/_nodes/_all/hot_threads",
+            "/_nodes/hotthreads",
+            "/_nodes/_all/hotthreads",
+            "/_cluster/nodes/hot_threads",
+            "/_cluster/nodes/_all/hot_threads",
+            "/_cluster/nodes/hotthreads",
+            "/_cluster/nodes/_all/hotthreads",
+        ] {
             let response = node.handle_rest_request(RestRequest::new(RestMethod::Get, path));
             assert_eq!(response.status, 200, "path {path}");
             let text = response.body.as_str().expect("hot_threads text body");
             assert!(text.contains("Hot threads at"), "path {path}");
             assert!(text.contains("cpu usage by thread"), "path {path}");
+        }
+
+        let parameterized = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_nodes/steel-node/hot_threads?threads=7&snapshots=2&ignore_idle_threads=false&type=wait&interval=1s",
+        ));
+        assert_eq!(parameterized.status, 200);
+        let text = parameterized.body.as_str().expect("hot_threads text body");
+        assert!(text.contains("::: steel-node"));
+        assert!(text.contains("interval=1s"));
+        assert!(text.contains("busiestThreads=7"));
+        assert!(text.contains("ignoreIdleThreads=false"));
+        assert!(text.contains("wait usage by thread"));
+        assert!(text.contains("1/2 snapshots"));
+
+        for (path, reason) in [
+            (
+                "/_nodes/hot_threads?ignore_idle_threads=maybe",
+                "Failed to parse value [maybe] as only [true] or [false] are allowed.",
+            ),
+            (
+                "/_nodes/hot_threads?threads=abc",
+                "Failed to parse value [abc] for [threads] as an integer",
+            ),
+            (
+                "/_nodes/hot_threads?snapshots=abc",
+                "Failed to parse value [abc] for [snapshots] as an integer",
+            ),
+            (
+                "/_nodes/hot_threads?type=memory",
+                "type not supported [memory]",
+            ),
+        ] {
+            let response = node.handle_rest_request(RestRequest::new(RestMethod::Get, path));
+            assert_eq!(response.status, 400, "path {path}");
+            assert_eq!(response.body["error"]["type"], "illegal_argument_exception");
+            assert_eq!(response.body["error"]["reason"], reason, "path {path}");
         }
     }
 

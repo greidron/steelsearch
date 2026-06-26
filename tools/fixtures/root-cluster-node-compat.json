@@ -125,6 +125,29 @@
       }
     },
     {
+      "name": "get_nodes_hotthreads_deprecated_alias_text",
+      "method": "GET",
+      "path": "/_nodes/hotthreads",
+      "compare": {
+        "expected_status": 200,
+        "body_text_contains": [
+          "Hot threads at"
+        ]
+      }
+    },
+    {
+      "name": "get_nodes_hot_threads_parameterized_text",
+      "method": "GET",
+      "path": "/_nodes/hot_threads?threads=7&snapshots=2&ignore_idle_threads=false&type=wait&interval=1s",
+      "compare": {
+        "expected_status": 200,
+        "body_text_contains": [
+          "busiestThreads=7",
+          "ignoreIdleThreads=false"
+        ]
+      }
+    },
+    {
       "name": "get_cat_pit_segments_all_text_shape",
       "method": "GET",
       "path": "/_cat/pit_segments/_all?v=true",
