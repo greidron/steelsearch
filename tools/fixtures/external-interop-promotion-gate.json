@@ -40,11 +40,12 @@
     "allowed_actions": [
       "ClusterStateAction.INSTANCE",
       "SearchAction.INSTANCE",
-      "BulkAction.INSTANCE"
-    ],
-    "rejected_actions": [
+      "BulkAction.INSTANCE",
       "MultiSearchAction.INSTANCE",
+      "SearchScrollAction.INSTANCE",
+      "ExplainAction.INSTANCE",
       "StreamSearchAction.INSTANCE"
-    ]
+    ],
+    "rejected_actions": []
   }
 }

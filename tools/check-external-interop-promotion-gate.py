@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import json
 import sys
+from pathlib import Path
 
 
 EXPECTED_ROUTE_EVIDENCE = {
@@ -15,17 +16,6 @@ EXPECTED_SEMANTIC_EVIDENCE = {
     "cluster-state-diff-apply",
 }
 
-EXPECTED_ALLOWED_ACTIONS = {
-    "ClusterStateAction.INSTANCE",
-    "SearchAction.INSTANCE",
-    "BulkAction.INSTANCE",
-}
-
-EXPECTED_REJECTED_ACTIONS = {
-    "MultiSearchAction.INSTANCE",
-    "StreamSearchAction.INSTANCE",
-}
-
 EXPECTED_LEDGERS = {
     "transport-action-subset-ledger.json",
     "transport-negotiation-exception-policy.json",
@@ -34,6 +24,28 @@ EXPECTED_LEDGERS = {
 
 def fail(message: str) -> None:
     raise SystemExit(message)
+
+
+def load_transport_action_dispositions(ledger_name: str) -> tuple[set[str], set[str]]:
+    repo_root = Path(__file__).resolve().parents[1]
+    ledger_path = repo_root / "tools" / "fixtures" / ledger_name
+    if not ledger_path.exists():
+        fail(f"missing transport action ledger: {ledger_name}")
+    ledger = json.loads(ledger_path.read_text(encoding="utf-8"))
+    allowed = set()
+    rejected = set()
+    for case in ledger.get("cases", []):
+        action = case.get("action")
+        disposition = case.get("disposition")
+        if not action:
+            continue
+        if disposition == "allowed":
+            allowed.add(action)
+        elif disposition == "rejected":
+            rejected.add(action)
+        else:
+            fail(f"unknown transport action disposition for {action}: {disposition}")
+    return allowed, rejected
 
 
 def main() -> None:
@@ -73,9 +85,14 @@ def main() -> None:
     dispatch = data.get("binary_dispatch_proof", {})
     if set(dispatch.get("required_ledgers", [])) != EXPECTED_LEDGERS:
         fail("dispatch ledgers mismatch")
-    if set(dispatch.get("allowed_actions", [])) != EXPECTED_ALLOWED_ACTIONS:
-        fail("allowed actions mismatch")
-    if set(dispatch.get("rejected_actions", [])) != EXPECTED_REJECTED_ACTIONS:
+    allowed_actions, rejected_actions = load_transport_action_dispositions(
+        "transport-action-subset-ledger.json"
+    )
+    if set(dispatch.get("allowed_actions", [])) != allowed_actions:
+        fail("allowed actions mismatch with transport-action-subset-ledger.json")
+    if set(dispatch.get("rejected_actions", [])) != rejected_actions:
+        fail("rejected actions mismatch with transport-action-subset-ledger.json")
+    if set(dispatch.get("allowed_actions", [])) & set(dispatch.get("rejected_actions", [])):
         fail("rejected actions mismatch")
 
     print(json.dumps({
