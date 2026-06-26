@@ -2388,8 +2388,8 @@ pub fn classify_opensearch_transport_action(
         },
         OPENSEARCH_EXPLAIN_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
-            disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "explain transport execution requires query explain response rendering mapping",
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "explain transport adapter evaluates the bounded match_all/match_none subset against local document state and renders OpenSearch ExplainResponse wire",
         },
         OPENSEARCH_CREATE_PIT_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -12108,6 +12108,35 @@ pub fn read_opensearch_explain_request_message(
         });
     }
     OpenSearchExplainRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_opensearch_explain_response_message(
+    request_id: i64,
+    version: Version,
+    response: &OpenSearchExplainResponseWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    response.write(&mut body)?;
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::response(),
+        version,
+        variable_header: BytesMut::new(),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_explain_response_message(
+    message: &TransportMessage,
+) -> Result<OpenSearchExplainResponseWire, TransportActionWireError> {
+    if message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "response",
+            actual: message.status.bits(),
+        });
+    }
+    OpenSearchExplainResponseWire::read(message.body.clone().freeze())
 }
 
 pub fn build_opensearch_create_pit_request_message(
@@ -33017,7 +33046,7 @@ impl OpenSearchExplainRequestWire {
         Ok(request)
     }
 
-    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+    pub fn validate_supported_execution_subset(&self) -> Result<(), TransportActionWireError> {
         if self.index.as_deref().unwrap_or_default().is_empty() {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "explain request index",
@@ -33066,10 +33095,120 @@ impl OpenSearchExplainRequestWire {
                 reason: "fetch-source explain response shaping is not mapped by this adapter",
             });
         }
+        if !matches!(self.query_name.as_str(), "match_all" | "match_none") {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "explain request query",
+                reason: "bounded explain transport supports only match_all and match_none query builders",
+            });
+        }
+        Ok(())
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        self.validate_supported_execution_subset()?;
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "explain request execution",
-            reason: "explain transport execution requires query explain response rendering mapping",
+            reason: "use validate_supported_execution_subset for the implemented explain adapter",
         })
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct OpenSearchExplainResponseWire {
+    pub shard_id: OpenSearchShardIdWire,
+    pub id: String,
+    pub exists: bool,
+    pub explanation: Option<Value>,
+}
+
+impl OpenSearchExplainResponseWire {
+    pub fn matched(index: impl Into<String>, id: impl Into<String>, matched: bool) -> Self {
+        Self {
+            shard_id: OpenSearchShardIdWire {
+                index_name: index.into(),
+                index_uuid: "_na_".to_string(),
+                shard_id: 0,
+            },
+            id: id.into(),
+            exists: true,
+            explanation: Some(serde_json::json!({
+                "value": if matched { 1.0 } else { 0.0 },
+                "description": if matched { "query matched document" } else { "query did not match document" },
+                "details": []
+            })),
+        }
+    }
+
+    pub fn missing(index: impl Into<String>, id: impl Into<String>) -> Self {
+        Self {
+            shard_id: OpenSearchShardIdWire {
+                index_name: index.into(),
+                index_uuid: "_na_".to_string(),
+                shard_id: 0,
+            },
+            id: id.into(),
+            exists: false,
+            explanation: None,
+        }
+    }
+
+    pub fn write(&self, output: &mut StreamOutput) -> Result<(), TransportActionWireError> {
+        self.validate_supported_subset()?;
+        self.shard_id.write(output);
+        output.write_string(&self.id);
+        output.write_bool(self.exists);
+        if let Some(explanation) = &self.explanation {
+            output.write_bool(true);
+            write_search_explanation(output, explanation)?;
+        } else {
+            output.write_bool(false);
+        }
+        output.write_bool(false);
+        Ok(())
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let response = Self {
+            shard_id: OpenSearchShardIdWire::read(&mut input)?,
+            id: input.read_string()?,
+            exists: input.read_bool()?,
+            explanation: if input.read_bool()? {
+                Some(read_search_explanation(
+                    &mut input,
+                    "explain response explanation",
+                )?)
+            } else {
+                None
+            },
+        };
+        if input.read_bool()? {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "explain response get result",
+                reason: "bounded explain transport responses omit optional get-result payloads",
+            });
+        }
+        require_no_trailing_bytes(&input)?;
+        response.validate_supported_subset()?;
+        Ok(response)
+    }
+
+    pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
+        self.shard_id
+            .validate_supported_shape("explain response shard id")?;
+        if self.id.is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "explain response id",
+                reason: "OpenSearch explain responses require a non-empty document id",
+            });
+        }
+        if !self.exists && self.explanation.is_some() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "explain response missing explanation",
+                reason: "bounded explain responses omit explanations when the document is missing",
+            });
+        }
+        Ok(())
     }
 }
 
@@ -43640,7 +43779,7 @@ mod tests {
         );
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_EXPLAIN_ACTION_NAME).disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_CREATE_PIT_ACTION_NAME).disposition,
@@ -44109,6 +44248,7 @@ mod tests {
                 || spec.action_name == OPENSEARCH_SEARCH_ACTION_NAME
                 || spec.action_name == OPENSEARCH_MULTI_SEARCH_ACTION_NAME
                 || spec.action_name == OPENSEARCH_SEARCH_SCROLL_ACTION_NAME
+                || spec.action_name == OPENSEARCH_EXPLAIN_ACTION_NAME
             {
                 assert_eq!(
                     decision.disposition,
@@ -44181,7 +44321,6 @@ mod tests {
                 || spec.action_name == OPENSEARCH_IMPORT_DANGLING_INDEX_ACTION_NAME
                 || spec.action_name == OPENSEARCH_DELETE_DANGLING_INDEX_ACTION_NAME
                 || spec.action_name == OPENSEARCH_STREAM_SEARCH_ACTION_NAME
-                || spec.action_name == OPENSEARCH_EXPLAIN_ACTION_NAME
             {
                 assert_eq!(
                     decision.disposition,
@@ -70369,6 +70508,32 @@ mod tests {
                 ..
             })
         ));
+    }
+
+    #[test]
+    fn opensearch_explain_response_transport_message_round_trips_bounded_subset() {
+        let response = OpenSearchExplainResponseWire::matched("logs", "doc-1", true);
+        let mut frame =
+            build_opensearch_explain_response_message(50, OPENSEARCH_3_7_0_TRANSPORT, &response)
+                .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected explain response message");
+        };
+        assert_eq!(
+            read_opensearch_explain_response_message(&message).unwrap(),
+            response
+        );
+
+        let missing = OpenSearchExplainResponseWire::missing("logs", "doc-missing");
+        let mut frame =
+            build_opensearch_explain_response_message(51, OPENSEARCH_3_7_0_TRANSPORT, &missing)
+                .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected missing explain response message");
+        };
+        let decoded = read_opensearch_explain_response_message(&message).unwrap();
+        assert!(!decoded.exists);
+        assert!(decoded.explanation.is_none());
     }
 
     #[test]

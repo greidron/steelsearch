@@ -1681,6 +1681,32 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end_at_ms,
         )?;
     } else if is_request
+        && normalized_action_hint == Some("indices:data/read/explain")
+        && explain_request_supports_local_execution_subset(&body)
+    {
+        let response = build_local_explain_response(request_id, header_version_id, &body);
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("indices:data/read/explain"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request
         && normalized_action_hint == Some("indices:data/read/point_in_time/create")
         && create_pit_request_supports_local_lifecycle_subset(&body)
     {
@@ -4411,6 +4437,56 @@ fn transport_scroll_hit_from_rest_hit(
     }
 }
 
+fn build_local_explain_response(request_id: i64, header_version_id: u32, body: &[u8]) -> Vec<u8> {
+    let Some(request) = decode_explain_request_from_transport_body(body) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    if request.validate_supported_execution_subset().is_err() {
+        return build_empty_transport_response(request_id, header_version_id);
+    }
+    let response = local_transport_explain_response_from_request(&request);
+    os_transport::action::build_opensearch_explain_response_message(
+        request_id,
+        Version::from_id(header_version_id as i32),
+        &response,
+    )
+    .map(|frame| frame.to_vec())
+    .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
+}
+
+fn explain_request_supports_local_execution_subset(body: &[u8]) -> bool {
+    decode_explain_request_from_transport_body(body)
+        .and_then(|request| request.validate_supported_execution_subset().ok())
+        .is_some()
+}
+
+fn decode_explain_request_from_transport_body(
+    body: &[u8],
+) -> Option<os_transport::action::OpenSearchExplainRequestWire> {
+    let message = decode_transport_message_from_body(body)?;
+    os_transport::action::read_opensearch_explain_request_message(&message).ok()
+}
+
+fn local_transport_explain_response_from_request(
+    request: &os_transport::action::OpenSearchExplainRequestWire,
+) -> os_transport::action::OpenSearchExplainResponseWire {
+    let index = request.index.as_deref().unwrap_or_default();
+    let id = request.id.as_str();
+    let documents = dev_transport_pit_bindings()
+        .documents
+        .lock()
+        .expect("dev transport documents lock poisoned");
+    let found = documents.iter().find_map(|(key, record)| {
+        let (record_index, record_id, _) = split_transport_document_key(key)?;
+        (record_index == index && record_id == id && record.refreshed).then_some(record)
+    });
+    let Some(_) = found else {
+        return os_transport::action::OpenSearchExplainResponseWire::missing(index, id);
+    };
+    let matched = request.query_name == "match_all";
+    os_transport::action::OpenSearchExplainResponseWire::matched(index, id, matched)
+}
+
 fn local_transport_search_response_from_request(
     request: &os_transport::action::OpenSearchSearchRequestWire,
 ) -> os_transport::action::OpenSearchSearchResponseWire {
@@ -6881,6 +6957,15 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
             if search_scroll_request_supports_local_lifecycle_subset(body) =>
         {
             Some(build_local_search_scroll_response(
+                request_id,
+                header_version_id,
+                body,
+            ))
+        }
+        Some("indices:data/read/explain")
+            if explain_request_supports_local_execution_subset(body) =>
+        {
+            Some(build_local_explain_response(
                 request_id,
                 header_version_id,
                 body,
@@ -11853,6 +11938,101 @@ mod tests {
         assert_eq!(response.responses[0].total_hits, Some(2));
         assert_eq!(response.responses[1].total_hits, Some(1));
         assert_eq!(response.responses[1].hits[0].id.as_deref(), Some("doc-1"));
+    }
+
+    #[test]
+    fn explain_transport_route_returns_local_match_explanation() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        dev_transport_pit_bindings()
+            .documents
+            .lock()
+            .expect("dev transport documents lock poisoned")
+            .clear();
+        dev_transport_pit_bindings()
+            .documents
+            .lock()
+            .expect("dev transport documents lock poisoned")
+            .insert(
+                "logs-explain:doc-1:".to_string(),
+                StoredDocument {
+                    source: serde_json::json!({ "status": "active" }),
+                    version: 1,
+                    seq_no: 1,
+                    primary_term: 1,
+                    routing: None,
+                    refreshed: true,
+                },
+            );
+
+        let request = os_transport::action::OpenSearchExplainRequestWire {
+            index: Some("logs-explain".to_string()),
+            id: "doc-1".to_string(),
+            query_name: "match_all".to_string(),
+            ..os_transport::action::OpenSearchExplainRequestWire::default()
+        };
+        let frame = os_transport::action::build_opensearch_explain_request_message(
+            305,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(explain_request_supports_local_execution_subset(&frame[6..]));
+
+        let response =
+            build_local_explain_response(305, OPENSEARCH_3_7_0_TRANSPORT.id() as u32, &frame[6..]);
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected explain response message");
+        };
+        let response =
+            os_transport::action::read_opensearch_explain_response_message(&message).unwrap();
+        assert!(response.exists);
+        assert_eq!(response.shard_id.index_name, "logs-explain");
+        assert_eq!(response.id, "doc-1");
+        assert_eq!(
+            response
+                .explanation
+                .as_ref()
+                .and_then(|explanation| explanation.get("value")),
+            Some(&serde_json::json!(1.0))
+        );
+
+        let match_none = os_transport::action::OpenSearchExplainRequestWire {
+            query_name: "match_none".to_string(),
+            ..request
+        };
+        let frame = os_transport::action::build_opensearch_explain_request_message(
+            306,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &match_none,
+        )
+        .unwrap();
+        let response =
+            build_local_explain_response(306, OPENSEARCH_3_7_0_TRANSPORT.id() as u32, &frame[6..]);
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected match-none explain response message");
+        };
+        let response =
+            os_transport::action::read_opensearch_explain_response_message(&message).unwrap();
+        assert!(response.exists);
+        assert_eq!(
+            response
+                .explanation
+                .as_ref()
+                .and_then(|explanation| explanation.get("value")),
+            Some(&serde_json::json!(0.0))
+        );
     }
 
     #[test]

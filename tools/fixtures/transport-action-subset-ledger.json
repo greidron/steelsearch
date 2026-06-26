@@ -52,6 +52,16 @@
       "reason": "bounded search-scroll transport parity advances local scroll contexts and returns OpenSearch-shaped search response pages"
     },
     {
+      "case": "explain_server_side_subset",
+      "action": "ExplainAction.INSTANCE",
+      "transport_class": "TransportExplainAction.class",
+      "family": "search",
+      "bucket": "server-side",
+      "disposition": "allowed",
+      "route_family": "/_explain",
+      "reason": "bounded explain transport parity evaluates supported query builders against local document state and returns OpenSearch-shaped explain responses"
+    },
+    {
       "case": "stream_search_planned_reject",
       "action": "StreamSearchAction.INSTANCE",
       "transport_class": "StreamTransportSearchAction.class",
