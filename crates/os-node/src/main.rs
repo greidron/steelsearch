@@ -5791,6 +5791,21 @@ fn local_transport_query_matches(
     match query {
         None | Some(os_transport::action::OpenSearchQueryBuilderWire::MatchAll(_)) => true,
         Some(os_transport::action::OpenSearchQueryBuilderWire::MatchNone(_)) => false,
+        Some(os_transport::action::OpenSearchQueryBuilderWire::Bool(bool_query)) => {
+            local_transport_bool_query_matches(source, id, bool_query)
+        }
+        Some(os_transport::action::OpenSearchQueryBuilderWire::ConstantScore(query)) => {
+            local_transport_query_matches(source, id, Some(query.filter.as_ref()))
+        }
+        Some(os_transport::action::OpenSearchQueryBuilderWire::Exists(exists)) => {
+            if exists.field_name == "_id" {
+                return true;
+            }
+            lookup_transport_source_value(source, &exists.field_name).is_some()
+        }
+        Some(os_transport::action::OpenSearchQueryBuilderWire::Ids(ids)) => {
+            ids.ids.iter().any(|candidate| candidate == id)
+        }
         Some(os_transport::action::OpenSearchQueryBuilderWire::Term(term)) => {
             if term.field_name == "_id" {
                 return value_matches_transport_term(&Value::String(id.to_string()), &term.value);
@@ -5798,7 +5813,76 @@ fn local_transport_query_matches(
             lookup_transport_source_value(source, &term.field_name)
                 .is_some_and(|value| value_matches_transport_term(value, &term.value))
         }
+        Some(os_transport::action::OpenSearchQueryBuilderWire::Terms(terms)) => {
+            if terms.field_name == "_id" {
+                return terms.values.iter().any(|value| {
+                    value_matches_transport_term(&Value::String(id.to_string()), value)
+                });
+            }
+            lookup_transport_source_value(source, &terms.field_name).is_some_and(|actual| {
+                terms
+                    .values
+                    .iter()
+                    .any(|expected| value_matches_transport_term(actual, expected))
+            })
+        }
         _ => false,
+    }
+}
+
+fn local_transport_bool_query_matches(
+    source: &Value,
+    id: &str,
+    query: &os_transport::action::OpenSearchBoolQueryBuilderWire,
+) -> bool {
+    if query
+        .must
+        .iter()
+        .any(|clause| !local_transport_query_matches(source, id, Some(clause)))
+    {
+        return false;
+    }
+    if query
+        .filter
+        .iter()
+        .any(|clause| !local_transport_query_matches(source, id, Some(clause)))
+    {
+        return false;
+    }
+    if query
+        .must_not
+        .iter()
+        .any(|clause| local_transport_query_matches(source, id, Some(clause)))
+    {
+        return false;
+    }
+    let should_match_count = query
+        .should
+        .iter()
+        .filter(|clause| local_transport_query_matches(source, id, Some(clause)))
+        .count();
+    let minimum_should_match = local_transport_bool_minimum_should_match(query, query.should.len());
+    should_match_count >= minimum_should_match
+}
+
+fn local_transport_bool_minimum_should_match(
+    query: &os_transport::action::OpenSearchBoolQueryBuilderWire,
+    should_clause_count: usize,
+) -> usize {
+    if should_clause_count == 0 {
+        return 0;
+    }
+    if let Some(value) = query.minimum_should_match.as_deref() {
+        return value
+            .trim()
+            .parse::<usize>()
+            .map(|minimum| minimum.min(should_clause_count))
+            .unwrap_or(1);
+    }
+    if query.must.is_empty() && query.filter.is_empty() {
+        1
+    } else {
+        0
     }
 }
 
@@ -15571,13 +15655,40 @@ mod tests {
                     "uuid-reader-pit".to_string(),
                     os_transport::action::OpenSearchAliasFilterWire::new(
                         vec!["logs-reader-alias".to_string()],
-                        Some(os_transport::action::OpenSearchQueryBuilderWire::Term(
-                            os_transport::action::OpenSearchTermQueryBuilderWire {
+                        Some(os_transport::action::OpenSearchQueryBuilderWire::Bool(
+                            os_transport::action::OpenSearchBoolQueryBuilderWire {
                                 boost: 1.0,
                                 query_name: None,
-                                field_name: "tenant".to_string(),
-                                value: serde_json::json!("a"),
-                                case_insensitive: false,
+                                must: Vec::new(),
+                                must_not: vec![
+                                    os_transport::action::OpenSearchQueryBuilderWire::Ids(
+                                        os_transport::action::OpenSearchIdsQueryBuilderWire {
+                                            boost: 1.0,
+                                            query_name: None,
+                                            ids: vec!["doc-3".to_string()],
+                                        },
+                                    ),
+                                ],
+                                should: Vec::new(),
+                                filter: vec![
+                                    os_transport::action::OpenSearchQueryBuilderWire::Exists(
+                                        os_transport::action::OpenSearchExistsQueryBuilderWire {
+                                            boost: 1.0,
+                                            query_name: None,
+                                            field_name: "tenant".to_string(),
+                                        },
+                                    ),
+                                    os_transport::action::OpenSearchQueryBuilderWire::Terms(
+                                        os_transport::action::OpenSearchTermsQueryBuilderWire {
+                                            boost: 1.0,
+                                            query_name: None,
+                                            field_name: "tenant".to_string(),
+                                            values: vec![serde_json::json!("a")],
+                                        },
+                                    ),
+                                ],
+                                adjust_pure_negative: true,
+                                minimum_should_match: None,
                             },
                         )),
                     ),
