@@ -7936,6 +7936,92 @@
       "description": "[ranking] multi-sort search_after follows OpenSearch tie-break pagination"
     },
     {
+      "name": "pit_search_after_multi_sort_desc_search",
+      "area": "search",
+      "extract": "search_hits",
+      "steps": [
+        {
+          "name": "pit-open-search-after",
+          "method": "POST",
+          "path": "/search-after-compat/_search/point_in_time?keep_alive=1m",
+          "body": null,
+          "expected_status": 200,
+          "extract": "pit_open",
+          "save": {
+            "pit_id": "body.pit_id"
+          }
+        },
+        {
+          "name": "pit-search-after-first-page",
+          "method": "POST",
+          "path": "/_search",
+          "body": {
+            "pit": {
+              "id": "${saved.pit_id}",
+              "keep_alive": "1m"
+            },
+            "query": {
+              "term": {
+                "foo": "bar"
+              }
+            },
+            "sort": [
+              {
+                "age": {
+                  "order": "desc"
+                }
+              },
+              {
+                "rank_id": {
+                  "order": "desc"
+                }
+              }
+            ],
+            "size": 1
+          },
+          "expected_status": 200,
+          "extract": "search_hits",
+          "save": {
+            "search_after": "body.hits.hits.0.sort"
+          }
+        },
+        {
+          "name": "pit-search-after-second-page",
+          "method": "POST",
+          "path": "/_search",
+          "body": {
+            "pit": {
+              "id": "${saved.pit_id}",
+              "keep_alive": "1m"
+            },
+            "query": {
+              "term": {
+                "foo": "bar"
+              }
+            },
+            "sort": [
+              {
+                "age": {
+                  "order": "desc"
+                }
+              },
+              {
+                "rank_id": {
+                  "order": "desc"
+                }
+              }
+            ],
+            "search_after": "${saved.search_after}",
+            "size": 1
+          },
+          "expected_status": 200,
+          "extract": "search_hits"
+        }
+      ],
+      "family": "ranking",
+      "description": "[ranking] PIT multi-sort desc search_after follows OpenSearch pagination"
+    },
+    {
       "name": "search_after_missing_sort_search",
       "area": "search",
       "method": "POST",
