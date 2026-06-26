@@ -9156,6 +9156,13 @@ impl SteelNode {
             indices.dedup();
             Some(indices)
         };
+        let requested_routing_values = request
+            .query_params
+            .get("routing")
+            .cloned()
+            .or_else(|| self.resolve_alias_search_routing(requested_target))
+            .map(|routing| parse_routing_values(&routing))
+            .filter(|routing| !routing.is_empty());
         let docs = self
             .documents_state
             .lock()
@@ -9175,7 +9182,17 @@ impl SteelNode {
                         return false;
                     }
                 }
-                let _ = id;
+                if let Some(routings) = requested_routing_values.as_ref() {
+                    if !document_matches_requested_routing_shards(
+                        index,
+                        id,
+                        record,
+                        routings,
+                        |index_name| self.index_primary_shard_count(index_name),
+                    ) {
+                        return false;
+                    }
+                }
                 matches_query_body(&record.source, Some(query))
             })
             .count();
@@ -43166,6 +43183,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
 
         for index in [
             "logs-routing-search",
+            "logs-routing-count",
             "logs-routing-delete-by-query",
             "logs-routing-update-by-query",
         ] {
@@ -43237,6 +43255,18 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(routed_search.status, 200);
         assert_eq!(routed_search.body["hits"]["total"]["value"], 1);
         assert_eq!(routed_search.body["hits"]["hits"][0]["_id"], "doc-a");
+
+        let routed_count = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                &format!("/logs-routing-count/_count?routing={routed_value}"),
+            )
+            .with_json_body(serde_json::json!({
+                "query": { "term": { "tenant": "same-query-value" } }
+            })),
+        );
+        assert_eq!(routed_count.status, 200);
+        assert_eq!(routed_count.body["count"], 1);
 
         let routed_delete = node.handle_rest_request(
             RestRequest::new(
