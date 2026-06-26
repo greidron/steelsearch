@@ -19599,31 +19599,42 @@ impl SteelNode {
             .get("format")
             .is_some_and(|value| value == "json")
         {
-            return RestResponse::json(200, Value::Array(rows.clone()));
+            let display_columns = cat_snapshots_display_columns(request.query_params.get("h"));
+            let selected_rows = rows
+                .iter()
+                .map(|row| {
+                    let mut object = serde_json::Map::new();
+                    for (column, display) in &display_columns {
+                        object.insert(display.clone(), row[*column].clone());
+                    }
+                    Value::Object(object)
+                })
+                .collect::<Vec<_>>();
+            return RestResponse::json(200, Value::Array(selected_rows));
         }
         let verbose = request
             .query_params
             .get("v")
             .is_some_and(|value| value == "true");
+        let display_columns = cat_snapshots_display_columns(request.query_params.get("h"));
         let mut lines = Vec::new();
         if verbose {
-            lines.push("id status start_epoch start_time end_epoch end_time duration indices successful_shards failed_shards total_shards".to_string());
+            lines.push(
+                display_columns
+                    .iter()
+                    .map(|(_, display)| display.as_str())
+                    .collect::<Vec<_>>()
+                    .join(" "),
+            );
         }
         for row in &rows {
-            lines.push(format!(
-                "{} {} {} {} {} {} {} {} {} {} {}",
-                row["id"].as_str().unwrap_or(""),
-                row["status"].as_str().unwrap_or("SUCCESS"),
-                row["start_epoch"].as_str().unwrap_or("0"),
-                row["start_time"].as_str().unwrap_or("00:00:00"),
-                row["end_epoch"].as_str().unwrap_or("0"),
-                row["end_time"].as_str().unwrap_or("00:00:00"),
-                row["duration"].as_str().unwrap_or("0s"),
-                row["indices"].as_str().unwrap_or("0"),
-                row["successful_shards"].as_str().unwrap_or("1"),
-                row["failed_shards"].as_str().unwrap_or("0"),
-                row["total_shards"].as_str().unwrap_or("1"),
-            ));
+            lines.push(
+                display_columns
+                    .iter()
+                    .map(|(column, _)| row[*column].as_str().unwrap_or(""))
+                    .collect::<Vec<_>>()
+                    .join(" "),
+            );
         }
         RestResponse::text(200, lines.join("\n") + "\n")
     }
@@ -31175,6 +31186,77 @@ fn cat_repositories_display_columns(h_param: Option<&String>) -> Vec<(&'static s
     selected
 }
 
+fn cat_snapshots_display_columns(h_param: Option<&String>) -> Vec<(&'static str, String)> {
+    let Some(h_param) = h_param else {
+        return vec![
+            ("id", "id".to_string()),
+            ("status", "status".to_string()),
+            ("start_epoch", "start_epoch".to_string()),
+            ("start_time", "start_time".to_string()),
+            ("end_epoch", "end_epoch".to_string()),
+            ("end_time", "end_time".to_string()),
+            ("duration", "duration".to_string()),
+            ("indices", "indices".to_string()),
+            ("successful_shards", "successful_shards".to_string()),
+            ("failed_shards", "failed_shards".to_string()),
+            ("total_shards", "total_shards".to_string()),
+        ];
+    };
+    let mut selected = Vec::new();
+    for requested in h_param
+        .split(',')
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        if requested.contains('*') {
+            for (column, aliases) in [
+                ("id", &["snapshot"][..]),
+                ("status", &["s"][..]),
+                ("start_epoch", &["ste", "startEpoch"][..]),
+                ("start_time", &["sti", "startTime"][..]),
+                ("end_epoch", &["ete", "endEpoch"][..]),
+                ("end_time", &["eti", "endTime"][..]),
+                ("duration", &["dur"][..]),
+                ("indices", &["i"][..]),
+                ("successful_shards", &["ss"][..]),
+                ("failed_shards", &["fs"][..]),
+                ("total_shards", &["ts"][..]),
+                ("reason", &["r"][..]),
+            ] {
+                if wildcard_match(requested, column)
+                    || aliases.iter().any(|alias| wildcard_match(requested, alias))
+                {
+                    if !selected.iter().any(|(existing, _)| existing == &column) {
+                        selected.push((column, column.to_string()));
+                    }
+                }
+            }
+            continue;
+        }
+        let column = match requested {
+            "id" | "snapshot" => Some("id"),
+            "status" | "s" => Some("status"),
+            "start_epoch" | "ste" | "startEpoch" => Some("start_epoch"),
+            "start_time" | "sti" | "startTime" => Some("start_time"),
+            "end_epoch" | "ete" | "endEpoch" => Some("end_epoch"),
+            "end_time" | "eti" | "endTime" => Some("end_time"),
+            "duration" | "dur" => Some("duration"),
+            "indices" | "i" => Some("indices"),
+            "successful_shards" | "ss" => Some("successful_shards"),
+            "failed_shards" | "fs" => Some("failed_shards"),
+            "total_shards" | "ts" => Some("total_shards"),
+            "reason" | "r" => Some("reason"),
+            _ => None,
+        };
+        if let Some(column) = column {
+            if !selected.iter().any(|(existing, _)| existing == &column) {
+                selected.push((column, requested.to_string()));
+            }
+        }
+    }
+    selected
+}
+
 fn cat_templates_display_columns(h_param: Option<&String>) -> Vec<(&'static str, String)> {
     let Some(h_param) = h_param else {
         return vec![
@@ -38684,6 +38766,15 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         let repository_response = node.handle_rest_request(repository_request);
         assert_eq!(repository_response.status, 200);
 
+        let snapshot_create_response = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Put,
+                "/_snapshot/repo-cat-snapshots/snap-cat-000001?wait_for_completion=true",
+            )
+            .with_json_body(serde_json::json!({})),
+        );
+        assert_eq!(snapshot_create_response.status, 200);
+
         let mut snapshots_json_request =
             RestRequest::new(RestMethod::Get, "/_cat/snapshots/repo-cat-snapshots");
         snapshots_json_request
@@ -38691,7 +38782,28 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             .insert("format".to_string(), "json".to_string());
         let snapshots_json_response = node.handle_rest_request(snapshots_json_request);
         assert_eq!(snapshots_json_response.status, 200);
-        assert_eq!(snapshots_json_response.body, Value::Array(Vec::new()));
+        assert_eq!(snapshots_json_response.body[0]["id"], "snap-cat-000001");
+        assert!(snapshots_json_response.body[0].get("reason").is_none());
+
+        let mut selected_snapshots_json_request =
+            RestRequest::new(RestMethod::Get, "/_cat/snapshots/repo-cat-snapshots");
+        selected_snapshots_json_request
+            .query_params
+            .insert("format".to_string(), "json".to_string());
+        selected_snapshots_json_request.query_params.insert(
+            "h".to_string(),
+            "snapshot,s,ste,sti,ete,eti,dur,i,ss,fs,ts,r".to_string(),
+        );
+        let selected_snapshots_json_response =
+            node.handle_rest_request(selected_snapshots_json_request);
+        assert_eq!(selected_snapshots_json_response.status, 200);
+        assert_eq!(
+            selected_snapshots_json_response.body[0]["snapshot"],
+            "snap-cat-000001"
+        );
+        assert_eq!(selected_snapshots_json_response.body[0]["s"], "SUCCESS");
+        assert_eq!(selected_snapshots_json_response.body[0]["r"], "");
+        assert!(selected_snapshots_json_response.body[0].get("id").is_none());
 
         let post_snapshots_repository = node.handle_rest_request(RestRequest::new(
             RestMethod::Post,
@@ -38723,6 +38835,27 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert!(snapshots_text.contains(
             "id status start_epoch start_time end_epoch end_time duration indices successful_shards failed_shards total_shards"
         ));
+
+        let mut selected_snapshots_text_request =
+            RestRequest::new(RestMethod::Get, "/_cat/snapshots/repo-cat-snapshots");
+        selected_snapshots_text_request
+            .query_params
+            .insert("v".to_string(), "true".to_string());
+        selected_snapshots_text_request.query_params.insert(
+            "h".to_string(),
+            "snapshot,s,ste,sti,ete,eti,dur,i,ss,fs,ts,r".to_string(),
+        );
+        let selected_snapshots_text_response =
+            node.handle_rest_request(selected_snapshots_text_request);
+        let selected_snapshots_text = selected_snapshots_text_response
+            .body
+            .as_str()
+            .expect("selected cat snapshots text body");
+        assert_eq!(
+            selected_snapshots_text.lines().next(),
+            Some("snapshot s ste sti ete eti dur i ss fs ts r")
+        );
+        assert!(selected_snapshots_text.contains("snap-cat-000001 SUCCESS"));
     }
 
     #[test]

@@ -1004,6 +1004,79 @@
       "description": "[admin-cat] cat thread pool root json"
     },
     {
+      "name": "cat_snapshots_text_selected_alias_columns",
+      "area": "cat",
+      "extract": "cat_selected_column_fields",
+      "steps": [
+        {
+          "name": "create-repository",
+          "method": "PUT",
+          "path": "/_snapshot/repo-cat-snapshots-selected",
+          "body": {
+            "type": "fs",
+            "settings": {
+              "location": "/tmp/repo-cat-snapshots-selected"
+            }
+          },
+          "expected_status": 200
+        },
+        {
+          "name": "create-snapshot",
+          "method": "PUT",
+          "path": "/_snapshot/repo-cat-snapshots-selected/snap-cat-selected?wait_for_completion=true",
+          "body": {},
+          "expected_status": 200
+        },
+        {
+          "name": "cat-snapshots-selected",
+          "method": "GET",
+          "path": "/_cat/snapshots/repo-cat-snapshots-selected?v=true&h=snapshot,s,ste,sti,ete,eti,dur,i,ss,fs,ts,r",
+          "body": null,
+          "expected_status": 200,
+          "accept": "text/plain",
+          "extract": "cat_selected_column_fields"
+        }
+      ],
+      "family": "admin-cat",
+      "description": "[admin-cat] cat snapshots text honors OpenSearch h aliases"
+    },
+    {
+      "name": "cat_snapshots_json_selected_alias_columns",
+      "area": "cat",
+      "extract": "cat_selected_column_fields",
+      "steps": [
+        {
+          "name": "create-repository",
+          "method": "PUT",
+          "path": "/_snapshot/repo-cat-snapshots-selected-json",
+          "body": {
+            "type": "fs",
+            "settings": {
+              "location": "/tmp/repo-cat-snapshots-selected-json"
+            }
+          },
+          "expected_status": 200
+        },
+        {
+          "name": "create-snapshot",
+          "method": "PUT",
+          "path": "/_snapshot/repo-cat-snapshots-selected-json/snap-cat-selected-json?wait_for_completion=true",
+          "body": {},
+          "expected_status": 200
+        },
+        {
+          "name": "cat-snapshots-selected-json",
+          "method": "GET",
+          "path": "/_cat/snapshots/repo-cat-snapshots-selected-json?format=json&h=snapshot,s,ste,sti,ete,eti,dur,i,ss,fs,ts,r",
+          "body": null,
+          "expected_status": 200,
+          "extract": "cat_selected_column_fields"
+        }
+      ],
+      "family": "admin-cat",
+      "description": "[admin-cat] cat snapshots json honors OpenSearch h aliases"
+    },
+    {
       "name": "cat_repositories_text_selected_alias_columns",
       "area": "cat",
       "extract": "cat_indices_selected_columns",
