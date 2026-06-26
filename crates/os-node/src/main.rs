@@ -8793,14 +8793,38 @@ fn delete_transport_pit_contexts(
             .cloned()
             .collect()
     };
+    let clear_all = pit_ids.len() == 1 && pit_ids.first().is_some_and(|id| id == "_all");
     let results = ids
         .into_iter()
         .map(|id| {
             let _ = contexts.remove(&id);
+            remove_transport_reader_contexts_for_pit_id(&id);
             os_transport::action::OpenSearchDeletePitInfoWire::new(true, id)
         })
         .collect();
+    if clear_all {
+        dev_transport_pit_bindings()
+            .reader_contexts
+            .lock()
+            .expect("dev transport reader contexts lock poisoned")
+            .clear();
+    }
     os_transport::action::OpenSearchDeletePitResponseWire::with_results(results)
+}
+
+fn remove_transport_reader_contexts_for_pit_id(pit_id: &str) {
+    let Ok(context_id) = os_transport::action::OpenSearchSearchContextIdWire::decode(pit_id) else {
+        return;
+    };
+    let context_keys = context_id.pit_context_ids();
+    if context_keys.is_empty() {
+        return;
+    }
+    dev_transport_pit_bindings()
+        .reader_contexts
+        .lock()
+        .expect("dev transport reader contexts lock poisoned")
+        .retain(|key, _| !context_keys.contains(&format!("{}:{}", key.0, key.1)));
 }
 
 fn get_all_transport_pits_response(
@@ -19918,6 +19942,178 @@ mod tests {
             search_response.hits[0].source.as_ref(),
             Some(&serde_json::json!({ "status": "before-reader" }))
         );
+    }
+
+    #[test]
+    fn delete_pit_transport_route_frees_encoded_reader_contexts() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        let bindings = dev_transport_pit_bindings();
+        bindings
+            .contexts
+            .lock()
+            .expect("dev transport PIT contexts lock poisoned")
+            .clear();
+        bindings
+            .reader_contexts
+            .lock()
+            .expect("dev transport reader contexts lock poisoned")
+            .clear();
+
+        let reader_context_id =
+            os_transport::action::OpenSearchShardSearchContextIdWire::new("reader-session", 42);
+        let encoded_pit_id =
+            os_transport::action::OpenSearchSearchContextIdWire::new(BTreeMap::from([(
+                os_transport::action::OpenSearchShardIdWire {
+                    index_name: "logs-delete-pit-reader".to_string(),
+                    index_uuid: "uuid-delete-pit-reader".to_string(),
+                    shard_id: 0,
+                },
+                os_transport::action::OpenSearchSearchContextIdForNodeWire {
+                    node: "steel-node-id".to_string(),
+                    cluster_alias: None,
+                    search_context_id: reader_context_id.clone(),
+                },
+            )]))
+            .encode(OPENSEARCH_3_7_0_TRANSPORT)
+            .unwrap();
+        bindings
+            .contexts
+            .lock()
+            .expect("dev transport PIT contexts lock poisoned")
+            .insert(
+                encoded_pit_id.clone(),
+                PitContext {
+                    indices: vec!["logs-delete-pit-reader".to_string()],
+                    documents: BTreeMap::new(),
+                    keep_alive_millis: 60_000,
+                    expires_at_millis: now_epoch_ms() + 60_000,
+                    creation_time_millis: now_epoch_ms(),
+                },
+            );
+        bindings
+            .reader_contexts
+            .lock()
+            .expect("dev transport reader contexts lock poisoned")
+            .insert(
+                reader_context_key(&reader_context_id),
+                DevTransportReaderContext {
+                    shard_id: os_transport::action::OpenSearchShardIdWire {
+                        index_name: "logs-delete-pit-reader".to_string(),
+                        index_uuid: "uuid-delete-pit-reader".to_string(),
+                        shard_id: 0,
+                    },
+                    documents: BTreeMap::new(),
+                },
+            );
+
+        let request = os_transport::action::OpenSearchDeletePitRequestWire {
+            pit_ids: vec![encoded_pit_id.clone()],
+            ..os_transport::action::OpenSearchDeletePitRequestWire::default()
+        };
+        let frame = os_transport::action::build_opensearch_delete_pit_request_message(
+            319,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(delete_pit_request_supports_local_lifecycle_subset(
+            &frame[6..]
+        ));
+        let response = build_local_delete_pit_response(
+            319,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &frame[6..],
+        );
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected delete-PIT response message");
+        };
+        let response =
+            os_transport::action::read_opensearch_delete_pit_response_message(&message).unwrap();
+        assert_eq!(response.results.len(), 1);
+        assert_eq!(response.results[0].pit_id, encoded_pit_id);
+        assert!(response.results[0].successful);
+        assert!(bindings
+            .contexts
+            .lock()
+            .expect("dev transport PIT contexts lock poisoned")
+            .is_empty());
+        assert!(bindings
+            .reader_contexts
+            .lock()
+            .expect("dev transport reader contexts lock poisoned")
+            .is_empty());
+    }
+
+    #[test]
+    fn delete_all_pit_transport_route_clears_orphaned_reader_contexts() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        let bindings = dev_transport_pit_bindings();
+        bindings
+            .contexts
+            .lock()
+            .expect("dev transport PIT contexts lock poisoned")
+            .clear();
+        bindings
+            .reader_contexts
+            .lock()
+            .expect("dev transport reader contexts lock poisoned")
+            .clear();
+        bindings
+            .reader_contexts
+            .lock()
+            .expect("dev transport reader contexts lock poisoned")
+            .insert(
+                ("orphan-reader".to_string(), 7),
+                DevTransportReaderContext {
+                    shard_id: os_transport::action::OpenSearchShardIdWire {
+                        index_name: "logs-orphan-pit-reader".to_string(),
+                        index_uuid: "uuid-orphan-pit-reader".to_string(),
+                        shard_id: 0,
+                    },
+                    documents: BTreeMap::new(),
+                },
+            );
+
+        let request = os_transport::action::OpenSearchDeletePitRequestWire::default();
+        let frame = os_transport::action::build_opensearch_delete_pit_request_message(
+            320,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(delete_pit_request_supports_local_lifecycle_subset(
+            &frame[6..]
+        ));
+        let response = build_local_delete_pit_response(
+            320,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &frame[6..],
+        );
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected delete-all-PIT response message");
+        };
+        let response =
+            os_transport::action::read_opensearch_delete_pit_response_message(&message).unwrap();
+        assert!(response.results.is_empty());
+        assert!(bindings
+            .reader_contexts
+            .lock()
+            .expect("dev transport reader contexts lock poisoned")
+            .is_empty());
     }
 
     #[test]
