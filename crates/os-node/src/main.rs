@@ -4572,6 +4572,7 @@ fn build_local_create_pit_response(
             .lock()
             .expect("dev transport PIT contexts lock poisoned");
         prune_expired_transport_pits(&mut contexts, now_millis);
+        prune_unavailable_transport_pits(&mut contexts);
         if contexts.len() >= DEV_TRANSPORT_MAX_OPEN_PIT_CONTEXTS {
             return build_empty_transport_response(request_id, header_version_id);
         }
@@ -8767,6 +8768,7 @@ fn transport_pit_segment_ids_exist(
         .lock()
         .expect("dev transport PIT contexts lock poisoned");
     prune_expired_transport_pits(&mut contexts, now_epoch_ms());
+    prune_unavailable_transport_pits(&mut contexts);
     request
         .pit_ids
         .iter()
@@ -8811,6 +8813,36 @@ fn prune_expired_transport_pits(contexts: &mut BTreeMap<String, PitContext>, now
     contexts.retain(|_, context| context.expires_at_millis > now_millis);
 }
 
+fn prune_unavailable_transport_pits(contexts: &mut BTreeMap<String, PitContext>) {
+    let bindings = dev_transport_pit_bindings();
+    let created_indices = bindings
+        .created_indices
+        .lock()
+        .expect("dev transport created indices lock poisoned");
+    let metadata_manifest = bindings
+        .metadata_manifest
+        .lock()
+        .expect("dev transport metadata manifest lock poisoned");
+    let removed_ids = contexts
+        .iter()
+        .filter_map(|(pit_id, context)| {
+            let available = context.indices.iter().all(|index| {
+                created_indices.contains(index)
+                    && metadata_manifest["indices"][index]["state"]
+                        .as_str()
+                        .map_or(true, |state| state != "close")
+            });
+            (!available).then_some(pit_id.clone())
+        })
+        .collect::<Vec<_>>();
+    drop(metadata_manifest);
+    drop(created_indices);
+    for pit_id in removed_ids {
+        contexts.remove(&pit_id);
+        remove_transport_reader_contexts_for_pit_id(&pit_id);
+    }
+}
+
 fn delete_transport_pit_contexts(
     pit_ids: &[String],
 ) -> os_transport::action::OpenSearchDeletePitResponseWire {
@@ -8819,6 +8851,7 @@ fn delete_transport_pit_contexts(
         .lock()
         .expect("dev transport PIT contexts lock poisoned");
     prune_expired_transport_pits(&mut contexts, now_epoch_ms());
+    prune_unavailable_transport_pits(&mut contexts);
     let ids = if pit_ids.len() == 1 && pit_ids.first().is_some_and(|id| id == "_all") {
         contexts.keys().cloned().collect::<Vec<_>>()
     } else {
@@ -8872,6 +8905,7 @@ fn get_all_transport_pits_response(
             .lock()
             .expect("dev transport PIT contexts lock poisoned");
         prune_expired_transport_pits(&mut contexts, now_epoch_ms());
+        prune_unavailable_transport_pits(&mut contexts);
         contexts
             .iter()
             .map(|(pit_id, context)| {
@@ -21966,6 +22000,25 @@ mod tests {
             remote_transport_queue_gate: Arc::new(RemoteTransportQueueGate::new(1, 1000)),
             task_queue_state: None,
         };
+        dev_transport_pit_bindings()
+            .created_indices
+            .lock()
+            .expect("dev transport created indices lock poisoned")
+            .insert("logs-pit-000001".to_string());
+        *dev_transport_pit_bindings()
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned") = serde_json::json!({
+            "indices": {
+                "logs-pit-000001": {
+                    "settings": {
+                        "index": {
+                            "number_of_shards": "1"
+                        }
+                    }
+                }
+            }
+        });
         {
             let mut contexts = dev_transport_pit_bindings()
                 .contexts
@@ -22028,6 +22081,130 @@ mod tests {
             .lock()
             .expect("dev transport PIT contexts lock poisoned")
             .contains_key("pit-expired"));
+    }
+
+    #[test]
+    fn unavailable_transport_pits_are_pruned_before_list_and_segments_admission() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        let live_pit_id = "pit-live-index-context";
+        let deleted_pit_id = "pit-deleted-index-context";
+        let closed_pit_id = "pit-closed-index-context";
+        let now = now_epoch_ms();
+        dev_transport_pit_bindings()
+            .created_indices
+            .lock()
+            .expect("dev transport created indices lock poisoned")
+            .clear();
+        dev_transport_pit_bindings()
+            .created_indices
+            .lock()
+            .expect("dev transport created indices lock poisoned")
+            .extend([
+                "logs-live-pit-000001".to_string(),
+                "logs-closed-pit-000001".to_string(),
+            ]);
+        *dev_transport_pit_bindings()
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned") = serde_json::json!({
+            "indices": {
+                "logs-live-pit-000001": {
+                    "settings": {
+                        "index": {
+                            "number_of_shards": "1"
+                        }
+                    }
+                },
+                "logs-closed-pit-000001": {
+                    "state": "close",
+                    "settings": {
+                        "index": {
+                            "number_of_shards": "1"
+                        }
+                    }
+                }
+            }
+        });
+        {
+            let mut contexts = dev_transport_pit_bindings()
+                .contexts
+                .lock()
+                .expect("dev transport PIT contexts lock poisoned");
+            contexts.clear();
+            for (pit_id, index) in [
+                (live_pit_id, "logs-live-pit-000001"),
+                (deleted_pit_id, "logs-deleted-pit-000001"),
+                (closed_pit_id, "logs-closed-pit-000001"),
+            ] {
+                contexts.insert(
+                    pit_id.to_string(),
+                    PitContext {
+                        indices: vec![index.to_string()],
+                        documents: BTreeMap::new(),
+                        keep_alive_millis: 60_000,
+                        expires_at_millis: now + 60_000,
+                        creation_time_millis: now,
+                    },
+                );
+            }
+        }
+        let transport_identity = DevTransportIdentity {
+            cluster_name: "steelsearch-dev".to_string(),
+            node_name: "steel-node".to_string(),
+            node_id: "steel-node-id".to_string(),
+            ephemeral_id: "steel-node-ephemeral".to_string(),
+            transport_address: "127.0.0.1:9300".parse().unwrap(),
+            attributes: Vec::new(),
+            roles: vec!["cluster_manager".to_string(), "data".to_string()],
+            seed_peer_identity: None,
+            seed_peer_identities: Vec::new(),
+            coordination_state: Arc::new(Mutex::new(DevTransportCoordinationState::default())),
+            remote_transport_queue_gate: Arc::new(RemoteTransportQueueGate::new(1, 1000)),
+            task_queue_state: None,
+        };
+
+        let list_response = build_local_get_all_pits_response(
+            102,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &transport_identity,
+        );
+        let mut frame = BytesMut::from(&list_response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected get-all-PITs response message");
+        };
+        let list_response =
+            os_transport::action::read_opensearch_get_all_pits_response_message(&message).unwrap();
+        assert_eq!(list_response.nodes.len(), 1);
+        assert_eq!(list_response.nodes[0].pit_infos.len(), 1);
+        assert_eq!(list_response.nodes[0].pit_infos[0].pit_id, live_pit_id);
+        let contexts = dev_transport_pit_bindings()
+            .contexts
+            .lock()
+            .expect("dev transport PIT contexts lock poisoned");
+        assert!(contexts.contains_key(live_pit_id));
+        assert!(!contexts.contains_key(deleted_pit_id));
+        assert!(!contexts.contains_key(closed_pit_id));
+        drop(contexts);
+
+        let deleted_request = os_transport::action::OpenSearchPitSegmentsRequestWire {
+            pit_ids: vec![deleted_pit_id.to_string()],
+            ..os_transport::action::OpenSearchPitSegmentsRequestWire::default()
+        };
+        let deleted_frame = os_transport::action::build_opensearch_pit_segments_request_message(
+            103,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &deleted_request,
+        )
+        .unwrap();
+        assert!(!pit_segments_request_supports_local_subset(
+            &deleted_frame[6..]
+        ));
     }
 
     #[test]
@@ -22214,6 +22391,25 @@ mod tests {
             .lock()
             .expect("dev transport PIT test lock poisoned");
         let pit_id = "pit-segments-explicit-context";
+        dev_transport_pit_bindings()
+            .created_indices
+            .lock()
+            .expect("dev transport created indices lock poisoned")
+            .insert("logs-pit-segments-000001".to_string());
+        *dev_transport_pit_bindings()
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned") = serde_json::json!({
+            "indices": {
+                "logs-pit-segments-000001": {
+                    "settings": {
+                        "index": {
+                            "number_of_shards": "1"
+                        }
+                    }
+                }
+            }
+        });
         {
             let mut contexts = dev_transport_pit_bindings()
                 .contexts
