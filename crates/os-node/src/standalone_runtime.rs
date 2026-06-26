@@ -18085,6 +18085,19 @@ impl SteelNode {
                     local: true,
                 }]
             });
+        let local_search_open_contexts = self.search_open_context_count_for_stats();
+        let local_pit_current_contexts = self
+            .pit_open_context_counts_by_index()
+            .values()
+            .copied()
+            .sum::<u64>();
+        let local_pit_total_contexts = self
+            .pit_total_contexts_by_index
+            .lock()
+            .expect("pit total contexts lock poisoned")
+            .values()
+            .copied()
+            .sum::<u64>();
         let mut rows = Vec::new();
         for node in nodes {
             let (ip, port) = node
@@ -18098,6 +18111,15 @@ impl SteelNode {
                 "di"
             } else {
                 "-"
+            };
+            let (search_open_contexts, pit_current, pit_total) = if node.local {
+                (
+                    local_search_open_contexts,
+                    local_pit_current_contexts,
+                    local_pit_total_contexts,
+                )
+            } else {
+                (0, 0, 0)
             };
             rows.push(serde_json::json!({
                 "id": node.node_id,
@@ -18117,6 +18139,10 @@ impl SteelNode {
                 "uptime": "0s",
                 "node.role": role_summary,
                 "master": if node.local { "*" } else { "-" },
+                "search.open_contexts": search_open_contexts.to_string(),
+                "search.point_in_time_current": pit_current.to_string(),
+                "search.point_in_time_time": "0s",
+                "search.point_in_time_total": pit_total.to_string(),
                 "name": node.node_name,
             }));
         }
@@ -33066,6 +33092,33 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             ],
             coordination: None,
         });
+        node.pit_contexts
+            .lock()
+            .expect("pit contexts lock poisoned")
+            .insert(
+                build_local_pit_id(701),
+                PitContext {
+                    indices: vec!["logs-cat-node-pit".to_string()],
+                    documents: BTreeMap::new(),
+                    keep_alive_millis: 60_000,
+                    expires_at_millis: current_epoch_millis() + 60_000,
+                    creation_time_millis: current_epoch_millis(),
+                },
+            );
+        node.scroll_contexts
+            .lock()
+            .expect("scroll contexts lock poisoned")
+            .insert(
+                "scroll-cat-node".to_string(),
+                ScrollContext {
+                    remaining_hits: Vec::new(),
+                    page_size: 10,
+                },
+            );
+        node.pit_total_contexts_by_index
+            .lock()
+            .expect("pit total contexts lock poisoned")
+            .insert("logs-cat-node-pit".to_string(), 3);
 
         let mut nodes_json_request = RestRequest::new(RestMethod::Get, "/_cat/nodes");
         nodes_json_request
@@ -33078,6 +33131,20 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(nodes_json_response.body[0]["heap.percent"], "0");
         assert_eq!(nodes_json_response.body[0]["cpu"], "0");
         assert_eq!(nodes_json_response.body[0]["uptime"], "0s");
+        assert_eq!(nodes_json_response.body[0]["search.open_contexts"], "2");
+        assert_eq!(
+            nodes_json_response.body[0]["search.point_in_time_current"],
+            "1"
+        );
+        assert_eq!(
+            nodes_json_response.body[0]["search.point_in_time_total"],
+            "3"
+        );
+        assert_eq!(nodes_json_response.body[1]["search.open_contexts"], "0");
+        assert_eq!(
+            nodes_json_response.body[1]["search.point_in_time_current"],
+            "0"
+        );
 
         let mut nodes_text_request = RestRequest::new(RestMethod::Get, "/_cat/nodes");
         nodes_text_request
