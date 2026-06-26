@@ -2346,6 +2346,10 @@ The create-PIT boundary covers:
 - REST and local transport create-PIT normalize non-positive keep-alive values
   to the OpenSearch-compatible 30s local keep-alive value, while wire decoding
   still rejects unknown keep-alive units.
+- local transport update-reader-context rejects keep-alive values above the
+  OpenSearch default `point_in_time.max_keep_alive` of `24h`, matching the
+  runtime `SearchService.updatePitIdAndKeepAlive` boundary before updating the
+  shared PIT context store.
 
 The indices-stats boundary covers:
 
