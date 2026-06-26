@@ -4233,6 +4233,94 @@
       "description": "[lexical] pit open search"
     },
     {
+      "name": "pit_open_wrong_method_error_search",
+      "area": "search",
+      "method": "GET",
+      "path": "/logs-compat/_search/point_in_time?keep_alive=1m",
+      "body": null,
+      "expected_status": 405,
+      "extract": "method_not_allowed_error",
+      "family": "lexical",
+      "description": "[lexical] create PIT only accepts POST like OpenSearch"
+    },
+    {
+      "name": "pit_open_missing_keep_alive_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search/point_in_time",
+      "body": null,
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] create PIT rejects missing keep_alive like OpenSearch"
+    },
+    {
+      "name": "pit_open_body_keep_alive_still_missing_query_keep_alive_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search/point_in_time",
+      "body": {
+        "keep_alive": "1m"
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] create PIT ignores body keep_alive and still requires the query parameter like OpenSearch"
+    },
+    {
+      "name": "pit_open_invalid_keep_alive_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search/point_in_time?keep_alive=not-a-duration",
+      "body": null,
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] create PIT rejects invalid keep_alive like OpenSearch"
+    },
+    {
+      "name": "pit_open_over_max_keep_alive_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search/point_in_time?keep_alive=25h",
+      "body": null,
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] create PIT enforces OpenSearch point_in_time.max_keep_alive default"
+    },
+    {
+      "name": "pit_open_zero_keep_alive_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search/point_in_time?keep_alive=0ms",
+      "body": null,
+      "extract": "pit_open",
+      "family": "lexical",
+      "description": "[lexical] create PIT accepts zero keep_alive like OpenSearch"
+    },
+    {
+      "name": "pit_open_negative_keep_alive_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search/point_in_time?keep_alive=-1ms",
+      "body": null,
+      "extract": "pit_open",
+      "family": "lexical",
+      "description": "[lexical] create PIT accepts negative keep_alive like OpenSearch"
+    },
+    {
+      "name": "pit_open_fractional_keep_alive_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search/point_in_time?keep_alive=1.5s",
+      "body": null,
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] create PIT reports fractional keep_alive parse errors like OpenSearch"
+    },
+    {
       "name": "pit_close_get_method_error_search",
       "area": "search",
       "method": "GET",
@@ -4550,6 +4638,42 @@
       ],
       "family": "lexical",
       "description": "[lexical] pit search"
+    },
+    {
+      "name": "pit_search_over_max_keep_alive_error_search",
+      "area": "search",
+      "extract": "search_error_root_cause",
+      "steps": [
+        {
+          "name": "pit-open",
+          "method": "POST",
+          "path": "/logs-compat/_search/point_in_time?keep_alive=1m",
+          "body": null,
+          "expected_status": 200,
+          "extract": "pit_open",
+          "save": {
+            "pit_id": "body.pit_id"
+          }
+        },
+        {
+          "name": "pit-search-over-max-keep-alive",
+          "method": "POST",
+          "path": "/_search",
+          "body": {
+            "pit": {
+              "id": "${saved.pit_id}",
+              "keep_alive": "25h"
+            },
+            "query": {
+              "match_all": {}
+            }
+          },
+          "expected_status": 400,
+          "extract": "search_error_root_cause"
+        }
+      ],
+      "family": "lexical",
+      "description": "[lexical] PIT search enforces OpenSearch point_in_time.max_keep_alive default"
     },
     {
       "name": "pre_filter_shard_size_search",
