@@ -177,8 +177,8 @@ The source-derived transport inventory currently has 160 rows:
 
 | Status | Count | Meaning |
 | --- | ---: | --- |
-| `implemented` | 54 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
-| `partial` | 106 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
+| `implemented` | 55 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
+| `partial` | 105 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
 | `planned` | 0 | No source-derived transport action remains unclassified. |
 
 The k-NN plugin action sweep is complete at the boundary layer. All 12
@@ -331,7 +331,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `cluster:admin/script_context/get` (rejected fail-closed)
 - `cluster:admin/script_language/get` (rejected fail-closed)
 - `cluster:admin/ingest/pipeline/put` (rejected fail-closed)
-- `cluster:admin/ingest/pipeline/get` (rejected fail-closed)
+- `cluster:admin/ingest/pipeline/get` (implemented empty pipeline metadata-read subset)
 - `cluster:admin/ingest/pipeline/delete` (rejected fail-closed)
 - `cluster:admin/ingest/pipeline/simulate` (rejected fail-closed)
 - `indices:admin/refresh`
@@ -1377,12 +1377,12 @@ The get-pipeline boundary covers:
 - OpenSearch `GetPipelineResponse` pipeline count and repeated
   `PipelineConfiguration` id, config bytes, and media type at the wire
   decode/build layer;
-- explicit fail-closed classification for
-  `cluster:admin/ingest/pipeline/get` until ingest pipeline metadata lookup,
-  id/wildcard resolution, and response rendering are implemented;
-- explicit rejection for custom cluster-manager timeouts, local cluster-state
-  reads, and get-pipeline execution, plus defensive decode rejection for
-  negative response pipeline counts.
+- implemented classification for `cluster:admin/ingest/pipeline/get` with an
+  OpenSearch-shaped empty pipeline list response for the default non-local
+  metadata read request;
+- explicit rejection for custom cluster-manager timeouts and local
+  cluster-state reads, plus defensive decode rejection for negative response
+  pipeline counts.
 
 The delete-pipeline boundary covers:
 

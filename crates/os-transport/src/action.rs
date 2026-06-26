@@ -2055,8 +2055,8 @@ pub fn classify_opensearch_transport_action(
         },
         OPENSEARCH_GET_PIPELINE_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
-            disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "get-pipeline transport execution requires ingest pipeline metadata lookup, id/wildcard resolution, and response rendering",
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "get-pipeline transport adapter returns an OpenSearch-shaped empty pipeline list for the default non-local metadata read request",
         },
         OPENSEARCH_DELETE_PIPELINE_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -20382,7 +20382,7 @@ impl OpenSearchGetPipelineRequestWire {
         })
     }
 
-    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+    pub fn validate_supported_execution_subset(&self) -> Result<(), TransportActionWireError> {
         if self.cluster_manager_timeout != TimeValueWire::seconds(30) {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "get pipeline cluster-manager timeout",
@@ -20396,9 +20396,14 @@ impl OpenSearchGetPipelineRequestWire {
                 reason: "local cluster-state reads are not mapped by the get-pipeline adapter yet",
             });
         }
+        Ok(())
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        self.validate_supported_execution_subset()?;
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "get pipeline execution",
-            reason: "get-pipeline transport execution requires ingest pipeline metadata lookup, id/wildcard resolution, and response rendering",
+            reason: "use validate_supported_execution_subset for the implemented empty get-pipeline adapter",
         })
     }
 }
@@ -58166,7 +58171,7 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_get_pipeline_request_wire_round_trips_and_rejects_execution_boundary() {
+    fn opensearch_get_pipeline_request_wire_round_trips_and_validates_empty_execution_subset() {
         let request = OpenSearchGetPipelineRequestWire::default();
         let mut output = StreamOutput::new();
         request.write(&mut output);
@@ -58174,25 +58179,13 @@ mod tests {
         let decoded = OpenSearchGetPipelineRequestWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, request);
         assert_eq!(decoded.ids, vec!["pipeline-1".to_string()]);
-        assert!(matches!(
-            decoded.reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "get pipeline execution",
-                ..
-            })
-        ));
+        decoded.validate_supported_execution_subset().unwrap();
 
         let all_pipelines = OpenSearchGetPipelineRequestWire {
             ids: Vec::new(),
             ..OpenSearchGetPipelineRequestWire::default()
         };
-        assert!(matches!(
-            all_pipelines.reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "get pipeline execution",
-                ..
-            })
-        ));
+        all_pipelines.validate_supported_execution_subset().unwrap();
     }
 
     #[test]
@@ -58252,7 +58245,7 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_get_pipeline_transport_messages_bind_rejected_action_frame_and_response() {
+    fn opensearch_get_pipeline_transport_messages_bind_implemented_action_frame_and_response() {
         let request = OpenSearchGetPipelineRequestWire::default();
         let mut frame =
             build_opensearch_get_pipeline_request_message(75, OPENSEARCH_3_7_0_TRANSPORT, &request)
@@ -58264,23 +58257,20 @@ mod tests {
             classify_opensearch_transport_request_message(&message)
                 .unwrap()
                 .disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             read_opensearch_get_pipeline_request_message(&message).unwrap(),
             request
         );
-        assert!(matches!(
-            read_opensearch_get_pipeline_request_message(&message)
-                .unwrap()
-                .reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "get pipeline execution",
-                ..
-            })
-        ));
+        read_opensearch_get_pipeline_request_message(&message)
+            .unwrap()
+            .validate_supported_execution_subset()
+            .unwrap();
 
-        let response = OpenSearchGetPipelineResponseWire::default();
+        let response = OpenSearchGetPipelineResponseWire {
+            pipelines: Vec::new(),
+        };
         let mut frame = build_opensearch_get_pipeline_response_message(
             75,
             OPENSEARCH_3_7_0_TRANSPORT,
