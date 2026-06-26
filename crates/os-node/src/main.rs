@@ -5463,6 +5463,7 @@ fn local_transport_search_response_from_request(
         total_hits_relation,
         max_score: if hits.is_empty() { f32::NAN } else { 1.0 },
         hits,
+        sort_fields: local_transport_sort_fields_for_response(sorts, documents.values()),
         total_shards,
         successful_shards: total_shards,
         terminated_early: terminated_early.then_some(true),
@@ -5471,6 +5472,96 @@ fn local_transport_search_response_from_request(
         ..os_transport::action::OpenSearchSearchResponseWire::empty_with_total_hits(
             actual_total_hits,
         )
+    }
+}
+
+fn local_transport_sort_fields_for_response<'a>(
+    sorts: Option<&[os_transport::action::OpenSearchSortBuilderWire]>,
+    records: impl Iterator<Item = &'a StoredDocument>,
+) -> Option<Vec<os_transport::action::OpenSearchSortFieldWire>> {
+    let sorts = sorts?;
+    let records = records.collect::<Vec<_>>();
+    Some(
+        sorts
+            .iter()
+            .map(|sort| local_transport_sort_field_for_response(sort, &records))
+            .collect(),
+    )
+}
+
+fn local_transport_sort_field_for_response(
+    sort: &os_transport::action::OpenSearchSortBuilderWire,
+    records: &[&StoredDocument],
+) -> os_transport::action::OpenSearchSortFieldWire {
+    match sort {
+        os_transport::action::OpenSearchSortBuilderWire::Score(score) => {
+            os_transport::action::OpenSearchSortFieldWire::score(
+                score.order == os_transport::action::OpenSearchSortOrderWire::Desc,
+            )
+        }
+        os_transport::action::OpenSearchSortBuilderWire::ShardDoc(shard_doc) => {
+            os_transport::action::OpenSearchSortFieldWire::doc(
+                shard_doc.order == os_transport::action::OpenSearchSortOrderWire::Desc,
+            )
+        }
+        os_transport::action::OpenSearchSortBuilderWire::Field(field) => {
+            let reverse = field.order == Some(os_transport::action::OpenSearchSortOrderWire::Desc);
+            let sort_type = local_transport_sort_field_type(field, records);
+            os_transport::action::OpenSearchSortFieldWire::field(
+                field.field_name.clone(),
+                sort_type,
+                reverse,
+                local_transport_sort_missing_value(field),
+            )
+        }
+    }
+}
+
+fn local_transport_sort_field_type(
+    field: &os_transport::action::OpenSearchFieldSortBuilderWire,
+    records: &[&StoredDocument],
+) -> i32 {
+    if field.field_name == "_shard_doc" {
+        return os_transport::action::OpenSearchSortFieldWire::DOC;
+    }
+    if matches!(
+        field.numeric_type.as_deref(),
+        Some("long" | "date" | "date_nanos")
+    ) {
+        return os_transport::action::OpenSearchSortFieldWire::LONG;
+    }
+    if field.numeric_type.as_deref() == Some("double") {
+        return os_transport::action::OpenSearchSortFieldWire::DOUBLE;
+    }
+    records
+        .iter()
+        .filter_map(|record| lookup_transport_source_value(&record.source, &field.field_name))
+        .find_map(|value| {
+            if value.as_i64().is_some() || value.as_u64().is_some() {
+                Some(os_transport::action::OpenSearchSortFieldWire::LONG)
+            } else if value.as_f64().is_some() {
+                Some(os_transport::action::OpenSearchSortFieldWire::DOUBLE)
+            } else if value.as_str().is_some() {
+                Some(os_transport::action::OpenSearchSortFieldWire::STRING)
+            } else {
+                None
+            }
+        })
+        .unwrap_or(os_transport::action::OpenSearchSortFieldWire::STRING)
+}
+
+fn local_transport_sort_missing_value(
+    field: &os_transport::action::OpenSearchFieldSortBuilderWire,
+) -> Option<os_transport::action::OpenSearchSortMissingValueWire> {
+    match &field.missing {
+        Value::String(value) if value == "_first" => {
+            Some(os_transport::action::OpenSearchSortMissingValueWire::StringFirst)
+        }
+        Value::String(value) if value == "_last" => {
+            Some(os_transport::action::OpenSearchSortMissingValueWire::StringLast)
+        }
+        Value::Null => None,
+        value => Some(os_transport::action::OpenSearchSortMissingValueWire::Generic(value.clone())),
     }
 }
 
@@ -16350,6 +16441,16 @@ mod tests {
         let first_page = os_transport::action::read_opensearch_search_response_message(&message)
             .expect("first PIT field-sort page response");
         assert_eq!(first_page.total_hits, Some(3));
+        let expected_sort_fields = Some(vec![
+            os_transport::action::OpenSearchSortFieldWire::field(
+                "val",
+                os_transport::action::OpenSearchSortFieldWire::LONG,
+                false,
+                None,
+            ),
+            os_transport::action::OpenSearchSortFieldWire::doc(false),
+        ]);
+        assert_eq!(first_page.sort_fields, expected_sort_fields);
         assert_eq!(
             first_page
                 .hits
@@ -16400,6 +16501,7 @@ mod tests {
         let second_page = os_transport::action::read_opensearch_search_response_message(&message)
             .expect("second PIT field-sort page response");
         assert_eq!(second_page.total_hits, Some(1));
+        assert_eq!(second_page.sort_fields, expected_sort_fields);
         assert_eq!(second_page.hits.len(), 1);
         assert_eq!(second_page.hits[0].id.as_deref(), Some("doc-3"));
         assert_eq!(
