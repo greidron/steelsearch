@@ -18819,8 +18819,8 @@ impl SteelNode {
                 "host": ip,
                 "ip": ip,
                 "port": port,
-                "attr": "roles",
-                "value": node.roles.join(","),
+                "attr": "shard_indexing_pressure_enabled",
+                "value": "true",
             }));
         }
         rows.sort_by(|left, right| {
@@ -31030,6 +31030,8 @@ fn cat_nodeattrs_display_columns(h_param: Option<&String>) -> Vec<(&'static str,
     let Some(h_param) = h_param else {
         return vec![
             ("node", "node".to_string()),
+            ("host", "host".to_string()),
+            ("ip", "ip".to_string()),
             ("attr", "attr".to_string()),
             ("value", "value".to_string()),
         ];
@@ -37403,9 +37405,13 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         let attrs_json_response = node.handle_rest_request(attrs_json_request);
         assert_eq!(attrs_json_response.status, 200);
         assert_eq!(attrs_json_response.body[0]["node"], "steel-node-a");
-        assert_eq!(attrs_json_response.body[0]["attr"], "roles");
-        assert_eq!(attrs_json_response.body[0]["value"], "cluster_manager,data");
-        assert!(attrs_json_response.body[0].get("host").is_none());
+        assert_eq!(
+            attrs_json_response.body[0]["attr"],
+            "shard_indexing_pressure_enabled"
+        );
+        assert_eq!(attrs_json_response.body[0]["value"], "true");
+        assert_eq!(attrs_json_response.body[0]["host"], "127.0.0.1");
+        assert_eq!(attrs_json_response.body[0]["ip"], "127.0.0.1");
 
         let mut selected_attrs_json_request = RestRequest::new(RestMethod::Get, "/_cat/nodeattrs");
         selected_attrs_json_request
@@ -37423,11 +37429,11 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(selected_attrs_json_response.body[0]["h"], "127.0.0.1");
         assert_eq!(selected_attrs_json_response.body[0]["i"], "127.0.0.1");
         assert_eq!(selected_attrs_json_response.body[0]["po"], "9300");
-        assert_eq!(selected_attrs_json_response.body[0]["attr.name"], "roles");
         assert_eq!(
-            selected_attrs_json_response.body[0]["attr.value"],
-            "cluster_manager,data"
+            selected_attrs_json_response.body[0]["attr.name"],
+            "shard_indexing_pressure_enabled"
         );
+        assert_eq!(selected_attrs_json_response.body[0]["attr.value"], "true");
         assert!(selected_attrs_json_response.body[0].get("node").is_none());
 
         let mut attrs_text_request = RestRequest::new(RestMethod::Get, "/_cat/nodeattrs");
@@ -37439,7 +37445,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             .body
             .as_str()
             .expect("cat nodeattrs text body");
-        assert!(attrs_text.contains("node attr value"));
+        assert!(attrs_text.contains("node host ip attr value"));
         assert!(attrs_text.contains("steel-node-a"));
 
         let mut selected_attrs_text_request = RestRequest::new(RestMethod::Get, "/_cat/nodeattrs");
@@ -37458,8 +37464,8 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             selected_attrs_text.lines().collect::<Vec<_>>(),
             vec![
                 "name attr.name attr.value",
-                "steel-node-a roles cluster_manager,data",
-                "steel-node-b roles data,ingest"
+                "steel-node-a shard_indexing_pressure_enabled true",
+                "steel-node-b shard_indexing_pressure_enabled true"
             ]
         );
     }
