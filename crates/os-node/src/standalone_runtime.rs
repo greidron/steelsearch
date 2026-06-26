@@ -12716,9 +12716,7 @@ impl SteelNode {
                 }),
             );
         };
-        if body.get("script").is_some() {
-            return action_request_validation_error(vec!["unsupported reindex option [script]"]);
-        }
+        let script = body.get("script");
         if let Some(response) =
             validate_opensearch_boolean_query_param(request.query_params.get("require_alias"))
         {
@@ -12810,6 +12808,13 @@ impl SteelNode {
                     Some(_) => unreachable!("destination routing was validated above"),
                 };
                 let mut dest_doc = doc;
+                if let Some(script) = script {
+                    if let Err(response) =
+                        apply_source_assignment_script(&mut dest_doc.source, script)
+                    {
+                        return response;
+                    }
+                }
                 dest_doc.routing = if resolved_routing.is_empty() {
                     None
                 } else {
@@ -30227,29 +30232,91 @@ fn substitute_template_params(
 }
 
 fn apply_update_by_query_script(source: &mut Value, script: &Value) {
-    let Some(source_obj) = source.as_object_mut() else {
-        return;
-    };
+    let _ = apply_source_assignment_script(source, script);
+}
+
+fn apply_source_assignment_script(source: &mut Value, script: &Value) -> Result<(), RestResponse> {
     let Some(script_source) = script.get("source").and_then(Value::as_str) else {
-        return;
+        return Err(RestResponse::json(
+            400,
+            serde_json::json!({
+                "error": {
+                    "type": "illegal_argument_exception",
+                    "reason": "script source is required"
+                },
+                "status": 400
+            }),
+        ));
     };
     let Some((field, value_literal)) = script_source
         .strip_prefix("ctx._source.")
         .and_then(|rest| rest.split_once('='))
         .map(|(field, value)| (field.trim(), value.trim()))
     else {
-        return;
+        return Err(RestResponse::json(
+            400,
+            serde_json::json!({
+                "error": {
+                    "type": "illegal_argument_exception",
+                    "reason": "unsupported source assignment script"
+                },
+                "status": 400
+            }),
+        ));
     };
-    let value = if value_literal.eq_ignore_ascii_case("true") {
-        Value::Bool(true)
-    } else if value_literal.eq_ignore_ascii_case("false") {
-        Value::Bool(false)
-    } else if let Ok(parsed) = serde_json::from_str::<Value>(value_literal) {
-        parsed
-    } else {
-        Value::String(value_literal.trim_matches('"').to_string())
+    let value = parse_source_assignment_value(script, value_literal)?;
+    let Some(source_obj) = source.as_object_mut() else {
+        *source = serde_json::json!({});
+        let source_obj = source.as_object_mut().expect("source converted to object");
+        source_obj.insert(field.to_string(), value);
+        return Ok(());
     };
     source_obj.insert(field.to_string(), value);
+    Ok(())
+}
+
+fn parse_source_assignment_value(
+    script: &Value,
+    value_literal: &str,
+) -> Result<Value, RestResponse> {
+    if let Some(param_name) = value_literal.strip_prefix("params.") {
+        return script
+            .get("params")
+            .and_then(Value::as_object)
+            .and_then(|params| params.get(param_name))
+            .cloned()
+            .ok_or_else(|| {
+                RestResponse::json(
+                    400,
+                    serde_json::json!({
+                        "error": {
+                            "type": "illegal_argument_exception",
+                            "reason": format!("missing script param [{param_name}]")
+                        },
+                        "status": 400
+                    }),
+                )
+            });
+    }
+    if value_literal.eq_ignore_ascii_case("true") {
+        return Ok(Value::Bool(true));
+    }
+    if value_literal.eq_ignore_ascii_case("false") {
+        return Ok(Value::Bool(false));
+    }
+    if value_literal.eq_ignore_ascii_case("null") {
+        return Ok(Value::Null);
+    }
+    if let Some(value) = value_literal
+        .strip_prefix('\'')
+        .and_then(|value| value.strip_suffix('\''))
+    {
+        return Ok(Value::String(value.to_string()));
+    }
+    if let Ok(parsed) = serde_json::from_str::<Value>(value_literal) {
+        return Ok(parsed);
+    }
+    Ok(Value::String(value_literal.trim_matches('"').to_string()))
 }
 
 fn matches_index_selector(selector: &str, index: &str) -> bool {
@@ -40460,7 +40527,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             "reindex dest.index is required"
         );
 
-        let unsupported_script = node.handle_rest_request(
+        let scripted_reindex = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/_reindex").with_json_body(serde_json::json!({
                 "source": { "index": "logs-reindex-source-a" },
                 "dest": { "index": "logs-reindex-dest" },
@@ -40469,14 +40536,17 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 }
             })),
         );
-        assert_eq!(unsupported_script.status, 400);
+        assert_eq!(scripted_reindex.status, 200);
+        assert_eq!(scripted_reindex.body["total"], 1);
+        assert_eq!(scripted_reindex.body["updated"], 1);
+        let scripted_doc = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/logs-reindex-dest/_doc/doc-1",
+        ));
+        assert_eq!(scripted_doc.status, 200);
         assert_eq!(
-            unsupported_script.body["error"]["type"],
-            "action_request_validation_exception"
-        );
-        assert_eq!(
-            unsupported_script.body["error"]["reason"],
-            "Validation Failed: 1: unsupported reindex option [script];"
+            scripted_doc.body["_source"]["message"],
+            Value::String("scripted reindex".to_string())
         );
 
         let wildcard_reindex = node.handle_rest_request(
