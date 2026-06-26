@@ -13316,7 +13316,7 @@ impl SteelNode {
         })
     }
 
-    fn cluster_settings_body(&self, flat_settings: bool, _include_defaults: bool) -> Value {
+    fn cluster_settings_body(&self, flat_settings: bool, include_defaults: bool) -> Value {
         let state = self
             .cluster_settings_state
             .lock()
@@ -13334,6 +13334,13 @@ impl SteelNode {
                 .unwrap_or(&Value::Object(serde_json::Map::new())),
             flat_settings,
         );
+        if include_defaults {
+            return cluster_settings_route_registration::build_cluster_settings_response_body_with_defaults(
+                &persistent,
+                &transient,
+                &render_cluster_settings_section(&default_cluster_settings_defaults(), flat_settings),
+            );
+        }
         cluster_settings_route_registration::build_cluster_settings_response_body(
             &persistent,
             &transient,
@@ -31565,6 +31572,16 @@ fn default_cluster_settings_state() -> Value {
     })
 }
 
+fn default_cluster_settings_defaults() -> Value {
+    serde_json::json!({
+        "cluster.routing.allocation.enable": "all",
+        "cluster.info.update.interval": "30s",
+        "search.default_keep_alive": "5m",
+        "point_in_time.max_keep_alive": "24h",
+        "search.max_open_pit_context": 300
+    })
+}
+
 fn merge_cluster_settings_section_flat(base: &Value, patch: &Value) -> Value {
     let mut merged = match base {
         Value::Object(map) => map.clone(),
@@ -35288,6 +35305,58 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             .runtime_lifecycle_snapshot()
             .blockers
             .contains(&"shared_runtime_state_recovery_failed".to_string()));
+    }
+
+    #[test]
+    fn cluster_settings_include_defaults_renders_source_backed_defaults() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        let response = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_cluster/settings?include_defaults=true",
+        ));
+
+        assert_eq!(response.status, 200);
+        assert_eq!(response.body["persistent"], serde_json::json!({}));
+        assert_eq!(response.body["transient"], serde_json::json!({}));
+        assert_eq!(
+            response.body["defaults"]["cluster"]["routing"]["allocation"]["enable"],
+            "all"
+        );
+        assert_eq!(
+            response.body["defaults"]["cluster"]["info"]["update"]["interval"],
+            "30s"
+        );
+        assert_eq!(
+            response.body["defaults"]["search"]["default_keep_alive"],
+            "5m"
+        );
+        assert_eq!(
+            response.body["defaults"]["point_in_time"]["max_keep_alive"],
+            "24h"
+        );
+        assert_eq!(
+            response.body["defaults"]["search"]["max_open_pit_context"],
+            300
+        );
+
+        let flat_response = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_cluster/settings?include_defaults=true&flat_settings=true",
+        ));
+
+        assert_eq!(flat_response.status, 200);
+        assert_eq!(
+            flat_response.body["defaults"]["point_in_time.max_keep_alive"],
+            "24h"
+        );
+        assert_eq!(
+            flat_response.body["defaults"]["search.max_open_pit_context"],
+            300
+        );
     }
 
     #[test]

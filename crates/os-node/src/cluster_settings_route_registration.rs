@@ -19,7 +19,8 @@ pub const CLUSTER_SETTINGS_SUPPORTED_QUERY_PARAMS: [&str; 2] =
 pub const CLUSTER_SETTINGS_RUNNABLE_SUBSET_FIELDS: [&str; 2] = ["persistent", "transient"];
 
 /// Canonical actual live-route response semantics for the current `GET /_cluster/settings` subset.
-pub const CLUSTER_SETTINGS_LIVE_ROUTE_RESPONSE_FIELDS: [&str; 2] = ["persistent", "transient"];
+pub const CLUSTER_SETTINGS_LIVE_ROUTE_RESPONSE_FIELDS: [&str; 3] =
+    ["persistent", "transient", "defaults"];
 
 /// Canonical response fields for the bounded `PUT /_cluster/settings` mutation subset.
 pub const CLUSTER_SETTINGS_MUTATION_RESPONSE_FIELDS: [&str; 3] =
@@ -56,6 +57,19 @@ pub fn build_cluster_settings_response_body(
     serde_json::json!({
         "persistent": persistent.clone(),
         "transient": transient.clone(),
+    })
+}
+
+/// Canonical bounded response-body helper for `GET /_cluster/settings?include_defaults=true`.
+pub fn build_cluster_settings_response_body_with_defaults(
+    persistent: &serde_json::Value,
+    transient: &serde_json::Value,
+    defaults: &serde_json::Value,
+) -> serde_json::Value {
+    serde_json::json!({
+        "persistent": persistent.clone(),
+        "transient": transient.clone(),
+        "defaults": defaults.clone(),
     })
 }
 
@@ -285,7 +299,7 @@ mod tests {
         );
         assert_eq!(
             CLUSTER_SETTINGS_LIVE_ROUTE_RESPONSE_FIELDS,
-            ["persistent", "transient"]
+            ["persistent", "transient", "defaults"]
         );
         assert_eq!(
             CLUSTER_SETTINGS_MUTATION_RESPONSE_FIELDS,
@@ -470,6 +484,25 @@ mod tests {
         assert_eq!(
             body["transient"]["cluster.info.update.interval"],
             serde_json::json!("30s")
+        );
+    }
+
+    #[test]
+    fn cluster_settings_response_body_helper_can_render_defaults_section() {
+        let body = build_cluster_settings_response_body_with_defaults(
+            &serde_json::json!({}),
+            &serde_json::json!({}),
+            &serde_json::json!({
+                "search.default_keep_alive": "5m",
+                "point_in_time.max_keep_alive": "24h"
+            }),
+        );
+
+        assert_eq!(body["persistent"], serde_json::json!({}));
+        assert_eq!(body["transient"], serde_json::json!({}));
+        assert_eq!(
+            body["defaults"]["point_in_time.max_keep_alive"],
+            serde_json::json!("24h")
         );
     }
 
