@@ -2303,6 +2303,7 @@ pub struct SteelNode {
     pub scroll_contexts: Arc<Mutex<BTreeMap<String, ScrollContext>>>,
     pub next_scroll_id: Arc<Mutex<u64>>,
     pub pit_contexts: Arc<Mutex<BTreeMap<String, PitContext>>>,
+    pub pit_total_contexts_by_index: Arc<Mutex<BTreeMap<String, u64>>>,
     pub next_pit_id: Arc<Mutex<u64>>,
     pub snapshot_restores_in_progress: Arc<Mutex<BTreeSet<String>>>,
 }
@@ -2565,6 +2566,7 @@ impl SteelNode {
             scroll_contexts: Arc::new(Mutex::new(BTreeMap::new())),
             next_scroll_id: Arc::new(Mutex::new(0)),
             pit_contexts: Arc::new(Mutex::new(BTreeMap::new())),
+            pit_total_contexts_by_index: Arc::new(Mutex::new(BTreeMap::new())),
             next_pit_id: Arc::new(Mutex::new(0)),
             snapshot_restores_in_progress: Arc::new(Mutex::new(BTreeSet::new())),
         };
@@ -10983,13 +10985,15 @@ impl SteelNode {
         pit_contexts.insert(
             pit_id.clone(),
             PitContext {
-                indices: resolved_indices,
+                indices: resolved_indices.clone(),
                 documents,
                 keep_alive_millis,
                 expires_at_millis: pit_expires_at_millis(creation_time_millis, keep_alive_millis),
                 creation_time_millis,
             },
         );
+        drop(pit_contexts);
+        self.record_pit_open_context_totals(&resolved_indices);
         RestResponse::json(
             200,
             serde_json::json!({
@@ -14653,9 +14657,22 @@ impl SteelNode {
             .iter()
             .map(|index| pit_open_contexts_by_index.get(index).copied().unwrap_or(0))
             .sum::<u64>();
+        let pit_total_contexts_by_index = self
+            .pit_total_contexts_by_index
+            .lock()
+            .expect("pit total contexts lock poisoned")
+            .clone();
+        let total_pit_contexts = created_indices
+            .iter()
+            .map(|index| pit_total_contexts_by_index.get(index).copied().unwrap_or(0))
+            .sum::<u64>();
         let mut indices = serde_json::Map::new();
         for index in created_indices {
             let pit_open_contexts = pit_open_contexts_by_index
+                .get(&index)
+                .copied()
+                .unwrap_or_default();
+            let pit_total_contexts = pit_total_contexts_by_index
                 .get(&index)
                 .copied()
                 .unwrap_or_default();
@@ -14664,11 +14681,17 @@ impl SteelNode {
                 serde_json::json!({
                     "primaries": {
                         "docs": { "count": 0 },
-                        "search": search_stats_body_for_open_pit_contexts(pit_open_contexts)
+                        "search": search_stats_body_for_pit_contexts(
+                            pit_open_contexts,
+                            pit_total_contexts
+                        )
                     },
                     "total": {
                         "docs": { "count": 0 },
-                        "search": search_stats_body_for_open_pit_contexts(pit_open_contexts)
+                        "search": search_stats_body_for_pit_contexts(
+                            pit_open_contexts,
+                            pit_total_contexts
+                        )
                     }
                 }),
             );
@@ -14684,13 +14707,19 @@ impl SteelNode {
                     "docs": {
                         "count": 0
                     },
-                    "search": search_stats_body_for_open_pit_contexts(total_pit_open_contexts)
+                    "search": search_stats_body_for_pit_contexts(
+                        total_pit_open_contexts,
+                        total_pit_contexts
+                    )
                 },
                 "total": {
                     "docs": {
                         "count": 0
                     },
-                    "search": search_stats_body_for_open_pit_contexts(total_pit_open_contexts)
+                    "search": search_stats_body_for_pit_contexts(
+                        total_pit_open_contexts,
+                        total_pit_contexts
+                    )
                 }
             },
             "indices": indices
@@ -14712,6 +14741,17 @@ impl SteelNode {
             }
         }
         counts
+    }
+
+    fn record_pit_open_context_totals(&self, indices: &[String]) {
+        let mut totals = self
+            .pit_total_contexts_by_index
+            .lock()
+            .expect("pit total contexts lock poisoned");
+        for index in indices {
+            let shard_contexts = self.index_primary_shard_count(index).max(1) as u64;
+            *totals.entry(index.clone()).or_insert(0) += shard_contexts;
+        }
     }
 
     fn handle_index_stats_route(&self, target: Option<&str>) -> RestResponse {
@@ -25078,7 +25118,7 @@ fn prune_expired_pit_contexts(contexts: &mut BTreeMap<String, PitContext>, now_m
     contexts.retain(|_, context| context.expires_at_millis > now_millis);
 }
 
-fn search_stats_body_for_open_pit_contexts(open_contexts: u64) -> Value {
+fn search_stats_body_for_pit_contexts(open_contexts: u64, total_contexts: u64) -> Value {
     serde_json::json!({
         "open_contexts": open_contexts,
         "query_total": 0,
@@ -25090,7 +25130,7 @@ fn search_stats_body_for_open_pit_contexts(open_contexts: u64) -> Value {
         "scroll_total": 0,
         "scroll_time_in_millis": 0,
         "scroll_current": 0,
-        "point_in_time_total": open_contexts,
+        "point_in_time_total": total_contexts,
         "point_in_time_time_in_millis": 0,
         "point_in_time_current": open_contexts,
         "suggest_total": 0,
@@ -46984,6 +47024,11 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             2
         );
         assert_eq!(
+            index_stats.body["indices"]["pit-stats-index"]["total"]["search"]
+                ["point_in_time_total"],
+            2
+        );
+        assert_eq!(
             index_stats.body["indices"]["pit-stats-index"]["total"]["search"]["open_contexts"],
             2
         );
@@ -47005,6 +47050,11 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 ["point_in_time_current"],
             2
         );
+        assert_eq!(
+            global_stats.body["indices"]["pit-stats-index"]["total"]["search"]
+                ["point_in_time_total"],
+            2
+        );
 
         let delete_pit = node.handle_rest_request(
             RestRequest::new(RestMethod::Delete, "/_search/point_in_time")
@@ -47022,8 +47072,32 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         );
         assert_eq!(
             stats_after_delete.body["indices"]["pit-stats-index"]["total"]["search"]
+                ["point_in_time_total"],
+            2
+        );
+        assert_eq!(
+            stats_after_delete.body["indices"]["pit-stats-index"]["total"]["search"]
                 ["open_contexts"],
             0
+        );
+
+        let second_open_pit = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/pit-stats-index/_search/point_in_time?keep_alive=1m",
+        ));
+        assert_eq!(second_open_pit.status, 200);
+        let stats_after_second_open =
+            node.handle_rest_request(RestRequest::new(RestMethod::Get, "/pit-stats-index/_stats"));
+        assert_eq!(stats_after_second_open.status, 200);
+        assert_eq!(
+            stats_after_second_open.body["indices"]["pit-stats-index"]["total"]["search"]
+                ["point_in_time_current"],
+            2
+        );
+        assert_eq!(
+            stats_after_second_open.body["indices"]["pit-stats-index"]["total"]["search"]
+                ["point_in_time_total"],
+            4
         );
     }
 
