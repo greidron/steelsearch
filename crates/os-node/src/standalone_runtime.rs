@@ -46577,6 +46577,116 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
     }
 
     #[test]
+    fn point_in_time_shard_doc_search_after_paginates_like_opensearch_rest_spec() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        let create = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/sharddoc-paging").with_json_body(
+                serde_json::json!({
+                    "settings": {
+                        "number_of_shards": 4,
+                        "number_of_replicas": 0
+                    },
+                    "mappings": {
+                        "properties": {
+                            "id": { "type": "integer" },
+                            "txt": { "type": "keyword" }
+                        }
+                    }
+                }),
+            ),
+        );
+        assert_eq!(create.status, 200);
+
+        for id in 1..=22 {
+            let doc = node.handle_rest_request(
+                RestRequest::new(RestMethod::Post, "/sharddoc-paging/_doc").with_json_body(
+                    serde_json::json!({
+                        "id": id,
+                        "txt": char::from(b'a' + (id as u8) - 1).to_string()
+                    }),
+                ),
+            );
+            assert_eq!(doc.status, 201, "{id}");
+        }
+
+        let open_pit = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/sharddoc-paging/_search/point_in_time?keep_alive=1m",
+        ));
+        assert_eq!(open_pit.status, 200);
+        let pit_id = open_pit.body["pit_id"].as_str().expect("pit id");
+
+        let page_1 = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_search").with_json_body(serde_json::json!({
+                "size": 10,
+                "pit": {
+                    "id": pit_id,
+                    "keep_alive": "1m"
+                },
+                "sort": [
+                    { "_shard_doc": {} }
+                ]
+            })),
+        );
+        assert_eq!(page_1.status, 200);
+        assert_eq!(page_1.body["_shards"]["failed"], 0);
+        assert_eq!(page_1.body["hits"]["hits"].as_array().unwrap().len(), 10);
+        let after_1 = page_1.body["hits"]["hits"][9]["sort"].clone();
+        assert!(after_1.is_array());
+
+        let page_2 = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_search").with_json_body(serde_json::json!({
+                "size": 10,
+                "pit": {
+                    "id": pit_id,
+                    "keep_alive": "1m"
+                },
+                "sort": [
+                    { "_shard_doc": {} }
+                ],
+                "search_after": after_1
+            })),
+        );
+        assert_eq!(page_2.status, 200);
+        assert_eq!(page_2.body["_shards"]["failed"], 0);
+        let page_2_hits = page_2.body["hits"]["hits"].as_array().unwrap();
+        assert_eq!(page_2_hits.len(), 10);
+        for window in page_2_hits.windows(2) {
+            let left = window[0]["sort"][0].as_i64().unwrap();
+            let right = window[1]["sort"][0].as_i64().unwrap();
+            assert!(left < right, "{left} < {right}");
+        }
+        let after_2 = page_2_hits[9]["sort"].clone();
+
+        let page_3 = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_search").with_json_body(serde_json::json!({
+                "size": 10,
+                "pit": {
+                    "id": pit_id,
+                    "keep_alive": "1m"
+                },
+                "sort": [
+                    { "_shard_doc": {} }
+                ],
+                "search_after": after_2
+            })),
+        );
+        assert_eq!(page_3.status, 200);
+        assert_eq!(page_3.body["_shards"]["failed"], 0);
+        assert_eq!(page_3.body["hits"]["hits"].as_array().unwrap().len(), 2);
+
+        let close_pit = node.handle_rest_request(
+            RestRequest::new(RestMethod::Delete, "/_search/point_in_time")
+                .with_json_body(serde_json::json!({ "pit_id": [pit_id] })),
+        );
+        assert_eq!(close_pit.status, 200);
+    }
+
+    #[test]
     fn point_in_time_searches_allow_concurrent_keep_alive_extensions_like_opensearch() {
         let node = std::sync::Arc::new(SteelNode::new(NodeInfo {
             name: "steel-node".to_string(),
