@@ -4321,6 +4321,127 @@
       "description": "[lexical] create PIT reports fractional keep_alive parse errors like OpenSearch"
     },
     {
+      "name": "pit_open_with_preference_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search/point_in_time?keep_alive=1m&preference=_local",
+      "body": null,
+      "extract": "pit_open",
+      "family": "lexical",
+      "description": "[lexical] pit open with preference search"
+    },
+    {
+      "name": "pit_open_ignores_request_body_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search/point_in_time?keep_alive=1m",
+      "body": {
+        "pit_id": "ignored",
+        "keep_alive": "25h",
+        "query": {
+          "match_none": {}
+        }
+      },
+      "extract": "pit_open",
+      "family": "lexical",
+      "description": "[lexical] create PIT follows OpenSearch by taking options from the route/query and ignoring request body"
+    },
+    {
+      "name": "pit_open_all_target_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/_all/_search/point_in_time?keep_alive=1m",
+      "body": null,
+      "extract": "pit_open",
+      "family": "lexical",
+      "description": "[lexical] pit open supports _all target like OpenSearch"
+    },
+    {
+      "name": "pit_open_encoded_hyphen_index_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs%2Dcompat/_search/point_in_time?keep_alive=1m",
+      "body": null,
+      "extract": "pit_open",
+      "family": "lexical",
+      "description": "[lexical] open PIT decodes encoded hyphen in index path like OpenSearch"
+    },
+    {
+      "name": "pit_open_unknown_query_param_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search/point_in_time?keep_alive=1m&foo=bar",
+      "body": null,
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] open PIT rejects unknown query params like OpenSearch"
+    },
+    {
+      "name": "pit_open_invalid_ignore_unavailable_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search/point_in_time?keep_alive=1m&ignore_unavailable=maybe",
+      "body": null,
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] open PIT rejects invalid ignore_unavailable like OpenSearch"
+    },
+    {
+      "name": "pit_open_blank_ignore_unavailable_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search/point_in_time?keep_alive=1m&ignore_unavailable=%20",
+      "body": null,
+      "extract": "pit_open",
+      "family": "lexical",
+      "description": "[lexical] open PIT treats blank ignore_unavailable like OpenSearch"
+    },
+    {
+      "name": "pit_open_invalid_allow_no_indices_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search/point_in_time?keep_alive=1m&allow_no_indices=maybe",
+      "body": null,
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] open PIT rejects invalid allow_no_indices like OpenSearch"
+    },
+    {
+      "name": "pit_open_invalid_ignore_throttled_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search/point_in_time?keep_alive=1m&ignore_throttled=maybe",
+      "body": null,
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] open PIT rejects invalid ignore_throttled like OpenSearch"
+    },
+    {
+      "name": "pit_open_blank_allow_partial_creation_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search/point_in_time?keep_alive=1m&allow_partial_pit_creation=%20",
+      "body": null,
+      "extract": "pit_open",
+      "family": "lexical",
+      "description": "[lexical] open PIT treats blank allow_partial_pit_creation like OpenSearch"
+    },
+    {
+      "name": "pit_open_invalid_allow_partial_creation_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search/point_in_time?keep_alive=1m&allow_partial_pit_creation=maybe",
+      "body": null,
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] open PIT rejects invalid allow_partial_pit_creation like OpenSearch"
+    },
+    {
       "name": "pit_close_get_method_error_search",
       "area": "search",
       "method": "GET",
