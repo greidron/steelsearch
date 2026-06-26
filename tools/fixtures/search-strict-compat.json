@@ -814,6 +814,27 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "cat_health_text_selected_alias_columns",
+      "area": "cat",
+      "method": "GET",
+      "path": "/_cat/health?v=true&h=cl,st,dcm,sh,p,asp",
+      "accept": "text/plain",
+      "extract": "cat_indices_selected_columns",
+      "family": "admin-cat",
+      "description": "[admin-cat] cat health text honors h aliases",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "cat_health_json_selected_alias_columns",
+      "area": "cat",
+      "method": "GET",
+      "path": "/_cat/health?format=json&h=cl,st,dcm,sh,p,asp",
+      "extract": "cat_health",
+      "family": "admin-cat",
+      "description": "[admin-cat] cat health json honors h aliases",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "cat_indices_json",
       "area": "cat",
       "method": "GET",

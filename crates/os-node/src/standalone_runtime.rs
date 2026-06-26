@@ -18850,13 +18850,14 @@ impl SteelNode {
             "status": body.get("status").and_then(Value::as_str).unwrap_or("red"),
             "node.total": body.get("number_of_nodes").and_then(Value::as_u64).unwrap_or(0).to_string(),
             "node.data": body.get("number_of_data_nodes").and_then(Value::as_u64).unwrap_or(0).to_string(),
+            "discovered_cluster_manager": "true",
             "shards": body.get("active_shards").and_then(Value::as_u64).unwrap_or(0).to_string(),
             "pri": body.get("active_primary_shards").and_then(Value::as_u64).unwrap_or(0).to_string(),
             "relo": body.get("relocating_shards").and_then(Value::as_u64).unwrap_or(0).to_string(),
             "init": body.get("initializing_shards").and_then(Value::as_u64).unwrap_or(0).to_string(),
             "unassign": body.get("unassigned_shards").and_then(Value::as_u64).unwrap_or(0).to_string(),
             "pending_tasks": body.get("number_of_pending_tasks").and_then(Value::as_u64).unwrap_or(0).to_string(),
-            "max_task_wait_time": "0s",
+            "max_task_wait_time": "-",
             "active_shards_percent": format!(
                 "{:.1}%",
                 body.get("active_shards_percent_as_number")
@@ -18869,33 +18870,35 @@ impl SteelNode {
             .get("format")
             .is_some_and(|value| value == "json")
         {
-            return RestResponse::json(200, Value::Array(vec![row]));
+            let display_columns = cat_health_display_columns(request.query_params.get("h"));
+            let mut object = serde_json::Map::new();
+            for (column, display) in &display_columns {
+                object.insert(display.clone(), row[*column].clone());
+            }
+            return RestResponse::json(200, Value::Array(vec![Value::Object(object)]));
         }
         let verbose = request
             .query_params
             .get("v")
             .is_some_and(|value| value == "true");
+        let display_columns = cat_health_display_columns(request.query_params.get("h"));
         let mut lines = Vec::new();
         if verbose {
-            lines.push("epoch timestamp cluster status node.total node.data shards pri relo init unassign pending_tasks max_task_wait_time active_shards_percent".to_string());
+            lines.push(
+                display_columns
+                    .iter()
+                    .map(|(_, display)| display.as_str())
+                    .collect::<Vec<_>>()
+                    .join(" "),
+            );
         }
-        lines.push(format!(
-            "{} {} {} {} {} {} {} {} {} {} {} {} {} {}",
-            row["epoch"].as_str().unwrap_or("0"),
-            row["timestamp"].as_str().unwrap_or("00:00:00"),
-            row["cluster"].as_str().unwrap_or(""),
-            row["status"].as_str().unwrap_or("red"),
-            row["node.total"].as_str().unwrap_or("0"),
-            row["node.data"].as_str().unwrap_or("0"),
-            row["shards"].as_str().unwrap_or("0"),
-            row["pri"].as_str().unwrap_or("0"),
-            row["relo"].as_str().unwrap_or("0"),
-            row["init"].as_str().unwrap_or("0"),
-            row["unassign"].as_str().unwrap_or("0"),
-            row["pending_tasks"].as_str().unwrap_or("0"),
-            row["max_task_wait_time"].as_str().unwrap_or("0s"),
-            row["active_shards_percent"].as_str().unwrap_or("100.0%"),
-        ));
+        lines.push(
+            display_columns
+                .iter()
+                .map(|(column, _)| row[*column].as_str().unwrap_or(""))
+                .collect::<Vec<_>>()
+                .join(" "),
+        );
         RestResponse::text(200, lines.join("\n") + "\n")
     }
 
@@ -30784,6 +30787,103 @@ fn cat_fielddata_display_columns(h_param: Option<&String>) -> Vec<(&'static str,
     selected
 }
 
+fn cat_health_display_columns(h_param: Option<&String>) -> Vec<(&'static str, String)> {
+    let Some(h_param) = h_param else {
+        return vec![
+            ("epoch", "epoch".to_string()),
+            ("timestamp", "timestamp".to_string()),
+            ("cluster", "cluster".to_string()),
+            ("status", "status".to_string()),
+            ("node.total", "node.total".to_string()),
+            ("node.data", "node.data".to_string()),
+            (
+                "discovered_cluster_manager",
+                "discovered_cluster_manager".to_string(),
+            ),
+            ("shards", "shards".to_string()),
+            ("pri", "pri".to_string()),
+            ("relo", "relo".to_string()),
+            ("init", "init".to_string()),
+            ("unassign", "unassign".to_string()),
+            ("pending_tasks", "pending_tasks".to_string()),
+            ("max_task_wait_time", "max_task_wait_time".to_string()),
+            ("active_shards_percent", "active_shards_percent".to_string()),
+        ];
+    };
+    let mut selected = Vec::new();
+    for requested in h_param
+        .split(',')
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        if requested.contains('*') {
+            for (column, aliases) in [
+                ("epoch", &[][..]),
+                ("timestamp", &[][..]),
+                ("cluster", &["cl"][..]),
+                ("status", &["st"][..]),
+                ("node.total", &["nt", "nodeTotal"][..]),
+                ("node.data", &["nd", "nodeData"][..]),
+                (
+                    "discovered_cluster_manager",
+                    &["dcm", "dm", "discovered_master"][..],
+                ),
+                ("shards", &["t", "sh", "shards.total", "shardsTotal"][..]),
+                ("pri", &["p", "shards.primary", "shardsPrimary"][..]),
+                ("relo", &["r", "shards.relocating", "shardsRelocating"][..]),
+                (
+                    "init",
+                    &["i", "shards.initializing", "shardsInitializing"][..],
+                ),
+                (
+                    "unassign",
+                    &["u", "shards.unassigned", "shardsUnassigned"][..],
+                ),
+                ("pending_tasks", &["pt", "pendingTasks"][..]),
+                ("max_task_wait_time", &["mtwt", "maxTaskWaitTime"][..]),
+                ("active_shards_percent", &["asp", "activeShardsPercent"][..]),
+            ] {
+                if wildcard_match(requested, column)
+                    || aliases.iter().any(|alias| wildcard_match(requested, alias))
+                {
+                    if !selected.iter().any(|(existing, _)| existing == &column) {
+                        selected.push((column, column.to_string()));
+                    }
+                }
+            }
+            continue;
+        }
+        let column = match requested {
+            "epoch" => Some("epoch"),
+            "timestamp" => Some("timestamp"),
+            "cluster" | "cl" => Some("cluster"),
+            "status" | "st" => Some("status"),
+            "node.total" | "nt" | "nodeTotal" => Some("node.total"),
+            "node.data" | "nd" | "nodeData" => Some("node.data"),
+            "discovered_cluster_manager" | "dcm" | "dm" | "discovered_master" => {
+                Some("discovered_cluster_manager")
+            }
+            "shards" | "t" | "sh" | "shards.total" | "shardsTotal" => Some("shards"),
+            "pri" | "p" | "shards.primary" | "shardsPrimary" => Some("pri"),
+            "relo" | "r" | "shards.relocating" | "shardsRelocating" => Some("relo"),
+            "init" | "i" | "shards.initializing" | "shardsInitializing" => Some("init"),
+            "unassign" | "u" | "shards.unassigned" | "shardsUnassigned" => Some("unassign"),
+            "pending_tasks" | "pt" | "pendingTasks" => Some("pending_tasks"),
+            "max_task_wait_time" | "mtwt" | "maxTaskWaitTime" => Some("max_task_wait_time"),
+            "active_shards_percent" | "asp" | "activeShardsPercent" => {
+                Some("active_shards_percent")
+            }
+            _ => None,
+        };
+        if let Some(column) = column {
+            if !selected.iter().any(|(existing, _)| existing == &column) {
+                selected.push((column, requested.to_string()));
+            }
+        }
+    }
+    selected
+}
+
 fn cat_nodeattrs_display_columns(h_param: Option<&String>) -> Vec<(&'static str, String)> {
     let Some(h_param) = h_param else {
         return vec![
@@ -36460,6 +36560,29 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(json_response.body[0]["cluster"], "steelsearch-dev");
         assert_eq!(json_response.body[0]["status"], "yellow");
         assert_eq!(json_response.body[0]["node.total"], "1");
+        assert_eq!(json_response.body[0]["discovered_cluster_manager"], "true");
+
+        let mut selected_json_request = RestRequest::new(RestMethod::Get, "/_cat/health");
+        selected_json_request
+            .query_params
+            .insert("format".to_string(), "json".to_string());
+        selected_json_request.query_params.insert(
+            "h".to_string(),
+            "cl,st,nt,nd,dcm,sh,p,pt,mtwt,asp".to_string(),
+        );
+        let selected_json_response = node.handle_rest_request(selected_json_request);
+        assert_eq!(selected_json_response.status, 200);
+        assert_eq!(selected_json_response.body[0]["cl"], "steelsearch-dev");
+        assert_eq!(selected_json_response.body[0]["st"], "yellow");
+        assert_eq!(selected_json_response.body[0]["nt"], "1");
+        assert_eq!(selected_json_response.body[0]["nd"], "1");
+        assert_eq!(selected_json_response.body[0]["dcm"], "true");
+        assert_eq!(selected_json_response.body[0]["sh"], "1");
+        assert_eq!(selected_json_response.body[0]["p"], "1");
+        assert_eq!(selected_json_response.body[0]["pt"], "0");
+        assert_eq!(selected_json_response.body[0]["mtwt"], "-");
+        assert_eq!(selected_json_response.body[0]["asp"], "50.0%");
+        assert!(selected_json_response.body[0].get("cluster").is_none());
 
         let mut text_request = RestRequest::new(RestMethod::Get, "/_cat/health");
         text_request
@@ -36469,7 +36592,28 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(text_response.status, 200);
         let text_body = text_response.body.as_str().expect("cat health text body");
         assert!(text_body.contains("epoch timestamp cluster status"));
+        assert!(text_body.contains("discovered_cluster_manager"));
         assert!(text_body.contains("steelsearch-dev"));
+
+        let mut selected_text_request = RestRequest::new(RestMethod::Get, "/_cat/health");
+        selected_text_request
+            .query_params
+            .insert("v".to_string(), "true".to_string());
+        selected_text_request
+            .query_params
+            .insert("h".to_string(), "cl,st,dcm,sh,p,asp".to_string());
+        let selected_text_response = node.handle_rest_request(selected_text_request);
+        let selected_text_body = selected_text_response
+            .body
+            .as_str()
+            .expect("selected cat health text body");
+        assert_eq!(
+            selected_text_body.lines().collect::<Vec<_>>(),
+            vec![
+                "cl st dcm sh p asp",
+                "steelsearch-dev yellow true 1 1 50.0%"
+            ]
+        );
     }
 
     #[test]
