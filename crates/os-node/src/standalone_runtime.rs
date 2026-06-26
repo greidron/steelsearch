@@ -18353,27 +18353,42 @@ impl SteelNode {
             .get("format")
             .is_some_and(|value| value == "json")
         {
-            return RestResponse::json(200, Value::Array(rows));
+            let display_columns = cat_aliases_display_columns(request.query_params.get("h"));
+            let selected_rows = rows
+                .iter()
+                .map(|row| {
+                    let mut object = serde_json::Map::new();
+                    for (column, display) in &display_columns {
+                        object.insert(display.clone(), row[*column].clone());
+                    }
+                    Value::Object(object)
+                })
+                .collect();
+            return RestResponse::json(200, Value::Array(selected_rows));
         }
         let verbose = request
             .query_params
             .get("v")
             .is_some_and(|value| value == "true");
+        let display_columns = cat_aliases_display_columns(request.query_params.get("h"));
         let mut lines = Vec::new();
         if verbose {
-            lines
-                .push("alias index filter routing.index routing.search is_write_index".to_string());
+            lines.push(
+                display_columns
+                    .iter()
+                    .map(|(_, display)| display.as_str())
+                    .collect::<Vec<_>>()
+                    .join(" "),
+            );
         }
         for row in &rows {
-            lines.push(format!(
-                "{} {} {} {} {} {}",
-                row["alias"].as_str().unwrap_or(""),
-                row["index"].as_str().unwrap_or(""),
-                row["filter"].as_str().unwrap_or("-"),
-                row["routing.index"].as_str().unwrap_or("-"),
-                row["routing.search"].as_str().unwrap_or("-"),
-                row["is_write_index"].as_str().unwrap_or("-"),
-            ));
+            lines.push(
+                display_columns
+                    .iter()
+                    .map(|(column, _)| row[*column].as_str().unwrap_or(""))
+                    .collect::<Vec<_>>()
+                    .join(" "),
+            );
         }
         RestResponse::text(200, lines.join("\n") + "\n")
     }
@@ -30589,6 +30604,56 @@ fn cat_count_selected_row(row: &Value, h_param: Option<&String>) -> Value {
     Value::Object(object)
 }
 
+fn cat_aliases_display_columns(h_param: Option<&String>) -> Vec<(&'static str, String)> {
+    let Some(h_param) = h_param else {
+        return vec![
+            ("alias", "alias".to_string()),
+            ("index", "index".to_string()),
+            ("filter", "filter".to_string()),
+            ("routing.index", "routing.index".to_string()),
+            ("routing.search", "routing.search".to_string()),
+            ("is_write_index", "is_write_index".to_string()),
+        ];
+    };
+    let mut selected = Vec::new();
+    for requested in h_param.split(',').map(str::trim).filter(|value| !value.is_empty()) {
+        if requested.contains('*') {
+            for (column, aliases) in [
+                ("alias", &["a"][..]),
+                ("index", &["i", "idx"][..]),
+                ("filter", &["f", "fi"][..]),
+                ("routing.index", &["ri", "routingIndex"][..]),
+                ("routing.search", &["rs", "routingSearch"][..]),
+                ("is_write_index", &["w", "isWriteIndex"][..]),
+            ] {
+                if wildcard_match(requested, column)
+                    || aliases.iter().any(|alias| wildcard_match(requested, alias))
+                {
+                    if !selected.iter().any(|(existing, _)| existing == &column) {
+                        selected.push((column, column.to_string()));
+                    }
+                }
+            }
+            continue;
+        }
+        let column = match requested {
+            "alias" | "a" => Some("alias"),
+            "index" | "i" | "idx" => Some("index"),
+            "filter" | "f" | "fi" => Some("filter"),
+            "routing.index" | "ri" | "routingIndex" => Some("routing.index"),
+            "routing.search" | "rs" | "routingSearch" => Some("routing.search"),
+            "is_write_index" | "w" | "isWriteIndex" => Some("is_write_index"),
+            _ => None,
+        };
+        if let Some(column) = column {
+            if !selected.iter().any(|(existing, _)| existing == &column) {
+                selected.push((column, requested.to_string()));
+            }
+        }
+    }
+    selected
+}
+
 fn parse_search_indices_boosts(indices_boost: Option<&Value>) -> Vec<(String, f64)> {
     match indices_boost {
         Some(Value::Object(boosts)) => boosts
@@ -34757,6 +34822,20 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(json_response.body[0]["index"], "logs-000001");
         assert_eq!(json_response.body[0]["routing.index"], "logs-route");
 
+        let mut selected_json_request = RestRequest::new(RestMethod::Get, "/_cat/aliases");
+        selected_json_request
+            .query_params
+            .insert("format".to_string(), "json".to_string());
+        selected_json_request
+            .query_params
+            .insert("h".to_string(), "a,idx".to_string());
+        let selected_json_response = node.handle_rest_request(selected_json_request);
+        assert_eq!(selected_json_response.status, 200);
+        assert_eq!(selected_json_response.body[0]["a"], "logs-read");
+        assert_eq!(selected_json_response.body[0]["idx"], "logs-000001");
+        assert!(selected_json_response.body[0].get("alias").is_none());
+        assert!(selected_json_response.body[0].get("index").is_none());
+
         let mut text_request = RestRequest::new(RestMethod::Get, "/_cat/aliases/logs-*");
         text_request
             .query_params
@@ -34768,6 +34847,24 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             text_body.contains("alias index filter routing.index routing.search is_write_index")
         );
         assert!(text_body.contains("logs-read logs-000001"));
+
+        let mut selected_text_request = RestRequest::new(RestMethod::Get, "/_cat/aliases/logs-*");
+        selected_text_request
+            .query_params
+            .insert("v".to_string(), "true".to_string());
+        selected_text_request
+            .query_params
+            .insert("h".to_string(), "a,idx".to_string());
+        let selected_text_response = node.handle_rest_request(selected_text_request);
+        assert_eq!(selected_text_response.status, 200);
+        let selected_text_body = selected_text_response
+            .body
+            .as_str()
+            .expect("cat aliases selected text body");
+        assert_eq!(
+            selected_text_body.lines().collect::<Vec<_>>(),
+            vec!["a idx", "logs-read logs-000001"]
+        );
     }
 
     #[test]

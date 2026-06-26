@@ -755,6 +755,25 @@
       "description": "[admin-cat] cat aliases text"
     },
     {
+      "name": "cat_aliases_text_selected_alias_columns",
+      "area": "cat",
+      "method": "GET",
+      "path": "/_cat/aliases/logs-*?v=true&h=a,idx",
+      "accept": "text/plain",
+      "extract": "cat_indices_selected_columns",
+      "family": "admin-cat",
+      "description": "[admin-cat] cat aliases text honors h aliases"
+    },
+    {
+      "name": "cat_aliases_json_selected_alias_columns",
+      "area": "cat",
+      "method": "GET",
+      "path": "/_cat/aliases?format=json&h=a,idx",
+      "extract": "cat_indices_selected_columns",
+      "family": "admin-cat",
+      "description": "[admin-cat] cat aliases json honors h aliases"
+    },
+    {
       "name": "cat_health_json",
       "area": "cat",
       "method": "GET",
