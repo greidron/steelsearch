@@ -33486,12 +33486,6 @@ impl OpenSearchShardSearchContextIdWire {
     }
 
     pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
-        if self.session_id.is_empty() {
-            return Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "shard search context id session",
-                reason: "OpenSearch ShardSearchContextId requires a non-empty session id",
-            });
-        }
         Ok(())
     }
 }
@@ -33615,12 +33609,6 @@ impl OpenSearchUpdateReaderContextRequestWire {
     }
 
     pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
-        if self.pit_id.is_empty() {
-            return Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "update reader context pit id",
-                reason: "OpenSearch UpdatePitContextRequest requires a non-empty PIT id",
-            });
-        }
         self.search_context_id.validate_supported_subset()
     }
 }
@@ -33654,12 +33642,6 @@ impl OpenSearchUpdateReaderContextResponseWire {
     }
 
     pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
-        if self.pit_id.is_empty() {
-            return Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "update reader context response pit id",
-                reason: "OpenSearch UpdatePitContextResponse carries the updated PIT id",
-            });
-        }
         Ok(())
     }
 }
@@ -33691,12 +33673,6 @@ impl OpenSearchSearchContextIdForNodeWire {
     }
 
     pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
-        if self.node.is_empty() {
-            return Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "search context node id",
-                reason: "OpenSearch SearchContextIdForNode requires a non-empty node id",
-            });
-        }
         self.search_context_id.validate_supported_subset()
     }
 }
@@ -33725,12 +33701,6 @@ impl OpenSearchPitSearchContextIdForNodeWire {
     }
 
     pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
-        if self.pit_id.is_empty() {
-            return Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "free pit context pit id",
-                reason: "OpenSearch PitSearchContextIdForNode requires a non-empty PIT id",
-            });
-        }
         self.search_context.validate_supported_subset()
     }
 }
@@ -71513,6 +71483,47 @@ mod tests {
             read_opensearch_update_reader_context_response_message(&message).unwrap(),
             update_response
         );
+
+        let empty_update_request = OpenSearchUpdateReaderContextRequestWire {
+            parent_task_node: String::new(),
+            parent_task_id: None,
+            pit_id: String::new(),
+            keep_alive_millis: 0,
+            creation_time_millis: 0,
+            search_context_id: OpenSearchShardSearchContextIdWire::new("", 0),
+        };
+        let mut frame = build_opensearch_update_reader_context_request_message(
+            62,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &empty_update_request,
+        )
+        .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected empty-string update-reader-context request message");
+        };
+        assert_eq!(
+            read_opensearch_update_reader_context_request_message(&message).unwrap(),
+            empty_update_request
+        );
+
+        let empty_update_response = OpenSearchUpdateReaderContextResponseWire {
+            pit_id: String::new(),
+            creation_time_millis: 0,
+            keep_alive_millis: 0,
+        };
+        let mut frame = build_opensearch_update_reader_context_response_message(
+            62,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &empty_update_response,
+        )
+        .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected empty-string update-reader-context response message");
+        };
+        assert_eq!(
+            read_opensearch_update_reader_context_response_message(&message).unwrap(),
+            empty_update_response
+        );
     }
 
     #[test]
@@ -71549,6 +71560,32 @@ mod tests {
                 ..
             }
         ));
+
+        let empty_strings_request = OpenSearchFreePitContextRequestWire {
+            parent_task_node: String::new(),
+            parent_task_id: None,
+            context_ids: vec![OpenSearchPitSearchContextIdForNodeWire {
+                pit_id: String::new(),
+                search_context: OpenSearchSearchContextIdForNodeWire {
+                    node: String::new(),
+                    cluster_alias: None,
+                    search_context_id: OpenSearchShardSearchContextIdWire::new("", 0),
+                },
+            }],
+        };
+        let mut frame = build_opensearch_free_pit_context_request_message(
+            59,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &empty_strings_request,
+        )
+        .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected empty-string free-PIT-context request message");
+        };
+        assert_eq!(
+            read_opensearch_free_pit_context_request_message(&message).unwrap(),
+            empty_strings_request
+        );
     }
 
     #[test]

@@ -2369,6 +2369,12 @@ The create-PIT boundary covers:
   previously allocated by the local create-reader-context route before updating
   PIT state, matching OpenSearch `getPitReaderContext(...)` missing-context
   rejection for the local-node subset.
+- PIT reader-context transport wire decoding now allows empty PIT id, node id,
+  and shard search session strings where OpenSearch's internal
+  `PitSearchContextIdForNode`, `SearchContextIdForNode`,
+  `ShardSearchContextId`, and update-PIT context request/response wire classes
+  also round-trip raw strings without validation; local execution still rejects
+  unknown reader contexts before mutating local PIT state.
 
 The indices-stats boundary covers:
 

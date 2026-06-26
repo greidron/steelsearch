@@ -15594,6 +15594,85 @@ mod tests {
     }
 
     #[test]
+    fn free_pit_context_transport_route_allows_empty_wire_strings_like_opensearch() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        let bindings = dev_transport_pit_bindings();
+        bindings
+            .contexts
+            .lock()
+            .expect("dev transport PIT contexts lock poisoned")
+            .clear();
+        bindings
+            .reader_contexts
+            .lock()
+            .expect("dev transport reader contexts lock poisoned")
+            .clear();
+        bindings
+            .contexts
+            .lock()
+            .expect("dev transport PIT contexts lock poisoned")
+            .insert(
+                "transport-pit-stays".to_string(),
+                PitContext {
+                    indices: Vec::new(),
+                    documents: BTreeMap::new(),
+                    keep_alive_millis: 60_000,
+                    expires_at_millis: now_epoch_ms() + 60_000,
+                    creation_time_millis: now_epoch_ms(),
+                },
+            );
+
+        let request = os_transport::action::OpenSearchFreePitContextRequestWire {
+            parent_task_node: String::new(),
+            parent_task_id: None,
+            context_ids: vec![
+                os_transport::action::OpenSearchPitSearchContextIdForNodeWire {
+                    pit_id: String::new(),
+                    search_context: os_transport::action::OpenSearchSearchContextIdForNodeWire {
+                        node: String::new(),
+                        cluster_alias: None,
+                        search_context_id:
+                            os_transport::action::OpenSearchShardSearchContextIdWire::new("", 0),
+                    },
+                },
+            ],
+        };
+        let frame = os_transport::action::build_opensearch_free_pit_context_request_message(
+            308,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(free_pit_context_request_supports_local_subset(&frame[6..]));
+
+        let response = build_local_free_pit_context_response(
+            308,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &frame[6..],
+        );
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected free-PIT-context response");
+        };
+        let response =
+            os_transport::action::read_opensearch_delete_pit_response_message(&message).unwrap();
+        assert_eq!(response.results.len(), 1);
+        assert_eq!(response.results[0].pit_id, "");
+        assert!(response.results[0].successful);
+        assert!(bindings
+            .contexts
+            .lock()
+            .expect("dev transport PIT contexts lock poisoned")
+            .contains_key("transport-pit-stays"));
+    }
+
+    #[test]
     fn create_reader_context_transport_route_rejects_missing_index_or_shard() {
         let _lock = dev_transport_pit_test_lock()
             .lock()
