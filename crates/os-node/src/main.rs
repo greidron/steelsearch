@@ -1733,6 +1733,32 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end_at_ms,
         )?;
     } else if is_request
+        && normalized_action_hint == Some("indices:admin/validate/query")
+        && validate_query_request_supports_local_execution_subset(&body)
+    {
+        let response = build_local_validate_query_response(request_id, header_version_id, &body);
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("indices:admin/validate/query"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request
         && normalized_action_hint == Some("indices:data/read/point_in_time/create")
         && create_pit_request_supports_local_lifecycle_subset(&body)
     {
@@ -4547,6 +4573,46 @@ fn local_transport_explain_response_from_request(
     os_transport::action::OpenSearchExplainResponseWire::matched(index, id, matched)
 }
 
+fn build_local_validate_query_response(
+    request_id: i64,
+    header_version_id: u32,
+    body: &[u8],
+) -> Vec<u8> {
+    let Some(request) = decode_validate_query_request_from_transport_body(body) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    if request.validate_supported_execution_subset().is_err() {
+        return build_empty_transport_response(request_id, header_version_id);
+    }
+    let response = local_transport_validate_query_response_from_request(&request);
+    os_transport::action::build_opensearch_validate_query_response_message(
+        request_id,
+        Version::from_id(header_version_id as i32),
+        &response,
+    )
+    .map(|frame| frame.to_vec())
+    .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
+}
+
+fn validate_query_request_supports_local_execution_subset(body: &[u8]) -> bool {
+    decode_validate_query_request_from_transport_body(body)
+        .and_then(|request| request.validate_supported_execution_subset().ok())
+        .is_some()
+}
+
+fn decode_validate_query_request_from_transport_body(
+    body: &[u8],
+) -> Option<os_transport::action::OpenSearchValidateQueryRequestWire> {
+    let message = decode_transport_message_from_body(body)?;
+    os_transport::action::read_opensearch_validate_query_request_message(&message).ok()
+}
+
+fn local_transport_validate_query_response_from_request(
+    _request: &os_transport::action::OpenSearchValidateQueryRequestWire,
+) -> os_transport::action::OpenSearchValidateQueryResponseWire {
+    os_transport::action::OpenSearchValidateQueryResponseWire::default()
+}
+
 fn local_transport_search_response_from_request(
     request: &os_transport::action::OpenSearchSearchRequestWire,
 ) -> os_transport::action::OpenSearchSearchResponseWire {
@@ -7035,6 +7101,15 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
             if explain_request_supports_local_execution_subset(body) =>
         {
             Some(build_local_explain_response(
+                request_id,
+                header_version_id,
+                body,
+            ))
+        }
+        Some("indices:admin/validate/query")
+            if validate_query_request_supports_local_execution_subset(body) =>
+        {
+            Some(build_local_validate_query_response(
                 request_id,
                 header_version_id,
                 body,
@@ -12130,6 +12205,42 @@ mod tests {
                 .and_then(|explanation| explanation.get("value")),
             Some(&serde_json::json!(0.0))
         );
+    }
+
+    #[test]
+    fn validate_query_transport_route_returns_valid_match_all_response() {
+        let request = os_transport::action::OpenSearchValidateQueryRequestWire::default();
+        let frame = os_transport::action::build_opensearch_validate_query_request_message(
+            307,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(validate_query_request_supports_local_execution_subset(
+            &frame[6..]
+        ));
+
+        let response = build_local_validate_query_response(
+            307,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &frame[6..],
+        );
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected validate query response message");
+        };
+        let response =
+            os_transport::action::read_opensearch_validate_query_response_message(&message)
+                .unwrap();
+        assert!(response.valid);
+        assert_eq!(response.total_shards, 1);
+        assert_eq!(response.successful_shards, 1);
+        assert_eq!(response.failed_shards, 0);
+        assert!(response.explanations.is_empty());
     }
 
     #[test]

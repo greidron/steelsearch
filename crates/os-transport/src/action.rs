@@ -2171,8 +2171,8 @@ pub fn classify_opensearch_transport_action(
         },
         OPENSEARCH_VALIDATE_QUERY_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
-            disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "validate-query transport execution requires query parser, rewrite, shard selection, and validation response rendering",
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "validate-query transport adapter validates the bounded match_all subset and renders OpenSearch-shaped shard counters",
         },
         OPENSEARCH_FLUSH_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -39447,7 +39447,7 @@ impl OpenSearchValidateQueryRequestWire {
         Ok(request)
     }
 
-    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+    pub fn validate_supported_execution_subset(&self) -> Result<(), TransportActionWireError> {
         if !self.indices.is_empty() {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "validate query indices",
@@ -39497,11 +39497,158 @@ impl OpenSearchValidateQueryRequestWire {
                 reason: "all-shards validation requires broadcast shard fanout semantics",
             });
         }
+        Ok(())
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        self.validate_supported_execution_subset()?;
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "validate query execution",
             reason:
-                "validate-query transport execution requires query parser, rewrite, shard selection, and response rendering",
+                "use validate_supported_execution_subset for the implemented validate-query adapter",
         })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchValidateQueryResponseWire {
+    pub valid: bool,
+    pub total_shards: i32,
+    pub successful_shards: i32,
+    pub failed_shards: i32,
+    pub shard_failure_count: i32,
+    pub explanations: Vec<OpenSearchQueryExplanationWire>,
+}
+
+impl Default for OpenSearchValidateQueryResponseWire {
+    fn default() -> Self {
+        Self {
+            valid: true,
+            total_shards: 1,
+            successful_shards: 1,
+            failed_shards: 0,
+            shard_failure_count: 0,
+            explanations: Vec::new(),
+        }
+    }
+}
+
+impl OpenSearchValidateQueryResponseWire {
+    pub fn write(&self, output: &mut StreamOutput) -> Result<(), TransportActionWireError> {
+        self.validate_supported_subset()?;
+        output.write_vint(self.total_shards);
+        output.write_vint(self.successful_shards);
+        output.write_vint(self.failed_shards);
+        output.write_vint(self.shard_failure_count);
+        output.write_bool(self.valid);
+        output.write_vint(self.explanations.len() as i32);
+        for explanation in &self.explanations {
+            explanation.write(output);
+        }
+        Ok(())
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let total_shards = input.read_vint()?;
+        let successful_shards = input.read_vint()?;
+        let failed_shards = input.read_vint()?;
+        let shard_failure_count = input.read_vint()?;
+        let valid = input.read_bool()?;
+        let explanation_count = read_len(&mut input)?;
+        let mut explanations = Vec::with_capacity(explanation_count);
+        for _ in 0..explanation_count {
+            explanations.push(OpenSearchQueryExplanationWire::read(&mut input)?);
+        }
+        require_no_trailing_bytes(&input)?;
+        let response = Self {
+            valid,
+            total_shards,
+            successful_shards,
+            failed_shards,
+            shard_failure_count,
+            explanations,
+        };
+        response.validate_supported_subset()?;
+        Ok(response)
+    }
+
+    pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
+        if self.total_shards < 0 || self.successful_shards < 0 || self.failed_shards < 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "validate query response shard counters",
+                reason: "OpenSearch validate-query shard counters must be non-negative",
+            });
+        }
+        if self.successful_shards > self.total_shards || self.failed_shards > self.total_shards {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "validate query response shard counters",
+                reason: "OpenSearch validate-query shard counters cannot exceed total shards",
+            });
+        }
+        if self.shard_failure_count < 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "validate query response shard failure count",
+                reason: "OpenSearch validate-query shard failure count must be non-negative",
+            });
+        }
+        if self.shard_failure_count > 0 || self.failed_shards > 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "validate query response shard failures",
+                reason: "bounded validate-query responses omit shard failure exception payloads",
+            });
+        }
+        for explanation in &self.explanations {
+            explanation.validate_supported_subset()?;
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchQueryExplanationWire {
+    pub index: Option<String>,
+    pub shard: i32,
+    pub valid: bool,
+    pub explanation: Option<String>,
+    pub error: Option<String>,
+}
+
+impl OpenSearchQueryExplanationWire {
+    pub fn write(&self, output: &mut StreamOutput) {
+        output.write_optional_string(self.index.as_deref());
+        output.write_i32(self.shard);
+        output.write_bool(self.valid);
+        output.write_optional_string(self.explanation.as_deref());
+        output.write_optional_string(self.error.as_deref());
+    }
+
+    pub fn read(input: &mut StreamInput) -> Result<Self, TransportActionWireError> {
+        let explanation = Self {
+            index: input.read_optional_string()?,
+            shard: input.read_i32()?,
+            valid: input.read_bool()?,
+            explanation: input.read_optional_string()?,
+            error: input.read_optional_string()?,
+        };
+        explanation.validate_supported_subset()?;
+        Ok(explanation)
+    }
+
+    fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
+        if self.shard < -1 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "validate query explanation shard",
+                reason: "OpenSearch validate-query explanation shard ids cannot be below -1",
+            });
+        }
+        if self.explanation.is_none() && self.error.is_none() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "validate query explanation text",
+                reason: "OpenSearch validate-query explanations require explanation or error text",
+            });
+        }
+        Ok(())
     }
 }
 
@@ -39579,6 +39726,35 @@ pub fn read_opensearch_validate_query_request_message(
         });
     }
     OpenSearchValidateQueryRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_opensearch_validate_query_response_message(
+    request_id: i64,
+    version: Version,
+    response: &OpenSearchValidateQueryResponseWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    response.write(&mut body)?;
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::response(),
+        version,
+        variable_header: BytesMut::new(),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_validate_query_response_message(
+    message: &TransportMessage,
+) -> Result<OpenSearchValidateQueryResponseWire, TransportActionWireError> {
+    if message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "response",
+            actual: message.status.bits(),
+        });
+    }
+    OpenSearchValidateQueryResponseWire::read(message.body.clone().freeze())
 }
 
 pub fn build_opensearch_flush_request_message(
@@ -44032,7 +44208,7 @@ mod tests {
         );
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_VALIDATE_QUERY_ACTION_NAME).disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_FLUSH_ACTION_NAME).disposition,
@@ -44250,6 +44426,7 @@ mod tests {
                 || spec.action_name == OPENSEARCH_MULTI_SEARCH_ACTION_NAME
                 || spec.action_name == OPENSEARCH_SEARCH_SCROLL_ACTION_NAME
                 || spec.action_name == OPENSEARCH_EXPLAIN_ACTION_NAME
+                || spec.action_name == OPENSEARCH_VALIDATE_QUERY_ACTION_NAME
             {
                 assert_eq!(
                     decision.disposition,
@@ -44297,7 +44474,6 @@ mod tests {
                 || spec.action_name == OPENSEARCH_DELETE_COMPOSABLE_INDEX_TEMPLATE_ACTION_NAME
                 || spec.action_name == OPENSEARCH_SIMULATE_INDEX_TEMPLATE_ACTION_NAME
                 || spec.action_name == OPENSEARCH_SIMULATE_TEMPLATE_ACTION_NAME
-                || spec.action_name == OPENSEARCH_VALIDATE_QUERY_ACTION_NAME
                 || spec.action_name == OPENSEARCH_FLUSH_ACTION_NAME
                 || spec.action_name == OPENSEARCH_FORCE_MERGE_ACTION_NAME
                 || spec.action_name == OPENSEARCH_UPGRADE_ACTION_NAME
@@ -60188,7 +60364,7 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_validate_query_transport_messages_bind_rejected_action_frame() {
+    fn opensearch_validate_query_transport_messages_bind_supported_action_frame() {
         let request = OpenSearchValidateQueryRequestWire::default();
         let mut frame = build_opensearch_validate_query_request_message(
             68,
@@ -60203,15 +60379,52 @@ mod tests {
             read_opensearch_validate_query_request_message(&message).unwrap(),
             request
         );
-        assert!(matches!(
-            read_opensearch_validate_query_request_message(&message)
-                .unwrap()
-                .reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "validate query execution",
-                ..
-            })
-        ));
+        read_opensearch_validate_query_request_message(&message)
+            .unwrap()
+            .validate_supported_execution_subset()
+            .unwrap();
+    }
+
+    #[test]
+    fn opensearch_validate_query_response_transport_message_round_trips_bounded_subset() {
+        let response = OpenSearchValidateQueryResponseWire::default();
+        let mut frame = build_opensearch_validate_query_response_message(
+            68,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &response,
+        )
+        .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected validate query response message");
+        };
+        assert_eq!(
+            read_opensearch_validate_query_response_message(&message).unwrap(),
+            response
+        );
+
+        let explained = OpenSearchValidateQueryResponseWire {
+            explanations: vec![OpenSearchQueryExplanationWire {
+                index: Some("logs".to_string()),
+                shard: 0,
+                valid: true,
+                explanation: Some("match_all query".to_string()),
+                error: None,
+            }],
+            ..OpenSearchValidateQueryResponseWire::default()
+        };
+        let mut frame = build_opensearch_validate_query_response_message(
+            69,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &explained,
+        )
+        .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected explained validate query response message");
+        };
+        assert_eq!(
+            read_opensearch_validate_query_response_message(&message).unwrap(),
+            explained
+        );
     }
 
     #[test]
