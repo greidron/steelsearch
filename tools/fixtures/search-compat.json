@@ -7191,6 +7191,136 @@
       "description": "[lexical] zero query-param terminate after preserves body search"
     },
     {
+      "name": "search_coordinator_knobs_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search?pre_filter_shard_size=1&batched_reduce_size=2&max_concurrent_shard_requests=1",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ],
+        "size": 2
+      },
+      "extract": "search_summary",
+      "family": "lexical",
+      "description": "[lexical] search coordinator knobs search"
+    },
+    {
+      "name": "allow_partial_search_results_true_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search?allow_partial_search_results=true",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ],
+        "size": 2
+      },
+      "extract": "search_summary",
+      "family": "lexical",
+      "description": "[lexical] allow partial search results true search"
+    },
+    {
+      "name": "render_template_named_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/_render/template/logs-compat-template",
+      "body": {
+        "params": {
+          "service": "catalog"
+        }
+      },
+      "extract": "render_template_semantic",
+      "family": "lexical",
+      "description": "[lexical] named search template render output"
+    },
+    {
+      "name": "search_template_named_target_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search/template",
+      "body": {
+        "id": "logs-compat-template",
+        "params": {
+          "service": "catalog"
+        }
+      },
+      "extract": "search_summary",
+      "family": "lexical",
+      "description": "[lexical] named search template targeted search"
+    },
+    {
+      "name": "msearch_template_named_root_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/_msearch/template",
+      "raw": true,
+      "body": "{\"index\":\"logs-compat\"}\n{\"id\":\"logs-compat-template\",\"params\":{\"service\":\"catalog\"}}\n{\"index\":\"logs-compat\"}\n{\"id\":\"logs-compat-template\",\"params\":{\"service\":\"missing\"}}\n",
+      "extract": "msearch_summary",
+      "family": "lexical",
+      "description": "[lexical] named multi-search template root search"
+    },
+    {
+      "name": "search_boolean_execution_query_params",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search?phase_took=true&verbose_pipeline=false&track_scores=true&include_named_queries_score=false",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ],
+        "size": 2
+      },
+      "extract": "search_score_rendering",
+      "family": "lexical",
+      "description": "[lexical] boolean execution query params search"
+    },
+    {
+      "name": "search_boolean_string_body_options",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "track_scores": "true",
+        "include_named_queries_score": "false",
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ],
+        "size": 2
+      },
+      "extract": "search_score_rendering",
+      "family": "lexical",
+      "description": "[lexical] string boolean body options search"
+    },
+    {
       "name": "simple_query_string_search",
       "area": "search",
       "method": "POST",
