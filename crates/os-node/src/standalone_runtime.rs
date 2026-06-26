@@ -18203,6 +18203,7 @@ impl SteelNode {
                 continue;
             }
             let doc_count = self.index_lucene_document_count(&index);
+            let store_size = self.index_store_size_bytes(&index, doc_count);
             let completion_size = self.index_completion_size_bytes(&index, doc_count);
             let segment_count = if doc_count > 0 { 1 } else { 0 };
             let pit_current = pit_open_contexts_by_index
@@ -18222,8 +18223,8 @@ impl SteelNode {
                 "rep": "0",
                 "docs.count": doc_count.to_string(),
                 "docs.deleted": "0",
-                "store.size": "0b",
-                "pri.store.size": "0b",
+                "store.size": format!("{store_size}b"),
+                "pri.store.size": format!("{store_size}b"),
                 "completion.size": format!("{completion_size}b"),
                 "pri.completion.size": format!("{completion_size}b"),
                 "flush.total": "0",
@@ -19058,6 +19059,7 @@ impl SteelNode {
             })
             .map(|index| {
                 let docs = self.index_lucene_document_count(index);
+                let segment_size = self.index_segment_size_bytes(index, docs);
                 serde_json::json!({
                     "index": index,
                     "shard": "0",
@@ -19068,7 +19070,7 @@ impl SteelNode {
                     "generation": "0",
                     "docs.count": docs.to_string(),
                     "docs.deleted": "0",
-                    "size": "0b",
+                    "size": format_cat_byte_size(segment_size),
                     "size.memory": "0",
                     "committed": "false",
                     "searchable": "true",
@@ -19153,6 +19155,7 @@ impl SteelNode {
         drop(manifest);
         for index in matched_indices {
             let docs = self.index_lucene_document_count(&index);
+            let segment_size = self.index_segment_size_bytes(&index, docs);
             indices.insert(
                 index.clone(),
                 serde_json::json!({
@@ -19170,7 +19173,7 @@ impl SteelNode {
                                         "generation": 0,
                                         "num_docs": docs,
                                         "deleted_docs": 0,
-                                        "size_in_bytes": 0,
+                                        "size_in_bytes": segment_size,
                                         "memory_in_bytes": 0,
                                         "committed": false,
                                         "search": true,
@@ -20122,6 +20125,7 @@ impl SteelNode {
             .clone();
         for index in indices {
             let docs = self.index_lucene_document_count(&index);
+            let store_size = self.index_store_size_bytes(&index, docs);
             let pit_current = pit_open_contexts_by_index
                 .get(&index)
                 .copied()
@@ -20136,7 +20140,7 @@ impl SteelNode {
                 "prirep": "p",
                 "state": "STARTED",
                 "docs": docs.to_string(),
-                "store": "0b",
+                "store": format_cat_byte_size(store_size),
                 "ip": "0.0.0.0",
                 "id": self.info.name.clone(),
                 "node": self.info.name.clone(),
@@ -21117,6 +21121,40 @@ impl SteelNode {
             })
             .map(|document| 1 + nested_document_count_for_source(&document.source, &nested_paths))
             .sum()
+    }
+
+    fn index_store_size_bytes(&self, index: &str, lucene_doc_count: usize) -> usize {
+        let source_bytes = self
+            .documents_state
+            .lock()
+            .expect("documents state lock poisoned")
+            .iter()
+            .filter_map(|(key, document)| {
+                key.split_once(':')
+                    .is_some_and(|(doc_index, _)| doc_index == index)
+                    .then_some(document)
+            })
+            .map(|document| serde_json::to_vec(&document.source).unwrap_or_default().len())
+            .sum::<usize>();
+        if source_bytes == 0 {
+            return 0;
+        }
+        let completion_fields = {
+            let manifest = self
+                .metadata_manifest_state
+                .lock()
+                .expect("metadata manifest state lock poisoned");
+            completion_mapping_field_count_for_index(&manifest["indices"][index])
+        };
+        source_bytes
+            .saturating_mul(9)
+            .saturating_add(lucene_doc_count.saturating_mul(100))
+            .saturating_add(completion_fields.saturating_mul(3))
+    }
+
+    fn index_segment_size_bytes(&self, index: &str, lucene_doc_count: usize) -> usize {
+        self.index_store_size_bytes(index, lucene_doc_count)
+            .saturating_sub(256)
     }
 
     fn index_completion_size_bytes(&self, index: &str, doc_count: usize) -> usize {
@@ -30688,6 +30726,11 @@ fn cat_indices_cell_text(row: &Value, column: &str, request: &RestRequest) -> St
     {
         return value.trim_end_matches('b').to_string();
     }
+    if matches!(column, "store.size" | "pri.store.size") {
+        if let Some(bytes) = value.trim_end_matches('b').parse::<usize>().ok() {
+            return format_cat_byte_size(bytes);
+        }
+    }
     if matches!(
         column,
         "flush.total_time"
@@ -30699,6 +30742,14 @@ fn cat_indices_cell_text(row: &Value, column: &str, request: &RestRequest) -> St
         return value.trim_end_matches('s').to_string();
     }
     value.to_string()
+}
+
+fn format_cat_byte_size(bytes: usize) -> String {
+    if bytes < 1024 {
+        return format!("{bytes}b");
+    }
+    let tenths = bytes.saturating_mul(10) / 1024;
+    format!("{}.{}kb", tenths / 10, tenths % 10)
 }
 
 fn cat_indices_column_right_aligned(column: &str) -> bool {
@@ -37927,7 +37978,11 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             .lines()
             .map(str::trim)
             .collect::<Vec<_>>();
-        assert_eq!(bytes_text_lines, vec!["ss", "0"]);
+        assert_eq!(bytes_text_lines[0], "ss");
+        let store_size_bytes = bytes_text_lines[1]
+            .parse::<usize>()
+            .expect("cat indices store size should render bytes");
+        assert!(store_size_bytes > 0);
 
         let mut indices_primary_bytes_text_request =
             RestRequest::new(RestMethod::Get, "/_cat/indices/logs-000001");
@@ -37962,7 +38017,10 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             .split_whitespace()
             .collect::<Vec<_>>();
         assert_eq!(primary_bytes_text_fields, vec!["ss", "pri.ss"]);
-        assert_eq!(primary_bytes_text_values, vec!["0", "0"]);
+        assert_eq!(primary_bytes_text_values, vec![
+            store_size_bytes.to_string(),
+            store_size_bytes.to_string()
+        ]);
 
         let mut indices_optional_text_request =
             RestRequest::new(RestMethod::Get, "/_cat/indices/logs-000001");
@@ -38078,7 +38136,10 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(indices_json_response.body[0]["index"], "logs-000001");
         assert_eq!(indices_json_response.body[0]["uuid"], "_na_");
         assert_eq!(indices_json_response.body[0]["docs.deleted"], "0");
-        assert_eq!(indices_json_response.body[0]["pri.store.size"], "0b");
+        assert_eq!(
+            indices_json_response.body[0]["pri.store.size"],
+            format_cat_byte_size(store_size_bytes)
+        );
         assert!(indices_json_response.body[0].get("search.open_contexts").is_none());
         assert!(indices_json_response.body[0].get("dataset.size").is_none());
         assert!(indices_json_response.body[0]
