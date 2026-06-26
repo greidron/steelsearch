@@ -2372,6 +2372,9 @@ The create-PIT boundary covers:
 - PIT searches reject malformed local opaque PIT ids with the OpenSearch
   `invalid id` error while preserving missing-context handling for well-formed
   local ids;
+- delete-PIT REST parsing now rejects malformed JSON bodies with the
+  OpenSearch `Failed to parse request body` illegal-argument response instead
+  of falling through to an empty PIT id validation error;
 - manifest-backed create-PIT index option handling for unavailable targets,
   `allow_no_indices`, ignored aliases, alias fanout guards, open/closed
   wildcard expansion, and hidden wildcard expansion;

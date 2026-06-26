@@ -22604,7 +22604,8 @@ fn pit_unrecognized_query_param_response_allowing_source(
 
 fn pit_body_or_source_param(request: &RestRequest) -> Result<Value, RestResponse> {
     if !request.body.is_empty() {
-        return Ok(serde_json::from_slice::<Value>(&request.body).unwrap_or(Value::Null));
+        return serde_json::from_slice::<Value>(&request.body)
+            .map_err(|_| delete_pit_illegal_argument("Failed to parse request body"));
     }
     let Some(source) = request.query_params.get("source") else {
         return Ok(Value::Null);
@@ -47206,6 +47207,24 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             malformed_close_pit.body["error"]["root_cause"][0]["reason"],
             "Malformed content, must start with an object"
+        );
+
+        let invalid_json_close_pit = node.handle_rest_request(
+            RestRequest::new(RestMethod::Delete, "/_search/point_in_time")
+                .with_body(b"{invalid_json}".to_vec()),
+        );
+        assert_eq!(invalid_json_close_pit.status, 400);
+        assert_eq!(
+            invalid_json_close_pit.body["error"]["type"],
+            "illegal_argument_exception"
+        );
+        assert_eq!(
+            invalid_json_close_pit.body["error"]["reason"],
+            "Failed to parse request body"
+        );
+        assert_eq!(
+            invalid_json_close_pit.body["error"]["root_cause"][0]["reason"],
+            "Failed to parse request body"
         );
 
         let unknown_close_pit_field = node.handle_rest_request(
