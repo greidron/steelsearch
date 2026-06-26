@@ -11017,6 +11017,11 @@ impl SteelNode {
             .get("expand_wildcards")
             .map(String::as_str)
             .unwrap_or("open");
+        let requested_routing_values = request
+            .query_params
+            .get("routing")
+            .map(|routing| parse_routing_values(routing))
+            .filter(|routing| !routing.is_empty());
         let resolved_indices = match self.resolve_search_targets(
             index,
             ignore_unavailable,
@@ -11058,6 +11063,18 @@ impl SteelNode {
                         .any(|candidate| candidate == doc_index)
                     {
                         return None;
+                    }
+                    if let Some(routings) = requested_routing_values.as_ref() {
+                        let (_, doc_id, _) = split_document_key(key)?;
+                        if !document_matches_requested_routing_shards(
+                            doc_index,
+                            doc_id,
+                            record,
+                            routings,
+                            |index_name| self.index_primary_shard_count(index_name),
+                        ) {
+                            return None;
+                        }
                     }
                     Some((key.clone(), record.clone()))
                 })
@@ -23770,6 +23787,28 @@ fn document_matches_search_slice(doc_id: &str, source: &Value, slice: &ParsedSea
     hash.rem_euclid(slice.max as i64) as u64 == slice.id
 }
 
+fn document_matches_requested_routing_shards(
+    index: &str,
+    doc_id: &str,
+    record: &StoredDocument,
+    requested_routing_values: &[String],
+    shard_count_for_index: impl Fn(&str) -> usize,
+) -> bool {
+    let shard_count = shard_count_for_index(index).max(1);
+    let doc_routing = record.routing.as_deref().unwrap_or(doc_id);
+    let doc_shard = opensearch_routing_shard(doc_routing, shard_count);
+    requested_routing_values
+        .iter()
+        .any(|routing| opensearch_routing_shard(routing, shard_count) == doc_shard)
+}
+
+fn opensearch_routing_shard(routing: &str, shard_count: usize) -> usize {
+    if shard_count <= 1 {
+        return 0;
+    }
+    opensearch_murmur3_x86_32(routing.as_bytes(), 0).rem_euclid(shard_count as i64) as usize
+}
+
 fn search_slice_value_key(value: &Value) -> String {
     match value {
         Value::String(value) => format!("s:{value}"),
@@ -23789,8 +23828,11 @@ fn opensearch_uid_encoded_utf8_id(id: &str) -> Vec<u8> {
 
 fn opensearch_terms_slice_hash(value: &[u8]) -> i64 {
     // Mirrors TermsSliceQuery's fixed-seed StringHelper.murmurhash3_x86_32 partitioning.
-    const SEED: u32 = 7919;
-    let mut hash = SEED;
+    opensearch_murmur3_x86_32(value, 7919)
+}
+
+fn opensearch_murmur3_x86_32(value: &[u8], seed: u32) -> i64 {
+    let mut hash = seed;
     let mut chunks = value.chunks_exact(4);
     for chunk in &mut chunks {
         let mut k = u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
@@ -46304,6 +46346,87 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(listed_pits.status, 200);
         assert_eq!(listed_pits.body["pits"][0]["pit_id"], pit_id);
         assert_eq!(listed_pits.body["pits"][0]["keep_alive"], 600000);
+    }
+
+    #[test]
+    fn point_in_time_open_routing_limits_snapshot_to_routed_shards_like_opensearch() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, "/logs-pit-routing-shard").with_json_body(
+                    serde_json::json!({
+                        "settings": {
+                            "index": {
+                                "number_of_shards": 3,
+                                "number_of_replicas": 0
+                            }
+                        },
+                        "mappings": {
+                            "properties": {
+                                "tenant": { "type": "keyword" }
+                            }
+                        }
+                    }),
+                ),
+            )
+            .status,
+            200
+        );
+
+        let routed_value = "tenant-a";
+        let routed_shard = opensearch_routing_shard(routed_value, 3);
+        let different_routing = (0..100)
+            .map(|candidate| format!("tenant-other-{candidate}"))
+            .find(|candidate| opensearch_routing_shard(candidate, 3) != routed_shard)
+            .expect("routing value on a different shard");
+
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(
+                    RestMethod::Put,
+                    "/logs-pit-routing-shard/_doc/doc-a?routing=tenant-a",
+                )
+                .with_json_body(serde_json::json!({ "tenant": "tenant-a" })),
+            )
+            .status,
+            201
+        );
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(
+                    RestMethod::Put,
+                    &format!("/logs-pit-routing-shard/_doc/doc-b?routing={different_routing}"),
+                )
+                .with_json_body(serde_json::json!({ "tenant": different_routing })),
+            )
+            .status,
+            201
+        );
+
+        let routed_pit = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/logs-pit-routing-shard/_search/point_in_time?keep_alive=1m&routing=tenant-a",
+        ));
+        assert_eq!(routed_pit.status, 200);
+        let pit_id = routed_pit.body["pit_id"].as_str().unwrap();
+
+        let pit_search = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_search").with_json_body(serde_json::json!({
+                "pit": {
+                    "id": pit_id,
+                    "keep_alive": "1m"
+                },
+                "query": { "match_all": {} },
+                "size": 10
+            })),
+        );
+        assert_eq!(pit_search.status, 200);
+        assert_eq!(pit_search.body["hits"]["total"]["value"], 1);
+        assert_eq!(pit_search.body["hits"]["hits"][0]["_id"], "doc-a");
     }
 
     #[test]
