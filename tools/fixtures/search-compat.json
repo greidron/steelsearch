@@ -955,6 +955,25 @@
       "description": "[admin-cat] cat thread pool targeted json"
     },
     {
+      "name": "cat_thread_pool_text_selected_alias_columns",
+      "area": "cat",
+      "method": "GET",
+      "path": "/_cat/thread_pool/search?v=true&h=nn,n,a,q,r",
+      "accept": "text/plain",
+      "extract": "cat_indices_selected_columns",
+      "family": "admin-cat",
+      "description": "[admin-cat] cat thread pool text honors h aliases"
+    },
+    {
+      "name": "cat_thread_pool_json_selected_alias_columns",
+      "area": "cat",
+      "method": "GET",
+      "path": "/_cat/thread_pool/search?format=json&h=nn,n,a,q,r",
+      "extract": "cat_indices_selected_columns",
+      "family": "admin-cat",
+      "description": "[admin-cat] cat thread pool json honors h aliases"
+    },
+    {
       "name": "cat_nodeattrs_json",
       "area": "cat",
       "method": "GET",

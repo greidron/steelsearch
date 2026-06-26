@@ -19853,25 +19853,42 @@ impl SteelNode {
             .get("format")
             .is_some_and(|value| value == "json")
         {
-            return RestResponse::json(200, Value::Array(rows.clone()));
+            let display_columns = cat_thread_pool_display_columns(request.query_params.get("h"));
+            let selected_rows = rows
+                .iter()
+                .map(|row| {
+                    let mut object = serde_json::Map::new();
+                    for (column, display) in &display_columns {
+                        object.insert(display.clone(), row[*column].clone());
+                    }
+                    Value::Object(object)
+                })
+                .collect();
+            return RestResponse::json(200, Value::Array(selected_rows));
         }
         let verbose = request
             .query_params
             .get("v")
             .is_some_and(|value| value == "true");
+        let display_columns = cat_thread_pool_display_columns(request.query_params.get("h"));
         let mut lines = Vec::new();
         if verbose {
-            lines.push("node_name name active queue rejected".to_string());
+            lines.push(
+                display_columns
+                    .iter()
+                    .map(|(_, display)| display.as_str())
+                    .collect::<Vec<_>>()
+                    .join(" "),
+            );
         }
         for row in &rows {
-            lines.push(format!(
-                "{} {} {} {} {}",
-                row["node_name"].as_str().unwrap_or(""),
-                row["name"].as_str().unwrap_or(""),
-                row["active"].as_str().unwrap_or("0"),
-                row["queue"].as_str().unwrap_or("0"),
-                row["rejected"].as_str().unwrap_or("0"),
-            ));
+            lines.push(
+                display_columns
+                    .iter()
+                    .map(|(column, _)| row[*column].as_str().unwrap_or(""))
+                    .collect::<Vec<_>>()
+                    .join(" "),
+            );
         }
         RestResponse::text(200, lines.join("\n") + "\n")
     }
@@ -30883,6 +30900,91 @@ fn cat_segments_display_columns(h_param: Option<&String>) -> Vec<(&'static str, 
     selected
 }
 
+fn cat_thread_pool_display_columns(h_param: Option<&String>) -> Vec<(&'static str, String)> {
+    let Some(h_param) = h_param else {
+        return vec![
+            ("node_name", "node_name".to_string()),
+            ("name", "name".to_string()),
+            ("active", "active".to_string()),
+            ("queue", "queue".to_string()),
+            ("rejected", "rejected".to_string()),
+        ];
+    };
+    let mut selected = Vec::new();
+    for requested in h_param
+        .split(',')
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        if requested.contains('*') {
+            for (column, aliases) in [
+                ("node_name", &["nn"][..]),
+                ("node_id", &["id"][..]),
+                ("ephemeral_node_id", &["eid"][..]),
+                ("pid", &["p"][..]),
+                ("host", &["h"][..]),
+                ("ip", &["i"][..]),
+                ("port", &["po"][..]),
+                ("name", &["n"][..]),
+                ("type", &["t"][..]),
+                ("active", &["a"][..]),
+                ("pool_size", &["psz"][..]),
+                ("queue", &["q"][..]),
+                ("queue_size", &["qs"][..]),
+                ("rejected", &["r"][..]),
+                ("largest", &["l"][..]),
+                ("completed", &["c"][..]),
+                ("total_wait_time", &["twt"][..]),
+                ("core", &["cr"][..]),
+                ("max", &["mx"][..]),
+                ("size", &["sz"][..]),
+                ("keep_alive", &["ka"][..]),
+                ("parallelism", &["pl"][..]),
+            ] {
+                if wildcard_match(requested, column)
+                    || aliases.iter().any(|alias| wildcard_match(requested, alias))
+                {
+                    if !selected.iter().any(|(existing, _)| existing == &column) {
+                        selected.push((column, column.to_string()));
+                    }
+                }
+            }
+            continue;
+        }
+        let column = match requested {
+            "node_name" | "nn" => Some("node_name"),
+            "node_id" | "id" => Some("node_id"),
+            "ephemeral_node_id" | "eid" => Some("ephemeral_node_id"),
+            "pid" | "p" => Some("pid"),
+            "host" | "h" => Some("host"),
+            "ip" | "i" => Some("ip"),
+            "port" | "po" => Some("port"),
+            "name" | "n" => Some("name"),
+            "type" | "t" => Some("type"),
+            "active" | "a" => Some("active"),
+            "pool_size" | "psz" => Some("pool_size"),
+            "queue" | "q" => Some("queue"),
+            "queue_size" | "qs" => Some("queue_size"),
+            "rejected" | "r" => Some("rejected"),
+            "largest" | "l" => Some("largest"),
+            "completed" | "c" => Some("completed"),
+            "total_wait_time" | "twt" => Some("total_wait_time"),
+            "core" | "cr" => Some("core"),
+            "max" | "mx" => Some("max"),
+            "size" | "sz" => Some("size"),
+            "keep_alive" | "ka" => Some("keep_alive"),
+            "parallelism" | "pl" => Some("parallelism"),
+            _ => None,
+        };
+        if let Some(column) = column {
+            if !selected.iter().any(|(existing, _)| existing == &column) {
+                selected.push((column, requested.to_string()));
+            }
+        }
+    }
+    selected
+}
+
 fn cat_aliases_display_columns(h_param: Option<&String>) -> Vec<(&'static str, String)> {
     let Some(h_param) = h_param else {
         return vec![
@@ -37668,6 +37770,31 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 .len(),
             8
         );
+        assert_eq!(thread_pool_json_response.body[0]["node_name"], "steel-node");
+        assert!(thread_pool_json_response.body[0].get("node_id").is_none());
+
+        let mut selected_thread_pool_json_request =
+            RestRequest::new(RestMethod::Get, "/_cat/thread_pool/search");
+        selected_thread_pool_json_request
+            .query_params
+            .insert("format".to_string(), "json".to_string());
+        selected_thread_pool_json_request
+            .query_params
+            .insert("h".to_string(), "nn,n,a,q,r".to_string());
+        let selected_thread_pool_json_response =
+            node.handle_rest_request(selected_thread_pool_json_request);
+        assert_eq!(selected_thread_pool_json_response.status, 200);
+        assert_eq!(
+            selected_thread_pool_json_response.body[0]["nn"],
+            "steel-node"
+        );
+        assert_eq!(selected_thread_pool_json_response.body[0]["n"], "search");
+        assert_eq!(selected_thread_pool_json_response.body[0]["a"], "0");
+        assert_eq!(selected_thread_pool_json_response.body[0]["q"], "0");
+        assert_eq!(selected_thread_pool_json_response.body[0]["r"], "0");
+        assert!(selected_thread_pool_json_response.body[0]
+            .get("node_name")
+            .is_none());
 
         let mut thread_pool_text_request =
             RestRequest::new(RestMethod::Get, "/_cat/thread_pool/search");
@@ -37682,6 +37809,25 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert!(thread_pool_text.contains("node_name name active queue rejected"));
         assert!(thread_pool_text.contains("search"));
         assert!(!thread_pool_text.contains("write"));
+
+        let mut selected_thread_pool_text_request =
+            RestRequest::new(RestMethod::Get, "/_cat/thread_pool/search");
+        selected_thread_pool_text_request
+            .query_params
+            .insert("v".to_string(), "true".to_string());
+        selected_thread_pool_text_request
+            .query_params
+            .insert("h".to_string(), "nn,n,a,q,r".to_string());
+        let selected_thread_pool_text_response =
+            node.handle_rest_request(selected_thread_pool_text_request);
+        let selected_thread_pool_text = selected_thread_pool_text_response
+            .body
+            .as_str()
+            .expect("selected cat thread_pool text body");
+        assert_eq!(
+            selected_thread_pool_text.lines().collect::<Vec<_>>(),
+            vec!["nn n a q r", "steel-node search 0 0 0"]
+        );
 
         let post_thread_pool_target = node.handle_rest_request(RestRequest::new(
             RestMethod::Post,
