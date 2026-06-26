@@ -6012,6 +6012,9 @@ fn local_transport_query_matches(
         Some(os_transport::action::OpenSearchQueryBuilderWire::SpanMulti(query)) => {
             local_transport_query_matches(source, id, Some(query.query.as_ref()))
         }
+        Some(os_transport::action::OpenSearchQueryBuilderWire::SpanNear(query)) => {
+            local_transport_span_near_query_matches(source, query)
+        }
         Some(os_transport::action::OpenSearchQueryBuilderWire::SpanOr(query)) => query
             .clauses
             .iter()
@@ -6405,6 +6408,131 @@ fn local_transport_match_bool_prefix_matches(haystacks: &[String], query_text: &
             .filter(|token| !token.is_empty())
             .any(|token| token.to_ascii_lowercase().starts_with(&prefix))
     })
+}
+
+fn local_transport_span_near_query_matches(
+    source: &Value,
+    query: &os_transport::action::OpenSearchSpanNearQueryBuilderWire,
+) -> bool {
+    let mut extracted = Vec::new();
+    for clause in &query.clauses {
+        let Some(extracted_clause) = extract_transport_span_clause(source, clause) else {
+            return false;
+        };
+        extracted.push(extracted_clause);
+    }
+    let Some((field, _)) = extracted.first() else {
+        return false;
+    };
+    if extracted
+        .iter()
+        .any(|(candidate_field, _)| candidate_field != field)
+    {
+        return false;
+    }
+    let Some(tokens) = lookup_transport_source_value(source, field)
+        .and_then(Value::as_str)
+        .map(tokenize_transport_search_text)
+    else {
+        return false;
+    };
+    if tokens.is_empty() {
+        return false;
+    }
+    let specs = extracted
+        .into_iter()
+        .map(|(_, values)| values)
+        .collect::<Vec<_>>();
+    if query.in_order {
+        let Some((first_terms, rest)) = first_transport_span_near_term_clause(&specs) else {
+            return false;
+        };
+        for start_position in 0..tokens.len() {
+            if !first_terms
+                .iter()
+                .any(|term| term == &tokens[start_position])
+            {
+                continue;
+            }
+            let mut previous_position = start_position;
+            let mut matched = true;
+            for spec in rest {
+                let TransportSpanClause::Terms(accepted_terms) = spec;
+                let start = previous_position + 1;
+                let mut matched_position = None;
+                for (index, token) in tokens.iter().enumerate().skip(start) {
+                    if accepted_terms.iter().any(|term| term == token) {
+                        matched_position = Some(index);
+                        break;
+                    }
+                }
+                let Some(position) = matched_position else {
+                    matched = false;
+                    break;
+                };
+                let gap = position.saturating_sub(previous_position + 1);
+                if gap > query.slop as usize {
+                    matched = false;
+                    break;
+                }
+                previous_position = position;
+            }
+            if matched {
+                return true;
+            }
+        }
+        return false;
+    }
+    specs.iter().all(|spec| {
+        let TransportSpanClause::Terms(accepted_terms) = spec;
+        tokens
+            .iter()
+            .any(|token| accepted_terms.iter().any(|term| term == token))
+    })
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum TransportSpanClause {
+    Terms(Vec<String>),
+}
+
+fn extract_transport_span_clause(
+    source: &Value,
+    clause: &os_transport::action::OpenSearchQueryBuilderWire,
+) -> Option<(String, TransportSpanClause)> {
+    match clause {
+        os_transport::action::OpenSearchQueryBuilderWire::SpanTerm(term) => Some((
+            term.field_name.clone(),
+            TransportSpanClause::Terms(vec![term.value.as_str()?.to_ascii_lowercase()]),
+        )),
+        os_transport::action::OpenSearchQueryBuilderWire::SpanMulti(query) => {
+            let os_transport::action::OpenSearchQueryBuilderWire::Prefix(prefix) =
+                query.query.as_ref()
+            else {
+                return None;
+            };
+            let expected = prefix.value.to_ascii_lowercase();
+            let tokens = lookup_transport_source_value(source, &prefix.field_name)
+                .and_then(Value::as_str)
+                .map(tokenize_transport_search_text)?;
+            let accepted = tokens
+                .into_iter()
+                .filter(|token| token.starts_with(&expected))
+                .collect::<Vec<_>>();
+            Some((
+                prefix.field_name.clone(),
+                TransportSpanClause::Terms(accepted),
+            ))
+        }
+        _ => None,
+    }
+}
+
+fn first_transport_span_near_term_clause(
+    specs: &[TransportSpanClause],
+) -> Option<(&[String], &[TransportSpanClause])> {
+    let TransportSpanClause::Terms(terms) = specs.first()?;
+    Some((terms.as_slice(), &specs[1..]))
 }
 
 fn score_transport_text_query_term(haystacks: &[String], term: &str) -> f64 {
@@ -16816,6 +16944,32 @@ mod tests {
                                                                                     ),
                                                                                 ),
                                                                                 ignore_unmapped: false,
+                                                                            },
+                                                                        ),
+                                                                        os_transport::action::OpenSearchQueryBuilderWire::SpanNear(
+                                                                            os_transport::action::OpenSearchSpanNearQueryBuilderWire {
+                                                                                boost: 1.0,
+                                                                                query_name: None,
+                                                                                clauses: vec![
+                                                                                    os_transport::action::OpenSearchQueryBuilderWire::SpanTerm(
+                                                                                        os_transport::action::OpenSearchSpanTermQueryBuilderWire {
+                                                                                            boost: 1.0,
+                                                                                            query_name: None,
+                                                                                            field_name: "message".to_string(),
+                                                                                            value: serde_json::json!("steel"),
+                                                                                        },
+                                                                                    ),
+                                                                                    os_transport::action::OpenSearchQueryBuilderWire::SpanTerm(
+                                                                                        os_transport::action::OpenSearchSpanTermQueryBuilderWire {
+                                                                                            boost: 1.0,
+                                                                                            query_name: None,
+                                                                                            field_name: "message".to_string(),
+                                                                                            value: serde_json::json!("search"),
+                                                                                        },
+                                                                                    ),
+                                                                                ],
+                                                                                slop: 0,
+                                                                                in_order: true,
                                                                             },
                                                                         ),
                                                                         os_transport::action::OpenSearchQueryBuilderWire::SpanOr(
