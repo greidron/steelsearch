@@ -22096,20 +22096,27 @@ fn action_request_validation_error(validation_errors: Vec<&str>) -> RestResponse
 }
 
 fn action_request_validation_error_owned(validation_errors: Vec<String>) -> RestResponse {
+    let reason = format!(
+        "Validation Failed: {}",
+        validation_errors
+            .iter()
+            .enumerate()
+            .map(|(index, error)| format!("{}: {};", index + 1, error))
+            .collect::<Vec<_>>()
+            .join("")
+    );
     RestResponse::json(
         400,
         serde_json::json!({
             "error": {
                 "type": "action_request_validation_exception",
-                "reason": format!(
-                    "Validation Failed: {}",
-                    validation_errors
-                    .iter()
-                    .enumerate()
-                    .map(|(index, error)| format!("{}: {};", index + 1, error))
-                    .collect::<Vec<_>>()
-                    .join("")
-                )
+                "reason": reason,
+                "root_cause": [
+                    {
+                        "type": "action_request_validation_exception",
+                        "reason": reason
+                    }
+                ]
             },
             "status": 400
         }),
