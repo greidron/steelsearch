@@ -50,6 +50,30 @@
       "body": {}
     },
     {
+      "name": "logs-update-query-match",
+      "body": {
+        "mappings": {
+          "properties": {
+            "tenant": {
+              "type": "keyword"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "logs-update-query-unmatched",
+      "body": {
+        "mappings": {
+          "properties": {
+            "tenant": {
+              "type": "keyword"
+            }
+          }
+        }
+      }
+    },
+    {
       "name": "logs-bulk-metadata-000001",
       "body": {}
     }
@@ -135,6 +159,30 @@
           "_source": {
             "tenant": "tenant-delete-refresh",
             "message": "delete by query refresh target"
+          }
+        }
+      ]
+    },
+    {
+      "index": "logs-update-query-match",
+      "documents": [
+        {
+          "_id": "doc-1",
+          "_source": {
+            "tenant": "tenant-a",
+            "processed": false
+          }
+        }
+      ]
+    },
+    {
+      "index": "logs-update-query-unmatched",
+      "documents": [
+        {
+          "_id": "doc-1",
+          "_source": {
+            "tenant": "tenant-a",
+            "processed": false
           }
         }
       ]
@@ -427,6 +475,48 @@
           "extract": "get_document"
         }
       ]
+    },
+    {
+      "name": "update_by_query_matched_summary",
+      "area": "document-write",
+      "method": "POST",
+      "path": "/logs-update-query-match/_update_by_query",
+      "body": {
+        "query": {
+          "term": {
+            "tenant": "tenant-a"
+          }
+        },
+        "script": {
+          "source": "ctx._source.processed = params.processed",
+          "params": {
+            "processed": true
+          }
+        }
+      },
+      "expected_status": 200,
+      "extract": "reindex_summary"
+    },
+    {
+      "name": "update_by_query_unmatched_summary",
+      "area": "document-write",
+      "method": "POST",
+      "path": "/logs-update-query-unmatched/_update_by_query",
+      "body": {
+        "query": {
+          "term": {
+            "tenant": "tenant-z"
+          }
+        },
+        "script": {
+          "source": "ctx._source.processed = params.processed",
+          "params": {
+            "processed": true
+          }
+        }
+      },
+      "expected_status": 200,
+      "extract": "reindex_summary"
     },
     {
       "name": "single_doc_update_missing_error",
