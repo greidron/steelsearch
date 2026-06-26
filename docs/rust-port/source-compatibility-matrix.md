@@ -221,8 +221,11 @@ Current 0.2.4 mixed-cluster coverage evidence:
   REST source rows, 371 are in scope and all are now classified as
   `implemented` in the source-derived matrix; exhaustive positive/negative live
   comparison still needs to expand across the route surface. Of the search
-  registration rows, 113 are now classified as `implemented` from Rust DSL and
-  engine evidence, while 14 remain `planned`.
+  registration rows, 120 are now classified as `implemented` from Rust DSL and
+  engine evidence, while 7 generic plugin/extension hook rows remain
+  `planned`. Of the node runtime rows, 61 are classified as `partial` because
+  Steelsearch has corresponding bounded runtime owners, while 17 remain
+  `planned`.
 - Drift checking is handled by `tools/check-source-compatibility-drift.sh` and
   `.github/workflows/source-compatibility.yml`.
 - Attach native Steelsearch crate/module owner to each remaining partial

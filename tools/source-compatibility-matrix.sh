@@ -328,6 +328,59 @@ extract_search_registrations() {
   } >"${output}"
 }
 
+node_runtime_component_status() {
+  local component="$1"
+
+  case "${component}" in
+    NetworkService|TransportService|StreamTransportService|SearchTransportService|StreamSearchTransportService)
+      echo "partial"
+      return
+      ;;
+    LocalClusterService|ClusterService|BatchedRerouteService|InternalClusterInfoService|ClusterModule)
+      echo "partial"
+      return
+      ;;
+    IndicesModule|IndicesService|MetadataCreateIndexService|MetadataCreateDataStreamService|MetadataIndexUpgradeService|SystemIndexMetadataUpgradeService|TemplateUpgradeService|ViewService|MappingTransformerRegistry)
+      echo "partial"
+      return
+      ;;
+    SearchModule|SearchService|SearchPhaseController|SearchPipelineService|ResponseCollectorService|SearchBackpressureService)
+      echo "partial"
+      return
+      ;;
+    ScriptModule|ScriptService|AnalysisModule|IngestService)
+      echo "partial"
+      return
+      ;;
+    SettingsModule|TelemetryModule|UsageService|MonitorService|NodeService|FsHealthService)
+      echo "partial"
+      return
+      ;;
+    RepositoriesModule|SnapshotsService|SnapshotShardsService|RestoreService|RemoteStoreRestoreService|InternalSnapshotsInfoService)
+      echo "partial"
+      return
+      ;;
+    GatewayModule|MetaStateService|PersistedClusterStateService|PersistedStateRegistry)
+      echo "partial"
+      return
+      ;;
+    TaskResourceTrackingService|TaskCancellationMonitoringService|TaskCancellationService|PersistentTasksExecutorRegistry|PersistentTasksClusterService|PersistentTasksService)
+      echo "partial"
+      return
+      ;;
+    ActionModule|NamedWriteableRegistry|NamedXContentRegistry|DataFormatRegistry)
+      echo "partial"
+      return
+      ;;
+    CacheModule|IndexingPressureService|AdmissionControlService|ResourceUsageCollectorService|HierarchyCircuitBreakerService|NoneCircuitBreakerService)
+      echo "partial"
+      return
+      ;;
+  esac
+
+  echo "planned"
+}
+
 extract_node_runtime_components() {
   local output="$1"
   {
@@ -351,7 +404,7 @@ extract_node_runtime_components() {
           *Registry) kind="registry" ;;
           *) kind="component" ;;
         esac
-        status="planned"
+        status="$(node_runtime_component_status "${component}")"
         printf '%s\t%s\t%s\t%s\t%s\n' "${status}" "${kind}" "${component}" "${OPENSEARCH_ROOT}/server/src/main/java/org/opensearch/node/Node.java" "${line}"
       done
   } >"${output}"
