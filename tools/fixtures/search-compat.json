@@ -1232,7 +1232,7 @@
           "body": {
             "type": "fs",
             "settings": {
-              "location": "/tmp/repo-cat-snapshots-selected"
+              "location": "${SNAPSHOT_REPOSITORY_BASE_DIR}/repo-cat-snapshots-selected"
             }
           },
           "expected_status": 200
@@ -1329,7 +1329,7 @@
           "body": {
             "type": "fs",
             "settings": {
-              "location": "/tmp/repo-cat-snapshots-selected-json"
+              "location": "${SNAPSHOT_REPOSITORY_BASE_DIR}/repo-cat-snapshots-selected-json"
             }
           },
           "expected_status": 200
@@ -1356,7 +1356,7 @@
     {
       "name": "cat_repositories_text_selected_alias_columns",
       "area": "cat",
-      "extract": "cat_indices_selected_columns",
+      "extract": "cat_repositories_selected_columns",
       "steps": [
         {
           "name": "create-repository",
@@ -1365,7 +1365,7 @@
           "body": {
             "type": "fs",
             "settings": {
-              "location": "/tmp/repo-cat-selected"
+              "location": "${SNAPSHOT_REPOSITORY_BASE_DIR}/repo-cat-selected"
             }
           },
           "expected_status": 200
@@ -1377,7 +1377,7 @@
           "body": null,
           "expected_status": 200,
           "accept": "text/plain",
-          "extract": "cat_indices_selected_columns"
+          "extract": "cat_repositories_selected_columns"
         }
       ],
       "family": "admin-cat",
@@ -1386,7 +1386,7 @@
     {
       "name": "cat_repositories_json_selected_alias_columns",
       "area": "cat",
-      "extract": "cat_indices_selected_columns",
+      "extract": "cat_repositories_selected_columns",
       "steps": [
         {
           "name": "create-repository",
@@ -1395,7 +1395,7 @@
           "body": {
             "type": "fs",
             "settings": {
-              "location": "/tmp/repo-cat-selected-json"
+              "location": "${SNAPSHOT_REPOSITORY_BASE_DIR}/repo-cat-selected-json"
             }
           },
           "expected_status": 200
@@ -1406,7 +1406,7 @@
           "path": "/_cat/repositories?format=json&h=repoId,t",
           "body": null,
           "expected_status": 200,
-          "extract": "cat_indices_selected_columns"
+          "extract": "cat_repositories_selected_columns"
         }
       ],
       "family": "admin-cat",
@@ -1509,7 +1509,7 @@
       "method": "GET",
       "path": "/_cat/thread_pool/search?v=true&h=nn,n,a,q,r",
       "accept": "text/plain",
-      "extract": "cat_indices_selected_columns",
+      "extract": "cat_thread_pool_selected_columns",
       "family": "admin-cat",
       "description": "[admin-cat] cat thread pool text honors h aliases"
     },
@@ -1529,7 +1529,7 @@
       "area": "cat",
       "method": "GET",
       "path": "/_cat/thread_pool/search?format=json&h=nn,n,a,q,r",
-      "extract": "cat_indices_selected_columns",
+      "extract": "cat_thread_pool_selected_columns",
       "family": "admin-cat",
       "description": "[admin-cat] cat thread pool json honors h aliases"
     },
@@ -1558,7 +1558,7 @@
       "method": "GET",
       "path": "/_cat/nodeattrs?v=true&h=name,attr.name,attr.value",
       "accept": "text/plain",
-      "extract": "cat_indices_selected_columns",
+      "extract": "cat_nodeattrs_selected_columns",
       "family": "admin-cat",
       "description": "[admin-cat] cat nodeattrs text honors h aliases"
     },
@@ -1568,7 +1568,7 @@
       "method": "GET",
       "path": "/_cat/nodeattrs?v=true&h=name,nodeId,p,h,i,po,attr.name,attr.value",
       "accept": "text/plain",
-      "extract": "cat_indices_selected_columns",
+      "extract": "cat_nodeattrs_selected_columns",
       "family": "admin-cat",
       "description": "[admin-cat] cat nodeattrs text honors identity aliases"
     },
@@ -1709,7 +1709,7 @@
       "method": "GET",
       "path": "/_cat/shards/logs-compat?v=true&h=idx,sh,p,st,dc,sto,id,n",
       "accept": "text/plain",
-      "extract": "cat_indices_selected_columns",
+      "extract": "cat_shards_selected_columns",
       "family": "admin-cat",
       "description": "[admin-cat] cat shards text honors h aliases"
     },
@@ -1718,7 +1718,7 @@
       "area": "cat",
       "method": "GET",
       "path": "/_cat/shards/logs-compat?format=json&h=idx,sh,p,st,dc,sto,id,n",
-      "extract": "cat_indices_selected_columns",
+      "extract": "cat_shards_selected_columns",
       "family": "admin-cat",
       "description": "[admin-cat] cat shards json honors h aliases"
     },
@@ -1756,7 +1756,7 @@
       "method": "GET",
       "path": "/_cat/segments/logs-compat?v=true&h=idx,sh,p,id,seg,g,dc,si",
       "accept": "text/plain",
-      "extract": "cat_indices_selected_columns",
+      "extract": "cat_segments_selected_columns",
       "family": "admin-cat",
       "description": "[admin-cat] cat segments text honors h aliases"
     },
@@ -1765,7 +1765,7 @@
       "area": "cat",
       "method": "GET",
       "path": "/_cat/segments/logs-compat?format=json&h=idx,sh,p,id,seg,g,dc,si",
-      "extract": "cat_indices_selected_columns",
+      "extract": "cat_segments_selected_columns",
       "family": "admin-cat",
       "description": "[admin-cat] cat segments json honors h aliases"
     },

@@ -1113,6 +1113,46 @@ def bulk_body(index: str, documents: list[dict[str, Any]]) -> str:
     return "\n".join(lines) + "\n"
 
 
+def normalize_selected_column_values(
+    selected: dict[str, Any],
+    volatile_fields: set[str],
+    replacement: str,
+) -> None:
+    fields = selected.get("fields") or []
+    volatile_positions = {
+        index for index, field in enumerate(fields) if field in volatile_fields
+    }
+    selected["rows"] = [
+        [
+            replacement if index in volatile_positions else value
+            for index, value in enumerate(row)
+        ]
+        for row in selected.get("rows", [])
+    ]
+
+
+def selected_column_int_total(
+    fields: list[str],
+    rows: list[list[Any]],
+    candidate_fields: set[str],
+) -> int | None:
+    positions = [
+        index for index, field in enumerate(fields) if field in candidate_fields
+    ]
+    if not positions:
+        return None
+    total = 0
+    for row in rows:
+        for position in positions:
+            if position >= len(row):
+                continue
+            try:
+                total += int(str(row[position]))
+            except (TypeError, ValueError):
+                pass
+    return total
+
+
 def extract(kind: str, response: dict[str, Any]) -> Any:
     body = response.get("body") or {}
     if kind == "status_only":
@@ -2190,17 +2230,47 @@ def extract(kind: str, response: dict[str, Any]) -> Any:
         }
     if kind == "cat_pit_segments_selected_columns":
         selected = extract("cat_indices_selected_columns", response)
-        fields = selected.get("fields") or []
-        volatile_positions = {
-            index for index, field in enumerate(fields) if field in {"id", "node_id", "nodeId"}
+        normalize_selected_column_values(selected, {"id", "node_id", "nodeId"}, "<node-id>")
+        return {
+            "status": selected.get("status"),
+            "fields": selected.get("fields") or [],
+            "docs_count_total": selected_column_int_total(
+                selected.get("fields") or [],
+                selected.get("rows") or [],
+                {"docs.count", "dc", "docsCount"},
+            ),
+            "row_count_positive": bool(selected.get("rows")),
         }
-        selected["rows"] = [
-            [
-                "<node-id>" if index in volatile_positions else value
-                for index, value in enumerate(row)
-            ]
-            for row in selected.get("rows", [])
-        ]
+    if kind == "cat_thread_pool_selected_columns":
+        selected = extract("cat_indices_selected_columns", response)
+        normalize_selected_column_values(selected, {"node_name", "nn"}, "<node-name>")
+        return selected
+    if kind == "cat_nodeattrs_selected_columns":
+        selected = extract("cat_indices_selected_columns", response)
+        normalize_selected_column_values(
+            selected,
+            {"name", "node", "nodeId", "id", "p", "pid", "h", "host", "i", "ip", "po", "port"},
+            "<node-identity>",
+        )
+        return selected
+    if kind == "cat_shards_selected_columns":
+        selected = extract("cat_indices_selected_columns", response)
+        normalize_selected_column_values(
+            selected,
+            {"id", "node", "n", "store", "sto"},
+            "<volatile>",
+        )
+        return selected
+    if kind == "cat_segments_selected_columns":
+        selected = extract("cat_indices_selected_columns", response)
+        return {
+            "status": selected.get("status"),
+            "fields": selected.get("fields") or [],
+            "row_count_positive": bool(selected.get("rows")),
+        }
+    if kind == "cat_repositories_selected_columns":
+        selected = extract("cat_indices_selected_columns", response)
+        selected["rows"] = sorted(selected.get("rows") or [])
         return selected
     if kind == "cat_selected_column_fields":
         if isinstance(body, list):
@@ -2402,14 +2472,27 @@ def extract(kind: str, response: dict[str, Any]) -> Any:
             rows = body
             columns = set(rows[0].keys()) if rows and isinstance(rows[0], dict) else set()
             row_count = len(rows)
+            docs_count_total = sum(
+                int(str(row.get("docs.count", 0)))
+                for row in rows
+                if isinstance(row, dict) and str(row.get("docs.count", "0")).isdigit()
+            )
         else:
             raw = body.get("_raw") if isinstance(body, dict) else None
             lines = [line.strip() for line in (raw or "").splitlines() if line.strip()]
-            columns = set(lines[0].split()) if lines else set()
+            fields = lines[0].split() if lines else []
+            columns = set(fields)
+            rows = [line.split() for line in lines[1:]]
             row_count = max(len(lines) - 1, 0)
+            docs_count_total = selected_column_int_total(
+                fields,
+                rows,
+                {"docs.count", "dc", "docsCount"},
+            )
         return {
             "status": response["status"],
-            "row_count": row_count,
+            "row_count_positive": row_count > 0,
+            "docs_count_total": docs_count_total,
             "required_columns_present": sorted(CAT_PIT_SEGMENTS_REQUIRED_COLUMNS & columns),
         }
     if kind == "cat_recovery":
