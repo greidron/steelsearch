@@ -3156,6 +3156,9 @@ impl SteelNode {
             ) {
                 return Some(response);
             }
+            if let Some(response) = validate_settings_get_query_params(request) {
+                return Some(response);
+            }
             return Some(self.handle_settings_get_route(
                 None,
                 None,
@@ -3184,6 +3187,9 @@ impl SteelNode {
                     SecurityPermission::IndexRead,
                     "index metadata",
                 ) {
+                    return Some(response);
+                }
+                if let Some(response) = validate_settings_get_query_params(request) {
                     return Some(response);
                 }
                 return Some(self.handle_settings_get_route(
@@ -4593,6 +4599,9 @@ impl SteelNode {
                     ) {
                         return Some(response);
                     }
+                    if let Some(response) = validate_settings_get_query_params(request) {
+                        return Some(response);
+                    }
                     Some(
                         self.handle_settings_get_route(
                             Some(target),
@@ -4634,6 +4643,9 @@ impl SteelNode {
                 ) {
                     return Some(response);
                 }
+                if let Some(response) = validate_settings_get_query_params(request) {
+                    return Some(response);
+                }
                 return Some(
                     self.handle_settings_get_route(
                         Some(target),
@@ -4661,6 +4673,9 @@ impl SteelNode {
                     SecurityPermission::IndexRead,
                     "index metadata",
                 ) {
+                    return Some(response);
+                }
+                if let Some(response) = validate_settings_get_query_params(request) {
                     return Some(response);
                 }
                 return Some(
@@ -31638,6 +31653,67 @@ fn validate_cluster_settings_timeout_params(request: &RestRequest) -> Option<Res
             ));
         }
     }
+    None
+}
+
+fn validate_settings_get_query_params(request: &RestRequest) -> Option<RestResponse> {
+    const ALLOWED_PARAMS: &[&str] = &[
+        "allow_no_indices",
+        "cluster_manager_timeout",
+        "expand_wildcards",
+        "flat_settings",
+        "human",
+        "ignore_throttled",
+        "ignore_unavailable",
+        "include_defaults",
+        "local",
+        "master_timeout",
+    ];
+
+    let unrecognized = request
+        .query_params
+        .keys()
+        .filter(|key| !ALLOWED_PARAMS.contains(&key.as_str()))
+        .collect::<Vec<_>>();
+    if let Some(response) = unrecognized_query_param_response_for_keys(request, &unrecognized) {
+        return Some(response);
+    }
+
+    for field in [
+        "allow_no_indices",
+        "flat_settings",
+        "ignore_throttled",
+        "ignore_unavailable",
+        "include_defaults",
+        "local",
+    ] {
+        if let Some(response) =
+            validate_opensearch_boolean_query_param(request.query_params.get(field))
+        {
+            return Some(response);
+        }
+    }
+
+    for param in ["cluster_manager_timeout", "master_timeout"] {
+        let Some(raw_value) = request.query_params.get(param) else {
+            continue;
+        };
+        if parse_time_value_millis(raw_value).is_none() {
+            return Some(RestResponse::opensearch_error_kind(
+                os_rest::RestErrorKind::IllegalArgument,
+                format!(
+                    "failed to parse setting [{param}] with value [{raw_value}] as a time value"
+                ),
+            ));
+        }
+    }
+
+    if let Some(expand_wildcards) = request.query_params.get("expand_wildcards") {
+        if let Err(response) = parse_index_expand_wildcards(expand_wildcards) {
+            return Some(response);
+        }
+    }
+
     None
 }
 
@@ -60859,6 +60935,52 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             .body
             .get("logs-settings-hidden-000001")
             .is_none());
+
+        let global_with_opensearch_get_params = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_settings?local=true&human=true&cluster_manager_timeout=30s&master_timeout=30s&ignore_throttled=false",
+        ));
+        assert_eq!(global_with_opensearch_get_params.status, 200);
+        assert!(global_with_opensearch_get_params
+            .body
+            .get("logs-settings-000001")
+            .is_some());
+
+        let unknown_param =
+            node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_settings?foo=bar"));
+        assert_eq!(unknown_param.status, 400);
+        assert_eq!(
+            unknown_param.body["error"]["root_cause"][0]["reason"],
+            "request [/_settings] contains unrecognized parameter: [foo]"
+        );
+
+        let invalid_local =
+            node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_settings?local=maybe"));
+        assert_eq!(invalid_local.status, 400);
+        assert_eq!(
+            invalid_local.body["error"]["root_cause"][0]["reason"],
+            "Failed to parse value [maybe] as only [true] or [false] are allowed."
+        );
+
+        let invalid_timeout = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_settings?cluster_manager_timeout=bogus",
+        ));
+        assert_eq!(invalid_timeout.status, 400);
+        assert_eq!(
+            invalid_timeout.body["error"]["root_cause"][0]["reason"],
+            "failed to parse setting [cluster_manager_timeout] with value [bogus] as a time value"
+        );
+
+        let invalid_expand_wildcards = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_settings?expand_wildcards=bogus",
+        ));
+        assert_eq!(invalid_expand_wildcards.status, 400);
+        assert_eq!(
+            invalid_expand_wildcards.body["error"]["root_cause"][0]["reason"],
+            "No valid expand wildcard value [bogus]"
+        );
 
         let targeted_put = node.handle_rest_request(
             RestRequest::new(RestMethod::Put, "/logs-settings-000001/_settings").with_json_body(
