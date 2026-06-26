@@ -24184,6 +24184,9 @@ fn validate_function_score_body(spec: &serde_json::Map<String, Value>) -> Option
                 | "functions"
                 | "field_value_factor"
                 | "random_score"
+                | "gauss"
+                | "linear"
+                | "exp"
         )
     }) {
         return Some(build_unsupported_search_response(
@@ -24237,6 +24240,13 @@ fn validate_function_score_body(spec: &serde_json::Map<String, Value>) -> Option
             return Some(response);
         }
     }
+    for decay_kind in ["gauss", "linear", "exp"] {
+        if let Some(decay) = spec.get(decay_kind) {
+            if let Some(response) = validate_decay_score_function(decay_kind, decay) {
+                return Some(response);
+            }
+        }
+    }
     if let Some(response) = validate_search_query_body(inner_query) {
         return Some(response);
     }
@@ -24249,7 +24259,13 @@ fn validate_function_score_function(
     if function.keys().any(|key| {
         !matches!(
             key.as_str(),
-            "filter" | "weight" | "field_value_factor" | "random_score"
+            "filter"
+                | "weight"
+                | "field_value_factor"
+                | "random_score"
+                | "gauss"
+                | "linear"
+                | "exp"
         )
     }) {
         return Some(build_unsupported_search_response(
@@ -24274,9 +24290,19 @@ fn validate_function_score_function(
             return Some(response);
         }
     }
+    for decay_kind in ["gauss", "linear", "exp"] {
+        if let Some(decay) = function.get(decay_kind) {
+            if let Some(response) = validate_decay_score_function(decay_kind, decay) {
+                return Some(response);
+            }
+        }
+    }
     if !function.contains_key("weight")
         && !function.contains_key("field_value_factor")
         && !function.contains_key("random_score")
+        && !function.contains_key("gauss")
+        && !function.contains_key("linear")
+        && !function.contains_key("exp")
     {
         return Some(build_unsupported_search_response(
             "unsupported function_score function",
@@ -24361,6 +24387,84 @@ fn validate_random_score_function(value: &Value) -> Option<RestResponse> {
         return Some(build_unsupported_search_response(
             "unsupported random_score seed",
         ));
+    }
+    None
+}
+
+fn validate_decay_score_function(decay_kind: &str, value: &Value) -> Option<RestResponse> {
+    let Some(object) = value.as_object() else {
+        return Some(build_unsupported_search_response(&format!(
+            "unsupported {decay_kind} function"
+        )));
+    };
+    if object.is_empty() {
+        return Some(build_unsupported_search_response(&format!(
+            "unsupported {decay_kind} function"
+        )));
+    }
+    let mut decay_fields = object
+        .iter()
+        .filter(|(key, _)| key.as_str() != "multi_value_mode");
+    let Some((field, spec)) = decay_fields.next() else {
+        return Some(build_unsupported_search_response(&format!(
+            "unsupported {decay_kind} function"
+        )));
+    };
+    if field.is_empty() || decay_fields.next().is_some() {
+        return Some(build_unsupported_search_response(&format!(
+            "unsupported {decay_kind} function"
+        )));
+    }
+    if let Some(mode) = object.get("multi_value_mode").and_then(Value::as_str) {
+        if !matches!(mode, "min" | "max" | "avg" | "sum") {
+            return Some(build_unsupported_search_response(&format!(
+                "unsupported {decay_kind} multi_value_mode"
+            )));
+        }
+    }
+    let Some(spec) = spec.as_object() else {
+        return Some(build_unsupported_search_response(&format!(
+            "unsupported {decay_kind} function"
+        )));
+    };
+    if spec
+        .keys()
+        .any(|key| !matches!(key.as_str(), "origin" | "scale" | "offset" | "decay"))
+    {
+        return Some(build_unsupported_search_response(&format!(
+            "unsupported {decay_kind} parameter"
+        )));
+    }
+    for required in ["origin", "scale"] {
+        let Some(value) = spec.get(required).and_then(Value::as_f64) else {
+            return Some(build_unsupported_search_response(&format!(
+                "unsupported {decay_kind} {required}"
+            )));
+        };
+        if required == "scale" && value <= 0.0 {
+            return Some(build_unsupported_search_response(&format!(
+                "unsupported {decay_kind} scale"
+            )));
+        }
+    }
+    if spec
+        .get("offset")
+        .is_some_and(|value| match value.as_f64() {
+            Some(offset) => offset < 0.0,
+            None => true,
+        })
+    {
+        return Some(build_unsupported_search_response(&format!(
+            "unsupported {decay_kind} offset"
+        )));
+    }
+    if spec.get("decay").is_some_and(|value| match value.as_f64() {
+        Some(decay) => !(0.0..1.0).contains(&decay),
+        None => true,
+    }) {
+        return Some(build_unsupported_search_response(&format!(
+            "unsupported {decay_kind} decay"
+        )));
     }
     None
 }
@@ -26855,7 +26959,7 @@ fn evaluate_search_query_source_with_mappings(
         } else {
             inner_score * function_value
         };
-        return Some((true, score.max(1.0)));
+        return Some((true, score.max(0.0)));
     }
     if let Some(script_score) = query.get("script_score").and_then(Value::as_object) {
         let inner_query = script_score.get("query")?;
@@ -27867,6 +27971,14 @@ fn evaluate_function_score_value(
     if let Some(random_score) = function_score.get("random_score") {
         values.push(evaluate_random_score(doc_id, random_score));
     }
+    for decay_kind in ["gauss", "linear", "exp"] {
+        if let Some(decay_score) = function_score
+            .get(decay_kind)
+            .and_then(|spec| evaluate_decay_score(source, decay_kind, spec))
+        {
+            values.push(decay_score);
+        }
+    }
     if let Some(functions) = function_score.get("functions").and_then(Value::as_array) {
         for function in functions {
             let Some(function) = function.as_object() else {
@@ -27912,6 +28024,14 @@ fn evaluate_function_score_function(
     if let Some(random_score) = function.get("random_score") {
         value *= evaluate_random_score(doc_id, random_score);
     }
+    for decay_kind in ["gauss", "linear", "exp"] {
+        if let Some(decay_score) = function
+            .get(decay_kind)
+            .and_then(|spec| evaluate_decay_score(source, decay_kind, spec))
+        {
+            value *= decay_score;
+        }
+    }
     Some(value)
 }
 
@@ -27943,6 +28063,67 @@ fn evaluate_random_score(doc_id: &str, spec: &Value) -> f64 {
         .unwrap_or_default();
     let hash = fnv1a64(&[doc_id.as_bytes(), seed.as_bytes()]);
     (hash as f64 / u64::MAX as f64).max(f64::MIN_POSITIVE)
+}
+
+fn evaluate_decay_score(source: &Value, decay_kind: &str, spec: &Value) -> Option<f64> {
+    let object = spec.as_object()?;
+    let mode = object
+        .get("multi_value_mode")
+        .and_then(Value::as_str)
+        .unwrap_or("min");
+    let (field, config) = object
+        .iter()
+        .find(|(key, _)| key.as_str() != "multi_value_mode")?;
+    let config = config.as_object()?;
+    let origin = config.get("origin").and_then(Value::as_f64)?;
+    let scale = config.get("scale").and_then(Value::as_f64)?;
+    if scale <= 0.0 {
+        return None;
+    }
+    let offset = config
+        .get("offset")
+        .and_then(Value::as_f64)
+        .unwrap_or(0.0)
+        .max(0.0);
+    let decay = config.get("decay").and_then(Value::as_f64).unwrap_or(0.5);
+    if !(0.0..1.0).contains(&decay) {
+        return None;
+    }
+    let field_values = numeric_score_values(lookup_query_field_value(source, field)?);
+    let value = combine_numeric_values(&field_values, mode)?;
+    let distance = (value - origin).abs();
+    let distance = (distance - offset).max(0.0);
+    let score = match decay_kind {
+        "linear" => {
+            let processed_scale = scale / (1.0 - decay);
+            ((processed_scale - distance) / processed_scale).max(0.0)
+        }
+        "exp" => ((decay.ln() / scale) * distance).exp(),
+        _ => (decay.ln() * (distance / scale).powi(2)).exp(),
+    };
+    Some(score)
+}
+
+fn numeric_score_values(value: &Value) -> Vec<f64> {
+    if let Some(number) = value.as_f64() {
+        return vec![number];
+    }
+    value
+        .as_array()
+        .map(|values| values.iter().filter_map(Value::as_f64).collect())
+        .unwrap_or_default()
+}
+
+fn combine_numeric_values(values: &[f64], mode: &str) -> Option<f64> {
+    if values.is_empty() {
+        return None;
+    }
+    Some(match mode {
+        "max" => values.iter().copied().fold(f64::MIN, f64::max),
+        "avg" => values.iter().sum::<f64>() / values.len() as f64,
+        "sum" => values.iter().sum(),
+        _ => values.iter().copied().fold(f64::MAX, f64::min),
+    })
 }
 
 fn canonical_random_seed(value: &Value) -> String {
@@ -51893,6 +52074,55 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                     .as_f64()
                     .unwrap_or_default()
         );
+
+        for decay_kind in ["gauss", "linear", "exp"] {
+            let mut function = serde_json::Map::new();
+            function.insert("weight".to_string(), serde_json::json!(10.0));
+            function.insert(
+                decay_kind.to_string(),
+                serde_json::json!({
+                    "priority": {
+                        "origin": 10.0,
+                        "scale": 10.0,
+                        "offset": 0.0,
+                        "decay": 0.5
+                    },
+                    "multi_value_mode": "min"
+                }),
+            );
+            let decay_response = node.handle_rest_request(
+                RestRequest::new(RestMethod::Post, "/vectors-unit-rank-l2-000001/_search")
+                    .with_json_body(serde_json::json!({
+                        "query": {
+                            "function_score": {
+                                "query": { "term": { "category": "primary" } },
+                                "functions": [Value::Object(function)],
+                                "score_mode": "multiply",
+                                "boost_mode": "replace"
+                            }
+                        }
+                    })),
+            );
+            assert_eq!(decay_response.status, 200, "{decay_kind}");
+            assert_eq!(decay_response.body["hits"]["total"]["value"], 2);
+            assert_eq!(
+                decay_response.body["hits"]["hits"][0]["_id"], "vec-c",
+                "{decay_kind}"
+            );
+            assert_eq!(
+                decay_response.body["hits"]["hits"][1]["_id"], "vec-a",
+                "{decay_kind}"
+            );
+            assert!(
+                decay_response.body["hits"]["hits"][0]["_score"]
+                    .as_f64()
+                    .unwrap_or_default()
+                    > decay_response.body["hits"]["hits"][1]["_score"]
+                        .as_f64()
+                        .unwrap_or_default(),
+                "{decay_kind}"
+            );
+        }
 
         let seeded_random_body = serde_json::json!({
             "query": {
