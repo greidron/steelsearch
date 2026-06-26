@@ -142,7 +142,8 @@
         "ids": [
           "1",
           "42",
-          "172"
+          "172",
+          "missing-age"
         ]
       },
       {
@@ -189,7 +190,8 @@
         "document_ids": [
           "1",
           "42",
-          "172"
+          "172",
+          "missing-age"
         ]
       },
       {
@@ -591,6 +593,13 @@
             "foo": "bar",
             "age": 24,
             "rank_id": 172
+          }
+        },
+        {
+          "_id": "missing-age",
+          "_source": {
+            "foo": "bar",
+            "rank_id": 999
           }
         }
       ]
@@ -6130,6 +6139,36 @@
       ],
       "family": "ranking",
       "description": "[ranking] multi-sort search_after follows OpenSearch tie-break pagination",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "search_after_missing_sort_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/search-after-compat/_search",
+      "body": {
+        "query": {
+          "term": {
+            "foo": "bar"
+          }
+        },
+        "sort": [
+          {
+            "age": {
+              "order": "asc",
+              "missing": "_last"
+            }
+          }
+        ],
+        "search_after": [
+          100
+        ],
+        "size": 5
+      },
+      "expected_status": 200,
+      "extract": "search_hits",
+      "family": "ranking",
+      "description": "[ranking] search_after with missing _last sort follows OpenSearch",
       "strict_source_parity_required": true
     },
     {
