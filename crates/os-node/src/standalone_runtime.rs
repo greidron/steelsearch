@@ -18158,6 +18158,36 @@ impl SteelNode {
             .lock()
             .expect("created indices state lock poisoned")
             .clone();
+        let hidden_indices = {
+            let manifest = self
+                .metadata_manifest_state
+                .lock()
+                .expect("metadata manifest state lock poisoned");
+            manifest["indices"]
+                .as_object()
+                .map(|indices| {
+                    indices
+                        .iter()
+                        .filter_map(|(index, body)| {
+                            index_metadata_is_hidden(body).then(|| index.clone())
+                        })
+                        .collect::<BTreeSet<_>>()
+                })
+                .unwrap_or_default()
+        };
+        let include_hidden = request
+            .query_params
+            .get("expand_wildcards")
+            .map(|value| {
+                value
+                    .split(',')
+                    .map(str::trim)
+                    .any(|token| token == "hidden" || token == "all")
+            })
+            .unwrap_or(false)
+            || target.is_some_and(|target| {
+                !target.contains('*') && hidden_indices.contains(target)
+            });
         let docs = self
             .documents_state
             .lock()
@@ -18171,6 +18201,9 @@ impl SteelNode {
         let mut rows = Vec::new();
         for index in created_indices {
             if target.is_some_and(|pattern| !wildcard_match(pattern, &index)) {
+                continue;
+            }
+            if !include_hidden && hidden_indices.contains(&index) {
                 continue;
             }
             let doc_count = docs
@@ -37690,11 +37723,13 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             .lines()
             .map(str::trim)
             .collect::<Vec<_>>();
-        assert_eq!(selected_text_lines[0], "idx dc");
+        assert_eq!(
+            selected_text_lines[0].split_whitespace().collect::<Vec<_>>(),
+            vec!["idx", "dc"]
+        );
         assert!(selected_text_lines
             .iter()
-            .any(|line| *line == "logs-000001 1"));
-        assert!(indices_selected_text.contains("logs-000001        1"));
+            .any(|line| line.split_whitespace().collect::<Vec<_>>() == vec!["logs-000001", "1"]));
 
         let mut indices_bytes_text_request =
             RestRequest::new(RestMethod::Get, "/_cat/indices/logs-000001");
@@ -37837,8 +37872,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             .map(str::trim)
             .collect::<Vec<_>>();
         assert_eq!(sorted_text_lines[0], "idx");
-        assert_eq!(sorted_text_lines[1], "logs-hidden-000001");
-        assert_eq!(sorted_text_lines[2], "logs-000001");
+        assert_eq!(sorted_text_lines, vec!["idx", "logs-000001"]);
 
         let mut indices_unknown_sort_request =
             RestRequest::new(RestMethod::Get, "/_cat/indices/logs-*");
@@ -37866,31 +37900,56 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(indices_json_response.body[0]["uuid"], "_na_");
         assert_eq!(indices_json_response.body[0]["docs.deleted"], "0");
         assert_eq!(indices_json_response.body[0]["pri.store.size"], "0b");
-        assert_eq!(indices_json_response.body[0]["search.open_contexts"], "1");
-        assert_eq!(
-            indices_json_response.body[0]["pri.search.open_contexts"],
-            "1"
-        );
-        assert_eq!(
-            indices_json_response.body[0]["search.point_in_time_current"],
-            "1"
-        );
-        assert_eq!(
-            indices_json_response.body[0]["pri.search.point_in_time_current"],
-            "1"
-        );
-        assert_eq!(
-            indices_json_response.body[0]["search.point_in_time_total"],
-            "4"
-        );
-        assert_eq!(
-            indices_json_response.body[0]["pri.search.point_in_time_total"],
-            "4"
-        );
+        assert!(indices_json_response.body[0].get("search.open_contexts").is_none());
         assert!(indices_json_response.body[0].get("dataset.size").is_none());
         assert!(indices_json_response.body[0]
             .get("creation.date.string")
             .is_none());
+
+        let mut indices_search_json_request =
+            RestRequest::new(RestMethod::Get, "/_cat/indices/logs-000001");
+        indices_search_json_request
+            .query_params
+            .insert("format".to_string(), "json".to_string());
+        indices_search_json_request.query_params.insert(
+            "h".to_string(),
+            [
+                "search.open_contexts",
+                "pri.search.open_contexts",
+                "search.point_in_time_current",
+                "pri.search.point_in_time_current",
+                "search.point_in_time_total",
+                "pri.search.point_in_time_total",
+            ]
+            .join(","),
+        );
+        let indices_search_json_response =
+            node.handle_rest_request(indices_search_json_request);
+        assert_eq!(indices_search_json_response.status, 200);
+        assert_eq!(
+            indices_search_json_response.body[0]["search.open_contexts"],
+            "1"
+        );
+        assert_eq!(
+            indices_search_json_response.body[0]["pri.search.open_contexts"],
+            "1"
+        );
+        assert_eq!(
+            indices_search_json_response.body[0]["search.point_in_time_current"],
+            "1"
+        );
+        assert_eq!(
+            indices_search_json_response.body[0]["pri.search.point_in_time_current"],
+            "1"
+        );
+        assert_eq!(
+            indices_search_json_response.body[0]["search.point_in_time_total"],
+            "4"
+        );
+        assert_eq!(
+            indices_search_json_response.body[0]["pri.search.point_in_time_total"],
+            "4"
+        );
 
         let mut indices_selected_json_request =
             RestRequest::new(RestMethod::Get, "/_cat/indices/logs-*");
