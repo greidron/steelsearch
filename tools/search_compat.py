@@ -2188,6 +2188,17 @@ def extract(kind: str, response: dict[str, Any]) -> Any:
             "fields": fields,
             "rows": rows,
         }
+    if kind == "cat_selected_column_fields":
+        if isinstance(body, list):
+            fields = sorted(body[0].keys()) if body and isinstance(body[0], dict) else []
+        else:
+            raw = body.get("_raw") if isinstance(body, dict) else None
+            lines = [line.strip() for line in (raw or "").splitlines() if line.strip()]
+            fields = lines[0].split() if lines else []
+        return {
+            "status": response["status"],
+            "fields": fields,
+        }
     if kind == "cat_count":
         if isinstance(body, list):
             row = body[0] if body and isinstance(body[0], dict) else {}

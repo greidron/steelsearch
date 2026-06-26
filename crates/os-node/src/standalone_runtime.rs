@@ -20154,23 +20154,23 @@ impl SteelNode {
     }
 
     fn handle_cat_plugins_route(&self, request: &RestRequest) -> RestResponse {
-        let node_name = self
+        let (node_id, node_name) = self
             .cluster_view
             .as_ref()
             .and_then(|view| view.nodes.first())
-            .map(|node| node.node_name.clone())
-            .unwrap_or_else(|| self.info.name.clone());
+            .map(|node| (node.node_id.clone(), node.node_name.clone()))
+            .unwrap_or_else(|| (self.info.name.clone(), self.info.name.clone()));
         let rows = self
             .extension_registry
             .registered_plugin_specs()
             .into_iter()
             .map(|spec| {
                 serde_json::json!({
+                    "id": node_id.clone(),
                     "name": node_name.clone(),
                     "component": spec.component,
                     "version": "1.0.0-dev",
-                    "description": spec.description,
-                    "classname": spec.classname
+                    "description": spec.description
                 })
             })
             .collect::<Vec<_>>();
@@ -20179,25 +20179,42 @@ impl SteelNode {
             .get("format")
             .is_some_and(|value| value == "json")
         {
-            return RestResponse::json(200, Value::Array(rows));
+            let display_columns = cat_plugins_display_columns(request.query_params.get("h"));
+            let selected_rows = rows
+                .iter()
+                .map(|row| {
+                    let mut object = serde_json::Map::new();
+                    for (column, display) in &display_columns {
+                        object.insert(display.clone(), row[*column].clone());
+                    }
+                    Value::Object(object)
+                })
+                .collect::<Vec<_>>();
+            return RestResponse::json(200, Value::Array(selected_rows));
         }
         let verbose = request
             .query_params
             .get("v")
             .is_some_and(|value| value == "true");
+        let display_columns = cat_plugins_display_columns(request.query_params.get("h"));
         let mut lines = Vec::new();
         if verbose {
-            lines.push("name component version description classname".to_string());
+            lines.push(
+                display_columns
+                    .iter()
+                    .map(|(_, display)| display.as_str())
+                    .collect::<Vec<_>>()
+                    .join(" "),
+            );
         }
         for row in &rows {
-            lines.push(format!(
-                "{} {} {} {} {}",
-                row["name"].as_str().unwrap_or(""),
-                row["component"].as_str().unwrap_or(""),
-                row["version"].as_str().unwrap_or(""),
-                row["description"].as_str().unwrap_or(""),
-                row["classname"].as_str().unwrap_or(""),
-            ));
+            lines.push(
+                display_columns
+                    .iter()
+                    .map(|(column, _)| row[*column].as_str().unwrap_or(""))
+                    .collect::<Vec<_>>()
+                    .join(" "),
+            );
         }
         RestResponse::text(200, lines.join("\n") + "\n")
     }
@@ -31204,6 +31221,55 @@ fn cat_templates_display_columns(h_param: Option<&String>) -> Vec<(&'static str,
     selected
 }
 
+fn cat_plugins_display_columns(h_param: Option<&String>) -> Vec<(&'static str, String)> {
+    let Some(h_param) = h_param else {
+        return vec![
+            ("name", "name".to_string()),
+            ("component", "component".to_string()),
+            ("version", "version".to_string()),
+        ];
+    };
+    let mut selected = Vec::new();
+    for requested in h_param
+        .split(',')
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        if requested.contains('*') {
+            for (column, aliases) in [
+                ("id", &[][..]),
+                ("name", &["n"][..]),
+                ("component", &["c"][..]),
+                ("version", &["v"][..]),
+                ("description", &["d"][..]),
+            ] {
+                if wildcard_match(requested, column)
+                    || aliases.iter().any(|alias| wildcard_match(requested, alias))
+                {
+                    if !selected.iter().any(|(existing, _)| existing == &column) {
+                        selected.push((column, column.to_string()));
+                    }
+                }
+            }
+            continue;
+        }
+        let column = match requested {
+            "id" => Some("id"),
+            "name" | "n" => Some("name"),
+            "component" | "c" => Some("component"),
+            "version" | "v" => Some("version"),
+            "description" | "d" => Some("description"),
+            _ => None,
+        };
+        if let Some(column) = column {
+            if !selected.iter().any(|(existing, _)| existing == &column) {
+                selected.push((column, requested.to_string()));
+            }
+        }
+    }
+    selected
+}
+
 fn cat_pending_tasks_display_columns(h_param: Option<&String>) -> Vec<(&'static str, String)> {
     let Some(h_param) = h_param else {
         return vec![
@@ -38911,18 +38977,34 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             .as_array()
             .expect("cat plugins array");
         assert_eq!(rows.len(), 3);
-        assert!(rows.iter().any(|row| {
-            row["component"] == "steelsearch-runtime"
-                && row["classname"] == "org.steelsearch.runtime.Plugin"
-        }));
-        assert!(rows.iter().any(|row| {
-            row["component"] == "opensearch-knn"
-                && row["classname"] == "org.steelsearch.knn.KNNPlugin"
-        }));
-        assert!(rows.iter().any(|row| {
-            row["component"] == "opensearch-ml-commons"
-                && row["classname"] == "org.steelsearch.ml.MLCommonsPlugin"
-        }));
+        assert!(rows
+            .iter()
+            .any(|row| row["component"] == "steelsearch-runtime"));
+        assert!(rows.iter().any(|row| row["component"] == "opensearch-knn"));
+        assert!(rows
+            .iter()
+            .any(|row| row["component"] == "opensearch-ml-commons"));
+        assert!(rows[0].get("id").is_none());
+        assert!(rows[0].get("description").is_none());
+        assert!(rows[0].get("classname").is_none());
+
+        let mut selected_plugins_json_request = RestRequest::new(RestMethod::Get, "/_cat/plugins");
+        selected_plugins_json_request
+            .query_params
+            .insert("format".to_string(), "json".to_string());
+        selected_plugins_json_request
+            .query_params
+            .insert("h".to_string(), "id,n,c,v,d".to_string());
+        let selected_plugins_json_response =
+            node.handle_rest_request(selected_plugins_json_request);
+        let selected_rows = selected_plugins_json_response
+            .body
+            .as_array()
+            .expect("selected cat plugins array");
+        assert_eq!(selected_rows[0]["id"], "steel-node");
+        assert_eq!(selected_rows[0]["n"], "steel-node");
+        assert!(selected_rows.iter().any(|row| row["c"] == "opensearch-knn"));
+        assert!(selected_rows[0].get("component").is_none());
 
         let mut plugins_text_request = RestRequest::new(RestMethod::Get, "/_cat/plugins");
         plugins_text_request
@@ -38933,9 +39015,27 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             .body
             .as_str()
             .expect("cat plugins text body");
-        assert!(plugins_text.contains("name component version description classname"));
+        assert!(plugins_text.contains("name component version"));
+        assert!(!plugins_text.contains("description"));
+        assert!(!plugins_text.contains("classname"));
         assert!(plugins_text.contains("opensearch-knn"));
         assert!(plugins_text.contains("opensearch-ml-commons"));
+
+        let mut selected_plugins_text_request = RestRequest::new(RestMethod::Get, "/_cat/plugins");
+        selected_plugins_text_request
+            .query_params
+            .insert("v".to_string(), "true".to_string());
+        selected_plugins_text_request
+            .query_params
+            .insert("h".to_string(), "id,n,c,v,d".to_string());
+        let selected_plugins_text_response =
+            node.handle_rest_request(selected_plugins_text_request);
+        let selected_plugins_text = selected_plugins_text_response
+            .body
+            .as_str()
+            .expect("selected cat plugins text body");
+        assert_eq!(selected_plugins_text.lines().next(), Some("id n c v d"));
+        assert!(selected_plugins_text.contains("steel-node steel-node opensearch-knn"));
     }
 
     #[test]

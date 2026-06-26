@@ -1319,6 +1319,17 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "cat_plugins_text_selected_alias_columns",
+      "area": "cat",
+      "method": "GET",
+      "path": "/_cat/plugins?v=true&h=id,n,c,v,d",
+      "accept": "text/plain",
+      "extract": "cat_selected_column_fields",
+      "family": "admin-cat",
+      "description": "[admin-cat] cat plugins text honors OpenSearch h aliases",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "cat_thread_pool_target_wrong_method_error",
       "area": "cat",
       "method": "POST",
