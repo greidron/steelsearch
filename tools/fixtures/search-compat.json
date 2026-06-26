@@ -1379,6 +1379,16 @@
       "description": "[admin-cat] cat fielddata text honors h aliases"
     },
     {
+      "name": "cat_fielddata_text_selected_identity_columns",
+      "area": "cat",
+      "method": "GET",
+      "path": "/_cat/fielddata?v=true&h=id,h,ip,n,f,s",
+      "accept": "text/plain",
+      "extract": "cat_indices_selected_columns",
+      "family": "admin-cat",
+      "description": "[admin-cat] cat fielddata text honors node identity aliases"
+    },
+    {
       "name": "cat_fielddata_json_selected_alias_columns",
       "area": "cat",
       "method": "GET",
@@ -1386,6 +1396,15 @@
       "extract": "cat_fielddata",
       "family": "admin-cat",
       "description": "[admin-cat] cat fielddata json honors h aliases"
+    },
+    {
+      "name": "cat_fielddata_json_selected_identity_columns",
+      "area": "cat",
+      "method": "GET",
+      "path": "/_cat/fielddata?format=json&h=id,h,ip,n,f,s",
+      "extract": "cat_fielddata",
+      "family": "admin-cat",
+      "description": "[admin-cat] cat fielddata json honors node identity aliases"
     },
     {
       "name": "cat_shards_root_json",
