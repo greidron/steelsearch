@@ -18592,26 +18592,42 @@ impl SteelNode {
             .get("format")
             .is_some_and(|value| value == "json")
         {
-            return RestResponse::json(200, Value::Array(rows));
+            let display_columns = cat_fielddata_display_columns(request.query_params.get("h"));
+            let selected_rows = rows
+                .iter()
+                .map(|row| {
+                    let mut object = serde_json::Map::new();
+                    for (column, display) in &display_columns {
+                        object.insert(display.clone(), row[*column].clone());
+                    }
+                    Value::Object(object)
+                })
+                .collect();
+            return RestResponse::json(200, Value::Array(selected_rows));
         }
         let verbose = request
             .query_params
             .get("v")
             .is_some_and(|value| value == "true");
+        let display_columns = cat_fielddata_display_columns(request.query_params.get("h"));
         let mut lines = Vec::new();
         if verbose {
-            lines.push("id host ip node field size".to_string());
+            lines.push(
+                display_columns
+                    .iter()
+                    .map(|(_, display)| display.as_str())
+                    .collect::<Vec<_>>()
+                    .join(" "),
+            );
         }
         for row in &rows {
-            lines.push(format!(
-                "{} {} {} {} {} {}",
-                row["id"].as_str().unwrap_or(""),
-                row["host"].as_str().unwrap_or("127.0.0.1"),
-                row["ip"].as_str().unwrap_or("127.0.0.1"),
-                row["node"].as_str().unwrap_or(""),
-                row["field"].as_str().unwrap_or(""),
-                row["size"].as_str().unwrap_or("0b"),
-            ));
+            lines.push(
+                display_columns
+                    .iter()
+                    .map(|(column, _)| row[*column].as_str().unwrap_or(""))
+                    .collect::<Vec<_>>()
+                    .join(" "),
+            );
         }
         RestResponse::text(200, lines.join("\n") + "\n")
     }
@@ -30682,6 +30698,60 @@ fn cat_count_selected_row(row: &Value, h_param: Option<&String>) -> Value {
     Value::Object(object)
 }
 
+fn cat_fielddata_display_columns(h_param: Option<&String>) -> Vec<(&'static str, String)> {
+    let Some(h_param) = h_param else {
+        return vec![
+            ("id", "id".to_string()),
+            ("host", "host".to_string()),
+            ("ip", "ip".to_string()),
+            ("node", "node".to_string()),
+            ("field", "field".to_string()),
+            ("size", "size".to_string()),
+        ];
+    };
+    let mut selected = Vec::new();
+    for requested in h_param
+        .split(',')
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        if requested.contains('*') {
+            for (column, aliases) in [
+                ("id", &[][..]),
+                ("host", &["h"][..]),
+                ("ip", &[][..]),
+                ("node", &["n"][..]),
+                ("field", &["f"][..]),
+                ("size", &["s"][..]),
+            ] {
+                if wildcard_match(requested, column)
+                    || aliases.iter().any(|alias| wildcard_match(requested, alias))
+                {
+                    if !selected.iter().any(|(existing, _)| existing == &column) {
+                        selected.push((column, column.to_string()));
+                    }
+                }
+            }
+            continue;
+        }
+        let column = match requested {
+            "id" => Some("id"),
+            "host" | "h" => Some("host"),
+            "ip" => Some("ip"),
+            "node" | "n" => Some("node"),
+            "field" | "f" => Some("field"),
+            "size" | "s" => Some("size"),
+            _ => None,
+        };
+        if let Some(column) = column {
+            if !selected.iter().any(|(existing, _)| existing == &column) {
+                selected.push((column, requested.to_string()));
+            }
+        }
+    }
+    selected
+}
+
 fn cat_allocation_display_columns(h_param: Option<&String>) -> Vec<(&'static str, String)> {
     let Some(h_param) = h_param else {
         return vec![
@@ -37217,6 +37287,24 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         );
         assert_eq!(fielddata_json_response.body[0]["field"], "message");
 
+        let mut selected_fielddata_json_request =
+            RestRequest::new(RestMethod::Get, "/_cat/fielddata/message,user");
+        selected_fielddata_json_request
+            .query_params
+            .insert("format".to_string(), "json".to_string());
+        selected_fielddata_json_request
+            .query_params
+            .insert("h".to_string(), "n,f,s".to_string());
+        let selected_fielddata_json_response =
+            node.handle_rest_request(selected_fielddata_json_request);
+        assert_eq!(selected_fielddata_json_response.status, 200);
+        assert_eq!(selected_fielddata_json_response.body[0]["n"], "steel-node");
+        assert_eq!(selected_fielddata_json_response.body[0]["f"], "message");
+        assert_eq!(selected_fielddata_json_response.body[0]["s"], "0b");
+        assert!(selected_fielddata_json_response.body[0]
+            .get("field")
+            .is_none());
+
         let mut fielddata_text_request =
             RestRequest::new(RestMethod::Get, "/_cat/fielddata/message,user");
         fielddata_text_request
@@ -37230,6 +37318,25 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert!(fielddata_text.contains("id host ip node field size"));
         assert!(fielddata_text.contains("message"));
         assert!(fielddata_text.contains("user"));
+
+        let mut selected_fielddata_text_request =
+            RestRequest::new(RestMethod::Get, "/_cat/fielddata/message,user");
+        selected_fielddata_text_request
+            .query_params
+            .insert("v".to_string(), "true".to_string());
+        selected_fielddata_text_request
+            .query_params
+            .insert("h".to_string(), "n,f,s".to_string());
+        let selected_fielddata_text_response =
+            node.handle_rest_request(selected_fielddata_text_request);
+        let selected_fielddata_text = selected_fielddata_text_response
+            .body
+            .as_str()
+            .expect("selected cat fielddata text body");
+        assert_eq!(
+            selected_fielddata_text.lines().collect::<Vec<_>>(),
+            vec!["n f s", "steel-node message 0b", "steel-node user 0b"]
+        );
     }
 
     #[test]
