@@ -19336,8 +19336,22 @@ impl SteelNode {
             })
             .cloned()
             .collect();
+        let pit_open_contexts_by_index = self.pit_open_context_counts_by_index();
+        let pit_total_contexts_by_index = self
+            .pit_total_contexts_by_index
+            .lock()
+            .expect("pit total contexts lock poisoned")
+            .clone();
         for index in indices {
             let docs = self.index_document_count(&index);
+            let pit_current = pit_open_contexts_by_index
+                .get(&index)
+                .copied()
+                .unwrap_or_default();
+            let pit_total = pit_total_contexts_by_index
+                .get(&index)
+                .copied()
+                .unwrap_or_default();
             rows.push(serde_json::json!({
                 "index": &index,
                 "shard": "0",
@@ -19347,6 +19361,10 @@ impl SteelNode {
                 "store": "0b",
                 "ip": "0.0.0.0",
                 "node": self.info.name.clone(),
+                "search.open_contexts": pit_current.to_string(),
+                "search.point_in_time_current": pit_current.to_string(),
+                "search.point_in_time_time": "0s",
+                "search.point_in_time_total": pit_total.to_string(),
             }));
             for _ in 0..self.index_replica_count(&index) {
                 rows.push(serde_json::json!({
@@ -19358,6 +19376,10 @@ impl SteelNode {
                     "store": "0b",
                     "ip": "",
                     "node": "",
+                    "search.open_contexts": "0",
+                    "search.point_in_time_current": "0",
+                    "search.point_in_time_time": "0s",
+                    "search.point_in_time_total": "0",
                 }));
             }
         }
@@ -33407,6 +33429,23 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 },
             );
         }
+        node.pit_contexts
+            .lock()
+            .expect("pit contexts lock poisoned")
+            .insert(
+                build_local_pit_id(901),
+                PitContext {
+                    indices: vec!["logs-000001".to_string()],
+                    documents: BTreeMap::new(),
+                    keep_alive_millis: 60_000,
+                    expires_at_millis: current_epoch_millis() + 60_000,
+                    creation_time_millis: current_epoch_millis(),
+                },
+            );
+        node.pit_total_contexts_by_index
+            .lock()
+            .expect("pit total contexts lock poisoned")
+            .insert("logs-000001".to_string(), 5);
 
         let mut pending_json_request = RestRequest::new(RestMethod::Get, "/_cat/pending_tasks");
         pending_json_request
@@ -33446,6 +33485,15 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         );
         assert_eq!(shards_json_response.body[0]["index"], "logs-000001");
         assert_eq!(shards_json_response.body[0]["prirep"], "p");
+        assert_eq!(shards_json_response.body[0]["search.open_contexts"], "1");
+        assert_eq!(
+            shards_json_response.body[0]["search.point_in_time_current"],
+            "1"
+        );
+        assert_eq!(
+            shards_json_response.body[0]["search.point_in_time_total"],
+            "5"
+        );
 
         node.metadata_manifest_state
             .lock()
@@ -33472,6 +33520,14 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             2
         );
         assert_eq!(replicated_shards_response.body[1]["prirep"], "r");
+        assert_eq!(
+            replicated_shards_response.body[1]["search.point_in_time_current"],
+            "0"
+        );
+        assert_eq!(
+            replicated_shards_response.body[1]["search.point_in_time_total"],
+            "0"
+        );
 
         let mut segments_text_request = RestRequest::new(RestMethod::Get, "/_cat/segments/logs-*");
         segments_text_request
