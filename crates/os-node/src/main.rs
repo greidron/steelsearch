@@ -5879,6 +5879,9 @@ fn build_local_create_reader_context_response(
     if request.validate_supported_subset().is_err() {
         return build_empty_transport_response(request_id, header_version_id);
     }
+    if time_value_wire_to_millis(&request.keep_alive) > DEV_TRANSPORT_MAX_PIT_KEEP_ALIVE_MILLIS {
+        return build_empty_transport_response(request_id, header_version_id);
+    }
     let context_id = {
         let mut next_id = dev_transport_pit_bindings()
             .next_id
@@ -5901,6 +5904,10 @@ fn build_local_create_reader_context_response(
 
 fn create_reader_context_request_supports_local_subset(body: &[u8]) -> bool {
     decode_create_reader_context_request_from_transport_body(body)
+        .filter(|request| {
+            time_value_wire_to_millis(&request.keep_alive)
+                <= DEV_TRANSPORT_MAX_PIT_KEEP_ALIVE_MILLIS
+        })
         .and_then(|request| request.validate_supported_subset().ok())
         .is_some()
 }
@@ -15463,6 +15470,64 @@ mod tests {
             .lock()
             .expect("dev transport PIT contexts lock poisoned")
             .is_empty());
+    }
+
+    #[test]
+    fn create_reader_context_transport_route_rejects_keep_alive_above_default_max() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        let bindings = dev_transport_pit_bindings();
+        bindings
+            .contexts
+            .lock()
+            .expect("dev transport PIT contexts lock poisoned")
+            .clear();
+        *bindings
+            .next_id
+            .lock()
+            .expect("dev transport next PIT id lock poisoned") = 11;
+
+        let request = os_transport::action::OpenSearchCreateReaderContextRequestWire::new(
+            os_transport::action::OpenSearchShardIdWire {
+                index_name: "logs-reader-too-long".to_string(),
+                index_uuid: "uuid-reader-too-long".to_string(),
+                shard_id: 0,
+            },
+            os_transport::action::TimeValueWire::minutes(1_500),
+        );
+        let frame = os_transport::action::build_opensearch_create_reader_context_request_message(
+            298,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(!create_reader_context_request_supports_local_subset(
+            &frame[6..]
+        ));
+
+        let response = build_local_create_reader_context_response(
+            298,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &frame[6..],
+        );
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected create-reader-context fallback response frame");
+        };
+        assert_eq!(message.request_id, 298);
+        assert!(message.body.is_empty());
+        assert_eq!(
+            *bindings
+                .next_id
+                .lock()
+                .expect("dev transport next PIT id lock poisoned"),
+            11
+        );
     }
 
     #[test]
