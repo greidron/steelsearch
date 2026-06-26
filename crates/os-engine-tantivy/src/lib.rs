@@ -8671,6 +8671,20 @@ impl StoredIndex {
                     .then_some(1.0))
             }
             Query::Bool { clauses } => self.score_bool_query(clauses, document),
+            Query::Boosting {
+                positive,
+                negative,
+                negative_boost,
+            } => {
+                let Some(positive_score) = self.score_document_query(positive, document)? else {
+                    return Ok(None);
+                };
+                if self.score_document_query(negative, document)?.is_some() {
+                    Ok(Some(positive_score.max(1.0) * *negative_boost as f32))
+                } else {
+                    Ok(Some(positive_score.max(1.0)))
+                }
+            }
             _ => Ok(
                 document_matches_query(query, &document.metadata.id, &document.source)
                     .then_some(1.0),
@@ -15709,7 +15723,7 @@ fn query_needs_exact_source_score(query: &Query) -> bool {
     matches!(
         query,
         Query::Bool { clauses } if !bool_query_has_scoring_clause(clauses)
-    )
+    ) || matches!(query, Query::Boosting { .. })
 }
 
 fn bool_query_has_scoring_clause(clauses: &BoolQuery) -> bool {
@@ -147525,12 +147539,19 @@ mod tests {
             })
             .unwrap();
 
-        for (id, service) in [("1", "api"), ("2", "worker"), ("3", "api")] {
+        for (id, service) in [("1", "api"), ("2", "api"), ("3", "worker")] {
             engine
                 .index_document(IndexDocumentRequest {
                     index: "bench".to_string(),
                     id: id.to_string(),
-                    source: serde_json::json!({ "service": service }),
+                    source: serde_json::json!({
+                        "service": service,
+                        "tags": if id == "2" {
+                            serde_json::json!(["blue", "green"])
+                        } else {
+                            serde_json::json!(["blue"])
+                        }
+                    }),
                 })
                 .unwrap();
         }
@@ -147543,7 +147564,7 @@ mod tests {
         let query = parse_query(&serde_json::json!({
             "boosting": {
                 "positive": { "term": { "service": "api" } },
-                "negative": { "term": { "service": "worker" } },
+                "negative": { "term": { "tags": "green" } },
                 "negative_boost": 0.2
             }
         }))
@@ -147555,7 +147576,9 @@ mod tests {
             .search_hits_for_query_native("bench", &query, &[])
             .unwrap()
             .expect("native boosting hits");
-        assert_eq!(search_hit_ids(&native_hits), vec!["1", "3"]);
+        assert_eq!(search_hit_ids(&native_hits), vec!["1", "2"]);
+        assert!(native_hits[0].score > native_hits[1].score);
+        assert_eq!(native_hits[1].score, 0.2);
     }
 
     #[test]

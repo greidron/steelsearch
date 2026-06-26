@@ -24155,6 +24155,7 @@ fn validate_search_query_body(query: &Value) -> Option<RestResponse> {
         | "distance_feature"
         | "rank_feature"
         | "intervals"
+        | "boosting"
         | "bool"
         | "range"
         | "knn" => validate_supported_query_shape(query),
@@ -24305,6 +24306,32 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
         };
         if let Some(response) = validate_search_query_body(&inner_query) {
             return Some(response);
+        }
+    }
+    if let Some(boosting) = query.get("boosting").and_then(Value::as_object) {
+        let Some(positive) = boosting.get("positive") else {
+            return Some(build_unsupported_search_response(
+                "unsupported boosting query shape",
+            ));
+        };
+        let Some(negative) = boosting.get("negative") else {
+            return Some(build_unsupported_search_response(
+                "unsupported boosting query shape",
+            ));
+        };
+        if !boosting
+            .get("negative_boost")
+            .and_then(Value::as_f64)
+            .is_some_and(|value| value >= 0.0)
+        {
+            return Some(build_unsupported_search_response(
+                "unsupported boosting negative_boost",
+            ));
+        }
+        for inner_query in [positive, negative] {
+            if let Some(response) = validate_search_query_body(inner_query) {
+                return Some(response);
+            }
         }
     }
     if let Some(dis_max) = query.get("dis_max").and_then(Value::as_object) {
@@ -26484,6 +26511,27 @@ fn evaluate_search_query_source_with_mappings(
             }
         }
         return Some((matched, if matched { best_score.max(1.0) } else { 0.0 }));
+    }
+    if let Some(boosting) = query.get("boosting").and_then(Value::as_object) {
+        let positive = boosting.get("positive")?;
+        let negative = boosting.get("negative")?;
+        let negative_boost = boosting
+            .get("negative_boost")
+            .and_then(Value::as_f64)
+            .unwrap_or(0.2);
+        let (positive_matched, positive_score) =
+            evaluate_search_query_source_with_mappings(source, doc_id, positive, mappings)?;
+        if !positive_matched {
+            return Some((false, 0.0));
+        }
+        let (negative_matched, _) =
+            evaluate_search_query_source_with_mappings(source, doc_id, negative, mappings)?;
+        let score = if negative_matched {
+            positive_score.max(1.0) * negative_boost
+        } else {
+            positive_score.max(1.0)
+        };
+        return Some((true, score));
     }
     if let Some(ids_query) = query.get("ids").and_then(Value::as_object) {
         let matched = ids_query
@@ -52791,6 +52839,52 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(wrapper_post_filter.status, 200);
         assert_eq!(wrapper_post_filter.body["hits"]["total"]["value"], 1);
         assert_eq!(wrapper_post_filter.body["hits"]["hits"][0]["_id"], "doc-2");
+
+        let boosting = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-dsl-000001/_search").with_json_body(
+                serde_json::json!({
+                    "query": {
+                        "boosting": {
+                            "positive": {
+                                "terms": { "tags": ["blue"] }
+                            },
+                            "negative": {
+                                "term": { "tags": "green" }
+                            },
+                            "negative_boost": 0.25
+                        }
+                    }
+                }),
+            ),
+        );
+        assert_eq!(boosting.status, 200);
+        assert_eq!(boosting.body["hits"]["total"]["value"], 2);
+        assert_eq!(boosting.body["hits"]["hits"][0]["_id"], "doc-1");
+        assert_eq!(boosting.body["hits"]["hits"][1]["_id"], "doc-2");
+        assert!(
+            boosting.body["hits"]["hits"][0]["_score"].as_f64().unwrap()
+                > boosting.body["hits"]["hits"][1]["_score"].as_f64().unwrap()
+        );
+
+        let boosting_positive_miss = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-dsl-000001/_search").with_json_body(
+                serde_json::json!({
+                    "query": {
+                        "boosting": {
+                            "positive": {
+                                "term": { "code": "missing-code" }
+                            },
+                            "negative": {
+                                "match_all": {}
+                            },
+                            "negative_boost": 0.25
+                        }
+                    }
+                }),
+            ),
+        );
+        assert_eq!(boosting_positive_miss.status, 200);
+        assert_eq!(boosting_positive_miss.body["hits"]["total"]["value"], 0);
 
         let nested = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/logs-search-dsl-000001/_search").with_json_body(
