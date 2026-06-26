@@ -5321,7 +5321,7 @@ fn local_transport_global_index_count() -> i32 {
         .len() as i32
 }
 
-type LocalTransportSearchMatch = (String, String, Value, i64, i64, i64);
+type LocalTransportSearchMatch = (String, String, Value, i64, i64, i64, f32);
 
 fn local_transport_search_response_from_request(
     request: &os_transport::action::OpenSearchSearchRequestWire,
@@ -5336,6 +5336,9 @@ fn local_transport_search_response_from_request(
     let query = request_source.and_then(|source| source.query.as_ref());
     let slice = request_source.and_then(|source| source.slice.as_ref());
     let min_score = request_source.and_then(|source| source.min_score);
+    let index_boosts = request_source
+        .map(|source| source.index_boosts.as_slice())
+        .unwrap_or_default();
     let terminate_after = request_source
         .map(|source| source.terminate_after.max(0) as usize)
         .unwrap_or(0);
@@ -5396,7 +5399,8 @@ fn local_transport_search_response_from_request(
         if !local_transport_query_matches(&record.source, id, query) {
             continue;
         }
-        if min_score.is_some_and(|min_score| 1.0_f32 < min_score) {
+        let score = local_transport_index_boost_score(index, index_boosts);
+        if min_score.is_some_and(|min_score| score < min_score) {
             continue;
         }
         matched.push((
@@ -5406,6 +5410,7 @@ fn local_transport_search_response_from_request(
             record.version,
             record.seq_no,
             record.primary_term,
+            score,
         ));
         if terminate_after > 0 && matched.len() >= terminate_after {
             terminated_early = true;
@@ -5439,10 +5444,12 @@ fn local_transport_search_response_from_request(
     let hits = page_matches
         .into_iter()
         .map(|candidate| {
-            let (index, id, source, version, seq_no, primary_term) = candidate;
+            let (index, id, source, version, seq_no, primary_term, score) = candidate;
             let sort_values = sorts
                 .map(|sorts| {
-                    transport_search_sort_values_for_match(&index, &id, &source, seq_no, sorts)
+                    transport_search_sort_values_for_match(
+                        &index, &id, &source, seq_no, score, sorts,
+                    )
                 })
                 .unwrap_or_default();
             let fields = local_transport_hit_fields(&source, request_source);
@@ -5457,7 +5464,7 @@ fn local_transport_search_response_from_request(
             let source = local_transport_filter_hit_source(&source, fetch_source);
             os_transport::action::OpenSearchSearchHitWire {
                 id: Some(id),
-                score: 1.0,
+                score,
                 nested_identity: None,
                 version: if include_version { version } else { -1 },
                 seq_no: if include_seq_no_and_primary_term {
@@ -5490,7 +5497,12 @@ fn local_transport_search_response_from_request(
     os_transport::action::OpenSearchSearchResponseWire {
         total_hits,
         total_hits_relation,
-        max_score: if hits.is_empty() { f32::NAN } else { 1.0 },
+        max_score: hits
+            .iter()
+            .map(|hit| hit.score)
+            .filter(|score| !score.is_nan())
+            .max_by(|left, right| left.partial_cmp(right).unwrap_or(std::cmp::Ordering::Equal))
+            .unwrap_or(f32::NAN),
         hits,
         sort_fields: local_transport_sort_fields_for_response(sorts, documents.values()),
         total_shards,
@@ -5504,6 +5516,17 @@ fn local_transport_search_response_from_request(
             actual_total_hits,
         )
     }
+}
+
+fn local_transport_index_boost_score(
+    index: &str,
+    boosts: &[os_transport::action::OpenSearchIndexBoostWire],
+) -> f32 {
+    boosts
+        .iter()
+        .find(|boost| boost.index == index || wildcard_match(&boost.index, index))
+        .map(|boost| boost.boost)
+        .unwrap_or(1.0)
 }
 
 fn local_transport_collapse_matches(
@@ -6058,7 +6081,7 @@ fn local_transport_remove_source_path_parts(source: &mut Value, parts: &[&str]) 
 }
 
 fn sort_transport_search_matches(
-    matches: &mut [(String, String, Value, i64, i64, i64)],
+    matches: &mut [LocalTransportSearchMatch],
     sorts: Option<&[os_transport::action::OpenSearchSortBuilderWire]>,
 ) {
     matches.sort_by(|left, right| {
@@ -6078,14 +6101,15 @@ fn sort_transport_search_matches(
 }
 
 fn compare_transport_search_sort_values(
-    left: &(String, String, Value, i64, i64, i64),
-    right: &(String, String, Value, i64, i64, i64),
+    left: &LocalTransportSearchMatch,
+    right: &LocalTransportSearchMatch,
     sort: &os_transport::action::OpenSearchSortBuilderWire,
 ) -> std::cmp::Ordering {
     let descending = transport_search_sort_descending(sort);
-    let left_value = transport_search_sort_value_for_match(&left.0, &left.1, &left.2, left.4, sort);
+    let left_value =
+        transport_search_sort_value_for_match(&left.0, &left.1, &left.2, left.4, left.6, sort);
     let right_value =
-        transport_search_sort_value_for_match(&right.0, &right.1, &right.2, right.4, sort);
+        transport_search_sort_value_for_match(&right.0, &right.1, &right.2, right.4, right.6, sort);
     let ordering = compare_transport_search_sort_json(&left_value, &right_value);
     if descending {
         ordering.reverse()
@@ -6095,7 +6119,7 @@ fn compare_transport_search_sort_values(
 }
 
 fn transport_search_match_after(
-    candidate: &(String, String, Value, i64, i64, i64),
+    candidate: &LocalTransportSearchMatch,
     sorts: &[os_transport::action::OpenSearchSortBuilderWire],
     search_after: &[Value],
 ) -> bool {
@@ -6108,6 +6132,7 @@ fn transport_search_match_after(
             &candidate.1,
             &candidate.2,
             candidate.4,
+            candidate.6,
             sort,
         );
         let mut ordering = compare_transport_search_sort_json(&value, after_value);
@@ -6127,11 +6152,12 @@ fn transport_search_sort_values_for_match(
     id: &str,
     source: &Value,
     seq_no: i64,
+    score: f32,
     sorts: &[os_transport::action::OpenSearchSortBuilderWire],
 ) -> Vec<Value> {
     sorts
         .iter()
-        .map(|sort| transport_search_sort_value_for_match(index, id, source, seq_no, sort))
+        .map(|sort| transport_search_sort_value_for_match(index, id, source, seq_no, score, sort))
         .collect()
 }
 
@@ -6140,11 +6166,12 @@ fn transport_search_sort_value_for_match(
     id: &str,
     source: &Value,
     seq_no: i64,
+    score: f32,
     sort: &os_transport::action::OpenSearchSortBuilderWire,
 ) -> Value {
     match sort {
         os_transport::action::OpenSearchSortBuilderWire::ShardDoc(_) => Value::from(seq_no),
-        os_transport::action::OpenSearchSortBuilderWire::Score(_) => serde_json::json!(1.0),
+        os_transport::action::OpenSearchSortBuilderWire::Score(_) => serde_json::json!(score),
         os_transport::action::OpenSearchSortBuilderWire::Field(field) => {
             match field.field_name.as_str() {
                 "_shard_doc" => Value::from(seq_no),
@@ -16137,6 +16164,128 @@ mod tests {
                 serde_json::json!("tenant-b")
             ])
         );
+    }
+
+    #[test]
+    fn search_transport_route_applies_index_boost_scores() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        dev_transport_pit_bindings()
+            .created_indices
+            .lock()
+            .expect("dev transport created indices lock poisoned")
+            .clear();
+        dev_transport_pit_bindings()
+            .documents
+            .lock()
+            .expect("dev transport documents lock poisoned")
+            .clear();
+        *dev_transport_pit_bindings()
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned") = serde_json::json!({
+            "indices": {
+                "logs-boost-a": {
+                    "settings": {
+                        "index": {
+                            "number_of_shards": "1"
+                        }
+                    }
+                },
+                "logs-boost-b": {
+                    "settings": {
+                        "index": {
+                            "number_of_shards": "1"
+                        }
+                    }
+                }
+            }
+        });
+        {
+            let mut created_indices = dev_transport_pit_bindings()
+                .created_indices
+                .lock()
+                .expect("dev transport created indices lock poisoned");
+            created_indices.insert("logs-boost-a".to_string());
+            created_indices.insert("logs-boost-b".to_string());
+        }
+        {
+            let mut documents = dev_transport_pit_bindings()
+                .documents
+                .lock()
+                .expect("dev transport documents lock poisoned");
+            documents.insert(
+                "logs-boost-a:doc-a:".to_string(),
+                StoredDocument {
+                    source: serde_json::json!({ "message": "same query" }),
+                    version: 1,
+                    seq_no: 1,
+                    primary_term: 1,
+                    routing: None,
+                    refreshed: true,
+                },
+            );
+            documents.insert(
+                "logs-boost-b:doc-b:".to_string(),
+                StoredDocument {
+                    source: serde_json::json!({ "message": "same query" }),
+                    version: 1,
+                    seq_no: 2,
+                    primary_term: 1,
+                    routing: None,
+                    refreshed: true,
+                },
+            );
+        }
+
+        let request = os_transport::action::OpenSearchSearchRequestWire {
+            source: Some(os_transport::action::OpenSearchSearchSourceBuilderWire {
+                query: Some(os_transport::action::OpenSearchQueryBuilderWire::MatchAll(
+                    os_transport::action::OpenSearchMatchAllQueryBuilderWire::default(),
+                )),
+                index_boosts: vec![os_transport::action::OpenSearchIndexBoostWire {
+                    index: "logs-boost-b".to_string(),
+                    boost: 2.0,
+                }],
+                min_score: Some(1.5),
+                sorts: Some(vec![
+                    os_transport::action::OpenSearchSortBuilderWire::Score(
+                        os_transport::action::OpenSearchScoreSortBuilderWire {
+                            order: os_transport::action::OpenSearchSortOrderWire::Desc,
+                        },
+                    ),
+                ]),
+                ..os_transport::action::OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..os_transport::action::OpenSearchSearchRequestWire::default()
+        };
+        let frame = os_transport::action::build_opensearch_search_request_message(
+            307,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(search_request_supports_local_execution_subset(&frame[6..]));
+        let response =
+            build_local_search_response(307, OPENSEARCH_3_7_0_TRANSPORT.id() as u32, &frame[6..]);
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected boosted search response message");
+        };
+        let response = os_transport::action::read_opensearch_search_response_message(&message)
+            .expect("boosted search response");
+
+        assert_eq!(response.total_hits, Some(1));
+        assert_eq!(response.max_score, 2.0);
+        assert_eq!(response.hits.len(), 1);
+        assert_eq!(response.hits[0].id.as_deref(), Some("doc-b"));
+        assert_eq!(response.hits[0].score, 2.0);
+        assert_eq!(response.hits[0].sort_values, vec![serde_json::json!(2.0)]);
     }
 
     #[test]
