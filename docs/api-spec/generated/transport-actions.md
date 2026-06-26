@@ -181,7 +181,7 @@ Columns:
 
 | status | action | transport_handler | opensearch_meaning | steelsearch_behavior | replacement_gap | source | line |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| partial | `RemoteStoreStatsAction.INSTANCE` | `TransportRemoteStoreStatsAction.class` | Transport action used by repository, snapshot, remote-store, or restore flows. | Steelsearch exposes this surface, but the behavior is narrower than OpenSearch. | Transport parity remains incomplete. | `ActionModule.java` | 661 |
+| implemented | `RemoteStoreStatsAction.INSTANCE` | `TransportRemoteStoreStatsAction.class` | Transport action used by repository, snapshot, remote-store, or restore flows. | Steelsearch exposes this surface with the main supported behavior present. | Transport parity remains incomplete. | `ActionModule.java` | 661 |
 | partial | `RemoteStoreMetadataAction.INSTANCE` | `TransportRemoteStoreMetadataAction.class` | Transport action used by repository, snapshot, remote-store, or restore flows. | Steelsearch exposes this surface, but the behavior is narrower than OpenSearch. | Transport parity remains incomplete. | `ActionModule.java` | 662 |
 | partial | `PutRepositoryAction.INSTANCE` | `TransportPutRepositoryAction.class` | Transport action used by repository, snapshot, remote-store, or restore flows. | Steelsearch exposes this surface, but the behavior is narrower than OpenSearch. | Transport parity remains incomplete. | `ActionModule.java` | 681 |
 | partial | `DeleteRepositoryAction.INSTANCE` | `TransportDeleteRepositoryAction.class` | Transport action used by write-path or document lifecycle features. | Steelsearch exposes this surface, but the behavior is narrower than OpenSearch. | Transport parity remains incomplete. | `ActionModule.java` | 683 |

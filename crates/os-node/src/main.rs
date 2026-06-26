@@ -1666,6 +1666,32 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end_at_ms,
         )?;
     } else if is_request
+        && normalized_action_hint == Some("cluster:monitor/_remotestore/stats")
+        && remote_store_stats_request_supports_empty_subset(&body)
+    {
+        let response = build_empty_remote_store_stats_response(request_id, header_version_id);
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("cluster:monitor/_remotestore/stats"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request
         && normalized_action_hint == Some("indices:data/read/search")
         && search_request_supports_local_execution_subset(&body)
     {
@@ -4463,6 +4489,16 @@ fn build_empty_segment_replication_stats_response(
         request_id,
         Version::from_id(header_version_id as i32),
         &os_transport::action::OpenSearchSegmentReplicationStatsResponseWire::empty(),
+    )
+    .map(|frame| frame.to_vec())
+    .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
+}
+
+fn build_empty_remote_store_stats_response(request_id: i64, header_version_id: u32) -> Vec<u8> {
+    os_transport::action::build_remote_store_stats_response_message(
+        request_id,
+        Version::from_id(header_version_id as i32),
+        &os_transport::action::RemoteStoreStatsResponseWire::empty(),
     )
     .map(|frame| frame.to_vec())
     .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
@@ -8783,11 +8819,24 @@ fn segment_replication_stats_request_supports_empty_subset(body: &[u8]) -> bool 
         .is_some()
 }
 
+fn remote_store_stats_request_supports_empty_subset(body: &[u8]) -> bool {
+    decode_remote_store_stats_request_from_transport_body(body)
+        .and_then(|request| request.validate_supported_subset().ok())
+        .is_some()
+}
+
 fn decode_segment_replication_stats_request_from_transport_body(
     body: &[u8],
 ) -> Option<os_transport::action::OpenSearchSegmentReplicationStatsRequestWire> {
     let message = decode_transport_message_from_body(body)?;
     os_transport::action::read_opensearch_segment_replication_stats_request_message(&message).ok()
+}
+
+fn decode_remote_store_stats_request_from_transport_body(
+    body: &[u8],
+) -> Option<os_transport::action::RemoteStoreStatsRequestWire> {
+    let message = decode_transport_message_from_body(body)?;
+    os_transport::action::read_remote_store_stats_request_message(&message).ok()
 }
 
 fn decode_pit_segments_request_from_transport_body(
@@ -10714,6 +10763,14 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
             if segment_replication_stats_request_supports_empty_subset(body) =>
         {
             Some(build_empty_segment_replication_stats_response(
+                request_id,
+                header_version_id,
+            ))
+        }
+        Some("cluster:monitor/_remotestore/stats")
+            if remote_store_stats_request_supports_empty_subset(body) =>
+        {
+            Some(build_empty_remote_store_stats_response(
                 request_id,
                 header_version_id,
             ))
@@ -15757,6 +15814,68 @@ mod tests {
         assert!(!segment_replication_stats_request_supports_empty_subset(
             &frame[6..]
         ));
+    }
+
+    #[test]
+    fn remote_store_stats_transport_route_builds_opensearch_shaped_empty_response() {
+        let request = os_transport::action::RemoteStoreStatsRequestWire::default();
+        let frame = os_transport::action::build_remote_store_stats_request_message(
+            190,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(remote_store_stats_request_supports_empty_subset(
+            &frame[6..]
+        ));
+
+        let response =
+            build_empty_remote_store_stats_response(190, OPENSEARCH_3_7_0_TRANSPORT.id() as u32);
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected remote store stats response message");
+        };
+
+        assert_eq!(message.request_id, 190);
+        assert!(!message.status.is_request());
+        let response =
+            os_transport::action::read_remote_store_stats_response_message(&message).unwrap();
+        assert_eq!(
+            response,
+            os_transport::action::RemoteStoreStatsResponseWire::empty()
+        );
+    }
+
+    #[test]
+    fn remote_store_stats_transport_route_rejects_filtered_subset() {
+        for request in [
+            os_transport::action::RemoteStoreStatsRequestWire {
+                indices: vec!["logs-*".to_string()],
+                ..os_transport::action::RemoteStoreStatsRequestWire::default()
+            },
+            os_transport::action::RemoteStoreStatsRequestWire {
+                shards: vec!["0".to_string()],
+                ..os_transport::action::RemoteStoreStatsRequestWire::default()
+            },
+            os_transport::action::RemoteStoreStatsRequestWire {
+                local: true,
+                ..os_transport::action::RemoteStoreStatsRequestWire::default()
+            },
+        ] {
+            let frame = os_transport::action::build_remote_store_stats_request_message(
+                191,
+                OPENSEARCH_3_7_0_TRANSPORT,
+                &request,
+            )
+            .unwrap();
+            assert!(!remote_store_stats_request_supports_empty_subset(
+                &frame[6..]
+            ));
+        }
     }
 
     #[test]

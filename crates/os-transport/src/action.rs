@@ -1729,8 +1729,8 @@ pub fn classify_opensearch_transport_action(
         },
         REMOTE_STORE_STATS_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
-            disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "remote-store-stats transport execution requires remote store shard stats rendering",
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "remote-store-stats transport adapter returns an OpenSearch-shaped empty broadcast response for the no-remote-store-shards subset",
         },
         REMOTE_STORE_METADATA_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -4013,7 +4013,7 @@ impl RemoteStoreStatsRequestWire {
         Ok(request)
     }
 
-    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+    pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
         if !self.indices.is_empty() {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "remote store stats index filter",
@@ -4039,11 +4039,89 @@ impl RemoteStoreStatsRequestWire {
                 reason: "local remote-store-stats execution requires local shard stats collection semantics",
             });
         }
+        Ok(())
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        self.validate_supported_subset()?;
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "remote store stats execution",
             reason:
                 "remote-store-stats transport execution requires remote store shard stats rendering",
         })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Default)]
+pub struct RemoteStoreStatsResponseWire {
+    pub total_shards: i32,
+    pub successful_shards: i32,
+    pub failed_shards: i32,
+    pub shard_failure_count: i32,
+    pub remote_store_stats_count: i32,
+}
+
+impl RemoteStoreStatsResponseWire {
+    pub fn empty() -> Self {
+        Self::default()
+    }
+
+    pub fn write(&self, output: &mut StreamOutput) -> Result<(), TransportActionWireError> {
+        self.validate_supported_subset()?;
+        output.write_vint(self.total_shards);
+        output.write_vint(self.successful_shards);
+        output.write_vint(self.failed_shards);
+        output.write_vint(self.shard_failure_count);
+        output.write_vint(self.remote_store_stats_count);
+        Ok(())
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let response = Self {
+            total_shards: input.read_vint()?,
+            successful_shards: input.read_vint()?,
+            failed_shards: input.read_vint()?,
+            shard_failure_count: input.read_vint()?,
+            remote_store_stats_count: input.read_vint()?,
+        };
+        require_no_trailing_bytes(&input)?;
+        response.validate_supported_subset()?;
+        Ok(response)
+    }
+
+    pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
+        if self.total_shards < 0 || self.successful_shards < 0 || self.failed_shards < 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "remote store stats response shard counters",
+                reason: "RemoteStoreStatsResponse shard counters must be non-negative",
+            });
+        }
+        if self.shard_failure_count < 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "remote store stats response failure count",
+                reason: "RemoteStoreStatsResponse shard failure count must be non-negative",
+            });
+        }
+        if self.remote_store_stats_count < 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "remote store stats response stats count",
+                reason: "RemoteStoreStatsResponse stats array count must be non-negative",
+            });
+        }
+        if self.failed_shards != 0 || self.shard_failure_count != 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "remote store stats response shard failures",
+                reason: "remote-store-stats shard failures require DefaultShardOperationFailedException decoding",
+            });
+        }
+        if self.remote_store_stats_count != 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "remote store stats response shard stats",
+                reason: "non-empty remote-store-stats require per-shard stats decoding",
+            });
+        }
+        Ok(())
     }
 }
 
@@ -5322,6 +5400,36 @@ pub fn read_remote_store_stats_request_message(
         });
     }
     RemoteStoreStatsRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_remote_store_stats_response_message(
+    request_id: i64,
+    version: Version,
+    response: &RemoteStoreStatsResponseWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    response.write(&mut body)?;
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::response(),
+        version,
+        variable_header: BytesMut::from(&ResponseVariableHeader::default().to_bytes()[..]),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_remote_store_stats_response_message(
+    message: &TransportMessage,
+) -> Result<RemoteStoreStatsResponseWire, TransportActionWireError> {
+    if !message.status.is_response() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "response",
+            actual: message.status.bits(),
+        });
+    }
+    let _header = ResponseVariableHeader::read(message.variable_header.clone().freeze())?;
+    RemoteStoreStatsResponseWire::read(message.body.clone().freeze())
 }
 
 pub fn build_remote_store_metadata_request_message(
@@ -48188,6 +48296,7 @@ mod tests {
 
         let decoded = RemoteStoreStatsRequestWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, request);
+        decoded.validate_supported_subset().unwrap();
         assert!(matches!(
             decoded.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
@@ -48252,7 +48361,29 @@ mod tests {
     }
 
     #[test]
-    fn remote_store_stats_transport_messages_bind_rejected_action_frame() {
+    fn remote_store_stats_response_wire_round_trips_empty_subset() {
+        let response = RemoteStoreStatsResponseWire::empty();
+        let mut output = StreamOutput::new();
+        response.write(&mut output).unwrap();
+
+        let decoded = RemoteStoreStatsResponseWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, response);
+
+        let non_empty = RemoteStoreStatsResponseWire {
+            remote_store_stats_count: 1,
+            ..RemoteStoreStatsResponseWire::empty()
+        };
+        assert!(matches!(
+            non_empty.validate_supported_subset(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "remote store stats response shard stats",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn remote_store_stats_transport_messages_bind_supported_action_frame_and_response() {
         let request = RemoteStoreStatsRequestWire::default();
         let mut frame =
             build_remote_store_stats_request_message(28, OPENSEARCH_3_7_0_TRANSPORT, &request)
@@ -48264,6 +48395,16 @@ mod tests {
             read_remote_store_stats_request_message(&message).unwrap(),
             request
         );
+        assert_eq!(
+            classify_opensearch_transport_request_message(&message)
+                .unwrap()
+                .disposition,
+            OpenSearchTransportActionDisposition::Implemented
+        );
+        read_remote_store_stats_request_message(&message)
+            .unwrap()
+            .validate_supported_subset()
+            .unwrap();
         assert!(matches!(
             read_remote_store_stats_request_message(&message)
                 .unwrap()
@@ -48272,6 +48413,25 @@ mod tests {
                 shape: "remote store stats execution",
                 ..
             })
+        ));
+
+        let response = RemoteStoreStatsResponseWire::empty();
+        let mut frame =
+            build_remote_store_stats_response_message(28, OPENSEARCH_3_7_0_TRANSPORT, &response)
+                .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected remote store stats response message");
+        };
+        assert_eq!(
+            read_remote_store_stats_response_message(&message).unwrap(),
+            response
+        );
+        assert!(matches!(
+            read_remote_store_stats_request_message(&message).unwrap_err(),
+            TransportActionWireError::UnexpectedMessageStatus {
+                expected: "request",
+                ..
+            }
         ));
     }
 

@@ -461,10 +461,11 @@ The remote-store-stats boundary covers:
 - OpenSearch `RemoteStoreStatsRequest` parent task, broadcast indices array,
   indices options, shard id array, and local flag at the wire decode/build
   layer;
-- explicit fail-closed classification for `cluster:monitor/_remotestore/stats`
-  until remote store shard stats rendering is implemented;
+- OpenSearch `RemoteStoreStatsResponse` broadcast counters plus empty
+  `RemoteStoreStats[]` rendering for the no-remote-store-shards subset;
 - explicit rejection for index filters, non-default indices options, shard
-  filters, local-only execution, and remote-store-stats execution.
+  filters, local-only execution, shard failures, and non-empty remote store
+  shard stats.
 
 The remote-store-metadata boundary covers:
 
