@@ -5814,6 +5814,23 @@ fn local_transport_query_matches(
             query.min_score.is_none()
                 && local_transport_query_matches(source, id, Some(query.query.as_ref()))
         }
+        Some(os_transport::action::OpenSearchQueryBuilderWire::Fuzzy(query)) => {
+            let value = if query.field_name == "_id" {
+                Some(Value::String(id.to_string()))
+            } else {
+                lookup_transport_source_value(source, &query.field_name).cloned()
+            };
+            value.is_some_and(|value| {
+                local_transport_value_matches_fuzzy(
+                    &value,
+                    query.value.as_str().unwrap_or_default(),
+                    local_transport_fuzziness(
+                        &query.fuzziness,
+                        query.value.as_str().unwrap_or_default(),
+                    ),
+                )
+            })
+        }
         Some(os_transport::action::OpenSearchQueryBuilderWire::Ids(ids)) => {
             ids.ids.iter().any(|candidate| candidate == id)
         }
@@ -5898,6 +5915,16 @@ fn local_transport_query_matches(
             };
             value.is_some_and(|value| local_transport_range_query_matches(&value, range))
         }
+        Some(os_transport::action::OpenSearchQueryBuilderWire::Regexp(regexp)) => {
+            let value = if regexp.field_name == "_id" {
+                Some(id)
+            } else {
+                lookup_transport_source_value(source, &regexp.field_name).and_then(Value::as_str)
+            };
+            value.is_some_and(|value| {
+                local_transport_regexp_query_matches(value, &regexp.value, regexp.case_insensitive)
+            })
+        }
         Some(os_transport::action::OpenSearchQueryBuilderWire::ScriptScore(query)) => {
             query.min_score.is_none()
                 && local_transport_query_matches(source, id, Some(query.query.as_ref()))
@@ -5935,6 +5962,14 @@ fn local_transport_query_matches(
                     .iter()
                     .any(|expected| value_matches_transport_term(actual, expected))
             })
+        }
+        Some(os_transport::action::OpenSearchQueryBuilderWire::TermsSet(terms_set)) => {
+            let value = if terms_set.field_name == "_id" {
+                Some(Value::String(id.to_string()))
+            } else {
+                lookup_transport_source_value(source, &terms_set.field_name).cloned()
+            };
+            value.is_some_and(|value| local_transport_terms_set_query_matches(&value, terms_set))
         }
         Some(os_transport::action::OpenSearchQueryBuilderWire::Wildcard(wildcard)) => {
             let value = if wildcard.field_name == "_id" {
@@ -6062,6 +6097,118 @@ fn local_transport_wildcard_query_matches(
     } else {
         wildcard_match(pattern, value)
     }
+}
+
+fn local_transport_regexp_query_matches(
+    value: &str,
+    pattern: &str,
+    case_insensitive: bool,
+) -> bool {
+    let candidate = if case_insensitive {
+        value.to_ascii_lowercase()
+    } else {
+        value.to_string()
+    };
+    let pattern = if case_insensitive {
+        pattern.to_ascii_lowercase()
+    } else {
+        pattern.to_string()
+    };
+    bounded_transport_regexp_match(pattern.as_bytes(), candidate.as_bytes())
+}
+
+fn bounded_transport_regexp_match(pattern: &[u8], candidate: &[u8]) -> bool {
+    fn recurse(pattern: &[u8], candidate: &[u8]) -> bool {
+        if pattern.is_empty() {
+            return candidate.is_empty();
+        }
+        let char_matches =
+            !candidate.is_empty() && (pattern[0] == b'.' || pattern[0] == candidate[0]);
+        if pattern.len() >= 2 && pattern[1] == b'*' {
+            return recurse(&pattern[2..], candidate)
+                || (char_matches && recurse(pattern, &candidate[1..]));
+        }
+        char_matches && recurse(&pattern[1..], &candidate[1..])
+    }
+    recurse(pattern, candidate)
+}
+
+fn local_transport_value_matches_fuzzy(
+    candidate: &Value,
+    expected: &str,
+    fuzziness: usize,
+) -> bool {
+    let Some(candidate_text) = candidate.as_str() else {
+        return false;
+    };
+    let expected = expected.to_ascii_lowercase();
+    tokenize_transport_search_text(candidate_text)
+        .into_iter()
+        .any(|token| levenshtein_transport_distance(&token, &expected) <= fuzziness)
+}
+
+fn local_transport_fuzziness(
+    fuzziness: &os_transport::action::OpenSearchFuzzinessWire,
+    query_value: &str,
+) -> usize {
+    if fuzziness.value == "AUTO" {
+        return auto_transport_fuzziness(query_value);
+    }
+    fuzziness
+        .value
+        .parse::<usize>()
+        .unwrap_or_else(|_| auto_transport_fuzziness(query_value))
+}
+
+fn auto_transport_fuzziness(query_value: &str) -> usize {
+    match query_value.chars().count() {
+        0..=2 => 0,
+        3..=5 => 1,
+        _ => 2,
+    }
+}
+
+fn levenshtein_transport_distance(left: &str, right: &str) -> usize {
+    let left_chars = left.chars().collect::<Vec<_>>();
+    let right_chars = right.chars().collect::<Vec<_>>();
+    let mut prev = (0..=right_chars.len()).collect::<Vec<_>>();
+    let mut curr = vec![0; right_chars.len() + 1];
+    for (i, left_char) in left_chars.iter().enumerate() {
+        curr[0] = i + 1;
+        for (j, right_char) in right_chars.iter().enumerate() {
+            let cost = usize::from(left_char != right_char);
+            curr[j + 1] = (curr[j] + 1).min(prev[j + 1] + 1).min(prev[j] + cost);
+        }
+        std::mem::swap(&mut prev, &mut curr);
+    }
+    prev[right_chars.len()]
+}
+
+fn local_transport_terms_set_query_matches(
+    actual: &Value,
+    query: &os_transport::action::OpenSearchTermsSetQueryBuilderWire,
+) -> bool {
+    let Some(minimum) = query
+        .minimum_should_match_script
+        .as_ref()
+        .and_then(|script| script.source.parse::<usize>().ok())
+    else {
+        return false;
+    };
+    if minimum == 0 {
+        return false;
+    }
+    let matched_terms = query
+        .values
+        .iter()
+        .filter(|term| match actual {
+            Value::Array(values) => values
+                .iter()
+                .any(|value| value_matches_transport_term(value, term)),
+            _ => value_matches_transport_term(actual, term),
+        })
+        .count();
+    matched_terms >= minimum
 }
 
 fn local_transport_text_query_matches(
@@ -16325,6 +16472,54 @@ mod tests {
                                                                                 max_expansions: 50,
                                                                                 fuzzy_transpositions: true,
                                                                                 fuzzy_rewrite: None,
+                                                                            },
+                                                                        ),
+                                                                        os_transport::action::OpenSearchQueryBuilderWire::Fuzzy(
+                                                                            os_transport::action::OpenSearchFuzzyQueryBuilderWire {
+                                                                                boost: 1.0,
+                                                                                query_name: None,
+                                                                                field_name: "message".to_string(),
+                                                                                value: serde_json::json!("searh"),
+                                                                                fuzziness: os_transport::action::OpenSearchFuzzinessWire {
+                                                                                    value: "AUTO".to_string(),
+                                                                                    custom_auto: None,
+                                                                                },
+                                                                                prefix_length: 0,
+                                                                                max_expansions: 50,
+                                                                                transpositions: true,
+                                                                                rewrite: None,
+                                                                            },
+                                                                        ),
+                                                                        os_transport::action::OpenSearchQueryBuilderWire::Regexp(
+                                                                            os_transport::action::OpenSearchRegexpQueryBuilderWire {
+                                                                                boost: 1.0,
+                                                                                query_name: None,
+                                                                                field_name: "category".to_string(),
+                                                                                value: "prod-.*".to_string(),
+                                                                                syntax_flags_value: 65535,
+                                                                                max_determinized_states: 10000,
+                                                                                rewrite: None,
+                                                                                case_insensitive: true,
+                                                                            },
+                                                                        ),
+                                                                        os_transport::action::OpenSearchQueryBuilderWire::TermsSet(
+                                                                            os_transport::action::OpenSearchTermsSetQueryBuilderWire {
+                                                                                boost: 1.0,
+                                                                                query_name: None,
+                                                                                field_name: "tags".to_string(),
+                                                                                values: vec![
+                                                                                    serde_json::json!("search"),
+                                                                                    serde_json::json!("transport"),
+                                                                                ],
+                                                                                minimum_should_match_field: None,
+                                                                                minimum_should_match_script: Some(
+                                                                                    os_transport::action::OpenSearchInlineScriptWire {
+                                                                                        lang: Some("painless".to_string()),
+                                                                                        source: "2".to_string(),
+                                                                                        options: serde_json::json!({}),
+                                                                                        params: serde_json::json!({}),
+                                                                                    },
+                                                                                ),
                                                                             },
                                                                         ),
                                                                         os_transport::action::OpenSearchQueryBuilderWire::SpanOr(
