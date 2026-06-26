@@ -38,7 +38,7 @@ pub fn build_settings_readback_response(
     target: Option<&str>,
     flat_settings: bool,
 ) -> serde_json::Value {
-    build_named_settings_readback_response(indices, target, None, flat_settings)
+    build_named_settings_readback_response(indices, target, None, flat_settings, false)
 }
 
 fn selector_matches_name(selector: &str, name: &str) -> bool {
@@ -70,11 +70,112 @@ fn flatten_settings_into(
     }
 }
 
+fn insert_dotted_setting(
+    output: &mut serde_json::Map<String, serde_json::Value>,
+    setting_name: &str,
+    value: serde_json::Value,
+) {
+    let mut cursor = output;
+    let mut parts = setting_name.split('.').peekable();
+    while let Some(part) = parts.next() {
+        if parts.peek().is_none() {
+            cursor.insert(part.to_string(), value);
+            return;
+        }
+        let entry = cursor
+            .entry(part.to_string())
+            .or_insert_with(|| serde_json::Value::Object(serde_json::Map::new()));
+        if !entry.is_object() {
+            *entry = serde_json::Value::Object(serde_json::Map::new());
+        }
+        cursor = entry.as_object_mut().expect("entry converted to object");
+    }
+}
+
+fn expand_settings_from_flat(
+    flat: serde_json::Map<String, serde_json::Value>,
+) -> serde_json::Value {
+    let mut expanded = serde_json::Map::new();
+    for (setting_name, value) in flat {
+        insert_dotted_setting(&mut expanded, &setting_name, value);
+    }
+    serde_json::Value::Object(expanded)
+}
+
+fn supported_index_default_settings() -> serde_json::Value {
+    serde_json::json!({
+        "index": {
+            "number_of_replicas": "1",
+            "refresh_interval": "1s",
+            "max_result_window": "10000",
+            "number_of_routing_shards": "1"
+        }
+    })
+}
+
+fn filter_settings_value(
+    settings: &serde_json::Value,
+    name_selectors: &[String],
+    flat_settings: bool,
+) -> serde_json::Value {
+    if name_selectors.is_empty() {
+        if flat_settings {
+            let mut flattened = serde_json::Map::new();
+            flatten_settings_into(None, settings, &mut flattened);
+            serde_json::Value::Object(flattened)
+        } else {
+            settings.clone()
+        }
+    } else {
+        let mut flattened = serde_json::Map::new();
+        flatten_settings_into(None, settings, &mut flattened);
+        let filtered = flattened
+            .into_iter()
+            .filter(|(setting_name, _)| {
+                name_selectors
+                    .iter()
+                    .any(|selector| selector_matches_name(selector, setting_name))
+            })
+            .collect::<serde_json::Map<_, _>>();
+        serde_json::Value::Object(filtered)
+    }
+}
+
+fn default_settings_for_index(
+    settings: &serde_json::Value,
+    name_selectors: &[String],
+    flat_settings: bool,
+) -> serde_json::Value {
+    let mut explicit = serde_json::Map::new();
+    flatten_settings_into(None, settings, &mut explicit);
+
+    let defaults = supported_index_default_settings();
+    let mut flattened_defaults = serde_json::Map::new();
+    flatten_settings_into(None, &defaults, &mut flattened_defaults);
+    let filtered = flattened_defaults
+        .into_iter()
+        .filter(|(setting_name, _)| !explicit.contains_key(setting_name))
+        .filter(|(setting_name, _)| {
+            name_selectors.is_empty()
+                || name_selectors
+                    .iter()
+                    .any(|selector| selector_matches_name(selector, setting_name))
+        })
+        .collect::<serde_json::Map<_, _>>();
+
+    if flat_settings || !name_selectors.is_empty() {
+        serde_json::Value::Object(filtered)
+    } else {
+        expand_settings_from_flat(filtered)
+    }
+}
+
 pub fn build_named_settings_readback_response(
     indices: &serde_json::Value,
     target: Option<&str>,
     name_filter: Option<&str>,
     flat_settings: bool,
+    include_defaults: bool,
 ) -> serde_json::Value {
     let selectors = target.map(parse_settings_selectors).unwrap_or_default();
     let name_selectors = name_filter
@@ -94,33 +195,16 @@ pub fn build_named_settings_readback_response(
             continue;
         }
         if let Some(settings) = metadata.get("settings") {
-            let filtered_settings = if name_selectors.is_empty() {
-                if flat_settings {
-                    let mut flattened = serde_json::Map::new();
-                    flatten_settings_into(None, settings, &mut flattened);
-                    serde_json::Value::Object(flattened)
-                } else {
-                    settings.clone()
-                }
-            } else {
-                let mut flattened = serde_json::Map::new();
-                flatten_settings_into(None, settings, &mut flattened);
-                let filtered = flattened
-                    .into_iter()
-                    .filter(|(setting_name, _)| {
-                        name_selectors
-                            .iter()
-                            .any(|selector| selector_matches_name(selector, setting_name))
-                    })
-                    .collect::<serde_json::Map<_, _>>();
-                serde_json::Value::Object(filtered)
-            };
-            response.insert(
-                name.clone(),
-                serde_json::json!({
-                    "settings": filtered_settings
-                }),
-            );
+            let filtered_settings = filter_settings_value(settings, &name_selectors, flat_settings);
+            let mut index_response = serde_json::Map::new();
+            index_response.insert("settings".to_string(), filtered_settings);
+            if include_defaults {
+                index_response.insert(
+                    "defaults".to_string(),
+                    default_settings_for_index(settings, &name_selectors, flat_settings),
+                );
+            }
+            response.insert(name.clone(), serde_json::Value::Object(index_response));
         }
     }
     serde_json::Value::Object(response)
@@ -305,11 +389,13 @@ mod tests {
             None,
             Some("index.number_of_shards"),
             false,
+            false,
         );
         let targeted = build_named_settings_readback_response(
             &indices,
             Some("logs-*"),
             Some("index.number_of_replicas"),
+            false,
             false,
         );
 
@@ -327,5 +413,60 @@ mod tests {
             serde_json::json!(0)
         );
         assert!(targeted.get("metrics-000001").is_none());
+    }
+
+    #[test]
+    fn settings_readback_response_can_include_supported_index_defaults() {
+        let indices = serde_json::json!({
+            "logs-000001": {
+                "settings": {
+                    "index": {
+                        "number_of_shards": "1",
+                        "number_of_replicas": "0"
+                    }
+                }
+            },
+            "metrics-000001": {
+                "settings": {
+                    "index": {
+                        "number_of_shards": "1"
+                    }
+                }
+            }
+        });
+
+        let nested = build_named_settings_readback_response(&indices, None, None, false, true);
+        assert_eq!(
+            nested["logs-000001"]["defaults"]["index"]["refresh_interval"],
+            serde_json::json!("1s")
+        );
+        assert!(nested["logs-000001"]["defaults"]["index"]
+            .get("number_of_replicas")
+            .is_none());
+        assert_eq!(
+            nested["metrics-000001"]["defaults"]["index"]["number_of_replicas"],
+            serde_json::json!("1")
+        );
+
+        let named = build_named_settings_readback_response(
+            &indices,
+            Some("metrics-*"),
+            Some("index.refresh_interval"),
+            false,
+            true,
+        );
+        assert_eq!(
+            named["metrics-000001"]["defaults"]["index.refresh_interval"],
+            serde_json::json!("1s")
+        );
+        assert!(named["metrics-000001"]["settings"]
+            .get("index.refresh_interval")
+            .is_none());
+
+        let flat = build_named_settings_readback_response(&indices, None, None, true, true);
+        assert_eq!(
+            flat["logs-000001"]["defaults"]["index.refresh_interval"],
+            serde_json::json!("1s")
+        );
     }
 }

@@ -3160,6 +3160,7 @@ impl SteelNode {
                 None,
                 None,
                 query_param_is_true(request.query_params.get("flat_settings")),
+                query_param_is_true(request.query_params.get("include_defaults")),
                 false,
                 false,
                 "open",
@@ -3189,6 +3190,7 @@ impl SteelNode {
                     None,
                     Some(setting_name),
                     query_param_is_true(request.query_params.get("flat_settings")),
+                    query_param_is_true(request.query_params.get("include_defaults")),
                     false,
                     false,
                     "open",
@@ -4596,6 +4598,7 @@ impl SteelNode {
                             Some(target),
                             None,
                             query_param_is_true(request.query_params.get("flat_settings")),
+                            query_param_is_true(request.query_params.get("include_defaults")),
                             query_param_is_true(request.query_params.get("ignore_unavailable")),
                             query_param_is_true(request.query_params.get("allow_no_indices")),
                             request
@@ -4636,6 +4639,7 @@ impl SteelNode {
                         Some(target),
                         Some(setting_name),
                         query_param_is_true(request.query_params.get("flat_settings")),
+                        query_param_is_true(request.query_params.get("include_defaults")),
                         query_param_is_true(request.query_params.get("ignore_unavailable")),
                         query_param_is_true(request.query_params.get("allow_no_indices")),
                         request
@@ -4664,6 +4668,7 @@ impl SteelNode {
                         Some(target),
                         Some(setting_name),
                         query_param_is_true(request.query_params.get("flat_settings")),
+                        query_param_is_true(request.query_params.get("include_defaults")),
                         query_param_is_true(request.query_params.get("ignore_unavailable")),
                         query_param_is_true(request.query_params.get("allow_no_indices")),
                         request
@@ -6193,6 +6198,7 @@ impl SteelNode {
         target: Option<&str>,
         name_filter: Option<&str>,
         flat_settings: bool,
+        include_defaults: bool,
         ignore_unavailable: bool,
         allow_no_indices: bool,
         expand_wildcards: &str,
@@ -6240,6 +6246,7 @@ impl SteelNode {
                 None,
                 name_filter,
                 flat_settings,
+                include_defaults,
             ),
         )
     }
@@ -60934,6 +60941,22 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             .get("index.refresh_interval")
             .is_none());
 
+        let metrics_refresh_defaults = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/metrics-settings-000001/_settings/index.refresh_interval?include_defaults=true",
+        ));
+        assert_eq!(metrics_refresh_defaults.status, 200);
+        assert!(
+            metrics_refresh_defaults.body["metrics-settings-000001"]["settings"]
+                .get("index.refresh_interval")
+                .is_none()
+        );
+        assert_eq!(
+            metrics_refresh_defaults.body["metrics-settings-000001"]["defaults"]
+                ["index.refresh_interval"],
+            Value::String("1s".to_string())
+        );
+
         let metrics_nested = node.handle_rest_request(RestRequest::new(
             RestMethod::Get,
             "/metrics-settings-000001/_settings",
@@ -60942,6 +60965,53 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert!(
             metrics_nested.body["metrics-settings-000001"]["settings"]["index"]
                 .get("refresh_interval")
+                .is_none()
+        );
+
+        let metrics_nested_defaults = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/metrics-settings-000001/_settings?include_defaults=true",
+        ));
+        assert_eq!(metrics_nested_defaults.status, 200);
+        assert_eq!(
+            metrics_nested_defaults.body["metrics-settings-000001"]["defaults"]["index"]
+                ["refresh_interval"],
+            Value::String("1s".to_string())
+        );
+        assert_eq!(
+            metrics_nested_defaults.body["metrics-settings-000001"]["defaults"]["index"]
+                ["max_result_window"],
+            Value::String("10000".to_string())
+        );
+        assert!(
+            metrics_nested_defaults.body["metrics-settings-000001"]["defaults"]["index"]
+                .get("number_of_replicas")
+                .is_none()
+        );
+        assert!(
+            metrics_nested_defaults.body["metrics-settings-000001"]["defaults"]["index"]
+                .get("number_of_shards")
+                .is_none()
+        );
+
+        let metrics_flat_defaults = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/metrics-settings-000001/_settings?include_defaults=true&flat_settings=true",
+        ));
+        assert_eq!(metrics_flat_defaults.status, 200);
+        assert_eq!(
+            metrics_flat_defaults.body["metrics-settings-000001"]["defaults"]
+                ["index.refresh_interval"],
+            Value::String("1s".to_string())
+        );
+        assert_eq!(
+            metrics_flat_defaults.body["metrics-settings-000001"]["defaults"]
+                ["index.max_result_window"],
+            Value::String("10000".to_string())
+        );
+        assert!(
+            metrics_flat_defaults.body["metrics-settings-000001"]["defaults"]
+                .get("index.number_of_replicas")
                 .is_none()
         );
 

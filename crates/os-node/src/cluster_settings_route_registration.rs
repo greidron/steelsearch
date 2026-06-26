@@ -629,7 +629,7 @@ mod tests {
     }
 
     #[test]
-    fn cluster_settings_mutation_reuses_readback_fail_closed_param_bucket() {
+    fn cluster_settings_mutation_uses_mutation_fail_closed_param_bucket() {
         let persisted_state = serde_json::json!({
             "persistent": {},
             "transient": {}
@@ -642,7 +642,7 @@ mod tests {
 
         assert_eq!(
             apply_cluster_settings_mutation(&persisted_state, &request),
-            Err(CLUSTER_SETTINGS_UNSUPPORTED_PARAMETER_BUCKET)
+            Err(CLUSTER_SETTINGS_UNSUPPORTED_MUTATION_PARAMETER_BUCKET)
         );
     }
 }
