@@ -24136,6 +24136,7 @@ fn validate_search_query_body(query: &Value) -> Option<RestResponse> {
         | "exists"
         | "terms_set"
         | "nested"
+        | "constant_score"
         | "geo_distance"
         | "geo_bounding_box"
         | "geo_polygon"
@@ -24280,6 +24281,19 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
                     return Some(response);
                 }
             }
+        }
+    }
+    if let Some(constant_score) = query.get("constant_score").and_then(Value::as_object) {
+        let inner_query = constant_score
+            .get("filter")
+            .or_else(|| constant_score.get("query"));
+        let Some(inner_query) = inner_query else {
+            return Some(build_unsupported_search_response(
+                "unsupported constant_score query shape",
+            ));
+        };
+        if let Some(response) = validate_search_query_body(inner_query) {
+            return Some(response);
         }
     }
     if let Some(dis_max) = query.get("dis_max").and_then(Value::as_object) {
@@ -26396,6 +26410,15 @@ fn evaluate_search_query_source_with_mappings(
         );
         return Some((matched, if matched { 1.0 } else { 0.0 }));
     }
+    if let Some(terms) = query.get("terms").and_then(Value::as_object) {
+        let (field, expected) = terms.iter().next()?;
+        let matched = value_matches_terms(
+            lookup_query_field_value(source, field),
+            expected,
+            lookup_query_field_mapping_type(mappings, field),
+        );
+        return Some((matched, if matched { 1.0 } else { 0.0 }));
+    }
     if let Some(match_query) = query.get("match").and_then(Value::as_object) {
         let (field, expected) = match_query.iter().next()?;
         let score = score_match_query(
@@ -26508,6 +26531,14 @@ fn evaluate_search_query_source_with_mappings(
         let (matched, score) =
             value_matches_terms_set(lookup_query_field_value(source, field), expected)?;
         return Some((matched, score));
+    }
+    if let Some(constant_score) = query.get("constant_score").and_then(Value::as_object) {
+        let inner_query = constant_score
+            .get("filter")
+            .or_else(|| constant_score.get("query"))?;
+        let (matched, _) =
+            evaluate_search_query_source_with_mappings(source, doc_id, inner_query, mappings)?;
+        return Some((matched, if matched { 1.0 } else { 0.0 }));
     }
     if let Some(function_score) = query.get("function_score").and_then(Value::as_object) {
         let inner_query = function_score.get("query")?;
@@ -26809,6 +26840,9 @@ fn value_matches_term(
     field_type: Option<&str>,
 ) -> bool {
     match (candidate, expected) {
+        (Some(Value::Array(values)), expected) => values
+            .iter()
+            .any(|value| value_matches_term(Some(value), expected, field_type)),
         (Some(Value::String(left)), Value::String(right)) => {
             let lowered_left = left.to_ascii_lowercase();
             let lowered_right = right.to_ascii_lowercase();
@@ -26827,6 +26861,19 @@ fn value_matches_term(
         (Some(left), right) => left == right,
         _ => false,
     }
+}
+
+fn value_matches_terms(
+    candidate: Option<&Value>,
+    expected: &Value,
+    field_type: Option<&str>,
+) -> bool {
+    let Some(expected_values) = expected.as_array() else {
+        return false;
+    };
+    expected_values
+        .iter()
+        .any(|expected| value_matches_term(candidate, expected, field_type))
 }
 
 fn lookup_query_field_mapping_type<'a>(mappings: &'a Value, field: &str) -> Option<&'a str> {
@@ -52595,6 +52642,74 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(terms_set.status, 200);
         assert_eq!(terms_set.body["hits"]["total"]["value"], 1);
         assert_eq!(terms_set.body["hits"]["hits"][0]["_id"], "doc-1");
+
+        let terms = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-dsl-000001/_search").with_json_body(
+                serde_json::json!({
+                    "query": {
+                        "terms": { "code": ["alpha-1", "gamma-3"] }
+                    },
+                    "sort": [{ "code": "asc" }]
+                }),
+            ),
+        );
+        assert_eq!(terms.status, 200);
+        assert_eq!(terms.body["hits"]["total"]["value"], 2);
+        assert_eq!(terms.body["hits"]["hits"][0]["_id"], "doc-1");
+        assert_eq!(terms.body["hits"]["hits"][1]["_id"], "doc-3");
+
+        let empty_terms = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-dsl-000001/_search").with_json_body(
+                serde_json::json!({
+                    "query": {
+                        "terms": { "code": [] }
+                    }
+                }),
+            ),
+        );
+        assert_eq!(empty_terms.status, 200);
+        assert_eq!(empty_terms.body["hits"]["total"]["value"], 0);
+
+        let constant_score_filter = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-dsl-000001/_search").with_json_body(
+                serde_json::json!({
+                    "query": {
+                        "constant_score": {
+                            "filter": {
+                                "terms": { "tags": ["green"] }
+                            }
+                        }
+                    }
+                }),
+            ),
+        );
+        assert_eq!(constant_score_filter.status, 200);
+        assert_eq!(constant_score_filter.body["hits"]["total"]["value"], 1);
+        assert_eq!(
+            constant_score_filter.body["hits"]["hits"][0]["_id"],
+            "doc-2"
+        );
+        assert_eq!(
+            constant_score_filter.body["hits"]["hits"][0]["_score"].as_f64(),
+            Some(1.0)
+        );
+
+        let constant_score_query = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-dsl-000001/_search").with_json_body(
+                serde_json::json!({
+                    "query": {
+                        "constant_score": {
+                            "query": {
+                                "term": { "code": "alpha-1" }
+                            }
+                        }
+                    }
+                }),
+            ),
+        );
+        assert_eq!(constant_score_query.status, 200);
+        assert_eq!(constant_score_query.body["hits"]["total"]["value"], 1);
+        assert_eq!(constant_score_query.body["hits"]["hits"][0]["_id"], "doc-1");
 
         let nested = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/logs-search-dsl-000001/_search").with_json_body(
