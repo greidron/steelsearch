@@ -29196,7 +29196,33 @@ impl OpenSearchPointInTimeBuilderWire {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OpenSearchSearchContextIdWire {
     pub shards: BTreeMap<OpenSearchShardIdWire, OpenSearchSearchContextIdForNodeWire>,
-    pub alias_filters: BTreeMap<String, Vec<String>>,
+    pub alias_filters: BTreeMap<String, OpenSearchAliasFilterWire>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct OpenSearchAliasFilterWire {
+    pub aliases: Vec<String>,
+    pub query: Option<OpenSearchQueryBuilderWire>,
+}
+
+impl Eq for OpenSearchAliasFilterWire {}
+
+impl OpenSearchAliasFilterWire {
+    pub fn new(aliases: Vec<String>, query: Option<OpenSearchQueryBuilderWire>) -> Self {
+        Self { aliases, query }
+    }
+
+    fn write(&self, output: &mut StreamOutput) {
+        output.write_string_array(&self.aliases);
+        write_optional_query_builder(output, self.query.as_ref());
+    }
+
+    fn read(input: &mut StreamInput) -> Result<Self, TransportActionWireError> {
+        Ok(Self {
+            aliases: input.read_string_array()?,
+            query: read_optional_query_builder(input)?,
+        })
+    }
 }
 
 impl OpenSearchSearchContextIdWire {
@@ -29211,7 +29237,7 @@ impl OpenSearchSearchContextIdWire {
 
     pub fn with_alias_filters(
         shards: BTreeMap<OpenSearchShardIdWire, OpenSearchSearchContextIdForNodeWire>,
-        alias_filters: BTreeMap<String, Vec<String>>,
+        alias_filters: BTreeMap<String, OpenSearchAliasFilterWire>,
     ) -> Self {
         Self {
             shards,
@@ -29229,10 +29255,9 @@ impl OpenSearchSearchContextIdWire {
             context.write(&mut output)?;
         }
         output.write_vint(self.alias_filters.len() as i32);
-        for (index, aliases) in &self.alias_filters {
+        for (index, filter) in &self.alias_filters {
             output.write_string(index);
-            output.write_string_array(aliases);
-            output.write_bool(false);
+            filter.write(&mut output);
         }
         Ok(URL_SAFE.encode(output.freeze()))
     }
@@ -29259,14 +29284,7 @@ impl OpenSearchSearchContextIdWire {
         let mut alias_filters = BTreeMap::new();
         for _ in 0..alias_filter_count {
             let index = input.read_string()?;
-            let aliases = input.read_string_array()?;
-            if input.read_bool()? {
-                return Err(TransportActionWireError::UnsupportedWireShape {
-                    shape: "search context id alias filter query",
-                    reason: "PIT search execution requires alias-filter query mapping before accepting filtered aliases",
-                });
-            }
-            alias_filters.insert(index, aliases);
+            alias_filters.insert(index, OpenSearchAliasFilterWire::read(&mut input)?);
         }
         require_no_trailing_bytes(&input)?;
         let context_id = Self {
@@ -29299,6 +29317,21 @@ impl OpenSearchSearchContextIdWire {
                 format!("{}:{}", context_id.session_id, context_id.id)
             })
             .collect()
+    }
+
+    pub fn alias_filter_for_index_name(
+        &self,
+        index_name: &str,
+    ) -> Option<&OpenSearchAliasFilterWire> {
+        self.shards.iter().find_map(|(shard_id, _context)| {
+            if shard_id.index_name == index_name {
+                self.alias_filters
+                    .get(&shard_id.index_uuid)
+                    .or_else(|| self.alias_filters.get(&shard_id.index_name))
+            } else {
+                None
+            }
+        })
     }
 
     pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
@@ -71620,7 +71653,10 @@ mod tests {
             )]),
             BTreeMap::from([(
                 "logs".to_string(),
-                vec!["logs_alias".to_string(), "logs_read".to_string()],
+                OpenSearchAliasFilterWire::new(
+                    vec!["logs_alias".to_string(), "logs_read".to_string()],
+                    None,
+                ),
             )]),
         );
 
@@ -71629,42 +71665,50 @@ mod tests {
 
         assert_eq!(decoded, context_id);
         assert_eq!(
-            decoded.alias_filters.get("logs").unwrap(),
+            &decoded.alias_filters.get("logs").unwrap().aliases,
             &vec!["logs_alias".to_string(), "logs_read".to_string()]
         );
+        assert!(decoded.alias_filters.get("logs").unwrap().query.is_none());
         assert_eq!(decoded.actual_indices(), vec!["logs".to_string()]);
     }
 
     #[test]
-    fn opensearch_search_context_id_rejects_alias_filter_queries() {
-        let mut output = StreamOutput::new();
-        output.write_vint(OPENSEARCH_3_7_0_TRANSPORT.id());
-        output.write_vint(1);
-        OpenSearchShardIdWire {
-            index_name: "logs".to_string(),
-            index_uuid: "uuid-logs".to_string(),
-            shard_id: 0,
-        }
-        .write(&mut output);
-        OpenSearchSearchContextIdForNodeWire {
-            node: "node-a".to_string(),
-            cluster_alias: None,
-            search_context_id: OpenSearchShardSearchContextIdWire::new("session-a", 42),
-        }
-        .write(&mut output)
-        .unwrap();
-        output.write_vint(1);
-        output.write_string("logs_alias");
-        output.write_vint(0);
-        output.write_bool(true);
-        let encoded = URL_SAFE.encode(output.freeze());
+    fn opensearch_search_context_id_preserves_alias_filter_queries() {
+        let alias_query = OpenSearchQueryBuilderWire::Term(OpenSearchTermQueryBuilderWire {
+            boost: 1.0,
+            query_name: None,
+            field_name: "tenant".to_string(),
+            value: Value::String("a".to_string()),
+            case_insensitive: false,
+        });
+        let context_id = OpenSearchSearchContextIdWire::with_alias_filters(
+            BTreeMap::from([(
+                OpenSearchShardIdWire {
+                    index_name: "logs".to_string(),
+                    index_uuid: "uuid-logs".to_string(),
+                    shard_id: 0,
+                },
+                OpenSearchSearchContextIdForNodeWire {
+                    node: "node-a".to_string(),
+                    cluster_alias: None,
+                    search_context_id: OpenSearchShardSearchContextIdWire::new("session-a", 42),
+                },
+            )]),
+            BTreeMap::from([(
+                "uuid-logs".to_string(),
+                OpenSearchAliasFilterWire::new(vec!["logs_alias".to_string()], Some(alias_query)),
+            )]),
+        );
 
+        let encoded = context_id.encode(OPENSEARCH_3_7_0_TRANSPORT).unwrap();
+        let decoded = OpenSearchSearchContextIdWire::decode(&encoded).unwrap();
+
+        assert_eq!(decoded, context_id);
         assert!(matches!(
-            OpenSearchSearchContextIdWire::decode(&encoded),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "search context id alias filter query",
-                ..
-            })
+            decoded
+                .alias_filter_for_index_name("logs")
+                .and_then(|filter| filter.query.as_ref()),
+            Some(OpenSearchQueryBuilderWire::Term(term)) if term.field_name == "tenant"
         ));
     }
 

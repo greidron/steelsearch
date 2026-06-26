@@ -5338,6 +5338,9 @@ fn local_transport_search_response_from_request(
     else {
         return os_transport::action::OpenSearchSearchResponseWire::empty_with_total_hits(0);
     };
+    let pit_search_context_id = point_in_time_id.as_deref().and_then(|pit_id| {
+        os_transport::action::OpenSearchSearchContextIdWire::decode(pit_id).ok()
+    });
     let sorts = source.and_then(|source| source.sorts.as_deref());
     let search_after = source.and_then(|source| source.search_after.as_deref());
     let mut matched = documents
@@ -5356,6 +5359,14 @@ fn local_transport_search_response_from_request(
             }
             if let Some(slice) = slice {
                 if !transport_document_matches_search_slice(id, &record.source, slice) {
+                    return None;
+                }
+            }
+            if let Some(alias_filter) = pit_search_context_id
+                .as_ref()
+                .and_then(|context_id| context_id.alias_filter_for_index_name(index))
+            {
+                if !local_transport_query_matches(&record.source, id, alias_filter.query.as_ref()) {
                     return None;
                 }
             }
@@ -15519,7 +15530,7 @@ mod tests {
             .insert(
                 "logs-reader-pit:doc-1:".to_string(),
                 StoredDocument {
-                    source: serde_json::json!({ "status": "reader-pit" }),
+                    source: serde_json::json!({ "status": "reader-pit", "tenant": "a" }),
                     version: 1,
                     seq_no: 1,
                     primary_term: 1,
@@ -15527,19 +15538,51 @@ mod tests {
                     refreshed: true,
                 },
             );
+        bindings
+            .documents
+            .lock()
+            .expect("dev transport documents lock poisoned")
+            .insert(
+                "logs-reader-pit:doc-2:".to_string(),
+                StoredDocument {
+                    source: serde_json::json!({ "status": "reader-pit", "tenant": "b" }),
+                    version: 1,
+                    seq_no: 2,
+                    primary_term: 1,
+                    routing: None,
+                    refreshed: true,
+                },
+            );
         let encoded_pit_id =
-            os_transport::action::OpenSearchSearchContextIdWire::new(BTreeMap::from([(
-                os_transport::action::OpenSearchShardIdWire {
-                    index_name: "logs-reader-pit".to_string(),
-                    index_uuid: "uuid-reader-pit".to_string(),
-                    shard_id: 0,
-                },
-                os_transport::action::OpenSearchSearchContextIdForNodeWire {
-                    node: transport_identity.node_id.clone(),
-                    cluster_alias: None,
-                    search_context_id: create_response.context_id.clone(),
-                },
-            )]))
+            os_transport::action::OpenSearchSearchContextIdWire::with_alias_filters(
+                BTreeMap::from([(
+                    os_transport::action::OpenSearchShardIdWire {
+                        index_name: "logs-reader-pit".to_string(),
+                        index_uuid: "uuid-reader-pit".to_string(),
+                        shard_id: 0,
+                    },
+                    os_transport::action::OpenSearchSearchContextIdForNodeWire {
+                        node: transport_identity.node_id.clone(),
+                        cluster_alias: None,
+                        search_context_id: create_response.context_id.clone(),
+                    },
+                )]),
+                BTreeMap::from([(
+                    "uuid-reader-pit".to_string(),
+                    os_transport::action::OpenSearchAliasFilterWire::new(
+                        vec!["logs-reader-alias".to_string()],
+                        Some(os_transport::action::OpenSearchQueryBuilderWire::Term(
+                            os_transport::action::OpenSearchTermQueryBuilderWire {
+                                boost: 1.0,
+                                query_name: None,
+                                field_name: "tenant".to_string(),
+                                value: serde_json::json!("a"),
+                                case_insensitive: false,
+                            },
+                        )),
+                    ),
+                )]),
+            )
             .encode(OPENSEARCH_3_7_0_TRANSPORT)
             .unwrap();
 
