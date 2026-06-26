@@ -23058,6 +23058,12 @@ impl OpenSearchPitSegmentsRequestWire {
                 reason: "OpenSearch PIT segments requests require non-empty PIT ids",
             });
         }
+        if !all_id_is_standalone(&self.pit_ids) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "pit segments mixed all ids",
+                reason: "OpenSearch treats [_all] as a special PIT selector only when it is the sole PIT id",
+            });
+        }
         if self.verbose {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "pit segments verbose",
@@ -32579,6 +32585,12 @@ impl OpenSearchDeletePitRequestWire {
                 reason: "OpenSearch delete-PIT requests require at least one PIT id",
             });
         }
+        if !all_id_is_standalone(&self.pit_ids) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "delete pit mixed all ids",
+                reason: "OpenSearch treats [_all] as a special PIT selector only when it is the sole PIT id",
+            });
+        }
         Ok(())
     }
 
@@ -32590,6 +32602,11 @@ impl OpenSearchDeletePitRequestWire {
                 "use validate_supported_subset for the implemented local PIT invalidation adapter",
         })
     }
+}
+
+fn all_id_is_standalone(ids: &[String]) -> bool {
+    !ids.iter().any(|id| id == "_all")
+        || (ids.len() == 1 && ids.first().is_some_and(|id| id == "_all"))
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -60798,6 +60815,18 @@ mod tests {
             })
         ));
 
+        let mixed_all = OpenSearchPitSegmentsRequestWire {
+            pit_ids: vec!["_all".to_string(), "pit-context".to_string()],
+            ..OpenSearchPitSegmentsRequestWire::default()
+        };
+        assert!(matches!(
+            mixed_all.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "pit segments mixed all ids",
+                ..
+            })
+        ));
+
         let verbose = OpenSearchPitSegmentsRequestWire {
             pit_ids: vec!["_all".to_string()],
             verbose: true,
@@ -68888,6 +68917,18 @@ mod tests {
             ..OpenSearchDeletePitRequestWire::default()
         };
         empty_id.validate_supported_subset().unwrap();
+
+        let mixed_all = OpenSearchDeletePitRequestWire {
+            pit_ids: vec!["_all".to_string(), "pit-context".to_string()],
+            ..OpenSearchDeletePitRequestWire::default()
+        };
+        assert!(matches!(
+            mixed_all.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "delete pit mixed all ids",
+                ..
+            })
+        ));
 
         let explicit_id = OpenSearchDeletePitRequestWire {
             pit_ids: vec!["pit-context".to_string()],
