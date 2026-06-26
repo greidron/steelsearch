@@ -16456,7 +16456,7 @@ impl SteelNode {
     ) -> RestResponse {
         let get_response = self.handle_get_source_route(index, id, request);
         if get_response.status == 200 {
-            RestResponse::json(200, serde_json::json!({}))
+            RestResponse::empty(200)
         } else {
             get_response
         }
@@ -60522,6 +60522,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             "/logs-source-000001/_source/doc-1",
         ));
         assert_eq!(head_response.status, 200);
+        assert_eq!(head_response.body, Value::Null);
 
         let missing_response = node.handle_rest_request(RestRequest::new(
             RestMethod::Get,
