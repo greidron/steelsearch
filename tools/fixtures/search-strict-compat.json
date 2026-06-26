@@ -856,6 +856,18 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "cat_pit_segments_all_source_query_param_error",
+      "area": "cat",
+      "method": "GET",
+      "path": "/_cat/pit_segments/_all?source=%7B%22pit_id%22%3A%22pit-missing%22%7D&source_content_type=json",
+      "body": null,
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "admin-cat",
+      "description": "[admin-cat] cat pit segments _all rejects source query body like OpenSearch",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "cat_pit_segments_explicit_body_json",
       "area": "cat",
       "extract": "cat_pit_segments",
