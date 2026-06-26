@@ -24274,29 +24274,8 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
         }
     }
     if let Some(bool_query) = query.get("bool").and_then(Value::as_object) {
-        if let Some(must) = bool_query.get("must").and_then(Value::as_array) {
-            for clause in must {
-                if let Some(response) = validate_search_query_body(clause) {
-                    return Some(response);
-                }
-            }
-        }
-        if let Some(filter) = bool_query.get("filter").and_then(Value::as_array) {
-            for clause in filter {
-                if let Some(response) = validate_search_query_body(clause) {
-                    return Some(response);
-                }
-            }
-        }
-        if let Some(should) = bool_query.get("should").and_then(Value::as_array) {
-            for clause in should {
-                if let Some(response) = validate_search_query_body(clause) {
-                    return Some(response);
-                }
-            }
-        }
-        if let Some(must_not) = bool_query.get("must_not").and_then(Value::as_array) {
-            for clause in must_not {
+        for clause_name in ["must", "filter", "should", "must_not"] {
+            for clause in bool_query_clauses(bool_query, clause_name) {
                 if let Some(response) = validate_search_query_body(clause) {
                     return Some(response);
                 }
@@ -25249,6 +25228,17 @@ fn format_time_value_millis(value: u64) -> String {
     }
 }
 
+fn bool_query_clauses<'a>(
+    bool_query: &'a serde_json::Map<String, Value>,
+    clause_name: &str,
+) -> Vec<&'a Value> {
+    match bool_query.get(clause_name) {
+        Some(Value::Array(clauses)) => clauses.iter().collect(),
+        Some(Value::Object(_)) => bool_query.get(clause_name).into_iter().collect(),
+        _ => Vec::new(),
+    }
+}
+
 fn extract_knn_field_name(query: &Value) -> Option<&str> {
     if let Some(knn) = query.get("knn").and_then(Value::as_object) {
         return knn.keys().next().map(String::as_str);
@@ -25272,10 +25262,9 @@ fn extract_knn_field_name(query: &Value) -> Option<&str> {
         return None;
     };
     for clause_name in ["must", "should", "filter", "must_not"] {
-        if let Some(field_name) = bool_query
-            .get(clause_name)
-            .and_then(Value::as_array)
-            .and_then(|clauses| clauses.iter().find_map(extract_knn_field_name))
+        if let Some(field_name) = bool_query_clauses(bool_query, clause_name)
+            .into_iter()
+            .find_map(extract_knn_field_name)
         {
             return Some(field_name);
         }
@@ -25309,10 +25298,9 @@ fn extract_knn_query_vector(query: &Value) -> Option<&Vec<Value>> {
     }
     let bool_query = query.get("bool").and_then(Value::as_object)?;
     for clause_name in ["must", "should", "filter", "must_not"] {
-        if let Some(vector) = bool_query
-            .get(clause_name)
-            .and_then(Value::as_array)
-            .and_then(|clauses| clauses.iter().find_map(extract_knn_query_vector))
+        if let Some(vector) = bool_query_clauses(bool_query, clause_name)
+            .into_iter()
+            .find_map(extract_knn_query_vector)
         {
             return Some(vector);
         }
@@ -26115,7 +26103,8 @@ fn extract_knn_limit(query: &Value) -> Option<usize> {
         }
     }
     if let Some(bool_query) = query.get("bool").and_then(Value::as_object) {
-        if let Some(shoulds) = bool_query.get("should").and_then(Value::as_array) {
+        let shoulds = bool_query_clauses(bool_query, "should");
+        if !shoulds.is_empty() {
             if bool_query.get("must").is_some() || bool_query.get("filter").is_some() {
                 return None;
             }
@@ -26142,13 +26131,11 @@ fn extract_knn_limit(query: &Value) -> Option<usize> {
         }
         let mut limits = Vec::new();
         for clause_name in ["must", "should", "filter"] {
-            if let Some(clauses) = bool_query.get(clause_name).and_then(Value::as_array) {
-                for clause in clauses {
-                    let Some(limit) = extract_knn_limit(clause) else {
-                        return None;
-                    };
-                    limits.push(limit);
-                }
+            for clause in bool_query_clauses(bool_query, clause_name) {
+                let Some(limit) = extract_knn_limit(clause) else {
+                    return None;
+                };
+                limits.push(limit);
             }
         }
         return if limits.len() == 1 {
@@ -26174,7 +26161,8 @@ fn query_uses_pure_knn_candidate_path(query: &Value) -> bool {
     let Some(bool_query) = query.get("bool").and_then(Value::as_object) else {
         return false;
     };
-    if let Some(shoulds) = bool_query.get("should").and_then(Value::as_array) {
+    let shoulds = bool_query_clauses(bool_query, "should");
+    if !shoulds.is_empty() {
         if bool_query.get("must").is_some() || bool_query.get("filter").is_some() {
             return false;
         }
@@ -26194,10 +26182,7 @@ fn query_uses_pure_knn_candidate_path(query: &Value) -> bool {
     }
     let mut positive_candidate_clauses = 0usize;
     for clause_name in ["must", "filter"] {
-        let Some(clauses) = bool_query.get(clause_name).and_then(Value::as_array) else {
-            continue;
-        };
-        for clause in clauses {
+        for clause in bool_query_clauses(bool_query, clause_name) {
             if query_uses_pure_knn_candidate_path(clause) {
                 positive_candidate_clauses += 1;
             } else {
@@ -26708,18 +26693,17 @@ fn evaluate_search_query_source_with_mappings(
         let mut has_scoring_clause = false;
         let mut has_filter_clause = false;
         let mut bool_matched_without_score = false;
-        if let Some(musts) = bool_query.get("must").and_then(Value::as_array) {
-            for clause in musts {
-                let (matched, score) =
-                    evaluate_search_query_source_with_mappings(source, doc_id, clause, mappings)?;
-                if !matched {
-                    return Some((false, 0.0));
-                }
-                total_score += score;
-                has_scoring_clause = true;
+        for clause in bool_query_clauses(bool_query, "must") {
+            let (matched, score) =
+                evaluate_search_query_source_with_mappings(source, doc_id, clause, mappings)?;
+            if !matched {
+                return Some((false, 0.0));
             }
+            total_score += score;
+            has_scoring_clause = true;
         }
-        if let Some(filters) = bool_query.get("filter").and_then(Value::as_array) {
+        let filters = bool_query_clauses(bool_query, "filter");
+        if !filters.is_empty() {
             has_filter_clause = true;
             let matched = filters.iter().all(|clause| {
                 evaluate_search_query_source_with_mappings(source, doc_id, clause, mappings)
@@ -26731,19 +26715,18 @@ fn evaluate_search_query_source_with_mappings(
             }
             bool_matched_without_score = true;
         }
-        if let Some(must_nots) = bool_query.get("must_not").and_then(Value::as_array) {
-            for clause in must_nots {
-                let (matched, _) =
-                    evaluate_search_query_source_with_mappings(source, doc_id, clause, mappings)?;
-                if matched {
-                    return Some((false, 0.0));
-                }
+        for clause in bool_query_clauses(bool_query, "must_not") {
+            let (matched, _) =
+                evaluate_search_query_source_with_mappings(source, doc_id, clause, mappings)?;
+            if matched {
+                return Some((false, 0.0));
             }
             bool_matched_without_score = true;
         }
-        if let Some(shoulds) = bool_query.get("should").and_then(Value::as_array) {
+        let shoulds = bool_query_clauses(bool_query, "should");
+        if !shoulds.is_empty() {
             let mut matched_should = 0usize;
-            for clause in shoulds {
+            for clause in &shoulds {
                 let (matched, score) =
                     evaluate_search_query_source_with_mappings(source, doc_id, clause, mappings)?;
                 if matched {
@@ -52692,6 +52675,44 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         );
         assert_eq!(must_not_only.status, 200);
         assert_eq!(must_not_only.body["hits"]["total"]["value"], 2);
+
+        let object_form_bool_clauses = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-dsl-000001/_search").with_json_body(
+                serde_json::json!({
+                    "query": {
+                        "bool": {
+                            "must": { "term": { "code": "beta-2" } },
+                            "filter": { "term": { "tags": "blue" } },
+                            "must_not": { "exists": { "field": "contact_email" } }
+                        }
+                    }
+                }),
+            ),
+        );
+        assert_eq!(object_form_bool_clauses.status, 200);
+        assert_eq!(object_form_bool_clauses.body["hits"]["total"]["value"], 1);
+        assert_eq!(
+            object_form_bool_clauses.body["hits"]["hits"][0]["_id"],
+            "doc-2"
+        );
+
+        let object_form_should_clause = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-dsl-000001/_search").with_json_body(
+                serde_json::json!({
+                    "query": {
+                        "bool": {
+                            "should": { "term": { "code": "gamma-3" } }
+                        }
+                    }
+                }),
+            ),
+        );
+        assert_eq!(object_form_should_clause.status, 200);
+        assert_eq!(object_form_should_clause.body["hits"]["total"]["value"], 1);
+        assert_eq!(
+            object_form_should_clause.body["hits"]["hits"][0]["_id"],
+            "doc-3"
+        );
 
         let zero_minimum_should_match = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/logs-search-dsl-000001/_search").with_json_body(
