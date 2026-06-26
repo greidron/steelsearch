@@ -1629,6 +1629,32 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end_at_ms,
         )?;
     } else if is_request
+        && normalized_action_hint == Some("indices:data/read/search/stream")
+        && stream_search_request_supports_local_execution_subset(&body)
+    {
+        let response = build_local_stream_search_response(request_id, header_version_id, &body);
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("indices:data/read/search/stream"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request
         && normalized_action_hint == Some("indices:data/read/msearch")
         && multi_search_request_supports_local_execution_subset(&body)
     {
@@ -4267,6 +4293,40 @@ fn decode_search_request_from_transport_body(
 ) -> Option<os_transport::action::OpenSearchSearchRequestWire> {
     let message = decode_transport_message_from_body(body)?;
     os_transport::action::read_opensearch_search_request_message(&message).ok()
+}
+
+fn build_local_stream_search_response(
+    request_id: i64,
+    header_version_id: u32,
+    body: &[u8],
+) -> Vec<u8> {
+    let Some(request) = decode_stream_search_request_from_transport_body(body) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    if request.validate_supported_execution_subset().is_err() {
+        return build_empty_transport_response(request_id, header_version_id);
+    }
+    let response = local_transport_search_response_from_request(&request);
+    os_transport::action::build_opensearch_search_response_message(
+        request_id,
+        Version::from_id(header_version_id as i32),
+        &response,
+    )
+    .map(|frame| frame.to_vec())
+    .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
+}
+
+fn stream_search_request_supports_local_execution_subset(body: &[u8]) -> bool {
+    decode_stream_search_request_from_transport_body(body)
+        .and_then(|request| request.validate_supported_execution_subset().ok())
+        .is_some()
+}
+
+fn decode_stream_search_request_from_transport_body(
+    body: &[u8],
+) -> Option<os_transport::action::OpenSearchSearchRequestWire> {
+    let message = decode_transport_message_from_body(body)?;
+    os_transport::action::read_opensearch_stream_search_request_message(&message).ok()
 }
 
 fn build_local_multi_search_response(
@@ -6939,6 +6999,15 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
             if search_request_supports_local_execution_subset(body) =>
         {
             Some(build_local_search_response(
+                request_id,
+                header_version_id,
+                body,
+            ))
+        }
+        Some("indices:data/read/search/stream")
+            if stream_search_request_supports_local_execution_subset(body) =>
+        {
+            Some(build_local_stream_search_response(
                 request_id,
                 header_version_id,
                 body,
@@ -11904,6 +11973,34 @@ mod tests {
                 .and_then(|source| source.get("status")),
             Some(&serde_json::json!("active"))
         );
+
+        let stream_frame = os_transport::action::build_opensearch_stream_search_request_message(
+            304,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &term_request,
+        )
+        .unwrap();
+        assert!(stream_search_request_supports_local_execution_subset(
+            &stream_frame[6..]
+        ));
+        let stream_response = build_local_stream_search_response(
+            304,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &stream_frame[6..],
+        );
+        let mut frame = BytesMut::from(&stream_response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected stream search response message");
+        };
+        let response = os_transport::action::read_opensearch_search_response_message(&message)
+            .expect("stream search response");
+        assert_eq!(response.total_hits, Some(1));
+        assert_eq!(response.hits.len(), 1);
+        assert_eq!(response.hits[0].id.as_deref(), Some("doc-1"));
 
         let multi_request = os_transport::action::OpenSearchMultiSearchRequestWire {
             requests: vec![match_all_request, term_request],

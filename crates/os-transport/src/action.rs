@@ -2368,8 +2368,8 @@ pub fn classify_opensearch_transport_action(
         },
         OPENSEARCH_STREAM_SEARCH_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
-            disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "stream search transport execution requires streaming search response mapping",
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "stream-search transport adapter executes the same bounded SearchRequest subset against local document state and renders OpenSearch SearchResponse wire",
         },
         OPENSEARCH_MULTI_SEARCH_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -43763,7 +43763,7 @@ mod tests {
         );
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_STREAM_SEARCH_ACTION_NAME).disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_MULTI_SEARCH_ACTION_NAME).disposition,
@@ -44246,6 +44246,7 @@ mod tests {
                 || spec.action_name == OPENSEARCH_GET_SETTINGS_ACTION_NAME
                 || spec.action_name == OPENSEARCH_FIELD_CAPABILITIES_ACTION_NAME
                 || spec.action_name == OPENSEARCH_SEARCH_ACTION_NAME
+                || spec.action_name == OPENSEARCH_STREAM_SEARCH_ACTION_NAME
                 || spec.action_name == OPENSEARCH_MULTI_SEARCH_ACTION_NAME
                 || spec.action_name == OPENSEARCH_SEARCH_SCROLL_ACTION_NAME
                 || spec.action_name == OPENSEARCH_EXPLAIN_ACTION_NAME
@@ -44320,7 +44321,6 @@ mod tests {
                 || spec.action_name == OPENSEARCH_REMOVE_RETENTION_LEASE_ACTION_NAME
                 || spec.action_name == OPENSEARCH_IMPORT_DANGLING_INDEX_ACTION_NAME
                 || spec.action_name == OPENSEARCH_DELETE_DANGLING_INDEX_ACTION_NAME
-                || spec.action_name == OPENSEARCH_STREAM_SEARCH_ACTION_NAME
             {
                 assert_eq!(
                     decision.disposition,

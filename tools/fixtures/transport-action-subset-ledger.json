@@ -62,14 +62,14 @@
       "reason": "bounded explain transport parity evaluates supported query builders against local document state and returns OpenSearch-shaped explain responses"
     },
     {
-      "case": "stream_search_planned_reject",
+      "case": "stream_search_server_side_subset",
       "action": "StreamSearchAction.INSTANCE",
       "transport_class": "StreamTransportSearchAction.class",
       "family": "search",
-      "bucket": "planned",
-      "disposition": "rejected",
+      "bucket": "server-side",
+      "disposition": "allowed",
       "route_family": "/_search/stream",
-      "reason": "stream search transport dispatch is not implemented and must fail closed"
+      "reason": "bounded stream-search transport parity executes the supported search request subset and returns OpenSearch-shaped search responses"
     }
   ]
 }
