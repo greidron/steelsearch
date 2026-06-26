@@ -5794,14 +5794,25 @@ fn local_transport_query_matches(
         Some(os_transport::action::OpenSearchQueryBuilderWire::Bool(bool_query)) => {
             local_transport_bool_query_matches(source, id, bool_query)
         }
+        Some(os_transport::action::OpenSearchQueryBuilderWire::Boosting(query)) => {
+            local_transport_query_matches(source, id, Some(query.positive.as_ref()))
+        }
         Some(os_transport::action::OpenSearchQueryBuilderWire::ConstantScore(query)) => {
             local_transport_query_matches(source, id, Some(query.filter.as_ref()))
         }
+        Some(os_transport::action::OpenSearchQueryBuilderWire::DisMax(query)) => query
+            .queries
+            .iter()
+            .any(|query| local_transport_query_matches(source, id, Some(query))),
         Some(os_transport::action::OpenSearchQueryBuilderWire::Exists(exists)) => {
             if exists.field_name == "_id" {
                 return true;
             }
             lookup_transport_source_value(source, &exists.field_name).is_some()
+        }
+        Some(os_transport::action::OpenSearchQueryBuilderWire::FunctionScore(query)) => {
+            query.min_score.is_none()
+                && local_transport_query_matches(source, id, Some(query.query.as_ref()))
         }
         Some(os_transport::action::OpenSearchQueryBuilderWire::Ids(ids)) => {
             ids.ids.iter().any(|candidate| candidate == id)
@@ -5823,6 +5834,10 @@ fn local_transport_query_matches(
                 lookup_transport_source_value(source, &range.field_name).cloned()
             };
             value.is_some_and(|value| local_transport_range_query_matches(&value, range))
+        }
+        Some(os_transport::action::OpenSearchQueryBuilderWire::ScriptScore(query)) => {
+            query.min_score.is_none()
+                && local_transport_query_matches(source, id, Some(query.query.as_ref()))
         }
         Some(os_transport::action::OpenSearchQueryBuilderWire::Term(term)) => {
             if term.field_name == "_id" {
@@ -15884,6 +15899,70 @@ mod tests {
                     id: encoded_pit_id.clone(),
                     keep_alive: Some(os_transport::action::TimeValueWire::minutes(1)),
                 }),
+                query: Some(os_transport::action::OpenSearchQueryBuilderWire::DisMax(
+                    os_transport::action::OpenSearchDisMaxQueryBuilderWire {
+                        boost: 1.0,
+                        query_name: Some("reader-pit-dismax".to_string()),
+                        queries: vec![os_transport::action::OpenSearchQueryBuilderWire::Boosting(
+                            os_transport::action::OpenSearchBoostingQueryBuilderWire {
+                                boost: 1.0,
+                                query_name: Some("reader-pit-boosting".to_string()),
+                                positive: Box::new(
+                                    os_transport::action::OpenSearchQueryBuilderWire::FunctionScore(
+                                        os_transport::action::OpenSearchFunctionScoreQueryBuilderWire {
+                                            boost: 1.0,
+                                            query_name: Some("reader-pit-function-score".to_string()),
+                                            query: Box::new(
+                                                os_transport::action::OpenSearchQueryBuilderWire::ScriptScore(
+                                                    os_transport::action::OpenSearchScriptScoreQueryBuilderWire {
+                                                        boost: 1.0,
+                                                        query_name: Some("reader-pit-script-score".to_string()),
+                                                        query: Box::new(
+                                                            os_transport::action::OpenSearchQueryBuilderWire::Term(
+                                                                os_transport::action::OpenSearchTermQueryBuilderWire {
+                                                                    boost: 1.0,
+                                                                    query_name: None,
+                                                                    field_name: "tenant".to_string(),
+                                                                    value: serde_json::json!("a"),
+                                                                    case_insensitive: false,
+                                                                },
+                                                            ),
+                                                        ),
+                                                        script: os_transport::action::OpenSearchInlineScriptWire {
+                                                            lang: Some("painless".to_string()),
+                                                            source: "1.0".to_string(),
+                                                            options: serde_json::json!({}),
+                                                            params: serde_json::json!({}),
+                                                        },
+                                                        min_score: None,
+                                                    },
+                                                ),
+                                            ),
+                                            filter_functions: Vec::new(),
+                                            max_boost: 3.4028235e38_f32,
+                                            min_score: None,
+                                            boost_mode: None,
+                                            score_mode: os_transport::action::OpenSearchFunctionScoreModeWire::Multiply,
+                                        },
+                                    ),
+                                ),
+                                negative: Box::new(
+                                    os_transport::action::OpenSearchQueryBuilderWire::Term(
+                                        os_transport::action::OpenSearchTermQueryBuilderWire {
+                                            boost: 1.0,
+                                            query_name: None,
+                                            field_name: "tenant".to_string(),
+                                            value: serde_json::json!("z"),
+                                            case_insensitive: false,
+                                        },
+                                    ),
+                                ),
+                                negative_boost: 0.5,
+                            },
+                        )],
+                        tie_breaker: 0.0,
+                    },
+                )),
                 ..os_transport::action::OpenSearchSearchSourceBuilderWire::default()
             }),
             indices_options:
