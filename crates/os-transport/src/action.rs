@@ -24372,6 +24372,7 @@ pub struct OpenSearchSearchRequestWire {
     pub indices: Vec<String>,
     pub routing: Option<String>,
     pub preference: Option<String>,
+    pub scroll: Option<OpenSearchScrollWire>,
     pub source: Option<OpenSearchSearchSourceBuilderWire>,
     pub indices_options: OpenSearchIndicesOptionsWire,
     pub request_cache: Option<bool>,
@@ -24395,6 +24396,7 @@ impl Default for OpenSearchSearchRequestWire {
             indices: Vec::new(),
             routing: None,
             preference: None,
+            scroll: None,
             source: None,
             indices_options:
                 OpenSearchIndicesOptionsWire::strict_expand_open_forbid_closed_ignore_throttled(),
@@ -24419,7 +24421,7 @@ impl OpenSearchSearchRequestWire {
         output.write_string_array(&self.indices);
         output.write_optional_string(self.routing.as_deref());
         output.write_optional_string(self.preference.as_deref());
-        output.write_bool(false);
+        write_optional_search_scroll(output, self.scroll.as_ref());
         output.write_bool(self.source.is_some());
         if let Some(source) = &self.source {
             write_search_source_builder(output, source);
@@ -24460,12 +24462,7 @@ impl OpenSearchSearchRequestWire {
         let indices = input.read_string_array()?;
         let routing = input.read_optional_string()?;
         let preference = input.read_optional_string()?;
-        if input.read_bool()? {
-            return Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "search request scroll",
-                reason: "scroll search requests require scroll context mapping before admission",
-            });
-        }
+        let scroll = read_optional_search_scroll(input)?;
         let source = if input.read_bool()? {
             Some(read_search_source_builder(input)?)
         } else {
@@ -24489,6 +24486,7 @@ impl OpenSearchSearchRequestWire {
             indices,
             routing,
             preference,
+            scroll,
             source,
             indices_options,
             request_cache,
@@ -24541,6 +24539,48 @@ impl OpenSearchSearchRequestWire {
         }
         if let Some(source) = &self.source {
             source.validate_supported_subset()?;
+        }
+        if let Some(scroll) = &self.scroll {
+            scroll.validate_supported_subset()?;
+            if let Some(source) = &self.source {
+                if source
+                    .track_total_hits_up_to
+                    .is_some_and(|track_total_hits| track_total_hits != i32::MAX)
+                {
+                    return Err(TransportActionWireError::UnsupportedWireShape {
+                        shape: "search request scroll track total hits",
+                        reason: "OpenSearch scroll requires accurate track_total_hits when explicitly set",
+                    });
+                }
+                if source.from > 0 {
+                    return Err(TransportActionWireError::UnsupportedWireShape {
+                        shape: "search request scroll from",
+                        reason: "OpenSearch scroll does not allow from greater than zero",
+                    });
+                }
+                if source.size == 0 {
+                    return Err(TransportActionWireError::UnsupportedWireShape {
+                        shape: "search request scroll size",
+                        reason: "OpenSearch scroll does not allow size zero",
+                    });
+                }
+                if source.point_in_time.is_some() {
+                    return Err(TransportActionWireError::UnsupportedWireShape {
+                        shape: "search request scroll point in time",
+                        reason: "OpenSearch point-in-time is not allowed in a scroll context",
+                    });
+                }
+            }
+            if self.request_cache == Some(true) {
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "search request scroll cache",
+                    reason: "OpenSearch request_cache cannot be true in a scroll context",
+                });
+            }
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request scroll execution",
+                reason: "initial scroll search execution requires scroll context lifecycle mapping",
+            });
         }
         if self.indices_options
             != OpenSearchIndicesOptionsWire::strict_expand_open_forbid_closed_ignore_throttled()
@@ -24612,6 +24652,51 @@ impl OpenSearchSearchRequestWire {
         }
         Ok(())
     }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchScrollWire {
+    pub keep_alive: TimeValueWire,
+}
+
+impl OpenSearchScrollWire {
+    fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
+        if self.keep_alive.duration < -1 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request scroll keep alive",
+                reason: "OpenSearch TimeValue rejects durations below -1",
+            });
+        }
+        if self.keep_alive.time_unit_ordinal > 6 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request scroll keep alive unit",
+                reason: "OpenSearch scroll keep-alive uses an unknown time unit",
+            });
+        }
+        Ok(())
+    }
+}
+
+fn write_optional_search_scroll(output: &mut StreamOutput, scroll: Option<&OpenSearchScrollWire>) {
+    if let Some(scroll) = scroll {
+        output.write_bool(true);
+        scroll.keep_alive.write(output);
+    } else {
+        output.write_bool(false);
+    }
+}
+
+fn read_optional_search_scroll(
+    input: &mut StreamInput,
+) -> Result<Option<OpenSearchScrollWire>, TransportActionWireError> {
+    if !input.read_bool()? {
+        return Ok(None);
+    }
+    let scroll = OpenSearchScrollWire {
+        keep_alive: TimeValueWire::read(input)?,
+    };
+    scroll.validate_supported_subset()?;
+    Ok(Some(scroll))
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -67463,6 +67548,113 @@ mod tests {
             })
         ));
 
+        let invalid_scroll_keep_alive = OpenSearchSearchRequestWire {
+            scroll: Some(OpenSearchScrollWire {
+                keep_alive: TimeValueWire {
+                    duration: -2,
+                    time_unit_ordinal: TIME_UNIT_MILLISECONDS,
+                },
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        assert!(matches!(
+            invalid_scroll_keep_alive.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request scroll keep alive",
+                ..
+            })
+        ));
+
+        let scroll_with_from = OpenSearchSearchRequestWire {
+            scroll: Some(OpenSearchScrollWire {
+                keep_alive: TimeValueWire::minutes(1),
+            }),
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                from: 1,
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        assert!(matches!(
+            scroll_with_from.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request scroll from",
+                ..
+            })
+        ));
+
+        let scroll_with_size_zero = OpenSearchSearchRequestWire {
+            scroll: Some(OpenSearchScrollWire {
+                keep_alive: TimeValueWire::minutes(1),
+            }),
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                size: 0,
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        assert!(matches!(
+            scroll_with_size_zero.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request scroll size",
+                ..
+            })
+        ));
+
+        let scroll_with_inaccurate_total_hits = OpenSearchSearchRequestWire {
+            scroll: Some(OpenSearchScrollWire {
+                keep_alive: TimeValueWire::minutes(1),
+            }),
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                track_total_hits_up_to: Some(100),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        assert!(matches!(
+            scroll_with_inaccurate_total_hits.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request scroll track total hits",
+                ..
+            })
+        ));
+
+        let scroll_with_pit = OpenSearchSearchRequestWire {
+            scroll: Some(OpenSearchScrollWire {
+                keep_alive: TimeValueWire::minutes(1),
+            }),
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                point_in_time: Some(OpenSearchPointInTimeBuilderWire {
+                    id: "pit-context".to_string(),
+                    keep_alive: Some(TimeValueWire::minutes(1)),
+                }),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        assert!(matches!(
+            scroll_with_pit.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request scroll point in time",
+                ..
+            })
+        ));
+
+        let scroll_with_request_cache = OpenSearchSearchRequestWire {
+            scroll: Some(OpenSearchScrollWire {
+                keep_alive: TimeValueWire::minutes(1),
+            }),
+            request_cache: Some(true),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        assert!(matches!(
+            scroll_with_request_cache.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request scroll cache",
+                ..
+            })
+        ));
+
         let mut unsupported_sort = StreamOutput::new();
         unsupported_sort.write_bool(true);
         unsupported_sort.write_vint(1);
@@ -67878,20 +68070,30 @@ mod tests {
             stored_fields_none
         );
 
+        let scroll_request = OpenSearchSearchRequestWire {
+            scroll: Some(OpenSearchScrollWire {
+                keep_alive: TimeValueWire::minutes(1),
+            }),
+            request_cache: Some(false),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        let mut output = StreamOutput::new();
+        scroll_request.write(&mut output);
+        let decoded = OpenSearchSearchRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, scroll_request);
+        assert!(matches!(
+            decoded.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request scroll execution",
+                ..
+            })
+        ));
+
         let source_present = search_request_body_with_present_query();
         assert!(matches!(
             OpenSearchSearchRequestWire::read(source_present.freeze()),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "search request source query",
-                ..
-            })
-        ));
-
-        let scroll_present = search_request_body_with_optional_writeable_shape(true, false);
-        assert!(matches!(
-            OpenSearchSearchRequestWire::read(scroll_present.freeze()),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "search request scroll",
                 ..
             })
         ));
@@ -69506,39 +69708,6 @@ mod tests {
                 ..
             }
         ));
-    }
-
-    fn search_request_body_with_optional_writeable_shape(
-        scroll_present: bool,
-        source_present: bool,
-    ) -> BytesMut {
-        let mut output = StreamOutput::new();
-        write_parent_task_id(&mut output, "", None);
-        output.write_byte(1);
-        output.write_string_array(&[]);
-        output.write_optional_string(None);
-        output.write_optional_string(None);
-        output.write_bool(scroll_present);
-        if scroll_present {
-            return BytesMut::from(&output.freeze()[..]);
-        }
-        output.write_bool(source_present);
-        if source_present {
-            write_search_source_builder(&mut output, &OpenSearchSearchSourceBuilderWire::default());
-            OpenSearchIndicesOptionsWire::strict_expand_open_forbid_closed_ignore_throttled()
-                .write(&mut output);
-            write_optional_bool(&mut output, None);
-            output.write_vint(512);
-            output.write_vint(0);
-            write_optional_vint(&mut output, None);
-            write_optional_bool(&mut output, None);
-            output.write_optional_string(None);
-            output.write_bool(true);
-            write_optional_time_value(&mut output, None);
-            output.write_optional_string(None);
-            write_optional_bool(&mut output, None);
-        }
-        BytesMut::from(&output.freeze()[..])
     }
 
     fn search_request_body_with_present_query() -> BytesMut {
