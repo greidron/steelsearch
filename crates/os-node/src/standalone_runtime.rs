@@ -45026,6 +45026,51 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
     }
 
     #[test]
+    fn pit_search_longer_keep_alive_extends_context_like_opensearch() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(
+                RestMethod::Put,
+                "/logs-pit-search-keep-alive-extend"
+            ))
+            .status,
+            200
+        );
+
+        let open_pit = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/logs-pit-search-keep-alive-extend/_search/point_in_time?keep_alive=1m",
+        ));
+        assert_eq!(open_pit.status, 200);
+        let pit_id = open_pit.body["pit_id"].as_str().unwrap();
+
+        let pit_search = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_search").with_json_body(serde_json::json!({
+                "pit": {
+                    "id": pit_id,
+                    "keep_alive": "10m"
+                },
+                "query": { "match_all": {} },
+                "size": 0
+            })),
+        );
+        assert_eq!(pit_search.status, 200);
+        assert_eq!(pit_search.body["pit_id"], pit_id);
+
+        let listed_pits = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_search/point_in_time/_all",
+        ));
+        assert_eq!(listed_pits.status, 200);
+        assert_eq!(listed_pits.body["pits"][0]["pit_id"], pit_id);
+        assert_eq!(listed_pits.body["pits"][0]["keep_alive"], 600000);
+    }
+
+    #[test]
     fn create_pit_on_closed_index_fails_without_allocating_context() {
         let node = SteelNode::new(NodeInfo {
             name: "steel-node".to_string(),
