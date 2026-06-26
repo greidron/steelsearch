@@ -25,10 +25,7 @@ pub struct StatsRouteRegistryEntry {
     pub hook: StatsRouteInvokeFn,
 }
 
-fn normalize_top_level_fields(
-    body: &serde_json::Value,
-    fields: &[&str],
-) -> serde_json::Value {
+fn normalize_top_level_fields(body: &serde_json::Value, fields: &[&str]) -> serde_json::Value {
     let mut normalized = serde_json::Map::new();
     for field in fields {
         if let Some(value) = body.get(*field) {

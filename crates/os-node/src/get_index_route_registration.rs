@@ -41,7 +41,11 @@ pub fn build_get_index_metadata_response(
 
     let matched_names = index_map
         .keys()
-        .filter(|name| selectors.iter().any(|selector| selector_matches(selector, name)))
+        .filter(|name| {
+            selectors
+                .iter()
+                .any(|selector| selector_matches(selector, name))
+        })
         .cloned()
         .collect::<Vec<_>>();
     build_get_index_metadata_response_for_names(indices, &matched_names)
@@ -90,7 +94,10 @@ mod tests {
     fn get_index_registry_entry_describes_metadata_readback_surface() {
         assert_eq!(GET_INDEX_ROUTE_REGISTRY_ENTRY.method, "GET");
         assert_eq!(GET_INDEX_ROUTE_REGISTRY_ENTRY.path, "/{index}");
-        assert_eq!(GET_INDEX_ROUTE_REGISTRY_ENTRY.family, "index_metadata_readback");
+        assert_eq!(
+            GET_INDEX_ROUTE_REGISTRY_ENTRY.family,
+            "index_metadata_readback"
+        );
     }
 
     #[test]
@@ -139,10 +146,8 @@ mod tests {
             "logs-000002": { "settings": {}, "mappings": {}, "aliases": {} }
         });
 
-        let response = build_get_index_metadata_response_for_names(
-            &indices,
-            &["logs-000002".to_string()],
-        );
+        let response =
+            build_get_index_metadata_response_for_names(&indices, &["logs-000002".to_string()]);
 
         assert!(response.get("logs-000002").is_some());
         assert!(response.get("logs-000001").is_none());

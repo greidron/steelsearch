@@ -137,7 +137,10 @@ mod tests {
     #[test]
     fn update_doc_registry_entry_describes_partial_update_surface() {
         assert_eq!(UPDATE_DOC_ROUTE_REGISTRY_ENTRY.method, "POST");
-        assert_eq!(UPDATE_DOC_ROUTE_REGISTRY_ENTRY.path, "/{index}/_update/{id}");
+        assert_eq!(
+            UPDATE_DOC_ROUTE_REGISTRY_ENTRY.path,
+            "/{index}/_update/{id}"
+        );
         assert_eq!(UPDATE_DOC_ROUTE_REGISTRY_ENTRY.family, "single_doc_update");
     }
 

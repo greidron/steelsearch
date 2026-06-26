@@ -11,8 +11,14 @@ pub const GET_DOC_REQUEST_QUERY_FIELDS: [&str; 5] = [
     "realtime",
     "routing",
 ];
-pub const GET_DOC_RESPONSE_FIELDS: [&str; 6] =
-    ["_index", "_id", "_version", "_seq_no", "_primary_term", "found"];
+pub const GET_DOC_RESPONSE_FIELDS: [&str; 6] = [
+    "_index",
+    "_id",
+    "_version",
+    "_seq_no",
+    "_primary_term",
+    "found",
+];
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct SingleDocGetRouteRegistryEntry {
@@ -70,8 +76,7 @@ pub const GET_DOC_ROUTE_REGISTRY_ENTRY: SingleDocGetRouteRegistryEntry =
 pub const GET_DOC_ROUTE_REGISTRY_TABLE: [SingleDocGetRouteRegistryEntry; 1] =
     [GET_DOC_ROUTE_REGISTRY_ENTRY];
 
-pub type SingleDocGetReadHook =
-    fn(&serde_json::Value, &serde_json::Value) -> serde_json::Value;
+pub type SingleDocGetReadHook = fn(&serde_json::Value, &serde_json::Value) -> serde_json::Value;
 
 pub fn invoke_get_doc_live_read(
     query: &serde_json::Value,

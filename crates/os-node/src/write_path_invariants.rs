@@ -46,6 +46,8 @@ mod tests {
         assert!(requires_explicit_refresh_boundary(
             "refresh_visibility_boundary"
         ));
-        assert!(!requires_multi_node_validation("refresh_visibility_boundary"));
+        assert!(!requires_multi_node_validation(
+            "refresh_visibility_boundary"
+        ));
     }
 }

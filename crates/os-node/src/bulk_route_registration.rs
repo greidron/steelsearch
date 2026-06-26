@@ -181,7 +181,10 @@ mod tests {
     fn bulk_registry_table_describes_global_and_index_scoped_surfaces() {
         assert_eq!(GLOBAL_BULK_ROUTE_REGISTRY_ENTRY.method, "POST");
         assert_eq!(GLOBAL_BULK_ROUTE_REGISTRY_ENTRY.path, "/_bulk");
-        assert_eq!(INDEX_SCOPED_BULK_ROUTE_REGISTRY_ENTRY.path, "/{index}/_bulk");
+        assert_eq!(
+            INDEX_SCOPED_BULK_ROUTE_REGISTRY_ENTRY.path,
+            "/{index}/_bulk"
+        );
     }
 
     #[test]
@@ -317,14 +320,26 @@ mod tests {
                 "retry_on_conflict": 3
             })
         );
-        assert_eq!(build_bulk_item_body_subset("delete", &serde_json::json!({})), serde_json::Value::Null);
+        assert_eq!(
+            build_bulk_item_body_subset("delete", &serde_json::json!({})),
+            serde_json::Value::Null
+        );
     }
 
     #[test]
     fn bulk_result_classes_are_bounded_per_item_type() {
-        assert_eq!(supported_bulk_result_classes("index"), &["created", "updated"]);
+        assert_eq!(
+            supported_bulk_result_classes("index"),
+            &["created", "updated"]
+        );
         assert_eq!(supported_bulk_result_classes("create"), &["created"]);
-        assert_eq!(supported_bulk_result_classes("update"), &["updated", "created"]);
-        assert_eq!(supported_bulk_result_classes("delete"), &["deleted", "not_found"]);
+        assert_eq!(
+            supported_bulk_result_classes("update"),
+            &["updated", "created"]
+        );
+        assert_eq!(
+            supported_bulk_result_classes("delete"),
+            &["deleted", "not_found"]
+        );
     }
 }

@@ -43,8 +43,14 @@ pub fn build_single_alias_add_action(
     body: &serde_json::Value,
 ) -> serde_json::Value {
     let mut add = serde_json::Map::new();
-    add.insert("index".to_string(), serde_json::Value::String(index.to_string()));
-    add.insert("alias".to_string(), serde_json::Value::String(alias.to_string()));
+    add.insert(
+        "index".to_string(),
+        serde_json::Value::String(index.to_string()),
+    );
+    add.insert(
+        "alias".to_string(),
+        serde_json::Value::String(alias.to_string()),
+    );
 
     if let Some(metadata) = build_alias_metadata_subset(body).as_object() {
         for (key, value) in metadata {
@@ -108,7 +114,10 @@ pub fn build_bulk_alias_actions_subset(body: &serde_json::Value) -> serde_json::
             continue;
         }
 
-        if let Some(remove_index) = action.get("remove_index").and_then(|value| value.as_object()) {
+        if let Some(remove_index) = action
+            .get("remove_index")
+            .and_then(|value| value.as_object())
+        {
             let mut bounded_remove_index = serde_json::Map::new();
             if let Some(value) = remove_index.get("index") {
                 bounded_remove_index.insert("index".to_string(), value.clone());
@@ -234,6 +243,8 @@ mod tests {
         assert_eq!(subset["actions"][1]["remove"]["alias"], "logs-read");
         assert!(subset["actions"][1]["remove"].get("must_exist").is_none());
         assert_eq!(subset["actions"][2]["remove_index"]["index"], "logs-000002");
-        assert!(subset["actions"][2]["remove_index"].get("must_exist").is_none());
+        assert!(subset["actions"][2]["remove_index"]
+            .get("must_exist")
+            .is_none());
     }
 }

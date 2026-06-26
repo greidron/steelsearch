@@ -66,7 +66,10 @@ mod tests {
     fn data_stream_registry_table_covers_read_write_and_stats_forms() {
         assert_eq!(DATA_STREAM_ROUTE_REGISTRY_TABLE.len(), 5);
         assert_eq!(DATA_STREAM_ROUTE_REGISTRY_TABLE[0].path, "/_data_stream");
-        assert_eq!(DATA_STREAM_ROUTE_REGISTRY_TABLE[2].path, "/_data_stream/_stats");
+        assert_eq!(
+            DATA_STREAM_ROUTE_REGISTRY_TABLE[2].path,
+            "/_data_stream/_stats"
+        );
         assert_eq!(DATA_STREAM_ROUTE_REGISTRY_TABLE[4].method, "DELETE");
     }
 

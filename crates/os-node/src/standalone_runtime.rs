@@ -46681,7 +46681,10 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         );
         assert_eq!(live_search.status, 200);
         assert_eq!(live_search.body["hits"]["total"], 3);
-        assert_eq!(live_search.body["hits"]["hits"].as_array().unwrap().len(), 1);
+        assert_eq!(
+            live_search.body["hits"]["hits"].as_array().unwrap().len(),
+            1
+        );
 
         let listed_pits = node.handle_rest_request(RestRequest::new(
             RestMethod::Get,
@@ -46825,19 +46828,17 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         });
 
         let create = node.handle_rest_request(
-            RestRequest::new(RestMethod::Put, "/sharddoc-scan").with_json_body(
-                serde_json::json!({
-                    "settings": {
-                        "number_of_shards": 2,
-                        "number_of_replicas": 0
-                    },
-                    "mappings": {
-                        "properties": {
-                            "v": { "type": "long" }
-                        }
+            RestRequest::new(RestMethod::Put, "/sharddoc-scan").with_json_body(serde_json::json!({
+                "settings": {
+                    "number_of_shards": 2,
+                    "number_of_replicas": 0
+                },
+                "mappings": {
+                    "properties": {
+                        "v": { "type": "long" }
                     }
-                }),
-            ),
+                }
+            })),
         );
         assert_eq!(create.status, 200);
 
@@ -46855,7 +46856,10 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 "/sharddoc-scan/_search/point_in_time?keep_alive=1m",
             ));
             assert_eq!(open_pit.status, 200, "{order}");
-            let pit_id = open_pit.body["pit_id"].as_str().expect("pit id").to_string();
+            let pit_id = open_pit.body["pit_id"]
+                .as_str()
+                .expect("pit id")
+                .to_string();
             let mut seen_ids = BTreeSet::new();
             let mut shard_doc_keys = Vec::new();
             let mut search_after = None;
@@ -46882,7 +46886,10 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 let hits = page.body["hits"]["hits"].as_array().expect("hits");
                 for hit in hits {
                     let id = hit["_id"].as_str().expect("hit id").to_string();
-                    assert!(seen_ids.insert(id.clone()), "duplicate hit {id} for {order}");
+                    assert!(
+                        seen_ids.insert(id.clone()),
+                        "duplicate hit {id} for {order}"
+                    );
                     shard_doc_keys.push(hit["sort"][0].as_i64().expect("_shard_doc sort"));
                 }
                 if hits.len() < page_size {
@@ -46946,7 +46953,10 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             "/sharddoc-tiebreak/_search/point_in_time?keep_alive=1m",
         ));
         assert_eq!(open_pit.status, 200);
-        let pit_id = open_pit.body["pit_id"].as_str().expect("pit id").to_string();
+        let pit_id = open_pit.body["pit_id"]
+            .as_str()
+            .expect("pit id")
+            .to_string();
         let page_size = 10;
         let mut search_after = None;
         let mut seen_ids = BTreeSet::new();
@@ -47036,7 +47046,10 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             "/sharddoc-resume/_search/point_in_time?keep_alive=1m",
         ));
         assert_eq!(open_pit.status, 200);
-        let pit_id = open_pit.body["pit_id"].as_str().expect("pit id").to_string();
+        let pit_id = open_pit.body["pit_id"]
+            .as_str()
+            .expect("pit id")
+            .to_string();
 
         let first_page = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/_search").with_json_body(serde_json::json!({
@@ -47284,7 +47297,10 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 "/sharddoc-boundary/_search/point_in_time?keep_alive=1m",
             ));
             assert_eq!(open_pit.status, 200, "{page_size}");
-            let pit_id = open_pit.body["pit_id"].as_str().expect("pit id").to_string();
+            let pit_id = open_pit.body["pit_id"]
+                .as_str()
+                .expect("pit id")
+                .to_string();
             pit_ids.push(pit_id.clone());
             let mut search_after = None;
             let mut keys = Vec::new();
@@ -47370,10 +47386,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(second.status, 200);
         let second_hits = second.body["hits"]["hits"].as_array().expect("hits");
         if let Some(first_second_page_hit) = second_hits.first() {
-            assert_ne!(
-                first_second_page_hit["_id"].as_str().expect("id"),
-                last_id
-            );
+            assert_ne!(first_second_page_hit["_id"].as_str().expect("id"), last_id);
         }
 
         let close_pit = node.handle_rest_request(
@@ -47409,8 +47422,11 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
 
         for id in 1..=500 {
             let doc = node.handle_rest_request(
-                RestRequest::new(RestMethod::Put, &format!("/sharddoc-interleaving/_doc/{id}"))
-                    .with_json_body(serde_json::json!({ "v": id })),
+                RestRequest::new(
+                    RestMethod::Put,
+                    &format!("/sharddoc-interleaving/_doc/{id}"),
+                )
+                .with_json_body(serde_json::json!({ "v": id })),
             );
             assert_eq!(doc.status, 201, "{id}");
         }
@@ -47422,7 +47438,10 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 "/sharddoc-interleaving/_search/point_in_time?keep_alive=1m",
             ));
             assert_eq!(open_pit.status, 200, "{page_size}");
-            let pit_id = open_pit.body["pit_id"].as_str().expect("pit id").to_string();
+            let pit_id = open_pit.body["pit_id"]
+                .as_str()
+                .expect("pit id")
+                .to_string();
             pit_ids.push(pit_id.clone());
 
             let mut search_after = None;

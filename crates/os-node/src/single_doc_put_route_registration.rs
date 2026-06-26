@@ -22,8 +22,7 @@ pub struct SingleDocPutRouteRegistryEntry {
     pub family: &'static str,
 }
 
-pub type SingleDocPutWriteHook =
-    fn(&serde_json::Value, &serde_json::Value) -> serde_json::Value;
+pub type SingleDocPutWriteHook = fn(&serde_json::Value, &serde_json::Value) -> serde_json::Value;
 
 pub fn build_put_doc_query_subset(query: &serde_json::Value) -> serde_json::Value {
     let Some(object) = query.as_object() else {

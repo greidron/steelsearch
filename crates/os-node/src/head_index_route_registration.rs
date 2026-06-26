@@ -69,7 +69,10 @@ mod tests {
     fn head_index_registry_entry_describes_exact_target_probe_surface() {
         assert_eq!(HEAD_INDEX_ROUTE_REGISTRY_ENTRY.method, RestMethod::Head);
         assert_eq!(HEAD_INDEX_ROUTE_REGISTRY_ENTRY.path, "/{index}");
-        assert_eq!(HEAD_INDEX_ROUTE_REGISTRY_ENTRY.family, "index_existence_probe");
+        assert_eq!(
+            HEAD_INDEX_ROUTE_REGISTRY_ENTRY.family,
+            "index_existence_probe"
+        );
     }
 
     #[test]

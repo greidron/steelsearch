@@ -68,8 +68,12 @@ pub fn build_alias_readback_response(
     index_target: Option<&str>,
     alias_target: Option<&str>,
 ) -> serde_json::Value {
-    let index_selectors = index_target.map(parse_alias_read_selectors).unwrap_or_default();
-    let alias_selectors = alias_target.map(parse_alias_read_selectors).unwrap_or_default();
+    let index_selectors = index_target
+        .map(parse_alias_read_selectors)
+        .unwrap_or_default();
+    let alias_selectors = alias_target
+        .map(parse_alias_read_selectors)
+        .unwrap_or_default();
     let Some(index_map) = indices.as_object() else {
         return serde_json::json!({});
     };
@@ -150,7 +154,10 @@ mod tests {
         assert_eq!(ALIAS_READ_ROUTE_REGISTRY_TABLE[0].path, "/_alias");
         assert_eq!(ALIAS_READ_ROUTE_REGISTRY_TABLE[1].path, "/_alias/{name}");
         assert_eq!(ALIAS_READ_ROUTE_REGISTRY_TABLE[2].path, "/{index}/_alias");
-        assert_eq!(ALIAS_READ_ROUTE_REGISTRY_TABLE[3].path, "/{index}/_alias/{name}");
+        assert_eq!(
+            ALIAS_READ_ROUTE_REGISTRY_TABLE[3].path,
+            "/{index}/_alias/{name}"
+        );
         assert_eq!(ALIAS_READ_ROUTE_REGISTRY_TABLE[4].path, "/_aliases");
     }
 
@@ -181,27 +188,22 @@ mod tests {
         });
 
         let global_named = build_alias_readback_response(&indices, None, Some("logs-read"));
-        let index_scoped = build_alias_readback_response(&indices, Some("logs-000001"), Some("logs-*"));
+        let index_scoped =
+            build_alias_readback_response(&indices, Some("logs-000001"), Some("logs-*"));
         let wildcard_aliases = build_alias_readback_response(&indices, None, Some("*-read"));
 
         assert!(global_named.get("logs-000001").is_some());
         assert!(global_named.get("metrics-000001").is_none());
         assert!(index_scoped.get("logs-000001").is_some());
         assert!(index_scoped.get("metrics-000001").is_none());
-        assert!(
-            wildcard_aliases["logs-000001"]["aliases"]
-                .get("logs-read")
-                .is_some()
-        );
-        assert!(
-            wildcard_aliases["metrics-000001"]["aliases"]
-                .get("metrics-read")
-                .is_some()
-        );
-        assert!(
-            wildcard_aliases["logs-000001"]["aliases"]
-                .get("logs-write")
-                .is_none()
-        );
+        assert!(wildcard_aliases["logs-000001"]["aliases"]
+            .get("logs-read")
+            .is_some());
+        assert!(wildcard_aliases["metrics-000001"]["aliases"]
+            .get("metrics-read")
+            .is_some());
+        assert!(wildcard_aliases["logs-000001"]["aliases"]
+            .get("logs-write")
+            .is_none());
     }
 }

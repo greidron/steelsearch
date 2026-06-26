@@ -72,8 +72,7 @@ pub const DELETE_DOC_ROUTE_REGISTRY_ENTRY: SingleDocDeleteRouteRegistryEntry =
 pub const DELETE_DOC_ROUTE_REGISTRY_TABLE: [SingleDocDeleteRouteRegistryEntry; 1] =
     [DELETE_DOC_ROUTE_REGISTRY_ENTRY];
 
-pub type SingleDocDeleteWriteHook =
-    fn(&serde_json::Value, &serde_json::Value) -> serde_json::Value;
+pub type SingleDocDeleteWriteHook = fn(&serde_json::Value, &serde_json::Value) -> serde_json::Value;
 
 pub fn invoke_delete_doc_live_write(
     query: &serde_json::Value,

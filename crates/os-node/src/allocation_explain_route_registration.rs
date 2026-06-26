@@ -38,8 +38,7 @@ pub const ALLOCATION_EXPLAIN_NODE_DECISION_FIELDS: [&str; 7] = [
     "deciders",
 ];
 
-pub const ALLOCATION_EXPLAIN_DECIDER_FIELDS: [&str; 3] =
-    ["decider", "decision", "explanation"];
+pub const ALLOCATION_EXPLAIN_DECIDER_FIELDS: [&str; 3] = ["decider", "decision", "explanation"];
 pub const ALLOCATION_EXPLAIN_CURRENT_NODE_FIELDS: [&str; 6] = [
     "id",
     "name",
@@ -84,16 +83,21 @@ fn normalize_deciders(deciders: &serde_json::Value) -> serde_json::Value {
     serde_json::Value::Array(
         deciders
             .iter()
-            .map(|decider| serde_json::Value::Object(normalize_fields(
-                decider,
-                &ALLOCATION_EXPLAIN_DECIDER_FIELDS,
-            )))
+            .map(|decider| {
+                serde_json::Value::Object(normalize_fields(
+                    decider,
+                    &ALLOCATION_EXPLAIN_DECIDER_FIELDS,
+                ))
+            })
             .collect(),
     )
 }
 
 fn normalize_node_allocation_decisions(body: &serde_json::Value) -> serde_json::Value {
-    let Some(decisions) = body.get("node_allocation_decisions").and_then(|v| v.as_array()) else {
+    let Some(decisions) = body
+        .get("node_allocation_decisions")
+        .and_then(|v| v.as_array())
+    else {
         return serde_json::Value::Array(Vec::new());
     };
 
@@ -112,9 +116,7 @@ fn normalize_node_allocation_decisions(body: &serde_json::Value) -> serde_json::
     )
 }
 
-pub fn build_cluster_allocation_explain_response(
-    body: &serde_json::Value,
-) -> serde_json::Value {
+pub fn build_cluster_allocation_explain_response(body: &serde_json::Value) -> serde_json::Value {
     let mut normalized = normalize_fields(body, &ALLOCATION_EXPLAIN_RESPONSE_FIELDS);
     for field in ALLOCATION_EXPLAIN_OPTIONAL_RESPONSE_FIELDS {
         if let Some(value) = body.get(field) {
@@ -150,20 +152,17 @@ pub fn build_cluster_allocation_explain_response(
 
 pub type AllocationExplainRouteInvokeFn = fn(&serde_json::Value) -> serde_json::Value;
 
-pub fn invoke_cluster_allocation_explain_live_route(
-    body: &serde_json::Value,
-) -> serde_json::Value {
+pub fn invoke_cluster_allocation_explain_live_route(body: &serde_json::Value) -> serde_json::Value {
     build_cluster_allocation_explain_response(body)
 }
 
-pub const ALLOCATION_EXPLAIN_ROUTE_REGISTRY_TABLE: [AllocationExplainRouteRegistryEntry; 1] = [
-    AllocationExplainRouteRegistryEntry {
+pub const ALLOCATION_EXPLAIN_ROUTE_REGISTRY_TABLE: [AllocationExplainRouteRegistryEntry; 1] =
+    [AllocationExplainRouteRegistryEntry {
         method: CLUSTER_ALLOCATION_EXPLAIN_ROUTE_METHOD,
         path: CLUSTER_ALLOCATION_EXPLAIN_ROUTE_PATH,
         family: CLUSTER_ALLOCATION_EXPLAIN_ROUTE_FAMILY,
         hook: invoke_cluster_allocation_explain_live_route,
-    },
-];
+    }];
 
 #[cfg(test)]
 mod tests {

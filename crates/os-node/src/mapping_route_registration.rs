@@ -53,7 +53,9 @@ pub fn build_mapping_readback_response(
     let mut response = serde_json::Map::new();
     for (name, metadata) in index_map {
         if !selectors.is_empty()
-            && !selectors.iter().any(|selector| selector_matches(selector, name))
+            && !selectors
+                .iter()
+                .any(|selector| selector_matches(selector, name))
         {
             continue;
         }
@@ -83,7 +85,9 @@ pub fn build_field_mapping_readback_response(
     let mut response = serde_json::Map::new();
     for (name, metadata) in index_map {
         if !selectors.is_empty()
-            && !selectors.iter().any(|selector| selector_matches(selector, name))
+            && !selectors
+                .iter()
+                .any(|selector| selector_matches(selector, name))
         {
             continue;
         }
@@ -177,9 +181,15 @@ mod tests {
     fn mapping_registry_table_describes_global_and_index_scoped_routes() {
         assert_eq!(MAPPING_ROUTE_REGISTRY_TABLE.len(), 5);
         assert_eq!(MAPPING_ROUTE_REGISTRY_TABLE[0].path, "/_mapping");
-        assert_eq!(MAPPING_ROUTE_REGISTRY_TABLE[1].path, "/_mapping/field/{fields}");
+        assert_eq!(
+            MAPPING_ROUTE_REGISTRY_TABLE[1].path,
+            "/_mapping/field/{fields}"
+        );
         assert_eq!(MAPPING_ROUTE_REGISTRY_TABLE[2].path, "/{index}/_mapping");
-        assert_eq!(MAPPING_ROUTE_REGISTRY_TABLE[3].path, "/{index}/_mapping/field/{fields}");
+        assert_eq!(
+            MAPPING_ROUTE_REGISTRY_TABLE[3].path,
+            "/{index}/_mapping/field/{fields}"
+        );
         assert_eq!(MAPPING_ROUTE_REGISTRY_TABLE[4].method, "PUT");
     }
 
@@ -288,7 +298,10 @@ mod tests {
         }));
 
         assert_eq!(subset.get("dynamic"), Some(&serde_json::json!("strict")));
-        assert_eq!(subset.get("_meta"), Some(&serde_json::json!({ "owner": "search" })));
+        assert_eq!(
+            subset.get("_meta"),
+            Some(&serde_json::json!({ "owner": "search" }))
+        );
         assert!(subset.get("properties").is_some());
         assert!(subset.get("runtime").is_none());
     }

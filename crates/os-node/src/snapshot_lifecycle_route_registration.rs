@@ -396,7 +396,8 @@ mod tests {
     }
 
     #[test]
-    fn validated_restore_live_hook_returns_fail_closed_error_for_stale_corrupt_and_incompatible_metadata() {
+    fn validated_restore_live_hook_returns_fail_closed_error_for_stale_corrupt_and_incompatible_metadata(
+    ) {
         let stale = invoke_validated_snapshot_restore_live_route(&serde_json::json!({
             "stale": true
         }));
@@ -437,10 +438,9 @@ mod tests {
                 "failed": 0
             }
         }));
-        let restore =
-            (SNAPSHOT_LIFECYCLE_RUNTIME_REGISTRATION_BODY.restore)(&serde_json::json!({
-                "indices": ["logs-000001"]
-            }));
+        let restore = (SNAPSHOT_LIFECYCLE_RUNTIME_REGISTRATION_BODY.restore)(&serde_json::json!({
+            "indices": ["logs-000001"]
+        }));
 
         assert_eq!(create["accepted"], true);
         assert_eq!(readback["snapshots"][0]["snapshot"], "snapshot-a");

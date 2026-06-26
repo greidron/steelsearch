@@ -2,8 +2,7 @@
 
 pub const DEFAULT_REFRESH_POLICY: &str = "false";
 pub const WAIT_FOR_REFRESH_POLICY: &str = "wait_for";
-pub const SUPPORTED_REFRESH_POLICIES: [&str; 2] =
-    [DEFAULT_REFRESH_POLICY, WAIT_FOR_REFRESH_POLICY];
+pub const SUPPORTED_REFRESH_POLICIES: [&str; 2] = [DEFAULT_REFRESH_POLICY, WAIT_FOR_REFRESH_POLICY];
 pub const UNSUPPORTED_REFRESH_POLICY_BUCKET: &str = "unsupported refresh policy";
 
 pub fn normalize_refresh_policy(raw: Option<&str>) -> Result<&'static str, &'static str> {

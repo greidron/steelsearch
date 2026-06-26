@@ -38,7 +38,11 @@ pub fn resolve_delete_index_targets(target: &str, known_indices: &[&str]) -> Vec
     let selectors = parse_delete_index_selectors(target);
     known_indices
         .iter()
-        .filter(|index| selectors.iter().any(|selector| selector_matches(selector, index)))
+        .filter(|index| {
+            selectors
+                .iter()
+                .any(|selector| selector_matches(selector, index))
+        })
         .map(|index| (*index).to_string())
         .collect()
 }

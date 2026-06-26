@@ -99,7 +99,10 @@ mod tests {
     #[test]
     fn pending_tasks_registry_entry_describes_cluster_pending_tasks_route() {
         assert_eq!(PENDING_TASKS_ROUTE_REGISTRY_ENTRY.method, "GET");
-        assert_eq!(PENDING_TASKS_ROUTE_REGISTRY_ENTRY.path, "/_cluster/pending_tasks");
+        assert_eq!(
+            PENDING_TASKS_ROUTE_REGISTRY_ENTRY.path,
+            "/_cluster/pending_tasks"
+        );
         assert_eq!(
             PENDING_TASKS_ROUTE_REGISTRY_ENTRY.family,
             "cluster_pending_tasks_readback"
@@ -133,7 +136,10 @@ mod tests {
         assert_eq!(normalized["tasks"][0]["id"], serde_json::json!(1));
         assert_eq!(normalized["tasks"][0]["node"], serde_json::json!("node-a"));
         assert_eq!(normalized["tasks"][0]["insert_order"], serde_json::json!(1));
-        assert_eq!(normalized["tasks"][0]["priority"], serde_json::json!("URGENT"));
+        assert_eq!(
+            normalized["tasks"][0]["priority"],
+            serde_json::json!("URGENT")
+        );
         assert_eq!(
             normalized["tasks"][0]["source"],
             serde_json::json!("publish cluster state")
@@ -164,11 +170,20 @@ mod tests {
         });
 
         let rendered = (PENDING_TASKS_ROUTE_REGISTRY_ENTRY.hook)(&body);
-        assert_eq!(rendered["tasks"][0]["node_name"], serde_json::json!("steel-node-a"));
-        assert_eq!(rendered["tasks"][0]["action"], serde_json::json!("cluster:admin/reroute"));
+        assert_eq!(
+            rendered["tasks"][0]["node_name"],
+            serde_json::json!("steel-node-a")
+        );
+        assert_eq!(
+            rendered["tasks"][0]["action"],
+            serde_json::json!("cluster:admin/reroute")
+        );
         assert_eq!(rendered["tasks"][0]["insert_order"], serde_json::json!(7));
         assert_eq!(rendered["tasks"][0]["priority"], serde_json::json!("HIGH"));
         assert_eq!(rendered["tasks"][0]["cancelled"], serde_json::json!(false));
-        assert_eq!(rendered["tasks"][0]["time_in_queue"], serde_json::json!("12ms"));
+        assert_eq!(
+            rendered["tasks"][0]["time_in_queue"],
+            serde_json::json!("12ms")
+        );
     }
 }

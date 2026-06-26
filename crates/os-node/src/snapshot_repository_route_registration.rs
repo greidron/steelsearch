@@ -19,8 +19,7 @@ pub struct SnapshotRepositoryRouteRegistryEntry {
     pub family: &'static str,
 }
 
-pub type SnapshotRepositoryReadbackHook =
-    fn(&serde_json::Value, Option<&str>) -> serde_json::Value;
+pub type SnapshotRepositoryReadbackHook = fn(&serde_json::Value, Option<&str>) -> serde_json::Value;
 pub type SnapshotRepositoryMutationHook = fn(&serde_json::Value) -> serde_json::Value;
 pub type SnapshotRepositoryVerifyHook = fn(&serde_json::Value) -> serde_json::Value;
 
@@ -83,7 +82,9 @@ pub fn build_snapshot_repository_acknowledged_response() -> serde_json::Value {
     })
 }
 
-pub fn build_snapshot_repository_verify_response(verification: &serde_json::Value) -> serde_json::Value {
+pub fn build_snapshot_repository_verify_response(
+    verification: &serde_json::Value,
+) -> serde_json::Value {
     let mut response = serde_json::Map::new();
 
     if let Some(nodes) = verification.get("nodes") {
@@ -109,7 +110,9 @@ pub fn invoke_snapshot_repository_live_mutation(body: &serde_json::Value) -> ser
     build_snapshot_repository_acknowledged_response()
 }
 
-pub fn invoke_snapshot_repository_live_verify(verification: &serde_json::Value) -> serde_json::Value {
+pub fn invoke_snapshot_repository_live_verify(
+    verification: &serde_json::Value,
+) -> serde_json::Value {
     build_snapshot_repository_verify_response(verification)
 }
 
@@ -199,9 +202,9 @@ pub fn run_snapshot_repository_local_route_activation(
         SnapshotRepositoryRuntimeHandlerKind::Readback => Some(
             (SNAPSHOT_REPOSITORY_RUNTIME_REGISTRATION_BODY.readback)(repositories, repository),
         ),
-        SnapshotRepositoryRuntimeHandlerKind::Mutation => {
-            Some((SNAPSHOT_REPOSITORY_RUNTIME_REGISTRATION_BODY.mutation)(body))
-        }
+        SnapshotRepositoryRuntimeHandlerKind::Mutation => Some(
+            (SNAPSHOT_REPOSITORY_RUNTIME_REGISTRATION_BODY.mutation)(body),
+        ),
         SnapshotRepositoryRuntimeHandlerKind::Verify => Some(
             (SNAPSHOT_REPOSITORY_RUNTIME_REGISTRATION_BODY.verify)(verification),
         ),
@@ -215,8 +218,14 @@ mod tests {
     #[test]
     fn snapshot_repository_registry_table_covers_global_named_mutation_and_verify_forms() {
         assert_eq!(SNAPSHOT_REPOSITORY_ROUTE_REGISTRY_TABLE.len(), 5);
-        assert_eq!(SNAPSHOT_REPOSITORY_ROUTE_REGISTRY_TABLE[0].path, "/_snapshot");
-        assert_eq!(SNAPSHOT_REPOSITORY_ROUTE_REGISTRY_TABLE[1].path, "/_snapshot/{repository}");
+        assert_eq!(
+            SNAPSHOT_REPOSITORY_ROUTE_REGISTRY_TABLE[0].path,
+            "/_snapshot"
+        );
+        assert_eq!(
+            SNAPSHOT_REPOSITORY_ROUTE_REGISTRY_TABLE[1].path,
+            "/_snapshot/{repository}"
+        );
         assert_eq!(
             SNAPSHOT_REPOSITORY_ROUTE_REGISTRY_TABLE[4].path,
             "/_snapshot/{repository}/_verify"
@@ -324,14 +333,13 @@ mod tests {
             }),
             Some("repo-a"),
         );
-        let mutation = (SNAPSHOT_REPOSITORY_RUNTIME_REGISTRATION_BODY.mutation)(
-            &serde_json::json!({
+        let mutation =
+            (SNAPSHOT_REPOSITORY_RUNTIME_REGISTRATION_BODY.mutation)(&serde_json::json!({
                 "type": "fs",
                 "settings": {
                     "location": "/tmp/repo-a"
                 }
-            }),
-        );
+            }));
         let verify = (SNAPSHOT_REPOSITORY_RUNTIME_REGISTRATION_BODY.verify)(&serde_json::json!({
             "nodes": {
                 "node-a": {
@@ -377,10 +385,7 @@ mod tests {
             Some(SnapshotRepositoryRuntimeHandlerKind::Mutation)
         );
         assert_eq!(
-            resolve_snapshot_repository_runtime_handler(
-                "POST",
-                "/_snapshot/{repository}/_verify"
-            ),
+            resolve_snapshot_repository_runtime_handler("POST", "/_snapshot/{repository}/_verify"),
             Some(SnapshotRepositoryRuntimeHandlerKind::Verify)
         );
     }

@@ -45,7 +45,10 @@ mod tests {
     fn create_index_registry_entry_describes_bounded_put_surface() {
         assert_eq!(CREATE_INDEX_ROUTE_REGISTRY_ENTRY.method, "PUT");
         assert_eq!(CREATE_INDEX_ROUTE_REGISTRY_ENTRY.path, "/{index}");
-        assert_eq!(CREATE_INDEX_ROUTE_REGISTRY_ENTRY.family, "create_index_body");
+        assert_eq!(
+            CREATE_INDEX_ROUTE_REGISTRY_ENTRY.family,
+            "create_index_body"
+        );
     }
 
     #[test]

@@ -99,9 +99,9 @@ pub fn run_snapshot_cleanup_local_route_activation(
     payload: &serde_json::Value,
 ) -> Option<serde_json::Value> {
     match (method, path) {
-        ("DELETE", "/_snapshot/{repository}/{snapshot}") => Some(
-            (SNAPSHOT_CLEANUP_RUNTIME_REGISTRATION_BODY.delete)(payload),
-        ),
+        ("DELETE", "/_snapshot/{repository}/{snapshot}") => {
+            Some((SNAPSHOT_CLEANUP_RUNTIME_REGISTRATION_BODY.delete)(payload))
+        }
         ("POST", "/_snapshot/{repository}/_cleanup") => Some(
             (SNAPSHOT_CLEANUP_RUNTIME_REGISTRATION_BODY.cleanup)(payload),
         ),

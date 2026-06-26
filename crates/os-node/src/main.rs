@@ -1629,6 +1629,86 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end_at_ms,
         )?;
     } else if is_request
+        && normalized_action_hint == Some("indices:data/read/search[create_context]")
+        && create_reader_context_request_supports_local_subset(&body)
+    {
+        let response =
+            build_local_create_reader_context_response(request_id, header_version_id, &body);
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("indices:data/read/search[create_context]"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request
+        && normalized_action_hint == Some("indices:data/read/search[update_context]")
+        && update_reader_context_request_supports_local_subset(&body)
+    {
+        let response =
+            build_local_update_reader_context_response(request_id, header_version_id, &body);
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("indices:data/read/search[update_context]"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request
+        && normalized_action_hint == Some("indices:data/read/search[free_context/pit]")
+        && free_pit_context_request_supports_local_subset(&body)
+    {
+        let response = build_local_free_pit_context_response(request_id, header_version_id, &body);
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("indices:data/read/search[free_context/pit]"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request
         && normalized_action_hint == Some("indices:data/read/point_in_time/delete")
         && delete_pit_request_supports_local_lifecycle_subset(&body)
     {
@@ -4126,6 +4206,163 @@ fn decode_create_pit_request_from_transport_body(
     os_transport::action::read_opensearch_create_pit_request_message(&message).ok()
 }
 
+fn build_local_create_reader_context_response(
+    request_id: i64,
+    header_version_id: u32,
+    body: &[u8],
+) -> Vec<u8> {
+    let Some(request) = decode_create_reader_context_request_from_transport_body(body) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    if request.validate_supported_subset().is_err() {
+        return build_empty_transport_response(request_id, header_version_id);
+    }
+    let context_id = {
+        let mut next_id = dev_transport_pit_bindings()
+            .next_id
+            .lock()
+            .expect("dev transport next PIT id lock poisoned");
+        *next_id += 1;
+        os_transport::action::OpenSearchShardSearchContextIdWire::new(
+            format!("steelsearch-pit-reader-{}", *next_id),
+            i64::try_from(*next_id).unwrap_or(i64::MAX),
+        )
+    };
+    os_transport::action::build_opensearch_create_reader_context_response_message(
+        request_id,
+        Version::from_id(header_version_id as i32),
+        &os_transport::action::OpenSearchCreateReaderContextResponseWire::new(context_id),
+    )
+    .map(|frame| frame.to_vec())
+    .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
+}
+
+fn create_reader_context_request_supports_local_subset(body: &[u8]) -> bool {
+    decode_create_reader_context_request_from_transport_body(body)
+        .and_then(|request| request.validate_supported_subset().ok())
+        .is_some()
+}
+
+fn decode_create_reader_context_request_from_transport_body(
+    body: &[u8],
+) -> Option<os_transport::action::OpenSearchCreateReaderContextRequestWire> {
+    let message = decode_transport_message_from_body(body)?;
+    os_transport::action::read_opensearch_create_reader_context_request_message(&message).ok()
+}
+
+fn build_local_update_reader_context_response(
+    request_id: i64,
+    header_version_id: u32,
+    body: &[u8],
+) -> Vec<u8> {
+    let Some(request) = decode_update_reader_context_request_from_transport_body(body) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    if request.validate_supported_subset().is_err() {
+        return build_empty_transport_response(request_id, header_version_id);
+    }
+    upsert_transport_pit_context_from_reader_update(&request);
+    os_transport::action::build_opensearch_update_reader_context_response_message(
+        request_id,
+        Version::from_id(header_version_id as i32),
+        &os_transport::action::OpenSearchUpdateReaderContextResponseWire {
+            pit_id: request.pit_id,
+            creation_time_millis: request.creation_time_millis,
+            keep_alive_millis: request.keep_alive_millis,
+        },
+    )
+    .map(|frame| frame.to_vec())
+    .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
+}
+
+fn update_reader_context_request_supports_local_subset(body: &[u8]) -> bool {
+    decode_update_reader_context_request_from_transport_body(body)
+        .and_then(|request| request.validate_supported_subset().ok())
+        .is_some()
+}
+
+fn decode_update_reader_context_request_from_transport_body(
+    body: &[u8],
+) -> Option<os_transport::action::OpenSearchUpdateReaderContextRequestWire> {
+    let message = decode_transport_message_from_body(body)?;
+    os_transport::action::read_opensearch_update_reader_context_request_message(&message).ok()
+}
+
+fn upsert_transport_pit_context_from_reader_update(
+    request: &os_transport::action::OpenSearchUpdateReaderContextRequestWire,
+) {
+    let keep_alive_millis = if request.keep_alive_millis <= 0 {
+        DEV_TRANSPORT_NON_POSITIVE_PIT_KEEP_ALIVE_MILLIS
+    } else {
+        u64::try_from(request.keep_alive_millis).unwrap_or(u64::MAX)
+    };
+    let now_millis = now_epoch_ms();
+    let creation_time_millis = if request.creation_time_millis >= 0 {
+        u128::try_from(request.creation_time_millis).unwrap_or(now_millis)
+    } else {
+        now_millis
+    };
+    let expires_at_millis = transport_pit_expires_at_millis(now_millis, keep_alive_millis);
+    let mut contexts = dev_transport_pit_bindings()
+        .contexts
+        .lock()
+        .expect("dev transport PIT contexts lock poisoned");
+    prune_expired_transport_pits(&mut contexts, now_millis);
+    contexts
+        .entry(request.pit_id.clone())
+        .and_modify(|context| {
+            context.keep_alive_millis = context.keep_alive_millis.max(keep_alive_millis);
+            context.expires_at_millis = context.expires_at_millis.max(expires_at_millis);
+            context.creation_time_millis = context.creation_time_millis.min(creation_time_millis);
+        })
+        .or_insert_with(|| PitContext {
+            indices: Vec::new(),
+            documents: BTreeMap::new(),
+            keep_alive_millis,
+            expires_at_millis,
+            creation_time_millis,
+        });
+}
+
+fn build_local_free_pit_context_response(
+    request_id: i64,
+    header_version_id: u32,
+    body: &[u8],
+) -> Vec<u8> {
+    let Some(request) = decode_free_pit_context_request_from_transport_body(body) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    if request.validate_supported_subset().is_err() {
+        return build_empty_transport_response(request_id, header_version_id);
+    }
+    let pit_ids = request
+        .context_ids
+        .iter()
+        .map(|context| context.pit_id.clone())
+        .collect::<Vec<_>>();
+    let response = delete_transport_pit_contexts(&pit_ids);
+    os_transport::action::build_opensearch_delete_pit_response_message(
+        request_id,
+        Version::from_id(header_version_id as i32),
+        &response,
+    )
+    .map(|frame| frame.to_vec())
+    .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
+}
+
+fn free_pit_context_request_supports_local_subset(body: &[u8]) -> bool {
+    decode_free_pit_context_request_from_transport_body(body)
+        .and_then(|request| request.validate_supported_subset().ok())
+        .is_some()
+}
+
+fn decode_free_pit_context_request_from_transport_body(
+    body: &[u8],
+) -> Option<os_transport::action::OpenSearchFreePitContextRequestWire> {
+    let message = decode_transport_message_from_body(body)?;
+    os_transport::action::read_opensearch_free_pit_context_request_message(&message).ok()
+}
+
 fn build_local_delete_pit_response(
     request_id: i64,
     header_version_id: u32,
@@ -6224,6 +6461,33 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
             if create_pit_request_supports_local_lifecycle_subset(body) =>
         {
             Some(build_local_create_pit_response(
+                request_id,
+                header_version_id,
+                body,
+            ))
+        }
+        Some("indices:data/read/search[create_context]")
+            if create_reader_context_request_supports_local_subset(body) =>
+        {
+            Some(build_local_create_reader_context_response(
+                request_id,
+                header_version_id,
+                body,
+            ))
+        }
+        Some("indices:data/read/search[update_context]")
+            if update_reader_context_request_supports_local_subset(body) =>
+        {
+            Some(build_local_update_reader_context_response(
+                request_id,
+                header_version_id,
+                body,
+            ))
+        }
+        Some("indices:data/read/search[free_context/pit]")
+            if free_pit_context_request_supports_local_subset(body) =>
+        {
+            Some(build_local_free_pit_context_response(
                 request_id,
                 header_version_id,
                 body,
@@ -11408,6 +11672,193 @@ mod tests {
             },
         )
         .is_none());
+    }
+
+    #[test]
+    fn pit_reader_context_transport_routes_register_update_and_free_local_contexts() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        let bindings = dev_transport_pit_bindings();
+        bindings
+            .contexts
+            .lock()
+            .expect("dev transport PIT contexts lock poisoned")
+            .clear();
+        *bindings
+            .next_id
+            .lock()
+            .expect("dev transport next PIT id lock poisoned") = 0;
+        let transport_identity = DevTransportIdentity {
+            cluster_name: "steelsearch-dev".to_string(),
+            node_name: "steel-node".to_string(),
+            node_id: "steel-node-id".to_string(),
+            ephemeral_id: "steel-node-ephemeral".to_string(),
+            transport_address: "127.0.0.1:9300".parse().unwrap(),
+            attributes: Vec::new(),
+            roles: vec!["cluster_manager".to_string(), "data".to_string()],
+            seed_peer_identity: None,
+            seed_peer_identities: Vec::new(),
+            coordination_state: Arc::new(Mutex::new(DevTransportCoordinationState::default())),
+            remote_transport_queue_gate: Arc::new(RemoteTransportQueueGate::new(1, 1000)),
+            task_queue_state: None,
+        };
+
+        let create_context_request =
+            os_transport::action::OpenSearchCreateReaderContextRequestWire::new(
+                os_transport::action::OpenSearchShardIdWire {
+                    index_name: "logs-reader-pit".to_string(),
+                    index_uuid: "uuid-reader-pit".to_string(),
+                    shard_id: 0,
+                },
+                os_transport::action::TimeValueWire::minutes(1),
+            );
+        let create_frame =
+            os_transport::action::build_opensearch_create_reader_context_request_message(
+                293,
+                OPENSEARCH_3_7_0_TRANSPORT,
+                &create_context_request,
+            )
+            .unwrap();
+        assert!(create_reader_context_request_supports_local_subset(
+            &create_frame[6..]
+        ));
+        let create_response = build_local_create_reader_context_response(
+            293,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &create_frame[6..],
+        );
+        let mut frame = BytesMut::from(&create_response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected create-reader-context response");
+        };
+        let create_response =
+            os_transport::action::read_opensearch_create_reader_context_response_message(&message)
+                .unwrap();
+        assert_eq!(create_response.context_id.id, 1);
+        assert!(create_response
+            .context_id
+            .session_id
+            .starts_with("steelsearch-pit-reader-"));
+
+        let update_request = os_transport::action::OpenSearchUpdateReaderContextRequestWire {
+            parent_task_node: String::new(),
+            parent_task_id: None,
+            pit_id: "transport-pit-reader-context".to_string(),
+            keep_alive_millis: 120_000,
+            creation_time_millis: 1_700_000_000_000,
+            search_context_id: create_response.context_id.clone(),
+        };
+        let update_frame =
+            os_transport::action::build_opensearch_update_reader_context_request_message(
+                294,
+                OPENSEARCH_3_7_0_TRANSPORT,
+                &update_request,
+            )
+            .unwrap();
+        assert!(update_reader_context_request_supports_local_subset(
+            &update_frame[6..]
+        ));
+        let update_response = build_local_update_reader_context_response(
+            294,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &update_frame[6..],
+        );
+        let mut frame = BytesMut::from(&update_response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected update-reader-context response");
+        };
+        let update_response =
+            os_transport::action::read_opensearch_update_reader_context_response_message(&message)
+                .unwrap();
+        assert_eq!(update_response.pit_id, "transport-pit-reader-context");
+        assert_eq!(update_response.creation_time_millis, 1_700_000_000_000);
+        assert_eq!(update_response.keep_alive_millis, 120_000);
+        assert!(bindings
+            .contexts
+            .lock()
+            .expect("dev transport PIT contexts lock poisoned")
+            .contains_key("transport-pit-reader-context"));
+
+        let list_response = build_local_get_all_pits_response(
+            295,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &transport_identity,
+        );
+        let mut frame = BytesMut::from(&list_response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected get-all-PITs response");
+        };
+        let list_response =
+            os_transport::action::read_opensearch_get_all_pits_response_message(&message).unwrap();
+        assert_eq!(list_response.nodes.len(), 1);
+        assert_eq!(list_response.nodes[0].pit_infos.len(), 1);
+        assert_eq!(
+            list_response.nodes[0].pit_infos[0].pit_id,
+            "transport-pit-reader-context"
+        );
+
+        let free_request = os_transport::action::OpenSearchFreePitContextRequestWire {
+            parent_task_node: String::new(),
+            parent_task_id: None,
+            context_ids: vec![
+                os_transport::action::OpenSearchPitSearchContextIdForNodeWire {
+                    pit_id: "transport-pit-reader-context".to_string(),
+                    search_context: os_transport::action::OpenSearchSearchContextIdForNodeWire {
+                        node: transport_identity.node_id.clone(),
+                        cluster_alias: None,
+                        search_context_id: create_response.context_id,
+                    },
+                },
+            ],
+        };
+        let free_frame = os_transport::action::build_opensearch_free_pit_context_request_message(
+            296,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &free_request,
+        )
+        .unwrap();
+        assert!(free_pit_context_request_supports_local_subset(
+            &free_frame[6..]
+        ));
+        let free_response = build_local_free_pit_context_response(
+            296,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &free_frame[6..],
+        );
+        let mut frame = BytesMut::from(&free_response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected free-PIT-context response");
+        };
+        let free_response =
+            os_transport::action::read_opensearch_delete_pit_response_message(&message).unwrap();
+        assert_eq!(free_response.results.len(), 1);
+        assert_eq!(
+            free_response.results[0].pit_id,
+            "transport-pit-reader-context"
+        );
+        assert!(free_response.results[0].successful);
+        assert!(bindings
+            .contexts
+            .lock()
+            .expect("dev transport PIT contexts lock poisoned")
+            .is_empty());
     }
 
     #[test]

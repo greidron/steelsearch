@@ -49,7 +49,11 @@ fn selector_matches_name(selector: &str, name: &str) -> bool {
     }
 }
 
-fn flatten_settings_into(prefix: Option<&str>, value: &serde_json::Value, output: &mut serde_json::Map<String, serde_json::Value>) {
+fn flatten_settings_into(
+    prefix: Option<&str>,
+    value: &serde_json::Value,
+    output: &mut serde_json::Map<String, serde_json::Value>,
+) {
     let Some(object) = value.as_object() else {
         if let Some(prefix) = prefix {
             output.insert(prefix.to_string(), value.clone());
@@ -73,7 +77,9 @@ pub fn build_named_settings_readback_response(
     flat_settings: bool,
 ) -> serde_json::Value {
     let selectors = target.map(parse_settings_selectors).unwrap_or_default();
-    let name_selectors = name_filter.map(parse_settings_selectors).unwrap_or_default();
+    let name_selectors = name_filter
+        .map(parse_settings_selectors)
+        .unwrap_or_default();
     let Some(index_map) = indices.as_object() else {
         return serde_json::json!({});
     };
@@ -81,7 +87,9 @@ pub fn build_named_settings_readback_response(
     let mut response = serde_json::Map::new();
     for (name, metadata) in index_map {
         if !selectors.is_empty()
-            && !selectors.iter().any(|selector| selector_matches(selector, name))
+            && !selectors
+                .iter()
+                .any(|selector| selector_matches(selector, name))
         {
             continue;
         }
@@ -184,7 +192,10 @@ mod tests {
         assert_eq!(SETTINGS_ROUTE_REGISTRY_TABLE[0].path, "/_settings");
         assert_eq!(SETTINGS_ROUTE_REGISTRY_TABLE[1].path, "/_settings/{name}");
         assert_eq!(SETTINGS_ROUTE_REGISTRY_TABLE[2].path, "/{index}/_settings");
-        assert_eq!(SETTINGS_ROUTE_REGISTRY_TABLE[3].path, "/{index}/_settings/{name}");
+        assert_eq!(
+            SETTINGS_ROUTE_REGISTRY_TABLE[3].path,
+            "/{index}/_settings/{name}"
+        );
         assert_eq!(SETTINGS_ROUTE_REGISTRY_TABLE[4].method, "PUT");
     }
 
@@ -225,7 +236,8 @@ mod tests {
 
         let global = build_settings_readback_response(&indices, None, false);
         let wildcard = build_settings_readback_response(&indices, Some("logs-*"), false);
-        let comma = build_settings_readback_response(&indices, Some("logs-000001,metrics-000001"), false);
+        let comma =
+            build_settings_readback_response(&indices, Some("logs-000001,metrics-000001"), false);
         let flat = build_settings_readback_response(&indices, Some("logs-000001"), true);
 
         assert!(global.get("logs-000001").is_some());

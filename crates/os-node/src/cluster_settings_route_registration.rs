@@ -160,9 +160,7 @@ fn insert_dotted_cluster_setting(
 }
 
 /// Reject unsupported query parameters for `GET /_cluster/settings`.
-pub fn reject_unsupported_cluster_settings_params(
-    params: &[&str],
-) -> Result<(), &'static str> {
+pub fn reject_unsupported_cluster_settings_params(params: &[&str]) -> Result<(), &'static str> {
     for param in params {
         if !CLUSTER_SETTINGS_SUPPORTED_QUERY_PARAMS.contains(param) {
             return Err(CLUSTER_SETTINGS_UNSUPPORTED_PARAMETER_BUCKET);
@@ -213,12 +211,8 @@ pub fn apply_cluster_settings_mutation(
 ) -> Result<serde_json::Value, &'static str> {
     reject_unsupported_cluster_settings_params(request.params)?;
     let empty_section = serde_json::Value::Object(serde_json::Map::new());
-    let current_persistent = persisted_state
-        .get("persistent")
-        .unwrap_or(&empty_section);
-    let current_transient = persisted_state
-        .get("transient")
-        .unwrap_or(&empty_section);
+    let current_persistent = persisted_state.get("persistent").unwrap_or(&empty_section);
+    let current_transient = persisted_state.get("transient").unwrap_or(&empty_section);
     let next_persistent = merge_cluster_settings_section(current_persistent, request.persistent);
     let next_transient = merge_cluster_settings_section(current_transient, request.transient);
     Ok(build_cluster_settings_mutation_response_body(
@@ -277,7 +271,10 @@ mod tests {
     #[test]
     fn cluster_settings_registry_entry_describes_get_cluster_settings() {
         assert_eq!(CLUSTER_SETTINGS_ROUTE_REGISTRY_ENTRY.method, "GET");
-        assert_eq!(CLUSTER_SETTINGS_ROUTE_REGISTRY_ENTRY.path, "/_cluster/settings");
+        assert_eq!(
+            CLUSTER_SETTINGS_ROUTE_REGISTRY_ENTRY.path,
+            "/_cluster/settings"
+        );
         assert_eq!(
             CLUSTER_SETTINGS_ROUTE_REGISTRY_ENTRY.family,
             "cluster_settings_readback"
@@ -311,10 +308,8 @@ mod tests {
 
     #[test]
     fn cluster_settings_response_builder_consumes_param_reject_helper() {
-        let body = build_cluster_settings_response_body(
-            &serde_json::json!({}),
-            &serde_json::json!({}),
-        );
+        let body =
+            build_cluster_settings_response_body(&serde_json::json!({}), &serde_json::json!({}));
 
         assert_eq!(
             build_cluster_settings_rest_response(&body, &["local"]),
@@ -396,12 +391,18 @@ mod tests {
     #[test]
     fn cluster_settings_registry_table_exposes_get_cluster_settings_surface() {
         assert_eq!(CLUSTER_SETTINGS_ROUTE_REGISTRY_TABLE.len(), 1);
-        assert_eq!(CLUSTER_SETTINGS_ROUTE_REGISTRY_TABLE[0].path, "/_cluster/settings");
+        assert_eq!(
+            CLUSTER_SETTINGS_ROUTE_REGISTRY_TABLE[0].path,
+            "/_cluster/settings"
+        );
     }
 
     #[test]
     fn cluster_settings_runtime_dispatch_record_points_at_get_cluster_settings() {
-        assert_eq!(CLUSTER_SETTINGS_RUNTIME_DISPATCH_RECORD.0, "/_cluster/settings");
+        assert_eq!(
+            CLUSTER_SETTINGS_RUNTIME_DISPATCH_RECORD.0,
+            "/_cluster/settings"
+        );
     }
 
     #[test]

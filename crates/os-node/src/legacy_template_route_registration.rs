@@ -62,7 +62,14 @@ pub fn build_legacy_template_body_subset(body: &serde_json::Value) -> serde_json
         return serde_json::json!({});
     };
     let mut subset = serde_json::Map::new();
-    for field in ["index_patterns", "order", "version", "settings", "mappings", "aliases"] {
+    for field in [
+        "index_patterns",
+        "order",
+        "version",
+        "settings",
+        "mappings",
+        "aliases",
+    ] {
         if let Some(value) = object.get(field) {
             subset.insert(field.to_string(), value.clone());
         }
@@ -144,7 +151,10 @@ mod tests {
     fn legacy_template_registry_table_describes_readback_and_mutation_routes() {
         assert_eq!(LEGACY_TEMPLATE_ROUTE_REGISTRY_TABLE.len(), 4);
         assert_eq!(LEGACY_TEMPLATE_ROUTE_REGISTRY_TABLE[0].path, "/_template");
-        assert_eq!(LEGACY_TEMPLATE_ROUTE_REGISTRY_TABLE[1].path, "/_template/{name}");
+        assert_eq!(
+            LEGACY_TEMPLATE_ROUTE_REGISTRY_TABLE[1].path,
+            "/_template/{name}"
+        );
         assert_eq!(LEGACY_TEMPLATE_ROUTE_REGISTRY_TABLE[3].method, "DELETE");
     }
 

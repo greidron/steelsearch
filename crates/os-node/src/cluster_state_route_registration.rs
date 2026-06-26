@@ -9,8 +9,7 @@
 use os_rest::{RestErrorKind, RestMethod, RestRequest, RestResponse};
 use serde_json::{Map, Value};
 
-pub type ClusterStateRouteInvokeFn =
-    fn(&RestRequest, &Value) -> Result<RestResponse, RestResponse>;
+pub type ClusterStateRouteInvokeFn = fn(&RestRequest, &Value) -> Result<RestResponse, RestResponse>;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ClusterStateRouteRegistryEntry {
@@ -41,8 +40,13 @@ pub const CLUSTER_STATE_FAIL_CLOSED_PARAMETER_BUCKETS: &[&str] = &[
 
 /// Exact metric names currently accepted by the bounded `_cluster/state`
 /// compatibility helper.
-pub const CLUSTER_STATE_SUPPORTED_METRICS: &[&str] =
-    &["metadata", "nodes", "routing_table", "routing_nodes", "blocks"];
+pub const CLUSTER_STATE_SUPPORTED_METRICS: &[&str] = &[
+    "metadata",
+    "nodes",
+    "routing_table",
+    "routing_nodes",
+    "blocks",
+];
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ClusterStateRouteScope {
@@ -80,8 +84,10 @@ pub fn apply_cluster_state_route_scope(
     metric_segment: Option<&str>,
     indices_segment: Option<&str>,
 ) -> Result<Value, RestResponse> {
-    let scope = parse_cluster_state_route_scope(metric_segment, indices_segment)
-        .map_err(|error| RestResponse::opensearch_error_kind(RestErrorKind::IllegalArgument, error))?;
+    let scope =
+        parse_cluster_state_route_scope(metric_segment, indices_segment).map_err(|error| {
+            RestResponse::opensearch_error_kind(RestErrorKind::IllegalArgument, error)
+        })?;
 
     if scope.metrics.is_empty() {
         return Ok(body.clone());
@@ -407,7 +413,8 @@ mod tests {
             }
         });
 
-        let response = build_cluster_state_rest_response(&body, Some("routing_nodes"), None).unwrap();
+        let response =
+            build_cluster_state_rest_response(&body, Some("routing_nodes"), None).unwrap();
         assert_eq!(response.status, 200);
         assert!(response.body.get("routing_nodes").is_some());
         assert!(response.body.get("master_node").is_none());

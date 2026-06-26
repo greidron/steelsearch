@@ -22,7 +22,10 @@ pub fn normalize_routing_tokens(raw: Option<&str>) -> Vec<String> {
         .collect()
 }
 
-pub fn routed_visibility_matches(stored_routing: Option<&str>, requested_routing: Option<&str>) -> bool {
+pub fn routed_visibility_matches(
+    stored_routing: Option<&str>,
+    requested_routing: Option<&str>,
+) -> bool {
     match (stored_routing, requested_routing) {
         (Some(stored), Some(requested)) => normalize_routing_tokens(Some(requested))
             .iter()
@@ -60,12 +63,18 @@ mod tests {
 
     #[test]
     fn routed_visibility_requires_matching_custom_routing_token() {
-        assert!(routed_visibility_matches(Some("tenant-a"), Some("tenant-a")));
+        assert!(routed_visibility_matches(
+            Some("tenant-a"),
+            Some("tenant-a")
+        ));
         assert!(routed_visibility_matches(
             Some("tenant-a"),
             Some("tenant-b,tenant-a")
         ));
-        assert!(!routed_visibility_matches(Some("tenant-a"), Some("tenant-b")));
+        assert!(!routed_visibility_matches(
+            Some("tenant-a"),
+            Some("tenant-b")
+        ));
         assert!(!routed_visibility_matches(Some("tenant-a"), None));
         assert!(routed_visibility_matches(None, None));
     }

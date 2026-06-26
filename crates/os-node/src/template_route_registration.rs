@@ -99,7 +99,9 @@ pub fn build_named_template_readback_response(
     templates: &serde_json::Value,
     name_target: Option<&str>,
 ) -> serde_json::Value {
-    let selectors = name_target.map(parse_template_name_selectors).unwrap_or_default();
+    let selectors = name_target
+        .map(parse_template_name_selectors)
+        .unwrap_or_default();
     let Some(template_map) = templates.as_object() else {
         return serde_json::json!({});
     };
@@ -198,7 +200,10 @@ mod tests {
     #[test]
     fn template_registry_table_covers_component_and_index_template_crud_readback() {
         assert_eq!(TEMPLATE_ROUTE_REGISTRY_TABLE.len(), 8);
-        assert_eq!(TEMPLATE_ROUTE_REGISTRY_TABLE[0].path, "/_component_template");
+        assert_eq!(
+            TEMPLATE_ROUTE_REGISTRY_TABLE[0].path,
+            "/_component_template"
+        );
         assert_eq!(TEMPLATE_ROUTE_REGISTRY_TABLE[4].path, "/_index_template");
         assert_eq!(TEMPLATE_ROUTE_REGISTRY_TABLE[7].method, "DELETE");
     }
@@ -291,8 +296,10 @@ mod tests {
         });
 
         let wildcard = build_named_template_readback_response(&templates, Some("logs-*"));
-        let comma =
-            build_named_template_readback_response(&templates, Some("logs-component,metrics-template"));
+        let comma = build_named_template_readback_response(
+            &templates,
+            Some("logs-component,metrics-template"),
+        );
 
         assert!(wildcard.get("logs-component").is_some());
         assert!(wildcard.get("logs-template").is_some());
