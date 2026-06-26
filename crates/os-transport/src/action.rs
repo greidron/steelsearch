@@ -24721,6 +24721,19 @@ impl OpenSearchSearchSourceBuilderWire {
         validate_query_builder(self.query.as_ref())?;
         validate_search_after_values(self.search_after.as_deref())?;
         validate_sort_builders(self.sorts.as_deref())?;
+        let shard_doc_sort_count = shard_doc_sort_count(self.sorts.as_deref());
+        if shard_doc_sort_count > 0 && self.point_in_time.is_none() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source shard doc sort",
+                reason: "OpenSearch _shard_doc sort is only supported with point-in-time",
+            });
+        }
+        if shard_doc_sort_count > 1 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source shard doc sort",
+                reason: "OpenSearch SearchRequest permits at most one _shard_doc sort",
+            });
+        }
         if let Some(point_in_time) = &self.point_in_time {
             point_in_time.validate_supported_subset()?;
         }
@@ -28455,6 +28468,18 @@ fn validate_sort_builders(
         }
     }
     Ok(())
+}
+
+fn shard_doc_sort_count(values: Option<&[OpenSearchSortBuilderWire]>) -> usize {
+    values
+        .into_iter()
+        .flat_map(|values| values.iter())
+        .filter(|value| match value {
+            OpenSearchSortBuilderWire::ShardDoc(_) => true,
+            OpenSearchSortBuilderWire::Field(value) => value.field_name == "_shard_doc",
+            OpenSearchSortBuilderWire::Score(_) => false,
+        })
+        .count()
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -67358,6 +67383,82 @@ mod tests {
             object_sort_missing.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "search request source sorts",
+                ..
+            })
+        ));
+
+        let shard_doc_sort_without_pit = OpenSearchSearchRequestWire {
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                sorts: Some(vec![OpenSearchSortBuilderWire::ShardDoc(
+                    OpenSearchShardDocSortBuilderWire {
+                        order: OpenSearchSortOrderWire::Asc,
+                    },
+                )]),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        assert!(matches!(
+            shard_doc_sort_without_pit.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source shard doc sort",
+                ..
+            })
+        ));
+
+        let shard_doc_field_sort_without_pit = OpenSearchSearchRequestWire {
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                sorts: Some(vec![OpenSearchSortBuilderWire::Field(
+                    OpenSearchFieldSortBuilderWire {
+                        field_name: "_shard_doc".to_string(),
+                        nested_path: None,
+                        missing: Value::Null,
+                        order: Some(OpenSearchSortOrderWire::Asc),
+                        sort_mode: None,
+                        unmapped_type: None,
+                        numeric_type: None,
+                    },
+                )]),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        assert!(matches!(
+            shard_doc_field_sort_without_pit.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source shard doc sort",
+                ..
+            })
+        ));
+
+        let duplicate_shard_doc_sort_with_pit = OpenSearchSearchRequestWire {
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                sorts: Some(vec![
+                    OpenSearchSortBuilderWire::ShardDoc(OpenSearchShardDocSortBuilderWire {
+                        order: OpenSearchSortOrderWire::Asc,
+                    }),
+                    OpenSearchSortBuilderWire::Field(OpenSearchFieldSortBuilderWire {
+                        field_name: "_shard_doc".to_string(),
+                        nested_path: None,
+                        missing: Value::Null,
+                        order: Some(OpenSearchSortOrderWire::Desc),
+                        sort_mode: None,
+                        unmapped_type: None,
+                        numeric_type: None,
+                    }),
+                ]),
+                point_in_time: Some(OpenSearchPointInTimeBuilderWire {
+                    id: "pit-context".to_string(),
+                    keep_alive: Some(TimeValueWire::minutes(1)),
+                }),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        assert!(matches!(
+            duplicate_shard_doc_sort_with_pit.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source shard doc sort",
                 ..
             })
         ));
