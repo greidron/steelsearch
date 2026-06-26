@@ -24,13 +24,18 @@
         "knn_cosinesimil_search",
         "knn_innerproduct_search",
         "knn_query_happy_path",
+        "hybrid_query_happy_path",
         "knn_query_filter_happy_path",
         "knn_query_ignore_unmapped_happy_path",
         "knn_query_radial_max_distance_happy_path",
         "knn_query_method_parameters_happy_path",
-        "hybrid_query_happy_path",
+        "knn_byte_vector_subset_happy_path",
+        "knn_binary_vector_subset_happy_path",
+        "knn_nested_filtered_happy_path",
+        "knn_query_unsupported_parameter_error",
         "hybrid_should_query_happy_path",
-        "hybrid_minimum_should_match_happy_path"
+        "hybrid_minimum_should_match_happy_path",
+        "hybrid_query_invalid_shape_error"
       ],
       "required_evidence_classes": [
         "lucene-score-space",

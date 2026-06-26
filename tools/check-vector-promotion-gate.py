@@ -18,6 +18,11 @@ def parse_args() -> argparse.Namespace:
         default="tools/fixtures/vector-promotion-gate.json",
     )
     parser.add_argument(
+        "--vector-compat-fixture",
+        default="tools/fixtures/vector-search-compat.json",
+        help="Vector compatibility fixture whose cases must be promoted.",
+    )
+    parser.add_argument(
         "--report",
         action="append",
         default=[],
@@ -35,6 +40,7 @@ def ensure_subset(name: str, actual: list[str], required: set[str]) -> None:
 def main() -> int:
     args = parse_args()
     fixture = json.loads(Path(args.fixture).read_text(encoding="utf-8"))
+    vector_compat = json.loads(Path(args.vector_compat_fixture).read_text(encoding="utf-8"))
 
     if fixture.get("source_area") != "k-NN vector indexing and query search":
         raise SystemExit("vector promotion gate fixture has the wrong source_area")
@@ -54,19 +60,7 @@ def main() -> int:
 
     route = sections["route_parity"]
     semantic = sections["semantic_parity"]
-    required_cases = {
-        "knn_search",
-        "knn_cosinesimil_search",
-        "knn_innerproduct_search",
-        "knn_query_happy_path",
-        "knn_query_filter_happy_path",
-        "knn_query_ignore_unmapped_happy_path",
-        "knn_query_radial_max_distance_happy_path",
-        "knn_query_method_parameters_happy_path",
-        "hybrid_query_happy_path",
-        "hybrid_should_query_happy_path",
-        "hybrid_minimum_should_match_happy_path",
-    }
+    required_cases = {case["name"] for case in vector_compat.get("cases", [])}
     required_evidence_classes = {
         "lucene-score-space",
         "byte-vector-subset",
@@ -91,6 +85,12 @@ def main() -> int:
         semantic.get("required_cases") or [],
         required_cases,
     )
+    stale_required_cases = sorted(set(semantic.get("required_cases") or []) - required_cases)
+    if stale_required_cases:
+        raise SystemExit(
+            "semantic_parity.required_cases contains non-vector-compat entries: "
+            f"{stale_required_cases}"
+        )
     ensure_subset(
         "semantic_parity.required_evidence_classes",
         semantic.get("required_evidence_classes") or [],
