@@ -1842,6 +1842,10 @@ The PIT-segments boundary covers:
 - request validation for decoded non-empty PIT id arrays while wire-level empty
   PIT id entries and `_all` mixed with explicit ids still decode like
   OpenSearch;
+- local PIT-segments admission de-duplicates repeated explicit PIT ids before
+  checking local context existence, matching OpenSearch
+  `TransportPitSegmentsAction.shards()` `LinkedHashSet` routing semantics for
+  the supported empty-metadata response subset;
 - explicit local runtime rejection for index filters, custom indices options,
   empty PIT id entries, `_all` mixed with explicit ids, verbose output, and
   unknown explicit PIT ids.

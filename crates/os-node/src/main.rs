@@ -8769,9 +8769,11 @@ fn transport_pit_segment_ids_exist(
         .expect("dev transport PIT contexts lock poisoned");
     prune_expired_transport_pits(&mut contexts, now_epoch_ms());
     prune_unavailable_transport_pits(&mut contexts);
+    let mut seen_ids = BTreeSet::new();
     request
         .pit_ids
         .iter()
+        .filter(|pit_id| seen_ids.insert((*pit_id).clone()))
         .all(|pit_id| pit_id == "_all" || contexts.contains_key(pit_id))
 }
 
@@ -22468,6 +22470,41 @@ mod tests {
             panic!("expected explicit PIT segments node response message");
         };
         assert_eq!(message.request_id, 98);
+        let mut input = StreamInput::new(message.body.freeze());
+        assert_eq!(input.read_string().unwrap(), "steel-node-id");
+        assert_eq!(input.read_vint().unwrap(), 0);
+        assert_eq!(input.read_vint().unwrap(), 0);
+        assert!(!input.read_bool().unwrap());
+        assert_eq!(input.remaining(), 0);
+
+        let duplicate_request = os_transport::action::OpenSearchPitSegmentsRequestWire {
+            pit_ids: vec![pit_id.to_string(), pit_id.to_string()],
+            ..os_transport::action::OpenSearchPitSegmentsRequestWire::default()
+        };
+        let duplicate_frame = os_transport::action::build_opensearch_pit_segments_request_message(
+            100,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &duplicate_request,
+        )
+        .unwrap();
+        assert!(pit_segments_request_supports_local_subset(
+            &duplicate_frame[6..]
+        ));
+        let duplicate_response = build_local_pit_segments_node_response(
+            100,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &transport_identity,
+            &duplicate_frame[6..],
+        );
+        let mut frame = BytesMut::from(&duplicate_response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected duplicate PIT segments node response message");
+        };
+        assert_eq!(message.request_id, 100);
         let mut input = StreamInput::new(message.body.freeze());
         assert_eq!(input.read_string().unwrap(), "steel-node-id");
         assert_eq!(input.read_vint().unwrap(), 0);
