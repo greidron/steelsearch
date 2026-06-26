@@ -3952,6 +3952,50 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "pit_search_without_keep_alive_search",
+      "area": "search",
+      "extract": "search_hits",
+      "steps": [
+        {
+          "name": "pit-open",
+          "method": "POST",
+          "path": "/logs-compat/_search/point_in_time?keep_alive=1m",
+          "body": null,
+          "expected_status": 200,
+          "extract": "pit_open",
+          "save": {
+            "pit_id": "body.pit_id"
+          }
+        },
+        {
+          "name": "pit-search-without-keep-alive",
+          "method": "POST",
+          "path": "/_search",
+          "body": {
+            "pit": {
+              "id": "${saved.pit_id}"
+            },
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "ts": {
+                  "order": "asc"
+                }
+              }
+            ],
+            "size": 1
+          },
+          "expected_status": 200,
+          "extract": "search_hits"
+        }
+      ],
+      "family": "lexical",
+      "description": "[lexical] PIT search accepts omitted keep_alive like OpenSearch PointInTimeBuilder",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "pit_search_with_routing_filter",
       "area": "search",
       "extract": "search_hits",
