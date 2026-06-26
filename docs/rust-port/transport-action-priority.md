@@ -612,6 +612,8 @@ The verify-repository boundary covers:
 
 - OpenSearch `VerifyRepositoryRequest` parent task, cluster-manager timeout,
   acknowledgement timeout, and repository name at the wire decode/build layer;
+- OpenSearch `VerifyRepositoryResponse` node-view list at the wire
+  decode/build layer, including the per-node id and name fields;
 - explicit fail-closed classification for `cluster:admin/repository/verify`
   until repository verification and node response rendering are implemented;
 - explicit rejection for custom cluster-manager timeout, custom acknowledgement

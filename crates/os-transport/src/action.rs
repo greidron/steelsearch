@@ -6290,6 +6290,36 @@ pub fn read_verify_repository_request_message(
     VerifyRepositoryRequestWire::read(message.body.clone().freeze())
 }
 
+pub fn build_verify_repository_response_message(
+    request_id: i64,
+    version: Version,
+    response: &VerifyRepositoryResponseWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    response.write(&mut body)?;
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::response(),
+        version,
+        variable_header: BytesMut::from(&ResponseVariableHeader::default().to_bytes()[..]),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_verify_repository_response_message(
+    message: &TransportMessage,
+) -> Result<VerifyRepositoryResponseWire, TransportActionWireError> {
+    if !message.status.is_response() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "response",
+            actual: message.status.bits(),
+        });
+    }
+    let _header = ResponseVariableHeader::read(message.variable_header.clone().freeze())?;
+    VerifyRepositoryResponseWire::read(message.body.clone().freeze())
+}
+
 pub fn build_cleanup_repository_request_message(
     request_id: i64,
     version: Version,
@@ -13391,6 +13421,76 @@ impl VerifyRepositoryRequestWire {
             shape: "verify repository execution",
             reason: "verify-repository transport execution requires repository verification and node response rendering",
         })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct VerifyRepositoryNodeViewWire {
+    pub node_id: String,
+    pub name: String,
+}
+
+impl VerifyRepositoryNodeViewWire {
+    pub fn write(&self, output: &mut StreamOutput) -> Result<(), TransportActionWireError> {
+        self.validate_supported_subset()?;
+        output.write_string(&self.node_id);
+        output.write_string(&self.name);
+        Ok(())
+    }
+
+    pub fn read(input: &mut StreamInput) -> Result<Self, TransportActionWireError> {
+        let node = Self {
+            node_id: input.read_string()?,
+            name: input.read_string()?,
+        };
+        node.validate_supported_subset()?;
+        Ok(node)
+    }
+
+    pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
+        if self.node_id.trim().is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "verify repository node id",
+                reason: "OpenSearch verify-repository node views require a node id",
+            });
+        }
+        if self.name.trim().is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "verify repository node name",
+                reason: "OpenSearch verify-repository node views require a node name",
+            });
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Default)]
+pub struct VerifyRepositoryResponseWire {
+    pub nodes: Vec<VerifyRepositoryNodeViewWire>,
+}
+
+impl VerifyRepositoryResponseWire {
+    pub fn empty() -> Self {
+        Self::default()
+    }
+
+    pub fn write(&self, output: &mut StreamOutput) -> Result<(), TransportActionWireError> {
+        output.write_vint(self.nodes.len() as i32);
+        for node in &self.nodes {
+            node.write(output)?;
+        }
+        Ok(())
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let node_count = read_len(&mut input)?;
+        let mut nodes = Vec::with_capacity(node_count);
+        for _ in 0..node_count {
+            nodes.push(VerifyRepositoryNodeViewWire::read(&mut input)?);
+        }
+        require_no_trailing_bytes(&input)?;
+        Ok(Self { nodes })
     }
 }
 
@@ -50608,6 +50708,84 @@ mod tests {
                 .reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "verify repository execution",
+                ..
+            })
+        ));
+
+        let response = VerifyRepositoryResponseWire {
+            nodes: vec![VerifyRepositoryNodeViewWire {
+                node_id: "node-a-id".to_string(),
+                name: "node-a".to_string(),
+            }],
+        };
+        let mut frame =
+            build_verify_repository_response_message(36, OPENSEARCH_3_7_0_TRANSPORT, &response)
+                .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected verify repository response message");
+        };
+        assert_eq!(
+            read_verify_repository_response_message(&message).unwrap(),
+            response
+        );
+        assert!(matches!(
+            read_verify_repository_request_message(&message).unwrap_err(),
+            TransportActionWireError::UnexpectedMessageStatus {
+                expected: "request",
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn verify_repository_response_wire_round_trips_node_views() {
+        let response = VerifyRepositoryResponseWire {
+            nodes: vec![
+                VerifyRepositoryNodeViewWire {
+                    node_id: "node-a-id".to_string(),
+                    name: "node-a".to_string(),
+                },
+                VerifyRepositoryNodeViewWire {
+                    node_id: "node-b-id".to_string(),
+                    name: "node-b".to_string(),
+                },
+            ],
+        };
+        let mut output = StreamOutput::new();
+        response.write(&mut output).unwrap();
+
+        assert_eq!(
+            VerifyRepositoryResponseWire::read(output.freeze()).unwrap(),
+            response
+        );
+        assert!(VerifyRepositoryResponseWire::empty().nodes.is_empty());
+    }
+
+    #[test]
+    fn verify_repository_response_rejects_blank_node_views() {
+        let blank_node_id = VerifyRepositoryResponseWire {
+            nodes: vec![VerifyRepositoryNodeViewWire {
+                node_id: " ".to_string(),
+                name: "node-a".to_string(),
+            }],
+        };
+        let mut output = StreamOutput::new();
+        assert!(matches!(
+            blank_node_id.write(&mut output),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "verify repository node id",
+                ..
+            })
+        ));
+
+        let mut blank_name = StreamOutput::new();
+        blank_name.write_vint(1);
+        blank_name.write_string("node-a-id");
+        blank_name.write_string("");
+        assert!(matches!(
+            VerifyRepositoryResponseWire::read(blank_name.freeze()),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "verify repository node name",
                 ..
             })
         ));
