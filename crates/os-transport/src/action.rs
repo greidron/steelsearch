@@ -25063,10 +25063,14 @@ impl OpenSearchSearchRequestWire {
                 reason: "cluster-alias search requires cross-cluster reduction semantics",
             });
         }
-        if !self.ccs_minimize_roundtrips {
+        let has_point_in_time = self
+            .source
+            .as_ref()
+            .is_some_and(|source| source.point_in_time.is_some());
+        if !self.ccs_minimize_roundtrips && !has_point_in_time {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "search request ccs minimize roundtrips",
-                reason: "cross-cluster search roundtrip control is not mapped by this adapter",
+                reason: "cross-cluster search roundtrip control is only mapped for the local PIT search subset",
             });
         }
         if self.cancel_after_time_interval.is_some() {
@@ -69768,6 +69772,37 @@ mod tests {
             decoded.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "search request scroll execution",
+                ..
+            })
+        ));
+
+        let ccs_minimize_disabled_without_pit = OpenSearchSearchRequestWire {
+            ccs_minimize_roundtrips: false,
+            ..OpenSearchSearchRequestWire::default()
+        };
+        assert!(matches!(
+            ccs_minimize_disabled_without_pit.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request ccs minimize roundtrips",
+                ..
+            })
+        ));
+
+        let ccs_minimize_disabled_with_pit = OpenSearchSearchRequestWire {
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                point_in_time: Some(OpenSearchPointInTimeBuilderWire {
+                    id: "pit-context".to_string(),
+                    keep_alive: Some(TimeValueWire::minutes(1)),
+                }),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ccs_minimize_roundtrips: false,
+            ..OpenSearchSearchRequestWire::default()
+        };
+        assert!(matches!(
+            ccs_minimize_disabled_with_pit.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request execution",
                 ..
             })
         ));

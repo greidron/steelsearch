@@ -2342,6 +2342,10 @@ The create-PIT boundary covers:
 - search request PIT builders now decode empty PIT ids at the wire layer like
   OpenSearch `PointInTimeBuilder`, while local PIT search execution still
   rejects empty ids before context lookup;
+- PIT searches accept `ccs_minimize_roundtrips=false` on the local execution
+  subset, matching OpenSearch transport execution where PIT searches bypass
+  minimized-roundtrip CCS even when non-PIT local search still rejects custom
+  CCS roundtrip control;
 - PIT searches reject malformed local opaque PIT ids with the OpenSearch
   `invalid id` error while preserving missing-context handling for well-formed
   local ids;

@@ -13751,6 +13751,7 @@ mod tests {
                 }),
                 ..os_transport::action::OpenSearchSearchSourceBuilderWire::default()
             }),
+            ccs_minimize_roundtrips: false,
             ..os_transport::action::OpenSearchSearchRequestWire::default()
         };
         let frame = os_transport::action::build_opensearch_search_request_message(
