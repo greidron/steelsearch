@@ -852,6 +852,16 @@
       "description": "[admin-cat] cat indices text includes pri sibling columns when requested"
     },
     {
+      "name": "cat_indices_text_optional_counter_columns",
+      "area": "cat",
+      "method": "GET",
+      "path": "/_cat/indices/logs-compat?v=true&h=cs,ft,ftt,sc,sm&pri=true&bytes=b&time=ms",
+      "accept": "text/plain",
+      "extract": "cat_indices_selected_columns",
+      "family": "admin-cat",
+      "description": "[admin-cat] cat indices text exposes optional counter/size/time columns with primary siblings"
+    },
+    {
       "name": "cat_indices_text_time_parameter",
       "area": "cat",
       "method": "GET",

@@ -18179,6 +18179,16 @@ impl SteelNode {
                 "docs.deleted": "0",
                 "store.size": "0b",
                 "pri.store.size": "0b",
+                "completion.size": "0b",
+                "pri.completion.size": "0b",
+                "flush.total": "0",
+                "pri.flush.total": "0",
+                "flush.total_time": "0s",
+                "pri.flush.total_time": "0s",
+                "segments.count": "0",
+                "pri.segments.count": "0",
+                "segments.memory": "0b",
+                "pri.segments.memory": "0b",
                 "search.open_contexts": pit_current.to_string(),
                 "pri.search.open_contexts": pit_current.to_string(),
                 "search.point_in_time_current": pit_current.to_string(),
@@ -30185,6 +30195,16 @@ const CAT_INDICES_ALL_COLUMNS: &[&str] = &[
     "docs.deleted",
     "store.size",
     "pri.store.size",
+    "completion.size",
+    "pri.completion.size",
+    "flush.total",
+    "pri.flush.total",
+    "flush.total_time",
+    "pri.flush.total_time",
+    "segments.count",
+    "pri.segments.count",
+    "segments.memory",
+    "pri.segments.memory",
     "search.open_contexts",
     "pri.search.open_contexts",
     "search.point_in_time_current",
@@ -30206,6 +30226,11 @@ fn cat_indices_column_aliases(column: &str) -> &'static [&'static str] {
         "docs.count" => &["dc", "docsCount"],
         "docs.deleted" => &["dd", "docsDeleted"],
         "store.size" => &["ss", "storeSize"],
+        "completion.size" => &["cs", "completionSize"],
+        "flush.total" => &["ft", "flushTotal"],
+        "flush.total_time" => &["ftt", "flushTotalTime"],
+        "segments.count" => &["sc", "segmentsCount"],
+        "segments.memory" => &["sm", "segmentsMemory"],
         "search.open_contexts" => &["so", "searchOpenContexts"],
         "search.point_in_time_current" => &["searchPointInTimeCurrent"],
         "search.point_in_time_time" => &["searchPointInTimeTime"],
@@ -30217,6 +30242,11 @@ fn cat_indices_column_aliases(column: &str) -> &'static [&'static str] {
 fn cat_indices_sibling_column(column: &str) -> Option<&'static str> {
     match column {
         "store.size" => Some("pri.store.size"),
+        "completion.size" => Some("pri.completion.size"),
+        "flush.total" => Some("pri.flush.total"),
+        "flush.total_time" => Some("pri.flush.total_time"),
+        "segments.count" => Some("pri.segments.count"),
+        "segments.memory" => Some("pri.segments.memory"),
         "search.open_contexts" => Some("pri.search.open_contexts"),
         "search.point_in_time_current" => Some("pri.search.point_in_time_current"),
         "search.point_in_time_time" => Some("pri.search.point_in_time_time"),
@@ -30294,14 +30324,25 @@ fn sort_cat_indices_rows(
 
 fn cat_indices_cell_text(row: &Value, column: &str, request: &RestRequest) -> String {
     let value = row[column].as_str().unwrap_or_default();
-    if matches!(column, "store.size" | "pri.store.size")
+    if matches!(
+        column,
+        "store.size"
+            | "pri.store.size"
+            | "completion.size"
+            | "pri.completion.size"
+            | "segments.memory"
+            | "pri.segments.memory"
+    )
         && request.query_params.contains_key("bytes")
     {
         return value.trim_end_matches('b').to_string();
     }
     if matches!(
         column,
-        "search.point_in_time_time" | "pri.search.point_in_time_time"
+        "flush.total_time"
+            | "pri.flush.total_time"
+            | "search.point_in_time_time"
+            | "pri.search.point_in_time_time"
     ) && request.query_params.contains_key("time")
     {
         return value.trim_end_matches('s').to_string();
@@ -30318,6 +30359,16 @@ fn cat_indices_column_right_aligned(column: &str) -> bool {
             | "docs.deleted"
             | "store.size"
             | "pri.store.size"
+            | "completion.size"
+            | "pri.completion.size"
+            | "flush.total"
+            | "pri.flush.total"
+            | "flush.total_time"
+            | "pri.flush.total_time"
+            | "segments.count"
+            | "pri.segments.count"
+            | "segments.memory"
+            | "pri.segments.memory"
             | "search.open_contexts"
             | "pri.search.open_contexts"
             | "search.point_in_time_current"
@@ -35865,6 +35916,54 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             .collect::<Vec<_>>();
         assert_eq!(primary_bytes_text_fields, vec!["ss", "pri.ss"]);
         assert_eq!(primary_bytes_text_values, vec!["0", "0"]);
+
+        let mut indices_optional_text_request =
+            RestRequest::new(RestMethod::Get, "/_cat/indices/logs-000001");
+        indices_optional_text_request
+            .query_params
+            .insert("v".to_string(), "true".to_string());
+        indices_optional_text_request.query_params.insert(
+            "h".to_string(),
+            "cs,ft,ftt,sc,sm".to_string(),
+        );
+        indices_optional_text_request
+            .query_params
+            .insert("pri".to_string(), "true".to_string());
+        indices_optional_text_request
+            .query_params
+            .insert("bytes".to_string(), "b".to_string());
+        indices_optional_text_request
+            .query_params
+            .insert("time".to_string(), "ms".to_string());
+        let indices_optional_text_response =
+            node.handle_rest_request(indices_optional_text_request);
+        let indices_optional_text = indices_optional_text_response
+            .body
+            .as_str()
+            .expect("cat indices optional text body");
+        let optional_text_fields = indices_optional_text
+            .lines()
+            .next()
+            .unwrap_or_default()
+            .split_whitespace()
+            .collect::<Vec<_>>();
+        let optional_text_values = indices_optional_text
+            .lines()
+            .nth(1)
+            .unwrap_or_default()
+            .split_whitespace()
+            .collect::<Vec<_>>();
+        assert_eq!(
+            optional_text_fields,
+            vec![
+                "cs", "pri.cs", "ft", "pri.ft", "ftt", "pri.ftt", "sc", "pri.sc", "sm",
+                "pri.sm"
+            ]
+        );
+        assert_eq!(
+            optional_text_values,
+            vec!["0", "0", "0", "0", "0", "0", "0", "0", "0", "0"]
+        );
 
         let mut indices_time_text_request =
             RestRequest::new(RestMethod::Get, "/_cat/indices/logs-000001");
