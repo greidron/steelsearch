@@ -1549,6 +1549,36 @@
       "description": "[admin-cat] cat pit segments text honors h aliases"
     },
     {
+      "name": "cat_pit_segments_json_selected_alias_columns",
+      "area": "cat",
+      "extract": "cat_indices_selected_columns",
+      "steps": [
+        {
+          "name": "pit-open",
+          "method": "POST",
+          "path": "/logs-compat/_search/point_in_time?keep_alive=1m",
+          "body": null,
+          "expected_status": 200,
+          "extract": "pit_open",
+          "save": {
+            "pit_id": "body.pit_id"
+          }
+        },
+        {
+          "name": "cat-pit-segments-selected-body",
+          "method": "GET",
+          "path": "/_cat/pit_segments?format=json&h=i,seg,dc,sm,id",
+          "body": {
+            "pit_id": "${saved.pit_id}"
+          },
+          "expected_status": 200,
+          "extract": "cat_indices_selected_columns"
+        }
+      ],
+      "family": "admin-cat",
+      "description": "[admin-cat] cat pit segments json honors h aliases"
+    },
+    {
       "name": "segments_global_shape",
       "area": "operational",
       "method": "GET",
