@@ -69846,6 +69846,44 @@ mod tests {
             })
         ));
 
+        let routed_pit_search = OpenSearchSearchRequestWire {
+            routing: Some("tenant-a".to_string()),
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                point_in_time: Some(OpenSearchPointInTimeBuilderWire {
+                    id: "pit-context".to_string(),
+                    keep_alive: Some(TimeValueWire::minutes(1)),
+                }),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        assert!(matches!(
+            routed_pit_search.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request routing",
+                ..
+            })
+        ));
+
+        let preference_pit_search = OpenSearchSearchRequestWire {
+            preference: Some("_local".to_string()),
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                point_in_time: Some(OpenSearchPointInTimeBuilderWire {
+                    id: "pit-context".to_string(),
+                    keep_alive: Some(TimeValueWire::minutes(1)),
+                }),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        assert!(matches!(
+            preference_pit_search.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request preference",
+                ..
+            })
+        ));
+
         let source_present = search_request_body_with_present_query();
         assert!(matches!(
             OpenSearchSearchRequestWire::read(source_present.freeze()),
