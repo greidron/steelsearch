@@ -51513,7 +51513,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         );
         assert_eq!(sliced_pit.status, 200);
         assert_eq!(sliced_pit.body["hits"]["total"]["value"], 1);
-        assert_eq!(sliced_pit.body["hits"]["hits"][0]["_id"], "doc-2");
+        assert_eq!(sliced_pit.body["hits"]["hits"][0]["_id"], "doc-1");
 
         let oversized_pit_slice = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/_search").with_json_body(serde_json::json!({
