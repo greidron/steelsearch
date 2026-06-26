@@ -7,6 +7,15 @@ import argparse
 import json
 from pathlib import Path
 
+DEFAULT_COMPAT_FIXTURES = [
+    "tools/fixtures/cluster-health-compat.json",
+    "tools/fixtures/allocation-explain-compat.json",
+    "tools/fixtures/cluster-settings-compat.json",
+    "tools/fixtures/cluster-state-compat.json",
+    "tools/fixtures/tasks-compat.json",
+    "tools/fixtures/stats-compat.json",
+]
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
@@ -14,6 +23,12 @@ def parse_args() -> argparse.Namespace:
         "fixture",
         nargs="?",
         default="tools/fixtures/cluster-admin-promotion-gate.json",
+    )
+    parser.add_argument(
+        "--compat-fixture",
+        action="append",
+        default=[],
+        help="Cluster-admin compatibility fixture whose cases must be promoted.",
     )
     return parser.parse_args()
 
@@ -27,6 +42,15 @@ def ensure_subset(name: str, actual: list[str], required: set[str]) -> None:
 def main() -> int:
     args = parse_args()
     fixture = json.loads(Path(args.fixture).read_text(encoding="utf-8"))
+    compat_fixture_paths = args.compat_fixture or DEFAULT_COMPAT_FIXTURES
+    required_cases = set()
+    for compat_fixture_path in compat_fixture_paths:
+        compat_fixture = json.loads(Path(compat_fixture_path).read_text(encoding="utf-8"))
+        required_cases.update(
+            case["name"]
+            for case in compat_fixture.get("cases", [])
+            if isinstance(case, dict) and case.get("name")
+        )
 
     if fixture.get("source_area") != "Cluster health, state, allocation, and node stats":
         raise SystemExit("cluster-admin promotion gate fixture has the wrong source_area")
@@ -59,6 +83,7 @@ def main() -> int:
         {
             "cluster-health-compat-report.json",
             "allocation-explain-compat-report.json",
+            "cluster-settings-compat-report.json",
             "cluster-state-compat-report.json",
             "tasks-compat-report.json",
             "stats-compat-report.json",
@@ -68,17 +93,14 @@ def main() -> int:
     ensure_subset(
         "semantic_parity.required_cases",
         semantic.get("required_cases") or [],
-        {
-            "cluster_health_wait_parameters",
-            "cluster_health_wait_for_green_timeout_semantic",
-            "cluster_health_wait_for_nodes_timeout_semantic",
-            "cluster_state_readback",
-            "cluster_pending_tasks_shape",
-            "node_stats_shape",
-            "allocation_explain_primary_happy_path",
-            "allocation_explain_replica_unassigned_path",
-        },
+        required_cases,
     )
+    stale_required_cases = sorted(set(semantic.get("required_cases") or []) - required_cases)
+    if stale_required_cases:
+        raise SystemExit(
+            "semantic_parity.required_cases contains non-cluster-admin compat entries: "
+            f"{stale_required_cases}"
+        )
     ensure_subset(
         "distributed_parity.required_suites",
         distributed.get("required_suites") or [],
@@ -115,6 +137,7 @@ def main() -> int:
         {
             "cluster-health-compat-report.json",
             "allocation-explain-compat-report.json",
+            "cluster-settings-compat-report.json",
             "cluster-state-compat-report.json",
             "tasks-compat-report.json",
             "stats-compat-report.json",
