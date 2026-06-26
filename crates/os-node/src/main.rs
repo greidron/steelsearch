@@ -5806,6 +5806,24 @@ fn local_transport_query_matches(
         Some(os_transport::action::OpenSearchQueryBuilderWire::Ids(ids)) => {
             ids.ids.iter().any(|candidate| candidate == id)
         }
+        Some(os_transport::action::OpenSearchQueryBuilderWire::Prefix(prefix)) => {
+            let value = if prefix.field_name == "_id" {
+                Some(id)
+            } else {
+                lookup_transport_source_value(source, &prefix.field_name).and_then(Value::as_str)
+            };
+            value.is_some_and(|value| {
+                local_transport_string_has_prefix(value, &prefix.value, prefix.case_insensitive)
+            })
+        }
+        Some(os_transport::action::OpenSearchQueryBuilderWire::Range(range)) => {
+            let value = if range.field_name == "_id" {
+                Some(Value::String(id.to_string()))
+            } else {
+                lookup_transport_source_value(source, &range.field_name).cloned()
+            };
+            value.is_some_and(|value| local_transport_range_query_matches(&value, range))
+        }
         Some(os_transport::action::OpenSearchQueryBuilderWire::Term(term)) => {
             if term.field_name == "_id" {
                 return value_matches_transport_term(&Value::String(id.to_string()), &term.value);
@@ -5824,6 +5842,20 @@ fn local_transport_query_matches(
                     .values
                     .iter()
                     .any(|expected| value_matches_transport_term(actual, expected))
+            })
+        }
+        Some(os_transport::action::OpenSearchQueryBuilderWire::Wildcard(wildcard)) => {
+            let value = if wildcard.field_name == "_id" {
+                Some(id)
+            } else {
+                lookup_transport_source_value(source, &wildcard.field_name).and_then(Value::as_str)
+            };
+            value.is_some_and(|value| {
+                local_transport_wildcard_query_matches(
+                    value,
+                    &wildcard.value,
+                    wildcard.case_insensitive,
+                )
             })
         }
         _ => false,
@@ -5883,6 +5915,60 @@ fn local_transport_bool_minimum_should_match(
         1
     } else {
         0
+    }
+}
+
+fn local_transport_range_query_matches(
+    actual: &Value,
+    query: &os_transport::action::OpenSearchRangeQueryBuilderWire,
+) -> bool {
+    let lower_matches = query.from.is_null()
+        || local_transport_range_bound_matches(actual, &query.from, query.include_lower, true);
+    let upper_matches = query.to.is_null()
+        || local_transport_range_bound_matches(actual, &query.to, query.include_upper, false);
+    lower_matches && upper_matches
+}
+
+fn local_transport_range_bound_matches(
+    actual: &Value,
+    bound: &Value,
+    inclusive: bool,
+    lower_bound: bool,
+) -> bool {
+    let ordering = match (actual.as_f64(), bound.as_f64()) {
+        (Some(actual), Some(bound)) => actual
+            .partial_cmp(&bound)
+            .unwrap_or(std::cmp::Ordering::Less),
+        _ => actual
+            .as_str()
+            .unwrap_or_default()
+            .cmp(bound.as_str().unwrap_or_default()),
+    };
+    if lower_bound {
+        ordering == std::cmp::Ordering::Greater
+            || (inclusive && ordering == std::cmp::Ordering::Equal)
+    } else {
+        ordering == std::cmp::Ordering::Less || (inclusive && ordering == std::cmp::Ordering::Equal)
+    }
+}
+
+fn local_transport_string_has_prefix(value: &str, prefix: &str, case_insensitive: bool) -> bool {
+    if case_insensitive {
+        value.to_lowercase().starts_with(&prefix.to_lowercase())
+    } else {
+        value.starts_with(prefix)
+    }
+}
+
+fn local_transport_wildcard_query_matches(
+    value: &str,
+    pattern: &str,
+    case_insensitive: bool,
+) -> bool {
+    if case_insensitive {
+        wildcard_match(&pattern.to_lowercase(), &value.to_lowercase())
+    } else {
+        wildcard_match(pattern, value)
     }
 }
 
@@ -15614,7 +15700,13 @@ mod tests {
             .insert(
                 "logs-reader-pit:doc-1:".to_string(),
                 StoredDocument {
-                    source: serde_json::json!({ "status": "reader-pit", "tenant": "a" }),
+                    source: serde_json::json!({
+                        "status": "reader-pit",
+                        "tenant": "a",
+                        "category": "prod-api",
+                        "path": "/logs/app-1",
+                        "age": 7
+                    }),
                     version: 1,
                     seq_no: 1,
                     primary_term: 1,
@@ -15629,7 +15721,13 @@ mod tests {
             .insert(
                 "logs-reader-pit:doc-2:".to_string(),
                 StoredDocument {
-                    source: serde_json::json!({ "status": "reader-pit", "tenant": "b" }),
+                    source: serde_json::json!({
+                        "status": "reader-pit",
+                        "tenant": "b",
+                        "category": "prod-api",
+                        "path": "/logs/app-2",
+                        "age": 7
+                    }),
                     version: 1,
                     seq_no: 2,
                     primary_term: 1,
@@ -15684,6 +15782,39 @@ mod tests {
                                             query_name: None,
                                             field_name: "tenant".to_string(),
                                             values: vec![serde_json::json!("a")],
+                                        },
+                                    ),
+                                    os_transport::action::OpenSearchQueryBuilderWire::Prefix(
+                                        os_transport::action::OpenSearchPrefixQueryBuilderWire {
+                                            boost: 1.0,
+                                            query_name: None,
+                                            field_name: "category".to_string(),
+                                            value: "prod".to_string(),
+                                            rewrite: None,
+                                            case_insensitive: false,
+                                        },
+                                    ),
+                                    os_transport::action::OpenSearchQueryBuilderWire::Wildcard(
+                                        os_transport::action::OpenSearchWildcardQueryBuilderWire {
+                                            boost: 1.0,
+                                            query_name: None,
+                                            field_name: "path".to_string(),
+                                            value: "/logs/*".to_string(),
+                                            rewrite: None,
+                                            case_insensitive: false,
+                                        },
+                                    ),
+                                    os_transport::action::OpenSearchQueryBuilderWire::Range(
+                                        os_transport::action::OpenSearchRangeQueryBuilderWire {
+                                            boost: 1.0,
+                                            query_name: None,
+                                            field_name: "age".to_string(),
+                                            from: serde_json::json!(5),
+                                            to: serde_json::json!(10),
+                                            include_lower: true,
+                                            include_upper: true,
+                                            format: None,
+                                            relation: None,
                                         },
                                     ),
                                 ],
