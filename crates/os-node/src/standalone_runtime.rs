@@ -5766,6 +5766,9 @@ impl SteelNode {
     }
 
     fn handle_cluster_health_route(&self, request: &RestRequest) -> RestResponse {
+        if let Some(response) = validate_cluster_health_query_params(request) {
+            return response;
+        }
         let target = request
             .path
             .strip_prefix("/_cluster/health/")
@@ -22676,6 +22679,70 @@ fn validate_cluster_state_query_params(request: &RestRequest) -> Option<RestResp
     None
 }
 
+fn validate_cluster_health_query_params(request: &RestRequest) -> Option<RestResponse> {
+    if let Some(response) = validate_tasks_boolean_query_params(
+        request,
+        &[
+            "local",
+            "ensure_node_weighed_in",
+            "wait_for_no_relocating_shards",
+            "wait_for_no_initializing_shards",
+        ],
+    ) {
+        return Some(response);
+    }
+    if let Some(response) = validate_tasks_time_query_params(
+        request,
+        &["timeout", "cluster_manager_timeout", "master_timeout"],
+    ) {
+        return Some(response);
+    }
+    if request
+        .query_params
+        .contains_key("wait_for_relocating_shards")
+    {
+        return Some(RestResponse::json(
+            400,
+            serde_json::json!({
+                "error": {
+                    "type": "illegal_argument_exception",
+                    "reason": "wait_for_relocating_shards has been removed, use wait_for_no_relocating_shards [true/false] instead"
+                },
+                "status": 400
+            }),
+        ));
+    }
+    if let Some(status) = request.query_params.get("wait_for_status") {
+        if !matches!(
+            status.to_ascii_lowercase().as_str(),
+            "green" | "yellow" | "red"
+        ) {
+            return Some(RestResponse::opensearch_error_kind(
+                os_rest::RestErrorKind::IllegalArgument,
+                format!(
+                    "No enum constant org.opensearch.cluster.health.ClusterHealthStatus.{}",
+                    status.to_ascii_uppercase()
+                ),
+            ));
+        }
+    }
+    if let Some(event) = request.query_params.get("wait_for_events") {
+        if !matches!(
+            event.to_ascii_lowercase().as_str(),
+            "immediate" | "urgent" | "high" | "normal" | "low" | "languid"
+        ) {
+            return Some(RestResponse::opensearch_error_kind(
+                os_rest::RestErrorKind::IllegalArgument,
+                format!(
+                    "No enum constant org.opensearch.common.Priority.{}",
+                    event.to_ascii_uppercase()
+                ),
+            ));
+        }
+    }
+    None
+}
+
 fn validate_doc_write_occ_query_params(
     request: &RestRequest,
 ) -> Option<(Option<i64>, Option<i64>)> {
@@ -34284,6 +34351,55 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(targeted.body["active_primary_shards"], 1);
         assert_eq!(targeted.body["unassigned_shards"], 1);
         assert_eq!(targeted.body["timed_out"], false);
+    }
+
+    #[test]
+    fn cluster_health_route_validates_request_params_like_opensearch() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        for (path, expected_reason) in [
+            (
+                "/_cluster/health?local=maybe",
+                "Failed to parse value [maybe] as only [true] or [false] are allowed.",
+            ),
+            (
+                "/_cluster/health?ensure_node_weighed_in=maybe",
+                "Failed to parse value [maybe] as only [true] or [false] are allowed.",
+            ),
+            (
+                "/_cluster/health?wait_for_no_relocating_shards=maybe",
+                "Failed to parse value [maybe] as only [true] or [false] are allowed.",
+            ),
+            (
+                "/_cluster/health?timeout=soon",
+                "failed to parse setting [timeout] with value [soon] as a time value",
+            ),
+            (
+                "/_cluster/health?cluster_manager_timeout=soon",
+                "failed to parse setting [cluster_manager_timeout] with value [soon] as a time value",
+            ),
+            (
+                "/_cluster/health?wait_for_relocating_shards=0",
+                "wait_for_relocating_shards has been removed, use wait_for_no_relocating_shards [true/false] instead",
+            ),
+        ] {
+            let response = node.handle_rest_request(RestRequest::new(RestMethod::Get, path));
+            assert_eq!(response.status, 400, "{path}");
+            assert_eq!(response.body["error"]["type"], "illegal_argument_exception");
+            assert_eq!(response.body["error"]["reason"], expected_reason, "{path}");
+        }
+
+        for path in [
+            "/_cluster/health?wait_for_status=blue",
+            "/_cluster/health?wait_for_events=soon",
+        ] {
+            let response = node.handle_rest_request(RestRequest::new(RestMethod::Get, path));
+            assert_eq!(response.status, 400, "{path}");
+            assert_eq!(response.body["error"]["type"], "illegal_argument_exception");
+        }
     }
 
     #[test]

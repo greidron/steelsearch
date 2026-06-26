@@ -97,6 +97,58 @@
           "timed_out"
         ]
       }
+    },
+    {
+      "name": "reject_cluster_health_invalid_local_boolean",
+      "method": "GET",
+      "path": "/_cluster/health?local=maybe",
+      "compare": {
+        "expected_status": 400,
+        "body_paths_present": [
+          "error.type",
+          "error.reason",
+          "status"
+        ]
+      }
+    },
+    {
+      "name": "reject_cluster_health_invalid_timeout",
+      "method": "GET",
+      "path": "/_cluster/health?timeout=soon",
+      "compare": {
+        "expected_status": 400,
+        "body_paths_present": [
+          "error.type",
+          "error.reason",
+          "status"
+        ]
+      }
+    },
+    {
+      "name": "reject_cluster_health_removed_wait_for_relocating_shards",
+      "method": "GET",
+      "path": "/_cluster/health?wait_for_relocating_shards=0",
+      "compare": {
+        "expected_status": 400,
+        "body_paths_present": [
+          "error.type",
+          "error.reason",
+          "status"
+        ]
+      }
+    },
+    {
+      "name": "reject_cluster_health_invalid_wait_for_status",
+      "method": "GET",
+      "path": "/_cluster/health?wait_for_status=blue",
+      "compare": {
+        "expected_status": 400,
+        "body_paths_present": [
+          "error.type",
+          "error.reason",
+          "status"
+        ]
+      }
     }
   ]
 }
