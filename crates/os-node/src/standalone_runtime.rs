@@ -18188,10 +18188,6 @@ impl SteelNode {
             || target.is_some_and(|target| {
                 !target.contains('*') && hidden_indices.contains(target)
             });
-        let docs = self
-            .documents_state
-            .lock()
-            .expect("documents state lock poisoned");
         let pit_open_contexts_by_index = self.pit_open_context_counts_by_index();
         let pit_total_contexts_by_index = self
             .pit_total_contexts_by_index
@@ -18206,10 +18202,7 @@ impl SteelNode {
             if !include_hidden && hidden_indices.contains(&index) {
                 continue;
             }
-            let doc_count = docs
-                .keys()
-                .filter(|key| key.starts_with(&format!("{index}:")))
-                .count();
+            let doc_count = self.index_lucene_document_count(&index);
             let pit_current = pit_open_contexts_by_index
                 .get(&index)
                 .copied()
@@ -19062,7 +19055,7 @@ impl SteelNode {
                     .unwrap_or(true)
             })
             .map(|index| {
-                let docs = self.index_document_count(index);
+                let docs = self.index_lucene_document_count(index);
                 serde_json::json!({
                     "index": index,
                     "shard": "0",
@@ -19157,7 +19150,7 @@ impl SteelNode {
             .collect();
         drop(manifest);
         for index in matched_indices {
-            let docs = self.index_document_count(&index);
+            let docs = self.index_lucene_document_count(&index);
             indices.insert(
                 index.clone(),
                 serde_json::json!({
@@ -20126,7 +20119,7 @@ impl SteelNode {
             .expect("pit total contexts lock poisoned")
             .clone();
         for index in indices {
-            let docs = self.index_document_count(&index);
+            let docs = self.index_lucene_document_count(&index);
             let pit_current = pit_open_contexts_by_index
                 .get(&index)
                 .copied()
@@ -21101,6 +21094,27 @@ impl SteelNode {
                     .unwrap_or(false)
             })
             .count()
+    }
+
+    fn index_lucene_document_count(&self, index: &str) -> usize {
+        let nested_paths = {
+            let manifest = self
+                .metadata_manifest_state
+                .lock()
+                .expect("metadata manifest state lock poisoned");
+            nested_mapping_paths_for_index(&manifest["indices"][index])
+        };
+        self.documents_state
+            .lock()
+            .expect("documents state lock poisoned")
+            .iter()
+            .filter_map(|(key, document)| {
+                key.split_once(':')
+                    .is_some_and(|(doc_index, _)| doc_index == index)
+                    .then_some(document)
+            })
+            .map(|document| 1 + nested_document_count_for_source(&document.source, &nested_paths))
+            .sum()
     }
 
     fn build_search_hit_fields(&self, index: &str, source: &Value, body: &Value) -> Option<Value> {
@@ -34659,6 +34673,79 @@ fn index_metadata_is_hidden(index_body: &Value) -> bool {
         .unwrap_or(false)
 }
 
+fn nested_mapping_paths_for_index(index_body: &Value) -> Vec<String> {
+    let mut paths = Vec::new();
+    collect_nested_mapping_paths(
+        index_body
+            .get("mappings")
+            .and_then(|mappings| mappings.get("properties")),
+        "",
+        &mut paths,
+    );
+    paths
+}
+
+fn collect_nested_mapping_paths(properties: Option<&Value>, prefix: &str, paths: &mut Vec<String>) {
+    let Some(properties) = properties.and_then(Value::as_object) else {
+        return;
+    };
+    for (field, mapping) in properties {
+        let path = if prefix.is_empty() {
+            field.clone()
+        } else {
+            format!("{prefix}.{field}")
+        };
+        if mapping
+            .get("type")
+            .and_then(Value::as_str)
+            .is_some_and(|field_type| field_type == "nested")
+        {
+            paths.push(path.clone());
+        }
+        collect_nested_mapping_paths(mapping.get("properties"), &path, paths);
+    }
+}
+
+fn nested_document_count_for_source(source: &Value, nested_paths: &[String]) -> usize {
+    nested_paths
+        .iter()
+        .map(|path| nested_value_count_at_path(source, path))
+        .sum()
+}
+
+fn nested_value_count_at_path(source: &Value, path: &str) -> usize {
+    let mut values = vec![source];
+    for segment in path.split('.') {
+        let mut next = Vec::new();
+        for value in values {
+            match value {
+                Value::Object(object) => {
+                    if let Some(child) = object.get(segment) {
+                        next.push(child);
+                    }
+                }
+                Value::Array(items) => {
+                    for item in items {
+                        if let Some(child) = item.get(segment) {
+                            next.push(child);
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        values = next;
+    }
+    values
+        .into_iter()
+        .map(|value| match value {
+            Value::Array(items) => items.len(),
+            Value::Object(_) => 1,
+            _ => 0,
+        })
+        .sum()
+}
+
 fn decode_url_component(value: &str) -> String {
     let bytes = value.as_bytes();
     let mut decoded = String::with_capacity(value.len());
@@ -37516,6 +37603,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 .expect("created indices state lock poisoned");
             created_indices.insert("logs-000001".to_string());
             created_indices.insert("logs-hidden-000001".to_string());
+            created_indices.insert("logs-nested-000001".to_string());
             created_indices.insert("metrics-000001".to_string());
         }
         {
@@ -37527,6 +37615,18 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 "settings": {
                     "index": {
                         "hidden": true
+                    }
+                }
+            });
+            manifest["indices"]["logs-nested-000001"] = serde_json::json!({
+                "mappings": {
+                    "properties": {
+                        "events": {
+                            "type": "nested",
+                            "properties": {
+                                "kind": { "type": "keyword" }
+                            }
+                        }
                     }
                 }
             });
@@ -37551,6 +37651,23 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 "logs-hidden-000001:doc-1".to_string(),
                 Arc::new(StoredDocument {
                     source: serde_json::json!({"message": "hidden log doc"}),
+                    version: 1,
+                    seq_no: 0,
+                    primary_term: 1,
+                    routing: None,
+                    refreshed: true,
+                }),
+            );
+            documents.insert(
+                "logs-nested-000001:doc-1".to_string(),
+                Arc::new(StoredDocument {
+                    source: serde_json::json!({
+                        "message": "nested log doc",
+                        "events": [
+                            { "kind": "payment" },
+                            { "kind": "cache" }
+                        ]
+                    }),
                     version: 1,
                     seq_no: 0,
                     primary_term: 1,
@@ -37594,7 +37711,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             .insert("format".to_string(), "json".to_string());
         let count_json_response = node.handle_rest_request(count_json_request);
         assert_eq!(count_json_response.status, 200);
-        assert_eq!(count_json_response.body[0]["count"], "1");
+        assert_eq!(count_json_response.body[0]["count"], "2");
 
         let mut global_count_json_request = RestRequest::new(RestMethod::Get, "/_cat/count");
         global_count_json_request
@@ -37602,7 +37719,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             .insert("format".to_string(), "json".to_string());
         let global_count_json_response = node.handle_rest_request(global_count_json_request);
         assert_eq!(global_count_json_response.status, 200);
-        assert_eq!(global_count_json_response.body[0]["count"], "2");
+        assert_eq!(global_count_json_response.body[0]["count"], "3");
 
         let mut count_selected_json_request =
             RestRequest::new(RestMethod::Get, "/_cat/count/logs-*");
@@ -37614,7 +37731,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             .insert("h".to_string(), "dc".to_string());
         let count_selected_json_response = node.handle_rest_request(count_selected_json_request);
         assert_eq!(count_selected_json_response.status, 200);
-        assert_eq!(count_selected_json_response.body[0]["dc"], "1");
+        assert_eq!(count_selected_json_response.body[0]["dc"], "2");
         assert!(count_selected_json_response.body[0].get("count").is_none());
 
         let mut count_selected_text_request =
@@ -37632,7 +37749,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             .expect("cat count selected text body");
         assert_eq!(
             count_selected_text.lines().collect::<Vec<_>>(),
-            vec!["dc", "1"]
+            vec!["dc", "2"]
         );
 
         let mut count_wildcard_text_request =
@@ -37650,7 +37767,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             .expect("cat count wildcard text body");
         assert_eq!(
             count_wildcard_text.lines().collect::<Vec<_>>(),
-            vec!["count", "1"]
+            vec!["count", "2"]
         );
 
         let mut count_sorted_text_request = RestRequest::new(RestMethod::Get, "/_cat/count/logs-*");
@@ -37670,7 +37787,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             .expect("cat count sorted text body");
         assert_eq!(
             count_sorted_text.lines().collect::<Vec<_>>(),
-            vec!["dc", "1"]
+            vec!["dc", "2"]
         );
 
         let mut count_unknown_sort_request =
@@ -37730,6 +37847,24 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert!(selected_text_lines
             .iter()
             .any(|line| line.split_whitespace().collect::<Vec<_>>() == vec!["logs-000001", "1"]));
+
+        let mut nested_indices_text_request =
+            RestRequest::new(RestMethod::Get, "/_cat/indices/logs-nested-000001");
+        nested_indices_text_request
+            .query_params
+            .insert("v".to_string(), "true".to_string());
+        nested_indices_text_request
+            .query_params
+            .insert("h".to_string(), "idx,dc".to_string());
+        let nested_indices_text_response =
+            node.handle_rest_request(nested_indices_text_request);
+        let nested_indices_text = nested_indices_text_response
+            .body
+            .as_str()
+            .expect("nested cat indices selected text body");
+        assert!(nested_indices_text
+            .lines()
+            .any(|line| line.split_whitespace().collect::<Vec<_>>() == vec!["logs-nested-000001", "3"]));
 
         let mut indices_bytes_text_request =
             RestRequest::new(RestMethod::Get, "/_cat/indices/logs-000001");
@@ -37872,7 +38007,10 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             .map(str::trim)
             .collect::<Vec<_>>();
         assert_eq!(sorted_text_lines[0], "idx");
-        assert_eq!(sorted_text_lines, vec!["idx", "logs-000001"]);
+        assert_eq!(
+            sorted_text_lines,
+            vec!["idx", "logs-nested-000001", "logs-000001"]
+        );
 
         let mut indices_unknown_sort_request =
             RestRequest::new(RestMethod::Get, "/_cat/indices/logs-*");
