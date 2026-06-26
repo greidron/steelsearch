@@ -2357,6 +2357,10 @@ The create-PIT boundary covers:
   allocating a reader context, matching the OpenSearch
   `indicesService.indexServiceSafe(...).getShard(...)` admission boundary for
   the local-node subset.
+- local transport update-reader-context now requires a reader context id
+  previously allocated by the local create-reader-context route before updating
+  PIT state, matching OpenSearch `getPitReaderContext(...)` missing-context
+  rejection for the local-node subset.
 
 The indices-stats boundary covers:
 
