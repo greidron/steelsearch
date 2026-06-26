@@ -794,6 +794,15 @@ pub const OPENSEARCH_PRIORITY_TRANSPORT_ACTIONS: &[OpenSearchPriorityTransportAc
         next_step: "expand local PIT listing adapter toward distributed node fanout and failure aggregation",
     },
     OpenSearchPriorityTransportActionSpec {
+        action_name: OPENSEARCH_FREE_PIT_CONTEXT_ACTION_NAME,
+        action_type: "PitFreeContextsRequest",
+        transport_action: "SearchTransportService",
+        request_wire_type: "PitFreeContextsRequest",
+        response_wire_type: "DeletePitResponse",
+        adapter_stage: "search-pit",
+        next_step: "expand local PIT free-context adapter toward distributed node fanout",
+    },
+    OpenSearchPriorityTransportActionSpec {
         action_name: OPENSEARCH_GET_MAPPINGS_ACTION_NAME,
         action_type: "GetMappingsAction",
         transport_action: "TransportGetMappingsAction",
@@ -2418,8 +2427,8 @@ pub fn classify_opensearch_transport_action(
         },
         OPENSEARCH_FREE_PIT_CONTEXT_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
-            disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "free-PIT-context wire is decoded, but distributed PIT cleanup fanout is not connected to runtime dispatch",
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "free-PIT-context transport adapter decodes PIT context ids and renders OpenSearch DeletePitResponse entries for the local lifecycle subset",
         },
         OPENSEARCH_GET_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -43378,6 +43387,15 @@ mod tests {
                     next_step: "expand local PIT listing adapter toward distributed node fanout and failure aggregation",
                 },
                 OpenSearchPriorityTransportActionSpec {
+                    action_name: "indices:data/read/search[free_context/pit]",
+                    action_type: "PitFreeContextsRequest",
+                    transport_action: "SearchTransportService",
+                    request_wire_type: "PitFreeContextsRequest",
+                    response_wire_type: "DeletePitResponse",
+                    adapter_stage: "search-pit",
+                    next_step: "expand local PIT free-context adapter toward distributed node fanout",
+                },
+                OpenSearchPriorityTransportActionSpec {
                     action_name: "indices:admin/mappings/get",
                     action_type: "GetMappingsAction",
                     transport_action: "TransportGetMappingsAction",
@@ -44338,7 +44356,7 @@ mod tests {
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_FREE_PIT_CONTEXT_ACTION_NAME)
                 .disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_GET_ACTION_NAME).disposition,
