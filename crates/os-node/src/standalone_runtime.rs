@@ -3530,7 +3530,7 @@ impl SteelNode {
             return Some(self.handle_wlm_stats_route(Some(node_id), Some(workload_group)));
         }
         if request.method == RestMethod::Get && request.path == "/_nodes" {
-            return Some(RestResponse::json(200, self.nodes_info_body()));
+            return Some(self.handle_nodes_info_route(request));
         }
         if request.method == RestMethod::Post && request.path == "/_nodes/reload_secure_settings" {
             if let Err(response) = require_security_permission(
@@ -3577,7 +3577,7 @@ impl SteelNode {
         if request.method == RestMethod::Get
             && self.nodes_info_variant_path_supported(&request.path)
         {
-            return Some(RestResponse::json(200, self.nodes_info_body()));
+            return Some(self.handle_nodes_info_route(request));
         }
         if request.method == RestMethod::Get && request.path == "/_dangling" {
             return Some(RestResponse::json(200, self.dangling_indices_body()));
@@ -13981,33 +13981,82 @@ impl SteelNode {
         serde_json::json!({ "nodes": nodes })
     }
 
+    fn handle_nodes_info_route(&self, request: &RestRequest) -> RestResponse {
+        let Some((node_selector, requested_metrics)) = parse_nodes_info_path(&request.path) else {
+            return RestResponse::opensearch_error_kind(
+                os_rest::RestErrorKind::IllegalArgument,
+                format!("no handler found for uri [{}]", request.path),
+            );
+        };
+        RestResponse::json(
+            200,
+            self.nodes_info_body_for(&node_selector, &requested_metrics),
+        )
+    }
+
     fn nodes_info_body(&self) -> Value {
+        let all_metrics = nodes_info_all_metrics()
+            .iter()
+            .map(|metric| (*metric).to_string())
+            .collect::<BTreeSet<_>>();
+        self.nodes_info_body_for("_all", &all_metrics)
+    }
+
+    fn nodes_info_body_for(
+        &self,
+        node_selector: &str,
+        requested_metrics: &BTreeSet<String>,
+    ) -> Value {
         let view = self.cluster_view.clone().unwrap_or_default();
         let mut nodes = serde_json::Map::new();
         for node in &view.nodes {
-            nodes.insert(
-                node.node_id.clone(),
+            if !node_matches_nodes_info_selector(&view, node, node_selector) {
+                continue;
+            }
+            let mut node_body = serde_json::Map::new();
+            node_body.insert("name".to_string(), serde_json::json!(node.node_name));
+            node_body.insert("host".to_string(), serde_json::json!("127.0.0.1"));
+            node_body.insert("ip".to_string(), serde_json::json!(node.transport_address));
+            node_body.insert("roles".to_string(), serde_json::json!(node.roles));
+            node_body.insert(
+                "attributes".to_string(),
                 serde_json::json!({
-                    "name": node.node_name,
-                    "host": "127.0.0.1",
-                    "ip": node.transport_address,
-                    "roles": node.roles,
-                    "attributes": {
-                        "testattr": "test",
-                        "shard_indexing_pressure_enabled": "true"
-                    },
-                    "transport_address": node.transport_address,
-                    "http": {
+                    "testattr": "test",
+                    "shard_indexing_pressure_enabled": "true"
+                }),
+            );
+            node_body.insert(
+                "transport_address".to_string(),
+                serde_json::json!(node.transport_address),
+            );
+            if requested_metrics.contains("http") {
+                node_body.insert(
+                    "http".to_string(),
+                    serde_json::json!({
                         "publish_address": node.http_address,
                         "bound_address": [node.http_address]
-                    },
-                    "settings": {
+                    }),
+                );
+            }
+            if requested_metrics.contains("settings") {
+                node_body.insert(
+                    "settings".to_string(),
+                    serde_json::json!({
                         "cluster": {
                             "name": view.cluster_name
                         }
-                    }
-                }),
-            );
+                    }),
+                );
+            }
+            for metric in requested_metrics {
+                if matches!(metric.as_str(), "http" | "settings") {
+                    continue;
+                }
+                node_body
+                    .entry(metric.clone())
+                    .or_insert_with(|| serde_json::json!({}));
+            }
+            nodes.insert(node.node_id.clone(), Value::Object(node_body));
         }
         serde_json::json!({ "nodes": nodes })
     }
@@ -23065,6 +23114,106 @@ fn nodes_stats_path_metric_segments(path: &str) -> (Option<&str>, Option<&str>) 
         [_, "stats", metric, index_metric] => (Some(*metric), Some(*index_metric)),
         _ => (None, None),
     }
+}
+
+fn nodes_info_all_metrics() -> &'static [&'static str] {
+    &[
+        "settings",
+        "os",
+        "process",
+        "jvm",
+        "thread_pool",
+        "transport",
+        "http",
+        "plugins",
+        "ingest",
+        "aggregations",
+        "indices",
+        "search_pipelines",
+    ]
+}
+
+fn parse_nodes_info_path(path: &str) -> Option<(String, BTreeSet<String>)> {
+    if path == "/_nodes" {
+        return Some((
+            "_all".to_string(),
+            nodes_info_all_metrics()
+                .iter()
+                .map(|metric| (*metric).to_string())
+                .collect(),
+        ));
+    }
+    let remainder = path.strip_prefix("/_nodes/")?;
+    let segments = remainder
+        .split('/')
+        .filter(|segment| !segment.is_empty())
+        .collect::<Vec<_>>();
+    match segments.as_slice() {
+        [node_or_metrics] => {
+            let tokens = split_nonempty_csv(node_or_metrics);
+            let is_metrics_only = !tokens.is_empty()
+                && tokens
+                    .iter()
+                    .all(|token| nodes_info_all_metrics().contains(token));
+            if is_metrics_only {
+                Some((
+                    "_all".to_string(),
+                    tokens.into_iter().map(str::to_string).collect(),
+                ))
+            } else {
+                Some((
+                    (*node_or_metrics).to_string(),
+                    nodes_info_all_metrics()
+                        .iter()
+                        .map(|metric| (*metric).to_string())
+                        .collect(),
+                ))
+            }
+        }
+        [node_id, metrics] => Some((
+            (*node_id).to_string(),
+            nodes_info_requested_metrics(metrics),
+        )),
+        [node_id, "info", metrics] => Some((
+            (*node_id).to_string(),
+            nodes_info_requested_metrics(metrics),
+        )),
+        _ => None,
+    }
+}
+
+fn nodes_info_requested_metrics(raw_metrics: &str) -> BTreeSet<String> {
+    let metrics = split_nonempty_csv(raw_metrics);
+    if metrics.len() == 1 && metrics.contains(&"_all") {
+        return nodes_info_all_metrics()
+            .iter()
+            .map(|metric| (*metric).to_string())
+            .collect();
+    }
+    metrics
+        .into_iter()
+        .filter(|metric| nodes_info_all_metrics().contains(metric))
+        .map(str::to_string)
+        .collect()
+}
+
+fn node_matches_nodes_info_selector(
+    view: &DevelopmentClusterView,
+    node: &DevelopmentClusterNode,
+    selector: &str,
+) -> bool {
+    if selector == "_all" || selector == "*" {
+        return true;
+    }
+    if selector == "_local" {
+        return node.local
+            || (!view.local_node_id.is_empty() && node.node_id == view.local_node_id);
+    }
+    selector.split(',').any(|pattern| {
+        wildcard_match(pattern, &node.node_id)
+            || wildcard_match(pattern, &node.node_name)
+            || wildcard_match(pattern, &node.transport_address)
+    })
 }
 
 fn validate_doc_write_occ_query_params(
@@ -62964,9 +63113,33 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
 
     #[test]
     fn nodes_info_variant_routes_serve_node_info_shape() {
-        let node = SteelNode::new(NodeInfo {
+        let mut node = SteelNode::new(NodeInfo {
             name: "steel-node".to_string(),
             version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        node.cluster_view = Some(DevelopmentClusterView {
+            cluster_name: "steel-cluster".to_string(),
+            cluster_uuid: "cluster-uuid".to_string(),
+            local_node_id: "steel-node".to_string(),
+            nodes: vec![
+                DevelopmentClusterNode {
+                    node_id: "steel-node".to_string(),
+                    node_name: "steel-node".to_string(),
+                    http_address: Some("127.0.0.1:9200".to_string()),
+                    transport_address: "127.0.0.1:9300".to_string(),
+                    roles: vec!["cluster_manager".to_string(), "data".to_string()],
+                    local: true,
+                },
+                DevelopmentClusterNode {
+                    node_id: "other-node".to_string(),
+                    node_name: "other-node".to_string(),
+                    http_address: Some("127.0.0.1:9201".to_string()),
+                    transport_address: "127.0.0.1:9301".to_string(),
+                    roles: vec!["data".to_string()],
+                    local: false,
+                },
+            ],
+            coordination: None,
         });
 
         for path in [
@@ -62974,11 +63147,31 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             "/_nodes/_all",
             "/_nodes/_all/http",
             "/_nodes/_all/info/http",
+            "/_nodes/http",
         ] {
             let response = node.handle_rest_request(RestRequest::new(RestMethod::Get, path));
             assert_eq!(response.status, 200, "path {path}");
             assert!(response.body["nodes"].is_object(), "path {path}");
         }
+
+        let http_only = node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_nodes/http"));
+        let first_node = &http_only.body["nodes"]["steel-node"];
+        assert!(first_node["http"].is_object());
+        assert!(first_node.get("settings").is_none());
+
+        let unknown_metric_ignored =
+            node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_nodes/_all/bogus"));
+        assert_eq!(unknown_metric_ignored.status, 200);
+        let first_node = &unknown_metric_ignored.body["nodes"]["steel-node"];
+        assert!(first_node["name"].is_string());
+        assert!(first_node.get("http").is_none());
+        assert!(first_node.get("settings").is_none());
+
+        let selected_node =
+            node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_nodes/other-node/http"));
+        assert_eq!(selected_node.status, 200);
+        assert!(selected_node.body["nodes"]["other-node"].is_object());
+        assert!(selected_node.body["nodes"]["steel-node"].is_null());
     }
 
     #[test]

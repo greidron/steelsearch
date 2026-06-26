@@ -115,6 +115,8 @@ def compare_targets(case: dict[str, Any], steelsearch: dict[str, Any], opensearc
         return compare_cat_indices_json(steelsearch, opensearch)
     if mode == "cat_plugins_json":
         return compare_cat_plugins_json(steelsearch, opensearch)
+    if mode == "nodes_info_http_only":
+        return compare_nodes_info_http_only(steelsearch, opensearch)
     for path in compare.get("body_paths_equal", []):
         left = extract_path(steelsearch.get("body"), path)
         right = extract_path(opensearch.get("body"), path)
@@ -125,6 +127,25 @@ def compare_targets(case: dict[str, Any], steelsearch: dict[str, Any], opensearc
             "body_text drift: "
             f"steelsearch={steelsearch.get('body_text')!r} opensearch={opensearch.get('body_text')!r}"
         )
+    return errors
+
+
+def compare_nodes_info_http_only(steelsearch: dict[str, Any], opensearch: dict[str, Any]) -> list[str]:
+    errors: list[str] = []
+    for label, response in (("steelsearch", steelsearch), ("opensearch", opensearch)):
+        body = response.get("body")
+        nodes = body.get("nodes") if isinstance(body, dict) else None
+        if not isinstance(nodes, dict) or not nodes:
+            errors.append(f"{label} nodes info response was not a non-empty nodes object")
+            continue
+        for node_id, node in nodes.items():
+            if not isinstance(node, dict):
+                errors.append(f"{label} node [{node_id}] was not an object")
+                continue
+            if "http" not in node:
+                errors.append(f"{label} node [{node_id}] missing requested http metric")
+            if "settings" in node:
+                errors.append(f"{label} node [{node_id}] included unrequested settings metric")
     return errors
 
 

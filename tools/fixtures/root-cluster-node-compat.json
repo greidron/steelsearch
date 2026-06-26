@@ -98,6 +98,24 @@
       }
     },
     {
+      "name": "get_nodes_info_metric_shorthand_http_only",
+      "method": "GET",
+      "path": "/_nodes/http",
+      "compare": {
+        "expected_status": 200,
+        "compare_mode": "nodes_info_http_only"
+      }
+    },
+    {
+      "name": "get_nodes_info_ignores_unknown_metric",
+      "method": "GET",
+      "path": "/_nodes/_all/http,bogus",
+      "compare": {
+        "expected_status": 200,
+        "compare_mode": "nodes_info_http_only"
+      }
+    },
+    {
       "name": "get_cat_pit_segments_all_text_shape",
       "method": "GET",
       "path": "/_cat/pit_segments/_all?v=true",
