@@ -1860,6 +1860,32 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end_at_ms,
         )?;
     } else if is_request
+        && normalized_action_hint == Some("indices:monitor/upgrade")
+        && upgrade_status_request_supports_local_execution_subset(&body)
+    {
+        let response = build_local_upgrade_status_response(request_id, header_version_id, &body);
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("indices:monitor/upgrade"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request
         && normalized_action_hint == Some("indices:data/read/point_in_time/create")
         && create_pit_request_supports_local_lifecycle_subset(&body)
     {
@@ -4873,6 +4899,48 @@ fn local_transport_upgrade_response_from_request(
     )
 }
 
+fn build_local_upgrade_status_response(
+    request_id: i64,
+    header_version_id: u32,
+    body: &[u8],
+) -> Vec<u8> {
+    let Some(request) = decode_upgrade_status_request_from_transport_body(body) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    if request.validate_supported_execution_subset().is_err() {
+        return build_empty_transport_response(request_id, header_version_id);
+    }
+    let response = local_transport_upgrade_status_response_from_request(&request);
+    os_transport::action::build_opensearch_upgrade_status_response_message(
+        request_id,
+        Version::from_id(header_version_id as i32),
+        &response,
+    )
+    .map(|frame| frame.to_vec())
+    .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
+}
+
+fn upgrade_status_request_supports_local_execution_subset(body: &[u8]) -> bool {
+    decode_upgrade_status_request_from_transport_body(body)
+        .and_then(|request| request.validate_supported_execution_subset().ok())
+        .is_some()
+}
+
+fn decode_upgrade_status_request_from_transport_body(
+    body: &[u8],
+) -> Option<os_transport::action::OpenSearchUpgradeStatusRequestWire> {
+    let message = decode_transport_message_from_body(body)?;
+    os_transport::action::read_opensearch_upgrade_status_request_message(&message).ok()
+}
+
+fn local_transport_upgrade_status_response_from_request(
+    _request: &os_transport::action::OpenSearchUpgradeStatusRequestWire,
+) -> os_transport::action::OpenSearchUpgradeStatusResponseWire {
+    os_transport::action::OpenSearchUpgradeStatusResponseWire::empty_shard_statuses(
+        local_transport_global_index_count(),
+    )
+}
+
 fn local_transport_global_index_count() -> i32 {
     dev_transport_pit_bindings()
         .created_indices
@@ -7406,6 +7474,15 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
         }
         Some("indices:admin/upgrade") if upgrade_request_supports_local_execution_subset(body) => {
             Some(build_local_upgrade_response(
+                request_id,
+                header_version_id,
+                body,
+            ))
+        }
+        Some("indices:monitor/upgrade")
+            if upgrade_status_request_supports_local_execution_subset(body) =>
+        {
+            Some(build_local_upgrade_status_response(
                 request_id,
                 header_version_id,
                 body,
@@ -12715,6 +12792,53 @@ mod tests {
             os_transport::action::read_opensearch_upgrade_response_message(&message).unwrap();
         assert_eq!(response.total_shards, 3);
         assert_eq!(response.successful_shards, 3);
+        assert_eq!(response.failed_shards, 0);
+    }
+
+    #[test]
+    fn upgrade_status_transport_route_returns_empty_global_shard_statuses() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        let bindings = dev_transport_pit_bindings();
+        let mut created_indices = bindings
+            .created_indices
+            .lock()
+            .expect("dev transport created indices lock poisoned");
+        created_indices.clear();
+        created_indices.insert("logs-upgrade-status-a".to_string());
+        created_indices.insert("logs-upgrade-status-b".to_string());
+        drop(created_indices);
+
+        let request = os_transport::action::OpenSearchUpgradeStatusRequestWire::default();
+        let frame = os_transport::action::build_opensearch_upgrade_status_request_message(
+            312,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(upgrade_status_request_supports_local_execution_subset(
+            &frame[6..]
+        ));
+
+        let response = build_local_upgrade_status_response(
+            312,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &frame[6..],
+        );
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected upgrade status response message");
+        };
+        let response =
+            os_transport::action::read_opensearch_upgrade_status_response_message(&message)
+                .unwrap();
+        assert_eq!(response.total_shards, 2);
+        assert_eq!(response.successful_shards, 2);
         assert_eq!(response.failed_shards, 0);
     }
 
