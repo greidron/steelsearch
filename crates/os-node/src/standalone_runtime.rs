@@ -18690,16 +18690,30 @@ impl SteelNode {
                 "port": port,
                 "http_address": node.http_address.unwrap_or("-".to_string()),
                 "version": self.info.version.to_string(),
+                "type": "tar",
+                "build": "-",
+                "jdk": "-",
                 "heap.current": "0b",
                 "heap.max": "0b",
                 "heap.percent": "0",
                 "ram.current": "0b",
+                "ram.max": "0b",
                 "ram.percent": "0",
                 "disk.total": "0b",
+                "disk.used": "0b",
+                "disk.avail": "0b",
+                "disk.used_percent": "0.00",
+                "file_desc.current": "0",
+                "file_desc.percent": "0",
+                "file_desc.max": "0",
                 "cpu": "0",
                 "load_1m": "0.00",
+                "load_5m": "0.00",
+                "load_15m": "0.00",
                 "uptime": "0s",
                 "node.role": role_summary,
+                "node.roles": node.roles.join(","),
+                "cluster_manager": if node.local { "*" } else { "-" },
                 "master": if node.local { "*" } else { "-" },
                 "search.open_contexts": search_open_contexts.to_string(),
                 "search.point_in_time_current": pit_current.to_string(),
@@ -18719,38 +18733,42 @@ impl SteelNode {
             .get("format")
             .is_some_and(|value| value == "json")
         {
-            return RestResponse::json(200, Value::Array(rows));
+            let display_columns = cat_nodes_display_columns(request.query_params.get("h"));
+            let selected_rows = rows
+                .iter()
+                .map(|row| {
+                    let mut object = serde_json::Map::new();
+                    for (column, display) in &display_columns {
+                        object.insert(display.clone(), row[*column].clone());
+                    }
+                    Value::Object(object)
+                })
+                .collect::<Vec<_>>();
+            return RestResponse::json(200, Value::Array(selected_rows));
         }
         let verbose = request
             .query_params
             .get("v")
             .is_some_and(|value| value == "true");
+        let display_columns = cat_nodes_display_columns(request.query_params.get("h"));
         let mut lines = Vec::new();
         if verbose {
-            lines.push("id pid ip port http_address version heap.current heap.max heap.percent ram.current ram.percent disk.total cpu load_1m uptime node.role master name".to_string());
+            lines.push(
+                display_columns
+                    .iter()
+                    .map(|(_, display)| display.as_str())
+                    .collect::<Vec<_>>()
+                    .join(" "),
+            );
         }
         for row in &rows {
-            lines.push(format!(
-                "{} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {}",
-                row["id"].as_str().unwrap_or(""),
-                row["pid"].as_str().unwrap_or("1"),
-                row["ip"].as_str().unwrap_or("127.0.0.1"),
-                row["port"].as_str().unwrap_or("9300"),
-                row["http_address"].as_str().unwrap_or("-"),
-                row["version"].as_str().unwrap_or(""),
-                row["heap.current"].as_str().unwrap_or("0b"),
-                row["heap.max"].as_str().unwrap_or("0b"),
-                row["heap.percent"].as_str().unwrap_or("0"),
-                row["ram.current"].as_str().unwrap_or("0b"),
-                row["ram.percent"].as_str().unwrap_or("0"),
-                row["disk.total"].as_str().unwrap_or("0b"),
-                row["cpu"].as_str().unwrap_or("0"),
-                row["load_1m"].as_str().unwrap_or("0.00"),
-                row["uptime"].as_str().unwrap_or("0s"),
-                row["node.role"].as_str().unwrap_or("-"),
-                row["master"].as_str().unwrap_or("-"),
-                row["name"].as_str().unwrap_or(""),
-            ));
+            lines.push(
+                display_columns
+                    .iter()
+                    .map(|(column, _)| row[*column].as_str().unwrap_or(""))
+                    .collect::<Vec<_>>()
+                    .join(" "),
+            );
         }
         RestResponse::text(200, lines.join("\n") + "\n")
     }
@@ -30939,6 +30957,98 @@ fn cat_nodeattrs_display_columns(h_param: Option<&String>) -> Vec<(&'static str,
     selected
 }
 
+fn cat_nodes_display_columns(h_param: Option<&String>) -> Vec<(&'static str, String)> {
+    const COLUMNS: &[(&str, &[&str])] = &[
+        ("id", &["nodeId"]),
+        ("pid", &["p"]),
+        ("ip", &["i"]),
+        ("port", &["po"]),
+        ("http_address", &["http"]),
+        ("version", &["v"]),
+        ("type", &["t"]),
+        ("build", &["b"]),
+        ("jdk", &["j"]),
+        ("disk.total", &["dt", "diskTotal"]),
+        ("disk.used", &["du", "diskUsed"]),
+        ("disk.avail", &["d", "da", "disk", "diskAvail"]),
+        ("disk.used_percent", &["dup", "diskUsedPercent"]),
+        ("heap.current", &["hc", "heapCurrent"]),
+        ("heap.percent", &["hp", "heapPercent"]),
+        ("heap.max", &["hm", "heapMax"]),
+        ("ram.current", &["rc", "ramCurrent"]),
+        ("ram.percent", &["rp", "ramPercent"]),
+        ("ram.max", &["rm", "ramMax"]),
+        ("file_desc.current", &["fdc", "fileDescriptorCurrent"]),
+        ("file_desc.percent", &["fdp", "fileDescriptorPercent"]),
+        ("file_desc.max", &["fdm", "fileDescriptorMax"]),
+        ("cpu", &["cpu"]),
+        ("load_1m", &["l"]),
+        ("load_5m", &["l"]),
+        ("load_15m", &["l"]),
+        ("uptime", &["u"]),
+        ("node.role", &["r", "role", "nodeRole"]),
+        ("node.roles", &["rs", "all roles"]),
+        ("cluster_manager", &["cm", "m", "master"]),
+        ("name", &["n"]),
+        ("search.open_contexts", &["so", "searchOpenContexts"]),
+        (
+            "search.point_in_time_current",
+            &["scc", "searchPointInTimeCurrent"],
+        ),
+        (
+            "search.point_in_time_time",
+            &["scti", "searchPointInTimeTime"],
+        ),
+        (
+            "search.point_in_time_total",
+            &["scto", "searchPointInTimeTotal"],
+        ),
+    ];
+    let Some(h_param) = h_param else {
+        return vec![
+            ("ip", "ip".to_string()),
+            ("heap.percent", "heap.percent".to_string()),
+            ("ram.percent", "ram.percent".to_string()),
+            ("cpu", "cpu".to_string()),
+            ("load_1m", "load_1m".to_string()),
+            ("load_5m", "load_5m".to_string()),
+            ("load_15m", "load_15m".to_string()),
+            ("node.role", "node.role".to_string()),
+            ("node.roles", "node.roles".to_string()),
+            ("cluster_manager", "cluster_manager".to_string()),
+            ("name", "name".to_string()),
+        ];
+    };
+    let mut selected = Vec::new();
+    for requested in h_param
+        .split(',')
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        if requested.contains('*') {
+            for (column, aliases) in COLUMNS {
+                if wildcard_match(requested, column)
+                    || aliases.iter().any(|alias| wildcard_match(requested, alias))
+                {
+                    if !selected.iter().any(|(existing, _)| existing == column) {
+                        selected.push((*column, (*column).to_string()));
+                    }
+                }
+            }
+            continue;
+        }
+        for (column, aliases) in COLUMNS {
+            if *column == requested || aliases.contains(&requested) {
+                if !selected.iter().any(|(existing, _)| existing == column) {
+                    selected.push((*column, requested.to_string()));
+                }
+                break;
+            }
+        }
+    }
+    selected
+}
+
 fn cat_pending_tasks_display_columns(h_param: Option<&String>) -> Vec<(&'static str, String)> {
     let Some(h_param) = h_param else {
         return vec![
@@ -36681,24 +36791,42 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         let nodes_json_response = node.handle_rest_request(nodes_json_request);
         assert_eq!(nodes_json_response.status, 200);
         assert_eq!(nodes_json_response.body[0]["name"], "steel-node-a");
-        assert_eq!(nodes_json_response.body[1]["master"], "-");
+        assert_eq!(nodes_json_response.body[1]["cluster_manager"], "-");
         assert_eq!(nodes_json_response.body[0]["heap.percent"], "0");
         assert_eq!(nodes_json_response.body[0]["cpu"], "0");
-        assert_eq!(nodes_json_response.body[0]["uptime"], "0s");
-        assert_eq!(nodes_json_response.body[0]["search.open_contexts"], "2");
+        assert!(nodes_json_response.body[0].get("id").is_none());
+
+        let mut selected_nodes_json_request = RestRequest::new(RestMethod::Get, "/_cat/nodes");
+        selected_nodes_json_request
+            .query_params
+            .insert("format".to_string(), "json".to_string());
+        selected_nodes_json_request.query_params.insert(
+            "h".to_string(),
+            "id,i,hp,rp,cpu,l,role,rs,master,n,so,searchPointInTimeCurrent,searchPointInTimeTotal"
+                .to_string(),
+        );
+        let selected_nodes_json_response = node.handle_rest_request(selected_nodes_json_request);
+        assert_eq!(selected_nodes_json_response.status, 200);
+        assert_eq!(selected_nodes_json_response.body[0]["id"], "node-a");
+        assert_eq!(selected_nodes_json_response.body[0]["i"], "127.0.0.1");
+        assert_eq!(selected_nodes_json_response.body[0]["hp"], "0");
+        assert_eq!(selected_nodes_json_response.body[0]["rp"], "0");
+        assert_eq!(selected_nodes_json_response.body[0]["role"], "dim");
         assert_eq!(
-            nodes_json_response.body[0]["search.point_in_time_current"],
+            selected_nodes_json_response.body[0]["rs"],
+            "cluster_manager,data"
+        );
+        assert_eq!(selected_nodes_json_response.body[0]["master"], "*");
+        assert_eq!(selected_nodes_json_response.body[0]["so"], "2");
+        assert_eq!(
+            selected_nodes_json_response.body[0]["searchPointInTimeCurrent"],
             "1"
         );
         assert_eq!(
-            nodes_json_response.body[0]["search.point_in_time_total"],
+            selected_nodes_json_response.body[0]["searchPointInTimeTotal"],
             "3"
         );
-        assert_eq!(nodes_json_response.body[1]["search.open_contexts"], "0");
-        assert_eq!(
-            nodes_json_response.body[1]["search.point_in_time_current"],
-            "0"
-        );
+        assert_eq!(selected_nodes_json_response.body[1]["so"], "0");
 
         let mut nodes_text_request = RestRequest::new(RestMethod::Get, "/_cat/nodes");
         nodes_text_request
@@ -36709,10 +36837,31 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             .body
             .as_str()
             .expect("cat nodes text body");
-        assert!(nodes_text
-            .contains("id pid ip port http_address version heap.current heap.max heap.percent"));
+        assert!(nodes_text.contains(
+            "ip heap.percent ram.percent cpu load_1m load_5m load_15m node.role node.roles cluster_manager name"
+        ));
         assert!(nodes_text.contains("steel-node-a"));
         assert!(nodes_text.contains("steel-node-b"));
+
+        let mut selected_nodes_text_request = RestRequest::new(RestMethod::Get, "/_cat/nodes");
+        selected_nodes_text_request
+            .query_params
+            .insert("v".to_string(), "true".to_string());
+        selected_nodes_text_request.query_params.insert(
+            "h".to_string(),
+            "id,i,hp,rp,cpu,role,rs,master,n,so,searchPointInTimeCurrent".to_string(),
+        );
+        let selected_nodes_text_response = node.handle_rest_request(selected_nodes_text_request);
+        let selected_nodes_text = selected_nodes_text_response
+            .body
+            .as_str()
+            .expect("selected cat nodes text body");
+        assert_eq!(
+            selected_nodes_text.lines().next(),
+            Some("id i hp rp cpu role rs master n so searchPointInTimeCurrent")
+        );
+        assert!(selected_nodes_text
+            .contains("node-a 127.0.0.1 0 0 0 dim cluster_manager,data * steel-node-a 2 1"));
 
         let mut attrs_json_request = RestRequest::new(RestMethod::Get, "/_cat/nodeattrs");
         attrs_json_request

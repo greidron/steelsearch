@@ -1069,6 +1069,25 @@
       "description": "[admin-cat] cat nodes text"
     },
     {
+      "name": "cat_nodes_text_selected_alias_columns",
+      "area": "cat",
+      "method": "GET",
+      "path": "/_cat/nodes?v=true&h=i,hp,rp,cpu,l,role,rs,master,n",
+      "accept": "text/plain",
+      "extract": "cat_nodes",
+      "family": "admin-cat",
+      "description": "[admin-cat] cat nodes text honors OpenSearch h aliases"
+    },
+    {
+      "name": "cat_nodes_json_selected_alias_columns",
+      "area": "cat",
+      "method": "GET",
+      "path": "/_cat/nodes?format=json&h=i,hp,rp,cpu,l,role,rs,master,n",
+      "extract": "cat_nodes",
+      "family": "admin-cat",
+      "description": "[admin-cat] cat nodes json honors OpenSearch h aliases"
+    },
+    {
       "name": "cat_fielddata_root_json",
       "area": "cat",
       "method": "GET",
