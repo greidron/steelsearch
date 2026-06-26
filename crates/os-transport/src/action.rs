@@ -28582,6 +28582,20 @@ impl OpenSearchPointInTimeBuilderWire {
                 reason: "OpenSearch PointInTimeBuilder id must be non-empty",
             });
         }
+        if let Some(keep_alive) = &self.keep_alive {
+            if keep_alive.duration < -1 {
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "search request source point in time keep alive",
+                    reason: "OpenSearch TimeValue rejects durations below -1",
+                });
+            }
+            if keep_alive.time_unit_ordinal > 6 {
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "search request source point in time keep alive unit",
+                    reason: "OpenSearch point-in-time keep-alive uses an unknown time unit",
+                });
+            }
+        }
         Ok(())
     }
 }
@@ -67445,6 +67459,48 @@ mod tests {
             empty_pit_id.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "search request source point in time",
+                ..
+            })
+        ));
+
+        let pit_keep_alive_below_floor = OpenSearchSearchRequestWire {
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                point_in_time: Some(OpenSearchPointInTimeBuilderWire {
+                    id: "pit-context".to_string(),
+                    keep_alive: Some(TimeValueWire {
+                        duration: -2,
+                        time_unit_ordinal: TIME_UNIT_MILLISECONDS,
+                    }),
+                }),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        assert!(matches!(
+            pit_keep_alive_below_floor.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source point in time keep alive",
+                ..
+            })
+        ));
+
+        let pit_keep_alive_unknown_unit = OpenSearchSearchRequestWire {
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                point_in_time: Some(OpenSearchPointInTimeBuilderWire {
+                    id: "pit-context".to_string(),
+                    keep_alive: Some(TimeValueWire {
+                        duration: 1,
+                        time_unit_ordinal: 7,
+                    }),
+                }),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        assert!(matches!(
+            pit_keep_alive_unknown_unit.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source point in time keep alive unit",
                 ..
             })
         ));
