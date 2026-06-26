@@ -938,6 +938,26 @@
       "description": "[admin-cat] cat pending tasks json honors h aliases"
     },
     {
+      "name": "cat_tasks_text",
+      "area": "cat",
+      "method": "GET",
+      "path": "/_cat/tasks?v=true",
+      "accept": "text/plain",
+      "extract": "cat_tasks",
+      "family": "admin-cat",
+      "description": "[admin-cat] cat tasks text exposes OpenSearch default columns"
+    },
+    {
+      "name": "cat_tasks_text_selected_alias_columns",
+      "area": "cat",
+      "method": "GET",
+      "path": "/_cat/tasks?v=true&h=id,ac,ti,pti,ty,start,ts,i,n,x",
+      "accept": "text/plain",
+      "extract": "cat_selected_column_fields",
+      "family": "admin-cat",
+      "description": "[admin-cat] cat tasks text honors OpenSearch h aliases"
+    },
+    {
       "name": "cat_allocation_root_json",
       "area": "cat",
       "method": "GET",

@@ -19673,7 +19673,24 @@ impl SteelNode {
             .get("format")
             .is_some_and(|value| value == "json")
         {
-            return RestResponse::json(200, Value::Array(rows.clone()));
+            let display_columns = cat_tasks_display_columns(
+                request.query_params.get("h"),
+                request
+                    .query_params
+                    .get("detailed")
+                    .is_some_and(|value| value == "true"),
+            );
+            let selected_rows = rows
+                .iter()
+                .map(|row| {
+                    let mut object = serde_json::Map::new();
+                    for (column, display) in &display_columns {
+                        object.insert(display.clone(), row[*column].clone());
+                    }
+                    Value::Object(object)
+                })
+                .collect::<Vec<_>>();
+            return RestResponse::json(200, Value::Array(selected_rows));
         }
         let verbose = request
             .query_params
@@ -19683,37 +19700,25 @@ impl SteelNode {
             .query_params
             .get("detailed")
             .is_some_and(|value| value == "true");
+        let display_columns = cat_tasks_display_columns(request.query_params.get("h"), detailed);
         let mut lines = Vec::new();
         if verbose {
-            let mut header =
-                "action task_id parent_task_id type start_time timestamp running_time ip node"
-                    .to_string();
-            if detailed {
-                header.push_str(" description resource_stats");
-            }
-            lines.push(header);
+            lines.push(
+                display_columns
+                    .iter()
+                    .map(|(_, display)| display.as_str())
+                    .collect::<Vec<_>>()
+                    .join(" "),
+            );
         }
         for row in &rows {
-            let mut line = format!(
-                "{} {} {} {} {} {} {} {} {}",
-                row["action"].as_str().unwrap_or(""),
-                row["task_id"].as_str().unwrap_or(""),
-                row["parent_task_id"].as_str().unwrap_or("-"),
-                row["type"].as_str().unwrap_or("transport"),
-                row["start_time"].as_str().unwrap_or("1"),
-                row["timestamp"].as_str().unwrap_or("00:00:00"),
-                row["running_time"].as_str().unwrap_or("0s"),
-                row["ip"].as_str().unwrap_or("127.0.0.1"),
-                row["node"].as_str().unwrap_or(""),
+            lines.push(
+                display_columns
+                    .iter()
+                    .map(|(column, _)| row[*column].as_str().unwrap_or(""))
+                    .collect::<Vec<_>>()
+                    .join(" "),
             );
-            if detailed {
-                line.push_str(&format!(
-                    " {} {}",
-                    row["description"].as_str().unwrap_or(""),
-                    row["resource_stats"].as_str().unwrap_or(""),
-                ));
-            }
-            lines.push(line);
         }
         RestResponse::text(200, lines.join("\n") + "\n")
     }
@@ -31270,6 +31275,92 @@ fn cat_plugins_display_columns(h_param: Option<&String>) -> Vec<(&'static str, S
     selected
 }
 
+fn cat_tasks_display_columns(
+    h_param: Option<&String>,
+    detailed: bool,
+) -> Vec<(&'static str, String)> {
+    let Some(h_param) = h_param else {
+        let mut columns = vec![
+            ("action", "action".to_string()),
+            ("task_id", "task_id".to_string()),
+            ("parent_task_id", "parent_task_id".to_string()),
+            ("type", "type".to_string()),
+            ("start_time", "start_time".to_string()),
+            ("timestamp", "timestamp".to_string()),
+            ("running_time", "running_time".to_string()),
+            ("ip", "ip".to_string()),
+            ("node", "node".to_string()),
+        ];
+        if detailed {
+            columns.push(("description", "description".to_string()));
+        }
+        return columns;
+    };
+    let mut selected = Vec::new();
+    for requested in h_param
+        .split(',')
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        if requested.contains('*') {
+            for (column, aliases) in [
+                ("id", &[][..]),
+                ("action", &["ac"][..]),
+                ("task_id", &["ti"][..]),
+                ("parent_task_id", &["pti"][..]),
+                ("type", &["ty"][..]),
+                ("start_time", &["start"][..]),
+                ("timestamp", &["ts", "hms", "hhmmss"][..]),
+                ("running_time_ns", &["time"][..]),
+                ("running_time", &["time"][..]),
+                ("node_id", &["ni"][..]),
+                ("ip", &["i"][..]),
+                ("port", &["po"][..]),
+                ("node", &["n"][..]),
+                ("version", &["v"][..]),
+                ("x_opaque_id", &["x"][..]),
+                ("description", &["desc"][..]),
+                ("resource_stats", &[][..]),
+            ] {
+                if wildcard_match(requested, column)
+                    || aliases.iter().any(|alias| wildcard_match(requested, alias))
+                {
+                    if !selected.iter().any(|(existing, _)| existing == &column) {
+                        selected.push((column, column.to_string()));
+                    }
+                }
+            }
+            continue;
+        }
+        let column = match requested {
+            "id" => Some("id"),
+            "action" | "ac" => Some("action"),
+            "task_id" | "ti" => Some("task_id"),
+            "parent_task_id" | "pti" => Some("parent_task_id"),
+            "type" | "ty" => Some("type"),
+            "start_time" | "start" => Some("start_time"),
+            "timestamp" | "ts" | "hms" | "hhmmss" => Some("timestamp"),
+            "running_time_ns" => Some("running_time_ns"),
+            "running_time" | "time" => Some("running_time"),
+            "node_id" | "ni" => Some("node_id"),
+            "ip" | "i" => Some("ip"),
+            "port" | "po" => Some("port"),
+            "node" | "n" => Some("node"),
+            "version" | "v" => Some("version"),
+            "x_opaque_id" | "x" => Some("x_opaque_id"),
+            "description" | "desc" => Some("description"),
+            "resource_stats" => Some("resource_stats"),
+            _ => None,
+        };
+        if let Some(column) = column {
+            if !selected.iter().any(|(existing, _)| existing == &column) {
+                selected.push((column, requested.to_string()));
+            }
+        }
+    }
+    selected
+}
+
 fn cat_pending_tasks_display_columns(h_param: Option<&String>) -> Vec<(&'static str, String)> {
     let Some(h_param) = h_param else {
         return vec![
@@ -38673,10 +38764,29 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             "cluster:admin/reroute"
         );
         assert_eq!(tasks_json_response.body[0]["parent_task_id"], "node-a:1");
+        assert!(tasks_json_response.body[0].get("x_opaque_id").is_none());
+
+        let mut selected_tasks_json_request = RestRequest::new(RestMethod::Get, "/_cat/tasks");
+        selected_tasks_json_request
+            .query_params
+            .insert("format".to_string(), "json".to_string());
+        selected_tasks_json_request.query_params.insert(
+            "h".to_string(),
+            "id,ac,ti,pti,ty,start,ts,i,n,x".to_string(),
+        );
+        let selected_tasks_json_response = node.handle_rest_request(selected_tasks_json_request);
+        assert_eq!(selected_tasks_json_response.status, 200);
+        assert_eq!(selected_tasks_json_response.body[0]["id"], "9");
         assert_eq!(
-            tasks_json_response.body[0]["x_opaque_id"],
+            selected_tasks_json_response.body[0]["ac"],
+            "cluster:admin/reroute"
+        );
+        assert_eq!(selected_tasks_json_response.body[0]["pti"], "node-a:1");
+        assert_eq!(
+            selected_tasks_json_response.body[0]["x"],
             "cat-task-request-1"
         );
+        assert!(selected_tasks_json_response.body[0].get("action").is_none());
 
         let mut tasks_text_request = RestRequest::new(RestMethod::Get, "/_cat/tasks");
         tasks_text_request
@@ -38692,6 +38802,48 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         ));
         assert!(tasks_text.contains("cluster:admin/reroute"));
         assert!(tasks_text.contains("node-a:1"));
+
+        let mut selected_tasks_text_request = RestRequest::new(RestMethod::Get, "/_cat/tasks");
+        selected_tasks_text_request
+            .query_params
+            .insert("v".to_string(), "true".to_string());
+        selected_tasks_text_request.query_params.insert(
+            "h".to_string(),
+            "id,ac,ti,pti,ty,start,ts,i,n,x".to_string(),
+        );
+        let selected_tasks_text_response = node.handle_rest_request(selected_tasks_text_request);
+        let selected_tasks_text = selected_tasks_text_response
+            .body
+            .as_str()
+            .expect("selected cat tasks text body");
+        assert_eq!(
+            selected_tasks_text.lines().next(),
+            Some("id ac ti pti ty start ts i n x")
+        );
+        assert!(selected_tasks_text.contains(
+            "9 cluster:admin/reroute node-a:9 node-a:1 transport 1 00:00:00 127.0.0.1 steel-node cat-task-request-1"
+        ));
+
+        let mut detailed_tasks_text_request = RestRequest::new(RestMethod::Get, "/_cat/tasks");
+        detailed_tasks_text_request
+            .query_params
+            .insert("v".to_string(), "true".to_string());
+        detailed_tasks_text_request
+            .query_params
+            .insert("detailed".to_string(), "true".to_string());
+        let detailed_tasks_text_response = node.handle_rest_request(detailed_tasks_text_request);
+        let detailed_tasks_text = detailed_tasks_text_response
+            .body
+            .as_str()
+            .expect("detailed cat tasks text body");
+        assert!(detailed_tasks_text.contains(
+            "action task_id parent_task_id type start_time timestamp running_time ip node description"
+        ));
+        assert!(!detailed_tasks_text
+            .lines()
+            .next()
+            .unwrap_or("")
+            .contains("resource_stats"));
     }
 
     #[test]
