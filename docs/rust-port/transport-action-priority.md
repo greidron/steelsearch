@@ -278,7 +278,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `indices:admin/aliases/get` (implemented empty alias metadata subset)
 - `indices:monitor/settings/get` (implemented metadata-backed index-settings subset)
 - `indices:admin/shards/search_shards` (implemented empty search-shards subset)
-- `indices:data/read/field_caps` (rejected fail-closed)
+- `indices:data/read/field_caps` (implemented empty field-capabilities subset)
 - `indices:monitor/recovery` (implemented local empty-recovery subset)
 - `indices:monitor/segment_replication` (implemented local empty segment-replication-stats subset)
 - `indices:monitor/segments` (implemented local empty-segments subset)
@@ -1753,11 +1753,11 @@ The field-capabilities boundary covers:
   array, `IndicesOptions.strictExpandOpen()`, `mergeResults`, `includeUnmapped`,
   optional index-filter query marker, and optional `nowInMillis` at the wire
   decode/build layer;
-- explicit fail-closed classification for `indices:data/read/field_caps` until
-  mapping/type metadata response rendering is implemented;
+- implemented classification for the default all-indices request subset with
+  OpenSearch-shaped empty `FieldCapabilitiesResponse` rendering;
 - explicit rejection for empty fields, index filters, custom indices options,
   unmerged responses, include-unmapped expansion, index-filter query rewrite,
-  timestamp injection, and field-capabilities execution.
+  timestamp injection, non-empty response maps, and per-index response lists.
 
 The get-aliases boundary covers:
 

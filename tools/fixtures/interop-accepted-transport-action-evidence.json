@@ -192,6 +192,13 @@
       "response_evidence": "crates/os-transport/src/action.rs::opensearch_cluster_search_shards_transport_messages_bind_supported_action_frame_and_empty_response"
     },
     {
+      "action_name": "indices:data/read/field_caps",
+      "disposition": "implemented",
+      "evidence_kind": "wire_round_trip",
+      "request_evidence": "crates/os-transport/src/action.rs::opensearch_field_capabilities_transport_messages_bind_supported_action_frame_and_empty_response",
+      "response_evidence": "crates/os-transport/src/action.rs::opensearch_field_capabilities_transport_messages_bind_supported_action_frame_and_empty_response"
+    },
+    {
       "action_name": "indices:monitor/recovery",
       "disposition": "implemented",
       "evidence_kind": "wire_round_trip",

@@ -990,8 +990,8 @@
       "transport_action": "TransportFieldCapabilitiesAction",
       "request_wire_type": "FieldCapabilitiesRequest",
       "response_wire_type": "FieldCapabilitiesResponse",
-      "disposition": "rejected",
-      "reason": "Field-capabilities transport execution requires mapping metadata response rendering before Steelsearch can serve OpenSearch field capabilities semantics."
+      "disposition": "implemented",
+      "reason": "Field-capabilities transport adapter returns an OpenSearch-shaped empty field capabilities response for the default all-indices request"
     },
     {
       "action_name": "indices:monitor/recovery",

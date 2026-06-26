@@ -2211,8 +2211,8 @@ pub fn classify_opensearch_transport_action(
         },
         OPENSEARCH_FIELD_CAPABILITIES_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
-            disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "field-capabilities transport execution requires mapping metadata response rendering",
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "field-capabilities transport adapter returns an OpenSearch-shaped empty field capabilities response for the default all-indices request",
         },
         OPENSEARCH_RECOVERY_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -9779,6 +9779,36 @@ pub fn read_opensearch_field_capabilities_request_message(
         });
     }
     OpenSearchFieldCapabilitiesRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_opensearch_field_capabilities_response_message(
+    request_id: i64,
+    version: Version,
+    response: &OpenSearchFieldCapabilitiesResponseWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    response.write(&mut body)?;
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::response(),
+        version,
+        variable_header: BytesMut::from(&ResponseVariableHeader::default().to_bytes()[..]),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_field_capabilities_response_message(
+    message: &TransportMessage,
+) -> Result<OpenSearchFieldCapabilitiesResponseWire, TransportActionWireError> {
+    if !message.status.is_response() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "response",
+            actual: message.status.bits(),
+        });
+    }
+    let _header = ResponseVariableHeader::read(message.variable_header.clone().freeze())?;
+    OpenSearchFieldCapabilitiesResponseWire::read(message.body.clone().freeze())
 }
 
 pub fn build_opensearch_get_aliases_request_message(
@@ -22031,7 +22061,7 @@ impl OpenSearchFieldCapabilitiesRequestWire {
         Ok(request)
     }
 
-    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+    pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
         if self.fields.is_empty() {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "field capabilities empty fields",
@@ -22077,11 +22107,72 @@ impl OpenSearchFieldCapabilitiesRequestWire {
                 reason: "field-capabilities timestamp injection is only valid with query rewrite semantics",
             });
         }
+        Ok(())
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        self.validate_supported_subset()?;
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "field capabilities execution",
             reason:
                 "field-capabilities transport execution requires mapping metadata response rendering",
         })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchFieldCapabilitiesResponseWire {
+    pub indices: Vec<String>,
+}
+
+impl OpenSearchFieldCapabilitiesResponseWire {
+    pub fn empty() -> Self {
+        Self {
+            indices: Vec::new(),
+        }
+    }
+
+    pub fn write(&self, output: &mut StreamOutput) -> Result<(), TransportActionWireError> {
+        self.validate_supported_subset()?;
+        output.write_string_array(&self.indices);
+        output.write_vint(0);
+        output.write_vint(0);
+        Ok(())
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let indices = input.read_string_array()?;
+        let response_map_count = read_len(&mut input)?;
+        if response_map_count != 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "field capabilities response map",
+                reason:
+                    "non-empty FieldCapabilities response maps are not decoded by this adapter yet",
+            });
+        }
+        let index_response_count = read_len(&mut input)?;
+        if index_response_count != 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "field capabilities index responses",
+                reason: "non-empty FieldCapabilitiesIndexResponse lists are not decoded by this adapter yet",
+            });
+        }
+        require_no_trailing_bytes(&input)?;
+        let response = Self { indices };
+        response.validate_supported_subset()?;
+        Ok(response)
+    }
+
+    pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
+        if !self.indices.is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "field capabilities response indices",
+                reason:
+                    "non-empty field-capabilities responses require field capability map rendering",
+            });
+        }
+        Ok(())
     }
 }
 
@@ -42911,7 +43002,7 @@ mod tests {
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_FIELD_CAPABILITIES_ACTION_NAME)
                 .disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_RECOVERY_ACTION_NAME).disposition,
@@ -43079,6 +43170,7 @@ mod tests {
                 || spec.action_name == OPENSEARCH_CLEAR_SCROLL_ACTION_NAME
                 || spec.action_name == OPENSEARCH_GET_ALIASES_ACTION_NAME
                 || spec.action_name == OPENSEARCH_GET_SETTINGS_ACTION_NAME
+                || spec.action_name == OPENSEARCH_FIELD_CAPABILITIES_ACTION_NAME
             {
                 assert_eq!(
                     decision.disposition,
@@ -43133,7 +43225,6 @@ mod tests {
                 || spec.action_name == OPENSEARCH_UPGRADE_STATUS_ACTION_NAME
                 || spec.action_name == OPENSEARCH_UPGRADE_SETTINGS_ACTION_NAME
                 || spec.action_name == OPENSEARCH_CLEAR_INDICES_CACHE_ACTION_NAME
-                || spec.action_name == OPENSEARCH_FIELD_CAPABILITIES_ACTION_NAME
                 || spec.action_name == OPENSEARCH_CREATE_DATA_STREAM_ACTION_NAME
                 || spec.action_name == OPENSEARCH_DELETE_DATA_STREAM_ACTION_NAME
                 || spec.action_name == OPENSEARCH_RESOLVE_INDEX_ACTION_NAME
@@ -59747,6 +59838,7 @@ mod tests {
 
         let decoded = OpenSearchFieldCapabilitiesRequestWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, request);
+        decoded.validate_supported_subset().unwrap();
         assert!(matches!(
             decoded.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
@@ -59847,7 +59939,8 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_field_capabilities_transport_messages_bind_rejected_action_frame() {
+    fn opensearch_field_capabilities_transport_messages_bind_supported_action_frame_and_empty_response(
+    ) {
         let request = OpenSearchFieldCapabilitiesRequestWire::default();
         let mut frame = build_opensearch_field_capabilities_request_message(
             57,
@@ -59862,12 +59955,64 @@ mod tests {
             read_opensearch_field_capabilities_request_message(&message).unwrap(),
             request
         );
+        read_opensearch_field_capabilities_request_message(&message)
+            .unwrap()
+            .validate_supported_subset()
+            .unwrap();
+
+        let response = OpenSearchFieldCapabilitiesResponseWire::empty();
+        let mut frame = build_opensearch_field_capabilities_response_message(
+            57,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &response,
+        )
+        .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected field capabilities response message");
+        };
+        assert_eq!(
+            read_opensearch_field_capabilities_response_message(&message).unwrap(),
+            response
+        );
+        assert_eq!(
+            classify_opensearch_transport_action(OPENSEARCH_FIELD_CAPABILITIES_ACTION_NAME)
+                .disposition,
+            OpenSearchTransportActionDisposition::Implemented
+        );
+    }
+
+    #[test]
+    fn opensearch_field_capabilities_response_wire_round_trips_empty_response() {
+        let response = OpenSearchFieldCapabilitiesResponseWire::empty();
+        let mut output = StreamOutput::new();
+        response.write(&mut output).unwrap();
+
+        let decoded = OpenSearchFieldCapabilitiesResponseWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, response);
+    }
+
+    #[test]
+    fn opensearch_field_capabilities_response_rejects_non_empty_sections() {
+        let mut response_map = StreamOutput::new();
+        response_map.write_string_array(&[]);
+        response_map.write_vint(1);
+        response_map.write_string("message");
         assert!(matches!(
-            read_opensearch_field_capabilities_request_message(&message)
-                .unwrap()
-                .reject_unsupported_execution(),
+            OpenSearchFieldCapabilitiesResponseWire::read(response_map.freeze()),
             Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "field capabilities execution",
+                shape: "field capabilities response map",
+                ..
+            })
+        ));
+
+        let mut index_responses = StreamOutput::new();
+        index_responses.write_string_array(&[]);
+        index_responses.write_vint(0);
+        index_responses.write_vint(1);
+        assert!(matches!(
+            OpenSearchFieldCapabilitiesResponseWire::read(index_responses.freeze()),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "field capabilities index responses",
                 ..
             })
         ));
