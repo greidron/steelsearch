@@ -149,15 +149,16 @@ development-only staging surface.
 - The current source-owned pagination subset is bounded to:
   - `from`
   - `size`
+  - `search_after` with one or more scalar sort keys for the documented field-sort subset
 - The current source-owned total-hits subset is bounded to:
   - `track_total_hits = true`
   - numeric `track_total_hits` threshold
   - default total-hit accounting for the documented subset
 - Current semantics gap:
-  - multi-key sort parity, missing/unmapped handling, and exact tie-breaking are
-    still narrower than OpenSearch
+  - missing/unmapped sort handling and exact tie-breaking beyond the documented
+    scalar field-sort subset are still narrower than OpenSearch
   - deep pagination semantics remain narrower than OpenSearch beyond the
-    documented scroll / PIT / single-key `search_after` subset
+    documented scroll / PIT / bounded `search_after` subset
 
 ## Aggregations
 
@@ -272,8 +273,8 @@ part of the OpenSearch parity target.
     - `DELETE /_search/point_in_time/_all`
     - `GET /_cat/pit_segments` and `GET /_cat/pit_segments/_all`
   - `search_after`
-    - single sort key
-    - single search-after scalar
+    - one or more scalar sort keys for the documented field-sort subset
+    - matching scalar search-after values
   - search execution mode controls
     - `search_type=query_then_fetch`
     - `search_type=dfs_query_then_fetch`

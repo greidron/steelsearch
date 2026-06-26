@@ -16,6 +16,15 @@
         ]
       },
       {
+        "index": "search-after-compat",
+        "features": [
+          "single_shard",
+          "no_replicas",
+          "keyword",
+          "long"
+        ]
+      },
+      {
         "index": "vectors-compat",
         "features": [
           "single_shard",
@@ -57,6 +66,14 @@
           "bytes": "long",
           "ts": "date",
           "location": "geo_point"
+        }
+      },
+      {
+        "index": "search-after-compat",
+        "fields": {
+          "foo": "keyword",
+          "age": "long",
+          "rank_id": "long"
         }
       },
       {
@@ -121,6 +138,14 @@
         ]
       },
       {
+        "index": "search-after-compat",
+        "ids": [
+          "1",
+          "42",
+          "172"
+        ]
+      },
+      {
         "index": "vectors-compat",
         "ids": [
           "vec-a",
@@ -155,6 +180,16 @@
           "log-2",
           "log-3",
           "log-4"
+        ]
+      },
+      {
+        "name": "search_after_bulk",
+        "index": "search-after-compat",
+        "format": "application/x-ndjson index actions with explicit _id values",
+        "document_ids": [
+          "1",
+          "42",
+          "172"
         ]
       },
       {
@@ -390,6 +425,30 @@
           }
         }
       }
+    },
+    {
+      "name": "search-after-compat",
+      "body": {
+        "settings": {
+          "index": {
+            "number_of_shards": 1,
+            "number_of_replicas": 0
+          }
+        },
+        "mappings": {
+          "properties": {
+            "foo": {
+              "type": "keyword"
+            },
+            "age": {
+              "type": "long"
+            },
+            "rank_id": {
+              "type": "long"
+            }
+          }
+        }
+      }
     }
   ],
   "bulk": [
@@ -503,6 +562,35 @@
               "lat": 37.785,
               "lon": -122.405
             }
+          }
+        }
+      ]
+    },
+    {
+      "index": "search-after-compat",
+      "documents": [
+        {
+          "_id": "1",
+          "_source": {
+            "foo": "bar",
+            "age": 18,
+            "rank_id": 1
+          }
+        },
+        {
+          "_id": "42",
+          "_source": {
+            "foo": "bar",
+            "age": 18,
+            "rank_id": 42
+          }
+        },
+        {
+          "_id": "172",
+          "_source": {
+            "foo": "bar",
+            "age": 24,
+            "rank_id": 172
           }
         }
       ]
@@ -5974,6 +6062,74 @@
       "extract": "search_hits",
       "family": "ranking",
       "description": "[ranking] search after search",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "search_after_multi_sort_search",
+      "area": "search",
+      "extract": "search_hits",
+      "steps": [
+        {
+          "name": "search-after-first-page",
+          "method": "POST",
+          "path": "/search-after-compat/_search",
+          "body": {
+            "query": {
+              "term": {
+                "foo": "bar"
+              }
+            },
+            "sort": [
+              {
+                "age": {
+                  "order": "desc"
+                }
+              },
+              {
+                "rank_id": {
+                  "order": "desc"
+                }
+              }
+            ],
+            "size": 1
+          },
+          "expected_status": 200,
+          "extract": "search_hits",
+          "save": {
+            "search_after": "body.hits.hits.0.sort"
+          }
+        },
+        {
+          "name": "search-after-second-page",
+          "method": "POST",
+          "path": "/search-after-compat/_search",
+          "body": {
+            "query": {
+              "term": {
+                "foo": "bar"
+              }
+            },
+            "sort": [
+              {
+                "age": {
+                  "order": "desc"
+                }
+              },
+              {
+                "rank_id": {
+                  "order": "desc"
+                }
+              }
+            ],
+            "search_after": "${saved.search_after}",
+            "size": 1
+          },
+          "expected_status": 200,
+          "extract": "search_hits"
+        }
+      ],
+      "family": "ranking",
+      "description": "[ranking] multi-sort search_after follows OpenSearch tie-break pagination",
       "strict_source_parity_required": true
     },
     {
