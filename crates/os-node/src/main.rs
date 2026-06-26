@@ -110,6 +110,7 @@ struct DevTransportCoordinationState {
 struct DevTransportReaderContext {
     shard_id: os_transport::action::OpenSearchShardIdWire,
     documents: BTreeMap<String, StoredDocument>,
+    expires_at_millis: u128,
 }
 
 #[derive(Clone, Debug)]
@@ -8223,6 +8224,14 @@ fn time_value_wire_to_millis(time_value: &os_transport::action::TimeValueWire) -
     }
 }
 
+fn transport_positive_keep_alive_millis(keep_alive_millis: i64) -> u64 {
+    if keep_alive_millis <= 0 {
+        DEV_TRANSPORT_NON_POSITIVE_PIT_KEEP_ALIVE_MILLIS
+    } else {
+        u64::try_from(keep_alive_millis).unwrap_or(u64::MAX)
+    }
+}
+
 fn u128_to_i64_saturating(value: u128) -> i64 {
     i64::try_from(value).unwrap_or(i64::MAX)
 }
@@ -8268,6 +8277,9 @@ fn build_local_create_reader_context_response(
     if !can_allocate_reader_context(dev_transport_pit_bindings()) {
         return build_empty_transport_response(request_id, header_version_id);
     }
+    let keep_alive_millis =
+        transport_positive_keep_alive_millis(time_value_wire_to_millis(&request.keep_alive));
+    let now_millis = now_epoch_ms();
     let context_id = {
         let bindings = dev_transport_pit_bindings();
         let mut next_id = bindings
@@ -8285,6 +8297,7 @@ fn build_local_create_reader_context_response(
                 bindings,
                 std::slice::from_ref(&request.shard_id.index_name),
             ),
+            expires_at_millis: transport_pit_expires_at_millis(now_millis, keep_alive_millis),
         };
         bindings
             .reader_contexts
@@ -8399,11 +8412,7 @@ fn decode_update_reader_context_request_from_transport_body(
 fn upsert_transport_pit_context_from_reader_update(
     request: &os_transport::action::OpenSearchUpdateReaderContextRequestWire,
 ) {
-    let keep_alive_millis = if request.keep_alive_millis <= 0 {
-        DEV_TRANSPORT_NON_POSITIVE_PIT_KEEP_ALIVE_MILLIS
-    } else {
-        u64::try_from(request.keep_alive_millis).unwrap_or(u64::MAX)
-    };
+    let keep_alive_millis = transport_positive_keep_alive_millis(request.keep_alive_millis);
     let now_millis = now_epoch_ms();
     let creation_time_millis = if request.creation_time_millis >= 0 {
         u128::try_from(request.creation_time_millis).unwrap_or(now_millis)
@@ -8412,6 +8421,7 @@ fn upsert_transport_pit_context_from_reader_update(
     };
     let expires_at_millis = transport_pit_expires_at_millis(now_millis, keep_alive_millis);
     let reader_context = transport_reader_context(&request.search_context_id);
+    extend_transport_reader_context_expiry(&request.search_context_id, expires_at_millis);
     let mut indices = transport_pit_indices_from_id(&request.pit_id).unwrap_or_default();
     if indices.is_empty() {
         if let Some(reader_context) = reader_context.as_ref() {
@@ -8505,31 +8515,57 @@ fn reader_context_key(
 fn reader_context_exists(
     context_id: &os_transport::action::OpenSearchShardSearchContextIdWire,
 ) -> bool {
-    dev_transport_pit_bindings()
+    let bindings = dev_transport_pit_bindings();
+    let mut reader_contexts = bindings
         .reader_contexts
         .lock()
-        .expect("dev transport reader contexts lock poisoned")
-        .contains_key(&reader_context_key(context_id))
+        .expect("dev transport reader contexts lock poisoned");
+    prune_expired_transport_reader_contexts(&mut reader_contexts, now_epoch_ms());
+    reader_contexts.contains_key(&reader_context_key(context_id))
 }
 
 fn transport_reader_context(
     context_id: &os_transport::action::OpenSearchShardSearchContextIdWire,
 ) -> Option<DevTransportReaderContext> {
-    dev_transport_pit_bindings()
+    let bindings = dev_transport_pit_bindings();
+    let mut reader_contexts = bindings
         .reader_contexts
         .lock()
-        .expect("dev transport reader contexts lock poisoned")
+        .expect("dev transport reader contexts lock poisoned");
+    prune_expired_transport_reader_contexts(&mut reader_contexts, now_epoch_ms());
+    reader_contexts
         .get(&reader_context_key(context_id))
         .cloned()
 }
 
 fn can_allocate_reader_context(bindings: &DevTransportPitBindings) -> bool {
-    bindings
+    let mut reader_contexts = bindings
         .reader_contexts
         .lock()
-        .expect("dev transport reader contexts lock poisoned")
-        .len()
-        < DEV_TRANSPORT_MAX_OPEN_PIT_CONTEXTS
+        .expect("dev transport reader contexts lock poisoned");
+    prune_expired_transport_reader_contexts(&mut reader_contexts, now_epoch_ms());
+    reader_contexts.len() < DEV_TRANSPORT_MAX_OPEN_PIT_CONTEXTS
+}
+
+fn prune_expired_transport_reader_contexts(
+    reader_contexts: &mut BTreeMap<(String, i64), DevTransportReaderContext>,
+    now_millis: u128,
+) {
+    reader_contexts.retain(|_, context| context.expires_at_millis > now_millis);
+}
+
+fn extend_transport_reader_context_expiry(
+    context_id: &os_transport::action::OpenSearchShardSearchContextIdWire,
+    expires_at_millis: u128,
+) {
+    let bindings = dev_transport_pit_bindings();
+    let mut reader_contexts = bindings
+        .reader_contexts
+        .lock()
+        .expect("dev transport reader contexts lock poisoned");
+    if let Some(context) = reader_contexts.get_mut(&reader_context_key(context_id)) {
+        context.expires_at_millis = context.expires_at_millis.max(expires_at_millis);
+    }
 }
 
 fn remove_reader_contexts_for_free_pit_request(
@@ -16895,6 +16931,11 @@ mod tests {
             .expect("dev transport PIT contexts lock poisoned")
             .clear();
         bindings
+            .reader_contexts
+            .lock()
+            .expect("dev transport reader contexts lock poisoned")
+            .clear();
+        bindings
             .created_indices
             .lock()
             .expect("dev transport created indices lock poisoned")
@@ -20005,6 +20046,7 @@ mod tests {
                         shard_id: 0,
                     },
                     documents: BTreeMap::new(),
+                    expires_at_millis: now_epoch_ms() + 60_000,
                 },
             );
 
@@ -20080,6 +20122,7 @@ mod tests {
                         shard_id: 0,
                     },
                     documents: BTreeMap::new(),
+                    expires_at_millis: now_epoch_ms() + 60_000,
                 },
             );
 
@@ -20316,6 +20359,7 @@ mod tests {
                             shard_id: 0,
                         },
                         documents: BTreeMap::new(),
+                        expires_at_millis: now_epoch_ms() + 60_000,
                     },
                 );
             }
@@ -20391,6 +20435,97 @@ mod tests {
     }
 
     #[test]
+    fn create_reader_context_transport_route_prunes_expired_contexts_before_max_check() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        let bindings = dev_transport_pit_bindings();
+        bindings
+            .contexts
+            .lock()
+            .expect("dev transport PIT contexts lock poisoned")
+            .clear();
+        let expired_at = now_epoch_ms().saturating_sub(1);
+        {
+            let mut reader_contexts = bindings
+                .reader_contexts
+                .lock()
+                .expect("dev transport reader contexts lock poisoned");
+            reader_contexts.clear();
+            for id in 0..DEV_TRANSPORT_MAX_OPEN_PIT_CONTEXTS {
+                reader_contexts.insert(
+                    (format!("expired-reader-session-{id}"), id as i64),
+                    DevTransportReaderContext {
+                        shard_id: os_transport::action::OpenSearchShardIdWire {
+                            index_name: "logs-reader-expired-max-open".to_string(),
+                            index_uuid: "uuid-reader-expired-max-open".to_string(),
+                            shard_id: 0,
+                        },
+                        documents: BTreeMap::new(),
+                        expires_at_millis: expired_at,
+                    },
+                );
+            }
+        }
+        bindings
+            .created_indices
+            .lock()
+            .expect("dev transport created indices lock poisoned")
+            .clear();
+        bindings
+            .created_indices
+            .lock()
+            .expect("dev transport created indices lock poisoned")
+            .insert("logs-reader-expired-max-open".to_string());
+        *bindings
+            .next_id
+            .lock()
+            .expect("dev transport next PIT id lock poisoned") = 31;
+
+        let request = os_transport::action::OpenSearchCreateReaderContextRequestWire::new(
+            os_transport::action::OpenSearchShardIdWire {
+                index_name: "logs-reader-expired-max-open".to_string(),
+                index_uuid: "uuid-reader-expired-max-open".to_string(),
+                shard_id: 0,
+            },
+            os_transport::action::TimeValueWire::minutes(1),
+        );
+        let frame = os_transport::action::build_opensearch_create_reader_context_request_message(
+            321,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(create_reader_context_request_supports_local_subset(
+            &frame[6..]
+        ));
+
+        let response = build_local_create_reader_context_response(
+            321,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &frame[6..],
+        );
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected create-reader-context response");
+        };
+        let response =
+            os_transport::action::read_opensearch_create_reader_context_response_message(&message)
+                .unwrap();
+        assert_eq!(response.context_id.id, 32);
+        let reader_contexts = bindings
+            .reader_contexts
+            .lock()
+            .expect("dev transport reader contexts lock poisoned");
+        assert_eq!(reader_contexts.len(), 1);
+        assert!(reader_contexts.contains_key(&reader_context_key(&response.context_id)));
+    }
+
+    #[test]
     fn update_reader_context_transport_route_rejects_unknown_reader_context() {
         let _lock = dev_transport_pit_test_lock()
             .lock()
@@ -20448,6 +20583,170 @@ mod tests {
             .lock()
             .expect("dev transport PIT contexts lock poisoned")
             .is_empty());
+    }
+
+    #[test]
+    fn update_reader_context_transport_route_prunes_expired_reader_context() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        let bindings = dev_transport_pit_bindings();
+        bindings
+            .contexts
+            .lock()
+            .expect("dev transport PIT contexts lock poisoned")
+            .clear();
+        bindings
+            .reader_contexts
+            .lock()
+            .expect("dev transport reader contexts lock poisoned")
+            .clear();
+        let expired_context_id = os_transport::action::OpenSearchShardSearchContextIdWire::new(
+            "expired-reader-session",
+            77,
+        );
+        bindings
+            .reader_contexts
+            .lock()
+            .expect("dev transport reader contexts lock poisoned")
+            .insert(
+                reader_context_key(&expired_context_id),
+                DevTransportReaderContext {
+                    shard_id: os_transport::action::OpenSearchShardIdWire {
+                        index_name: "logs-reader-expired-update".to_string(),
+                        index_uuid: "uuid-reader-expired-update".to_string(),
+                        shard_id: 0,
+                    },
+                    documents: BTreeMap::new(),
+                    expires_at_millis: now_epoch_ms().saturating_sub(1),
+                },
+            );
+
+        let request = os_transport::action::OpenSearchUpdateReaderContextRequestWire {
+            parent_task_node: String::new(),
+            parent_task_id: None,
+            pit_id: "transport-pit-reader-expired".to_string(),
+            keep_alive_millis: 120_000,
+            creation_time_millis: 1_700_000_000_000,
+            search_context_id: expired_context_id,
+        };
+        let frame = os_transport::action::build_opensearch_update_reader_context_request_message(
+            322,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(!update_reader_context_request_supports_local_subset(
+            &frame[6..]
+        ));
+        assert!(bindings
+            .reader_contexts
+            .lock()
+            .expect("dev transport reader contexts lock poisoned")
+            .is_empty());
+
+        let response = build_local_update_reader_context_response(
+            322,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &frame[6..],
+        );
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected expired update-reader-context fallback response frame");
+        };
+        assert_eq!(message.request_id, 322);
+        assert!(message.body.is_empty());
+        assert!(bindings
+            .contexts
+            .lock()
+            .expect("dev transport PIT contexts lock poisoned")
+            .is_empty());
+    }
+
+    #[test]
+    fn update_reader_context_transport_route_extends_reader_context_keep_alive() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        let bindings = dev_transport_pit_bindings();
+        bindings
+            .contexts
+            .lock()
+            .expect("dev transport PIT contexts lock poisoned")
+            .clear();
+        bindings
+            .reader_contexts
+            .lock()
+            .expect("dev transport reader contexts lock poisoned")
+            .clear();
+        let reader_context_id = os_transport::action::OpenSearchShardSearchContextIdWire::new(
+            "extend-reader-session",
+            88,
+        );
+        let initial_expires_at = now_epoch_ms() + 60_000;
+        bindings
+            .reader_contexts
+            .lock()
+            .expect("dev transport reader contexts lock poisoned")
+            .insert(
+                reader_context_key(&reader_context_id),
+                DevTransportReaderContext {
+                    shard_id: os_transport::action::OpenSearchShardIdWire {
+                        index_name: "logs-reader-extend-update".to_string(),
+                        index_uuid: "uuid-reader-extend-update".to_string(),
+                        shard_id: 0,
+                    },
+                    documents: BTreeMap::new(),
+                    expires_at_millis: initial_expires_at,
+                },
+            );
+
+        let request = os_transport::action::OpenSearchUpdateReaderContextRequestWire {
+            parent_task_node: String::new(),
+            parent_task_id: None,
+            pit_id: "transport-pit-reader-extend".to_string(),
+            keep_alive_millis: 120_000,
+            creation_time_millis: 1_700_000_000_000,
+            search_context_id: reader_context_id.clone(),
+        };
+        let frame = os_transport::action::build_opensearch_update_reader_context_request_message(
+            323,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(update_reader_context_request_supports_local_subset(
+            &frame[6..]
+        ));
+        let response = build_local_update_reader_context_response(
+            323,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &frame[6..],
+        );
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected update-reader-context response");
+        };
+        let response =
+            os_transport::action::read_opensearch_update_reader_context_response_message(&message)
+                .unwrap();
+        assert_eq!(response.pit_id, "transport-pit-reader-extend");
+        let reader_contexts = bindings
+            .reader_contexts
+            .lock()
+            .expect("dev transport reader contexts lock poisoned");
+        let context = reader_contexts
+            .get(&reader_context_key(&reader_context_id))
+            .expect("reader context should remain after update");
+        assert!(context.expires_at_millis > initial_expires_at);
     }
 
     #[test]
