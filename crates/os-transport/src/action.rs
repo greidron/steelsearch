@@ -24570,6 +24570,12 @@ impl OpenSearchSearchRequestWire {
                         reason: "OpenSearch point-in-time is not allowed in a scroll context",
                     });
                 }
+                if shard_doc_sort_count(source.sorts.as_deref()) > 0 {
+                    return Err(TransportActionWireError::UnsupportedWireShape {
+                        shape: "search request scroll shard doc sort",
+                        reason: "OpenSearch _shard_doc cannot be used with scroll",
+                    });
+                }
             }
             if self.request_cache == Some(true) {
                 return Err(TransportActionWireError::UnsupportedWireShape {
@@ -24581,6 +24587,21 @@ impl OpenSearchSearchRequestWire {
                 shape: "search request scroll execution",
                 reason: "initial scroll search execution requires scroll context lifecycle mapping",
             });
+        }
+        if let Some(source) = &self.source {
+            let shard_doc_sort_count = shard_doc_sort_count(source.sorts.as_deref());
+            if shard_doc_sort_count > 0 && source.point_in_time.is_none() {
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "search request source shard doc sort",
+                    reason: "OpenSearch _shard_doc sort is only supported with point-in-time",
+                });
+            }
+            if shard_doc_sort_count > 1 {
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "search request source shard doc sort",
+                    reason: "OpenSearch SearchRequest permits at most one _shard_doc sort",
+                });
+            }
         }
         if self.indices_options
             != OpenSearchIndicesOptionsWire::strict_expand_open_forbid_closed_ignore_throttled()
@@ -24806,19 +24827,6 @@ impl OpenSearchSearchSourceBuilderWire {
         validate_query_builder(self.query.as_ref())?;
         validate_search_after_values(self.search_after.as_deref())?;
         validate_sort_builders(self.sorts.as_deref())?;
-        let shard_doc_sort_count = shard_doc_sort_count(self.sorts.as_deref());
-        if shard_doc_sort_count > 0 && self.point_in_time.is_none() {
-            return Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "search request source shard doc sort",
-                reason: "OpenSearch _shard_doc sort is only supported with point-in-time",
-            });
-        }
-        if shard_doc_sort_count > 1 {
-            return Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "search request source shard doc sort",
-                reason: "OpenSearch SearchRequest permits at most one _shard_doc sort",
-            });
-        }
         if let Some(point_in_time) = &self.point_in_time {
             point_in_time.validate_supported_subset()?;
         }
@@ -67636,6 +67644,28 @@ mod tests {
             scroll_with_pit.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "search request scroll point in time",
+                ..
+            })
+        ));
+
+        let scroll_with_shard_doc = OpenSearchSearchRequestWire {
+            scroll: Some(OpenSearchScrollWire {
+                keep_alive: TimeValueWire::minutes(1),
+            }),
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                sorts: Some(vec![OpenSearchSortBuilderWire::ShardDoc(
+                    OpenSearchShardDocSortBuilderWire {
+                        order: OpenSearchSortOrderWire::Asc,
+                    },
+                )]),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        assert!(matches!(
+            scroll_with_shard_doc.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request scroll shard doc sort",
                 ..
             })
         ));
