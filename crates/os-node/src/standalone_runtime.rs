@@ -18772,15 +18772,18 @@ impl SteelNode {
             });
         let mut rows = Vec::new();
         for node in nodes {
-            let ip = node
+            let (ip, port) = node
                 .transport_address
                 .rsplit_once(':')
-                .map(|(host, _)| host.to_string())
-                .unwrap_or_else(|| "127.0.0.1".to_string());
+                .map(|(host, port)| (host.to_string(), port.to_string()))
+                .unwrap_or_else(|| ("127.0.0.1".to_string(), "9300".to_string()));
             rows.push(serde_json::json!({
                 "node": node.node_name,
+                "id": node.node_id,
+                "pid": "1",
                 "host": ip,
                 "ip": ip,
+                "port": port,
                 "attr": "roles",
                 "value": node.roles.join(","),
             }));
@@ -18796,25 +18799,42 @@ impl SteelNode {
             .get("format")
             .is_some_and(|value| value == "json")
         {
-            return RestResponse::json(200, Value::Array(rows));
+            let display_columns = cat_nodeattrs_display_columns(request.query_params.get("h"));
+            let selected_rows = rows
+                .iter()
+                .map(|row| {
+                    let mut object = serde_json::Map::new();
+                    for (column, display) in &display_columns {
+                        object.insert(display.clone(), row[*column].clone());
+                    }
+                    Value::Object(object)
+                })
+                .collect();
+            return RestResponse::json(200, Value::Array(selected_rows));
         }
         let verbose = request
             .query_params
             .get("v")
             .is_some_and(|value| value == "true");
+        let display_columns = cat_nodeattrs_display_columns(request.query_params.get("h"));
         let mut lines = Vec::new();
         if verbose {
-            lines.push("node host ip attr value".to_string());
+            lines.push(
+                display_columns
+                    .iter()
+                    .map(|(_, display)| display.as_str())
+                    .collect::<Vec<_>>()
+                    .join(" "),
+            );
         }
         for row in &rows {
-            lines.push(format!(
-                "{} {} {} {} {}",
-                row["node"].as_str().unwrap_or(""),
-                row["host"].as_str().unwrap_or("127.0.0.1"),
-                row["ip"].as_str().unwrap_or("127.0.0.1"),
-                row["attr"].as_str().unwrap_or("roles"),
-                row["value"].as_str().unwrap_or(""),
-            ));
+            lines.push(
+                display_columns
+                    .iter()
+                    .map(|(column, _)| row[*column].as_str().unwrap_or(""))
+                    .collect::<Vec<_>>()
+                    .join(" "),
+            );
         }
         RestResponse::text(200, lines.join("\n") + "\n")
     }
@@ -30752,6 +30772,61 @@ fn cat_fielddata_display_columns(h_param: Option<&String>) -> Vec<(&'static str,
     selected
 }
 
+fn cat_nodeattrs_display_columns(h_param: Option<&String>) -> Vec<(&'static str, String)> {
+    let Some(h_param) = h_param else {
+        return vec![
+            ("node", "node".to_string()),
+            ("attr", "attr".to_string()),
+            ("value", "value".to_string()),
+        ];
+    };
+    let mut selected = Vec::new();
+    for requested in h_param
+        .split(',')
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        if requested.contains('*') {
+            for (column, aliases) in [
+                ("node", &["name"][..]),
+                ("id", &["nodeId"][..]),
+                ("pid", &["p"][..]),
+                ("host", &["h"][..]),
+                ("ip", &["i"][..]),
+                ("port", &["po"][..]),
+                ("attr", &["attr.name"][..]),
+                ("value", &["attr.value"][..]),
+            ] {
+                if wildcard_match(requested, column)
+                    || aliases.iter().any(|alias| wildcard_match(requested, alias))
+                {
+                    if !selected.iter().any(|(existing, _)| existing == &column) {
+                        selected.push((column, column.to_string()));
+                    }
+                }
+            }
+            continue;
+        }
+        let column = match requested {
+            "node" | "name" => Some("node"),
+            "id" | "nodeId" => Some("id"),
+            "pid" | "p" => Some("pid"),
+            "host" | "h" => Some("host"),
+            "ip" | "i" => Some("ip"),
+            "port" | "po" => Some("port"),
+            "attr" | "attr.name" => Some("attr"),
+            "value" | "attr.value" => Some("value"),
+            _ => None,
+        };
+        if let Some(column) = column {
+            if !selected.iter().any(|(existing, _)| existing == &column) {
+                selected.push((column, requested.to_string()));
+            }
+        }
+    }
+    selected
+}
+
 fn cat_allocation_display_columns(h_param: Option<&String>) -> Vec<(&'static str, String)> {
     let Some(h_param) = h_param else {
         return vec![
@@ -36441,8 +36516,33 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             .insert("format".to_string(), "json".to_string());
         let attrs_json_response = node.handle_rest_request(attrs_json_request);
         assert_eq!(attrs_json_response.status, 200);
+        assert_eq!(attrs_json_response.body[0]["node"], "steel-node-a");
         assert_eq!(attrs_json_response.body[0]["attr"], "roles");
         assert_eq!(attrs_json_response.body[0]["value"], "cluster_manager,data");
+        assert!(attrs_json_response.body[0].get("host").is_none());
+
+        let mut selected_attrs_json_request = RestRequest::new(RestMethod::Get, "/_cat/nodeattrs");
+        selected_attrs_json_request
+            .query_params
+            .insert("format".to_string(), "json".to_string());
+        selected_attrs_json_request.query_params.insert(
+            "h".to_string(),
+            "name,nodeId,p,h,i,po,attr.name,attr.value".to_string(),
+        );
+        let selected_attrs_json_response = node.handle_rest_request(selected_attrs_json_request);
+        assert_eq!(selected_attrs_json_response.status, 200);
+        assert_eq!(selected_attrs_json_response.body[0]["name"], "steel-node-a");
+        assert_eq!(selected_attrs_json_response.body[0]["nodeId"], "node-a");
+        assert_eq!(selected_attrs_json_response.body[0]["p"], "1");
+        assert_eq!(selected_attrs_json_response.body[0]["h"], "127.0.0.1");
+        assert_eq!(selected_attrs_json_response.body[0]["i"], "127.0.0.1");
+        assert_eq!(selected_attrs_json_response.body[0]["po"], "9300");
+        assert_eq!(selected_attrs_json_response.body[0]["attr.name"], "roles");
+        assert_eq!(
+            selected_attrs_json_response.body[0]["attr.value"],
+            "cluster_manager,data"
+        );
+        assert!(selected_attrs_json_response.body[0].get("node").is_none());
 
         let mut attrs_text_request = RestRequest::new(RestMethod::Get, "/_cat/nodeattrs");
         attrs_text_request
@@ -36453,8 +36553,29 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             .body
             .as_str()
             .expect("cat nodeattrs text body");
-        assert!(attrs_text.contains("node host ip attr value"));
+        assert!(attrs_text.contains("node attr value"));
         assert!(attrs_text.contains("steel-node-a"));
+
+        let mut selected_attrs_text_request = RestRequest::new(RestMethod::Get, "/_cat/nodeattrs");
+        selected_attrs_text_request
+            .query_params
+            .insert("v".to_string(), "true".to_string());
+        selected_attrs_text_request
+            .query_params
+            .insert("h".to_string(), "name,attr.name,attr.value".to_string());
+        let selected_attrs_text_response = node.handle_rest_request(selected_attrs_text_request);
+        let selected_attrs_text = selected_attrs_text_response
+            .body
+            .as_str()
+            .expect("selected cat nodeattrs text body");
+        assert_eq!(
+            selected_attrs_text.lines().collect::<Vec<_>>(),
+            vec![
+                "name attr.name attr.value",
+                "steel-node-a roles cluster_manager,data",
+                "steel-node-b roles data,ingest"
+            ]
+        );
     }
 
     #[test]

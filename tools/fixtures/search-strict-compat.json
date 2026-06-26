@@ -1207,6 +1207,27 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "cat_nodeattrs_text_selected_alias_columns",
+      "area": "cat",
+      "method": "GET",
+      "path": "/_cat/nodeattrs?v=true&h=name,attr.name,attr.value",
+      "accept": "text/plain",
+      "extract": "cat_indices_selected_columns",
+      "family": "admin-cat",
+      "description": "[admin-cat] cat nodeattrs text honors h aliases",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "cat_nodeattrs_json_selected_alias_columns",
+      "area": "cat",
+      "method": "GET",
+      "path": "/_cat/nodeattrs?format=json&h=name,attr.name,attr.value",
+      "extract": "cat_nodeattrs",
+      "family": "admin-cat",
+      "description": "[admin-cat] cat nodeattrs json honors h aliases",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "cat_nodes_json",
       "area": "cat",
       "method": "GET",
