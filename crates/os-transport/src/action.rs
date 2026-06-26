@@ -2222,7 +2222,7 @@ pub fn classify_opensearch_transport_action(
         OPENSEARCH_FIELD_CAPABILITIES_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Implemented,
-            reason: "field-capabilities transport adapter returns OpenSearch-shaped empty and merged field capabilities responses for the default all-indices request",
+            reason: "field-capabilities transport adapter renders OpenSearch-shaped merged field capabilities responses from local mapping metadata and document source inference for the default all-indices request",
         },
         OPENSEARCH_RECOVERY_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -22415,12 +22415,16 @@ impl OpenSearchFieldCapabilitiesRequestWire {
         Ok(())
     }
 
+    pub fn validate_supported_execution_subset(&self) -> Result<(), TransportActionWireError> {
+        self.validate_supported_subset()
+    }
+
     pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
-        self.validate_supported_subset()?;
+        self.validate_supported_execution_subset()?;
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "field capabilities execution",
             reason:
-                "field-capabilities transport execution requires mapping metadata response rendering",
+                "use validate_supported_execution_subset for the implemented field-capabilities adapter",
         })
     }
 }
@@ -61544,7 +61548,7 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_field_capabilities_request_wire_round_trips_and_rejects_execution_boundary() {
+    fn opensearch_field_capabilities_request_wire_round_trips_and_validates_execution_subset() {
         let request = OpenSearchFieldCapabilitiesRequestWire::default();
         let mut output = StreamOutput::new();
         request.write(&mut output);
@@ -61552,13 +61556,7 @@ mod tests {
         let decoded = OpenSearchFieldCapabilitiesRequestWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, request);
         decoded.validate_supported_subset().unwrap();
-        assert!(matches!(
-            decoded.reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "field capabilities execution",
-                ..
-            })
-        ));
+        decoded.validate_supported_execution_subset().unwrap();
     }
 
     #[test]

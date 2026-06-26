@@ -1432,6 +1432,33 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end_at_ms,
         )?;
     } else if is_request
+        && normalized_action_hint == Some("indices:data/read/field_caps")
+        && field_capabilities_request_supports_local_execution_subset(&body)
+    {
+        let response =
+            build_local_field_capabilities_response(request_id, header_version_id, &body);
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("indices:data/read/field_caps"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request
         && normalized_action_hint == Some("indices:monitor/segment_replication")
         && segment_replication_stats_request_supports_empty_subset(&body)
     {
@@ -4086,6 +4113,155 @@ fn build_empty_cluster_search_shards_response(request_id: i64, header_version_id
     )
     .map(|frame| frame.to_vec())
     .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
+}
+
+fn build_local_field_capabilities_response(
+    request_id: i64,
+    header_version_id: u32,
+    body: &[u8],
+) -> Vec<u8> {
+    let Some(request) = decode_field_capabilities_request_from_transport_body(body) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    if request.validate_supported_execution_subset().is_err() {
+        return build_empty_transport_response(request_id, header_version_id);
+    }
+    let response = local_field_capabilities_response_from_request(&request);
+    os_transport::action::build_opensearch_field_capabilities_response_message(
+        request_id,
+        Version::from_id(header_version_id as i32),
+        &response,
+    )
+    .map(|frame| frame.to_vec())
+    .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
+}
+
+fn field_capabilities_request_supports_local_execution_subset(body: &[u8]) -> bool {
+    decode_field_capabilities_request_from_transport_body(body)
+        .as_ref()
+        .is_some_and(|request| request.validate_supported_execution_subset().is_ok())
+}
+
+fn decode_field_capabilities_request_from_transport_body(
+    body: &[u8],
+) -> Option<os_transport::action::OpenSearchFieldCapabilitiesRequestWire> {
+    let message = decode_transport_message_from_body(body)?;
+    os_transport::action::read_opensearch_field_capabilities_request_message(&message).ok()
+}
+
+fn local_field_capabilities_response_from_request(
+    request: &os_transport::action::OpenSearchFieldCapabilitiesRequestWire,
+) -> os_transport::action::OpenSearchFieldCapabilitiesResponseWire {
+    let bindings = dev_transport_pit_bindings();
+    let metadata_manifest = bindings
+        .metadata_manifest
+        .lock()
+        .expect("dev transport metadata manifest lock poisoned");
+    let documents = bindings
+        .documents
+        .lock()
+        .expect("dev transport documents lock poisoned");
+    field_capabilities_response_from_metadata_and_documents(&metadata_manifest, &documents, request)
+}
+
+fn field_capabilities_response_from_metadata_and_documents(
+    metadata_manifest: &Value,
+    documents: &BTreeMap<String, StoredDocument>,
+    request: &os_transport::action::OpenSearchFieldCapabilitiesRequestWire,
+) -> os_transport::action::OpenSearchFieldCapabilitiesResponseWire {
+    let mut indices = Vec::new();
+    let mut fields = BTreeMap::new();
+
+    if let Some(index_map) = metadata_manifest["indices"].as_object() {
+        for (index, metadata) in index_map {
+            indices.push(index.clone());
+            if let Some(properties) = metadata
+                .get("mappings")
+                .and_then(|mappings| mappings.get("properties"))
+                .and_then(Value::as_object)
+            {
+                for (field_name, field_spec) in properties {
+                    if !field_capabilities_request_includes_field(request, field_name) {
+                        continue;
+                    }
+                    let field_type = field_spec
+                        .get("type")
+                        .and_then(Value::as_str)
+                        .unwrap_or("keyword");
+                    insert_field_capability(&mut fields, field_name, field_type, true);
+                }
+            }
+        }
+    }
+
+    if fields.is_empty() {
+        for (key, record) in documents {
+            let Some(index) = key.split(':').next() else {
+                continue;
+            };
+            if !indices.iter().any(|existing| existing == index) {
+                indices.push(index.to_string());
+            }
+            if let Some(source) = record.source.as_object() {
+                for (field_name, value) in source {
+                    if !field_capabilities_request_includes_field(request, field_name) {
+                        continue;
+                    }
+                    let field_type = infer_transport_field_caps_type(value);
+                    insert_field_capability(
+                        &mut fields,
+                        field_name,
+                        field_type,
+                        field_type != "text",
+                    );
+                }
+            }
+        }
+    }
+
+    os_transport::action::OpenSearchFieldCapabilitiesResponseWire { indices, fields }
+}
+
+fn field_capabilities_request_includes_field(
+    request: &os_transport::action::OpenSearchFieldCapabilitiesRequestWire,
+    field_name: &str,
+) -> bool {
+    request
+        .fields
+        .iter()
+        .any(|pattern| pattern == "*" || wildcard_match(pattern, field_name))
+}
+
+fn insert_field_capability(
+    fields: &mut BTreeMap<
+        String,
+        BTreeMap<String, os_transport::action::OpenSearchFieldCapabilityWire>,
+    >,
+    field_name: &str,
+    field_type: &str,
+    aggregatable: bool,
+) {
+    fields
+        .entry(field_name.to_string())
+        .or_default()
+        .entry(field_type.to_string())
+        .or_insert_with(|| {
+            let mut capability =
+                os_transport::action::OpenSearchFieldCapabilityWire::new(field_name, field_type);
+            capability.aggregatable = aggregatable;
+            capability
+        });
+}
+
+fn infer_transport_field_caps_type(value: &Value) -> &'static str {
+    match value {
+        Value::Bool(_) => "boolean",
+        Value::Number(number) if number.is_f64() => "float",
+        Value::Number(_) => "long",
+        Value::Array(_) => "keyword",
+        Value::Object(_) => "object",
+        _ => "text",
+    }
 }
 
 fn build_empty_segment_replication_stats_response(
@@ -7724,6 +7900,15 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
         Some("indices:admin/shards/search_shards") => Some(
             build_empty_cluster_search_shards_response(request_id, header_version_id),
         ),
+        Some("indices:data/read/field_caps")
+            if field_capabilities_request_supports_local_execution_subset(body) =>
+        {
+            Some(build_local_field_capabilities_response(
+                request_id,
+                header_version_id,
+                body,
+            ))
+        }
         Some("indices:monitor/segment_replication")
             if segment_replication_stats_request_supports_empty_subset(body) =>
         {
@@ -12404,6 +12589,86 @@ mod tests {
             response,
             os_transport::action::OpenSearchClusterSearchShardsResponseWire::empty()
         );
+    }
+
+    #[test]
+    fn field_capabilities_transport_route_builds_merged_metadata_response() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        dev_transport_pit_bindings()
+            .documents
+            .lock()
+            .expect("dev transport documents lock poisoned")
+            .clear();
+        *dev_transport_pit_bindings()
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned") = serde_json::json!({
+            "indices": {
+                "logs-field-caps-000001": {
+                    "mappings": {
+                        "properties": {
+                            "message": { "type": "text" },
+                            "tenant": { "type": "keyword" }
+                        }
+                    }
+                },
+                "logs-field-caps-000002": {
+                    "mappings": {
+                        "properties": {
+                            "tenant": { "type": "keyword" }
+                        }
+                    }
+                }
+            }
+        });
+        let request = os_transport::action::OpenSearchFieldCapabilitiesRequestWire {
+            fields: vec!["tenant".to_string()],
+            ..os_transport::action::OpenSearchFieldCapabilitiesRequestWire::default()
+        };
+        let frame = os_transport::action::build_opensearch_field_capabilities_request_message(
+            188,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+
+        assert!(field_capabilities_request_supports_local_execution_subset(
+            &frame[6..]
+        ));
+        let response = build_local_field_capabilities_response(
+            188,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &frame[6..],
+        );
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected field capabilities response message");
+        };
+
+        assert_eq!(message.request_id, 188);
+        assert!(!message.status.is_request());
+        let response =
+            os_transport::action::read_opensearch_field_capabilities_response_message(&message)
+                .unwrap();
+        assert_eq!(
+            response.indices,
+            vec![
+                "logs-field-caps-000001".to_string(),
+                "logs-field-caps-000002".to_string()
+            ]
+        );
+        assert!(!response.fields.contains_key("message"));
+        let tenant = &response.fields["tenant"]["keyword"];
+        assert_eq!(tenant.name, "tenant");
+        assert_eq!(tenant.field_type, "keyword");
+        assert!(tenant.searchable);
+        assert!(tenant.aggregatable);
     }
 
     #[test]

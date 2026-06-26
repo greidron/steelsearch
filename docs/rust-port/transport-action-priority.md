@@ -177,8 +177,8 @@ The source-derived transport inventory currently has 160 rows:
 
 | Status | Count | Meaning |
 | --- | ---: | --- |
-| `implemented` | 41 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
-| `partial` | 119 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
+| `implemented` | 54 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
+| `partial` | 106 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
 | `planned` | 0 | No source-derived transport action remains unclassified. |
 
 The k-NN plugin action sweep is complete at the boundary layer. All 12
@@ -278,7 +278,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `indices:admin/aliases/get` (implemented empty alias metadata subset)
 - `indices:monitor/settings/get` (implemented metadata-backed index-settings subset)
 - `indices:admin/shards/search_shards` (implemented empty search-shards subset)
-- `indices:data/read/field_caps` (implemented merged field-capabilities response subset)
+- `indices:data/read/field_caps` (implemented local metadata/document field-capabilities subset)
 - `indices:monitor/recovery` (implemented local empty-recovery subset)
 - `indices:monitor/segment_replication` (implemented local empty segment-replication-stats subset)
 - `indices:monitor/segments` (implemented local empty-segments subset)
@@ -1747,8 +1747,10 @@ The field-capabilities boundary covers:
   array, `IndicesOptions.strictExpandOpen()`, `mergeResults`, `includeUnmapped`,
   optional index-filter query marker, and optional `nowInMillis` at the wire
   decode/build layer;
-- implemented classification for the default all-indices request subset with
-  OpenSearch-shaped empty and merged `FieldCapabilitiesResponse` rendering;
+- implemented classification for the default all-indices merged request subset
+  with OpenSearch-shaped `FieldCapabilitiesResponse` rendering from local
+  mapping metadata, falling back to local document source type inference when
+  no mapping properties are present;
 - explicit rejection for empty fields, index filters, custom indices options,
   unmerged responses, include-unmapped expansion, index-filter query rewrite,
   timestamp injection, and per-index response lists.
@@ -4485,7 +4487,7 @@ options, and cache selector booleans before rejecting execution. At roughly
 performance-sensitive work is shard cache invalidation, file-cache pruning,
 node-wide cache cleanup, shard failure aggregation, and response rendering.
 
-Current field-capabilities reject wire microbenchmark:
+Current field-capabilities request wire microbenchmark:
 
 ```text
 cargo run -p os-transport --release --bin field-capabilities-reject-wire-benchmark
@@ -4495,13 +4497,14 @@ field_capabilities_reject_validation iterations=400000 elapsed_ms=272.583 ops_pe
 field_capabilities_reject_wire_bottleneck_ops_per_second=1467442.71
 ```
 
-The current field-capabilities fail-closed boundary bottleneck is validation.
+The current field-capabilities request-boundary bottleneck is validation.
 This path carries the ActionRequest parent task, field and index arrays,
 `IndicesOptions.strictExpandOpen()`, merge/include-unmapped flags, optional
-query marker, and optional timestamp before rejecting execution. At roughly
-1.47M ops/s in the latest local release run, the boundary itself is
-lightweight; the first performance point to inspect before accepting execution
-is mapping/type metadata aggregation and field-capabilities response rendering.
+query marker, and optional timestamp before the local metadata/document
+execution subset is admitted. At roughly 1.47M ops/s in the latest local
+release run, the request boundary itself is lightweight; the next performance
+point to inspect is mapping/type metadata aggregation and field-capabilities
+response rendering.
 
 Current get-aliases implemented-path wire microbenchmark:
 

@@ -991,7 +991,7 @@
       "request_wire_type": "FieldCapabilitiesRequest",
       "response_wire_type": "FieldCapabilitiesResponse",
       "disposition": "implemented",
-      "reason": "field-capabilities transport adapter returns OpenSearch-shaped empty and merged field capabilities responses for the default all-indices request"
+      "reason": "field-capabilities transport adapter renders OpenSearch-shaped merged field capabilities responses from local mapping metadata and document source inference for the default all-indices request"
     },
     {
       "action_name": "indices:monitor/recovery",
