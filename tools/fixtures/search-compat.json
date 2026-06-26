@@ -793,14 +793,33 @@
       "description": "[admin-cat] cat indices targeted text"
     },
     {
-      "name": "cat_indices_text_parameters_skip",
+      "name": "cat_indices_text_parameters",
       "area": "cat",
       "method": "GET",
       "path": "/_cat/indices?v=true",
       "accept": "text/plain",
       "extract": "cat_indices_text",
       "family": "admin-cat",
-      "description": "[admin-cat] cat indices text parameters skip"
+      "description": "[admin-cat] cat indices text parameters"
+    },
+    {
+      "name": "cat_indices_text_selected_alias_columns",
+      "area": "cat",
+      "method": "GET",
+      "path": "/_cat/indices/logs-compat?v=true&h=idx,dc",
+      "accept": "text/plain",
+      "extract": "cat_indices_selected_columns",
+      "family": "admin-cat",
+      "description": "[admin-cat] cat indices text honors h aliases for index and docs.count"
+    },
+    {
+      "name": "cat_indices_json_selected_alias_columns",
+      "area": "cat",
+      "method": "GET",
+      "path": "/_cat/indices/logs-compat?format=json&h=idx,dc",
+      "extract": "cat_indices_selected_columns",
+      "family": "admin-cat",
+      "description": "[admin-cat] cat indices json honors h aliases for index and docs.count"
     },
     {
       "name": "cat_pending_tasks_json",
