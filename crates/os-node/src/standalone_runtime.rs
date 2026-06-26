@@ -5384,6 +5384,16 @@ impl SteelNode {
                     }
                     Some(self.handle_get_doc_route(index, doc_path, request))
                 }
+                RestMethod::Head => {
+                    if let Err(response) = require_security_permission(
+                        request,
+                        SecurityPermission::IndexRead,
+                        "single document read",
+                    ) {
+                        return Some(response);
+                    }
+                    Some(self.handle_head_doc_route(index, doc_path, request))
+                }
                 RestMethod::Delete => {
                     if let Err(response) = require_security_permission(
                         request,
@@ -16383,6 +16393,11 @@ impl SteelNode {
                 id,
             ),
         )
+    }
+
+    fn handle_head_doc_route(&self, index: &str, id: &str, request: &RestRequest) -> RestResponse {
+        let get_response = self.handle_get_doc_route(index, id, request);
+        RestResponse::empty(get_response.status)
     }
 
     fn handle_get_source_route(
@@ -43548,7 +43563,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
     }
 
     #[test]
-    fn single_doc_get_route_rejects_stored_fields_option() {
+    fn single_doc_get_and_head_routes_match_opensearch_options() {
         let node = SteelNode::new(NodeInfo {
             name: "steel-node".to_string(),
             version: OPENSEARCH_3_7_0_TRANSPORT,
@@ -43570,6 +43585,20 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             .status,
             201
         );
+
+        let head_existing = node.handle_rest_request(RestRequest::new(
+            RestMethod::Head,
+            "/logs-get-options-probe/_doc/doc-1",
+        ));
+        assert_eq!(head_existing.status, 200);
+        assert_eq!(head_existing.body, Value::Null);
+
+        let head_missing = node.handle_rest_request(RestRequest::new(
+            RestMethod::Head,
+            "/logs-get-options-probe/_doc/missing-doc",
+        ));
+        assert_eq!(head_missing.status, 404);
+        assert_eq!(head_missing.body, Value::Null);
 
         let stored_fields = node.handle_rest_request(RestRequest::new(
             RestMethod::Get,
@@ -43601,6 +43630,13 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                     .to_string()
             )
         );
+
+        let legacy_fields_head = node.handle_rest_request(RestRequest::new(
+            RestMethod::Head,
+            "/logs-get-options-probe/_doc/doc-1?fields=tenant",
+        ));
+        assert_eq!(legacy_fields_head.status, 400);
+        assert_eq!(legacy_fields_head.body, Value::Null);
     }
 
     #[test]
