@@ -29,7 +29,9 @@ fn mixed_cluster_allocation_admission_fixture_stays_explicit_and_bounded() {
     assert_eq!(fixture.phase, "Phase C");
     assert_eq!(fixture.profile, "mixed-cluster-allocation");
     assert_eq!(
-        fixture.allocation_admission_policy.validated_index_family_patterns,
+        fixture
+            .allocation_admission_policy
+            .validated_index_family_patterns,
         vec!["logs-phase-c-*"]
     );
     assert_eq!(
@@ -45,17 +47,23 @@ fn mixed_cluster_allocation_admission_fixture_stays_explicit_and_bounded() {
         vec!["Started"]
     );
     assert_eq!(
-        fixture.allocation_admission_policy.admitted_recovery_sources,
+        fixture
+            .allocation_admission_policy
+            .admitted_recovery_sources,
         vec!["EmptyStore"]
     );
     assert_eq!(
         fixture.allocation_admission_policy.disallowed_routing_flags,
         vec!["search_only"]
     );
-    assert!(fixture
-        .allocation_admission_policy
-        .started_shard_requires_allocation_id);
-    assert!(fixture
-        .allocation_admission_policy
-        .ownership_fail_closed_on_missing_allocation_id);
+    assert!(
+        fixture
+            .allocation_admission_policy
+            .started_shard_requires_allocation_id
+    );
+    assert!(
+        fixture
+            .allocation_admission_policy
+            .ownership_fail_closed_on_missing_allocation_id
+    );
 }

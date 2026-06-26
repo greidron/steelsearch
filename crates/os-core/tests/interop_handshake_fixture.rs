@@ -24,7 +24,10 @@ fn interop_handshake_fixture_matches_current_version_constants() {
     ))
     .expect("interop handshake fixture should deserialize");
 
-    assert_eq!(fixture.supported_version_range.product_version_ids, vec![OPENSEARCH_3_7_0.id()]);
+    assert_eq!(
+        fixture.supported_version_range.product_version_ids,
+        vec![OPENSEARCH_3_7_0.id()]
+    );
     assert_eq!(
         fixture.supported_version_range.transport_version_ids,
         vec![OPENSEARCH_3_7_0_TRANSPORT.id()]

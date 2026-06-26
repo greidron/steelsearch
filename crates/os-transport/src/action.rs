@@ -16,7 +16,7 @@ use os_stream::output::StreamOutput;
 use os_wire::TransportStatus;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::Value;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use thiserror::Error;
 
@@ -2222,7 +2222,7 @@ pub fn classify_opensearch_transport_action(
         OPENSEARCH_FIELD_CAPABILITIES_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Implemented,
-            reason: "field-capabilities transport adapter returns an OpenSearch-shaped empty field capabilities response for the default all-indices request",
+            reason: "field-capabilities transport adapter returns OpenSearch-shaped empty and merged field capabilities responses for the default all-indices request",
         },
         OPENSEARCH_RECOVERY_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -22428,19 +22428,29 @@ impl OpenSearchFieldCapabilitiesRequestWire {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OpenSearchFieldCapabilitiesResponseWire {
     pub indices: Vec<String>,
+    pub fields: BTreeMap<String, BTreeMap<String, OpenSearchFieldCapabilityWire>>,
 }
 
 impl OpenSearchFieldCapabilitiesResponseWire {
     pub fn empty() -> Self {
         Self {
             indices: Vec::new(),
+            fields: BTreeMap::new(),
         }
     }
 
     pub fn write(&self, output: &mut StreamOutput) -> Result<(), TransportActionWireError> {
         self.validate_supported_subset()?;
         output.write_string_array(&self.indices);
-        output.write_vint(0);
+        output.write_vint(self.fields.len() as i32);
+        for (field_name, field_types) in &self.fields {
+            output.write_string(field_name);
+            output.write_vint(field_types.len() as i32);
+            for (field_type, capability) in field_types {
+                output.write_string(field_type);
+                capability.write(output);
+            }
+        }
         output.write_vint(0);
         Ok(())
     }
@@ -22449,12 +22459,16 @@ impl OpenSearchFieldCapabilitiesResponseWire {
         let mut input = StreamInput::new(bytes);
         let indices = input.read_string_array()?;
         let response_map_count = read_len(&mut input)?;
-        if response_map_count != 0 {
-            return Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "field capabilities response map",
-                reason:
-                    "non-empty FieldCapabilities response maps are not decoded by this adapter yet",
-            });
+        let mut fields = BTreeMap::new();
+        for _ in 0..response_map_count {
+            let field_name = input.read_string()?;
+            let field_type_count = read_len(&mut input)?;
+            let mut field_types = BTreeMap::new();
+            for _ in 0..field_type_count {
+                let field_type = input.read_string()?;
+                field_types.insert(field_type, OpenSearchFieldCapabilityWire::read(&mut input)?);
+            }
+            fields.insert(field_name, field_types);
         }
         let index_response_count = read_len(&mut input)?;
         if index_response_count != 0 {
@@ -22464,20 +22478,64 @@ impl OpenSearchFieldCapabilitiesResponseWire {
             });
         }
         require_no_trailing_bytes(&input)?;
-        let response = Self { indices };
+        let response = Self { indices, fields };
         response.validate_supported_subset()?;
         Ok(response)
     }
 
     pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
-        if !self.indices.is_empty() {
-            return Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "field capabilities response indices",
-                reason:
-                    "non-empty field-capabilities responses require field capability map rendering",
-            });
-        }
         Ok(())
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchFieldCapabilityWire {
+    pub name: String,
+    pub field_type: String,
+    pub searchable: bool,
+    pub aggregatable: bool,
+    pub indices: Option<Vec<String>>,
+    pub non_searchable_indices: Option<Vec<String>>,
+    pub non_aggregatable_indices: Option<Vec<String>>,
+    pub meta: BTreeMap<String, BTreeSet<String>>,
+}
+
+impl OpenSearchFieldCapabilityWire {
+    pub fn new(name: impl Into<String>, field_type: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            field_type: field_type.into(),
+            searchable: true,
+            aggregatable: true,
+            indices: None,
+            non_searchable_indices: None,
+            non_aggregatable_indices: None,
+            meta: BTreeMap::new(),
+        }
+    }
+
+    fn write(&self, output: &mut StreamOutput) {
+        output.write_string(&self.name);
+        output.write_string(&self.field_type);
+        output.write_bool(self.searchable);
+        output.write_bool(self.aggregatable);
+        write_optional_string_array(output, self.indices.as_deref());
+        write_optional_string_array(output, self.non_searchable_indices.as_deref());
+        write_optional_string_array(output, self.non_aggregatable_indices.as_deref());
+        output.write_string_set_map(&self.meta);
+    }
+
+    fn read(input: &mut StreamInput) -> Result<Self, TransportActionWireError> {
+        Ok(Self {
+            name: input.read_string()?,
+            field_type: input.read_string()?,
+            searchable: input.read_bool()?,
+            aggregatable: input.read_bool()?,
+            indices: read_optional_string_array(input)?,
+            non_searchable_indices: read_optional_string_array(input)?,
+            non_aggregatable_indices: read_optional_string_array(input)?,
+            meta: input.read_string_set_map()?,
+        })
     }
 }
 
@@ -61647,19 +61705,54 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_field_capabilities_response_rejects_non_empty_sections() {
-        let mut response_map = StreamOutput::new();
-        response_map.write_string_array(&[]);
-        response_map.write_vint(1);
-        response_map.write_string("message");
-        assert!(matches!(
-            OpenSearchFieldCapabilitiesResponseWire::read(response_map.freeze()),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "field capabilities response map",
-                ..
-            })
-        ));
+    fn opensearch_field_capabilities_response_round_trips_merged_field_map() {
+        let mut keyword_meta = BTreeMap::new();
+        keyword_meta.insert(
+            "origin".to_string(),
+            BTreeSet::from(["dynamic".to_string(), "template".to_string()]),
+        );
+        let keyword = OpenSearchFieldCapabilityWire {
+            name: "tenant".to_string(),
+            field_type: "keyword".to_string(),
+            searchable: true,
+            aggregatable: true,
+            indices: Some(vec!["logs-000001".to_string(), "logs-000002".to_string()]),
+            non_searchable_indices: None,
+            non_aggregatable_indices: Some(vec!["logs-000002".to_string()]),
+            meta: keyword_meta,
+        };
+        let text = OpenSearchFieldCapabilityWire {
+            name: "message".to_string(),
+            field_type: "text".to_string(),
+            searchable: true,
+            aggregatable: false,
+            indices: None,
+            non_searchable_indices: None,
+            non_aggregatable_indices: None,
+            meta: BTreeMap::new(),
+        };
+        let response = OpenSearchFieldCapabilitiesResponseWire {
+            indices: vec!["logs-000001".to_string(), "logs-000002".to_string()],
+            fields: BTreeMap::from([
+                (
+                    "message".to_string(),
+                    BTreeMap::from([("text".to_string(), text)]),
+                ),
+                (
+                    "tenant".to_string(),
+                    BTreeMap::from([("keyword".to_string(), keyword)]),
+                ),
+            ]),
+        };
+        let mut output = StreamOutput::new();
+        response.write(&mut output).unwrap();
 
+        let decoded = OpenSearchFieldCapabilitiesResponseWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, response);
+    }
+
+    #[test]
+    fn opensearch_field_capabilities_response_rejects_non_empty_index_responses() {
         let mut index_responses = StreamOutput::new();
         index_responses.write_string_array(&[]);
         index_responses.write_vint(0);

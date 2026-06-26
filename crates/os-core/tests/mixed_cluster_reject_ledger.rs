@@ -41,9 +41,17 @@ fn mixed_cluster_reject_ledger_covers_membership_publication_routing_recovery_an
             "unexpected error class for {}",
             case.name
         );
-        assert!(!case.evidence.is_empty(), "missing evidence for {}", case.name);
+        assert!(
+            !case.evidence.is_empty(),
+            "missing evidence for {}",
+            case.name
+        );
         assert!(!case.reason.is_empty(), "missing reason for {}", case.name);
-        assert!(seen.insert(case.name.clone()), "duplicate case {}", case.name);
+        assert!(
+            seen.insert(case.name.clone()),
+            "duplicate case {}",
+            case.name
+        );
     }
 
     assert!(seen.contains("join_membership_reject"));

@@ -278,7 +278,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `indices:admin/aliases/get` (implemented empty alias metadata subset)
 - `indices:monitor/settings/get` (implemented metadata-backed index-settings subset)
 - `indices:admin/shards/search_shards` (implemented empty search-shards subset)
-- `indices:data/read/field_caps` (implemented empty field-capabilities subset)
+- `indices:data/read/field_caps` (implemented merged field-capabilities response subset)
 - `indices:monitor/recovery` (implemented local empty-recovery subset)
 - `indices:monitor/segment_replication` (implemented local empty segment-replication-stats subset)
 - `indices:monitor/segments` (implemented local empty-segments subset)
@@ -304,12 +304,12 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `indices:admin/seq_no/remove_retention_lease` (rejected fail-closed)
 - `cluster:admin/indices/dangling/list` (implemented empty dangling-index subset)
 - `cluster:admin/indices/dangling/import` (rejected fail-closed)
-- `indices:data/read/search` (rejected fail-closed)
-- `indices:data/read/search/stream` (rejected fail-closed)
-- `indices:data/read/msearch` (rejected fail-closed)
-- `indices:data/read/scroll` (rejected fail-closed)
+- `indices:data/read/search` (implemented bounded local search subset)
+- `indices:data/read/search/stream` (implemented bounded local search subset)
+- `indices:data/read/msearch` (implemented bounded ordered sub-search subset)
+- `indices:data/read/scroll` (implemented local scroll-page subset)
 - `indices:data/read/scroll/clear` (implemented `_all` empty clear-scroll subset)
-- `indices:data/read/explain` (rejected fail-closed)
+- `indices:data/read/explain` (implemented bounded local explain subset)
 - `indices:data/read/point_in_time/create` (implemented local PIT lifecycle subset)
 - `indices:data/read/point_in_time/delete` (implemented local PIT lifecycle subset)
 - `indices:data/read/point_in_time/readall` (implemented local PIT lifecycle subset)
@@ -337,12 +337,12 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `indices:admin/refresh`
 - `indices:data/read/tv` (rejected fail-closed)
 - `indices:data/read/mtv` (rejected fail-closed)
-- `indices:admin/flush` (rejected fail-closed)
-- `indices:admin/forcemerge` (rejected fail-closed)
-- `indices:admin/upgrade` (rejected fail-closed)
-- `indices:monitor/upgrade` (rejected fail-closed)
+- `indices:admin/flush` (implemented bounded global default subset)
+- `indices:admin/forcemerge` (implemented bounded global default subset)
+- `indices:admin/upgrade` (implemented bounded global default subset)
+- `indices:monitor/upgrade` (implemented bounded global default subset)
 - `internal:indices/admin/upgrade` (rejected fail-closed)
-- `indices:admin/cache/clear` (rejected fail-closed)
+- `indices:admin/cache/clear` (implemented bounded global default subset)
 - `indices:monitor/stats` (implemented local empty-index-stats subset)
 
 The health adapter covers:
@@ -1665,9 +1665,8 @@ The validate-query boundary covers:
   `IndicesOptions.fromOptions(false, false, true, false)`, minimal
   `match_all` named query builder wire, explain flag, rewrite flag, and
   all-shards flag at the OpenSearch 3.x wire decode/build layer;
-- explicit fail-closed classification for `indices:admin/validate/query` until
-  query parser, rewrite, shard selection, and validation response rendering are
-  implemented against Rust query execution semantics;
+- implemented classification for the bounded `match_all` validate-query subset
+  with OpenSearch-shaped shard counter rendering;
 - explicit rejection for index filters, custom indices options, non-`match_all`
   query builders, custom boosts, named-query markers, explain, rewrite,
   all-shards validation, and validate-query execution.
@@ -1677,9 +1676,8 @@ The flush boundary covers:
 - OpenSearch `FlushRequest` parent task, nullable index array, default
   `IndicesOptions.strictExpandOpenAndForbidClosed()`, force flag, and
   wait-if-ongoing flag at the OpenSearch 3.x wire decode/build layer;
-- explicit fail-closed classification for `indices:admin/flush` until shard
-  translog flush execution, wait-if-ongoing concurrency semantics, and shard
-  status response rendering are implemented against Rust shard state;
+- implemented classification for the bounded global default flush subset with
+  OpenSearch-shaped shard counter rendering;
 - explicit rejection for index filters, custom indices options,
   `force=true && wait_if_ongoing=false` validation failures, forced flush,
   non-waiting flush, and flush execution.
@@ -1690,9 +1688,8 @@ The force-merge boundary covers:
   `IndicesOptions.strictExpandOpenAndForbidClosed()`, max segment count,
   only-expunge-deletes flag, post-merge flush flag, primary-only flag, and
   OpenSearch 3.x non-optional force-merge UUID at the wire decode/build layer;
-- explicit fail-closed classification for `indices:admin/forcemerge` until
-  shard segment merge execution, primary-only routing, post-merge flush, and
-  shard status response rendering are implemented against Rust shard state;
+- implemented classification for the bounded global default force-merge subset
+  with OpenSearch-shaped shard counter rendering;
 - explicit rejection for index filters, custom indices options, bounded segment
   counts, delete-expunge-only merges, `flush=false`, primary-only routing,
   empty force-merge UUIDs, and force-merge execution.
@@ -1702,9 +1699,8 @@ The upgrade boundary covers:
 - OpenSearch `UpgradeRequest` parent task, nullable index array, default
   `IndicesOptions.strictExpandOpenAndForbidClosed()`, and
   upgrade-only-ancient-segments flag at the wire decode/build layer;
-- explicit fail-closed classification for `indices:admin/upgrade` until shard
-  segment upgrade execution, primary availability checks, settings update, and
-  response rendering are implemented against Rust shard state;
+- implemented classification for the bounded global default upgrade subset with
+  OpenSearch-shaped shard counters and an empty upgraded-indices map;
 - explicit rejection for index filters, custom indices options,
   ancient-segment-only upgrades, and upgrade execution.
 
@@ -1713,9 +1709,8 @@ The upgrade-status boundary covers:
 - OpenSearch `UpgradeStatusRequest` parent task, nullable index array, and
   default `IndicesOptions.strictExpandOpenAndForbidClosed()` at the wire
   decode/build layer;
-- explicit fail-closed classification for `indices:monitor/upgrade` until shard
-  segment-version stats, routing metadata, and response rendering are
-  implemented against Rust shard state;
+- implemented classification for the bounded global default upgrade-status
+  subset with OpenSearch-shaped shard counters and an empty shard-status array;
 - explicit rejection for index filters, custom indices options, and
   upgrade-status execution.
 
@@ -1740,9 +1735,8 @@ The clear-indices-cache boundary covers:
   field-data-cache flag, nullable fields array normalized to empty fields,
   request-cache flag, and OpenSearch 2.8+ file-cache flag at the wire
   decode/build layer;
-- explicit fail-closed classification for `indices:admin/cache/clear` until
-  shard query, field-data, request, file, and node-wide cache clearing plus
-  shard status response rendering are implemented against Rust shard state;
+- implemented classification for the bounded global default clear-cache subset
+  with OpenSearch-shaped shard counter rendering;
 - explicit rejection for index filters, custom indices options, blank field
   names, query-cache clearing, field-data cache clearing, field selectors,
   request-cache clearing, file-cache clearing, and clear-cache execution.
@@ -1754,10 +1748,10 @@ The field-capabilities boundary covers:
   optional index-filter query marker, and optional `nowInMillis` at the wire
   decode/build layer;
 - implemented classification for the default all-indices request subset with
-  OpenSearch-shaped empty `FieldCapabilitiesResponse` rendering;
+  OpenSearch-shaped empty and merged `FieldCapabilitiesResponse` rendering;
 - explicit rejection for empty fields, index filters, custom indices options,
   unmerged responses, include-unmapped expansion, index-filter query rewrite,
-  timestamp injection, non-empty response maps, and per-index response lists.
+  timestamp injection, and per-index response lists.
 
 The get-aliases boundary covers:
 
@@ -2175,8 +2169,8 @@ The search boundary covers:
   request-cache flag, reduce/fanout controls, partial-results flag,
   cross-cluster reduction flags, cancellation interval, search pipeline, and
   phase timing flag at the wire decode/build layer;
-- explicit fail-closed classification for `indices:data/read/search` until
-  search source decoding and response rendering are mapped;
+- implemented classification for the bounded root match-all/match-none/term
+  local search subset with OpenSearch `SearchResponse` wire rendering;
 - explicit rejection for source/scroll payloads, non-default index/routing/
   preference/fanout/cache/partial-results/cross-cluster/pipeline/timing shapes,
   and search execution.
@@ -2209,17 +2203,18 @@ The stream-search boundary covers:
 
 - OpenSearch `StreamSearchAction` action binding with the same bounded
   `SearchRequest` wire decode/build layer used by normal search;
-- explicit fail-closed classification for `indices:data/read/search/stream`
-  until streaming response semantics are mapped;
-- explicit rejection through the bounded `SearchRequest` execution boundary.
+- implemented classification for the same bounded local `SearchRequest` subset
+  as normal search, bound to the stream-search action name;
+- explicit rejection for unsupported nested `SearchRequest` shapes through the
+  bounded search execution boundary.
 
 The multi-search boundary covers:
 
 - OpenSearch `MultiSearchRequest` parent task, max concurrent search request
   count, sub-search count, and nested `SearchRequest` wire shapes at the wire
   decode/build layer;
-- explicit fail-closed classification for `indices:data/read/msearch` until
-  batched search source decoding and response rendering are mapped;
+- implemented classification for ordered batches of supported sub-search
+  requests with OpenSearch `MultiSearchResponse` success-item rendering;
 - explicit rejection for custom multi-search concurrency, empty request batches,
   unsupported nested search request shapes, and multi-search execution.
 
@@ -2227,10 +2222,10 @@ The search-scroll boundary covers:
 
 - OpenSearch `SearchScrollRequest` parent task, scroll id, and optional
   keep-alive `Scroll` time value at the wire decode/build layer;
-- explicit fail-closed classification for `indices:data/read/scroll` until
-  OpenSearch `SearchResponse` wire rendering and scroll-id execution mapping
-  are implemented;
-- explicit rejection for empty scroll ids and search-scroll execution.
+- implemented classification for local scroll context advancement with
+  OpenSearch `SearchResponse` wire page rendering;
+- explicit rejection for empty scroll ids and unsupported search-scroll
+  execution shapes.
 
 The clear-scroll boundary covers:
 
@@ -2249,8 +2244,8 @@ The explain boundary covers:
   routing, preference, query named-writeable marker, alias filter marker,
   optional stored fields, fetch-source context marker, and `nowInMillis` at the
   bounded wire decode/build layer;
-- explicit fail-closed classification for `indices:data/read/explain` until
-  query builder decoding and explanation response rendering are mapped;
+- implemented classification for the bounded match_all/match_none local explain
+  subset with OpenSearch `ExplainResponse` wire rendering;
 - explicit rejection for concrete shard ids, missing index/id/query fields,
   routing, preference, alias filters, stored fields, fetch-source context, and
   explain execution.

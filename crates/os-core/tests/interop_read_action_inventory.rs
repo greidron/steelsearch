@@ -46,9 +46,21 @@ fn interop_read_action_inventory_uses_only_supported_phase_b_dispositions() {
             "unexpected disposition for {}",
             action.surface
         );
-        assert!(!action.family.is_empty(), "family missing for {}", action.surface);
-        assert!(!action.backing.is_empty(), "backing missing for {}", action.surface);
-        assert!(!action.reason.is_empty(), "reason missing for {}", action.surface);
+        assert!(
+            !action.family.is_empty(),
+            "family missing for {}",
+            action.surface
+        );
+        assert!(
+            !action.backing.is_empty(),
+            "backing missing for {}",
+            action.surface
+        );
+        assert!(
+            !action.reason.is_empty(),
+            "reason missing for {}",
+            action.surface
+        );
         assert!(
             seen_surfaces.insert(action.surface.clone()),
             "duplicate surface {}",

@@ -900,8 +900,8 @@
       "transport_action": "TransportValidateQueryAction",
       "request_wire_type": "ValidateQueryRequest",
       "response_wire_type": "ValidateQueryResponse",
-      "disposition": "rejected",
-      "reason": "Validate-query transport execution requires query parser, rewrite, shard selection, and validation response rendering before Steelsearch can serve OpenSearch query validation."
+      "disposition": "implemented",
+      "reason": "validate-query transport adapter validates the bounded match_all subset and renders OpenSearch-shaped shard counters"
     },
     {
       "action_name": "indices:admin/flush",
@@ -909,8 +909,8 @@
       "transport_action": "TransportFlushAction",
       "request_wire_type": "FlushRequest",
       "response_wire_type": "FlushResponse",
-      "disposition": "rejected",
-      "reason": "Flush transport execution requires shard translog flush execution, wait-if-ongoing semantics, and shard status response rendering before Steelsearch can serve OpenSearch flush semantics."
+      "disposition": "implemented",
+      "reason": "flush transport adapter validates the bounded global default subset and renders OpenSearch-shaped shard counters"
     },
     {
       "action_name": "indices:admin/forcemerge",
@@ -918,8 +918,8 @@
       "transport_action": "TransportForceMergeAction",
       "request_wire_type": "ForceMergeRequest",
       "response_wire_type": "ForceMergeResponse",
-      "disposition": "rejected",
-      "reason": "Force-merge transport execution requires shard segment merge execution, primary-only routing, post-merge flush, and shard status response rendering before Steelsearch can serve OpenSearch force-merge semantics."
+      "disposition": "implemented",
+      "reason": "force-merge transport adapter validates the bounded global default subset and renders OpenSearch-shaped shard counters"
     },
     {
       "action_name": "indices:admin/upgrade",
@@ -927,8 +927,8 @@
       "transport_action": "TransportUpgradeAction",
       "request_wire_type": "UpgradeRequest",
       "response_wire_type": "UpgradeResponse",
-      "disposition": "rejected",
-      "reason": "Upgrade transport execution requires shard segment upgrade execution, primary availability checks, settings update, and response rendering before Steelsearch can serve OpenSearch upgrade semantics."
+      "disposition": "implemented",
+      "reason": "upgrade transport adapter validates the bounded global default subset and renders OpenSearch-shaped shard counters with an empty upgraded-indices map"
     },
     {
       "action_name": "indices:monitor/upgrade",
@@ -936,8 +936,8 @@
       "transport_action": "TransportUpgradeStatusAction",
       "request_wire_type": "UpgradeStatusRequest",
       "response_wire_type": "UpgradeStatusResponse",
-      "disposition": "rejected",
-      "reason": "Upgrade-status transport execution requires shard segment-version stats, routing metadata, and response rendering before Steelsearch can serve OpenSearch upgrade-status semantics."
+      "disposition": "implemented",
+      "reason": "upgrade-status transport adapter validates the bounded global default subset and renders OpenSearch-shaped shard counters with an empty shard-status array"
     },
     {
       "action_name": "internal:indices/admin/upgrade",
@@ -954,8 +954,8 @@
       "transport_action": "TransportClearIndicesCacheAction",
       "request_wire_type": "ClearIndicesCacheRequest",
       "response_wire_type": "ClearIndicesCacheResponse",
-      "disposition": "rejected",
-      "reason": "Clear-indices-cache transport execution requires shard query, field-data, request, file, and node-wide cache clearing plus shard status response rendering before Steelsearch can serve OpenSearch clear-cache semantics."
+      "disposition": "implemented",
+      "reason": "clear-indices-cache transport adapter validates the bounded global default subset and renders OpenSearch-shaped shard counters"
     },
     {
       "action_name": "indices:admin/aliases/get",
@@ -991,7 +991,7 @@
       "request_wire_type": "FieldCapabilitiesRequest",
       "response_wire_type": "FieldCapabilitiesResponse",
       "disposition": "implemented",
-      "reason": "Field-capabilities transport adapter returns an OpenSearch-shaped empty field capabilities response for the default all-indices request"
+      "reason": "field-capabilities transport adapter returns OpenSearch-shaped empty and merged field capabilities responses for the default all-indices request"
     },
     {
       "action_name": "indices:monitor/recovery",
@@ -1242,8 +1242,8 @@
       "transport_action": "TransportSearchAction",
       "request_wire_type": "SearchRequest",
       "response_wire_type": "SearchResponse",
-      "disposition": "rejected",
-      "reason": "Search transport execution requires search source and response rendering mapping before Steelsearch can serve OpenSearch search semantics."
+      "disposition": "implemented",
+      "reason": "search transport adapter executes the bounded root match-all/match-none/term subset against Steelsearch local document state and renders OpenSearch SearchResponse wire"
     },
     {
       "action_name": "indices:data/read/search/stream",
@@ -1251,8 +1251,8 @@
       "transport_action": "StreamTransportSearchAction",
       "request_wire_type": "SearchRequest",
       "response_wire_type": "SearchResponse",
-      "disposition": "rejected",
-      "reason": "Stream search transport execution requires streaming search response mapping before Steelsearch can serve OpenSearch stream-search semantics."
+      "disposition": "implemented",
+      "reason": "stream-search transport adapter executes the same bounded SearchRequest subset against local document state and renders OpenSearch SearchResponse wire"
     },
     {
       "action_name": "indices:data/read/msearch",
@@ -1260,8 +1260,8 @@
       "transport_action": "TransportMultiSearchAction",
       "request_wire_type": "MultiSearchRequest",
       "response_wire_type": "MultiSearchResponse",
-      "disposition": "rejected",
-      "reason": "Multi-search transport execution requires batched search source and response rendering mapping before Steelsearch can serve OpenSearch multi-search semantics."
+      "disposition": "implemented",
+      "reason": "multi-search transport adapter executes supported sub-search requests in order and renders OpenSearch MultiSearchResponse success items"
     },
     {
       "action_name": "indices:data/read/scroll",
@@ -1269,8 +1269,8 @@
       "transport_action": "TransportSearchScrollAction",
       "request_wire_type": "SearchScrollRequest",
       "response_wire_type": "SearchResponse",
-      "disposition": "rejected",
-      "reason": "Search-scroll transport execution remains gated on remaining SearchHit optional sections and scroll-id execution mapping."
+      "disposition": "implemented",
+      "reason": "search-scroll transport adapter advances local scroll contexts and renders OpenSearch SearchResponse wire pages"
     },
     {
       "action_name": "indices:data/read/scroll/clear",
@@ -1287,8 +1287,8 @@
       "transport_action": "TransportExplainAction",
       "request_wire_type": "ExplainRequest",
       "response_wire_type": "ExplainResponse",
-      "disposition": "rejected",
-      "reason": "Explain transport execution requires query explain response rendering mapping before Steelsearch can serve OpenSearch explain semantics."
+      "disposition": "implemented",
+      "reason": "explain transport adapter evaluates the bounded match_all/match_none subset against local document state and renders OpenSearch ExplainResponse wire"
     },
     {
       "action_name": "indices:data/read/point_in_time/create",

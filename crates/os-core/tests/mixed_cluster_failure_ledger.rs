@@ -36,9 +36,17 @@ fn mixed_cluster_failure_ledger_covers_publication_mismatch_routing_hole_and_sta
             "unexpected error class for {}",
             case.name
         );
-        assert!(!case.evidence.is_empty(), "missing evidence for {}", case.name);
+        assert!(
+            !case.evidence.is_empty(),
+            "missing evidence for {}",
+            case.name
+        );
         assert!(!case.reason.is_empty(), "missing reason for {}", case.name);
-        assert!(seen.insert(case.name.clone()), "duplicate case {}", case.name);
+        assert!(
+            seen.insert(case.name.clone()),
+            "duplicate case {}",
+            case.name
+        );
     }
 
     assert!(seen.contains("publication_mismatch"));

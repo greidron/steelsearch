@@ -418,17 +418,37 @@ pub struct SearchRequest {
     pub query: Value,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stored_fields: Option<Value>,
-    #[serde(rename = "_source_fields", default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "_source_fields",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub source_fields: Option<Value>,
     #[serde(rename = "_source", default, skip_serializing_if = "Option::is_none")]
     pub source_filter: Option<Value>,
-    #[serde(rename = "_source_includes", default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "_source_includes",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub source_includes: Option<Value>,
-    #[serde(rename = "_source_include", default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "_source_include",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub source_include: Option<Value>,
-    #[serde(rename = "_source_excludes", default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "_source_excludes",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub source_excludes: Option<Value>,
-    #[serde(rename = "_source_exclude", default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "_source_exclude",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub source_exclude: Option<Value>,
     pub aggregations: Value,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -634,9 +654,7 @@ impl<'de> Deserialize<'de> for GeoSortOrigin {
     {
         let value = Value::deserialize(deserializer)?;
         parse_geo_sort_origin(&value).ok_or_else(|| {
-            serde::de::Error::custom(
-                "geo origin must be {lat,lon}, \"lat,lon\", or [lon, lat]",
-            )
+            serde::de::Error::custom("geo origin must be {lat,lon}, \"lat,lon\", or [lon, lat]")
         })
     }
 }
@@ -752,10 +770,7 @@ impl SearchResponse {
         self.hits.is_empty()
     }
 
-    pub fn transform_hits(
-        &mut self,
-        transform: impl FnMut(SearchHit) -> SearchHit,
-    ) -> &mut Self {
+    pub fn transform_hits(&mut self, transform: impl FnMut(SearchHit) -> SearchHit) -> &mut Self {
         self.hits = self.hits.drain(..).map(transform).collect();
         self
     }
@@ -1140,7 +1155,8 @@ impl SearchShardSearchResult {
     }
 
     pub fn hit_at(&self, index: usize) -> Option<&SearchHit> {
-        self.response_ref().and_then(|response| response.hit_at(index))
+        self.response_ref()
+            .and_then(|response| response.hit_at(index))
     }
 
     pub fn hit_count(&self) -> usize {
@@ -1202,15 +1218,15 @@ pub fn merge_shard_search_results(
         hits.into_iter().skip(from).take(size),
         serde_json::json!({}),
     )
-        .with_shards(SearchShardStats {
-            total,
-            successful,
-            skipped: 0,
-            failed,
-            failures,
-        })
-        .with_phase_results(phase_results)
-        .with_fetch_subphases(fetch_subphases)
+    .with_shards(SearchShardStats {
+        total,
+        successful,
+        skipped: 0,
+        failed,
+        failures,
+    })
+    .with_phase_results(phase_results)
+    .with_fetch_subphases(fetch_subphases)
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -1263,10 +1279,10 @@ impl SearchHit {
         self.opensearch_body_with_optional_sections_applied(self.base_opensearch_body())
     }
 
-    fn opensearch_body_batch<'a>(
-        hits: impl IntoIterator<Item = &'a Self>,
-    ) -> Vec<Value> {
-        hits.into_iter().map(SearchHit::to_opensearch_body).collect()
+    fn opensearch_body_batch<'a>(hits: impl IntoIterator<Item = &'a Self>) -> Vec<Value> {
+        hits.into_iter()
+            .map(SearchHit::to_opensearch_body)
+            .collect()
     }
 }
 
@@ -1936,7 +1952,7 @@ mod tests {
                             fields: None,
                             highlight: None,
                             explanation: None,
-                sort: None,
+                            sort: None,
                         }],
                         serde_json::json!({}),
                     )
@@ -1968,7 +1984,7 @@ mod tests {
                             fields: None,
                             highlight: None,
                             explanation: None,
-                sort: None,
+                            sort: None,
                         }],
                         serde_json::json!({}),
                     )

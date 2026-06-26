@@ -42,9 +42,17 @@ fn interop_failure_injection_ledger_covers_remote_unavailable_and_transport_unwr
             "unexpected error class for {}",
             case.name
         );
-        assert!(!case.evidence.is_empty(), "missing evidence for {}", case.name);
+        assert!(
+            !case.evidence.is_empty(),
+            "missing evidence for {}",
+            case.name
+        );
         assert!(!case.reason.is_empty(), "missing reason for {}", case.name);
-        assert!(seen.insert(case.name.clone()), "duplicate case {}", case.name);
+        assert!(
+            seen.insert(case.name.clone()),
+            "duplicate case {}",
+            case.name
+        );
     }
 
     assert!(seen.contains("stale_cluster_state_base"));

@@ -32,15 +32,31 @@ fn interop_search_forwarding_policy_fixture_stays_bounded_and_explicit() {
     let mut accepted = BTreeSet::new();
     for row in &fixture.accepted_query_families {
         assert_eq!(row.policy, "accepted");
-        assert!(!row.reason.is_empty(), "accepted family missing reason: {}", row.family);
-        assert!(accepted.insert(row.family.clone()), "duplicate accepted family {}", row.family);
+        assert!(
+            !row.reason.is_empty(),
+            "accepted family missing reason: {}",
+            row.family
+        );
+        assert!(
+            accepted.insert(row.family.clone()),
+            "duplicate accepted family {}",
+            row.family
+        );
     }
 
     let mut rejected = BTreeSet::new();
     for row in &fixture.rejected_query_families {
         assert_eq!(row.policy, "rejected");
-        assert!(!row.reason.is_empty(), "rejected family missing reason: {}", row.family);
-        assert!(rejected.insert(row.family.clone()), "duplicate rejected family {}", row.family);
+        assert!(
+            !row.reason.is_empty(),
+            "rejected family missing reason: {}",
+            row.family
+        );
+        assert!(
+            rejected.insert(row.family.clone()),
+            "duplicate rejected family {}",
+            row.family
+        );
     }
 
     for required in [
@@ -60,16 +76,30 @@ fn interop_search_forwarding_policy_fixture_stays_bounded_and_explicit() {
         "highlight",
         "suggest",
     ] {
-        assert!(accepted.contains(required), "missing accepted family {required}");
+        assert!(
+            accepted.contains(required),
+            "missing accepted family {required}"
+        );
     }
     for required in ["scroll", "knn", "hybrid"] {
-        assert!(rejected.contains(required), "missing rejected family {required}");
+        assert!(
+            rejected.contains(required),
+            "missing rejected family {required}"
+        );
     }
     let mut excluded = BTreeSet::new();
     for row in &fixture.excluded_request_extensions {
         assert_eq!(row.policy, "excluded");
-        assert!(!row.reason.is_empty(), "excluded extension missing reason: {}", row.family);
-        assert!(excluded.insert(row.family.clone()), "duplicate excluded extension {}", row.family);
+        assert!(
+            !row.reason.is_empty(),
+            "excluded extension missing reason: {}",
+            row.family
+        );
+        assert!(
+            excluded.insert(row.family.clone()),
+            "duplicate excluded extension {}",
+            row.family
+        );
     }
     assert!(
         excluded.contains("runtime_mappings"),
@@ -123,9 +153,19 @@ fn interop_search_forwarding_policy_fixture_stays_bounded_and_explicit() {
         !rejected.contains("suggest"),
         "suggest must not remain rejected after forwarding profile coverage"
     );
-    for required in ["sort", "from", "size", "track_total_hits", "pit", "search_after"] {
+    for required in [
+        "sort",
+        "from",
+        "size",
+        "track_total_hits",
+        "pit",
+        "search_after",
+    ] {
         assert!(
-            fixture.accepted_request_options.iter().any(|option| option == required),
+            fixture
+                .accepted_request_options
+                .iter()
+                .any(|option| option == required),
             "missing accepted request option {required}"
         );
     }
@@ -150,26 +190,38 @@ fn interop_search_forwarding_policy_fixture_stays_bounded_and_explicit() {
             .as_array()
             .unwrap_or_else(|| panic!("rejected family {family} missing blocking evidence"));
         assert!(
-            evidence.iter().all(|item| item.as_str().map_or(false, |value| !value.is_empty())),
+            evidence
+                .iter()
+                .all(|item| item.as_str().map_or(false, |value| !value.is_empty())),
             "rejected family {family} has blank blocking evidence"
         );
         if family == "scroll" {
             assert!(
-                evidence.iter().any(|item| item.as_str().map_or(false, |value| {
-                    value.contains("SearchResponse.java::writeTo")
-                })),
+                evidence
+                    .iter()
+                    .any(|item| item.as_str().map_or(false, |value| {
+                        value.contains("SearchResponse.java::writeTo")
+                    })),
                 "scroll rejection must name the OpenSearch SearchResponse source contract"
             );
             assert!(
-                evidence.iter().any(|item| item.as_str().map_or(false, |value| {
-                    value.contains("opensearch_search_response_wire_round_trips_empty_hits_subset")
-                })),
+                evidence
+                    .iter()
+                    .any(|item| item.as_str().map_or(false, |value| {
+                        value.contains(
+                            "opensearch_search_response_wire_round_trips_empty_hits_subset",
+                        )
+                    })),
                 "scroll rejection must name the implemented empty SearchResponse wire subset"
             );
             assert!(
-                evidence.iter().any(|item| item.as_str().map_or(false, |value| {
-                    value.contains("opensearch_search_response_wire_round_trips_basic_hit_subset")
-                })),
+                evidence
+                    .iter()
+                    .any(|item| item.as_str().map_or(false, |value| {
+                        value.contains(
+                            "opensearch_search_response_wire_round_trips_basic_hit_subset",
+                        )
+                    })),
                 "scroll rejection must name the implemented basic SearchHit wire subset"
             );
         }
@@ -187,8 +239,12 @@ fn interop_search_forwarding_policy_fixture_stays_bounded_and_explicit() {
         cases.iter().any(|case| {
             case["name"] == "pit_snapshot_after_mutation_search"
                 && case["use_pit"] == true
-                && case["mutate_after_pit"].as_array().is_some_and(|steps| steps.len() >= 2)
-                && case["expected_ids"].as_array().is_some_and(|ids| ids.len() == 2)
+                && case["mutate_after_pit"]
+                    .as_array()
+                    .is_some_and(|steps| steps.len() >= 2)
+                && case["expected_ids"]
+                    .as_array()
+                    .is_some_and(|ids| ids.len() == 2)
         }),
         "accepted pit policy requires a PIT snapshot case that mutates documents after PIT open"
     );
@@ -201,8 +257,7 @@ fn interop_search_forwarding_policy_fixture_stays_bounded_and_explicit() {
     );
     assert!(
         cases.iter().any(|case| {
-            case["name"] == "nested_tuple_search"
-                && case["body"]["query"]["nested"].is_object()
+            case["name"] == "nested_tuple_search" && case["body"]["query"]["nested"].is_object()
         }),
         "accepted nested policy requires an executable nested forwarding profile case"
     );
@@ -229,15 +284,13 @@ fn interop_search_forwarding_policy_fixture_stays_bounded_and_explicit() {
     );
     assert!(
         cases.iter().any(|case| {
-            case["name"] == "rescore_search"
-                && case["body"]["rescore"].is_object()
+            case["name"] == "rescore_search" && case["body"]["rescore"].is_object()
         }),
         "accepted rescore policy requires an executable rescore forwarding profile case"
     );
     assert!(
         cases.iter().any(|case| {
-            case["name"] == "collapse_search"
-                && case["body"]["collapse"].is_object()
+            case["name"] == "collapse_search" && case["body"]["collapse"].is_object()
         }),
         "accepted collapse policy requires an executable collapse forwarding profile case"
     );

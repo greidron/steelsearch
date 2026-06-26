@@ -974,9 +974,13 @@ pub struct InteropReadForwardingTarget {
 pub enum InteropReadForwardingError {
     #[error("unsupported Phase B read forwarding request: {surface}")]
     UnsupportedRequest { surface: String },
-    #[error("missing routing prerequisite for Phase B read forwarding request {surface}: {reason}")]
+    #[error(
+        "missing routing prerequisite for Phase B read forwarding request {surface}: {reason}"
+    )]
     MissingRouting { surface: String, reason: String },
-    #[error("missing discovery node {node_id} while planning Phase B read forwarding request {surface}")]
+    #[error(
+        "missing discovery node {node_id} while planning Phase B read forwarding request {surface}"
+    )]
     MissingDiscoveryNode { surface: String, node_id: String },
 }
 
@@ -1055,11 +1059,13 @@ pub fn validate_mixed_cluster_allocation_admission(
     match routing.state {
         ShardRoutingState::Initializing | ShardRoutingState::Started => {}
         other => {
-            return Err(MixedClusterAllocationAdmissionError::UnsupportedShardState {
-                index_name: index_name.to_string(),
-                shard_id,
-                state: other,
-            })
+            return Err(
+                MixedClusterAllocationAdmissionError::UnsupportedShardState {
+                    index_name: index_name.to_string(),
+                    shard_id,
+                    state: other,
+                },
+            )
         }
     }
 
@@ -1098,7 +1104,9 @@ pub fn validate_mixed_cluster_allocation_admission(
 
 #[derive(Clone, Debug, Eq, PartialEq, Error, Serialize, Deserialize)]
 pub enum MixedClusterRecoveryAdmissionError {
-    #[error("unsupported recovery source [{recovery_source:?}] for index {index_name} shard {shard_id}")]
+    #[error(
+        "unsupported recovery source [{recovery_source:?}] for index {index_name} shard {shard_id}"
+    )]
     UnsupportedRecoverySource {
         index_name: String,
         shard_id: u32,
@@ -1115,11 +1123,13 @@ pub fn validate_mixed_cluster_peer_recovery_admission(
     relocation_interrupted: bool,
 ) -> Result<(), MixedClusterRecoveryAdmissionError> {
     if recovery_source != RecoverySourceType::Peer {
-        return Err(MixedClusterRecoveryAdmissionError::UnsupportedRecoverySource {
-            index_name: index_name.to_string(),
-            shard_id,
-            recovery_source,
-        });
+        return Err(
+            MixedClusterRecoveryAdmissionError::UnsupportedRecoverySource {
+                index_name: index_name.to_string(),
+                shard_id,
+                recovery_source,
+            },
+        );
     }
 
     if relocation_interrupted {
@@ -1142,12 +1152,14 @@ pub fn plan_interop_read_forwarding(
         | "GET /_cluster/settings"
         | "GET /_cluster/pending_tasks"
         | "GET /_tasks" => {
-            let cluster_manager_node_id = state.discovery_nodes.cluster_manager_node_id.as_ref().ok_or_else(|| {
-                InteropReadForwardingError::MissingRouting {
+            let cluster_manager_node_id = state
+                .discovery_nodes
+                .cluster_manager_node_id
+                .as_ref()
+                .ok_or_else(|| InteropReadForwardingError::MissingRouting {
                     surface: surface.to_string(),
                     reason: "cluster_manager_node_id missing from cached discovery nodes".into(),
-                }
-            })?;
+                })?;
             let node = state
                 .discovery_nodes
                 .nodes
@@ -1215,8 +1227,7 @@ pub fn plan_interop_search_forwarding(
                 .shard_routings
                 .iter()
                 .find(|routing| {
-                    routing.state == ShardRoutingState::Started
-                        && routing.current_node_id.is_some()
+                    routing.state == ShardRoutingState::Started && routing.current_node_id.is_some()
                 })
                 .ok_or_else(|| InteropSearchRoutingError::MissingStartedShard {
                     index_name: index_name.clone(),
@@ -1283,7 +1294,8 @@ pub fn plan_interop_write_forwarding(
     if retry_unsafe {
         return Err(InteropWriteForwardingError::RetryUnsafe {
             surface: surface.to_string(),
-            reason: "retry-sensitive writes are outside the validated Phase B forwarding contract".into(),
+            reason: "retry-sensitive writes are outside the validated Phase B forwarding contract"
+                .into(),
         });
     }
 
@@ -1297,12 +1309,14 @@ pub fn plan_interop_write_forwarding(
             reason: "index missing from cached routing table".into(),
         })?;
 
-    let shard = index_routing.shards.iter().find(|shard| shard.shard_id == 0).ok_or_else(|| {
-        InteropWriteForwardingError::MissingRouting {
+    let shard = index_routing
+        .shards
+        .iter()
+        .find(|shard| shard.shard_id == 0)
+        .ok_or_else(|| InteropWriteForwardingError::MissingRouting {
             index_name: index_name.to_string(),
             reason: "primary shard 0 missing from cached routing table".into(),
-        }
-    })?;
+        })?;
 
     let chosen = shard
         .shard_routings
@@ -7729,46 +7743,41 @@ pub enum ClusterStateDecodeError {
 #[cfg(test)]
 mod tests {
     use super::{
-        read_allocation_id_prefix, read_cluster_blocks_prefix, read_cluster_state_tail_prefix,
-        read_generic_map_prefix, read_metadata_prefix, read_publication_cluster_state_diff,
-        read_publication_cluster_state_diff_header_prefix,
+        apply_full_cluster_state_response, apply_publication_diff_and_ack,
+        plan_interop_read_forwarding, plan_interop_search_forwarding,
+        plan_interop_write_forwarding, read_allocation_id_prefix, read_cluster_blocks_prefix,
+        read_cluster_state_tail_prefix, read_generic_map_prefix, read_metadata_prefix,
+        read_publication_cluster_state_diff, read_publication_cluster_state_diff_header_prefix,
         read_publication_cluster_state_diff_prefix, read_remote_store_recovery_source_prefix,
         read_routing_table_prefix, read_shard_routing_prefix, read_snapshot_recovery_source_prefix,
         read_snapshots_in_progress_prefix, read_string_map_diff_envelope_prefix,
-        read_string_map_prefix, AllocationId, ClusterBlockLevel, ClusterBlockLevelPrefix,
-        ClusterBlockPrefix, ClusterBlocks, ClusterBlocksPrefix, ClusterState, ClusterStateCustoms,
-        ClusterStateDecodeError, ClusterStateHeader, ClusterStateRequest,
-        ClusterStateResponsePrefix, ClusterStateTailPrefix, ComponentTemplate,
+        read_string_map_prefix, validate_mixed_cluster_allocation_admission,
+        validate_mixed_cluster_peer_recovery_admission, AllocationId, ClusterBlockLevel,
+        ClusterBlockLevelPrefix, ClusterBlockPrefix, ClusterBlocks, ClusterBlocksPrefix,
+        ClusterState, ClusterStateCustoms, ClusterStateDecodeError, ClusterStateHeader,
+        ClusterStateRequest, ClusterStateResponsePrefix, ClusterStateTailPrefix, ComponentTemplate,
         ComponentTemplatePrefix, ComposableIndexTemplate, ComposableIndexTemplatePrefix,
-        CoordinationMetadata, CoordinationMetadataPrefix, DataStream,
-        DataStreamBackingIndexPrefix, DataStreamPrefix, DecommissionAttributeMetadata,
-        DecommissionAttributeMetadataPrefix, DiffableStringMapDiffPrefix, DiscoveryNode,
-        DiscoveryNodePrefix, DiscoveryNodesPrefix,
-        DiscoveryNodeRolePrefix, DiscoveryNodes, IndexClusterBlocksPrefix, IndexGraveyardTombstone,
+        CoordinationMetadata, CoordinationMetadataPrefix, DataStream, DataStreamBackingIndexPrefix,
+        DataStreamPrefix, DecommissionAttributeMetadata, DecommissionAttributeMetadataPrefix,
+        DiffableStringMapDiffPrefix, DiscoveryNode, DiscoveryNodePrefix, DiscoveryNodeRolePrefix,
+        DiscoveryNodes, DiscoveryNodesPrefix, IndexClusterBlocksPrefix, IndexGraveyardTombstone,
         IndexGraveyardTombstonePrefix, IndexMetadata, IndexMetadataPrefix, IndexRoutingTable,
         IndexRoutingTablePrefix, IndexShardRoutingTable, IndexShardRoutingTablePrefix,
         IndexTemplateMetadata, IndexTemplateMetadataPrefix, IngestPipeline, IngestPipelinePrefix,
-        Metadata, MetadataCustoms, MetadataPrefix, PersistentTask, PersistentTaskPrefix,
-        PublicationClusterStateDiff, PublicationClusterStateDiffHeader, RepositoryCleanupInProgress,
-        RepositoryCleanupInProgressPrefix, RepositoryMetadata, RepositoryMetadataPrefix,
-        RestoreInProgress, RestoreInProgressPrefix, RoutingTable, RoutingTablePrefix,
-        SearchPipeline, SearchPipelinePrefix, SettingPrefix, ShardRouting, ShardRoutingPrefix,
-        ShardRoutingState, ShardRoutingStatePrefix, RecoverySourceType,
+        InteropReadForwardingError, InteropSearchRoutingError, InteropWriteForwardingError,
+        Metadata, MetadataCustoms, MetadataPrefix, MixedClusterAllocationAdmissionError,
+        MixedClusterRecoveryAdmissionError, PersistentTask, PersistentTaskPrefix,
+        PublicationClusterStateDiff, PublicationClusterStateDiffHeader, RecoverySourceType,
+        RepositoryCleanupInProgress, RepositoryCleanupInProgressPrefix, RepositoryMetadata,
+        RepositoryMetadataPrefix, RestoreInProgress, RestoreInProgressPrefix, RoutingTable,
+        RoutingTablePrefix, SearchPipeline, SearchPipelinePrefix, SettingPrefix, ShardRouting,
+        ShardRoutingPrefix, ShardRoutingState, ShardRoutingStatePrefix,
         SnapshotDeletionsInProgress, SnapshotDeletionsInProgressPrefix, SnapshotsInProgress,
-        SnapshotsInProgressPrefix, InteropReadForwardingError,
-        MixedClusterAllocationAdmissionError, MixedClusterRecoveryAdmissionError,
-        StoredScript, StoredScriptPrefix,
-        StringMapDiffEnvelope, TransportAddress, TransportAddressPrefix, ViewMetadata,
-        ViewMetadataPrefix, WeightedRoutingMetadata,
-        WeightedRoutingMetadataPrefix, WorkloadGroup, WorkloadGroupPrefix,
+        SnapshotsInProgressPrefix, StoredScript, StoredScriptPrefix, StringMapDiffEnvelope,
+        TransportAddress, TransportAddressPrefix, ViewMetadata, ViewMetadataPrefix,
+        WeightedRoutingMetadata, WeightedRoutingMetadataPrefix, WorkloadGroup, WorkloadGroupPrefix,
         CLUSTER_STATE_ACTION, OPENSEARCH_2_10_0, OPENSEARCH_2_17_0, OPENSEARCH_2_18_0,
         OPENSEARCH_2_7_0, OPENSEARCH_2_9_0, OPENSEARCH_3_6_0, OPENSEARCH_3_7_0,
-        apply_full_cluster_state_response, apply_publication_diff_and_ack,
-        validate_mixed_cluster_allocation_admission,
-        validate_mixed_cluster_peer_recovery_admission,
-        plan_interop_read_forwarding, plan_interop_search_forwarding,
-        plan_interop_write_forwarding, InteropSearchRoutingError,
-        InteropWriteForwardingError,
     };
     use bytes::Bytes;
     use os_stream::StreamInput;
@@ -8270,7 +8279,8 @@ mod tests {
     }
 
     #[test]
-    fn interop_cluster_state_diff_fail_closed_fixture_preserves_prior_cache_on_from_uuid_mismatch() {
+    fn interop_cluster_state_diff_fail_closed_fixture_preserves_prior_cache_on_from_uuid_mismatch()
+    {
         let fixture: InteropDiffFailClosedFixture = serde_json::from_str(include_str!(
             "../../../tools/fixtures/interop-cluster-state-diff-fail-closed.json"
         ))
@@ -8285,7 +8295,11 @@ mod tests {
 
             match error {
                 ClusterStateDecodeError::DiffBaseMismatch { expected, actual } => {
-                    assert_eq!(case.expected_error_class, "DiffBaseMismatch", "{}", case.name);
+                    assert_eq!(
+                        case.expected_error_class, "DiffBaseMismatch",
+                        "{}",
+                        case.name
+                    );
                     assert_eq!(expected, case.expected_previous_state_uuid, "{}", case.name);
                     assert_eq!(actual, case.diff_from_uuid, "{}", case.name);
                 }
@@ -8348,7 +8362,11 @@ mod tests {
             let error = apply_publication_diff_and_ack(&previous, diff).unwrap_err();
             match error {
                 ClusterStateDecodeError::DiffBaseMismatch { expected, actual } => {
-                    assert_eq!(case.expected_error_class, "DiffBaseMismatch", "{}", case.name);
+                    assert_eq!(
+                        case.expected_error_class, "DiffBaseMismatch",
+                        "{}",
+                        case.name
+                    );
                     assert_eq!(expected, case.expected_previous_state_uuid, "{}", case.name);
                     assert_eq!(actual, case.diff_from_uuid, "{}", case.name);
                 }
@@ -8367,15 +8385,13 @@ mod tests {
 
             let error = match case.decoder.as_str() {
                 "metadata.custom" => {
-                    let mut input = StreamInput::new(unsupported_metadata_custom_bytes(
-                        &case.custom_name,
-                    ));
+                    let mut input =
+                        StreamInput::new(unsupported_metadata_custom_bytes(&case.custom_name));
                     read_metadata_prefix(&mut input, OPENSEARCH_3_7_0).unwrap_err()
                 }
                 "cluster_state.customs" => {
-                    let mut input = StreamInput::new(unsupported_cluster_state_custom_bytes(
-                        &case.custom_name,
-                    ));
+                    let mut input =
+                        StreamInput::new(unsupported_cluster_state_custom_bytes(&case.custom_name));
                     read_cluster_state_tail_prefix(&mut input, OPENSEARCH_3_7_0).unwrap_err()
                 }
                 other => panic!("{}: unsupported decoder {other}", case.name),
@@ -8405,15 +8421,13 @@ mod tests {
 
             let error = match case.decoder.as_str() {
                 "metadata.custom" => {
-                    let mut input = StreamInput::new(unsupported_metadata_custom_bytes(
-                        &case.custom_name,
-                    ));
+                    let mut input =
+                        StreamInput::new(unsupported_metadata_custom_bytes(&case.custom_name));
                     read_metadata_prefix(&mut input, OPENSEARCH_3_7_0).unwrap_err()
                 }
                 "cluster_state.customs" => {
-                    let mut input = StreamInput::new(unsupported_cluster_state_custom_bytes(
-                        &case.custom_name,
-                    ));
+                    let mut input =
+                        StreamInput::new(unsupported_cluster_state_custom_bytes(&case.custom_name));
                     read_cluster_state_tail_prefix(&mut input, OPENSEARCH_3_7_0).unwrap_err()
                 }
                 other => panic!("{}: unsupported decoder {other}", case.name),
@@ -8444,19 +8458,13 @@ mod tests {
                 "no_cluster_manager" => {}
                 "cluster_manager_missing_from_nodes" => {
                     state.discovery_nodes.cluster_manager_node_id = Some("missing-node".into());
-                    state.discovery_nodes.nodes = vec![interop_discovery_node(
-                        "node-1",
-                        "interop-node-1",
-                        9300,
-                    )];
+                    state.discovery_nodes.nodes =
+                        vec![interop_discovery_node("node-1", "interop-node-1", 9300)];
                 }
                 "single_node" => {
                     state.discovery_nodes.cluster_manager_node_id = Some("node-1".into());
-                    state.discovery_nodes.nodes = vec![interop_discovery_node(
-                        "node-1",
-                        "interop-node-1",
-                        9300,
-                    )];
+                    state.discovery_nodes.nodes =
+                        vec![interop_discovery_node("node-1", "interop-node-1", 9300)];
                 }
                 other => panic!("{}: unknown state shape {other}", case.name),
             }
@@ -8469,14 +8477,17 @@ mod tests {
                 }
                 InteropReadForwardingError::MissingDiscoveryNode { .. } => {
                     assert_eq!(
-                        case.expected_error_class,
-                        "MissingDiscoveryNode",
+                        case.expected_error_class, "MissingDiscoveryNode",
                         "{}",
                         case.name
                     );
                 }
                 InteropReadForwardingError::UnsupportedRequest { .. } => {
-                    assert_eq!(case.expected_error_class, "UnsupportedRequest", "{}", case.name);
+                    assert_eq!(
+                        case.expected_error_class, "UnsupportedRequest",
+                        "{}",
+                        case.name
+                    );
                 }
             }
         }
@@ -8518,8 +8529,15 @@ mod tests {
                 let actual_target = actual
                     .iter()
                     .find(|target| target.node_id == expected_target.node_id)
-                    .unwrap_or_else(|| panic!("{}: missing node {}", case.name, expected_target.node_id));
-                assert_eq!(actual_target.shards.len(), expected_target.shards.len(), "{}", case.name);
+                    .unwrap_or_else(|| {
+                        panic!("{}: missing node {}", case.name, expected_target.node_id)
+                    });
+                assert_eq!(
+                    actual_target.shards.len(),
+                    expected_target.shards.len(),
+                    "{}",
+                    case.name
+                );
                 for expected_shard in &expected_target.shards {
                     assert!(
                         actual_target.shards.iter().any(|shard| {
@@ -8546,11 +8564,8 @@ mod tests {
 
         for case in fixture.cases {
             let mut state = minimal_cluster_state_with_uuid("cached-state-uuid");
-            state.discovery_nodes.nodes = vec![interop_discovery_node(
-                "node-1",
-                "interop-node-1",
-                9300,
-            )];
+            state.discovery_nodes.nodes =
+                vec![interop_discovery_node("node-1", "interop-node-1", 9300)];
             state.discovery_nodes.cluster_manager_node_id = Some("node-1".into());
             state.routing_table.indices = vec![IndexRoutingTable {
                 index_name: "logs-interop".into(),
@@ -8581,7 +8596,11 @@ mod tests {
             let error = plan_interop_search_forwarding(&state, &case.indices).unwrap_err();
             match error {
                 InteropSearchRoutingError::MissingStartedShard { .. } => {
-                    assert_eq!(case.expected_error_class, "MissingStartedShard", "{}", case.name);
+                    assert_eq!(
+                        case.expected_error_class, "MissingStartedShard",
+                        "{}",
+                        case.name
+                    );
                 }
                 other => panic!("{}: unexpected error {other:?}", case.name),
             }
@@ -8597,11 +8616,8 @@ mod tests {
 
         for case in fixture.cases {
             let mut state = minimal_cluster_state_with_uuid("cached-state-uuid");
-            state.discovery_nodes.nodes = vec![interop_discovery_node(
-                "node-1",
-                "interop-node-1",
-                9300,
-            )];
+            state.discovery_nodes.nodes =
+                vec![interop_discovery_node("node-1", "interop-node-1", 9300)];
             state.discovery_nodes.cluster_manager_node_id = Some("node-1".into());
             state.routing_table.indices = vec![IndexRoutingTable {
                 index_name: "interop-write-forwarding".into(),
@@ -8641,13 +8657,21 @@ mod tests {
 
             match error {
                 InteropWriteForwardingError::UnsupportedRequest { .. } => {
-                    assert_eq!(case.expected_error_class, "UnsupportedRequest", "{}", case.name);
+                    assert_eq!(
+                        case.expected_error_class, "UnsupportedRequest",
+                        "{}",
+                        case.name
+                    );
                 }
                 InteropWriteForwardingError::GateDisabled { .. } => {
                     assert_eq!(case.expected_error_class, "GateDisabled", "{}", case.name);
                 }
                 InteropWriteForwardingError::MissingPrimaryShard { .. } => {
-                    assert_eq!(case.expected_error_class, "MissingPrimaryShard", "{}", case.name);
+                    assert_eq!(
+                        case.expected_error_class, "MissingPrimaryShard",
+                        "{}",
+                        case.name
+                    );
                 }
                 InteropWriteForwardingError::RetryUnsafe { .. } => {
                     assert_eq!(case.expected_error_class, "RetryUnsafe", "{}", case.name);
@@ -8733,13 +8757,25 @@ mod tests {
 
             match error {
                 MixedClusterAllocationAdmissionError::UnsupportedShardState { .. } => {
-                    assert_eq!(case.expected_error_class, "UnsupportedShardState", "{}", case.name)
+                    assert_eq!(
+                        case.expected_error_class, "UnsupportedShardState",
+                        "{}",
+                        case.name
+                    )
                 }
                 MixedClusterAllocationAdmissionError::MissingAllocationId { .. } => {
-                    assert_eq!(case.expected_error_class, "MissingAllocationId", "{}", case.name)
+                    assert_eq!(
+                        case.expected_error_class, "MissingAllocationId",
+                        "{}",
+                        case.name
+                    )
                 }
                 MixedClusterAllocationAdmissionError::InvalidStoreContract { .. } => {
-                    assert_eq!(case.expected_error_class, "InvalidStoreContract", "{}", case.name)
+                    assert_eq!(
+                        case.expected_error_class, "InvalidStoreContract",
+                        "{}",
+                        case.name
+                    )
                 }
             }
         }
@@ -8770,10 +8806,18 @@ mod tests {
 
             match error {
                 MixedClusterRecoveryAdmissionError::UnsupportedRecoverySource { .. } => {
-                    assert_eq!(case.expected_error_class, "UnsupportedRecoverySource", "{}", case.name)
+                    assert_eq!(
+                        case.expected_error_class, "UnsupportedRecoverySource",
+                        "{}",
+                        case.name
+                    )
                 }
                 MixedClusterRecoveryAdmissionError::RelocationInterrupted { .. } => {
-                    assert_eq!(case.expected_error_class, "RelocationInterrupted", "{}", case.name)
+                    assert_eq!(
+                        case.expected_error_class, "RelocationInterrupted",
+                        "{}",
+                        case.name
+                    )
                 }
             }
         }
@@ -8825,12 +8869,8 @@ mod tests {
             }),
             expected_shard_size: None,
         };
-        validate_mixed_cluster_allocation_admission(
-            "logs-phase-c-000001",
-            0,
-            &primary_routing,
-        )
-        .unwrap();
+        validate_mixed_cluster_allocation_admission("logs-phase-c-000001", 0, &primary_routing)
+            .unwrap();
 
         validate_mixed_cluster_peer_recovery_admission(
             "logs-phase-c-000001",
