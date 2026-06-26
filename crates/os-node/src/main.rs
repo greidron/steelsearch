@@ -5810,6 +5810,9 @@ fn local_transport_query_matches(
             }
             lookup_transport_source_value(source, &exists.field_name).is_some()
         }
+        Some(os_transport::action::OpenSearchQueryBuilderWire::FieldMaskingSpan(query)) => {
+            local_transport_query_matches(source, id, Some(query.query.as_ref()))
+        }
         Some(os_transport::action::OpenSearchQueryBuilderWire::FunctionScore(query)) => {
             query.min_score.is_none()
                 && local_transport_query_matches(source, id, Some(query.query.as_ref()))
@@ -5894,6 +5897,23 @@ fn local_transport_query_matches(
                     && query.zero_terms_query
                         == os_transport::action::OpenSearchZeroTermsQueryWire::All)
         }
+        Some(os_transport::action::OpenSearchQueryBuilderWire::MoreLikeThis(query)) => {
+            let fields = query
+                .fields
+                .as_deref()
+                .unwrap_or_default()
+                .iter()
+                .map(String::as_str)
+                .collect::<Vec<_>>();
+            let haystacks = collect_transport_searchable_field_values(source, Some(&fields));
+            query.like_texts.first().is_some_and(|like| {
+                local_transport_match_query_matches(
+                    &haystacks,
+                    like,
+                    os_transport::action::OpenSearchMatchOperatorWire::Or,
+                )
+            })
+        }
         Some(os_transport::action::OpenSearchQueryBuilderWire::MultiMatch(query)) => {
             let fields = query
                 .fields
@@ -5927,6 +5947,26 @@ fn local_transport_query_matches(
                 local_transport_string_has_prefix(value, &prefix.value, prefix.case_insensitive)
             })
         }
+        Some(os_transport::action::OpenSearchQueryBuilderWire::QueryString(query)) => {
+            let fields = if query.fields.is_empty() {
+                query.default_field.as_deref().map(|field| vec![field])
+            } else {
+                Some(
+                    query
+                        .fields
+                        .iter()
+                        .map(|field| field.field_name.as_str())
+                        .collect::<Vec<_>>(),
+                )
+            };
+            let haystacks = collect_transport_searchable_field_values(source, fields.as_deref());
+            local_transport_query_string_matches(
+                &haystacks,
+                &query.query_string,
+                query.default_operator,
+                false,
+            )
+        }
         Some(os_transport::action::OpenSearchQueryBuilderWire::Range(range)) => {
             let value = if range.field_name == "_id" {
                 Some(Value::String(id.to_string()))
@@ -5948,6 +5988,26 @@ fn local_transport_query_matches(
         Some(os_transport::action::OpenSearchQueryBuilderWire::ScriptScore(query)) => {
             query.min_score.is_none()
                 && local_transport_query_matches(source, id, Some(query.query.as_ref()))
+        }
+        Some(os_transport::action::OpenSearchQueryBuilderWire::SimpleQueryString(query)) => {
+            let fields = if query.fields.is_empty() {
+                None
+            } else {
+                Some(
+                    query
+                        .fields
+                        .iter()
+                        .map(|field| field.field_name.as_str())
+                        .collect::<Vec<_>>(),
+                )
+            };
+            let haystacks = collect_transport_searchable_field_values(source, fields.as_deref());
+            local_transport_query_string_matches(
+                &haystacks,
+                &query.query_text,
+                query.default_operator,
+                true,
+            )
         }
         Some(os_transport::action::OpenSearchQueryBuilderWire::SpanMulti(query)) => {
             local_transport_query_matches(source, id, Some(query.query.as_ref()))
@@ -6259,6 +6319,52 @@ fn local_transport_text_query_matches(
     query_text: &str,
     operator: os_transport::action::OpenSearchMatchOperatorWire,
 ) -> bool {
+    local_transport_match_query_matches(haystacks, query_text, operator)
+}
+
+fn local_transport_query_string_matches(
+    haystacks: &[String],
+    query_text: &str,
+    operator: os_transport::action::OpenSearchMatchOperatorWire,
+    simple_syntax: bool,
+) -> bool {
+    let explicit_or = if simple_syntax && query_text.contains('|') {
+        Some(
+            query_text
+                .split('|')
+                .map(str::trim)
+                .filter(|part| !part.is_empty())
+                .map(str::to_string)
+                .collect::<Vec<_>>(),
+        )
+    } else if query_text.contains(" OR ") {
+        Some(
+            query_text
+                .split(" OR ")
+                .map(str::trim)
+                .filter(|part| !part.is_empty())
+                .map(str::to_string)
+                .collect::<Vec<_>>(),
+        )
+    } else {
+        None
+    };
+    if let Some(disjuncts) = explicit_or {
+        return disjuncts.iter().any(|disjunct| {
+            local_transport_match_query_matches(
+                haystacks,
+                disjunct,
+                os_transport::action::OpenSearchMatchOperatorWire::And,
+            )
+        });
+    }
+    if query_text.contains(" AND ") {
+        return local_transport_match_query_matches(
+            haystacks,
+            query_text,
+            os_transport::action::OpenSearchMatchOperatorWire::And,
+        );
+    }
     local_transport_match_query_matches(haystacks, query_text, operator)
 }
 
@@ -16523,6 +16629,110 @@ mod tests {
                                                                                 max_expansions: 50,
                                                                                 fuzzy_transpositions: true,
                                                                                 fuzzy_rewrite: None,
+                                                                            },
+                                                                        ),
+                                                                        os_transport::action::OpenSearchQueryBuilderWire::QueryString(
+                                                                            os_transport::action::OpenSearchQueryStringQueryBuilderWire {
+                                                                                boost: 1.0,
+                                                                                query_name: None,
+                                                                                query_string: "steel AND transport".to_string(),
+                                                                                default_field: None,
+                                                                                fields: vec![
+                                                                                    os_transport::action::OpenSearchQueryStringFieldBoostWire {
+                                                                                        field_name: "title".to_string(),
+                                                                                        boost: 1.0,
+                                                                                    },
+                                                                                    os_transport::action::OpenSearchQueryStringFieldBoostWire {
+                                                                                        field_name: "description".to_string(),
+                                                                                        boost: 1.0,
+                                                                                    },
+                                                                                ],
+                                                                                default_operator: os_transport::action::OpenSearchMatchOperatorWire::And,
+                                                                                analyzer: None,
+                                                                                quote_analyzer: None,
+                                                                                quote_field_suffix: None,
+                                                                                allow_leading_wildcard: Some(false),
+                                                                                analyze_wildcard: Some(false),
+                                                                                enable_position_increments: true,
+                                                                                fuzziness: os_transport::action::OpenSearchFuzzinessWire {
+                                                                                    value: "AUTO".to_string(),
+                                                                                    custom_auto: None,
+                                                                                },
+                                                                                fuzzy_prefix_length: 0,
+                                                                                fuzzy_max_expansions: 50,
+                                                                                fuzzy_rewrite: None,
+                                                                                phrase_slop: 0,
+                                                                                query_type: os_transport::action::OpenSearchMultiMatchTypeWire::BestFields,
+                                                                                tie_breaker: None,
+                                                                                rewrite: None,
+                                                                                minimum_should_match: None,
+                                                                                lenient: Some(false),
+                                                                                time_zone: None,
+                                                                                escape: false,
+                                                                                max_determinized_states: 10_000,
+                                                                                auto_generate_synonyms_phrase_query: true,
+                                                                                fuzzy_transpositions: true,
+                                                                            },
+                                                                        ),
+                                                                        os_transport::action::OpenSearchQueryBuilderWire::SimpleQueryString(
+                                                                            os_transport::action::OpenSearchSimpleQueryStringQueryBuilderWire {
+                                                                                boost: 1.0,
+                                                                                query_name: None,
+                                                                                query_text: "reader | missing".to_string(),
+                                                                                fields: vec![os_transport::action::OpenSearchSimpleQueryStringFieldBoostWire {
+                                                                                    field_name: "description".to_string(),
+                                                                                    boost: 1.0,
+                                                                                }],
+                                                                                flags: 1023,
+                                                                                analyzer: None,
+                                                                                default_operator: os_transport::action::OpenSearchMatchOperatorWire::Or,
+                                                                                lenient: false,
+                                                                                lenient_set: true,
+                                                                                analyze_wildcard: false,
+                                                                                minimum_should_match: None,
+                                                                                quote_field_suffix: None,
+                                                                                auto_generate_synonyms_phrase_query: true,
+                                                                                fuzzy_prefix_length: 0,
+                                                                                fuzzy_max_expansions: 50,
+                                                                                fuzzy_transpositions: true,
+                                                                            },
+                                                                        ),
+                                                                        os_transport::action::OpenSearchQueryBuilderWire::MoreLikeThis(
+                                                                            os_transport::action::OpenSearchMoreLikeThisQueryBuilderWire {
+                                                                                boost: 1.0,
+                                                                                query_name: None,
+                                                                                fields: Some(vec!["message".to_string(), "title".to_string()]),
+                                                                                like_texts: vec!["steel search".to_string()],
+                                                                                unlike_texts: Vec::new(),
+                                                                                max_query_terms: 25,
+                                                                                min_term_freq: 0,
+                                                                                min_doc_freq: 0,
+                                                                                max_doc_freq: i32::MAX,
+                                                                                min_word_length: 0,
+                                                                                max_word_length: 0,
+                                                                                stop_words: None,
+                                                                                analyzer: None,
+                                                                                minimum_should_match: "30%".to_string(),
+                                                                                boost_terms: serde_json::json!(0.0),
+                                                                                include: false,
+                                                                                fail_on_unsupported_field: true,
+                                                                            },
+                                                                        ),
+                                                                        os_transport::action::OpenSearchQueryBuilderWire::FieldMaskingSpan(
+                                                                            os_transport::action::OpenSearchFieldMaskingSpanQueryBuilderWire {
+                                                                                boost: 1.0,
+                                                                                query_name: None,
+                                                                                query: Box::new(
+                                                                                    os_transport::action::OpenSearchQueryBuilderWire::SpanTerm(
+                                                                                        os_transport::action::OpenSearchSpanTermQueryBuilderWire {
+                                                                                            boost: 1.0,
+                                                                                            query_name: None,
+                                                                                            field_name: "category".to_string(),
+                                                                                            value: serde_json::json!("prod-api"),
+                                                                                        },
+                                                                                    ),
+                                                                                ),
+                                                                                field_name: "category.masked".to_string(),
                                                                             },
                                                                         ),
                                                                         os_transport::action::OpenSearchQueryBuilderWire::Fuzzy(
