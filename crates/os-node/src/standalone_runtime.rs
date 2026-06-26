@@ -53632,6 +53632,33 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(sliced_pit.body["hits"]["total"]["value"], 1);
         assert_eq!(sliced_pit.body["hits"]["hits"][0]["_id"], "doc-1");
 
+        let mut sliced_pit_ids = BTreeSet::new();
+        for slice_id in 0..2 {
+            let slice_response = node.handle_rest_request(
+                RestRequest::new(RestMethod::Post, "/_search").with_json_body(serde_json::json!({
+                    "pit": { "id": search_params_pit_id, "keep_alive": "1m" },
+                    "query": { "match_all": {} },
+                    "slice": { "id": slice_id, "max": 2 },
+                    "sort": [{ "rank": "asc" }]
+                })),
+            );
+            assert_eq!(slice_response.status, 200, "{slice_id}");
+            for hit in slice_response.body["hits"]["hits"]
+                .as_array()
+                .expect("hits")
+            {
+                let id = hit["_id"].as_str().expect("hit id").to_string();
+                assert!(
+                    sliced_pit_ids.insert(id.clone()),
+                    "duplicate sliced PIT hit {id}"
+                );
+            }
+        }
+        assert_eq!(
+            sliced_pit_ids,
+            BTreeSet::from(["doc-1".to_string(), "doc-2".to_string()])
+        );
+
         let oversized_pit_slice = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/_search").with_json_body(serde_json::json!({
                 "pit": { "id": search_params_pit_id, "keep_alive": "1m" },
