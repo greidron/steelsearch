@@ -11973,6 +11973,11 @@ impl SteelNode {
             .unwrap_or_else(|| serde_json::json!({}));
         let next_persistent = merge_cluster_settings_section_flat(&current_persistent, &persistent);
         let next_transient = merge_cluster_settings_section_flat(&current_transient, &transient);
+        if let Some(response) =
+            validate_pit_cluster_keep_alive_settings(&next_persistent, &next_transient)
+        {
+            return response;
+        }
         let response_body =
             cluster_settings_route_registration::build_cluster_settings_mutation_response_body(
                 &render_cluster_settings_section(&next_persistent, false),
@@ -30686,6 +30691,71 @@ fn merge_cluster_settings_section_flat(base: &Value, patch: &Value) -> Value {
     Value::Object(merged)
 }
 
+fn validate_pit_cluster_keep_alive_settings(
+    persistent: &Value,
+    transient: &Value,
+) -> Option<RestResponse> {
+    let default_keep_alive = effective_cluster_time_setting_millis(
+        persistent,
+        transient,
+        "search.default_keep_alive",
+        300_000,
+    )?;
+    let max_pit_keep_alive = effective_cluster_time_setting_millis(
+        persistent,
+        transient,
+        "point_in_time.max_keep_alive",
+        DEFAULT_MAX_PIT_KEEP_ALIVE_MILLIS,
+    )?;
+    if default_keep_alive <= max_pit_keep_alive {
+        return None;
+    }
+    let reason = format!(
+        "Default keep alive setting for request [search.default_keep_alive] should be smaller than max keep alive for PIT [point_in_time.max_keep_alive], was ({} > {})",
+        format_time_value_millis(default_keep_alive),
+        format_time_value_millis(max_pit_keep_alive)
+    );
+    Some(RestResponse::json(
+        400,
+        serde_json::json!({
+            "error": {
+                "type": "illegal_argument_exception",
+                "reason": reason,
+                "root_cause": [
+                    {
+                        "type": "illegal_argument_exception",
+                        "reason": reason
+                    }
+                ]
+            },
+            "status": 400
+        }),
+    ))
+}
+
+fn effective_cluster_time_setting_millis(
+    persistent: &Value,
+    transient: &Value,
+    key: &str,
+    default_millis: u64,
+) -> Option<u64> {
+    cluster_time_setting_millis(transient, key)
+        .or_else(|| cluster_time_setting_millis(persistent, key))
+        .or(Some(default_millis))
+}
+
+fn cluster_time_setting_millis(section: &Value, key: &str) -> Option<u64> {
+    let value = section.get(key)?;
+    if value.is_null() {
+        return None;
+    }
+    match value {
+        Value::String(raw) => parse_time_value_millis(raw),
+        Value::Number(number) => number.as_u64(),
+        _ => None,
+    }
+}
+
 fn render_cluster_settings_section(section: &Value, flat_settings: bool) -> Value {
     if flat_settings {
         return match section {
@@ -44281,6 +44351,109 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             fractional_keep_alive_pit.body["error"]["root_cause"][0]["reason"],
             "failed to parse [1.5s], fractional time values are not supported"
         );
+    }
+
+    #[test]
+    fn cluster_settings_validate_pit_default_keep_alive_against_max_like_opensearch() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        let invalid_combined = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/_cluster/settings").with_json_body(
+                serde_json::json!({
+                    "persistent": {
+                        "point_in_time.max_keep_alive": "1m",
+                        "search.default_keep_alive": "2m"
+                    }
+                }),
+            ),
+        );
+        assert_eq!(invalid_combined.status, 400);
+        assert_eq!(
+            invalid_combined.body["error"]["type"],
+            "illegal_argument_exception"
+        );
+        assert!(invalid_combined.body["error"]["reason"]
+            .as_str()
+            .unwrap()
+            .contains("was (2m > 1m)"));
+
+        let valid_equal = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/_cluster/settings").with_json_body(
+                serde_json::json!({
+                    "persistent": {
+                        "search.default_keep_alive": "5m",
+                        "point_in_time.max_keep_alive": "5m"
+                    }
+                }),
+            ),
+        );
+        assert_eq!(valid_equal.status, 200);
+
+        let valid_lower_default = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/_cluster/settings").with_json_body(
+                serde_json::json!({
+                    "persistent": {
+                        "search.default_keep_alive": "2m"
+                    }
+                }),
+            ),
+        );
+        assert_eq!(valid_lower_default.status, 200);
+
+        let valid_lower_max = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/_cluster/settings").with_json_body(
+                serde_json::json!({
+                    "persistent": {
+                        "point_in_time.max_keep_alive": "2m"
+                    }
+                }),
+            ),
+        );
+        assert_eq!(valid_lower_max.status, 200);
+
+        let invalid_default_raise = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/_cluster/settings").with_json_body(
+                serde_json::json!({
+                    "persistent": {
+                        "search.default_keep_alive": "3m"
+                    }
+                }),
+            ),
+        );
+        assert_eq!(invalid_default_raise.status, 400);
+        assert!(invalid_default_raise.body["error"]["reason"]
+            .as_str()
+            .unwrap()
+            .contains("was (3m > 2m)"));
+
+        let valid_default_lower = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/_cluster/settings").with_json_body(
+                serde_json::json!({
+                    "persistent": {
+                        "search.default_keep_alive": "1m"
+                    }
+                }),
+            ),
+        );
+        assert_eq!(valid_default_lower.status, 200);
+
+        let invalid_max_lower = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/_cluster/settings").with_json_body(
+                serde_json::json!({
+                    "persistent": {
+                        "point_in_time.max_keep_alive": "30s"
+                    }
+                }),
+            ),
+        );
+        assert_eq!(invalid_max_lower.status, 400);
+        assert!(invalid_max_lower.body["error"]["reason"]
+            .as_str()
+            .unwrap()
+            .contains("was (1m > 30s)"));
     }
 
     #[test]
