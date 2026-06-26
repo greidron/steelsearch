@@ -1389,7 +1389,7 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end_at_ms,
         )?;
     } else if is_request && normalized_action_hint == Some("indices:admin/mappings/get") {
-        let response = build_empty_get_mappings_response(request_id, header_version_id);
+        let response = build_get_mappings_response(request_id, header_version_id, &body);
         response_frame = summarize_transport_response_frame_for_action(
             &response,
             Some("indices:admin/mappings/get"),
@@ -4169,14 +4169,60 @@ fn flatten_string_settings(
     }
 }
 
-fn build_empty_get_mappings_response(request_id: i64, header_version_id: u32) -> Vec<u8> {
+fn build_get_mappings_response(request_id: i64, header_version_id: u32, body: &[u8]) -> Vec<u8> {
+    let request = decode_get_mappings_request_from_transport_body(body)
+        .filter(|request| request.validate_supported_subset().is_ok())
+        .unwrap_or_default();
+    let response = get_mappings_response_from_metadata_manifest(
+        &dev_transport_pit_bindings()
+            .metadata_manifest
+            .lock()
+            .expect("metadata manifest lock poisoned"),
+        &request,
+    );
     os_transport::action::build_opensearch_get_mappings_response_message(
         request_id,
         Version::from_id(header_version_id as i32),
-        &os_transport::action::OpenSearchGetMappingsResponseWire::empty(),
+        &response,
     )
     .map(|frame| frame.to_vec())
     .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
+}
+
+fn decode_get_mappings_request_from_transport_body(
+    body: &[u8],
+) -> Option<os_transport::action::OpenSearchGetMappingsRequestWire> {
+    let message = decode_transport_message_from_body(body)?;
+    os_transport::action::read_opensearch_get_mappings_request_message(&message).ok()
+}
+
+fn get_mappings_response_from_metadata_manifest(
+    metadata_manifest: &Value,
+    request: &os_transport::action::OpenSearchGetMappingsRequestWire,
+) -> os_transport::action::OpenSearchGetMappingsResponseWire {
+    if request.validate_supported_subset().is_err() {
+        return os_transport::action::OpenSearchGetMappingsResponseWire::empty();
+    }
+    let Some(indices) = metadata_manifest["indices"].as_object() else {
+        return os_transport::action::OpenSearchGetMappingsResponseWire::empty();
+    };
+    let empty_mapping_indices = indices
+        .iter()
+        .filter_map(|(index, entry)| {
+            let mappings_empty = entry
+                .get("mappings")
+                .and_then(Value::as_object)
+                .map_or(true, |mappings| mappings.is_empty());
+            if mappings_empty {
+                Some(index.clone())
+            } else {
+                None
+            }
+        })
+        .collect();
+    os_transport::action::OpenSearchGetMappingsResponseWire {
+        empty_mapping_indices,
+    }
 }
 
 fn build_empty_get_field_mappings_response(request_id: i64, header_version_id: u32) -> Vec<u8> {
@@ -7974,9 +8020,10 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
             header_version_id,
             body,
         )),
-        Some("indices:admin/mappings/get") => Some(build_empty_get_mappings_response(
+        Some("indices:admin/mappings/get") => Some(build_get_mappings_response(
             request_id,
             header_version_id,
+            body,
         )),
         Some("indices:admin/mappings/fields/get") => Some(build_empty_get_field_mappings_response(
             request_id,
@@ -12735,9 +12782,44 @@ mod tests {
     }
 
     #[test]
-    fn get_mappings_transport_route_builds_opensearch_shaped_empty_response() {
+    fn get_mappings_transport_route_builds_opensearch_shaped_empty_mapping_index_response() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        *dev_transport_pit_bindings()
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned") = serde_json::json!({
+            "indices": {
+                "logs-empty-mapping-000001": {
+                    "settings": {},
+                    "mappings": {},
+                    "aliases": {}
+                },
+                "logs-with-mapping-000001": {
+                    "settings": {},
+                    "mappings": {
+                        "properties": {
+                            "message": { "type": "text" }
+                        }
+                    },
+                    "aliases": {}
+                },
+                "metrics-empty-mapping-000001": {
+                    "settings": {},
+                    "aliases": {}
+                }
+            }
+        });
+        let request = os_transport::action::OpenSearchGetMappingsRequestWire::default();
+        let frame = os_transport::action::build_opensearch_get_mappings_request_message(
+            84,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
         let response =
-            build_empty_get_mappings_response(84, OPENSEARCH_3_7_0_TRANSPORT.id() as u32);
+            build_get_mappings_response(84, OPENSEARCH_3_7_0_TRANSPORT.id() as u32, &frame[6..]);
         let mut frame = BytesMut::from(&response[..]);
         let os_transport::frame::DecodedFrame::Message(message) =
             os_transport::frame::decode_frame(&mut frame)
@@ -12751,7 +12833,10 @@ mod tests {
         assert!(!message.status.is_request());
         let response =
             os_transport::action::read_opensearch_get_mappings_response_message(&message).unwrap();
-        assert!(response.empty_mapping_indices.is_empty());
+        assert_eq!(
+            response.empty_mapping_indices,
+            vec!["logs-empty-mapping-000001", "metrics-empty-mapping-000001"]
+        );
     }
 
     #[test]
