@@ -2169,6 +2169,47 @@
       "description": "[admin-cat] targeted count GET value"
     },
     {
+      "name": "count_root_get_value",
+      "area": "search",
+      "method": "GET",
+      "path": "/_count",
+      "extract": "count_value",
+      "family": "admin-cat",
+      "description": "[admin-cat] root count GET value"
+    },
+    {
+      "name": "count_root_post_query_value",
+      "area": "search",
+      "method": "POST",
+      "path": "/_count",
+      "body": {
+        "query": {
+          "term": {
+            "service": "catalog"
+          }
+        }
+      },
+      "extract": "count_query",
+      "family": "admin-cat",
+      "description": "[admin-cat] root count POST query value"
+    },
+    {
+      "name": "count_target_post_query_value",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_count",
+      "body": {
+        "query": {
+          "term": {
+            "service": "catalog"
+          }
+        }
+      },
+      "extract": "count_query",
+      "family": "admin-cat",
+      "description": "[admin-cat] targeted count POST query value"
+    },
+    {
       "name": "search_root_get_default_hits",
       "area": "search",
       "method": "GET",

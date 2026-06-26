@@ -9186,7 +9186,10 @@ impl SteelNode {
         }
         let requested_target = target.unwrap_or("_all");
         let resolved_indices = if requested_target == "_all" {
-            None
+            Some(match self.resolve_search_targets("*", false, true, "open") {
+                Ok(indices) => indices,
+                Err(response) => return response,
+            })
         } else {
             let ignore_unavailable =
                 query_param_is_true(request.query_params.get("ignore_unavailable"));
@@ -9213,6 +9216,15 @@ impl SteelNode {
             indices.dedup();
             Some(indices)
         };
+        let shard_total = resolved_indices
+            .as_ref()
+            .map(|indices| {
+                indices
+                    .iter()
+                    .map(|index| self.index_primary_shard_count(index))
+                    .sum::<usize>()
+            })
+            .unwrap_or(1);
         let requested_routing_values = request
             .query_params
             .get("routing")
@@ -9258,8 +9270,8 @@ impl SteelNode {
             serde_json::json!({
                 "count": count,
                 "_shards": {
-                    "total": 1,
-                    "successful": 1,
+                    "total": shard_total,
+                    "successful": shard_total,
                     "skipped": 0,
                     "failed": 0
                 }
@@ -48316,11 +48328,15 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         );
         assert_eq!(root_count.status, 200);
         assert_eq!(root_count.body["count"], 2);
+        assert_eq!(root_count.body["_shards"]["total"], 2);
+        assert_eq!(root_count.body["_shards"]["successful"], 2);
 
         let root_default_count =
             node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_count"));
         assert_eq!(root_default_count.status, 200);
         assert_eq!(root_default_count.body["count"], 2);
+        assert_eq!(root_default_count.body["_shards"]["total"], 2);
+        assert_eq!(root_default_count.body["_shards"]["successful"], 2);
 
         let targeted_default_count =
             node.handle_rest_request(RestRequest::new(RestMethod::Get, "/logs-count-*/_count"));

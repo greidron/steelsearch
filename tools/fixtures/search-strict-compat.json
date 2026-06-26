@@ -5837,6 +5837,60 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "count_root_get_value",
+      "area": "search",
+      "method": "GET",
+      "path": "/_count",
+      "extract": "count_value",
+      "family": "lexical",
+      "description": "[lexical] root count GET value",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "count_target_get_value",
+      "area": "search",
+      "method": "GET",
+      "path": "/logs-compat/_count",
+      "extract": "count_value",
+      "family": "lexical",
+      "description": "[lexical] targeted count GET value",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "count_root_post_query_value",
+      "area": "search",
+      "method": "POST",
+      "path": "/_count",
+      "body": {
+        "query": {
+          "term": {
+            "service": "catalog"
+          }
+        }
+      },
+      "extract": "count_query",
+      "family": "lexical",
+      "description": "[lexical] root count POST query value",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "count_target_post_query_value",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_count",
+      "body": {
+        "query": {
+          "term": {
+            "service": "catalog"
+          }
+        }
+      },
+      "extract": "count_query",
+      "family": "lexical",
+      "description": "[lexical] targeted count POST query value",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "count_query_string_url_q_search",
       "area": "search",
       "method": "GET",
