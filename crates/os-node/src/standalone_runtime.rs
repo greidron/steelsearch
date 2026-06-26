@@ -24135,6 +24135,7 @@ fn validate_search_query_body(query: &Value) -> Option<RestResponse> {
         | "fuzzy"
         | "exists"
         | "terms_set"
+        | "wrapper"
         | "nested"
         | "constant_score"
         | "geo_distance"
@@ -24293,6 +24294,16 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
             ));
         };
         if let Some(response) = validate_search_query_body(inner_query) {
+            return Some(response);
+        }
+    }
+    if query.get("wrapper").is_some() {
+        let Ok(inner_query) = decode_wrapper_query(query) else {
+            return Some(build_unsupported_search_response(
+                "unsupported wrapper query shape",
+            ));
+        };
+        if let Some(response) = validate_search_query_body(&inner_query) {
             return Some(response);
         }
     }
@@ -26540,6 +26551,10 @@ fn evaluate_search_query_source_with_mappings(
             evaluate_search_query_source_with_mappings(source, doc_id, inner_query, mappings)?;
         return Some((matched, if matched { 1.0 } else { 0.0 }));
     }
+    if query.get("wrapper").is_some() {
+        let inner_query = decode_wrapper_query(query).ok()?;
+        return evaluate_search_query_source_with_mappings(source, doc_id, &inner_query, mappings);
+    }
     if let Some(function_score) = query.get("function_score").and_then(Value::as_object) {
         let inner_query = function_score.get("query")?;
         let (matched, inner_score) =
@@ -26874,6 +26889,17 @@ fn value_matches_terms(
     expected_values
         .iter()
         .any(|expected| value_matches_term(candidate, expected, field_type))
+}
+
+fn decode_wrapper_query(query: &Value) -> Result<Value, ()> {
+    let encoded = query
+        .get("wrapper")
+        .and_then(Value::as_object)
+        .and_then(|wrapper| wrapper.get("query"))
+        .and_then(Value::as_str)
+        .ok_or(())?;
+    let decoded = decode_base64_standard(encoded).ok_or(())?;
+    serde_json::from_slice::<Value>(&decoded).map_err(|_| ())
 }
 
 fn lookup_query_field_mapping_type<'a>(mappings: &'a Value, field: &str) -> Option<&'a str> {
@@ -52710,6 +52736,61 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(constant_score_query.status, 200);
         assert_eq!(constant_score_query.body["hits"]["total"]["value"], 1);
         assert_eq!(constant_score_query.body["hits"]["hits"][0]["_id"], "doc-1");
+
+        let wrapper_query = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-dsl-000001/_search").with_json_body(
+                serde_json::json!({
+                    "query": {
+                        "wrapper": {
+                            "query": "eyJ0ZXJtIjp7ImNvZGUiOiJhbHBoYS0xIn19"
+                        }
+                    }
+                }),
+            ),
+        );
+        assert_eq!(wrapper_query.status, 200);
+        assert_eq!(wrapper_query.body["hits"]["total"]["value"], 1);
+        assert_eq!(wrapper_query.body["hits"]["hits"][0]["_id"], "doc-1");
+
+        let wrapper_inside_bool = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-dsl-000001/_search").with_json_body(
+                serde_json::json!({
+                    "query": {
+                        "bool": {
+                            "must": [
+                                {
+                                    "wrapper": {
+                                        "query": "eyJ0ZXJtIjp7ImNvZGUiOiJhbHBoYS0xIn19"
+                                    }
+                                },
+                                {
+                                    "term": { "contact_email": "alpha@example.com" }
+                                }
+                            ]
+                        }
+                    }
+                }),
+            ),
+        );
+        assert_eq!(wrapper_inside_bool.status, 200);
+        assert_eq!(wrapper_inside_bool.body["hits"]["total"]["value"], 1);
+        assert_eq!(wrapper_inside_bool.body["hits"]["hits"][0]["_id"], "doc-1");
+
+        let wrapper_post_filter = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-dsl-000001/_search").with_json_body(
+                serde_json::json!({
+                    "query": { "match_all": {} },
+                    "post_filter": {
+                        "wrapper": {
+                            "query": "eyJ0ZXJtIjp7InRhZ3MiOiJncmVlbiJ9fQ=="
+                        }
+                    }
+                }),
+            ),
+        );
+        assert_eq!(wrapper_post_filter.status, 200);
+        assert_eq!(wrapper_post_filter.body["hits"]["total"]["value"], 1);
+        assert_eq!(wrapper_post_filter.body["hits"]["hits"][0]["_id"], "doc-2");
 
         let nested = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/logs-search-dsl-000001/_search").with_json_body(
