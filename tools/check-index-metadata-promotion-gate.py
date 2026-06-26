@@ -7,6 +7,15 @@ import argparse
 import json
 from pathlib import Path
 
+DEFAULT_COMPAT_FIXTURES = [
+    "tools/fixtures/index-lifecycle-compat.json",
+    "tools/fixtures/mapping-compat.json",
+    "tools/fixtures/settings-compat.json",
+    "tools/fixtures/alias-read-compat.json",
+    "tools/fixtures/template-compat.json",
+    "tools/fixtures/data-stream-rollover-compat.json",
+]
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
@@ -14,6 +23,12 @@ def parse_args() -> argparse.Namespace:
         "fixture",
         nargs="?",
         default="tools/fixtures/index-metadata-promotion-gate.json",
+    )
+    parser.add_argument(
+        "--compat-fixture",
+        action="append",
+        default=[],
+        help="Index metadata compatibility fixture whose cases must be promoted.",
     )
     return parser.parse_args()
 
@@ -27,6 +42,15 @@ def ensure_subset(name: str, actual: list[str], required: set[str]) -> None:
 def main() -> int:
     args = parse_args()
     fixture = json.loads(Path(args.fixture).read_text(encoding="utf-8"))
+    compat_fixture_paths = args.compat_fixture or DEFAULT_COMPAT_FIXTURES
+    required_cases = set()
+    for compat_fixture_path in compat_fixture_paths:
+        compat_fixture = json.loads(Path(compat_fixture_path).read_text(encoding="utf-8"))
+        required_cases.update(
+            case["name"]
+            for case in compat_fixture.get("cases", [])
+            if isinstance(case, dict) and case.get("name")
+        )
 
     if fixture.get("source_area") != "Index create/get/delete and mappings/settings":
         raise SystemExit("index metadata promotion gate fixture has the wrong source_area")
@@ -69,25 +93,14 @@ def main() -> int:
     ensure_subset(
         "semantic_parity.required_cases",
         semantic.get("required_cases") or [],
-        {
-            "get_component_template_readback",
-            "get_index_template_readback",
-            "templated_index_application_readback",
-            "get_data_stream_metadata_readback",
-            "get_data_stream_stats_readback",
-            "delete_data_stream_ack",
-            "dynamic_mapping_readback",
-            "mapping_conflict_reject",
-            "settings_targeted_named_readback",
-            "settings_targeted_flat_readback",
-            "settings_global_named_readback",
-            "wildcard_index_read_visible_only",
-            "settings_hidden_wildcard_put_ack",
-            "settings_hidden_target_readback",
-            "wildcard_alias_readback",
-            "get_created_alias_readback",
-        },
+        required_cases,
     )
+    stale_required_cases = sorted(set(semantic.get("required_cases") or []) - required_cases)
+    if stale_required_cases:
+        raise SystemExit(
+            "semantic_parity.required_cases contains non-index-metadata compat entries: "
+            f"{stale_required_cases}"
+        )
     ensure_subset(
         "security_parity.report_paths",
         security.get("report_paths") or [],
