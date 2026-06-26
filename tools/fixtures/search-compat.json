@@ -4037,6 +4037,192 @@
       "description": "[lexical] pit clear search"
     },
     {
+      "name": "pit_search_after_close_missing_context",
+      "area": "search",
+      "extract": "search_error",
+      "steps": [
+        {
+          "name": "pit-open",
+          "method": "POST",
+          "path": "/logs-compat/_search/point_in_time?keep_alive=1m",
+          "body": null,
+          "expected_status": 200,
+          "extract": "pit_open",
+          "save": {
+            "pit_id": "body.pit_id"
+          }
+        },
+        {
+          "name": "pit-clear",
+          "method": "DELETE",
+          "path": "/_search/point_in_time",
+          "body": {
+            "pit_id": "${saved.pit_id}"
+          },
+          "expected_status": 200,
+          "extract": "pit_clear"
+        },
+        {
+          "name": "pit-search-after-close",
+          "method": "POST",
+          "path": "/_search",
+          "body": {
+            "pit": {
+              "id": "${saved.pit_id}",
+              "keep_alive": "1m"
+            },
+            "query": {
+              "match_all": {}
+            }
+          },
+          "expected_status": 404,
+          "extract": "search_error"
+        }
+      ],
+      "family": "lexical",
+      "description": "[lexical] closed PIT search returns a missing search context error"
+    },
+    {
+      "name": "pit_list_search",
+      "area": "search",
+      "extract": "pit_list",
+      "steps": [
+        {
+          "name": "pit-open",
+          "method": "POST",
+          "path": "/logs-compat/_search/point_in_time?keep_alive=1m",
+          "body": null,
+          "expected_status": 200,
+          "extract": "pit_open"
+        },
+        {
+          "name": "pit-list",
+          "method": "GET",
+          "path": "/_search/point_in_time/_all",
+          "body": null,
+          "expected_status": 200,
+          "extract": "pit_list"
+        }
+      ],
+      "family": "lexical",
+      "description": "[lexical] pit list search"
+    },
+    {
+      "name": "pit_clear_all_search",
+      "area": "search",
+      "extract": "pit_clear",
+      "steps": [
+        {
+          "name": "pit-open",
+          "method": "POST",
+          "path": "/logs-compat/_search/point_in_time?keep_alive=1m",
+          "body": null,
+          "expected_status": 200,
+          "extract": "pit_open"
+        },
+        {
+          "name": "pit-clear-all",
+          "method": "DELETE",
+          "path": "/_search/point_in_time/_all",
+          "body": null,
+          "expected_status": 200,
+          "extract": "pit_clear"
+        }
+      ],
+      "family": "lexical",
+      "description": "[lexical] pit clear all search"
+    },
+    {
+      "name": "pit_clear_all_path_ignores_body_search",
+      "area": "search",
+      "extract": "pit_clear",
+      "steps": [
+        {
+          "name": "pit-open",
+          "method": "POST",
+          "path": "/logs-compat/_search/point_in_time?keep_alive=1m",
+          "body": null,
+          "expected_status": 200,
+          "extract": "pit_open",
+          "save": {
+            "pit_id": "body.pit_id"
+          }
+        },
+        {
+          "name": "pit-clear-all-path-with-body",
+          "method": "DELETE",
+          "path": "/_search/point_in_time/_all",
+          "body": {
+            "pit_id": "pit-body-ignored"
+          },
+          "expected_status": 200,
+          "extract": "pit_clear"
+        }
+      ],
+      "family": "lexical",
+      "description": "[lexical] delete-all PIT ignores request body like OpenSearch RestDeletePitAction"
+    },
+    {
+      "name": "pit_clear_all_body_search",
+      "area": "search",
+      "extract": "pit_clear",
+      "steps": [
+        {
+          "name": "pit-open",
+          "method": "POST",
+          "path": "/logs-compat/_search/point_in_time?keep_alive=1m",
+          "body": null,
+          "expected_status": 200,
+          "extract": "pit_open"
+        },
+        {
+          "name": "pit-clear-all-body",
+          "method": "DELETE",
+          "path": "/_search/point_in_time",
+          "body": {
+            "pit_id": "_all"
+          },
+          "expected_status": 200,
+          "extract": "pit_clear"
+        }
+      ],
+      "family": "lexical",
+      "description": "[lexical] pit clear all body search"
+    },
+    {
+      "name": "pit_close_duplicate_ids_search",
+      "area": "search",
+      "extract": "pit_clear",
+      "steps": [
+        {
+          "name": "pit-open",
+          "method": "POST",
+          "path": "/logs-compat/_search/point_in_time?keep_alive=1m",
+          "body": null,
+          "expected_status": 200,
+          "extract": "pit_open",
+          "save": {
+            "pit_id": "body.pit_id"
+          }
+        },
+        {
+          "name": "pit-close-duplicate-ids",
+          "method": "DELETE",
+          "path": "/_search/point_in_time",
+          "body": {
+            "pit_id": [
+              "${saved.pit_id}",
+              "${saved.pit_id}"
+            ]
+          },
+          "expected_status": 200,
+          "extract": "pit_clear"
+        }
+      ],
+      "family": "lexical",
+      "description": "[lexical] close PIT deduplicates duplicate ids like OpenSearch"
+    },
+    {
       "name": "pit_open_search",
       "area": "search",
       "method": "POST",
