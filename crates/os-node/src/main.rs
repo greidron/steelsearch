@@ -101,6 +101,7 @@ struct DevTransportCoordinationState {
     local_initializing_replicas: Vec<PublishedReplicaAssignment>,
     cached_cluster_state: Option<ClusterState>,
     last_cluster_state_refresh_at_ms: Option<u128>,
+    voting_config_exclusions: BTreeSet<String>,
     initiated_peer_recoveries: BTreeSet<String>,
     cached_query_phase_response_bodies: BTreeMap<String, Vec<u8>>,
     cached_match_all_total_hits: BTreeMap<String, i64>,
@@ -1699,6 +1700,40 @@ fn handle_transport_seed_connection<S: TransportConnection>(
         response_frame = summarize_transport_response_frame_for_action(
             &response,
             Some("cluster:admin/remote_store/metadata"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request
+        && normalized_action_hint == Some("cluster:admin/voting_config/add_exclusions")
+        && add_voting_config_exclusions_request_supports_local_execution_subset(
+            &body,
+            transport_identity,
+        )
+    {
+        let response = build_local_add_voting_config_exclusions_response(
+            request_id,
+            header_version_id,
+            &body,
+            transport_identity,
+        );
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("cluster:admin/voting_config/add_exclusions"),
         );
         stream.write_all(&response)?;
         stream.flush()?;
@@ -4535,6 +4570,29 @@ fn build_empty_remote_store_metadata_response(request_id: i64, header_version_id
         request_id,
         Version::from_id(header_version_id as i32),
         &os_transport::action::RemoteStoreMetadataResponseWire::empty(),
+    )
+    .map(|frame| frame.to_vec())
+    .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
+}
+
+fn build_local_add_voting_config_exclusions_response(
+    request_id: i64,
+    header_version_id: u32,
+    body: &[u8],
+    transport_identity: &DevTransportIdentity,
+) -> Vec<u8> {
+    let Some(request) = decode_add_voting_config_exclusions_request_from_transport_body(body)
+    else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    if request.validate_supported_subset().is_err() {
+        return build_empty_transport_response(request_id, header_version_id);
+    }
+    apply_local_add_voting_config_exclusions(&request, transport_identity);
+    os_transport::action::build_add_voting_config_exclusions_response_message(
+        request_id,
+        Version::from_id(header_version_id as i32),
+        &os_transport::action::AddVotingConfigExclusionsResponseWire::empty(),
     )
     .map(|frame| frame.to_vec())
     .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
@@ -8867,6 +8925,15 @@ fn remote_store_metadata_request_supports_empty_subset(body: &[u8]) -> bool {
         .is_some()
 }
 
+fn add_voting_config_exclusions_request_supports_local_execution_subset(
+    body: &[u8],
+    _transport_identity: &DevTransportIdentity,
+) -> bool {
+    decode_add_voting_config_exclusions_request_from_transport_body(body)
+        .and_then(|request| request.validate_supported_subset().ok())
+        .is_some()
+}
+
 fn decode_segment_replication_stats_request_from_transport_body(
     body: &[u8],
 ) -> Option<os_transport::action::OpenSearchSegmentReplicationStatsRequestWire> {
@@ -8886,6 +8953,66 @@ fn decode_remote_store_metadata_request_from_transport_body(
 ) -> Option<os_transport::action::RemoteStoreMetadataRequestWire> {
     let message = decode_transport_message_from_body(body)?;
     os_transport::action::read_remote_store_metadata_request_message(&message).ok()
+}
+
+fn decode_add_voting_config_exclusions_request_from_transport_body(
+    body: &[u8],
+) -> Option<os_transport::action::AddVotingConfigExclusionsRequestWire> {
+    let message = decode_transport_message_from_body(body)?;
+    os_transport::action::read_add_voting_config_exclusions_request_message(&message).ok()
+}
+
+fn apply_local_add_voting_config_exclusions(
+    request: &os_transport::action::AddVotingConfigExclusionsRequestWire,
+    transport_identity: &DevTransportIdentity,
+) {
+    let resolved_exclusions = resolve_transport_voting_config_exclusion_node_names(
+        &request.node_names,
+        transport_identity,
+    );
+    if let Ok(mut state) = transport_identity.coordination_state.lock() {
+        state.voting_config_exclusions.extend(resolved_exclusions);
+    }
+}
+
+fn resolve_transport_voting_config_exclusion_node_names(
+    node_names: &[String],
+    transport_identity: &DevTransportIdentity,
+) -> BTreeSet<String> {
+    node_names
+        .iter()
+        .filter(|name| !name.is_empty())
+        .map(|name| {
+            resolve_transport_cluster_manager_node_id_by_name(name, transport_identity)
+                .unwrap_or_else(|| format!("_missing_:{name}"))
+        })
+        .collect()
+}
+
+fn resolve_transport_cluster_manager_node_id_by_name(
+    node_name: &str,
+    transport_identity: &DevTransportIdentity,
+) -> Option<String> {
+    if transport_identity.node_name == node_name
+        && transport_identity
+            .roles
+            .iter()
+            .any(|role| role == "cluster_manager" || role == "master")
+    {
+        return Some(transport_identity.node_id.clone());
+    }
+    transport_identity
+        .seed_peer_identities
+        .iter()
+        .find(|peer| {
+            peer.discovery_node.name == node_name
+                && peer
+                    .discovery_node
+                    .roles
+                    .iter()
+                    .any(|role| role == "cluster_manager" || role == "master")
+        })
+        .map(|peer| peer.discovery_node.id.clone())
 }
 
 fn decode_pit_segments_request_from_transport_body(
@@ -10830,6 +10957,19 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
             Some(build_empty_remote_store_metadata_response(
                 request_id,
                 header_version_id,
+            ))
+        }
+        Some("cluster:admin/voting_config/add_exclusions")
+            if add_voting_config_exclusions_request_supports_local_execution_subset(
+                body,
+                transport_identity,
+            ) =>
+        {
+            Some(build_local_add_voting_config_exclusions_response(
+                request_id,
+                header_version_id,
+                body,
+                transport_identity,
             ))
         }
         Some("indices:monitor/shard_stores") => Some(build_empty_indices_shard_stores_response(
@@ -15990,6 +16130,118 @@ mod tests {
             assert!(!remote_store_metadata_request_supports_empty_subset(
                 &frame[6..]
             ));
+        }
+    }
+
+    #[test]
+    fn add_voting_config_exclusions_transport_route_mutates_coordination_state() {
+        let transport_identity = DevTransportIdentity {
+            cluster_name: "steelsearch-dev".to_string(),
+            node_name: "steel-node".to_string(),
+            node_id: "steel-node-id".to_string(),
+            ephemeral_id: "steel-node-ephemeral".to_string(),
+            transport_address: "127.0.0.1:9300".parse().unwrap(),
+            attributes: Vec::new(),
+            roles: vec!["cluster_manager".to_string(), "data".to_string()],
+            seed_peer_identity: None,
+            seed_peer_identities: Vec::new(),
+            coordination_state: Arc::new(Mutex::new(DevTransportCoordinationState::default())),
+            remote_transport_queue_gate: Arc::new(RemoteTransportQueueGate::new(1, 1000)),
+            task_queue_state: None,
+        };
+        let request = os_transport::action::AddVotingConfigExclusionsRequestWire {
+            node_names: vec!["steel-node".to_string(), "missing-node".to_string()],
+            ..os_transport::action::AddVotingConfigExclusionsRequestWire::default()
+        };
+        let frame = os_transport::action::build_add_voting_config_exclusions_request_message(
+            194,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(
+            add_voting_config_exclusions_request_supports_local_execution_subset(
+                &frame[6..],
+                &transport_identity
+            )
+        );
+
+        let response = build_local_add_voting_config_exclusions_response(
+            194,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &frame[6..],
+            &transport_identity,
+        );
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected add voting config exclusions response message");
+        };
+
+        assert_eq!(message.request_id, 194);
+        assert!(!message.status.is_request());
+        assert_eq!(
+            os_transport::action::read_add_voting_config_exclusions_response_message(&message)
+                .unwrap(),
+            os_transport::action::AddVotingConfigExclusionsResponseWire::empty()
+        );
+        let coordination_state = transport_identity
+            .coordination_state
+            .lock()
+            .expect("coordination state lock poisoned");
+        assert!(coordination_state
+            .voting_config_exclusions
+            .contains("steel-node-id"));
+        assert!(coordination_state
+            .voting_config_exclusions
+            .contains("_missing_:missing-node"));
+    }
+
+    #[test]
+    fn add_voting_config_exclusions_transport_route_rejects_unsupported_selectors() {
+        let transport_identity = DevTransportIdentity {
+            cluster_name: "steelsearch-dev".to_string(),
+            node_name: "steel-node".to_string(),
+            node_id: "steel-node-id".to_string(),
+            ephemeral_id: "steel-node-ephemeral".to_string(),
+            transport_address: "127.0.0.1:9300".parse().unwrap(),
+            attributes: Vec::new(),
+            roles: vec!["cluster_manager".to_string(), "data".to_string()],
+            seed_peer_identity: None,
+            seed_peer_identities: Vec::new(),
+            coordination_state: Arc::new(Mutex::new(DevTransportCoordinationState::default())),
+            remote_transport_queue_gate: Arc::new(RemoteTransportQueueGate::new(1, 1000)),
+            task_queue_state: None,
+        };
+        for request in [
+            os_transport::action::AddVotingConfigExclusionsRequestWire {
+                node_names: Vec::new(),
+                ..os_transport::action::AddVotingConfigExclusionsRequestWire::default()
+            },
+            os_transport::action::AddVotingConfigExclusionsRequestWire {
+                node_ids: vec!["steel-node-id".to_string()],
+                ..os_transport::action::AddVotingConfigExclusionsRequestWire::default()
+            },
+            os_transport::action::AddVotingConfigExclusionsRequestWire {
+                timeout: os_transport::action::TimeValueWire::millis(1),
+                ..os_transport::action::AddVotingConfigExclusionsRequestWire::default()
+            },
+        ] {
+            let frame = os_transport::action::build_add_voting_config_exclusions_request_message(
+                195,
+                OPENSEARCH_3_7_0_TRANSPORT,
+                &request,
+            )
+            .unwrap();
+            assert!(
+                !add_voting_config_exclusions_request_supports_local_execution_subset(
+                    &frame[6..],
+                    &transport_identity
+                )
+            );
         }
     }
 

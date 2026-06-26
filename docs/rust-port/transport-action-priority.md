@@ -495,12 +495,12 @@ The add-voting-config-exclusions boundary covers:
   cluster-manager timeout, node-description selector array, node-id selector
   array, node-name selector array, and wait timeout at the wire decode/build
   layer;
-- explicit fail-closed classification for
-  `cluster:admin/voting_config/add_exclusions` until coordination metadata
-  mutation and voting-configuration convergence tracking are implemented;
+- OpenSearch `AddVotingConfigExclusionsResponse` empty `ActionResponse`
+  rendering after mutating local transport coordination exclusions for the
+  default `node_names` selector subset;
 - explicit rejection for custom cluster-manager timeout, custom wait timeout,
   missing selector, multiple selectors, deprecated node-description selectors,
-  node-id selectors, and add-voting-config-exclusions execution.
+  and node-id selectors.
 
 The clear-voting-config-exclusions boundary covers:
 

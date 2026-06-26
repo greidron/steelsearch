@@ -1749,8 +1749,8 @@ pub fn classify_opensearch_transport_action(
         },
         ADD_VOTING_CONFIG_EXCLUSIONS_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
-            disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "add-voting-config-exclusions transport execution requires coordination metadata mutation semantics",
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "add-voting-config-exclusions transport adapter mutates local coordination exclusions for the node_names subset",
         },
         CLEAR_VOTING_CONFIG_EXCLUSIONS_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -5940,6 +5940,36 @@ pub fn read_add_voting_config_exclusions_request_message(
         });
     }
     AddVotingConfigExclusionsRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_add_voting_config_exclusions_response_message(
+    request_id: i64,
+    version: Version,
+    response: &AddVotingConfigExclusionsResponseWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    response.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::response(),
+        version,
+        variable_header: BytesMut::from(&ResponseVariableHeader::default().to_bytes()[..]),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_add_voting_config_exclusions_response_message(
+    message: &TransportMessage,
+) -> Result<AddVotingConfigExclusionsResponseWire, TransportActionWireError> {
+    if !message.status.is_response() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "response",
+            actual: message.status.bits(),
+        });
+    }
+    let _header = ResponseVariableHeader::read(message.variable_header.clone().freeze())?;
+    AddVotingConfigExclusionsResponseWire::read(message.body.clone().freeze())
 }
 
 pub fn build_clear_voting_config_exclusions_request_message(
@@ -35087,7 +35117,7 @@ impl AddVotingConfigExclusionsRequestWire {
         Ok(request)
     }
 
-    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+    pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
         if self.cluster_manager_timeout != TimeValueWire::seconds(30) {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "add voting config exclusions cluster-manager timeout",
@@ -35128,10 +35158,32 @@ impl AddVotingConfigExclusionsRequestWire {
                 reason: "node-id selectors require voting-config exclusion resolution semantics",
             });
         }
+        Ok(())
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        self.validate_supported_subset()?;
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "add voting config exclusions execution",
             reason: "adding voting config exclusions requires coordination metadata mutation and convergence tracking",
         })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Default)]
+pub struct AddVotingConfigExclusionsResponseWire {}
+
+impl AddVotingConfigExclusionsResponseWire {
+    pub fn empty() -> Self {
+        Self::default()
+    }
+
+    pub fn write(&self, _output: &mut StreamOutput) {}
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let input = StreamInput::new(bytes);
+        require_no_trailing_bytes(&input)?;
+        Ok(Self::empty())
     }
 }
 
@@ -49357,6 +49409,7 @@ mod tests {
 
         let decoded = AddVotingConfigExclusionsRequestWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, request);
+        decoded.validate_supported_subset().unwrap();
         assert!(matches!(
             decoded.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
@@ -49444,7 +49497,19 @@ mod tests {
     }
 
     #[test]
-    fn add_voting_config_exclusions_transport_messages_bind_rejected_action_frame() {
+    fn add_voting_config_exclusions_response_wire_round_trips_empty_body() {
+        let response = AddVotingConfigExclusionsResponseWire::empty();
+        let mut output = StreamOutput::new();
+        response.write(&mut output);
+
+        assert_eq!(
+            AddVotingConfigExclusionsResponseWire::read(output.freeze()).unwrap(),
+            response
+        );
+    }
+
+    #[test]
+    fn add_voting_config_exclusions_transport_messages_bind_supported_action_frame_and_response() {
         let request = AddVotingConfigExclusionsRequestWire::default();
         let mut frame = build_add_voting_config_exclusions_request_message(
             42,
@@ -49459,6 +49524,16 @@ mod tests {
             read_add_voting_config_exclusions_request_message(&message).unwrap(),
             request
         );
+        assert_eq!(
+            classify_opensearch_transport_request_message(&message)
+                .unwrap()
+                .disposition,
+            OpenSearchTransportActionDisposition::Implemented
+        );
+        read_add_voting_config_exclusions_request_message(&message)
+            .unwrap()
+            .validate_supported_subset()
+            .unwrap();
         assert!(matches!(
             read_add_voting_config_exclusions_request_message(&message)
                 .unwrap()
@@ -49467,6 +49542,28 @@ mod tests {
                 shape: "add voting config exclusions execution",
                 ..
             })
+        ));
+
+        let response = AddVotingConfigExclusionsResponseWire::empty();
+        let mut frame = build_add_voting_config_exclusions_response_message(
+            42,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &response,
+        )
+        .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected add voting config exclusions response message");
+        };
+        assert_eq!(
+            read_add_voting_config_exclusions_response_message(&message).unwrap(),
+            response
+        );
+        assert!(matches!(
+            read_add_voting_config_exclusions_request_message(&message).unwrap_err(),
+            TransportActionWireError::UnexpectedMessageStatus {
+                expected: "request",
+                ..
+            }
         ));
     }
 

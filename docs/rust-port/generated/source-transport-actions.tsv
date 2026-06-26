@@ -11,7 +11,7 @@ implemented	NodesHotThreadsAction.INSTANCE	TransportNodesHotThreadsAction.class	
 implemented	ListTasksAction.INSTANCE	TransportListTasksAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	665
 implemented	GetTaskAction.INSTANCE	TransportGetTaskAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	666
 implemented	CancelTasksAction.INSTANCE	TransportCancelTasksAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	667
-partial	AddVotingConfigExclusionsAction.INSTANCE	TransportAddVotingConfigExclusionsAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	669
+implemented	AddVotingConfigExclusionsAction.INSTANCE	TransportAddVotingConfigExclusionsAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	669
 partial	ClearVotingConfigExclusionsAction.INSTANCE	TransportClearVotingConfigExclusionsAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	670
 partial	ClusterAllocationExplainAction.INSTANCE	TransportClusterAllocationExplainAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	671
 partial	ClusterStatsAction.INSTANCE	TransportClusterStatsAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	672
