@@ -19933,28 +19933,42 @@ impl SteelNode {
             .get("format")
             .is_some_and(|value| value == "json")
         {
-            return RestResponse::json(200, Value::Array(rows));
+            let display_columns = cat_shards_display_columns(request.query_params.get("h"));
+            let selected_rows = rows
+                .iter()
+                .map(|row| {
+                    let mut object = serde_json::Map::new();
+                    for (column, display) in &display_columns {
+                        object.insert(display.clone(), row[*column].clone());
+                    }
+                    Value::Object(object)
+                })
+                .collect();
+            return RestResponse::json(200, Value::Array(selected_rows));
         }
         let verbose = request
             .query_params
             .get("v")
             .is_some_and(|value| value == "true");
+        let display_columns = cat_shards_display_columns(request.query_params.get("h"));
         let mut lines = Vec::new();
         if verbose {
-            lines.push("index shard prirep state docs store ip node".to_string());
+            lines.push(
+                display_columns
+                    .iter()
+                    .map(|(_, display)| display.as_str())
+                    .collect::<Vec<_>>()
+                    .join(" "),
+            );
         }
         for row in &rows {
-            lines.push(format!(
-                "{} {} {} {} {} {} {} {}",
-                row["index"].as_str().unwrap_or(""),
-                row["shard"].as_str().unwrap_or("0"),
-                row["prirep"].as_str().unwrap_or("p"),
-                row["state"].as_str().unwrap_or("STARTED"),
-                row["docs"].as_str().unwrap_or("0"),
-                row["store"].as_str().unwrap_or("0b"),
-                row["ip"].as_str().unwrap_or(""),
-                row["node"].as_str().unwrap_or(""),
-            ));
+            lines.push(
+                display_columns
+                    .iter()
+                    .map(|(column, _)| row[*column].as_str().unwrap_or(""))
+                    .collect::<Vec<_>>()
+                    .join(" "),
+            );
         }
         RestResponse::text(200, lines.join("\n") + "\n")
     }
@@ -30688,6 +30702,86 @@ fn cat_allocation_display_columns(h_param: Option<&String>) -> Vec<(&'static str
     selected
 }
 
+fn cat_shards_display_columns(h_param: Option<&String>) -> Vec<(&'static str, String)> {
+    let Some(h_param) = h_param else {
+        return vec![
+            ("index", "index".to_string()),
+            ("shard", "shard".to_string()),
+            ("prirep", "prirep".to_string()),
+            ("state", "state".to_string()),
+            ("docs", "docs".to_string()),
+            ("store", "store".to_string()),
+            ("ip", "ip".to_string()),
+            ("node", "node".to_string()),
+        ];
+    };
+    let mut selected = Vec::new();
+    for requested in h_param
+        .split(',')
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        if requested.contains('*') {
+            for (column, aliases) in [
+                ("index", &["i", "idx"][..]),
+                ("shard", &["s", "sh"][..]),
+                ("prirep", &["p", "pr", "primaryOrReplica"][..]),
+                ("state", &["st"][..]),
+                ("docs", &["d", "dc"][..]),
+                ("store", &["sto"][..]),
+                ("ip", &[][..]),
+                ("node", &["n"][..]),
+                ("search.open_contexts", &["so", "searchOpenContexts"][..]),
+                (
+                    "search.point_in_time_current",
+                    &["searchPointInTimeCurrent"][..],
+                ),
+                ("search.point_in_time_time", &["searchPointInTimeTime"][..]),
+                (
+                    "search.point_in_time_total",
+                    &["searchPointInTimeTotal"][..],
+                ),
+            ] {
+                if wildcard_match(requested, column)
+                    || aliases.iter().any(|alias| wildcard_match(requested, alias))
+                {
+                    if !selected.iter().any(|(existing, _)| existing == &column) {
+                        selected.push((column, column.to_string()));
+                    }
+                }
+            }
+            continue;
+        }
+        let column = match requested {
+            "index" | "i" | "idx" => Some("index"),
+            "shard" | "s" | "sh" => Some("shard"),
+            "prirep" | "p" | "pr" | "primaryOrReplica" => Some("prirep"),
+            "state" | "st" => Some("state"),
+            "docs" | "d" | "dc" => Some("docs"),
+            "store" | "sto" => Some("store"),
+            "ip" => Some("ip"),
+            "node" | "n" => Some("node"),
+            "search.open_contexts" | "so" | "searchOpenContexts" => Some("search.open_contexts"),
+            "search.point_in_time_current" | "searchPointInTimeCurrent" => {
+                Some("search.point_in_time_current")
+            }
+            "search.point_in_time_time" | "searchPointInTimeTime" => {
+                Some("search.point_in_time_time")
+            }
+            "search.point_in_time_total" | "searchPointInTimeTotal" => {
+                Some("search.point_in_time_total")
+            }
+            _ => None,
+        };
+        if let Some(column) = column {
+            if !selected.iter().any(|(existing, _)| existing == &column) {
+                selected.push((column, requested.to_string()));
+            }
+        }
+    }
+    selected
+}
+
 fn cat_aliases_display_columns(h_param: Option<&String>) -> Vec<(&'static str, String)> {
     let Some(h_param) = h_param else {
         return vec![
@@ -36553,14 +36647,70 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         );
         assert_eq!(shards_json_response.body[0]["index"], "logs-000001");
         assert_eq!(shards_json_response.body[0]["prirep"], "p");
-        assert_eq!(shards_json_response.body[0]["search.open_contexts"], "1");
+        assert!(shards_json_response.body[0]
+            .get("search.open_contexts")
+            .is_none());
+
+        let mut selected_shards_json_request =
+            RestRequest::new(RestMethod::Get, "/_cat/shards/logs-*");
+        selected_shards_json_request
+            .query_params
+            .insert("format".to_string(), "json".to_string());
+        selected_shards_json_request
+            .query_params
+            .insert("h".to_string(), "idx,sh,p,st,dc,sto,n".to_string());
+        let selected_shards_json_response = node.handle_rest_request(selected_shards_json_request);
+        assert_eq!(selected_shards_json_response.status, 200);
+        assert_eq!(selected_shards_json_response.body[0]["idx"], "logs-000001");
+        assert_eq!(selected_shards_json_response.body[0]["sh"], "0");
+        assert_eq!(selected_shards_json_response.body[0]["p"], "p");
+        assert_eq!(selected_shards_json_response.body[0]["st"], "STARTED");
+        assert_eq!(selected_shards_json_response.body[0]["dc"], "1");
+        assert_eq!(selected_shards_json_response.body[0]["sto"], "0b");
+        assert_eq!(selected_shards_json_response.body[0]["n"], "steel-node");
+        assert!(selected_shards_json_response.body[0].get("index").is_none());
+        assert!(selected_shards_json_response.body[0].get("shard").is_none());
+
+        let mut optional_shards_json_request =
+            RestRequest::new(RestMethod::Get, "/_cat/shards/logs-*");
+        optional_shards_json_request
+            .query_params
+            .insert("format".to_string(), "json".to_string());
+        optional_shards_json_request.query_params.insert(
+            "h".to_string(),
+            "so,search.point_in_time_current,search.point_in_time_total".to_string(),
+        );
+        let optional_shards_json_response = node.handle_rest_request(optional_shards_json_request);
+        assert_eq!(optional_shards_json_response.status, 200);
+        assert_eq!(optional_shards_json_response.body[0]["so"], "1");
         assert_eq!(
-            shards_json_response.body[0]["search.point_in_time_current"],
+            optional_shards_json_response.body[0]["search.point_in_time_current"],
             "1"
         );
         assert_eq!(
-            shards_json_response.body[0]["search.point_in_time_total"],
+            optional_shards_json_response.body[0]["search.point_in_time_total"],
             "5"
+        );
+
+        let mut selected_shards_text_request =
+            RestRequest::new(RestMethod::Get, "/_cat/shards/logs-*");
+        selected_shards_text_request
+            .query_params
+            .insert("v".to_string(), "true".to_string());
+        selected_shards_text_request
+            .query_params
+            .insert("h".to_string(), "idx,sh,p,st,dc,sto,n".to_string());
+        let selected_shards_text_response = node.handle_rest_request(selected_shards_text_request);
+        let selected_shards_text = selected_shards_text_response
+            .body
+            .as_str()
+            .expect("selected cat shards text body");
+        assert_eq!(
+            selected_shards_text.lines().collect::<Vec<_>>(),
+            vec![
+                "idx sh p st dc sto n",
+                "logs-000001 0 p STARTED 1 0b steel-node"
+            ]
         );
 
         node.metadata_manifest_state
@@ -36588,14 +36738,12 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             2
         );
         assert_eq!(replicated_shards_response.body[1]["prirep"], "r");
-        assert_eq!(
-            replicated_shards_response.body[1]["search.point_in_time_current"],
-            "0"
-        );
-        assert_eq!(
-            replicated_shards_response.body[1]["search.point_in_time_total"],
-            "0"
-        );
+        assert!(replicated_shards_response.body[1]
+            .get("search.point_in_time_current")
+            .is_none());
+        assert!(replicated_shards_response.body[1]
+            .get("search.point_in_time_total")
+            .is_none());
 
         let mut segments_text_request = RestRequest::new(RestMethod::Get, "/_cat/segments/logs-*");
         segments_text_request
