@@ -16168,10 +16168,11 @@ mod tests {
     }
 
     #[test]
-    fn get_all_pits_transport_route_builds_opensearch_shaped_empty_response() {
+    fn get_all_pits_transport_route_builds_opensearch_shaped_node_response() {
         let _lock = dev_transport_pit_test_lock()
             .lock()
             .expect("dev transport PIT test lock poisoned");
+        let now = now_epoch_ms();
         let transport_identity = DevTransportIdentity {
             cluster_name: "steelsearch-dev".to_string(),
             node_name: "steel-node".to_string(),
@@ -16186,11 +16187,33 @@ mod tests {
             remote_transport_queue_gate: Arc::new(RemoteTransportQueueGate::new(1, 1000)),
             task_queue_state: None,
         };
-        dev_transport_pit_bindings()
-            .contexts
-            .lock()
-            .expect("dev transport PIT contexts lock poisoned")
-            .clear();
+        {
+            let mut contexts = dev_transport_pit_bindings()
+                .contexts
+                .lock()
+                .expect("dev transport PIT contexts lock poisoned");
+            contexts.clear();
+            contexts.insert(
+                "pit-live-a".to_string(),
+                PitContext {
+                    indices: vec!["logs-pit-000001".to_string()],
+                    documents: BTreeMap::new(),
+                    keep_alive_millis: 60_000,
+                    expires_at_millis: now + 60_000,
+                    creation_time_millis: now - 1_000,
+                },
+            );
+            contexts.insert(
+                "pit-expired".to_string(),
+                PitContext {
+                    indices: vec!["logs-pit-000001".to_string()],
+                    documents: BTreeMap::new(),
+                    keep_alive_millis: 1,
+                    expires_at_millis: now.saturating_sub(1),
+                    creation_time_millis: now.saturating_sub(2_000),
+                },
+            );
+        }
         let response = build_local_get_all_pits_response(
             93,
             OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
@@ -16209,10 +16232,23 @@ mod tests {
         assert!(!message.status.is_request());
         let response =
             os_transport::action::read_opensearch_get_all_pits_response_message(&message).unwrap();
+        assert_eq!(response.cluster_name, "steelsearch-dev");
+        assert!(response.failures.is_empty());
+        assert_eq!(response.nodes.len(), 1);
+        assert_eq!(response.nodes[0].node.id, "steel-node-id");
         assert_eq!(
-            response,
-            os_transport::action::OpenSearchGetAllPitsResponseWire::empty("steelsearch-dev")
+            response.nodes[0].pit_infos,
+            vec![os_transport::action::OpenSearchListPitInfoWire::new(
+                "pit-live-a",
+                u128_to_i64_saturating(now - 1_000),
+                60_000
+            )]
         );
+        assert!(!dev_transport_pit_bindings()
+            .contexts
+            .lock()
+            .expect("dev transport PIT contexts lock poisoned")
+            .contains_key("pit-expired"));
     }
 
     #[test]
