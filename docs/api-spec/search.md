@@ -266,7 +266,7 @@ part of the OpenSearch parity target.
     - create-PIT `routing` admission preserves OpenSearch shard-routing semantics without document filtering
     - `_search` with `pit.id`
     - PIT searches read from the open-time document snapshot rather than later live writes
-    - PIT field-sort and `_shard_doc` pagination support `search_after`
+    - PIT field-sort and `_shard_doc` string/object-form pagination support `search_after`
     - `GET /_search/point_in_time/_all`
     - `DELETE /_search/point_in_time`
     - `DELETE /_search/point_in_time/_all`
