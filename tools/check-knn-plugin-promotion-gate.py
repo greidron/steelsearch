@@ -10,6 +10,18 @@ from pathlib import Path
 from promotion_report_evidence import validate_report_evidence
 
 
+def resolve_report_path(path: str) -> Path | None:
+    direct = Path(path)
+    if direct.exists():
+        return direct
+    matches = sorted(
+        Path("target").glob(f"**/{direct.name}"),
+        key=lambda candidate: candidate.stat().st_mtime,
+        reverse=True,
+    )
+    return matches[0] if matches else None
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -20,8 +32,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--report",
         action="append",
-        default=[],
-        help="Executed compatibility report to validate against required cases/evidence.",
+        default=None,
+        help=(
+            "Executed compatibility report to validate against required cases/evidence. "
+            "Defaults to latest_standalone_gate.required_reports from the fixture."
+        ),
     )
     return parser.parse_args()
 
@@ -90,9 +105,24 @@ def main() -> int:
         semantic.get("required_evidence_classes") or [],
         required_evidence_classes,
     )
-    if args.report:
+    gate = fixture.get("latest_standalone_gate") or {}
+    report_paths = args.report
+    if report_paths is None:
+        report_paths = gate.get("required_reports") or []
+    if not report_paths:
+        raise SystemExit("at least one k-NN compatibility report is required")
+    resolved_reports = [resolve_report_path(path) for path in report_paths]
+    missing_reports = sorted(
+        str(path)
+        for path, resolved_report in zip(report_paths, resolved_reports)
+        if resolved_report is None
+    )
+    if missing_reports:
+        raise SystemExit(f"k-NN compatibility reports do not exist: {missing_reports}")
+
+    if report_paths:
         report_errors = validate_report_evidence(
-            [Path(report) for report in args.report],
+            [report for report in resolved_reports if report is not None],
             required_cases,
             required_evidence_classes,
         )
@@ -104,7 +134,6 @@ def main() -> int:
         {"secure-clustered-lifecycle"},
     )
 
-    gate = fixture.get("latest_standalone_gate") or {}
     ensure_subset(
         "latest_standalone_gate.required_entrypoints",
         gate.get("required_entrypoints") or [],
@@ -121,7 +150,7 @@ def main() -> int:
             {
                 "fixture": str(Path(args.fixture)),
                 "profile": fixture["profile"],
-                "reports": args.report,
+                "reports": [str(report) for report in resolved_reports if report is not None],
                 "source_area": fixture["source_area"],
                 "status": "ok",
             },
