@@ -25,6 +25,9 @@ pub fn parse_alias_read_selectors(target: &str) -> Vec<String> {
 }
 
 fn selector_matches(selector: &str, candidate: &str) -> bool {
+    if selector.contains('?') {
+        return selector_matches_with_question_wildcard(selector, candidate);
+    }
     if !selector.contains('*') {
         return selector == candidate;
     }
@@ -61,6 +64,34 @@ fn selector_matches(selector: &str, candidate: &str) -> bool {
         Some("") => true,
         Some(last) => remainder.ends_with(last),
     }
+}
+
+fn selector_matches_with_question_wildcard(selector: &str, candidate: &str) -> bool {
+    let selector = selector.chars().collect::<Vec<_>>();
+    let candidate = candidate.chars().collect::<Vec<_>>();
+    let mut matches = vec![vec![false; candidate.len() + 1]; selector.len() + 1];
+    matches[0][0] = true;
+    for selector_index in 1..=selector.len() {
+        if selector[selector_index - 1] == '*' {
+            matches[selector_index][0] = matches[selector_index - 1][0];
+        }
+    }
+    for selector_index in 1..=selector.len() {
+        for candidate_index in 1..=candidate.len() {
+            matches[selector_index][candidate_index] = match selector[selector_index - 1] {
+                '*' => {
+                    matches[selector_index - 1][candidate_index]
+                        || matches[selector_index][candidate_index - 1]
+                }
+                '?' => matches[selector_index - 1][candidate_index - 1],
+                literal => {
+                    literal == candidate[candidate_index - 1]
+                        && matches[selector_index - 1][candidate_index - 1]
+                }
+            };
+        }
+    }
+    matches[selector.len()][candidate.len()]
 }
 
 pub fn build_alias_readback_response(
@@ -116,6 +147,54 @@ pub fn build_alias_readback_response(
     serde_json::Value::Object(response)
 }
 
+pub fn missing_explicit_aliases(
+    response: &serde_json::Value,
+    alias_target: Option<&str>,
+) -> Vec<String> {
+    let Some(alias_target) = alias_target else {
+        return Vec::new();
+    };
+    let requested_aliases = parse_alias_read_selectors(alias_target);
+    let mut returned_aliases = std::collections::BTreeSet::new();
+    if let Some(indices) = response.as_object() {
+        for index_body in indices.values() {
+            if let Some(aliases) = index_body
+                .get("aliases")
+                .and_then(|value| value.as_object())
+            {
+                returned_aliases.extend(aliases.keys().cloned());
+            }
+        }
+    }
+
+    let first_wildcard_index = requested_aliases
+        .iter()
+        .position(|alias| alias.contains('*') || alias.contains('?'))
+        .unwrap_or(requested_aliases.len());
+    let mut missing = Vec::new();
+    for (index, alias) in requested_aliases.iter().enumerate() {
+        if alias == "_all"
+            || alias.contains('*')
+            || alias.contains('?')
+            || (index > first_wildcard_index && alias.starts_with('-'))
+        {
+            continue;
+        }
+        let excluded = requested_aliases
+            .iter()
+            .skip(std::cmp::max(index + 1, first_wildcard_index))
+            .any(|candidate| {
+                candidate
+                    .strip_prefix('-')
+                    .is_some_and(|pattern| pattern == "_all" || selector_matches(pattern, alias))
+            });
+        if !excluded && !returned_aliases.contains(alias) {
+            missing.push(alias.clone());
+        }
+    }
+    missing
+}
+
 pub const ALIAS_READ_ROUTE_REGISTRY_TABLE: [AliasReadRouteRegistryEntry; 5] = [
     AliasReadRouteRegistryEntry {
         method: GET_ALIAS_ROUTE_METHOD,
@@ -166,6 +245,26 @@ mod tests {
         assert_eq!(
             parse_alias_read_selectors("logs-*,metrics-000001"),
             vec!["logs-*".to_string(), "metrics-000001".to_string()]
+        );
+    }
+
+    #[test]
+    fn alias_read_missing_explicit_aliases_reports_only_literal_unmatched_names() {
+        let response = serde_json::json!({
+            "logs-000001": {
+                "aliases": {
+                    "logs-read": {}
+                }
+            }
+        });
+
+        assert_eq!(
+            missing_explicit_aliases(&response, Some("logs-read,logs-write")),
+            vec!["logs-write".to_string()]
+        );
+        assert!(missing_explicit_aliases(&response, Some("logs-*")).is_empty());
+        assert!(
+            missing_explicit_aliases(&response, Some("logs-write,logs-*,-logs-write")).is_empty()
         );
     }
 

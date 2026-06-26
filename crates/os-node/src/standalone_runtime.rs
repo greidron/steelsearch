@@ -6392,14 +6392,26 @@ impl SteelNode {
             .metadata_manifest_state
             .lock()
             .expect("metadata manifest state lock poisoned");
-        RestResponse::json(
-            200,
-            alias_read_route_registration::build_alias_readback_response(
-                &manifest["indices"],
-                index_target,
-                alias_target,
-            ),
-        )
+        let mut body = alias_read_route_registration::build_alias_readback_response(
+            &manifest["indices"],
+            index_target,
+            alias_target,
+        );
+        let missing_aliases =
+            alias_read_route_registration::missing_explicit_aliases(&body, alias_target);
+        if missing_aliases.is_empty() {
+            return RestResponse::json(200, body);
+        }
+        let message = if missing_aliases.len() == 1 {
+            format!("alias [{}] missing", missing_aliases.join(","))
+        } else {
+            format!("aliases [{}] missing", missing_aliases.join(","))
+        };
+        if let Some(object) = body.as_object_mut() {
+            object.insert("error".to_string(), Value::String(message));
+            object.insert("status".to_string(), Value::from(404));
+        }
+        RestResponse::json(404, body)
     }
 
     fn handle_alias_head_route(&self, alias: &str, request: &RestRequest) -> RestResponse {
@@ -57348,6 +57360,32 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             named_get.body["logs-root-alias-000001"]["aliases"]["logs-root-write"]
                 ["is_write_index"],
             Value::Bool(true)
+        );
+
+        let missing_named_get = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_alias/logs-root-missing",
+        ));
+        assert_eq!(missing_named_get.status, 404);
+        assert_eq!(
+            missing_named_get.body["error"],
+            "alias [logs-root-missing] missing"
+        );
+        assert_eq!(missing_named_get.body["status"], 404);
+
+        let partially_missing_named_get = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_alias/logs-root-write,logs-root-missing",
+        ));
+        assert_eq!(partially_missing_named_get.status, 404);
+        assert_eq!(
+            partially_missing_named_get.body["error"],
+            "alias [logs-root-missing] missing"
+        );
+        assert!(
+            partially_missing_named_get.body["logs-root-alias-000001"]["aliases"]
+                .get("logs-root-write")
+                .is_some()
         );
 
         let named_head = node.handle_rest_request(RestRequest::new(
