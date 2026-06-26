@@ -5324,15 +5324,15 @@ fn local_transport_global_index_count() -> i32 {
 fn local_transport_search_response_from_request(
     request: &os_transport::action::OpenSearchSearchRequestWire,
 ) -> os_transport::action::OpenSearchSearchResponseWire {
-    let source = request.source.as_ref();
-    let from = source
+    let request_source = request.source.as_ref();
+    let from = request_source
         .map(|source| source.from.max(0) as usize)
         .unwrap_or(0);
-    let size = source
+    let size = request_source
         .map(|source| source.size.max(0) as usize)
         .unwrap_or(10);
-    let query = source.and_then(|source| source.query.as_ref());
-    let slice = source.and_then(|source| source.slice.as_ref());
+    let query = request_source.and_then(|source| source.query.as_ref());
+    let slice = request_source.and_then(|source| source.slice.as_ref());
     let Some((documents, resolved_indices, point_in_time_id)) =
         transport_search_documents_for_request(request)
     else {
@@ -5341,8 +5341,9 @@ fn local_transport_search_response_from_request(
     let pit_search_context_id = point_in_time_id.as_deref().and_then(|pit_id| {
         os_transport::action::OpenSearchSearchContextIdWire::decode(pit_id).ok()
     });
-    let sorts = source.and_then(|source| source.sorts.as_deref());
-    let search_after = source.and_then(|source| source.search_after.as_deref());
+    let sorts = request_source.and_then(|source| source.sorts.as_deref());
+    let search_after = request_source.and_then(|source| source.search_after.as_deref());
+    let fetch_source = request_source.and_then(|source| source.fetch_source.as_ref());
     let mut matched = documents
         .iter()
         .filter_map(|(key, record)| {
@@ -5401,6 +5402,7 @@ fn local_transport_search_response_from_request(
                     transport_search_sort_values_for_match(&index, &id, &source, seq_no, sorts)
                 })
                 .unwrap_or_default();
+            let source = local_transport_filter_hit_source(&source, fetch_source);
             os_transport::action::OpenSearchSearchHitWire {
                 id: Some(id),
                 score: 1.0,
@@ -5408,7 +5410,7 @@ fn local_transport_search_response_from_request(
                 version,
                 seq_no,
                 primary_term,
-                source: Some(source),
+                source,
                 explanation: None,
                 fields: BTreeMap::new(),
                 meta_fields: BTreeMap::new(),
@@ -5435,6 +5437,122 @@ fn local_transport_search_response_from_request(
         took_millis: 1,
         point_in_time_id,
         ..os_transport::action::OpenSearchSearchResponseWire::empty_with_total_hits(total_hits)
+    }
+}
+
+fn local_transport_filter_hit_source(
+    source: &Value,
+    fetch_source: Option<&os_transport::action::OpenSearchFetchSourceContextWire>,
+) -> Option<Value> {
+    let Some(fetch_source) = fetch_source else {
+        return Some(source.clone());
+    };
+    if !fetch_source.fetch_source {
+        return None;
+    }
+    let mut filtered = if fetch_source.includes.is_empty() {
+        source.clone()
+    } else {
+        let mut included = Value::Object(serde_json::Map::new());
+        for path in &fetch_source.includes {
+            local_transport_copy_source_paths(source, &mut included, path);
+        }
+        included
+    };
+    for path in &fetch_source.excludes {
+        local_transport_remove_source_paths(&mut filtered, path);
+    }
+    Some(filtered)
+}
+
+fn local_transport_copy_source_paths(source: &Value, target: &mut Value, path: &str) {
+    let parts = path.split('.').collect::<Vec<_>>();
+    if parts.is_empty() {
+        return;
+    }
+    if let Some(extracted) = local_transport_extract_source_path_parts(source, &parts) {
+        local_transport_merge_source_value(target, extracted);
+    }
+}
+
+fn local_transport_extract_source_path_parts(source: &Value, parts: &[&str]) -> Option<Value> {
+    let Some((part, rest)) = parts.split_first() else {
+        return Some(source.clone());
+    };
+    match source {
+        Value::Object(source_object) => {
+            let mut output = serde_json::Map::new();
+            for (field, value) in source_object {
+                if !wildcard_match(part, field) {
+                    continue;
+                }
+                let extracted = if rest.is_empty() {
+                    value.clone()
+                } else {
+                    local_transport_extract_source_path_parts(value, rest)?
+                };
+                output.insert(field.clone(), extracted);
+            }
+            (!output.is_empty()).then_some(Value::Object(output))
+        }
+        Value::Array(values) => {
+            let filtered = values
+                .iter()
+                .filter_map(|value| local_transport_extract_source_path_parts(value, parts))
+                .collect::<Vec<_>>();
+            (!filtered.is_empty()).then_some(Value::Array(filtered))
+        }
+        _ => None,
+    }
+}
+
+fn local_transport_merge_source_value(target: &mut Value, incoming: Value) {
+    match (target, incoming) {
+        (Value::Object(target_object), Value::Object(incoming_object)) => {
+            for (field, value) in incoming_object {
+                match target_object.get_mut(&field) {
+                    Some(existing) => local_transport_merge_source_value(existing, value),
+                    None => {
+                        target_object.insert(field, value);
+                    }
+                }
+            }
+        }
+        (target_value, incoming_value) => *target_value = incoming_value,
+    }
+}
+
+fn local_transport_remove_source_paths(source: &mut Value, path: &str) {
+    let parts = path.split('.').collect::<Vec<_>>();
+    if parts.is_empty() {
+        return;
+    }
+    local_transport_remove_source_path_parts(source, &parts);
+}
+
+fn local_transport_remove_source_path_parts(source: &mut Value, parts: &[&str]) {
+    let Some((part, rest)) = parts.split_first() else {
+        return;
+    };
+    match source {
+        Value::Object(source_object) => {
+            if rest.is_empty() {
+                source_object.retain(|field, _| !wildcard_match(part, field));
+                return;
+            }
+            for value in source_object
+                .iter_mut()
+                .filter_map(|(field, value)| wildcard_match(part, field).then_some(value))
+            {
+                local_transport_remove_source_path_parts(value, rest);
+            }
+        }
+        Value::Array(values) => {
+            for value in values {
+                local_transport_remove_source_path_parts(value, parts);
+            }
+        }
+        _ => {}
     }
 }
 
@@ -17930,6 +18048,11 @@ mod tests {
                         tie_breaker: 0.0,
                     },
                 )),
+                fetch_source: Some(os_transport::action::OpenSearchFetchSourceContextWire {
+                    fetch_source: true,
+                    includes: vec!["message".to_string(), "comments.*".to_string()],
+                    excludes: vec!["comments.text".to_string()],
+                }),
                 ..os_transport::action::OpenSearchSearchSourceBuilderWire::default()
             }),
             indices_options:
@@ -17968,6 +18091,15 @@ mod tests {
         assert_eq!(search_response.total_hits, Some(1));
         assert_eq!(search_response.hits.len(), 1);
         assert_eq!(search_response.hits[0].id.as_deref(), Some("doc-1"));
+        assert_eq!(
+            search_response.hits[0].source.as_ref(),
+            Some(&serde_json::json!({
+                "message": "steel search reader pit transport",
+                "comments": [
+                    { "author": "ann" }
+                ]
+            }))
+        );
 
         let list_response = build_local_get_all_pits_response(
             295,
