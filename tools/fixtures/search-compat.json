@@ -1041,6 +1041,17 @@
       "description": "[admin-cat] cat snapshots text honors OpenSearch h aliases"
     },
     {
+      "name": "cat_snapshots_repository_wrong_method_error",
+      "area": "cat",
+      "method": "POST",
+      "path": "/_cat/snapshots/repo-root-cat-probe?format=json",
+      "body": null,
+      "expected_status": 405,
+      "extract": "method_not_allowed_error",
+      "family": "admin-cat",
+      "description": "[admin-cat] cat snapshots repository path only accepts GET like OpenSearch"
+    },
+    {
       "name": "cat_recovery_text_selected_alias_columns",
       "area": "cat",
       "extract": "cat_selected_column_fields",
@@ -1216,6 +1227,17 @@
       "description": "[admin-cat] cat templates text honors OpenSearch h aliases"
     },
     {
+      "name": "cat_templates_target_wrong_method_error",
+      "area": "cat",
+      "method": "POST",
+      "path": "/_cat/templates/logs-*?v=true",
+      "body": null,
+      "expected_status": 405,
+      "extract": "method_not_allowed_error",
+      "family": "admin-cat",
+      "description": "[admin-cat] cat templates target path only accepts GET like OpenSearch"
+    },
+    {
       "name": "cat_templates_json_selected_alias_columns",
       "area": "cat",
       "extract": "cat_indices_selected_columns",
@@ -1273,6 +1295,17 @@
       "extract": "cat_indices_selected_columns",
       "family": "admin-cat",
       "description": "[admin-cat] cat thread pool text honors h aliases"
+    },
+    {
+      "name": "cat_thread_pool_target_wrong_method_error",
+      "area": "cat",
+      "method": "POST",
+      "path": "/_cat/thread_pool/search?v=true",
+      "body": null,
+      "expected_status": 405,
+      "extract": "method_not_allowed_error",
+      "family": "admin-cat",
+      "description": "[admin-cat] cat thread pool target path only accepts GET like OpenSearch"
     },
     {
       "name": "cat_thread_pool_json_selected_alias_columns",
@@ -1577,6 +1610,17 @@
       ],
       "family": "admin-cat",
       "description": "[admin-cat] cat pit segments json honors h aliases"
+    },
+    {
+      "name": "cat_pit_segments_wrong_method_error",
+      "area": "cat",
+      "method": "POST",
+      "path": "/_cat/pit_segments/_all?v=true",
+      "body": null,
+      "expected_status": 405,
+      "extract": "method_not_allowed_error",
+      "family": "admin-cat",
+      "description": "[admin-cat] cat pit segments only accepts GET like OpenSearch"
     },
     {
       "name": "segments_global_shape",
