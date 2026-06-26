@@ -5298,6 +5298,7 @@ fn transport_search_documents_for_request(
             .lock()
             .expect("dev transport PIT contexts lock poisoned");
         prune_expired_transport_pits(&mut contexts, now_millis);
+        remove_transport_pit_if_indices_missing(&mut contexts, &pit.id)?;
         let context = contexts.get_mut(&pit.id)?;
         if let Some(keep_alive) = pit.keep_alive.as_ref() {
             let keep_alive_millis = time_value_wire_to_millis(keep_alive);
@@ -5361,7 +5362,28 @@ fn transport_search_pit_context_exists_for_request(
         .lock()
         .expect("dev transport PIT contexts lock poisoned");
     prune_expired_transport_pits(&mut contexts, now_epoch_ms());
-    contexts.contains_key(&pit.id)
+    remove_transport_pit_if_indices_missing(&mut contexts, &pit.id).is_some()
+}
+
+fn remove_transport_pit_if_indices_missing(
+    contexts: &mut BTreeMap<String, PitContext>,
+    pit_id: &str,
+) -> Option<()> {
+    let context = contexts.get(pit_id)?;
+    let created_indices = dev_transport_pit_bindings()
+        .created_indices
+        .lock()
+        .expect("dev transport created indices lock poisoned");
+    if context
+        .indices
+        .iter()
+        .all(|index| created_indices.contains(index))
+    {
+        return Some(());
+    }
+    drop(created_indices);
+    contexts.remove(pit_id);
+    None
 }
 
 fn local_transport_query_matches(
@@ -13069,6 +13091,88 @@ mod tests {
                 .keep_alive_millis,
             60_000
         );
+    }
+
+    #[test]
+    fn search_transport_route_removes_pit_when_backing_index_is_deleted() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        let bindings = dev_transport_pit_bindings();
+        bindings
+            .contexts
+            .lock()
+            .expect("dev transport PIT contexts lock poisoned")
+            .clear();
+        bindings
+            .created_indices
+            .lock()
+            .expect("dev transport created indices lock poisoned")
+            .clear();
+        bindings
+            .documents
+            .lock()
+            .expect("dev transport documents lock poisoned")
+            .clear();
+        bindings
+            .created_indices
+            .lock()
+            .expect("dev transport created indices lock poisoned")
+            .insert("logs-search-pit-deleted-index".to_string());
+
+        let pit_id = build_local_pit_id(705);
+        bindings
+            .contexts
+            .lock()
+            .expect("dev transport PIT contexts lock poisoned")
+            .insert(
+                pit_id.clone(),
+                PitContext {
+                    indices: vec!["logs-search-pit-deleted-index".to_string()],
+                    documents: BTreeMap::from([(
+                        "logs-search-pit-deleted-index:doc-1:".to_string(),
+                        StoredDocument {
+                            source: serde_json::json!({ "status": "active" }),
+                            version: 1,
+                            seq_no: 1,
+                            primary_term: 1,
+                            routing: None,
+                            refreshed: true,
+                        },
+                    )]),
+                    keep_alive_millis: 60_000,
+                    expires_at_millis: transport_pit_expires_at_millis(now_epoch_ms(), 60_000),
+                    creation_time_millis: now_epoch_ms(),
+                },
+            );
+        bindings
+            .created_indices
+            .lock()
+            .expect("dev transport created indices lock poisoned")
+            .remove("logs-search-pit-deleted-index");
+
+        let request = os_transport::action::OpenSearchSearchRequestWire {
+            source: Some(os_transport::action::OpenSearchSearchSourceBuilderWire {
+                point_in_time: Some(os_transport::action::OpenSearchPointInTimeBuilderWire {
+                    id: pit_id.clone(),
+                    keep_alive: Some(os_transport::action::TimeValueWire::minutes(1)),
+                }),
+                ..os_transport::action::OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..os_transport::action::OpenSearchSearchRequestWire::default()
+        };
+        let frame = os_transport::action::build_opensearch_search_request_message(
+            314,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(!search_request_supports_local_execution_subset(&frame[6..]));
+        assert!(!bindings
+            .contexts
+            .lock()
+            .expect("dev transport PIT contexts lock poisoned")
+            .contains_key(&pit_id));
     }
 
     #[test]
