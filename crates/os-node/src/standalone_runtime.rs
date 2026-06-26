@@ -2479,7 +2479,7 @@ pub struct ScrollContext {
 #[derive(Clone, Debug)]
 pub struct PitContext {
     pub indices: Vec<String>,
-    pub documents: BTreeMap<String, StoredDocument>,
+    pub documents: Arc<BTreeMap<String, StoredDocument>>,
     pub keep_alive_millis: u64,
     pub expires_at_millis: u128,
     pub creation_time_millis: u128,
@@ -10089,7 +10089,7 @@ impl SteelNode {
         let (candidate_documents, docs_snapshot_for_suggest) = {
             let live_docs;
             let docs = if let Some(context) = pit_context.as_ref() {
-                &context.documents
+                context.documents.as_ref()
             } else {
                 live_docs = self
                     .documents_state
@@ -11123,7 +11123,7 @@ impl SteelNode {
             pit_id.clone(),
             PitContext {
                 indices: resolved_indices.clone(),
-                documents,
+                documents: Arc::new(documents),
                 keep_alive_millis,
                 expires_at_millis: pit_expires_at_millis(creation_time_millis, keep_alive_millis),
                 creation_time_millis,
@@ -34320,7 +34320,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 build_local_pit_id(701),
                 PitContext {
                     indices: vec!["logs-cat-node-pit".to_string()],
-                    documents: BTreeMap::new(),
+                    documents: Arc::new(BTreeMap::new()),
                     keep_alive_millis: 60_000,
                     expires_at_millis: current_epoch_millis() + 60_000,
                     creation_time_millis: current_epoch_millis(),
@@ -34477,7 +34477,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 build_local_pit_id(801),
                 PitContext {
                     indices: vec!["logs-000001".to_string()],
-                    documents: BTreeMap::new(),
+                    documents: Arc::new(BTreeMap::new()),
                     keep_alive_millis: 60_000,
                     expires_at_millis: current_epoch_millis() + 60_000,
                     creation_time_millis: current_epoch_millis(),
@@ -34613,7 +34613,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 build_local_pit_id(901),
                 PitContext {
                     indices: vec!["logs-000001".to_string()],
-                    documents: BTreeMap::new(),
+                    documents: Arc::new(BTreeMap::new()),
                     keep_alive_millis: 60_000,
                     expires_at_millis: current_epoch_millis() + 60_000,
                     creation_time_millis: current_epoch_millis(),
@@ -35060,7 +35060,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 expired_pit_id.clone(),
                 PitContext {
                     indices: vec!["logs-expired-pit-segments".to_string()],
-                    documents: BTreeMap::new(),
+                    documents: Arc::new(BTreeMap::new()),
                     keep_alive_millis: 1,
                     expires_at_millis: now_millis.saturating_sub(1),
                     creation_time_millis: now_millis.saturating_sub(2),
@@ -35070,7 +35070,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 active_pit_id.clone(),
                 PitContext {
                     indices: vec!["logs-active-pit-segments".to_string()],
-                    documents: BTreeMap::new(),
+                    documents: Arc::new(BTreeMap::new()),
                     keep_alive_millis: 60_000,
                     expires_at_millis: now_millis + 60_000,
                     creation_time_millis: now_millis,
@@ -35120,7 +35120,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                     expired_explicit_pit_id.clone(),
                     PitContext {
                         indices: vec!["logs-expired-explicit-pit-segments".to_string()],
-                        documents: BTreeMap::new(),
+                        documents: Arc::new(BTreeMap::new()),
                         keep_alive_millis: 1,
                         expires_at_millis: now_millis.saturating_sub(1),
                         creation_time_millis: now_millis.saturating_sub(2),
@@ -36254,7 +36254,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 expired_pit_id.clone(),
                 PitContext {
                     indices: vec!["logs-node-stats-expired-pit".to_string()],
-                    documents: BTreeMap::new(),
+                    documents: Arc::new(BTreeMap::new()),
                     keep_alive_millis: 1,
                     expires_at_millis: now_millis.saturating_sub(1),
                     creation_time_millis: now_millis.saturating_sub(2),
@@ -36264,7 +36264,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 build_local_pit_id(202),
                 PitContext {
                     indices: vec!["logs-node-stats-active-pit".to_string()],
-                    documents: BTreeMap::new(),
+                    documents: Arc::new(BTreeMap::new()),
                     keep_alive_millis: 60_000,
                     expires_at_millis: now_millis + 60_000,
                     creation_time_millis: now_millis,
@@ -46318,7 +46318,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 "pit-expired".to_string(),
                 PitContext {
                     indices: vec!["logs-pit-expired".to_string()],
-                    documents: BTreeMap::new(),
+                    documents: Arc::new(BTreeMap::new()),
                     keep_alive_millis: 1,
                     expires_at_millis: now_millis.saturating_sub(1),
                     creation_time_millis: now_millis.saturating_sub(2),
@@ -46328,7 +46328,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 "pit-active".to_string(),
                 PitContext {
                     indices: vec!["logs-pit-active".to_string()],
-                    documents: BTreeMap::new(),
+                    documents: Arc::new(BTreeMap::new()),
                     keep_alive_millis: 60_000,
                     expires_at_millis: now_millis + 60_000,
                     creation_time_millis: now_millis,
@@ -48642,6 +48642,14 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         ));
         assert_eq!(open_pit.status, 200);
         let pit_id = open_pit.body["pit_id"].as_str().unwrap();
+        let original_snapshot = node
+            .pit_contexts
+            .lock()
+            .expect("pit contexts lock poisoned")
+            .get(pit_id)
+            .expect("opened pit context")
+            .documents
+            .clone();
 
         assert_eq!(
             node.handle_rest_request(
@@ -48738,6 +48746,13 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                     serde_json::json!("original")
                 )
             ]
+        );
+        let resolved_context = node
+            .resolve_pit_context(pit_id, Some(60_000))
+            .expect("pit context resolves");
+        assert!(
+            Arc::ptr_eq(&original_snapshot, &resolved_context.documents),
+            "PIT context resolution must share the open-time snapshot instead of cloning the document map"
         );
 
         let pit_second_page = node.handle_rest_request(
@@ -50301,7 +50316,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 expired_pit_id.clone(),
                 PitContext {
                     indices: vec!["logs-pit-reaper-expired".to_string()],
-                    documents: BTreeMap::new(),
+                    documents: Arc::new(BTreeMap::new()),
                     keep_alive_millis: 1,
                     expires_at_millis: now_millis.saturating_sub(1),
                     creation_time_millis: now_millis.saturating_sub(2),
@@ -50311,7 +50326,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 active_pit_id.clone(),
                 PitContext {
                     indices: vec!["logs-pit-reaper-active".to_string()],
-                    documents: BTreeMap::new(),
+                    documents: Arc::new(BTreeMap::new()),
                     keep_alive_millis: 60_000,
                     expires_at_millis: now_millis + 60_000,
                     creation_time_millis: now_millis,

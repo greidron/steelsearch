@@ -16,6 +16,10 @@ name = "steelsearch"
 path = "src/main.rs"
 required-features = ["standalone-runtime"]
 
+[[bin]]
+name = "pit-context-benchmark"
+path = "benchmarks/pit_context.rs"
+
 [[test]]
 name = "dev_cluster_daemons"
 path = "tests/dev_cluster_daemons.rs"
