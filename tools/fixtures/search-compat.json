@@ -832,6 +832,16 @@
       "description": "[admin-cat] cat indices text honors s aliases and desc order"
     },
     {
+      "name": "cat_indices_text_bytes_parameter",
+      "area": "cat",
+      "method": "GET",
+      "path": "/_cat/indices/logs-compat?v=true&h=ss&bytes=b",
+      "accept": "text/plain",
+      "extract": "cat_indices_selected_columns",
+      "family": "admin-cat",
+      "description": "[admin-cat] cat indices text renders byte-size columns using bytes parameter"
+    },
+    {
       "name": "cat_pending_tasks_json",
       "area": "cat",
       "method": "GET",

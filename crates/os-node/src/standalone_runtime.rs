@@ -18203,8 +18203,11 @@ impl SteelNode {
                 .map(|row| {
                     let mut object = serde_json::Map::new();
                     for (name, display) in &display_columns {
-                        if let Some(value) = row.get(*name) {
-                            object.insert(display.clone(), value.clone());
+                        if row.get(*name).is_some() {
+                            object.insert(
+                                display.clone(),
+                                Value::String(cat_indices_cell_text(row, name, request)),
+                            );
                         }
                     }
                     Value::Object(object)
@@ -18230,7 +18233,7 @@ impl SteelNode {
             lines.push(
                 display_columns
                     .iter()
-                    .map(|(name, _)| row[*name].as_str().unwrap_or(""))
+                    .map(|(name, _)| cat_indices_cell_text(row, name, request))
                     .collect::<Vec<_>>()
                     .join(" "),
             );
@@ -30271,6 +30274,16 @@ fn sort_cat_indices_rows(
     Ok(())
 }
 
+fn cat_indices_cell_text(row: &Value, column: &str, request: &RestRequest) -> String {
+    let value = row[column].as_str().unwrap_or_default();
+    if matches!(column, "store.size" | "pri.store.size")
+        && request.query_params.contains_key("bytes")
+    {
+        return value.trim_end_matches('b').to_string();
+    }
+    value.to_string()
+}
+
 fn cat_indices_display_columns(h_param: Option<&String>) -> Vec<(&'static str, String)> {
     let Some(h_param) = h_param else {
         return CAT_INDICES_DEFAULT_COLUMNS
@@ -35684,6 +35697,28 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             .collect::<Vec<_>>();
         assert_eq!(selected_text_lines[0], "idx dc");
         assert!(selected_text_lines.iter().any(|line| *line == "logs-000001 1"));
+
+        let mut indices_bytes_text_request =
+            RestRequest::new(RestMethod::Get, "/_cat/indices/logs-000001");
+        indices_bytes_text_request
+            .query_params
+            .insert("v".to_string(), "true".to_string());
+        indices_bytes_text_request
+            .query_params
+            .insert("h".to_string(), "ss".to_string());
+        indices_bytes_text_request
+            .query_params
+            .insert("bytes".to_string(), "b".to_string());
+        let indices_bytes_text_response = node.handle_rest_request(indices_bytes_text_request);
+        let indices_bytes_text = indices_bytes_text_response
+            .body
+            .as_str()
+            .expect("cat indices bytes text body");
+        let bytes_text_lines = indices_bytes_text
+            .lines()
+            .map(str::trim)
+            .collect::<Vec<_>>();
+        assert_eq!(bytes_text_lines, vec!["ss", "0"]);
 
         let mut indices_sorted_text_request =
             RestRequest::new(RestMethod::Get, "/_cat/indices/logs-*");
