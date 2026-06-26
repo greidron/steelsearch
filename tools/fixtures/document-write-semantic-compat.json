@@ -46,6 +46,10 @@
       "body": {}
     },
     {
+      "name": "logs-delete-query-refresh",
+      "body": {}
+    },
+    {
       "name": "logs-bulk-metadata-000001",
       "body": {}
     }
@@ -119,6 +123,18 @@
           "_source": {
             "tenant": "tenant-refresh",
             "processed": false
+          }
+        }
+      ]
+    },
+    {
+      "index": "logs-delete-query-refresh",
+      "documents": [
+        {
+          "_id": "doc-1",
+          "_source": {
+            "tenant": "tenant-delete-refresh",
+            "message": "delete by query refresh target"
           }
         }
       ]
@@ -382,6 +398,32 @@
           "method": "GET",
           "path": "/logs-update-query-refresh/_doc/doc-1?realtime=false",
           "expected_status": 200,
+          "extract": "get_document"
+        }
+      ]
+    },
+    {
+      "name": "delete_by_query_refresh_true_readback",
+      "area": "document-write",
+      "extract": "get_document",
+      "steps": [
+        {
+          "name": "delete-by-query-refresh-true",
+          "method": "POST",
+          "path": "/logs-delete-query-refresh/_delete_by_query?refresh=true",
+          "body": {
+            "query": {
+              "match_all": {}
+            }
+          },
+          "expected_status": 200,
+          "extract": "reindex_summary"
+        },
+        {
+          "name": "delete-by-query-refresh-readback",
+          "method": "GET",
+          "path": "/logs-delete-query-refresh/_doc/doc-1?realtime=false",
+          "expected_status": 404,
           "extract": "get_document"
         }
       ]
