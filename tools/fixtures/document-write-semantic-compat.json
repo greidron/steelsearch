@@ -42,6 +42,10 @@
       "body": {}
     },
     {
+      "name": "logs-update-query-refresh",
+      "body": {}
+    },
+    {
       "name": "logs-bulk-metadata-000001",
       "body": {}
     }
@@ -102,6 +106,18 @@
           "_id": "doc-1",
           "_source": {
             "tenant": "tenant-a",
+            "processed": false
+          }
+        }
+      ]
+    },
+    {
+      "index": "logs-update-query-refresh",
+      "documents": [
+        {
+          "_id": "doc-1",
+          "_source": {
+            "tenant": "tenant-refresh",
             "processed": false
           }
         }
@@ -335,6 +351,38 @@
           },
           "expected_status": 200,
           "extract": "reindex_summary"
+        }
+      ]
+    },
+    {
+      "name": "update_by_query_refresh_true_readback",
+      "area": "document-write",
+      "extract": "get_document",
+      "steps": [
+        {
+          "name": "update-by-query-refresh-true",
+          "method": "POST",
+          "path": "/logs-update-query-refresh/_update_by_query?refresh=true",
+          "body": {
+            "query": {
+              "match_all": {}
+            },
+            "script": {
+              "source": "ctx._source.processed = params.processed",
+              "params": {
+                "processed": true
+              }
+            }
+          },
+          "expected_status": 200,
+          "extract": "reindex_summary"
+        },
+        {
+          "name": "update-by-query-refresh-readback",
+          "method": "GET",
+          "path": "/logs-update-query-refresh/_doc/doc-1?realtime=false",
+          "expected_status": 200,
+          "extract": "get_document"
         }
       ]
     },
