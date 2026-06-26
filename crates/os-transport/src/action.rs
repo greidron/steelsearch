@@ -33791,12 +33791,6 @@ impl OpenSearchDeletePitRequestWire {
                 reason: "OpenSearch delete-PIT requests require at least one PIT id",
             });
         }
-        if !all_id_is_standalone(&self.pit_ids) {
-            return Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "delete pit mixed all ids",
-                reason: "OpenSearch treats [_all] as a special PIT selector only when it is the sole PIT id",
-            });
-        }
         Ok(())
     }
 
@@ -71633,13 +71627,7 @@ mod tests {
             pit_ids: vec!["_all".to_string(), "pit-context".to_string()],
             ..OpenSearchDeletePitRequestWire::default()
         };
-        assert!(matches!(
-            mixed_all.reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "delete pit mixed all ids",
-                ..
-            })
-        ));
+        mixed_all.validate_supported_subset().unwrap();
 
         let explicit_id = OpenSearchDeletePitRequestWire {
             pit_ids: vec!["pit-context".to_string()],

@@ -2238,8 +2238,9 @@ The clear-scroll boundary covers:
   `num_freed` counts;
 - local transport route invalidation for standalone `_all` and explicit scroll
   ids through the shared `SteelNode` scroll context store;
-- explicit rejection for empty scroll id arrays, empty scroll id entries, and
-  `_all` mixed with explicit scroll ids at the local lifecycle boundary.
+- explicit rejection for empty scroll id arrays and empty scroll id entries;
+  `_all` is treated as a clear-all selector only when it is the sole scroll id,
+  matching the OpenSearch controller branch.
 
 The explain boundary covers:
 
@@ -2266,8 +2267,8 @@ The delete-PIT boundary covers:
   removed PIT contexts still render successful `DeletePitInfo` entries, with
   duplicate explicit ids collapsed like the REST close-PIT route;
 - standalone `_all` delete prunes expired local PIT contexts before rendering
-  active deletion results, while `_all` mixed with explicit ids is excluded
-  from the local lifecycle route;
+  active deletion results, while `_all` mixed with explicit ids stays on the
+  explicit-id path like OpenSearch's delete-PIT transport action;
 - explicit local lifecycle rejection for empty PIT id arrays and empty PIT id
   entries, while wire-level empty PIT id entries still decode like OpenSearch.
 

@@ -6159,7 +6159,6 @@ fn delete_pit_request_matches_local_lifecycle_subset(
 ) -> bool {
     request.validate_supported_subset().is_ok()
         && !request.pit_ids.iter().any(|pit_id| pit_id.is_empty())
-        && ids_use_all_only_as_standalone(&request.pit_ids)
 }
 
 fn ids_use_all_only_as_standalone(ids: &[String]) -> bool {
@@ -6204,7 +6203,6 @@ fn clear_scroll_request_matches_local_lifecycle_subset(
     request: &os_transport::action::OpenSearchClearScrollRequestWire,
 ) -> bool {
     request.validate_supported_subset().is_ok()
-        && ids_use_all_only_as_standalone(&request.scroll_ids)
 }
 
 fn get_all_pits_request_supports_local_lifecycle_subset(
@@ -6249,7 +6247,7 @@ fn clear_transport_scroll_contexts(
         .contexts
         .lock()
         .expect("dev transport scroll contexts lock poisoned");
-    let freed = if scroll_ids.iter().any(|id| id == "_all") {
+    let freed = if scroll_ids.len() == 1 && scroll_ids.first().is_some_and(|id| id == "_all") {
         let freed = contexts.len();
         contexts.clear();
         freed
@@ -6364,7 +6362,7 @@ fn delete_transport_pit_contexts(
         .lock()
         .expect("dev transport PIT contexts lock poisoned");
     prune_expired_transport_pits(&mut contexts, now_epoch_ms());
-    let ids = if pit_ids.iter().any(|id| id == "_all") {
+    let ids = if pit_ids.len() == 1 && pit_ids.first().is_some_and(|id| id == "_all") {
         contexts.keys().cloned().collect::<Vec<_>>()
     } else {
         let mut seen_ids = BTreeSet::new();
@@ -16585,7 +16583,7 @@ mod tests {
     }
 
     #[test]
-    fn delete_pit_transport_route_rejects_all_mixed_with_explicit_ids() {
+    fn delete_pit_transport_route_treats_mixed_all_as_explicit_id_like_opensearch() {
         let _lock = dev_transport_pit_test_lock()
             .lock()
             .expect("dev transport PIT test lock poisoned");
@@ -16616,7 +16614,7 @@ mod tests {
             &request,
         )
         .unwrap();
-        assert!(!delete_pit_request_supports_local_lifecycle_subset(
+        assert!(delete_pit_request_supports_local_lifecycle_subset(
             &frame[6..]
         ));
 
@@ -16631,11 +16629,15 @@ mod tests {
                 .unwrap()
                 .unwrap()
         else {
-            panic!("expected delete-PIT fallback response message");
+            panic!("expected delete-PIT response message");
         };
-        assert_eq!(message.request_id, 199);
-        assert!(message.body.is_empty());
-        assert!(dev_transport_pit_bindings()
+        let response =
+            os_transport::action::read_opensearch_delete_pit_response_message(&message).unwrap();
+        assert_eq!(response.results.len(), 2);
+        assert_eq!(response.results[0].pit_id, "_all");
+        assert_eq!(response.results[1].pit_id, "pit-context");
+        assert!(response.results.iter().all(|result| result.successful));
+        assert!(!dev_transport_pit_bindings()
             .contexts
             .lock()
             .expect("dev transport PIT contexts lock poisoned")
@@ -16872,7 +16874,7 @@ mod tests {
     }
 
     #[test]
-    fn clear_scroll_transport_route_rejects_all_mixed_with_explicit_ids() {
+    fn clear_scroll_transport_route_treats_mixed_all_as_explicit_id_like_opensearch() {
         let _lock = dev_transport_scroll_test_lock()
             .lock()
             .expect("dev transport scroll test lock poisoned");
@@ -16902,7 +16904,7 @@ mod tests {
             &request,
         )
         .unwrap();
-        assert!(!clear_scroll_request_supports_local_lifecycle_subset(
+        assert!(clear_scroll_request_supports_local_lifecycle_subset(
             &frame[6..]
         ));
 
@@ -16917,11 +16919,13 @@ mod tests {
                 .unwrap()
                 .unwrap()
         else {
-            panic!("expected mixed clear-scroll fallback response message");
+            panic!("expected mixed clear-scroll response message");
         };
-        assert_eq!(message.request_id, 202);
-        assert!(message.body.is_empty());
-        assert!(dev_transport_scroll_bindings()
+        let response =
+            os_transport::action::read_opensearch_clear_scroll_response_message(&message).unwrap();
+        assert!(response.succeeded);
+        assert_eq!(response.num_freed, 1);
+        assert!(!dev_transport_scroll_bindings()
             .contexts
             .lock()
             .expect("dev transport scroll contexts lock poisoned")
