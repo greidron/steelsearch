@@ -1344,9 +1344,10 @@ The get-script-context boundary covers:
 - OpenSearch `GetScriptContextResponse` context count and `ScriptContextInfo`
   name, execute method, getter methods, and method parameter metadata at the
   wire decode/build layer;
+- default response rendering for the same Rust-supported script context catalog
+  exposed by REST `GET /_script_context`;
 - explicit fail-closed classification for `cluster:admin/script_context/get`
-  until Rust-supported script context catalog mapping and response rendering
-  are implemented;
+  until a local transport execution adapter is wired to the catalog renderer;
 - explicit rejection for get-script-context execution, plus defensive decode
   rejection for negative context, getter, and parameter counts.
 
@@ -1357,9 +1358,10 @@ The get-script-language boundary covers:
 - OpenSearch `GetScriptLanguageResponse` / `ScriptLanguagesInfo`
   `types_allowed` string collection and language-to-contexts string collection
   map at the wire decode/build layer;
+- default response rendering for the same Rust-supported script language
+  catalog exposed by REST `GET /_script_language`;
 - explicit fail-closed classification for `cluster:admin/script_language/get`
-  until Rust-supported script language/type/context catalog mapping and
-  response rendering are implemented;
+  until a local transport execution adapter is wired to the catalog renderer;
 - explicit rejection for get-script-language execution, plus defensive decode
   rejection for negative type, language, and context counts.
 

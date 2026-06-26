@@ -20574,6 +20574,10 @@ impl OpenSearchScriptContextMethodInfoWire {
         Self::new("execute", "void", Vec::new())
     }
 
+    fn getter(name: impl Into<String>, return_type: impl Into<String>) -> Self {
+        Self::new(name, return_type, Vec::new())
+    }
+
     fn write(&self, output: &mut StreamOutput) {
         output.write_string(&self.name);
         output.write_string(&self.return_type);
@@ -20664,11 +20668,7 @@ pub struct OpenSearchGetScriptContextResponseWire {
 impl Default for OpenSearchGetScriptContextResponseWire {
     fn default() -> Self {
         Self {
-            contexts: vec![OpenSearchScriptContextInfoWire::new(
-                "template",
-                OpenSearchScriptContextMethodInfoWire::execute_void(),
-                Vec::new(),
-            )],
+            contexts: rust_supported_script_contexts_wire(),
         }
     }
 }
@@ -20697,6 +20697,81 @@ impl OpenSearchGetScriptContextResponseWire {
         require_no_trailing_bytes(&input)?;
         Ok(Self { contexts })
     }
+}
+
+fn rust_supported_script_contexts_wire() -> Vec<OpenSearchScriptContextInfoWire> {
+    vec![
+        OpenSearchScriptContextInfoWire::new(
+            "filter",
+            OpenSearchScriptContextMethodInfoWire::new("execute", "boolean", Vec::new()),
+            vec![
+                OpenSearchScriptContextMethodInfoWire::getter("getDoc", "java.util.Map"),
+                OpenSearchScriptContextMethodInfoWire::getter("getParams", "java.util.Map"),
+            ],
+        ),
+        OpenSearchScriptContextInfoWire::new(
+            "ingest",
+            OpenSearchScriptContextMethodInfoWire::new(
+                "execute",
+                "void",
+                vec![OpenSearchScriptContextParameterInfoWire::new(
+                    "java.util.Map",
+                    "ctx",
+                )],
+            ),
+            vec![OpenSearchScriptContextMethodInfoWire::getter(
+                "getParams",
+                "java.util.Map",
+            )],
+        ),
+        OpenSearchScriptContextInfoWire::new(
+            "score",
+            OpenSearchScriptContextMethodInfoWire::new(
+                "execute",
+                "double",
+                vec![OpenSearchScriptContextParameterInfoWire::new(
+                    "org.opensearch.script.ScoreScript$ExplanationHolder",
+                    "explanation",
+                )],
+            ),
+            vec![
+                OpenSearchScriptContextMethodInfoWire::getter("getDoc", "java.util.Map"),
+                OpenSearchScriptContextMethodInfoWire::getter("getParams", "java.util.Map"),
+                OpenSearchScriptContextMethodInfoWire::getter("get_score", "double"),
+            ],
+        ),
+        OpenSearchScriptContextInfoWire::new(
+            "search",
+            OpenSearchScriptContextMethodInfoWire::new(
+                "execute",
+                "void",
+                vec![OpenSearchScriptContextParameterInfoWire::new(
+                    "java.util.Map",
+                    "ctx",
+                )],
+            ),
+            vec![OpenSearchScriptContextMethodInfoWire::getter(
+                "getParams",
+                "java.util.Map",
+            )],
+        ),
+        OpenSearchScriptContextInfoWire::new(
+            "template",
+            OpenSearchScriptContextMethodInfoWire::new("execute", "java.lang.String", Vec::new()),
+            vec![OpenSearchScriptContextMethodInfoWire::getter(
+                "getParams",
+                "java.util.Map",
+            )],
+        ),
+        OpenSearchScriptContextInfoWire::new(
+            "update",
+            OpenSearchScriptContextMethodInfoWire::execute_void(),
+            vec![
+                OpenSearchScriptContextMethodInfoWire::getter("getCtx", "java.util.Map"),
+                OpenSearchScriptContextMethodInfoWire::getter("getParams", "java.util.Map"),
+            ],
+        ),
+    ]
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -20747,10 +20822,7 @@ impl Default for OpenSearchGetScriptLanguageResponseWire {
     fn default() -> Self {
         Self {
             types_allowed: vec!["inline".to_string(), "stored".to_string()],
-            language_contexts: BTreeMap::from([(
-                "painless".to_string(),
-                vec!["score".to_string(), "template".to_string()],
-            )]),
+            language_contexts: rust_supported_script_language_contexts_wire(),
         }
     }
 }
@@ -20787,6 +20859,32 @@ impl OpenSearchGetScriptLanguageResponseWire {
             language_contexts,
         })
     }
+}
+
+fn rust_supported_script_language_contexts_wire() -> BTreeMap<String, Vec<String>> {
+    BTreeMap::from([
+        (
+            "expression".to_string(),
+            vec![
+                "field".to_string(),
+                "filter".to_string(),
+                "score".to_string(),
+                "terms_set".to_string(),
+            ],
+        ),
+        ("mustache".to_string(), vec!["template".to_string()]),
+        (
+            "painless".to_string(),
+            vec![
+                "filter".to_string(),
+                "ingest".to_string(),
+                "score".to_string(),
+                "search".to_string(),
+                "template".to_string(),
+                "update".to_string(),
+            ],
+        ),
+    ])
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -58958,6 +59056,37 @@ mod tests {
     }
 
     #[test]
+    fn opensearch_get_script_context_default_matches_rust_rest_catalog() {
+        let response = OpenSearchGetScriptContextResponseWire::default();
+        let names = response
+            .contexts
+            .iter()
+            .map(|context| context.name.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            names,
+            vec!["filter", "ingest", "score", "search", "template", "update"]
+        );
+        let score = response
+            .contexts
+            .iter()
+            .find(|context| context.name == "score")
+            .expect("score context");
+        assert_eq!(score.execute.return_type, "double");
+        assert_eq!(
+            score.execute.parameters,
+            vec![OpenSearchScriptContextParameterInfoWire::new(
+                "org.opensearch.script.ScoreScript$ExplanationHolder",
+                "explanation"
+            )]
+        );
+        assert!(score
+            .getters
+            .iter()
+            .any(|getter| getter.name == "get_score" && getter.return_type == "double"));
+    }
+
+    #[test]
     fn opensearch_get_script_context_response_rejects_negative_counts() {
         let mut context_count = StreamOutput::new();
         context_count.write_i32(-1);
@@ -59085,6 +59214,36 @@ mod tests {
         assert_eq!(
             OpenSearchGetScriptLanguageResponseWire::read(output.freeze()).unwrap(),
             response
+        );
+    }
+
+    #[test]
+    fn opensearch_get_script_language_default_matches_rust_rest_catalog() {
+        let response = OpenSearchGetScriptLanguageResponseWire::default();
+        assert_eq!(response.types_allowed, vec!["inline", "stored"]);
+        assert_eq!(
+            response.language_contexts.get("expression").unwrap(),
+            &vec![
+                "field".to_string(),
+                "filter".to_string(),
+                "score".to_string(),
+                "terms_set".to_string()
+            ]
+        );
+        assert_eq!(
+            response.language_contexts.get("mustache").unwrap(),
+            &vec!["template".to_string()]
+        );
+        assert_eq!(
+            response.language_contexts.get("painless").unwrap(),
+            &vec![
+                "filter".to_string(),
+                "ingest".to_string(),
+                "score".to_string(),
+                "search".to_string(),
+                "template".to_string(),
+                "update".to_string()
+            ]
         );
     }
 
