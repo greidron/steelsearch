@@ -5333,6 +5333,11 @@ fn local_transport_search_response_from_request(
         .unwrap_or(10);
     let query = request_source.and_then(|source| source.query.as_ref());
     let slice = request_source.and_then(|source| source.slice.as_ref());
+    let min_score = request_source.and_then(|source| source.min_score);
+    let terminate_after = request_source
+        .map(|source| source.terminate_after.max(0) as usize)
+        .unwrap_or(0);
+    let track_total_hits_up_to = request_source.and_then(|source| source.track_total_hits_up_to);
     let Some((documents, resolved_indices, point_in_time_id)) =
         transport_search_documents_for_request(request)
     else {
@@ -5350,45 +5355,54 @@ fn local_transport_search_response_from_request(
     let include_seq_no_and_primary_term = request_source
         .and_then(|source| source.seq_no_and_primary_term)
         .unwrap_or(false);
-    let mut matched = documents
-        .iter()
-        .filter_map(|(key, record)| {
-            if !record.refreshed {
-                return None;
+    let mut terminated_early = false;
+    let mut matched = Vec::new();
+    for (key, record) in documents.iter() {
+        if !record.refreshed {
+            continue;
+        }
+        let Some((index, id, _)) = split_transport_document_key(key) else {
+            continue;
+        };
+        if !resolved_indices.is_empty()
+            && !resolved_indices
+                .iter()
+                .any(|candidate| candidate.as_str() == index)
+        {
+            continue;
+        }
+        if let Some(slice) = slice {
+            if !transport_document_matches_search_slice(id, &record.source, slice) {
+                continue;
             }
-            let (index, id, _) = split_transport_document_key(key)?;
-            if !resolved_indices.is_empty()
-                && !resolved_indices
-                    .iter()
-                    .any(|candidate| candidate.as_str() == index)
-            {
-                return None;
+        }
+        if let Some(alias_filter) = pit_search_context_id
+            .as_ref()
+            .and_then(|context_id| context_id.alias_filter_for_index_name(index))
+        {
+            if !local_transport_query_matches(&record.source, id, alias_filter.query.as_ref()) {
+                continue;
             }
-            if let Some(slice) = slice {
-                if !transport_document_matches_search_slice(id, &record.source, slice) {
-                    return None;
-                }
-            }
-            if let Some(alias_filter) = pit_search_context_id
-                .as_ref()
-                .and_then(|context_id| context_id.alias_filter_for_index_name(index))
-            {
-                if !local_transport_query_matches(&record.source, id, alias_filter.query.as_ref()) {
-                    return None;
-                }
-            }
-            local_transport_query_matches(&record.source, id, query).then(|| {
-                (
-                    index.to_string(),
-                    id.to_string(),
-                    record.source.clone(),
-                    record.version,
-                    record.seq_no,
-                    record.primary_term,
-                )
-            })
-        })
-        .collect::<Vec<_>>();
+        }
+        if !local_transport_query_matches(&record.source, id, query) {
+            continue;
+        }
+        if min_score.is_some_and(|min_score| 1.0_f32 < min_score) {
+            continue;
+        }
+        matched.push((
+            index.to_string(),
+            id.to_string(),
+            record.source.clone(),
+            record.version,
+            record.seq_no,
+            record.primary_term,
+        ));
+        if terminate_after > 0 && matched.len() >= terminate_after {
+            terminated_early = true;
+            break;
+        }
+    }
     sort_transport_search_matches(&mut matched, sorts);
     if let (Some(sorts), Some(search_after)) = (sorts, search_after) {
         matched = matched
@@ -5396,7 +5410,9 @@ fn local_transport_search_response_from_request(
             .filter(|candidate| transport_search_match_after(candidate, sorts, search_after))
             .collect();
     }
-    let total_hits = matched.len() as i64;
+    let actual_total_hits = matched.len() as i64;
+    let (total_hits, total_hits_relation) =
+        local_transport_total_hits(actual_total_hits, track_total_hits_up_to);
     let hits = matched
         .into_iter()
         .skip(from)
@@ -5442,15 +5458,29 @@ fn local_transport_search_response_from_request(
         transport_pit_total_primary_shards(dev_transport_pit_bindings(), &resolved_indices).max(1)
             as i32;
     os_transport::action::OpenSearchSearchResponseWire {
-        total_hits: Some(total_hits),
-        total_hits_relation: 0,
+        total_hits,
+        total_hits_relation,
         max_score: if hits.is_empty() { f32::NAN } else { 1.0 },
         hits,
         total_shards,
         successful_shards: total_shards,
+        terminated_early: terminated_early.then_some(true),
         took_millis: 1,
         point_in_time_id,
-        ..os_transport::action::OpenSearchSearchResponseWire::empty_with_total_hits(total_hits)
+        ..os_transport::action::OpenSearchSearchResponseWire::empty_with_total_hits(
+            actual_total_hits,
+        )
+    }
+}
+
+fn local_transport_total_hits(
+    actual_total_hits: i64,
+    track_total_hits_up_to: Option<i32>,
+) -> (Option<i64>, i32) {
+    match track_total_hits_up_to {
+        Some(-1) => (None, 0),
+        Some(limit) if actual_total_hits > i64::from(limit) => (Some(i64::from(limit)), 1),
+        _ => (Some(actual_total_hits), 0),
     }
 }
 
@@ -18172,6 +18202,203 @@ mod tests {
         assert_eq!(metadata_response.hits[0].seq_no, 1);
         assert_eq!(metadata_response.hits[0].primary_term, 1);
         assert_eq!(metadata_response.hits[0].source, None);
+
+        let hidden_total_request = os_transport::action::OpenSearchSearchRequestWire {
+            source: Some(os_transport::action::OpenSearchSearchSourceBuilderWire {
+                point_in_time: Some(os_transport::action::OpenSearchPointInTimeBuilderWire {
+                    id: encoded_pit_id.clone(),
+                    keep_alive: Some(os_transport::action::TimeValueWire::minutes(1)),
+                }),
+                query: Some(os_transport::action::OpenSearchQueryBuilderWire::MatchAll(
+                    os_transport::action::OpenSearchMatchAllQueryBuilderWire::default(),
+                )),
+                track_total_hits_up_to: Some(-1),
+                ..os_transport::action::OpenSearchSearchSourceBuilderWire::default()
+            }),
+            indices_options:
+                os_transport::action::OpenSearchIndicesOptionsWire::point_in_time_search_prepared(),
+            ccs_minimize_roundtrips: false,
+            ..os_transport::action::OpenSearchSearchRequestWire::default()
+        };
+        let hidden_total_frame = os_transport::action::build_opensearch_search_request_message(
+            299,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &hidden_total_request,
+        )
+        .unwrap();
+        assert!(search_request_supports_local_execution_subset(
+            &hidden_total_frame[6..]
+        ));
+        let hidden_total_response = build_local_search_response(
+            299,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &hidden_total_frame[6..],
+        );
+        let mut frame = BytesMut::from(&hidden_total_response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected encoded-PIT hidden-total response");
+        };
+        let hidden_total_response =
+            os_transport::action::read_opensearch_search_response_message(&message).unwrap();
+        assert_eq!(hidden_total_response.total_hits, None);
+        assert_eq!(hidden_total_response.total_hits_relation, 0);
+        assert_eq!(hidden_total_response.hits.len(), 1);
+
+        let lower_bound_request = os_transport::action::OpenSearchSearchRequestWire {
+            source: Some(os_transport::action::OpenSearchSearchSourceBuilderWire {
+                point_in_time: Some(os_transport::action::OpenSearchPointInTimeBuilderWire {
+                    id: encoded_pit_id.clone(),
+                    keep_alive: Some(os_transport::action::TimeValueWire::minutes(1)),
+                }),
+                query: Some(os_transport::action::OpenSearchQueryBuilderWire::MatchAll(
+                    os_transport::action::OpenSearchMatchAllQueryBuilderWire::default(),
+                )),
+                track_total_hits_up_to: Some(0),
+                ..os_transport::action::OpenSearchSearchSourceBuilderWire::default()
+            }),
+            indices_options:
+                os_transport::action::OpenSearchIndicesOptionsWire::point_in_time_search_prepared(),
+            ccs_minimize_roundtrips: false,
+            ..os_transport::action::OpenSearchSearchRequestWire::default()
+        };
+        let lower_bound_frame = os_transport::action::build_opensearch_search_request_message(
+            300,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &lower_bound_request,
+        )
+        .unwrap();
+        assert!(search_request_supports_local_execution_subset(
+            &lower_bound_frame[6..]
+        ));
+        let lower_bound_response = build_local_search_response(
+            300,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &lower_bound_frame[6..],
+        );
+        let mut frame = BytesMut::from(&lower_bound_response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected encoded-PIT lower-bound response");
+        };
+        let lower_bound_response =
+            os_transport::action::read_opensearch_search_response_message(&message).unwrap();
+        assert_eq!(lower_bound_response.total_hits, Some(0));
+        assert_eq!(lower_bound_response.total_hits_relation, 1);
+        assert_eq!(lower_bound_response.hits.len(), 1);
+
+        let min_score_request = os_transport::action::OpenSearchSearchRequestWire {
+            source: Some(os_transport::action::OpenSearchSearchSourceBuilderWire {
+                point_in_time: Some(os_transport::action::OpenSearchPointInTimeBuilderWire {
+                    id: encoded_pit_id.clone(),
+                    keep_alive: Some(os_transport::action::TimeValueWire::minutes(1)),
+                }),
+                query: Some(os_transport::action::OpenSearchQueryBuilderWire::MatchAll(
+                    os_transport::action::OpenSearchMatchAllQueryBuilderWire::default(),
+                )),
+                min_score: Some(1.1),
+                ..os_transport::action::OpenSearchSearchSourceBuilderWire::default()
+            }),
+            indices_options:
+                os_transport::action::OpenSearchIndicesOptionsWire::point_in_time_search_prepared(),
+            ccs_minimize_roundtrips: false,
+            ..os_transport::action::OpenSearchSearchRequestWire::default()
+        };
+        let min_score_frame = os_transport::action::build_opensearch_search_request_message(
+            301,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &min_score_request,
+        )
+        .unwrap();
+        assert!(search_request_supports_local_execution_subset(
+            &min_score_frame[6..]
+        ));
+        let min_score_response = build_local_search_response(
+            301,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &min_score_frame[6..],
+        );
+        let mut frame = BytesMut::from(&min_score_response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected encoded-PIT min-score response");
+        };
+        let min_score_response =
+            os_transport::action::read_opensearch_search_response_message(&message).unwrap();
+        assert_eq!(min_score_response.total_hits, Some(0));
+        assert!(min_score_response.hits.is_empty());
+
+        bindings
+            .contexts
+            .lock()
+            .expect("dev transport PIT contexts lock poisoned")
+            .get_mut(&encoded_pit_id)
+            .expect("encoded PIT context should remain")
+            .documents
+            .insert(
+                "logs-reader-pit:doc-4:".to_string(),
+                StoredDocument {
+                    source: serde_json::json!({ "tenant": "a" }),
+                    version: 1,
+                    seq_no: 4,
+                    primary_term: 1,
+                    routing: None,
+                    refreshed: true,
+                },
+            );
+        let terminate_request = os_transport::action::OpenSearchSearchRequestWire {
+            source: Some(os_transport::action::OpenSearchSearchSourceBuilderWire {
+                point_in_time: Some(os_transport::action::OpenSearchPointInTimeBuilderWire {
+                    id: encoded_pit_id.clone(),
+                    keep_alive: Some(os_transport::action::TimeValueWire::minutes(1)),
+                }),
+                query: Some(os_transport::action::OpenSearchQueryBuilderWire::MatchAll(
+                    os_transport::action::OpenSearchMatchAllQueryBuilderWire::default(),
+                )),
+                terminate_after: 1,
+                ..os_transport::action::OpenSearchSearchSourceBuilderWire::default()
+            }),
+            indices_options:
+                os_transport::action::OpenSearchIndicesOptionsWire::point_in_time_search_prepared(),
+            ccs_minimize_roundtrips: false,
+            ..os_transport::action::OpenSearchSearchRequestWire::default()
+        };
+        let terminate_frame = os_transport::action::build_opensearch_search_request_message(
+            302,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &terminate_request,
+        )
+        .unwrap();
+        assert!(search_request_supports_local_execution_subset(
+            &terminate_frame[6..]
+        ));
+        let terminate_response = build_local_search_response(
+            302,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &terminate_frame[6..],
+        );
+        let mut frame = BytesMut::from(&terminate_response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected encoded-PIT terminated response");
+        };
+        let terminate_response =
+            os_transport::action::read_opensearch_search_response_message(&message).unwrap();
+        assert_eq!(terminate_response.total_hits, Some(1));
+        assert_eq!(terminate_response.hits.len(), 1);
+        assert_eq!(terminate_response.terminated_early, Some(true));
 
         let list_response = build_local_get_all_pits_response(
             295,
