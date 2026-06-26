@@ -24125,6 +24125,8 @@ fn validate_search_query_body(query: &Value) -> Option<RestResponse> {
         | "multi_match"
         | "match_phrase"
         | "match_phrase_prefix"
+        | "match_bool_prefix"
+        | "combined_fields"
         | "dis_max"
         | "ids"
         | "query_string"
@@ -24283,6 +24285,47 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
                     return Some(response);
                 }
             }
+        }
+    }
+    if let Some(match_bool_prefix) = query.get("match_bool_prefix").and_then(Value::as_object) {
+        let Some((_, spec)) = match_bool_prefix.iter().next() else {
+            return Some(build_unsupported_search_response(
+                "unsupported match_bool_prefix query shape",
+            ));
+        };
+        let valid = spec.as_str().is_some_and(|value| !value.is_empty())
+            || spec
+                .as_object()
+                .and_then(|object| object.get("query"))
+                .and_then(Value::as_str)
+                .is_some_and(|value| !value.is_empty());
+        if match_bool_prefix.len() != 1 || !valid {
+            return Some(build_unsupported_search_response(
+                "unsupported match_bool_prefix query shape",
+            ));
+        }
+    }
+    if let Some(combined_fields) = query.get("combined_fields").and_then(Value::as_object) {
+        let valid_query = combined_fields
+            .get("query")
+            .and_then(Value::as_str)
+            .is_some_and(|value| !value.is_empty());
+        let valid_fields = combined_fields
+            .get("fields")
+            .and_then(Value::as_array)
+            .is_some_and(|fields| !fields.is_empty() && fields.iter().all(Value::is_string));
+        if !valid_query || !valid_fields {
+            return Some(build_unsupported_search_response(
+                "unsupported combined_fields query shape",
+            ));
+        }
+        if combined_fields
+            .keys()
+            .any(|key| key != "query" && key != "fields")
+        {
+            return Some(build_unsupported_search_response(
+                "unsupported combined_fields parameter",
+            ));
         }
     }
     if let Some(constant_score) = query.get("constant_score").and_then(Value::as_object) {
@@ -26498,6 +26541,27 @@ fn evaluate_search_query_source_with_mappings(
         );
         return Some((matched, if matched { 1.0 } else { 0.0 }));
     }
+    if let Some(match_bool_prefix) = query.get("match_bool_prefix").and_then(Value::as_object) {
+        let (field, expected) = match_bool_prefix.iter().next()?;
+        let expected_value = extract_string_query_value(expected)?;
+        let haystacks = lookup_query_field_value(source, field)
+            .map(collect_string_leaf_values)
+            .unwrap_or_default();
+        let matched = value_matches_match_bool_prefix(&haystacks, expected_value);
+        return Some((matched, if matched { 1.0 } else { 0.0 }));
+    }
+    if let Some(combined_fields) = query.get("combined_fields").and_then(Value::as_object) {
+        let query_text = combined_fields.get("query").and_then(Value::as_str)?;
+        let fields = combined_fields
+            .get("fields")
+            .and_then(Value::as_array)?
+            .iter()
+            .filter_map(Value::as_str)
+            .collect::<Vec<_>>();
+        let haystacks = collect_searchable_field_values(source, Some(fields.as_slice()));
+        let (matched, score) = evaluate_text_query_strings(&haystacks, query_text, "and", false);
+        return Some((matched, score));
+    }
     if let Some(dis_max) = query.get("dis_max").and_then(Value::as_object) {
         let queries = dis_max.get("queries").and_then(Value::as_array)?;
         let mut best_score: f64 = 0.0;
@@ -27549,6 +27613,26 @@ fn evaluate_text_conjunction(haystacks: &[String], terms: &[String]) -> (bool, f
         score += term_score;
     }
     (true, score.max(1.0))
+}
+
+fn value_matches_match_bool_prefix(haystacks: &[String], query_text: &str) -> bool {
+    let terms = split_query_terms(query_text);
+    let Some((last, required)) = terms.split_last() else {
+        return true;
+    };
+    if required
+        .iter()
+        .any(|term| score_text_query_term(haystacks, term) == 0.0)
+    {
+        return false;
+    }
+    let prefix = last.to_ascii_lowercase();
+    haystacks.iter().any(|haystack| {
+        haystack
+            .split(|ch: char| !ch.is_alphanumeric())
+            .filter(|token| !token.is_empty())
+            .any(|token| token.to_ascii_lowercase().starts_with(&prefix))
+    })
 }
 
 fn score_text_query_term(haystacks: &[String], term: &str) -> f64 {
@@ -52618,6 +52702,39 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             simple_query_string_default_fields.body["hits"]["hits"][0]["_id"],
             "doc-2"
         );
+
+        let match_bool_prefix = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-dsl-000001/_search").with_json_body(
+                serde_json::json!({
+                    "query": {
+                        "match_bool_prefix": {
+                            "message": {
+                                "query": "beta wo"
+                            }
+                        }
+                    }
+                }),
+            ),
+        );
+        assert_eq!(match_bool_prefix.status, 200);
+        assert_eq!(match_bool_prefix.body["hits"]["total"]["value"], 1);
+        assert_eq!(match_bool_prefix.body["hits"]["hits"][0]["_id"], "doc-2");
+
+        let combined_fields = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-dsl-000001/_search").with_json_body(
+                serde_json::json!({
+                    "query": {
+                        "combined_fields": {
+                            "query": "alpha fox",
+                            "fields": ["message", "code"]
+                        }
+                    }
+                }),
+            ),
+        );
+        assert_eq!(combined_fields.status, 200);
+        assert_eq!(combined_fields.body["hits"]["total"]["value"], 1);
+        assert_eq!(combined_fields.body["hits"]["hits"][0]["_id"], "doc-1");
 
         let query_string = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/logs-search-dsl-000001/_search").with_json_body(
