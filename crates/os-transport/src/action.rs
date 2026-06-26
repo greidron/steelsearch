@@ -2201,8 +2201,8 @@ pub fn classify_opensearch_transport_action(
         },
         OPENSEARCH_CLEAR_INDICES_CACHE_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
-            disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "clear-indices-cache transport execution requires shard query, field-data, request, file, and node-wide cache clearing plus shard status response rendering",
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "clear-indices-cache transport adapter validates the bounded global default subset and renders OpenSearch-shaped shard counters",
         },
         OPENSEARCH_GET_ALIASES_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -39321,7 +39321,7 @@ impl OpenSearchClearIndicesCacheRequestWire {
         Ok(request)
     }
 
-    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+    pub fn validate_supported_execution_subset(&self) -> Result<(), TransportActionWireError> {
         if !self.indices.is_empty() {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "clear indices cache indices",
@@ -39372,12 +39372,20 @@ impl OpenSearchClearIndicesCacheRequestWire {
                 reason: "file cache clearing requires Rust file-cache pruning semantics",
             });
         }
+        Ok(())
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        self.validate_supported_execution_subset()?;
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "clear indices cache execution",
-            reason: "clear-indices-cache transport execution requires shard and node-wide cache clearing plus response rendering",
+            reason:
+                "use validate_supported_execution_subset for the implemented clear-indices-cache adapter",
         })
     }
 }
+
+pub type OpenSearchClearIndicesCacheResponseWire = OpenSearchRefreshResponseWire;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OpenSearchValidateQueryRequestWire {
@@ -40019,6 +40027,36 @@ pub fn read_opensearch_clear_indices_cache_request_message(
         });
     }
     OpenSearchClearIndicesCacheRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_opensearch_clear_indices_cache_response_message(
+    request_id: i64,
+    version: Version,
+    response: &OpenSearchClearIndicesCacheResponseWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    response.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::response(),
+        version,
+        variable_header: BytesMut::from(&ResponseVariableHeader::default().to_bytes()[..]),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_clear_indices_cache_response_message(
+    message: &TransportMessage,
+) -> Result<OpenSearchClearIndicesCacheResponseWire, TransportActionWireError> {
+    if !message.status.is_response() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "response",
+            actual: message.status.bits(),
+        });
+    }
+    let _header = ResponseVariableHeader::read(message.variable_header.clone().freeze())?;
+    OpenSearchClearIndicesCacheResponseWire::read(message.body.clone().freeze())
 }
 
 pub fn build_opensearch_refresh_response_message(
@@ -44270,7 +44308,7 @@ mod tests {
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_CLEAR_INDICES_CACHE_ACTION_NAME)
                 .disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_GET_ALIASES_ACTION_NAME).disposition,
@@ -44464,6 +44502,7 @@ mod tests {
                 || spec.action_name == OPENSEARCH_EXPLAIN_ACTION_NAME
                 || spec.action_name == OPENSEARCH_VALIDATE_QUERY_ACTION_NAME
                 || spec.action_name == OPENSEARCH_FLUSH_ACTION_NAME
+                || spec.action_name == OPENSEARCH_CLEAR_INDICES_CACHE_ACTION_NAME
             {
                 assert_eq!(
                     decision.disposition,
@@ -44515,7 +44554,6 @@ mod tests {
                 || spec.action_name == OPENSEARCH_UPGRADE_ACTION_NAME
                 || spec.action_name == OPENSEARCH_UPGRADE_STATUS_ACTION_NAME
                 || spec.action_name == OPENSEARCH_UPGRADE_SETTINGS_ACTION_NAME
-                || spec.action_name == OPENSEARCH_CLEAR_INDICES_CACHE_ACTION_NAME
                 || spec.action_name == OPENSEARCH_CREATE_DATA_STREAM_ACTION_NAME
                 || spec.action_name == OPENSEARCH_DELETE_DATA_STREAM_ACTION_NAME
                 || spec.action_name == OPENSEARCH_RESOLVE_INDEX_ACTION_NAME
@@ -61063,7 +61101,7 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_clear_indices_cache_request_wire_round_trips_and_rejects_execution_boundary() {
+    fn opensearch_clear_indices_cache_request_wire_round_trips_and_validates_supported_default() {
         let request = OpenSearchClearIndicesCacheRequestWire {
             parent_task_node: "node-a".into(),
             parent_task_id: Some(42),
@@ -61074,13 +61112,7 @@ mod tests {
 
         let decoded = OpenSearchClearIndicesCacheRequestWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, request);
-        assert!(matches!(
-            decoded.reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "clear indices cache execution",
-                ..
-            })
-        ));
+        decoded.validate_supported_execution_subset().unwrap();
     }
 
     #[test]
@@ -61186,7 +61218,8 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_clear_indices_cache_transport_messages_bind_rejected_action_frame() {
+    fn opensearch_clear_indices_cache_transport_messages_bind_supported_action_frame_and_response()
+    {
         let request = OpenSearchClearIndicesCacheRequestWire::default();
         let mut frame = build_opensearch_clear_indices_cache_request_message(
             74,
@@ -61205,17 +61238,27 @@ mod tests {
             classify_opensearch_transport_request_message(&message)
                 .unwrap()
                 .disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
-        assert!(matches!(
-            read_opensearch_clear_indices_cache_request_message(&message)
-                .unwrap()
-                .reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "clear indices cache execution",
-                ..
-            })
-        ));
+        read_opensearch_clear_indices_cache_request_message(&message)
+            .unwrap()
+            .validate_supported_execution_subset()
+            .unwrap();
+
+        let response = OpenSearchClearIndicesCacheResponseWire::success(2);
+        let mut frame = build_opensearch_clear_indices_cache_response_message(
+            74,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &response,
+        )
+        .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected clear indices cache response message");
+        };
+        assert_eq!(
+            read_opensearch_clear_indices_cache_response_message(&message).unwrap(),
+            response
+        );
     }
 
     #[test]
