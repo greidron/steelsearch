@@ -19786,7 +19786,7 @@ impl SteelNode {
                         "index_patterns": format!("[{patterns}]"),
                         "order": template.get("order").and_then(Value::as_u64).unwrap_or(0).to_string(),
                         "version": template.get("version").and_then(Value::as_u64).map(|v| v.to_string()).unwrap_or_default(),
-                        "composed_of": "[]"
+                        "composed_of": ""
                     }));
                 }
             }
@@ -39267,7 +39267,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             .expect("selected cat templates text body");
         assert_eq!(
             selected_templates_text.lines().collect::<Vec<_>>(),
-            vec!["n o v c", "logs-template 7 1 []"]
+            vec!["n o v c", "logs-template 7 1 "]
         );
 
         let post_templates_target = node.handle_rest_request(RestRequest::new(
