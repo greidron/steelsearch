@@ -5339,6 +5339,12 @@ fn local_transport_search_response_from_request(
     let index_boosts = request_source
         .map(|source| source.index_boosts.as_slice())
         .unwrap_or_default();
+    let timed_out_before_execution = request_source.is_some_and(|source| {
+        source
+            .timeout
+            .as_ref()
+            .is_some_and(|timeout| time_value_wire_to_millis(timeout) <= 0)
+    });
     let terminate_after = request_source
         .map(|source| source.terminate_after.max(0) as usize)
         .unwrap_or(0);
@@ -5351,6 +5357,19 @@ fn local_transport_search_response_from_request(
     let pit_search_context_id = point_in_time_id.as_deref().and_then(|pit_id| {
         os_transport::action::OpenSearchSearchContextIdWire::decode(pit_id).ok()
     });
+    let total_shards =
+        transport_pit_total_primary_shards(dev_transport_pit_bindings(), &resolved_indices).max(1)
+            as i32;
+    if timed_out_before_execution {
+        return os_transport::action::OpenSearchSearchResponseWire {
+            timed_out: true,
+            total_shards,
+            successful_shards: total_shards,
+            took_millis: 0,
+            point_in_time_id,
+            ..os_transport::action::OpenSearchSearchResponseWire::empty_with_total_hits(0)
+        };
+    }
     let sorts = request_source.and_then(|source| source.sorts.as_deref());
     let search_after = request_source.and_then(|source| source.search_after.as_deref());
     let collapse = request_source.and_then(|source| source.collapse.as_ref());
@@ -5491,9 +5510,6 @@ fn local_transport_search_response_from_request(
             }
         })
         .collect::<Vec<_>>();
-    let total_shards =
-        transport_pit_total_primary_shards(dev_transport_pit_bindings(), &resolved_indices).max(1)
-            as i32;
     os_transport::action::OpenSearchSearchResponseWire {
         total_hits,
         total_hits_relation,
@@ -16286,6 +16302,92 @@ mod tests {
         assert_eq!(response.hits[0].id.as_deref(), Some("doc-b"));
         assert_eq!(response.hits[0].score, 2.0);
         assert_eq!(response.hits[0].sort_values, vec![serde_json::json!(2.0)]);
+    }
+
+    #[test]
+    fn search_transport_route_marks_immediate_timeout() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        dev_transport_pit_bindings()
+            .created_indices
+            .lock()
+            .expect("dev transport created indices lock poisoned")
+            .clear();
+        dev_transport_pit_bindings()
+            .documents
+            .lock()
+            .expect("dev transport documents lock poisoned")
+            .clear();
+        *dev_transport_pit_bindings()
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned") = serde_json::json!({
+            "indices": {
+                "logs-timeout-transport": {
+                    "settings": {
+                        "index": {
+                            "number_of_shards": "1"
+                        }
+                    }
+                }
+            }
+        });
+        dev_transport_pit_bindings()
+            .created_indices
+            .lock()
+            .expect("dev transport created indices lock poisoned")
+            .insert("logs-timeout-transport".to_string());
+        dev_transport_pit_bindings()
+            .documents
+            .lock()
+            .expect("dev transport documents lock poisoned")
+            .insert(
+                "logs-timeout-transport:doc-1:".to_string(),
+                StoredDocument {
+                    source: serde_json::json!({ "message": "timeout candidate" }),
+                    version: 1,
+                    seq_no: 1,
+                    primary_term: 1,
+                    routing: None,
+                    refreshed: true,
+                },
+            );
+
+        let request = os_transport::action::OpenSearchSearchRequestWire {
+            source: Some(os_transport::action::OpenSearchSearchSourceBuilderWire {
+                query: Some(os_transport::action::OpenSearchQueryBuilderWire::MatchAll(
+                    os_transport::action::OpenSearchMatchAllQueryBuilderWire::default(),
+                )),
+                timeout: Some(os_transport::action::TimeValueWire::millis(0)),
+                ..os_transport::action::OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..os_transport::action::OpenSearchSearchRequestWire::default()
+        };
+        let frame = os_transport::action::build_opensearch_search_request_message(
+            308,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(search_request_supports_local_execution_subset(&frame[6..]));
+        let response =
+            build_local_search_response(308, OPENSEARCH_3_7_0_TRANSPORT.id() as u32, &frame[6..]);
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected timeout search response message");
+        };
+        let response = os_transport::action::read_opensearch_search_response_message(&message)
+            .expect("timeout search response");
+
+        assert!(response.timed_out);
+        assert_eq!(response.took_millis, 0);
+        assert_eq!(response.total_hits, Some(0));
+        assert!(response.hits.is_empty());
     }
 
     #[test]
