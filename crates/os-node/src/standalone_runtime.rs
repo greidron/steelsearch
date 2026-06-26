@@ -8999,6 +8999,13 @@ impl SteelNode {
     }
 
     fn handle_index_tier_route(&self, index: &str) -> RestResponse {
+        if index.split(',').filter(|value| !value.is_empty()).count() != 1 {
+            return RestResponse::opensearch_error(
+                400,
+                "illegal_argument_exception",
+                "request should contain single index",
+            );
+        }
         let tier = self
             .metadata_manifest_state
             .lock()
@@ -47251,6 +47258,20 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(index_tier.status, 200);
         assert_eq!(index_tier.body["index"], "logs-misc-000001");
         assert_eq!(index_tier.body["tiers"][0], "hot");
+
+        let multi_index_tier = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/logs-misc-000001,metrics-misc-000001/_tier",
+        ));
+        assert_eq!(multi_index_tier.status, 400);
+        assert_eq!(
+            multi_index_tier.body["error"]["type"],
+            "illegal_argument_exception"
+        );
+        assert_eq!(
+            multi_index_tier.body["error"]["reason"],
+            "request should contain single index"
+        );
 
         let tier_target = node.handle_rest_request(RestRequest::new(
             RestMethod::Post,
