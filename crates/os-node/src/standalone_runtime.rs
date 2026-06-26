@@ -16340,10 +16340,18 @@ impl SteelNode {
                 .get("_source")
                 .map_or(true, |value| value != "false");
             if include_source {
-                if let Some(includes) = request.query_params.get("_source_includes") {
+                if let Some(includes) = request
+                    .query_params
+                    .get("_source_includes")
+                    .or_else(|| request.query_params.get("_source_include"))
+                {
                     source = filter_source_fields(&source, includes);
                 }
-                if let Some(excludes) = request.query_params.get("_source_excludes") {
+                if let Some(excludes) = request
+                    .query_params
+                    .get("_source_excludes")
+                    .or_else(|| request.query_params.get("_source_exclude"))
+                {
                     source = exclude_source_fields(&source, excludes);
                 }
             }
@@ -16383,6 +16391,13 @@ impl SteelNode {
         id: &str,
         request: &RestRequest,
     ) -> RestResponse {
+        if request
+            .query_params
+            .get("_source")
+            .is_some_and(|value| value == "false")
+        {
+            return action_request_validation_error(vec!["fetching source can not be disabled"]);
+        }
         let resolved_index = self.resolve_index_or_alias(index);
         let routing = request
             .query_params
@@ -16407,7 +16422,22 @@ impl SteelNode {
             }
         });
         if let Some(record) = record {
-            return RestResponse::json(200, record.source.clone());
+            let mut source = record.source.clone();
+            if let Some(includes) = request
+                .query_params
+                .get("_source_includes")
+                .or_else(|| request.query_params.get("_source_include"))
+            {
+                source = filter_source_fields(&source, includes);
+            }
+            if let Some(excludes) = request
+                .query_params
+                .get("_source_excludes")
+                .or_else(|| request.query_params.get("_source_exclude"))
+            {
+                source = exclude_source_fields(&source, excludes);
+            }
+            return RestResponse::json(200, source);
         }
         RestResponse::json(
             404,
@@ -60365,7 +60395,11 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             node.handle_rest_request(
                 RestRequest::new(RestMethod::Put, "/logs-source-000001/_doc/doc-1").with_json_body(
-                    serde_json::json!({"message":"source-doc","tenant":"tenant-a"})
+                    serde_json::json!({
+                        "message": "source-doc",
+                        "tenant": "tenant-a",
+                        "secret": "hidden"
+                    })
                 ),
             )
             .status,
@@ -60379,6 +60413,40 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(get_response.status, 200);
         assert_eq!(get_response.body["message"], "source-doc");
         assert_eq!(get_response.body["tenant"], "tenant-a");
+
+        let filtered_response = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/logs-source-000001/_source/doc-1?_source_includes=message,tenant&_source_excludes=tenant",
+        ));
+        assert_eq!(filtered_response.status, 200);
+        assert_eq!(
+            filtered_response.body,
+            serde_json::json!({"message":"source-doc"})
+        );
+
+        let singular_filtered_response = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/logs-source-000001/_source/doc-1?_source_include=message,tenant&_source_exclude=tenant",
+        ));
+        assert_eq!(singular_filtered_response.status, 200);
+        assert_eq!(
+            singular_filtered_response.body,
+            serde_json::json!({"message":"source-doc"})
+        );
+
+        let disabled_response = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/logs-source-000001/_source/doc-1?_source=false",
+        ));
+        assert_eq!(disabled_response.status, 400);
+        assert_eq!(
+            disabled_response.body["error"]["type"],
+            "action_request_validation_exception"
+        );
+        assert!(disabled_response.body["error"]["reason"]
+            .as_str()
+            .unwrap()
+            .contains("fetching source can not be disabled"));
 
         let head_response = node.handle_rest_request(RestRequest::new(
             RestMethod::Head,
