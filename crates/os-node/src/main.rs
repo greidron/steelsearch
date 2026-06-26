@@ -5839,6 +5839,20 @@ fn local_transport_query_matches(
             query.min_score.is_none()
                 && local_transport_query_matches(source, id, Some(query.query.as_ref()))
         }
+        Some(os_transport::action::OpenSearchQueryBuilderWire::SpanMulti(query)) => {
+            local_transport_query_matches(source, id, Some(query.query.as_ref()))
+        }
+        Some(os_transport::action::OpenSearchQueryBuilderWire::SpanOr(query)) => query
+            .clauses
+            .iter()
+            .any(|query| local_transport_query_matches(source, id, Some(query))),
+        Some(os_transport::action::OpenSearchQueryBuilderWire::SpanTerm(term)) => {
+            if term.field_name == "_id" {
+                return value_matches_transport_term(&Value::String(id.to_string()), &term.value);
+            }
+            lookup_transport_source_value(source, &term.field_name)
+                .is_some_and(|value| value_matches_transport_term(value, &term.value))
+        }
         Some(os_transport::action::OpenSearchQueryBuilderWire::Term(term)) => {
             if term.field_name == "_id" {
                 return value_matches_transport_term(&Value::String(id.to_string()), &term.value);
@@ -15918,13 +15932,38 @@ mod tests {
                                                         boost: 1.0,
                                                         query_name: Some("reader-pit-script-score".to_string()),
                                                         query: Box::new(
-                                                            os_transport::action::OpenSearchQueryBuilderWire::Term(
-                                                                os_transport::action::OpenSearchTermQueryBuilderWire {
+                                                            os_transport::action::OpenSearchQueryBuilderWire::SpanOr(
+                                                                os_transport::action::OpenSearchSpanOrQueryBuilderWire {
                                                                     boost: 1.0,
-                                                                    query_name: None,
-                                                                    field_name: "tenant".to_string(),
-                                                                    value: serde_json::json!("a"),
-                                                                    case_insensitive: false,
+                                                                    query_name: Some("reader-pit-span-or".to_string()),
+                                                                    clauses: vec![
+                                                                        os_transport::action::OpenSearchQueryBuilderWire::SpanTerm(
+                                                                            os_transport::action::OpenSearchSpanTermQueryBuilderWire {
+                                                                                boost: 1.0,
+                                                                                query_name: None,
+                                                                                field_name: "category".to_string(),
+                                                                                value: serde_json::json!("prod-api"),
+                                                                            },
+                                                                        ),
+                                                                        os_transport::action::OpenSearchQueryBuilderWire::SpanMulti(
+                                                                            os_transport::action::OpenSearchSpanMultiTermQueryBuilderWire {
+                                                                                boost: 1.0,
+                                                                                query_name: None,
+                                                                                query: Box::new(
+                                                                                    os_transport::action::OpenSearchQueryBuilderWire::Prefix(
+                                                                                        os_transport::action::OpenSearchPrefixQueryBuilderWire {
+                                                                                            boost: 1.0,
+                                                                                            query_name: None,
+                                                                                            field_name: "path".to_string(),
+                                                                                            value: "/logs/".to_string(),
+                                                                                            rewrite: None,
+                                                                                            case_insensitive: false,
+                                                                                        },
+                                                                                    ),
+                                                                                ),
+                                                                            },
+                                                                        ),
+                                                                    ],
                                                                 },
                                                             ),
                                                         ),
