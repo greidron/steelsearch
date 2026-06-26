@@ -23542,18 +23542,6 @@ impl OpenSearchPitSegmentsRequestWire {
                 reason: "OpenSearch PIT segments requests require at least one PIT id",
             });
         }
-        if self.pit_ids.iter().any(String::is_empty) {
-            return Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "pit segments empty id",
-                reason: "OpenSearch PIT segments requests require non-empty PIT ids",
-            });
-        }
-        if !all_id_is_standalone(&self.pit_ids) {
-            return Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "pit segments mixed all ids",
-                reason: "OpenSearch treats [_all] as a special PIT selector only when it is the sole PIT id",
-            });
-        }
         if self.verbose {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "pit segments verbose",
@@ -33802,11 +33790,6 @@ impl OpenSearchDeletePitRequestWire {
                 "use validate_supported_subset for the implemented local PIT invalidation adapter",
         })
     }
-}
-
-fn all_id_is_standalone(ids: &[String]) -> bool {
-    !ids.iter().any(|id| id == "_all")
-        || (ids.len() == 1 && ids.first().is_some_and(|id| id == "_all"))
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -62706,25 +62689,13 @@ mod tests {
             pit_ids: vec![String::new()],
             ..OpenSearchPitSegmentsRequestWire::default()
         };
-        assert!(matches!(
-            empty_id.reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "pit segments empty id",
-                ..
-            })
-        ));
+        empty_id.validate_supported_subset().unwrap();
 
         let mixed_all = OpenSearchPitSegmentsRequestWire {
             pit_ids: vec!["_all".to_string(), "pit-context".to_string()],
             ..OpenSearchPitSegmentsRequestWire::default()
         };
-        assert!(matches!(
-            mixed_all.reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "pit segments mixed all ids",
-                ..
-            })
-        ));
+        mixed_all.validate_supported_subset().unwrap();
 
         let verbose = OpenSearchPitSegmentsRequestWire {
             pit_ids: vec!["_all".to_string()],

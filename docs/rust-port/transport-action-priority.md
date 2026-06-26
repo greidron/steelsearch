@@ -1839,9 +1839,12 @@ The PIT-segments boundary covers:
   PIT ids that resolve through the shared `SteelNode` PIT context store,
   including daemon transport routing when the decoded request validates as the
   supported local subset;
-- explicit rejection for index filters, custom indices options, empty PIT id
-  arrays, empty PIT id entries, `_all` mixed with explicit ids, verbose output,
-  and unknown explicit PIT ids at the local runtime boundary.
+- request validation for decoded non-empty PIT id arrays while wire-level empty
+  PIT id entries and `_all` mixed with explicit ids still decode like
+  OpenSearch;
+- explicit local runtime rejection for index filters, custom indices options,
+  empty PIT id entries, `_all` mixed with explicit ids, verbose output, and
+  unknown explicit PIT ids.
 - REST `_cat/pit_segments` prunes expired local PIT contexts before resolving
   `_all` or explicit PIT id segment rows, matching the same reaper boundary used
   by list/delete/search PIT routes.

@@ -6302,7 +6302,9 @@ fn build_local_pit_segments_node_response(
 fn transport_pit_segment_ids_exist(
     request: &os_transport::action::OpenSearchPitSegmentsRequestWire,
 ) -> bool {
-    if !ids_use_all_only_as_standalone(&request.pit_ids) {
+    if request.pit_ids.iter().any(|pit_id| pit_id.is_empty())
+        || !ids_use_all_only_as_standalone(&request.pit_ids)
+    {
         return false;
     }
     let mut contexts = dev_transport_pit_bindings()
@@ -17549,6 +17551,60 @@ mod tests {
             .lock()
             .expect("dev transport PIT contexts lock poisoned")
             .contains_key(pit_id));
+    }
+
+    #[test]
+    fn pit_segments_transport_route_rejects_empty_id_at_local_execution_boundary() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        dev_transport_pit_bindings()
+            .contexts
+            .lock()
+            .expect("dev transport PIT contexts lock poisoned")
+            .clear();
+        let transport_identity = DevTransportIdentity {
+            cluster_name: "steelsearch-dev".to_string(),
+            node_name: "steel-node".to_string(),
+            node_id: "steel-node-id".to_string(),
+            ephemeral_id: "steel-node-ephemeral".to_string(),
+            transport_address: "127.0.0.1:9300".parse().unwrap(),
+            attributes: Vec::new(),
+            roles: vec!["cluster_manager".to_string(), "data".to_string()],
+            seed_peer_identity: None,
+            seed_peer_identities: Vec::new(),
+            coordination_state: Arc::new(Mutex::new(DevTransportCoordinationState::default())),
+            remote_transport_queue_gate: Arc::new(RemoteTransportQueueGate::new(1, 1000)),
+            task_queue_state: None,
+        };
+        let request = os_transport::action::OpenSearchPitSegmentsRequestWire {
+            pit_ids: vec![String::new()],
+            ..os_transport::action::OpenSearchPitSegmentsRequestWire::default()
+        };
+        let frame = os_transport::action::build_opensearch_pit_segments_request_message(
+            201,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(!pit_segments_request_supports_local_subset(&frame[6..]));
+
+        let response = build_local_pit_segments_node_response(
+            201,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &transport_identity,
+            &frame[6..],
+        );
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected empty PIT id segments fallback response message");
+        };
+        assert_eq!(message.request_id, 201);
+        assert!(message.body.is_empty());
     }
 
     #[test]
