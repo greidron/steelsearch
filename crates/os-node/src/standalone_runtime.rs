@@ -13529,6 +13529,18 @@ impl SteelNode {
         let view = self.cluster_view.clone().unwrap_or_default();
         let mut nodes = serde_json::Map::new();
         let local_search_open_contexts = self.search_open_context_count_for_stats();
+        let local_pit_current_contexts = self
+            .pit_open_context_counts_by_index()
+            .values()
+            .copied()
+            .sum::<u64>();
+        let local_pit_total_contexts = self
+            .pit_total_contexts_by_index
+            .lock()
+            .expect("pit total contexts lock poisoned")
+            .values()
+            .copied()
+            .sum::<u64>();
         let local_search_cache_telemetry = self
             .native_engine
             .search_cache_telemetry_snapshot()
@@ -13571,12 +13583,14 @@ impl SteelNode {
                         "store": {
                             "size_in_bytes": 0
                         },
-                        "search": {
-                            "open_contexts": if node.node_id == view.local_node_id {
-                                local_search_open_contexts
-                            } else {
-                                0
-                            }
+                        "search": if node.node_id == view.local_node_id {
+                            search_stats_body(
+                                local_search_open_contexts,
+                                local_pit_current_contexts,
+                                local_pit_total_contexts
+                            )
+                        } else {
+                            search_stats_body(0, 0, 0)
                         }
                     },
                     "process": {
@@ -14681,14 +14695,16 @@ impl SteelNode {
                 serde_json::json!({
                     "primaries": {
                         "docs": { "count": 0 },
-                        "search": search_stats_body_for_pit_contexts(
+                        "search": search_stats_body(
+                            pit_open_contexts,
                             pit_open_contexts,
                             pit_total_contexts
                         )
                     },
                     "total": {
                         "docs": { "count": 0 },
-                        "search": search_stats_body_for_pit_contexts(
+                        "search": search_stats_body(
+                            pit_open_contexts,
                             pit_open_contexts,
                             pit_total_contexts
                         )
@@ -14707,7 +14723,8 @@ impl SteelNode {
                     "docs": {
                         "count": 0
                     },
-                    "search": search_stats_body_for_pit_contexts(
+                    "search": search_stats_body(
+                        total_pit_open_contexts,
                         total_pit_open_contexts,
                         total_pit_contexts
                     )
@@ -14716,7 +14733,8 @@ impl SteelNode {
                     "docs": {
                         "count": 0
                     },
-                    "search": search_stats_body_for_pit_contexts(
+                    "search": search_stats_body(
+                        total_pit_open_contexts,
                         total_pit_open_contexts,
                         total_pit_contexts
                     )
@@ -25118,7 +25136,11 @@ fn prune_expired_pit_contexts(contexts: &mut BTreeMap<String, PitContext>, now_m
     contexts.retain(|_, context| context.expires_at_millis > now_millis);
 }
 
-fn search_stats_body_for_pit_contexts(open_contexts: u64, total_contexts: u64) -> Value {
+fn search_stats_body(
+    open_contexts: u64,
+    pit_current_contexts: u64,
+    pit_total_contexts: u64,
+) -> Value {
     serde_json::json!({
         "open_contexts": open_contexts,
         "query_total": 0,
@@ -25130,9 +25152,9 @@ fn search_stats_body_for_pit_contexts(open_contexts: u64, total_contexts: u64) -
         "scroll_total": 0,
         "scroll_time_in_millis": 0,
         "scroll_current": 0,
-        "point_in_time_total": total_contexts,
+        "point_in_time_total": pit_total_contexts,
         "point_in_time_time_in_millis": 0,
-        "point_in_time_current": open_contexts,
+        "point_in_time_current": pit_current_contexts,
         "suggest_total": 0,
         "suggest_time_in_millis": 0,
         "suggest_current": 0
@@ -34767,6 +34789,10 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                     page_size: 10,
                 },
             );
+        node.pit_total_contexts_by_index
+            .lock()
+            .expect("pit total contexts lock poisoned")
+            .insert("logs-node-stats-active-pit".to_string(), 3);
 
         for path in [
             "/_nodes/stats/indices",
@@ -34796,6 +34822,14 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             );
             assert_eq!(
                 first_node["indices"]["search"]["open_contexts"], 2,
+                "path {path}"
+            );
+            assert_eq!(
+                first_node["indices"]["search"]["point_in_time_current"], 1,
+                "path {path}"
+            );
+            assert_eq!(
+                first_node["indices"]["search"]["point_in_time_total"], 3,
                 "path {path}"
             );
             assert!(
