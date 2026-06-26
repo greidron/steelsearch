@@ -40,6 +40,20 @@ def main() -> int:
         missing = sorted(required_profiles - set(profiles.keys()))
         raise SystemExit(f"comparison required suites missing profiles: {missing}")
 
+    required_reports_by_profile = {
+        "vector-ml": {
+            "vector-search-compat-report.json",
+            "knn-plugin-compat-report.json",
+            "ml-model-surface-compat-report.json",
+            "security-authz-compat-report.json",
+        },
+        "snapshot-migration": {
+            "snapshot-lifecycle-compat-report.json",
+            "migration-cutover-integration-report.json",
+            "migration-acceptance/report.json",
+        },
+    }
+
     for profile_name, profile in profiles.items():
         route_families = profile.get("route_families") or []
         required_reports = profile.get("required_reports") or []
@@ -50,6 +64,12 @@ def main() -> int:
             raise SystemExit(f"{profile_name}: route_families must include at least three families")
         if not required_reports:
             raise SystemExit(f"{profile_name}: required_reports must not be empty")
+        required_profile_reports = required_reports_by_profile.get(profile_name, set())
+        missing_reports = sorted(required_profile_reports - set(required_reports))
+        if missing_reports:
+            raise SystemExit(
+                f"{profile_name}: required_reports missing entries: {missing_reports}"
+            )
 
     print(
         json.dumps(

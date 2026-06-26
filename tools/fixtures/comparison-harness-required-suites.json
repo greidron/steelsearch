@@ -38,7 +38,10 @@
       ],
       "entrypoint": "tools/run-phase-a-acceptance-harness.sh --mode local --scope vector-ml",
       "required_reports": [
-        "vector-search-compat-report.json"
+        "vector-search-compat-report.json",
+        "knn-plugin-compat-report.json",
+        "ml-model-surface-compat-report.json",
+        "security-authz-compat-report.json"
       ]
     },
     "snapshot-migration": {
@@ -50,6 +53,7 @@
       "entrypoint": "tools/run-phase-a-acceptance-harness.sh --mode local --scope snapshot-migration",
       "required_reports": [
         "snapshot-lifecycle-compat-report.json",
+        "migration-cutover-integration-report.json",
         "migration-acceptance/report.json"
       ]
     },
