@@ -2181,8 +2181,8 @@ pub fn classify_opensearch_transport_action(
         },
         OPENSEARCH_FORCE_MERGE_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
-            disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "force-merge transport execution requires shard segment merge execution, primary-only routing, post-merge flush, and shard status response rendering",
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "force-merge transport adapter validates the bounded global default subset and renders OpenSearch-shaped shard counters",
         },
         OPENSEARCH_UPGRADE_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -38951,7 +38951,7 @@ impl OpenSearchForceMergeRequestWire {
         Ok(request)
     }
 
-    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+    pub fn validate_supported_execution_subset(&self) -> Result<(), TransportActionWireError> {
         if !self.indices.is_empty() {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "force merge indices",
@@ -38996,12 +38996,20 @@ impl OpenSearchForceMergeRequestWire {
                 reason: "OpenSearch 3.x force-merge requests require a non-empty force-merge UUID",
             });
         }
+        Ok(())
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        self.validate_supported_execution_subset()?;
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "force merge execution",
-            reason: "force-merge transport execution requires shard segment merge execution and response rendering",
+            reason:
+                "use validate_supported_execution_subset for the implemented force-merge adapter",
         })
     }
 }
+
+pub type OpenSearchForceMergeResponseWire = OpenSearchRefreshResponseWire;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OpenSearchUpgradeRequestWire {
@@ -39875,6 +39883,36 @@ pub fn read_opensearch_force_merge_request_message(
         });
     }
     OpenSearchForceMergeRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_opensearch_force_merge_response_message(
+    request_id: i64,
+    version: Version,
+    response: &OpenSearchForceMergeResponseWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    response.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::response(),
+        version,
+        variable_header: BytesMut::from(&ResponseVariableHeader::default().to_bytes()[..]),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_force_merge_response_message(
+    message: &TransportMessage,
+) -> Result<OpenSearchForceMergeResponseWire, TransportActionWireError> {
+    if !message.status.is_response() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "response",
+            actual: message.status.bits(),
+        });
+    }
+    let _header = ResponseVariableHeader::read(message.variable_header.clone().freeze())?;
+    OpenSearchForceMergeResponseWire::read(message.body.clone().freeze())
 }
 
 pub fn build_opensearch_upgrade_request_message(
@@ -44290,7 +44328,7 @@ mod tests {
         );
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_FORCE_MERGE_ACTION_NAME).disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_UPGRADE_ACTION_NAME).disposition,
@@ -44503,6 +44541,7 @@ mod tests {
                 || spec.action_name == OPENSEARCH_VALIDATE_QUERY_ACTION_NAME
                 || spec.action_name == OPENSEARCH_FLUSH_ACTION_NAME
                 || spec.action_name == OPENSEARCH_CLEAR_INDICES_CACHE_ACTION_NAME
+                || spec.action_name == OPENSEARCH_FORCE_MERGE_ACTION_NAME
             {
                 assert_eq!(
                     decision.disposition,
@@ -44550,7 +44589,6 @@ mod tests {
                 || spec.action_name == OPENSEARCH_DELETE_COMPOSABLE_INDEX_TEMPLATE_ACTION_NAME
                 || spec.action_name == OPENSEARCH_SIMULATE_INDEX_TEMPLATE_ACTION_NAME
                 || spec.action_name == OPENSEARCH_SIMULATE_TEMPLATE_ACTION_NAME
-                || spec.action_name == OPENSEARCH_FORCE_MERGE_ACTION_NAME
                 || spec.action_name == OPENSEARCH_UPGRADE_ACTION_NAME
                 || spec.action_name == OPENSEARCH_UPGRADE_STATUS_ACTION_NAME
                 || spec.action_name == OPENSEARCH_UPGRADE_SETTINGS_ACTION_NAME
@@ -60623,7 +60661,7 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_force_merge_request_wire_round_trips_and_rejects_execution_boundary() {
+    fn opensearch_force_merge_request_wire_round_trips_and_validates_supported_default() {
         let request = OpenSearchForceMergeRequestWire {
             parent_task_node: "node-a".into(),
             parent_task_id: Some(42),
@@ -60640,13 +60678,7 @@ mod tests {
         assert!(decoded.flush);
         assert!(!decoded.primary_only);
         assert_eq!(decoded.force_merge_uuid, "force-merge-uuid");
-        assert!(matches!(
-            decoded.reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "force merge execution",
-                ..
-            })
-        ));
+        decoded.validate_supported_execution_subset().unwrap();
     }
 
     #[test]
@@ -60740,7 +60772,7 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_force_merge_transport_messages_bind_rejected_action_frame() {
+    fn opensearch_force_merge_transport_messages_bind_supported_action_frame_and_response() {
         let request = OpenSearchForceMergeRequestWire::default();
         let mut frame =
             build_opensearch_force_merge_request_message(70, OPENSEARCH_3_7_0_TRANSPORT, &request)
@@ -60756,17 +60788,27 @@ mod tests {
             classify_opensearch_transport_request_message(&message)
                 .unwrap()
                 .disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
-        assert!(matches!(
-            read_opensearch_force_merge_request_message(&message)
-                .unwrap()
-                .reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "force merge execution",
-                ..
-            })
-        ));
+        read_opensearch_force_merge_request_message(&message)
+            .unwrap()
+            .validate_supported_execution_subset()
+            .unwrap();
+
+        let response = OpenSearchForceMergeResponseWire::success(2);
+        let mut frame = build_opensearch_force_merge_response_message(
+            70,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &response,
+        )
+        .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected force merge response message");
+        };
+        assert_eq!(
+            read_opensearch_force_merge_response_message(&message).unwrap(),
+            response
+        );
     }
 
     #[test]
