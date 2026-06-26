@@ -18412,22 +18412,31 @@ impl SteelNode {
             .get("format")
             .is_some_and(|value| value == "json")
         {
-            return RestResponse::json(200, Value::Array(vec![row]));
+            let selected_row = cat_count_selected_row(&row, request.query_params.get("h"));
+            return RestResponse::json(200, Value::Array(vec![selected_row]));
         }
         let verbose = request
             .query_params
             .get("v")
             .is_some_and(|value| value == "true");
+        let display_columns = cat_count_display_columns(request.query_params.get("h"));
         let mut lines = Vec::new();
         if verbose {
-            lines.push("epoch timestamp count".to_string());
+            lines.push(
+                display_columns
+                    .iter()
+                    .map(|(_, display)| display.as_str())
+                    .collect::<Vec<_>>()
+                    .join(" "),
+            );
         }
-        lines.push(format!(
-            "{} {} {}",
-            row["epoch"].as_str().unwrap_or("0"),
-            row["timestamp"].as_str().unwrap_or("00:00:00"),
-            row["count"].as_str().unwrap_or("0"),
-        ));
+        lines.push(
+            display_columns
+                .iter()
+                .map(|(column, _)| row[*column].as_str().unwrap_or(""))
+                .collect::<Vec<_>>()
+                .join(" "),
+        );
         RestResponse::text(200, lines.join("\n") + "\n")
     }
 
@@ -30490,6 +30499,48 @@ fn cat_indices_display_columns(
     selected
 }
 
+fn cat_count_display_columns(h_param: Option<&String>) -> Vec<(&'static str, String)> {
+    let Some(h_param) = h_param else {
+        return vec![
+            ("epoch", "epoch".to_string()),
+            ("timestamp", "timestamp".to_string()),
+            ("count", "count".to_string()),
+        ];
+    };
+    let mut selected = Vec::new();
+    for requested in h_param.split(',').map(str::trim).filter(|value| !value.is_empty()) {
+        let column = match requested {
+            "epoch" => Some("epoch"),
+            "timestamp" => Some("timestamp"),
+            "count" => Some("count"),
+            "dc" | "docs.count" | "docsCount" => Some("count"),
+            "*" => {
+                for column in ["epoch", "timestamp", "count"] {
+                    if !selected.iter().any(|(existing, _)| existing == &column) {
+                        selected.push((column, column.to_string()));
+                    }
+                }
+                None
+            }
+            _ => None,
+        };
+        if let Some(column) = column {
+            if !selected.iter().any(|(existing, _)| existing == &column) {
+                selected.push((column, requested.to_string()));
+            }
+        }
+    }
+    selected
+}
+
+fn cat_count_selected_row(row: &Value, h_param: Option<&String>) -> Value {
+    let mut object = serde_json::Map::new();
+    for (column, display) in cat_count_display_columns(h_param) {
+        object.insert(display, row[column].clone());
+    }
+    Value::Object(object)
+}
+
 fn parse_search_indices_boosts(indices_boost: Option<&Value>) -> Vec<(String, f64)> {
     match indices_boost {
         Some(Value::Object(boosts)) => boosts
@@ -35821,6 +35872,37 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         let global_count_json_response = node.handle_rest_request(global_count_json_request);
         assert_eq!(global_count_json_response.status, 200);
         assert_eq!(global_count_json_response.body[0]["count"], "2");
+
+        let mut count_selected_json_request =
+            RestRequest::new(RestMethod::Get, "/_cat/count/logs-*");
+        count_selected_json_request
+            .query_params
+            .insert("format".to_string(), "json".to_string());
+        count_selected_json_request
+            .query_params
+            .insert("h".to_string(), "dc".to_string());
+        let count_selected_json_response = node.handle_rest_request(count_selected_json_request);
+        assert_eq!(count_selected_json_response.status, 200);
+        assert_eq!(count_selected_json_response.body[0]["dc"], "1");
+        assert!(count_selected_json_response.body[0].get("count").is_none());
+
+        let mut count_selected_text_request =
+            RestRequest::new(RestMethod::Get, "/_cat/count/logs-*");
+        count_selected_text_request
+            .query_params
+            .insert("v".to_string(), "true".to_string());
+        count_selected_text_request
+            .query_params
+            .insert("h".to_string(), "dc".to_string());
+        let count_selected_text_response = node.handle_rest_request(count_selected_text_request);
+        let count_selected_text = count_selected_text_response
+            .body
+            .as_str()
+            .expect("cat count selected text body");
+        assert_eq!(
+            count_selected_text.lines().collect::<Vec<_>>(),
+            vec!["dc", "1"]
+        );
 
         let mut indices_text_request = RestRequest::new(RestMethod::Get, "/_cat/indices/logs-*");
         indices_text_request

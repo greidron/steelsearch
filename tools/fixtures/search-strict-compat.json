@@ -1672,6 +1672,27 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "cat_count_text_selected_alias_column",
+      "area": "cat",
+      "method": "GET",
+      "path": "/_cat/count/logs-compat?v=true&h=dc",
+      "accept": "text/plain",
+      "extract": "cat_indices_selected_columns",
+      "family": "lexical",
+      "description": "[lexical] cat count text honors h alias for count",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "cat_count_json_selected_alias_column",
+      "area": "cat",
+      "method": "GET",
+      "path": "/_cat/count/logs-compat?format=json&h=dc",
+      "extract": "cat_indices_selected_columns",
+      "family": "lexical",
+      "description": "[lexical] cat count json honors h alias for count",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "dfs_query_then_fetch_search",
       "area": "search",
       "method": "POST",
