@@ -10092,12 +10092,16 @@ impl SteelNode {
                     {
                         return None;
                     }
-                    if requested_routing_values.as_ref().is_some_and(|routings| {
-                        !record.routing.as_deref().is_some_and(|routing| {
-                            routings.iter().any(|candidate| candidate == routing)
-                        })
-                    }) {
-                        return None;
+                    if let Some(routings) = requested_routing_values.as_ref() {
+                        if !document_matches_requested_routing_shards(
+                            doc_index,
+                            doc_id,
+                            record,
+                            routings,
+                            |index_name| self.index_primary_shard_count(index_name),
+                        ) {
+                            return None;
+                        }
                     }
                     Some((
                         doc_index.to_string(),
@@ -13085,15 +13089,20 @@ impl SteelNode {
                 .filter_map(|(key, doc)| {
                     let mut parts = key.splitn(3, ':');
                     let doc_index = parts.next()?;
+                    let doc_id = parts.next()?;
                     if doc_index != resolved_index {
                         return None;
                     }
-                    if requested_routing_values.as_ref().is_some_and(|routings| {
-                        !doc.routing.as_deref().is_some_and(|routing| {
-                            routings.iter().any(|candidate| candidate == routing)
-                        })
-                    }) {
-                        return None;
+                    if let Some(routings) = requested_routing_values.as_ref() {
+                        if !document_matches_requested_routing_shards(
+                            doc_index,
+                            doc_id,
+                            doc,
+                            routings,
+                            |index_name| self.index_primary_shard_count(index_name),
+                        ) {
+                            return None;
+                        }
                     }
                     if matches_query_body(&doc.source, body.get("query")) {
                         Some(key.clone())
@@ -13182,15 +13191,20 @@ impl SteelNode {
             for (key, doc) in docs.iter_mut() {
                 let mut parts = key.splitn(3, ':');
                 let doc_index = parts.next().unwrap_or_default();
+                let doc_id = parts.next().unwrap_or_default();
                 if doc_index != resolved_index {
                     continue;
                 }
-                if requested_routing_values.as_ref().is_some_and(|routings| {
-                    !doc.routing.as_deref().is_some_and(|routing| {
-                        routings.iter().any(|candidate| candidate == routing)
-                    })
-                }) {
-                    continue;
+                if let Some(routings) = requested_routing_values.as_ref() {
+                    if !document_matches_requested_routing_shards(
+                        doc_index,
+                        doc_id,
+                        doc,
+                        routings,
+                        |index_name| self.index_primary_shard_count(index_name),
+                    ) {
+                        continue;
+                    }
                 }
                 if !matches_query_body(&doc.source, body.get("query")) {
                     continue;
@@ -42950,8 +42964,8 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             })),
         );
         assert_eq!(routed.status, 200);
-        assert_eq!(routed.body["total"], 1);
-        assert_eq!(routed.body["deleted"], 1);
+        assert_eq!(routed.body["total"], 2);
+        assert_eq!(routed.body["deleted"], 2);
         assert_eq!(
             node.handle_rest_request(RestRequest::new(
                 RestMethod::Get,
@@ -42964,8 +42978,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             RestMethod::Get,
             "/logs-delete-query-probe/_doc/doc-routed-b?routing=tenant-b",
         ));
-        assert_eq!(routed_remaining.status, 200);
-        assert_eq!(routed_remaining.body["_source"]["message"], "keep routed b");
+        assert_eq!(routed_remaining.status, 404);
     }
 
     #[test]
@@ -43114,8 +43127,8 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             })),
         );
         assert_eq!(routed.status, 200);
-        assert_eq!(routed.body["total"], 1);
-        assert_eq!(routed.body["updated"], 1);
+        assert_eq!(routed.body["total"], 2);
+        assert_eq!(routed.body["updated"], 2);
 
         let routed_updated = node.handle_rest_request(RestRequest::new(
             RestMethod::Get,
@@ -43133,6 +43146,154 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(routed_untouched.status, 200);
         assert_eq!(
             routed_untouched.body["_source"]["processed"],
+            Value::Bool(true)
+        );
+    }
+
+    #[test]
+    fn routed_search_and_by_query_routes_select_shards_like_opensearch() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        let routed_value = "tenant-a";
+        let routed_shard = opensearch_routing_shard(routed_value, 3);
+        let different_routing = (0..100)
+            .map(|candidate| format!("tenant-other-{candidate}"))
+            .find(|candidate| opensearch_routing_shard(candidate, 3) != routed_shard)
+            .expect("routing value on a different shard");
+
+        for index in [
+            "logs-routing-search",
+            "logs-routing-delete-by-query",
+            "logs-routing-update-by-query",
+        ] {
+            assert_eq!(
+                node.handle_rest_request(
+                    RestRequest::new(RestMethod::Put, &format!("/{index}")).with_json_body(
+                        serde_json::json!({
+                            "settings": {
+                                "index": {
+                                    "number_of_shards": 3,
+                                    "number_of_replicas": 0
+                                }
+                            },
+                            "mappings": {
+                                "properties": {
+                                    "tenant": { "type": "keyword" },
+                                    "processed": { "type": "boolean" }
+                                }
+                            }
+                        }),
+                    ),
+                )
+                .status,
+                200,
+                "{index}"
+            );
+            assert_eq!(
+                node.handle_rest_request(
+                    RestRequest::new(
+                        RestMethod::Put,
+                        &format!("/{index}/_doc/doc-a?routing={routed_value}"),
+                    )
+                    .with_json_body(serde_json::json!({
+                        "tenant": "same-query-value",
+                        "processed": false
+                    })),
+                )
+                .status,
+                201,
+                "{index}"
+            );
+            assert_eq!(
+                node.handle_rest_request(
+                    RestRequest::new(
+                        RestMethod::Put,
+                        &format!("/{index}/_doc/doc-b?routing={different_routing}"),
+                    )
+                    .with_json_body(serde_json::json!({
+                        "tenant": "same-query-value",
+                        "processed": false
+                    })),
+                )
+                .status,
+                201,
+                "{index}"
+            );
+        }
+
+        let routed_search = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                &format!("/logs-routing-search/_search?routing={routed_value}"),
+            )
+            .with_json_body(serde_json::json!({
+                "query": { "term": { "tenant": "same-query-value" } },
+                "size": 10
+            })),
+        );
+        assert_eq!(routed_search.status, 200);
+        assert_eq!(routed_search.body["hits"]["total"]["value"], 1);
+        assert_eq!(routed_search.body["hits"]["hits"][0]["_id"], "doc-a");
+
+        let routed_delete = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                &format!("/logs-routing-delete-by-query/_delete_by_query?routing={routed_value}"),
+            )
+            .with_json_body(serde_json::json!({
+                "query": { "term": { "tenant": "same-query-value" } }
+            })),
+        );
+        assert_eq!(routed_delete.status, 200);
+        assert_eq!(routed_delete.body["total"], 1);
+        assert_eq!(routed_delete.body["deleted"], 1);
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(
+                RestMethod::Get,
+                "/logs-routing-delete-by-query/_doc/doc-a?routing=tenant-a",
+            ))
+            .status,
+            404
+        );
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(
+                RestMethod::Get,
+                &format!("/logs-routing-delete-by-query/_doc/doc-b?routing={different_routing}"),
+            ))
+            .status,
+            200
+        );
+
+        let routed_update = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                &format!("/logs-routing-update-by-query/_update_by_query?routing={routed_value}"),
+            )
+            .with_json_body(serde_json::json!({
+                "query": { "term": { "tenant": "same-query-value" } },
+                "script": { "source": "ctx._source.processed = true" }
+            })),
+        );
+        assert_eq!(routed_update.status, 200);
+        assert_eq!(routed_update.body["total"], 1);
+        assert_eq!(routed_update.body["updated"], 1);
+
+        let updated_doc = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/logs-routing-update-by-query/_doc/doc-a?routing=tenant-a",
+        ));
+        assert_eq!(updated_doc.status, 200);
+        assert_eq!(updated_doc.body["_source"]["processed"], Value::Bool(true));
+        let untouched_doc = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            &format!("/logs-routing-update-by-query/_doc/doc-b?routing={different_routing}"),
+        ));
+        assert_eq!(untouched_doc.status, 200);
+        assert_eq!(
+            untouched_doc.body["_source"]["processed"],
             Value::Bool(false)
         );
     }
@@ -48344,8 +48505,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             })),
         );
         assert_eq!(routed_live_search.status, 200);
-        assert_eq!(routed_live_search.body["hits"]["total"]["value"], 1);
-        assert_eq!(routed_live_search.body["hits"]["hits"][0]["_id"], "doc-a");
+        assert_eq!(routed_live_search.body["hits"]["total"]["value"], 2);
 
         let routed_pit_search = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/_search").with_json_body(serde_json::json!({
