@@ -19184,37 +19184,42 @@ impl SteelNode {
             .get("format")
             .is_some_and(|value| value == "json")
         {
-            return RestResponse::json(200, Value::Array(rows));
+            let display_columns = cat_pit_segments_display_columns(request.query_params.get("h"));
+            let selected_rows = rows
+                .iter()
+                .map(|row| {
+                    let mut object = serde_json::Map::new();
+                    for (column, display) in &display_columns {
+                        object.insert(display.clone(), row[*column].clone());
+                    }
+                    Value::Object(object)
+                })
+                .collect();
+            return RestResponse::json(200, Value::Array(selected_rows));
         }
         let verbose = request
             .query_params
             .get("v")
             .is_some_and(|value| value == "true");
+        let display_columns = cat_pit_segments_display_columns(request.query_params.get("h"));
         let mut lines = Vec::new();
         if verbose {
             lines.push(
-                "index shard prirep ip segment generation docs.count docs.deleted size size.memory committed searchable version compound"
-                    .to_string(),
+                display_columns
+                    .iter()
+                    .map(|(_, display)| display.as_str())
+                    .collect::<Vec<_>>()
+                    .join(" "),
             );
         }
         for row in &rows {
-            lines.push(format!(
-                "{} {} {} {} {} {} {} {} {} {} {} {} {} {}",
-                row["index"].as_str().unwrap_or(""),
-                row["shard"].as_str().unwrap_or("0"),
-                row["prirep"].as_str().unwrap_or("p"),
-                row["ip"].as_str().unwrap_or("127.0.0.1"),
-                row["segment"].as_str().unwrap_or("_0"),
-                row["generation"].as_str().unwrap_or("0"),
-                row["docs.count"].as_str().unwrap_or("0"),
-                row["docs.deleted"].as_str().unwrap_or("0"),
-                row["size"].as_str().unwrap_or("0b"),
-                row["size.memory"].as_str().unwrap_or("0"),
-                row["committed"].as_str().unwrap_or("true"),
-                row["searchable"].as_str().unwrap_or("true"),
-                row["version"].as_str().unwrap_or("0"),
-                row["compound"].as_str().unwrap_or("false"),
-            ));
+            lines.push(
+                display_columns
+                    .iter()
+                    .map(|(column, _)| row[*column].as_str().unwrap_or(""))
+                    .collect::<Vec<_>>()
+                    .join(" "),
+            );
         }
         RestResponse::text(200, lines.join("\n") + "\n")
     }
@@ -30985,6 +30990,86 @@ fn cat_thread_pool_display_columns(h_param: Option<&String>) -> Vec<(&'static st
     selected
 }
 
+fn cat_pit_segments_display_columns(h_param: Option<&String>) -> Vec<(&'static str, String)> {
+    let Some(h_param) = h_param else {
+        return vec![
+            ("index", "index".to_string()),
+            ("shard", "shard".to_string()),
+            ("prirep", "prirep".to_string()),
+            ("ip", "ip".to_string()),
+            ("segment", "segment".to_string()),
+            ("generation", "generation".to_string()),
+            ("docs.count", "docs.count".to_string()),
+            ("docs.deleted", "docs.deleted".to_string()),
+            ("size", "size".to_string()),
+            ("size.memory", "size.memory".to_string()),
+            ("committed", "committed".to_string()),
+            ("searchable", "searchable".to_string()),
+            ("version", "version".to_string()),
+            ("compound", "compound".to_string()),
+        ];
+    };
+    let mut selected = Vec::new();
+    for requested in h_param
+        .split(',')
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        if requested.contains('*') {
+            for (column, aliases) in [
+                ("index", &["i", "idx"][..]),
+                ("shard", &["s", "sh"][..]),
+                ("prirep", &["p", "pr", "primaryOrReplica"][..]),
+                ("ip", &[][..]),
+                ("id", &[][..]),
+                ("segment", &["seg"][..]),
+                ("generation", &["g", "gen"][..]),
+                ("docs.count", &["dc", "docsCount"][..]),
+                ("docs.deleted", &["dd", "docsDeleted"][..]),
+                ("size", &["si"][..]),
+                ("size.memory", &["sm", "sizeMemory"][..]),
+                ("committed", &["ic", "isCommitted"][..]),
+                ("searchable", &["is", "isSearchable"][..]),
+                ("version", &["v", "ver"][..]),
+                ("compound", &["ico", "isCompound"][..]),
+            ] {
+                if wildcard_match(requested, column)
+                    || aliases.iter().any(|alias| wildcard_match(requested, alias))
+                {
+                    if !selected.iter().any(|(existing, _)| existing == &column) {
+                        selected.push((column, column.to_string()));
+                    }
+                }
+            }
+            continue;
+        }
+        let column = match requested {
+            "index" | "i" | "idx" => Some("index"),
+            "shard" | "s" | "sh" => Some("shard"),
+            "prirep" | "p" | "pr" | "primaryOrReplica" => Some("prirep"),
+            "ip" => Some("ip"),
+            "id" => Some("id"),
+            "segment" | "seg" => Some("segment"),
+            "generation" | "g" | "gen" => Some("generation"),
+            "docs.count" | "dc" | "docsCount" => Some("docs.count"),
+            "docs.deleted" | "dd" | "docsDeleted" => Some("docs.deleted"),
+            "size" | "si" => Some("size"),
+            "size.memory" | "sm" | "sizeMemory" => Some("size.memory"),
+            "committed" | "ic" | "isCommitted" => Some("committed"),
+            "searchable" | "is" | "isSearchable" => Some("searchable"),
+            "version" | "v" | "ver" => Some("version"),
+            "compound" | "ico" | "isCompound" => Some("compound"),
+            _ => None,
+        };
+        if let Some(column) = column {
+            if !selected.iter().any(|(existing, _)| existing == &column) {
+                selected.push((column, requested.to_string()));
+            }
+        }
+    }
+    selected
+}
+
 fn cat_aliases_display_columns(h_param: Option<&String>) -> Vec<(&'static str, String)> {
     let Some(h_param) = h_param else {
         return vec![
@@ -37275,6 +37360,31 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             "logs-pit-segments-000001"
         );
         assert_eq!(pit_body_json_response.body[0]["docs.count"], "2");
+        assert!(pit_body_json_response.body[0].get("id").is_none());
+
+        let mut selected_pit_body_json_request =
+            RestRequest::new(RestMethod::Get, "/_cat/pit_segments")
+                .with_json_body(serde_json::json!({ "pit_id": pit_id }));
+        selected_pit_body_json_request
+            .query_params
+            .insert("format".to_string(), "json".to_string());
+        selected_pit_body_json_request
+            .query_params
+            .insert("h".to_string(), "i,seg,dc,sm,id".to_string());
+        let selected_pit_body_json_response =
+            node.handle_rest_request(selected_pit_body_json_request);
+        assert_eq!(selected_pit_body_json_response.status, 200);
+        assert_eq!(
+            selected_pit_body_json_response.body[0]["i"],
+            "logs-pit-segments-000001"
+        );
+        assert_eq!(selected_pit_body_json_response.body[0]["seg"], "_0");
+        assert_eq!(selected_pit_body_json_response.body[0]["dc"], "2");
+        assert_eq!(selected_pit_body_json_response.body[0]["sm"], "0");
+        assert_eq!(selected_pit_body_json_response.body[0]["id"], "steel-node");
+        assert!(selected_pit_body_json_response.body[0]
+            .get("index")
+            .is_none());
 
         let mut pit_short_source_content_type_request =
             RestRequest::new(RestMethod::Get, "/_cat/pit_segments");
@@ -37356,6 +37466,27 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         ));
         assert!(pit_text.contains("logs-pit-segments-000001"));
         assert!(pit_text.contains(" 2 0 0b "));
+
+        let mut selected_pit_text_request =
+            RestRequest::new(RestMethod::Get, "/_cat/pit_segments/_all");
+        selected_pit_text_request
+            .query_params
+            .insert("v".to_string(), "true".to_string());
+        selected_pit_text_request
+            .query_params
+            .insert("h".to_string(), "i,seg,dc,sm,id".to_string());
+        let selected_pit_text_response = node.handle_rest_request(selected_pit_text_request);
+        let selected_pit_text = selected_pit_text_response
+            .body
+            .as_str()
+            .expect("selected cat pit_segments text body");
+        assert_eq!(
+            selected_pit_text.lines().collect::<Vec<_>>(),
+            vec![
+                "i seg dc sm id",
+                "logs-pit-segments-000001 _0 2 0 steel-node"
+            ]
+        );
 
         let mut pit_all_request = RestRequest::new(RestMethod::Get, "/_cat/pit_segments/_all");
         pit_all_request
