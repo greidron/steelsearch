@@ -6028,6 +6028,350 @@
       "description": "[lexical] PIT rejects null keep_alive values like OpenSearch"
     },
     {
+      "name": "pit_short_keep_alive_survives_before_reaper_search",
+      "area": "search",
+      "extract": "search_hits",
+      "steps": [
+        {
+          "name": "pit-open-short-lived",
+          "method": "POST",
+          "path": "/logs-compat/_search/point_in_time?keep_alive=1ms",
+          "body": null,
+          "expected_status": 200,
+          "extract": "pit_open",
+          "save": {
+            "pit_id": "body.pit_id"
+          }
+        },
+        {
+          "name": "wait-for-pit-expiry",
+          "sleep_seconds": 0.25
+        },
+        {
+          "name": "pit-search-before-reaper",
+          "method": "POST",
+          "path": "/_search",
+          "body": {
+            "pit": {
+              "id": "${saved.pit_id}",
+              "keep_alive": "1m"
+            },
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "ts": {
+                  "order": "asc"
+                }
+              }
+            ],
+            "size": 1
+          },
+          "expected_status": 200,
+          "extract": "search_hits"
+        }
+      ],
+      "family": "lexical",
+      "description": "[lexical] short PIT keep_alive survives before the cleanup reaper observes expiry"
+    },
+    {
+      "name": "pit_close_all_mixed_array_error_search",
+      "area": "search",
+      "method": "DELETE",
+      "path": "/_search/point_in_time",
+      "body": {
+        "pit_id": [
+          "_all",
+          "pit-missing"
+        ]
+      },
+      "expected_status": 500,
+      "expected_steelsearch_status": 500,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] close PIT rejects mixed _all array entries like OpenSearch"
+    },
+    {
+      "name": "pit_search_with_routing_filter",
+      "area": "search",
+      "extract": "search_hits",
+      "steps": [
+        {
+          "name": "create-index",
+          "method": "PUT",
+          "path": "/logs-pit-routing-compat",
+          "body": {
+            "settings": {
+              "number_of_shards": 1,
+              "number_of_replicas": 0
+            },
+            "mappings": {
+              "properties": {
+                "tenant": {
+                  "type": "keyword"
+                },
+                "message": {
+                  "type": "keyword"
+                }
+              }
+            }
+          },
+          "expected_status": 200,
+          "extract": "status_only"
+        },
+        {
+          "name": "index-routed-a",
+          "method": "PUT",
+          "path": "/logs-pit-routing-compat/_doc/doc-a?routing=tenant-a",
+          "body": {
+            "tenant": "tenant-a",
+            "message": "routed a"
+          },
+          "expected_status": 201,
+          "extract": "status_only"
+        },
+        {
+          "name": "index-routed-b",
+          "method": "PUT",
+          "path": "/logs-pit-routing-compat/_doc/doc-b?routing=tenant-b",
+          "body": {
+            "tenant": "tenant-b",
+            "message": "routed b"
+          },
+          "expected_status": 201,
+          "extract": "status_only"
+        },
+        {
+          "name": "refresh-before-pit",
+          "method": "POST",
+          "path": "/logs-pit-routing-compat/_refresh",
+          "body": {},
+          "expected_status": 200,
+          "extract": "status_only"
+        },
+        {
+          "name": "pit-open-routed",
+          "method": "POST",
+          "path": "/logs-pit-routing-compat/_search/point_in_time?keep_alive=1m&routing=tenant-a",
+          "body": null,
+          "expected_status": 200,
+          "extract": "pit_open",
+          "save": {
+            "pit_id": "body.pit_id"
+          }
+        },
+        {
+          "name": "pit-search-routed",
+          "method": "POST",
+          "path": "/_search",
+          "body": {
+            "pit": {
+              "id": "${saved.pit_id}",
+              "keep_alive": "1m"
+            },
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "message": {
+                  "order": "asc"
+                }
+              }
+            ],
+            "size": 10
+          },
+          "expected_status": 200,
+          "extract": "search_hits"
+        }
+      ],
+      "family": "lexical",
+      "description": "[lexical] pit opened with routing preserves OpenSearch shard-routing semantics without document filtering"
+    },
+    {
+      "name": "pit_snapshot_after_update_delete_search",
+      "area": "search",
+      "extract": "search_hits",
+      "steps": [
+        {
+          "name": "create-index",
+          "method": "PUT",
+          "path": "/logs-pit-snapshot-compat",
+          "body": {
+            "settings": {
+              "number_of_shards": 1,
+              "number_of_replicas": 0
+            }
+          },
+          "expected_status": 200,
+          "extract": "status_only"
+        },
+        {
+          "name": "put-mapping",
+          "method": "PUT",
+          "path": "/logs-pit-snapshot-compat/_mappings",
+          "body": {
+            "properties": {
+              "rank": {
+                "type": "long"
+              },
+              "status": {
+                "type": "keyword"
+              }
+            }
+          },
+          "expected_status": 200,
+          "extract": "status_only"
+        },
+        {
+          "name": "index-doc-1",
+          "method": "PUT",
+          "path": "/logs-pit-snapshot-compat/_doc/doc-1",
+          "body": {
+            "rank": 10,
+            "status": "original"
+          },
+          "expected_status": 201,
+          "extract": "status_only"
+        },
+        {
+          "name": "index-doc-2",
+          "method": "PUT",
+          "path": "/logs-pit-snapshot-compat/_doc/doc-2",
+          "body": {
+            "rank": 20,
+            "status": "original"
+          },
+          "expected_status": 201,
+          "extract": "status_only"
+        },
+        {
+          "name": "refresh-before-pit",
+          "method": "POST",
+          "path": "/logs-pit-snapshot-compat/_refresh",
+          "body": {},
+          "expected_status": 200,
+          "extract": "status_only"
+        },
+        {
+          "name": "pit-open",
+          "method": "POST",
+          "path": "/logs-pit-snapshot-compat/_search/point_in_time?keep_alive=1m",
+          "body": null,
+          "expected_status": 200,
+          "extract": "pit_open",
+          "save": {
+            "pit_id": "body.pit_id"
+          }
+        },
+        {
+          "name": "update-doc-2",
+          "method": "PUT",
+          "path": "/logs-pit-snapshot-compat/_doc/doc-2",
+          "body": {
+            "rank": 200,
+            "status": "updated"
+          },
+          "expected_status": 200,
+          "extract": "status_only"
+        },
+        {
+          "name": "delete-doc-1",
+          "method": "DELETE",
+          "path": "/logs-pit-snapshot-compat/_doc/doc-1",
+          "body": null,
+          "expected_status": 200,
+          "extract": "status_only"
+        },
+        {
+          "name": "index-doc-3-after-pit",
+          "method": "PUT",
+          "path": "/logs-pit-snapshot-compat/_doc/doc-3",
+          "body": {
+            "rank": 30,
+            "status": "post-pit"
+          },
+          "expected_status": 201,
+          "extract": "status_only"
+        },
+        {
+          "name": "refresh-after-mutation",
+          "method": "POST",
+          "path": "/logs-pit-snapshot-compat/_refresh",
+          "body": {},
+          "expected_status": 200,
+          "extract": "status_only"
+        },
+        {
+          "name": "live-search-after-mutation",
+          "method": "POST",
+          "path": "/logs-pit-snapshot-compat/_search",
+          "body": {
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "rank": {
+                  "order": "asc"
+                }
+              }
+            ],
+            "size": 10
+          },
+          "expected_status": 200,
+          "extract": "search_hits"
+        },
+        {
+          "name": "pit-search",
+          "method": "POST",
+          "path": "/_search",
+          "body": {
+            "pit": {
+              "id": "${saved.pit_id}",
+              "keep_alive": "1m"
+            },
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "rank": {
+                  "order": "asc"
+                }
+              }
+            ],
+            "size": 10
+          },
+          "expected_status": 200,
+          "extract": "search_hits"
+        }
+      ],
+      "family": "lexical",
+      "description": "[lexical] pit search keeps the open-time snapshot after later update/delete mutations"
+    },
+    {
+      "name": "slice_without_scroll_or_pit_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "slice": {
+          "id": 0,
+          "max": 2
+        }
+      },
+      "expected_status": 500,
+      "expected_steelsearch_status": 500,
+      "extract": "search_error_root_cause",
+      "family": "ranking",
+      "description": "[ranking] slice without scroll or PIT is rejected"
+    },
+    {
       "name": "pre_filter_shard_size_search",
       "area": "search",
       "method": "POST",
