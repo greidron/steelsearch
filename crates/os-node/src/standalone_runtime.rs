@@ -18394,6 +18394,14 @@ impl SteelNode {
         let pit_ids = if include_all {
             Vec::new()
         } else {
+            if request.query_params.contains_key("source")
+                && request
+                    .query_params
+                    .get("source_content_type")
+                    .is_some_and(|source_content_type| source_content_type == "json")
+            {
+                return delete_pit_illegal_argument("invalid Content-Type header [json]");
+            }
             let body = match pit_body_or_source_param(request) {
                 Ok(body) => body,
                 Err(response) => return response,
@@ -33378,6 +33386,26 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         );
         assert_eq!(pit_body_json_response.body[0]["docs.count"], "2");
 
+        let mut pit_short_source_content_type_request =
+            RestRequest::new(RestMethod::Get, "/_cat/pit_segments");
+        pit_short_source_content_type_request
+            .query_params
+            .insert("format".to_string(), "json".to_string());
+        pit_short_source_content_type_request.query_params.insert(
+            "source".to_string(),
+            serde_json::json!({ "pit_id": pit_id }).to_string(),
+        );
+        pit_short_source_content_type_request
+            .query_params
+            .insert("source_content_type".to_string(), "json".to_string());
+        let pit_short_source_content_type_response =
+            node.handle_rest_request(pit_short_source_content_type_request);
+        assert_eq!(pit_short_source_content_type_response.status, 400);
+        assert_eq!(
+            pit_short_source_content_type_response.body["error"]["root_cause"][0]["reason"],
+            "invalid Content-Type header [json]"
+        );
+
         let mut pit_source_json_request = RestRequest::new(RestMethod::Get, "/_cat/pit_segments");
         pit_source_json_request
             .query_params
@@ -33386,9 +33414,10 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             "source".to_string(),
             serde_json::json!({ "pit_id": pit_id }).to_string(),
         );
-        pit_source_json_request
-            .query_params
-            .insert("source_content_type".to_string(), "json".to_string());
+        pit_source_json_request.query_params.insert(
+            "source_content_type".to_string(),
+            "application/json".to_string(),
+        );
         let pit_source_json_response = node.handle_rest_request(pit_source_json_request);
         assert_eq!(pit_source_json_response.status, 200);
         assert_eq!(
