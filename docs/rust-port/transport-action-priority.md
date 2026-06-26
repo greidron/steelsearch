@@ -2279,7 +2279,8 @@ The delete-PIT boundary covers:
 - shared `SteelNode` PIT context invalidation for explicit PIT ids and `_all`;
 - OpenSearch-compatible explicit-id delete idempotence where missing or already
   removed PIT contexts still render successful `DeletePitInfo` entries, with
-  duplicate explicit ids collapsed like the REST close-PIT route;
+  duplicate explicit ids collapsed for both missing and existing contexts like
+  the REST close-PIT route;
 - standalone `_all` delete prunes expired local PIT contexts before rendering
   active deletion results, while `_all` mixed with explicit ids stays on the
   explicit-id path like OpenSearch's delete-PIT transport action;

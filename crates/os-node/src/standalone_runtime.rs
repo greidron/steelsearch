@@ -47506,6 +47506,49 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             "pit-missing"
         );
 
+        let duplicate_existing_open_pit = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/logs-session-000001/_search/point_in_time?keep_alive=1m",
+        ));
+        assert_eq!(duplicate_existing_open_pit.status, 200);
+        let duplicate_existing_pit_id = duplicate_existing_open_pit.body["pit_id"]
+            .as_str()
+            .expect("pit id")
+            .to_string();
+        let duplicate_existing_close_pit = node.handle_rest_request(
+            RestRequest::new(RestMethod::Delete, "/_search/point_in_time").with_json_body(
+                serde_json::json!({ "pit_id": [
+                    duplicate_existing_pit_id,
+                    duplicate_existing_pit_id
+                ] }),
+            ),
+        );
+        assert_eq!(duplicate_existing_close_pit.status, 200);
+        assert_eq!(
+            duplicate_existing_close_pit.body["pits"]
+                .as_array()
+                .map(|pits| pits.len()),
+            Some(1)
+        );
+        assert_eq!(
+            duplicate_existing_close_pit.body["pits"][0]["successful"],
+            true
+        );
+        assert_eq!(
+            duplicate_existing_close_pit.body["pits"][0]["pit_id"],
+            duplicate_existing_pit_id
+        );
+        let duplicate_existing_closed_search = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_search").with_json_body(serde_json::json!({
+                "pit": {
+                    "id": duplicate_existing_pit_id,
+                    "keep_alive": "1m"
+                },
+                "query": { "match_all": {} }
+            })),
+        );
+        assert_eq!(duplicate_existing_closed_search.status, 404);
+
         let mixed_all_close_pit = node.handle_rest_request(
             RestRequest::new(RestMethod::Delete, "/_search/point_in_time")
                 .with_json_body(serde_json::json!({ "pit_id": ["_all", "pit-missing"] })),
