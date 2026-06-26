@@ -74,6 +74,30 @@
       }
     },
     {
+      "name": "logs-delete-query-match",
+      "body": {
+        "mappings": {
+          "properties": {
+            "tenant": {
+              "type": "keyword"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "logs-delete-query-unmatched",
+      "body": {
+        "mappings": {
+          "properties": {
+            "tenant": {
+              "type": "keyword"
+            }
+          }
+        }
+      }
+    },
+    {
       "name": "logs-bulk-metadata-000001",
       "body": {}
     }
@@ -183,6 +207,30 @@
           "_source": {
             "tenant": "tenant-a",
             "processed": false
+          }
+        }
+      ]
+    },
+    {
+      "index": "logs-delete-query-match",
+      "documents": [
+        {
+          "_id": "doc-1",
+          "_source": {
+            "tenant": "tenant-a",
+            "message": "delete query match"
+          }
+        }
+      ]
+    },
+    {
+      "index": "logs-delete-query-unmatched",
+      "documents": [
+        {
+          "_id": "doc-1",
+          "_source": {
+            "tenant": "tenant-a",
+            "message": "delete query unmatched"
           }
         }
       ]
@@ -512,6 +560,36 @@
           "source": "ctx._source.processed = params.processed",
           "params": {
             "processed": true
+          }
+        }
+      },
+      "expected_status": 200,
+      "extract": "reindex_summary"
+    },
+    {
+      "name": "delete_by_query_matched_summary",
+      "area": "document-write",
+      "method": "POST",
+      "path": "/logs-delete-query-match/_delete_by_query",
+      "body": {
+        "query": {
+          "term": {
+            "tenant": "tenant-a"
+          }
+        }
+      },
+      "expected_status": 200,
+      "extract": "reindex_summary"
+    },
+    {
+      "name": "delete_by_query_unmatched_summary",
+      "area": "document-write",
+      "method": "POST",
+      "path": "/logs-delete-query-unmatched/_delete_by_query",
+      "body": {
+        "query": {
+          "term": {
+            "tenant": "tenant-z"
           }
         }
       },
