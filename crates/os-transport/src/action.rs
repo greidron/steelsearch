@@ -24923,13 +24923,17 @@ impl OpenSearchSearchRequestWire {
     }
 
     pub fn validate_supported_execution_subset(&self) -> Result<(), TransportActionWireError> {
+        let has_point_in_time = self
+            .source
+            .as_ref()
+            .is_some_and(|source| source.point_in_time.is_some());
         if self.search_type != 1 {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "search request search type",
                 reason: "dfs_query_then_fetch search requires distributed term-stat mapping",
             });
         }
-        if !self.indices.is_empty() {
+        if !self.indices.is_empty() && !has_point_in_time {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "search request index filter",
                 reason: "index-scoped search requires OpenSearch index resolution semantics",
@@ -25019,8 +25023,12 @@ impl OpenSearchSearchRequestWire {
                 });
             }
         }
-        if self.indices_options
-            != OpenSearchIndicesOptionsWire::strict_expand_open_forbid_closed_ignore_throttled()
+        let default_indices_options =
+            OpenSearchIndicesOptionsWire::strict_expand_open_forbid_closed_ignore_throttled();
+        let pit_prepared_indices_options =
+            OpenSearchIndicesOptionsWire::point_in_time_search_prepared();
+        if self.indices_options != default_indices_options
+            && !(has_point_in_time && self.indices_options == pit_prepared_indices_options)
         {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "search request indices options",
@@ -25063,10 +25071,6 @@ impl OpenSearchSearchRequestWire {
                 reason: "cluster-alias search requires cross-cluster reduction semantics",
             });
         }
-        let has_point_in_time = self
-            .source
-            .as_ref()
-            .is_some_and(|source| source.point_in_time.is_some());
         if !self.ccs_minimize_roundtrips && !has_point_in_time {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "search request ccs minimize roundtrips",
@@ -40399,6 +40403,20 @@ impl OpenSearchIndicesOptionsWire {
             forbid_closed_indices: true,
             ignore_throttled: true,
             expand_open: true,
+            expand_closed: false,
+            expand_hidden: false,
+        }
+    }
+
+    pub const fn point_in_time_search_prepared() -> Self {
+        Self {
+            ignore_unavailable: false,
+            ignore_aliases: true,
+            allow_no_indices: true,
+            forbid_aliases_to_multiple_indices: false,
+            forbid_closed_indices: true,
+            ignore_throttled: true,
+            expand_open: false,
             expand_closed: false,
             expand_hidden: false,
         }
@@ -69801,6 +69819,27 @@ mod tests {
         };
         assert!(matches!(
             ccs_minimize_disabled_with_pit.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request execution",
+                ..
+            })
+        ));
+
+        let rest_prepared_pit_search = OpenSearchSearchRequestWire {
+            indices: vec!["logs-000001".to_string()],
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                point_in_time: Some(OpenSearchPointInTimeBuilderWire {
+                    id: "pit-context".to_string(),
+                    keep_alive: Some(TimeValueWire::minutes(1)),
+                }),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            indices_options: OpenSearchIndicesOptionsWire::point_in_time_search_prepared(),
+            ccs_minimize_roundtrips: false,
+            ..OpenSearchSearchRequestWire::default()
+        };
+        assert!(matches!(
+            rest_prepared_pit_search.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "search request execution",
                 ..

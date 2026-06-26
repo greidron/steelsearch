@@ -2346,6 +2346,10 @@ The create-PIT boundary covers:
   subset, matching OpenSearch transport execution where PIT searches bypass
   minimized-roundtrip CCS even when non-PIT local search still rejects custom
   CCS roundtrip control;
+- PIT searches accept the OpenSearch REST `preparePointInTime` transport shape
+  where request indices are populated from the decoded PIT id and indices
+  options are tightened for PIT execution, while local execution rejects
+  indices that do not match the stored PIT context;
 - PIT searches reject malformed local opaque PIT ids with the OpenSearch
   `invalid id` error while preserving missing-context handling for well-formed
   local ids;

@@ -5722,7 +5722,17 @@ fn transport_search_pit_context_exists_for_request(
         .lock()
         .expect("dev transport PIT contexts lock poisoned");
     prune_expired_transport_pits(&mut contexts, now_epoch_ms());
-    remove_transport_pit_if_indices_missing(&mut contexts, &pit.id).is_some()
+    remove_transport_pit_if_indices_missing(&mut contexts, &pit.id).is_some_and(|_| {
+        if request.indices.is_empty() {
+            return true;
+        }
+        let Some(context) = contexts.get(&pit.id) else {
+            return false;
+        };
+        let requested_indices = request.indices.iter().collect::<BTreeSet<_>>();
+        let context_indices = context.indices.iter().collect::<BTreeSet<_>>();
+        requested_indices == context_indices
+    })
 }
 
 fn remove_transport_pit_if_indices_missing(
@@ -13744,6 +13754,7 @@ mod tests {
         }
 
         let request = os_transport::action::OpenSearchSearchRequestWire {
+            indices: vec!["logs-search-pit-transport".to_string()],
             source: Some(os_transport::action::OpenSearchSearchSourceBuilderWire {
                 point_in_time: Some(os_transport::action::OpenSearchPointInTimeBuilderWire {
                     id: pit_id.clone(),
@@ -13751,9 +13762,24 @@ mod tests {
                 }),
                 ..os_transport::action::OpenSearchSearchSourceBuilderWire::default()
             }),
+            indices_options:
+                os_transport::action::OpenSearchIndicesOptionsWire::point_in_time_search_prepared(),
             ccs_minimize_roundtrips: false,
             ..os_transport::action::OpenSearchSearchRequestWire::default()
         };
+        let mismatched_indices_request = os_transport::action::OpenSearchSearchRequestWire {
+            indices: vec!["logs-search-pit-other".to_string()],
+            ..request.clone()
+        };
+        let mismatched_frame = os_transport::action::build_opensearch_search_request_message(
+            305,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &mismatched_indices_request,
+        )
+        .unwrap();
+        assert!(!search_request_supports_local_execution_subset(
+            &mismatched_frame[6..]
+        ));
         let frame = os_transport::action::build_opensearch_search_request_message(
             306,
             OPENSEARCH_3_7_0_TRANSPORT,
