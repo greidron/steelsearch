@@ -2976,6 +2976,20 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "pit_open_body_keep_alive_still_missing_query_keep_alive_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search/point_in_time",
+      "body": {
+        "keep_alive": "1m"
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] create PIT ignores body keep_alive and still requires the query parameter like OpenSearch",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "pit_open_invalid_keep_alive_error_search",
       "area": "search",
       "method": "POST",
@@ -3079,6 +3093,23 @@
       "extract": "pit_open",
       "family": "lexical",
       "description": "[lexical] pit open with preference search",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "pit_open_ignores_request_body_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search/point_in_time?keep_alive=1m",
+      "body": {
+        "pit_id": "ignored",
+        "keep_alive": "25h",
+        "query": {
+          "match_none": {}
+        }
+      },
+      "extract": "pit_open",
+      "family": "lexical",
+      "description": "[lexical] create PIT follows OpenSearch by taking options from the route/query and ignoring request body",
       "strict_source_parity_required": true
     },
     {
