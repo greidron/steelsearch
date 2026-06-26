@@ -28692,6 +28692,39 @@ fn build_search_aggregations(
             result.insert(name.clone(), Value::Object(nested_value));
             continue;
         }
+        if let Some(reverse_nested) = aggregation_object
+            .get("reverse_nested")
+            .and_then(Value::as_object)
+        {
+            if reverse_nested
+                .get("path")
+                .and_then(Value::as_str)
+                .is_some_and(|path| !path.is_empty())
+            {
+                return Err(build_unsupported_search_response(
+                    "unsupported aggregation option [reverse_nested.path]",
+                ));
+            }
+            let parent_hits = collect_reverse_nested_parent_hits(hits);
+            let mut reverse_nested_value = serde_json::Map::new();
+            reverse_nested_value.insert(
+                "doc_count".to_string(),
+                Value::from(parent_hits.len() as u64),
+            );
+            let nested_aggs = aggregation_object
+                .get("aggs")
+                .or_else(|| aggregation_object.get("aggregations"));
+            if let Some(nested) = build_search_aggregations(nested_aggs, &parent_hits, global_hits)?
+            {
+                if let Some(nested_object) = nested.as_object() {
+                    for (nested_name, nested_value) in nested_object {
+                        reverse_nested_value.insert(nested_name.clone(), nested_value.clone());
+                    }
+                }
+            }
+            result.insert(name.clone(), Value::Object(reverse_nested_value));
+            continue;
+        }
         if let Some(sampler) = aggregation_object.get("sampler").and_then(Value::as_object) {
             let shard_size = sampler
                 .get("shard_size")
@@ -29896,7 +29929,8 @@ fn collect_nested_child_hits(hits: &[Value], path: &str) -> Vec<Value> {
                     let parent_id = hit.get("_id").and_then(Value::as_str).unwrap_or_default();
                     nested_hits.push(serde_json::json!({
                         "_id": format!("{parent_id}#{path}#{index}"),
-                        "_source": child
+                        "_source": child,
+                        "_nested_parent": hit
                     }));
                 }
             }
@@ -29904,13 +29938,32 @@ fn collect_nested_child_hits(hits: &[Value], path: &str) -> Vec<Value> {
                 let parent_id = hit.get("_id").and_then(Value::as_str).unwrap_or_default();
                 nested_hits.push(serde_json::json!({
                     "_id": format!("{parent_id}#{path}#0"),
-                    "_source": value
+                    "_source": value,
+                    "_nested_parent": hit
                 }));
             }
             _ => {}
         }
     }
     nested_hits
+}
+
+fn collect_reverse_nested_parent_hits(hits: &[Value]) -> Vec<Value> {
+    let mut seen = std::collections::BTreeSet::new();
+    let mut parents = Vec::new();
+    for hit in hits {
+        let Some(parent) = hit.get("_nested_parent") else {
+            continue;
+        };
+        let parent_id = parent
+            .get("_id")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        if seen.insert(parent_id.to_string()) {
+            parents.push(parent.clone());
+        }
+    }
+    parents
 }
 
 fn date_histogram_bucket_day(timestamp: &str) -> Option<(i64, String)> {
@@ -53035,6 +53088,17 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                                         "field": "comments.author",
                                         "order": { "_key": "asc" }
                                     }
+                                },
+                                "to_parent": {
+                                    "reverse_nested": {},
+                                    "aggs": {
+                                        "by_code": {
+                                            "terms": {
+                                                "field": "code",
+                                                "order": { "_key": "asc" }
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -53060,6 +53124,27 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 },
                 {
                     "key": "cara",
+                    "doc_count": 1
+                }
+            ])
+        );
+        assert_eq!(
+            nested_aggregation.body["aggregations"]["comments"]["to_parent"]["doc_count"],
+            3
+        );
+        assert_eq!(
+            nested_aggregation.body["aggregations"]["comments"]["to_parent"]["by_code"]["buckets"],
+            serde_json::json!([
+                {
+                    "key": "alpha-1",
+                    "doc_count": 1
+                },
+                {
+                    "key": "beta-2",
+                    "doc_count": 1
+                },
+                {
+                    "key": "gamma-3",
                     "doc_count": 1
                 }
             ])
