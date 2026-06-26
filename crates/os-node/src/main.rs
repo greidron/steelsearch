@@ -2147,29 +2147,6 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end,
             &mut connection_end_at_ms,
         )?;
-    } else if is_request && normalized_action_hint == Some("cluster:admin/knn_stats_action") {
-        let response = build_empty_knn_stats_response(request_id, header_version_id);
-        response_frame = summarize_transport_response_frame_for_action(
-            &response,
-            Some("cluster:admin/knn_stats_action[n]"),
-        );
-        stream.write_all(&response)?;
-        stream.flush()?;
-        response_frame_sent_at_ms = Some(unix_time_ms());
-        hold_transport_channel_open(
-            stream,
-            transport_identity,
-            &mut post_follow_up_frame,
-            &mut post_follow_up_frame_received_at_ms,
-            true,
-            &mut proactive_keepalive_sent_at_ms,
-            &mut proactive_keepalive_count,
-            transport_connection_hold_duration(),
-            &mut hold_open_started_at_ms,
-            &mut first_post_response_event,
-            &mut connection_end,
-            &mut connection_end_at_ms,
-        )?;
     } else if is_request && normalized_action_hint == Some("cluster:monitor/nodes/info") {
         let response = build_nodes_info_response(request_id, header_version_id, transport_identity);
         response_frame = summarize_transport_response_frame_for_action(
@@ -7101,16 +7078,6 @@ fn build_empty_nodes_stats_response(
     build_empty_transport_response(request_id, header_version_id)
 }
 
-fn build_empty_knn_stats_response(request_id: i64, header_version_id: u32) -> Vec<u8> {
-    os_transport::action::build_knn_stats_response_message(
-        request_id,
-        Version::from_id(header_version_id as i32),
-        &os_transport::action::KnnStatsResponseWire::default(),
-    )
-    .map(|frame| frame.to_vec())
-    .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
-}
-
 fn build_nodes_info_response(
     request_id: i64,
     header_version_id: u32,
@@ -8176,10 +8143,6 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
             request_id,
             header_version_id,
             transport_identity,
-        )),
-        Some("cluster:admin/knn_stats_action") => Some(build_empty_knn_stats_response(
-            request_id,
-            header_version_id,
         )),
         Some("cluster:monitor/nodes/info") => Some(build_nodes_info_response(
             request_id,
@@ -12229,24 +12192,73 @@ mod tests {
     }
 
     #[test]
-    fn knn_stats_transport_route_builds_opensearch_shaped_empty_response() {
-        let response = build_empty_knn_stats_response(77, OPENSEARCH_3_7_0_TRANSPORT.id() as u32);
-        let mut frame = BytesMut::from(&response[..]);
-        let os_transport::frame::DecodedFrame::Message(message) =
-            os_transport::frame::decode_frame(&mut frame)
-                .unwrap()
-                .unwrap()
-        else {
-            panic!("expected knn stats response message");
-        };
+    fn knn_stats_transport_route_remains_fail_closed_until_stats_aggregation_exists() {
+        struct RecordingTransportConnection {
+            writes: Vec<u8>,
+        }
 
-        assert_eq!(message.request_id, 77);
-        assert!(!message.status.is_request());
-        let response = os_transport::action::read_knn_stats_response_message(&message).unwrap();
-        assert_eq!(
-            response,
-            os_transport::action::KnnStatsResponseWire::default()
-        );
+        impl std::io::Read for RecordingTransportConnection {
+            fn read(&mut self, _buf: &mut [u8]) -> std::io::Result<usize> {
+                Ok(0)
+            }
+        }
+
+        impl std::io::Write for RecordingTransportConnection {
+            fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+                self.writes.extend_from_slice(buf);
+                Ok(buf.len())
+            }
+
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+
+        impl TransportConnection for RecordingTransportConnection {
+            fn set_read_timeout(&self, _duration: Option<Duration>) -> std::io::Result<()> {
+                Ok(())
+            }
+
+            fn peer_addr(&self) -> std::io::Result<SocketAddr> {
+                "127.0.0.1:9300"
+                    .parse()
+                    .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidInput, error))
+            }
+        }
+
+        let request = os_transport::action::KnnStatsRequestWire::default();
+        let frame = os_transport::action::build_knn_stats_request_message(
+            77,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        let transport_identity = DevTransportIdentity {
+            cluster_name: "steelsearch-dev".to_string(),
+            node_name: "steel-node".to_string(),
+            node_id: "steel-node-id".to_string(),
+            ephemeral_id: "steel-node-ephemeral".to_string(),
+            transport_address: "127.0.0.1:9300".parse().unwrap(),
+            attributes: Vec::new(),
+            roles: vec!["cluster_manager".to_string(), "data".to_string()],
+            seed_peer_identity: None,
+            seed_peer_identities: Vec::new(),
+            coordination_state: Arc::new(Mutex::new(DevTransportCoordinationState::default())),
+            remote_transport_queue_gate: Arc::new(RemoteTransportQueueGate::new(1, 1000)),
+            task_queue_state: None,
+        };
+        let mut stream = RecordingTransportConnection { writes: Vec::new() };
+
+        let response = handle_subsequent_transport_request(
+            &mut stream,
+            &frame[6..],
+            &transport_identity,
+            None,
+        )
+        .unwrap();
+
+        assert!(!response);
+        assert!(stream.writes.is_empty());
     }
 
     #[test]
