@@ -18188,12 +18188,25 @@ impl SteelNode {
                 .unwrap_or_default()
                 .cmp(right["index"].as_str().unwrap_or_default())
         });
+        let display_columns = cat_indices_display_columns(request.query_params.get("h"));
         if request
             .query_params
             .get("format")
             .is_some_and(|value| value == "json")
         {
-            return RestResponse::json(200, Value::Array(rows));
+            let selected_rows = rows
+                .iter()
+                .map(|row| {
+                    let mut object = serde_json::Map::new();
+                    for (name, display) in &display_columns {
+                        if let Some(value) = row.get(*name) {
+                            object.insert(display.clone(), value.clone());
+                        }
+                    }
+                    Value::Object(object)
+                })
+                .collect();
+            return RestResponse::json(200, Value::Array(selected_rows));
         }
         let verbose = request
             .query_params
@@ -18201,22 +18214,22 @@ impl SteelNode {
             .is_some_and(|value| value == "true");
         let mut lines = Vec::new();
         if verbose {
-            lines.push("health status index uuid pri rep docs.count docs.deleted store.size pri.store.size".to_string());
+            lines.push(
+                display_columns
+                    .iter()
+                    .map(|(_, display)| display.as_str())
+                    .collect::<Vec<_>>()
+                    .join(" "),
+            );
         }
         for row in &rows {
-            lines.push(format!(
-                "{} {} {} {} {} {} {} {} {} {}",
-                row["health"].as_str().unwrap_or("yellow"),
-                row["status"].as_str().unwrap_or("open"),
-                row["index"].as_str().unwrap_or(""),
-                row["uuid"].as_str().unwrap_or("_na_"),
-                row["pri"].as_str().unwrap_or("1"),
-                row["rep"].as_str().unwrap_or("0"),
-                row["docs.count"].as_str().unwrap_or("0"),
-                row["docs.deleted"].as_str().unwrap_or("0"),
-                row["store.size"].as_str().unwrap_or("0b"),
-                row["pri.store.size"].as_str().unwrap_or("0b"),
-            ));
+            lines.push(
+                display_columns
+                    .iter()
+                    .map(|(name, _)| row[*name].as_str().unwrap_or(""))
+                    .collect::<Vec<_>>()
+                    .join(" "),
+            );
         }
         RestResponse::text(200, lines.join("\n") + "\n")
     }
@@ -30138,6 +30151,100 @@ fn wildcard_match(pattern: &str, candidate: &str) -> bool {
     true
 }
 
+const CAT_INDICES_DEFAULT_COLUMNS: &[&str] = &[
+    "health",
+    "status",
+    "index",
+    "uuid",
+    "pri",
+    "rep",
+    "docs.count",
+    "docs.deleted",
+    "store.size",
+    "pri.store.size",
+];
+
+const CAT_INDICES_ALL_COLUMNS: &[&str] = &[
+    "health",
+    "status",
+    "index",
+    "uuid",
+    "pri",
+    "rep",
+    "docs.count",
+    "docs.deleted",
+    "store.size",
+    "pri.store.size",
+    "search.open_contexts",
+    "pri.search.open_contexts",
+    "search.point_in_time_current",
+    "pri.search.point_in_time_current",
+    "search.point_in_time_time",
+    "pri.search.point_in_time_time",
+    "search.point_in_time_total",
+    "pri.search.point_in_time_total",
+];
+
+fn cat_indices_column_aliases(column: &str) -> &'static [&'static str] {
+    match column {
+        "health" => &["h"],
+        "status" => &["s"],
+        "index" => &["i", "idx"],
+        "uuid" => &["id", "uuid"],
+        "pri" => &["p", "shards.primary", "shardsPrimary"],
+        "rep" => &["r", "shards.replica", "shardsReplica"],
+        "docs.count" => &["dc", "docsCount"],
+        "docs.deleted" => &["dd", "docsDeleted"],
+        "store.size" => &["ss", "storeSize"],
+        _ => &[],
+    }
+}
+
+fn cat_indices_display_columns(h_param: Option<&String>) -> Vec<(&'static str, String)> {
+    let Some(h_param) = h_param else {
+        return CAT_INDICES_DEFAULT_COLUMNS
+            .iter()
+            .map(|column| (*column, (*column).to_string()))
+            .collect();
+    };
+    let mut selected = Vec::new();
+    for requested in h_param.split(',').map(str::trim).filter(|value| !value.is_empty()) {
+        if requested.contains('*') {
+            for column in CAT_INDICES_ALL_COLUMNS {
+                if wildcard_match(requested, column)
+                    || cat_indices_column_aliases(column)
+                        .iter()
+                        .any(|alias| wildcard_match(requested, alias))
+                {
+                    if !selected.iter().any(|(existing, _)| existing == column) {
+                        selected.push((*column, (*column).to_string()));
+                    }
+                }
+            }
+            continue;
+        }
+        if let Some(column) = CAT_INDICES_ALL_COLUMNS
+            .iter()
+            .copied()
+            .find(|column| *column == requested)
+        {
+            if !selected.iter().any(|(existing, _)| existing == &column) {
+                selected.push((column, column.to_string()));
+            }
+            continue;
+        }
+        for column in CAT_INDICES_ALL_COLUMNS {
+            if cat_indices_column_aliases(column).contains(&requested) {
+                if !selected.iter().any(|(existing, _)| existing == column) {
+                    selected.push((*column, requested.to_string()));
+                }
+                break;
+            }
+        }
+    }
+    selected
+}
+
 fn parse_search_indices_boosts(indices_boost: Option<&Value>) -> Vec<(String, f64)> {
     match indices_boost {
         Some(Value::Object(boosts)) => boosts
@@ -35486,6 +35593,27 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert!(indices_text.contains("logs-000001"));
         assert!(!indices_text.contains("metrics-000001"));
 
+        let mut indices_selected_text_request =
+            RestRequest::new(RestMethod::Get, "/_cat/indices/logs-*");
+        indices_selected_text_request
+            .query_params
+            .insert("v".to_string(), "true".to_string());
+        indices_selected_text_request
+            .query_params
+            .insert("h".to_string(), "idx,dc".to_string());
+        let indices_selected_text_response =
+            node.handle_rest_request(indices_selected_text_request);
+        let indices_selected_text = indices_selected_text_response
+            .body
+            .as_str()
+            .expect("cat indices selected text body");
+        let selected_text_lines = indices_selected_text
+            .lines()
+            .map(str::trim)
+            .collect::<Vec<_>>();
+        assert_eq!(selected_text_lines[0], "idx dc");
+        assert!(selected_text_lines.iter().any(|line| *line == "logs-000001 1"));
+
         let mut indices_json_request = RestRequest::new(RestMethod::Get, "/_cat/indices/logs-*");
         indices_json_request
             .query_params
@@ -35520,6 +35648,24 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert!(indices_json_response.body[0].get("dataset.size").is_none());
         assert!(indices_json_response.body[0]
             .get("creation.date.string")
+            .is_none());
+
+        let mut indices_selected_json_request =
+            RestRequest::new(RestMethod::Get, "/_cat/indices/logs-*");
+        indices_selected_json_request
+            .query_params
+            .insert("format".to_string(), "json".to_string());
+        indices_selected_json_request
+            .query_params
+            .insert("h".to_string(), "idx,dc".to_string());
+        let indices_selected_json_response =
+            node.handle_rest_request(indices_selected_json_request);
+        assert_eq!(indices_selected_json_response.status, 200);
+        assert_eq!(indices_selected_json_response.body[0]["idx"], "logs-000001");
+        assert_eq!(indices_selected_json_response.body[0]["dc"], "1");
+        assert!(indices_selected_json_response.body[0].get("index").is_none());
+        assert!(indices_selected_json_response.body[0]
+            .get("docs.count")
             .is_none());
     }
 

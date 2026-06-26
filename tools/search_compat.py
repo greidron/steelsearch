@@ -2170,6 +2170,24 @@ def extract(kind: str, response: dict[str, Any]) -> Any:
             "fixture_indices_present": sorted(COMPAT_INDICES & set(indices)),
             "required_columns_present": sorted(CAT_INDEX_REQUIRED_COLUMNS & set(header)),
         }
+    if kind == "cat_indices_selected_columns":
+        if isinstance(body, list):
+            fields = sorted(body[0].keys()) if body and isinstance(body[0], dict) else []
+            rows = [
+                [row.get(field) for field in fields]
+                for row in body
+                if isinstance(row, dict)
+            ]
+        else:
+            raw = body.get("_raw") if isinstance(body, dict) else None
+            lines = [line.strip() for line in (raw or "").splitlines() if line.strip()]
+            fields = lines[0].split() if lines else []
+            rows = [line.split() for line in lines[1:]]
+        return {
+            "status": response["status"],
+            "fields": fields,
+            "rows": rows,
+        }
     if kind == "cat_count":
         if isinstance(body, list):
             row = body[0] if body and isinstance(body[0], dict) else {}
