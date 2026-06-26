@@ -15777,12 +15777,36 @@ mod tests {
                 query: Some(os_transport::action::OpenSearchQueryBuilderWire::Term(
                     os_transport::action::OpenSearchTermQueryBuilderWire {
                         boost: 1.0,
-                        query_name: None,
+                        query_name: Some("active-status".to_string()),
                         field_name: "status".to_string(),
                         value: serde_json::json!("active"),
                         case_insensitive: false,
                     },
                 )),
+                fetch_source: Some(os_transport::action::OpenSearchFetchSourceContextWire {
+                    fetch_source: true,
+                    includes: vec!["status".to_string()],
+                    excludes: Vec::new(),
+                }),
+                doc_value_fields: Some(vec![os_transport::action::OpenSearchFieldAndFormatWire {
+                    field: "ordinal".to_string(),
+                    format: None,
+                }]),
+                sorts: Some(vec![
+                    os_transport::action::OpenSearchSortBuilderWire::Field(
+                        os_transport::action::OpenSearchFieldSortBuilderWire {
+                            field_name: "ordinal".to_string(),
+                            nested_path: None,
+                            missing: serde_json::Value::Null,
+                            order: Some(os_transport::action::OpenSearchSortOrderWire::Desc),
+                            sort_mode: None,
+                            unmapped_type: None,
+                            numeric_type: Some("long".to_string()),
+                        },
+                    ),
+                ]),
+                explain: Some(true),
+                include_named_queries_score: Some(true),
                 ..os_transport::action::OpenSearchSearchSourceBuilderWire::default()
             }),
             ..os_transport::action::OpenSearchSearchRequestWire::default()
@@ -15821,6 +15845,35 @@ mod tests {
                 .and_then(|source| source.get("status")),
             Some(&serde_json::json!("active"))
         );
+        assert_eq!(
+            response.hits[0].source.as_ref(),
+            Some(&serde_json::json!({ "status": "active" }))
+        );
+        assert_eq!(
+            response.hits[0].fields,
+            BTreeMap::from([("ordinal".to_string(), vec![serde_json::json!(1)])])
+        );
+        assert_eq!(
+            response.sort_fields,
+            Some(vec![os_transport::action::OpenSearchSortFieldWire::field(
+                "ordinal",
+                os_transport::action::OpenSearchSortFieldWire::LONG,
+                true,
+                None,
+            )])
+        );
+        assert_eq!(response.hits[0].sort_values, vec![serde_json::json!(1)]);
+        assert_eq!(
+            response.hits[0].matched_queries.get("active-status"),
+            Some(&1.0)
+        );
+        assert_eq!(
+            response.hits[0]
+                .explanation
+                .as_ref()
+                .and_then(|explanation| explanation.get("value")),
+            Some(&serde_json::json!(1.0))
+        );
 
         let stream_frame = os_transport::action::build_opensearch_stream_search_request_message(
             304,
@@ -15849,6 +15902,11 @@ mod tests {
         assert_eq!(response.total_hits, Some(1));
         assert_eq!(response.hits.len(), 1);
         assert_eq!(response.hits[0].id.as_deref(), Some("doc-1"));
+        assert_eq!(
+            response.hits[0].matched_queries.get("active-status"),
+            Some(&1.0)
+        );
+        assert_eq!(response.hits[0].sort_values, vec![serde_json::json!(1)]);
 
         let multi_request = os_transport::action::OpenSearchMultiSearchRequestWire {
             requests: vec![match_all_request, term_request],
@@ -15883,6 +15941,25 @@ mod tests {
         assert_eq!(response.responses[0].total_hits, Some(2));
         assert_eq!(response.responses[1].total_hits, Some(1));
         assert_eq!(response.responses[1].hits[0].id.as_deref(), Some("doc-1"));
+        assert_eq!(
+            response.responses[1].hits[0].fields,
+            BTreeMap::from([("ordinal".to_string(), vec![serde_json::json!(1)])])
+        );
+        assert_eq!(
+            response.responses[1].hits[0]
+                .matched_queries
+                .get("active-status"),
+            Some(&1.0)
+        );
+        assert_eq!(
+            response.responses[1].sort_fields,
+            Some(vec![os_transport::action::OpenSearchSortFieldWire::field(
+                "ordinal",
+                os_transport::action::OpenSearchSortFieldWire::LONG,
+                true,
+                None,
+            )])
+        );
     }
 
     #[test]
