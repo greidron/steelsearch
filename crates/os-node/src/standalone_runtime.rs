@@ -47747,6 +47747,139 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
     }
 
     #[test]
+    fn point_in_time_create_and_delete_routes_are_concurrent_safe_like_opensearch() {
+        let node = std::sync::Arc::new(SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        }));
+
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(RestMethod::Put, "/logs-pit-concurrent-op"))
+                .status,
+            200
+        );
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, "/logs-pit-concurrent-op/_doc/doc-1")
+                    .with_json_body(serde_json::json!({ "message": "value" })),
+            )
+            .status,
+            201
+        );
+
+        let create_workers = 24;
+        let create_barrier = std::sync::Arc::new(std::sync::Barrier::new(create_workers));
+        let created_ids = std::sync::Arc::new(Mutex::new(BTreeSet::new()));
+        let mut handles = Vec::new();
+        for _ in 0..create_workers {
+            let node = node.clone();
+            let barrier = create_barrier.clone();
+            let created_ids = created_ids.clone();
+            handles.push(std::thread::spawn(move || {
+                barrier.wait();
+                let response = node.handle_rest_request(RestRequest::new(
+                    RestMethod::Post,
+                    "/logs-pit-concurrent-op/_search/point_in_time?keep_alive=1m",
+                ));
+                assert_eq!(response.status, 200);
+                let pit_id = response.body["pit_id"]
+                    .as_str()
+                    .expect("PIT id")
+                    .to_string();
+                assert!(created_ids
+                    .lock()
+                    .expect("created PIT ids lock poisoned")
+                    .insert(pit_id));
+            }));
+        }
+        for handle in handles {
+            handle.join().expect("PIT create worker panicked");
+        }
+        assert_eq!(
+            created_ids
+                .lock()
+                .expect("created PIT ids lock poisoned")
+                .len(),
+            create_workers
+        );
+
+        let delete_target = created_ids
+            .lock()
+            .expect("created PIT ids lock poisoned")
+            .iter()
+            .next()
+            .expect("created PIT id")
+            .clone();
+        let mixed_workers = 20;
+        let delete_workers = mixed_workers - 1;
+        let mixed_barrier = std::sync::Arc::new(std::sync::Barrier::new(mixed_workers));
+        let mixed_created_ids = std::sync::Arc::new(Mutex::new(BTreeSet::new()));
+        let delete_successes = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let mut handles = Vec::new();
+        for worker in 0..mixed_workers {
+            let node = node.clone();
+            let barrier = mixed_barrier.clone();
+            let delete_target = delete_target.clone();
+            let mixed_created_ids = mixed_created_ids.clone();
+            let delete_successes = delete_successes.clone();
+            handles.push(std::thread::spawn(move || {
+                barrier.wait();
+                if worker == 0 {
+                    let response = node.handle_rest_request(RestRequest::new(
+                        RestMethod::Post,
+                        "/logs-pit-concurrent-op/_search/point_in_time?keep_alive=1m",
+                    ));
+                    assert_eq!(response.status, 200);
+                    let pit_id = response.body["pit_id"]
+                        .as_str()
+                        .expect("PIT id")
+                        .to_string();
+                    assert!(mixed_created_ids
+                        .lock()
+                        .expect("mixed PIT ids lock poisoned")
+                        .insert(pit_id));
+                } else {
+                    let response = node.handle_rest_request(
+                        RestRequest::new(RestMethod::Delete, "/_search/point_in_time")
+                            .with_json_body(serde_json::json!({ "pit_id": delete_target })),
+                    );
+                    assert_eq!(response.status, 200);
+                    assert_eq!(response.body["pits"][0]["successful"], true);
+                    assert_eq!(response.body["pits"][0]["pit_id"], delete_target);
+                    delete_successes.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                }
+            }));
+        }
+        for handle in handles {
+            handle
+                .join()
+                .expect("PIT mixed create/delete worker panicked");
+        }
+        assert_eq!(
+            delete_successes.load(std::sync::atomic::Ordering::SeqCst),
+            delete_workers
+        );
+        assert_eq!(
+            mixed_created_ids
+                .lock()
+                .expect("mixed PIT ids lock poisoned")
+                .len(),
+            1
+        );
+
+        let list_pits = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_search/point_in_time/_all",
+        ));
+        assert_eq!(list_pits.status, 200);
+        assert!(list_pits.body["pits"]
+            .as_array()
+            .expect("listed PITs")
+            .iter()
+            .all(|pit| pit["pit_id"] != delete_target));
+    }
+
+    #[test]
     fn point_in_time_short_keep_alive_uses_reaper_grace_like_opensearch() {
         assert_eq!(
             pit_expires_at_millis(1_000, 1),
