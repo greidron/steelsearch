@@ -3626,7 +3626,7 @@ impl SteelNode {
             (request.method, request.path.as_str()),
             (RestMethod::Get, "/_alias") | (RestMethod::Get, "/_aliases")
         ) {
-            return Some(self.handle_alias_read_route(None, None));
+            return Some(self.handle_alias_read_route(None, None, request));
         }
         if request.method == RestMethod::Put && request.path == "/_alias" {
             if let Err(response) =
@@ -3640,12 +3640,11 @@ impl SteelNode {
             return Some(self.handle_alias_head_route(request.path.trim_start_matches("/_alias/")));
         }
         if request.method == RestMethod::Get && request.path.starts_with("/_alias/") {
-            return Some(
-                self.handle_alias_read_route(
-                    None,
-                    Some(request.path.trim_start_matches("/_alias/")),
-                ),
-            );
+            return Some(self.handle_alias_read_route(
+                None,
+                Some(request.path.trim_start_matches("/_alias/")),
+                request,
+            ));
         }
         if matches!(request.method, RestMethod::Put | RestMethod::Post)
             && request.path.starts_with("/_alias/")
@@ -5278,7 +5277,9 @@ impl SteelNode {
         }
         if let Some((index, alias)) = request.path.trim_matches('/').split_once("/_alias/") {
             return match request.method {
-                RestMethod::Get => Some(self.handle_alias_read_route(Some(index), Some(alias))),
+                RestMethod::Get => {
+                    Some(self.handle_alias_read_route(Some(index), Some(alias), request))
+                }
                 RestMethod::Head => Some(self.handle_index_alias_named_head_route(index, alias)),
                 RestMethod::Put | RestMethod::Post => {
                     if let Err(response) = require_security_permission(
@@ -5305,7 +5306,7 @@ impl SteelNode {
         }
         if let Some(index) = request.path.trim_matches('/').strip_suffix("/_alias") {
             return match request.method {
-                RestMethod::Get => Some(self.handle_alias_read_route(Some(index), None)),
+                RestMethod::Get => Some(self.handle_alias_read_route(Some(index), None, request)),
                 RestMethod::Head => Some(self.handle_index_alias_collection_head_route(index)),
                 RestMethod::Put => {
                     if let Err(response) = require_security_permission(
@@ -6376,7 +6377,11 @@ impl SteelNode {
         &self,
         index_target: Option<&str>,
         alias_target: Option<&str>,
+        request: &RestRequest,
     ) -> RestResponse {
+        if let Some(response) = validate_alias_get_query_params(request) {
+            return response;
+        }
         let manifest = self
             .metadata_manifest_state
             .lock()
@@ -31685,6 +31690,62 @@ fn validate_settings_get_query_params(request: &RestRequest) -> Option<RestRespo
         "ignore_throttled",
         "ignore_unavailable",
         "include_defaults",
+        "local",
+    ] {
+        if let Some(response) =
+            validate_opensearch_boolean_query_param(request.query_params.get(field))
+        {
+            return Some(response);
+        }
+    }
+
+    for param in ["cluster_manager_timeout", "master_timeout"] {
+        let Some(raw_value) = request.query_params.get(param) else {
+            continue;
+        };
+        if parse_time_value_millis(raw_value).is_none() {
+            return Some(RestResponse::opensearch_error_kind(
+                os_rest::RestErrorKind::IllegalArgument,
+                format!(
+                    "failed to parse setting [{param}] with value [{raw_value}] as a time value"
+                ),
+            ));
+        }
+    }
+
+    if let Some(expand_wildcards) = request.query_params.get("expand_wildcards") {
+        if let Err(response) = parse_index_expand_wildcards(expand_wildcards) {
+            return Some(response);
+        }
+    }
+
+    None
+}
+
+fn validate_alias_get_query_params(request: &RestRequest) -> Option<RestResponse> {
+    const ALLOWED_PARAMS: &[&str] = &[
+        "allow_no_indices",
+        "cluster_manager_timeout",
+        "expand_wildcards",
+        "ignore_throttled",
+        "ignore_unavailable",
+        "local",
+        "master_timeout",
+    ];
+
+    let unrecognized = request
+        .query_params
+        .keys()
+        .filter(|key| !ALLOWED_PARAMS.contains(&key.as_str()))
+        .collect::<Vec<_>>();
+    if let Some(response) = unrecognized_query_param_response_for_keys(request, &unrecognized) {
+        return Some(response);
+    }
+
+    for field in [
+        "allow_no_indices",
+        "ignore_throttled",
+        "ignore_unavailable",
         "local",
     ] {
         if let Some(response) =
@@ -57045,6 +57106,53 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             readback.body["logs-root-alias-000001"]["aliases"]["logs-root-read"]["is_write_index"],
             Value::Bool(true)
+        );
+
+        let readback_with_options = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_alias?local=true&ignore_unavailable=false&allow_no_indices=true&ignore_throttled=false&expand_wildcards=open,hidden&cluster_manager_timeout=30s&master_timeout=30s",
+        ));
+        assert_eq!(readback_with_options.status, 200);
+        assert_eq!(
+            readback_with_options.body["logs-root-alias-000001"]["aliases"]["logs-root-read"]
+                ["is_write_index"],
+            Value::Bool(true)
+        );
+
+        let unknown_param =
+            node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_alias?foo=bar"));
+        assert_eq!(unknown_param.status, 400);
+        assert_eq!(
+            unknown_param.body["error"]["reason"],
+            "request [/_alias] contains unrecognized parameter: [foo]"
+        );
+
+        let invalid_bool =
+            node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_alias?local=maybe"));
+        assert_eq!(invalid_bool.status, 400);
+        assert_eq!(
+            invalid_bool.body["error"]["reason"],
+            "Failed to parse value [maybe] as only [true] or [false] are allowed."
+        );
+
+        let invalid_timeout = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_alias?cluster_manager_timeout=bogus",
+        ));
+        assert_eq!(invalid_timeout.status, 400);
+        assert_eq!(
+            invalid_timeout.body["error"]["reason"],
+            "failed to parse setting [cluster_manager_timeout] with value [bogus] as a time value"
+        );
+
+        let invalid_expand = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_alias?expand_wildcards=bogus",
+        ));
+        assert_eq!(invalid_expand.status, 400);
+        assert_eq!(
+            invalid_expand.body["error"]["reason"],
+            "No valid expand wildcard value [bogus]"
         );
 
         let named_put = node.handle_rest_request(
