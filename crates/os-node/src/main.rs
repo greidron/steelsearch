@@ -6037,6 +6037,8 @@ fn upsert_transport_pit_context_from_reader_update(
         now_millis
     };
     let expires_at_millis = transport_pit_expires_at_millis(now_millis, keep_alive_millis);
+    let indices = transport_pit_indices_from_id(&request.pit_id).unwrap_or_default();
+    let documents = transport_pit_document_snapshot(dev_transport_pit_bindings(), &indices);
     let mut contexts = dev_transport_pit_bindings()
         .contexts
         .lock()
@@ -6045,17 +6047,29 @@ fn upsert_transport_pit_context_from_reader_update(
     contexts
         .entry(request.pit_id.clone())
         .and_modify(|context| {
+            if context.indices.is_empty() && !indices.is_empty() {
+                context.indices = indices.clone();
+            }
+            if context.documents.is_empty() && !documents.is_empty() {
+                context.documents = documents.clone();
+            }
             context.keep_alive_millis = context.keep_alive_millis.max(keep_alive_millis);
             context.expires_at_millis = context.expires_at_millis.max(expires_at_millis);
             context.creation_time_millis = context.creation_time_millis.min(creation_time_millis);
         })
         .or_insert_with(|| PitContext {
-            indices: Vec::new(),
-            documents: BTreeMap::new(),
+            indices,
+            documents,
             keep_alive_millis,
             expires_at_millis,
             creation_time_millis,
         });
+}
+
+fn transport_pit_indices_from_id(pit_id: &str) -> Option<Vec<String>> {
+    os_transport::action::OpenSearchSearchContextIdWire::decode(pit_id)
+        .ok()
+        .map(|context_id| context_id.actual_indices())
 }
 
 fn build_local_free_pit_context_response(
@@ -15498,11 +15512,41 @@ mod tests {
             .lock()
             .expect("dev transport reader contexts lock poisoned")
             .contains(&reader_context_key(&create_response.context_id)));
+        bindings
+            .documents
+            .lock()
+            .expect("dev transport documents lock poisoned")
+            .insert(
+                "logs-reader-pit:doc-1:".to_string(),
+                StoredDocument {
+                    source: serde_json::json!({ "status": "reader-pit" }),
+                    version: 1,
+                    seq_no: 1,
+                    primary_term: 1,
+                    routing: None,
+                    refreshed: true,
+                },
+            );
+        let encoded_pit_id =
+            os_transport::action::OpenSearchSearchContextIdWire::new(BTreeMap::from([(
+                os_transport::action::OpenSearchShardIdWire {
+                    index_name: "logs-reader-pit".to_string(),
+                    index_uuid: "uuid-reader-pit".to_string(),
+                    shard_id: 0,
+                },
+                os_transport::action::OpenSearchSearchContextIdForNodeWire {
+                    node: transport_identity.node_id.clone(),
+                    cluster_alias: None,
+                    search_context_id: create_response.context_id.clone(),
+                },
+            )]))
+            .encode(OPENSEARCH_3_7_0_TRANSPORT)
+            .unwrap();
 
         let update_request = os_transport::action::OpenSearchUpdateReaderContextRequestWire {
             parent_task_node: String::new(),
             parent_task_id: None,
-            pit_id: "transport-pit-reader-context".to_string(),
+            pit_id: encoded_pit_id.clone(),
             keep_alive_millis: 120_000,
             creation_time_millis: 1_700_000_000_000,
             search_context_id: create_response.context_id.clone(),
@@ -15533,14 +15577,66 @@ mod tests {
         let update_response =
             os_transport::action::read_opensearch_update_reader_context_response_message(&message)
                 .unwrap();
-        assert_eq!(update_response.pit_id, "transport-pit-reader-context");
+        assert_eq!(update_response.pit_id, encoded_pit_id);
         assert_eq!(update_response.creation_time_millis, 1_700_000_000_000);
         assert_eq!(update_response.keep_alive_millis, 120_000);
-        assert!(bindings
-            .contexts
-            .lock()
-            .expect("dev transport PIT contexts lock poisoned")
-            .contains_key("transport-pit-reader-context"));
+        {
+            let contexts = bindings
+                .contexts
+                .lock()
+                .expect("dev transport PIT contexts lock poisoned");
+            let context = contexts
+                .get(&encoded_pit_id)
+                .expect("encoded PIT context should be registered");
+            assert_eq!(context.indices, vec!["logs-reader-pit".to_string()]);
+            assert!(context.documents.contains_key("logs-reader-pit:doc-1:"));
+        }
+
+        let search_request = os_transport::action::OpenSearchSearchRequestWire {
+            indices: vec!["logs-reader-pit".to_string()],
+            source: Some(os_transport::action::OpenSearchSearchSourceBuilderWire {
+                point_in_time: Some(os_transport::action::OpenSearchPointInTimeBuilderWire {
+                    id: encoded_pit_id.clone(),
+                    keep_alive: Some(os_transport::action::TimeValueWire::minutes(1)),
+                }),
+                ..os_transport::action::OpenSearchSearchSourceBuilderWire::default()
+            }),
+            indices_options:
+                os_transport::action::OpenSearchIndicesOptionsWire::point_in_time_search_prepared(),
+            ccs_minimize_roundtrips: false,
+            ..os_transport::action::OpenSearchSearchRequestWire::default()
+        };
+        let search_frame = os_transport::action::build_opensearch_search_request_message(
+            297,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &search_request,
+        )
+        .unwrap();
+        assert!(search_request_supports_local_execution_subset(
+            &search_frame[6..]
+        ));
+        let search_response = build_local_search_response(
+            297,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &search_frame[6..],
+        );
+        let mut frame = BytesMut::from(&search_response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected encoded-PIT search response");
+        };
+        let search_response =
+            os_transport::action::read_opensearch_search_response_message(&message).unwrap();
+        assert_eq!(
+            search_response.point_in_time_id.as_deref(),
+            Some(encoded_pit_id.as_str())
+        );
+        assert_eq!(search_response.total_hits, Some(1));
+        assert_eq!(search_response.hits.len(), 1);
+        assert_eq!(search_response.hits[0].id.as_deref(), Some("doc-1"));
 
         let list_response = build_local_get_all_pits_response(
             295,
@@ -15559,17 +15655,14 @@ mod tests {
             os_transport::action::read_opensearch_get_all_pits_response_message(&message).unwrap();
         assert_eq!(list_response.nodes.len(), 1);
         assert_eq!(list_response.nodes[0].pit_infos.len(), 1);
-        assert_eq!(
-            list_response.nodes[0].pit_infos[0].pit_id,
-            "transport-pit-reader-context"
-        );
+        assert_eq!(list_response.nodes[0].pit_infos[0].pit_id, encoded_pit_id);
 
         let free_request = os_transport::action::OpenSearchFreePitContextRequestWire {
             parent_task_node: String::new(),
             parent_task_id: None,
             context_ids: vec![
                 os_transport::action::OpenSearchPitSearchContextIdForNodeWire {
-                    pit_id: "transport-pit-reader-context".to_string(),
+                    pit_id: encoded_pit_id.clone(),
                     search_context: os_transport::action::OpenSearchSearchContextIdForNodeWire {
                         node: transport_identity.node_id.clone(),
                         cluster_alias: None,
@@ -15603,10 +15696,7 @@ mod tests {
         let free_response =
             os_transport::action::read_opensearch_delete_pit_response_message(&message).unwrap();
         assert_eq!(free_response.results.len(), 1);
-        assert_eq!(
-            free_response.results[0].pit_id,
-            "transport-pit-reader-context"
-        );
+        assert_eq!(free_response.results[0].pit_id, encoded_pit_id);
         assert!(free_response.results[0].successful);
         assert!(bindings
             .contexts

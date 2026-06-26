@@ -2352,6 +2352,13 @@ The create-PIT boundary covers:
   indices that do not match the stored PIT context;
 - PIT search execution keeps the OpenSearch REST `preparePointInTime`
   rejection boundary for explicit `routing` and `preference` alongside PIT;
+- PIT reader-context updates now decode OpenSearch `SearchContextId` PIT ids to
+  restore the backing indices and admit the subsequent prepared PIT search
+  shape against the registered local context;
+- OpenSearch `SearchContextId` wire support is bounded to the empty
+  `AliasFilter` map subset used by the local PIT execution path; PIT ids with
+  alias-filter payloads are rejected until alias-filter query execution is
+  mapped;
 - PIT searches reject malformed local opaque PIT ids with the OpenSearch
   `invalid id` error while preserving missing-context handling for well-formed
   local ids;

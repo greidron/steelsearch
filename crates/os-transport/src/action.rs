@@ -1,3 +1,5 @@
+use base64::engine::general_purpose::{URL_SAFE, URL_SAFE_NO_PAD};
+use base64::Engine;
 use bytes::{Bytes, BytesMut};
 use os_core::{
     Version, OPENSEARCH_2_10_0, OPENSEARCH_2_12_0, OPENSEARCH_2_13_0, OPENSEARCH_2_14_0,
@@ -29191,6 +29193,101 @@ impl OpenSearchPointInTimeBuilderWire {
     }
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchSearchContextIdWire {
+    pub shards: BTreeMap<OpenSearchShardIdWire, OpenSearchSearchContextIdForNodeWire>,
+}
+
+impl OpenSearchSearchContextIdWire {
+    pub fn new(
+        shards: BTreeMap<OpenSearchShardIdWire, OpenSearchSearchContextIdForNodeWire>,
+    ) -> Self {
+        Self { shards }
+    }
+
+    pub fn encode(&self, version: Version) -> Result<String, TransportActionWireError> {
+        self.validate_supported_subset()?;
+        let mut output = StreamOutput::new();
+        output.write_vint(version.id());
+        output.write_vint(self.shards.len() as i32);
+        for (shard_id, context) in &self.shards {
+            shard_id.write(&mut output);
+            context.write(&mut output)?;
+        }
+        output.write_vint(0);
+        Ok(URL_SAFE.encode(output.freeze()))
+    }
+
+    pub fn decode(id: &str) -> Result<Self, TransportActionWireError> {
+        let bytes = URL_SAFE
+            .decode(id)
+            .or_else(|_| URL_SAFE_NO_PAD.decode(id))
+            .map_err(|_| TransportActionWireError::UnsupportedWireShape {
+                shape: "search context id",
+                reason: "OpenSearch SearchContextId requires base64url-encoded bytes",
+            })?;
+        let mut input = StreamInput::new(Bytes::from(bytes));
+        let _version = Version::from_id(input.read_vint()?);
+        let shard_count = read_len(&mut input)?;
+        let mut shards = BTreeMap::new();
+        for _ in 0..shard_count {
+            shards.insert(
+                OpenSearchShardIdWire::read(&mut input)?,
+                OpenSearchSearchContextIdForNodeWire::read(&mut input)?,
+            );
+        }
+        let alias_filter_count = read_len(&mut input)?;
+        if alias_filter_count != 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search context id alias filters",
+                reason: "PIT search execution only supports empty AliasFilter maps",
+            });
+        }
+        require_no_trailing_bytes(&input)?;
+        let context_id = Self { shards };
+        context_id.validate_supported_subset()?;
+        Ok(context_id)
+    }
+
+    pub fn actual_indices(&self) -> Vec<String> {
+        let mut indices = BTreeSet::new();
+        for (shard_id, context) in &self.shards {
+            if let Some(cluster_alias) = context.cluster_alias.as_deref() {
+                if !cluster_alias.is_empty() {
+                    indices.insert(format!("{cluster_alias}:{}", shard_id.index_name));
+                    continue;
+                }
+            }
+            indices.insert(shard_id.index_name.clone());
+        }
+        indices.into_iter().collect()
+    }
+
+    pub fn pit_context_ids(&self) -> BTreeSet<String> {
+        self.shards
+            .values()
+            .map(|context| {
+                let context_id = &context.search_context_id;
+                format!("{}:{}", context_id.session_id, context_id.id)
+            })
+            .collect()
+    }
+
+    pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
+        if self.shards.is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search context id shards",
+                reason: "OpenSearch SearchContextId requires at least one shard context",
+            });
+        }
+        for (shard_id, context) in &self.shards {
+            shard_id.validate_supported_shape("search context id shard id")?;
+            context.validate_supported_subset()?;
+        }
+        Ok(())
+    }
+}
+
 fn write_optional_point_in_time_builder(
     output: &mut StreamOutput,
     point_in_time: Option<&OpenSearchPointInTimeBuilderWire>,
@@ -30357,7 +30454,7 @@ impl OpenSearchRemovePersistentTaskRequestWire {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub struct OpenSearchShardIdWire {
     pub index_name: String,
     pub index_uuid: String,
@@ -71450,6 +71547,65 @@ mod tests {
         let decoded = OpenSearchCreatePitResponseWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, response);
         decoded.validate_supported_subset().unwrap();
+    }
+
+    #[test]
+    fn opensearch_search_context_id_encodes_decodes_pit_indices() {
+        let context_id = OpenSearchSearchContextIdWire::new(BTreeMap::from([(
+            OpenSearchShardIdWire {
+                index_name: "logs".to_string(),
+                index_uuid: "uuid-logs".to_string(),
+                shard_id: 0,
+            },
+            OpenSearchSearchContextIdForNodeWire {
+                node: "node-a".to_string(),
+                cluster_alias: None,
+                search_context_id: OpenSearchShardSearchContextIdWire::new("session-a", 42),
+            },
+        )]));
+
+        let encoded = context_id.encode(OPENSEARCH_3_7_0_TRANSPORT).unwrap();
+        let decoded = OpenSearchSearchContextIdWire::decode(&encoded).unwrap();
+
+        assert_eq!(decoded, context_id);
+        assert_eq!(decoded.actual_indices(), vec!["logs".to_string()]);
+        assert_eq!(
+            decoded.pit_context_ids(),
+            BTreeSet::from(["session-a:42".to_string()])
+        );
+    }
+
+    #[test]
+    fn opensearch_search_context_id_rejects_alias_filters() {
+        let mut output = StreamOutput::new();
+        output.write_vint(OPENSEARCH_3_7_0_TRANSPORT.id());
+        output.write_vint(1);
+        OpenSearchShardIdWire {
+            index_name: "logs".to_string(),
+            index_uuid: "uuid-logs".to_string(),
+            shard_id: 0,
+        }
+        .write(&mut output);
+        OpenSearchSearchContextIdForNodeWire {
+            node: "node-a".to_string(),
+            cluster_alias: None,
+            search_context_id: OpenSearchShardSearchContextIdWire::new("session-a", 42),
+        }
+        .write(&mut output)
+        .unwrap();
+        output.write_vint(1);
+        output.write_string("logs_alias");
+        output.write_vint(0);
+        output.write_bool(false);
+        let encoded = URL_SAFE.encode(output.freeze());
+
+        assert!(matches!(
+            OpenSearchSearchContextIdWire::decode(&encoded),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search context id alias filters",
+                ..
+            })
+        ));
     }
 
     #[test]

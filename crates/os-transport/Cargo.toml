@@ -6,6 +6,7 @@ license.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+base64.workspace = true
 bytes.workspace = true
 flate2.workspace = true
 os-core = { path = "../os-core" }
