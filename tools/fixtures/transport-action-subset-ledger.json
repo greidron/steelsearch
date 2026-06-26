@@ -42,6 +42,16 @@
       "reason": "bounded multi-search transport parity executes supported sub-search requests in order and returns OpenSearch-shaped success items"
     },
     {
+      "case": "search_scroll_server_side_subset",
+      "action": "SearchScrollAction.INSTANCE",
+      "transport_class": "TransportSearchScrollAction.class",
+      "family": "search",
+      "bucket": "server-side",
+      "disposition": "allowed",
+      "route_family": "/_search/scroll",
+      "reason": "bounded search-scroll transport parity advances local scroll contexts and returns OpenSearch-shaped search response pages"
+    },
+    {
       "case": "stream_search_planned_reject",
       "action": "StreamSearchAction.INSTANCE",
       "transport_class": "StreamTransportSearchAction.class",
