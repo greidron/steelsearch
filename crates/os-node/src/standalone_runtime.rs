@@ -30509,6 +30509,22 @@ fn cat_count_display_columns(h_param: Option<&String>) -> Vec<(&'static str, Str
     };
     let mut selected = Vec::new();
     for requested in h_param.split(',').map(str::trim).filter(|value| !value.is_empty()) {
+        if requested.contains('*') {
+            for (column, aliases) in [
+                ("epoch", &[][..]),
+                ("timestamp", &[][..]),
+                ("count", &["dc", "docs.count", "docsCount"][..]),
+            ] {
+                if wildcard_match(requested, column)
+                    || aliases.iter().any(|alias| wildcard_match(requested, alias))
+                {
+                    if !selected.iter().any(|(existing, _)| existing == &column) {
+                        selected.push((column, column.to_string()));
+                    }
+                }
+            }
+            continue;
+        }
         let column = match requested {
             "epoch" => Some("epoch"),
             "timestamp" => Some("timestamp"),
@@ -35902,6 +35918,24 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             count_selected_text.lines().collect::<Vec<_>>(),
             vec!["dc", "1"]
+        );
+
+        let mut count_wildcard_text_request =
+            RestRequest::new(RestMethod::Get, "/_cat/count/logs-*");
+        count_wildcard_text_request
+            .query_params
+            .insert("v".to_string(), "true".to_string());
+        count_wildcard_text_request
+            .query_params
+            .insert("h".to_string(), "docs.*".to_string());
+        let count_wildcard_text_response = node.handle_rest_request(count_wildcard_text_request);
+        let count_wildcard_text = count_wildcard_text_response
+            .body
+            .as_str()
+            .expect("cat count wildcard text body");
+        assert_eq!(
+            count_wildcard_text.lines().collect::<Vec<_>>(),
+            vec!["count", "1"]
         );
 
         let mut indices_text_request = RestRequest::new(RestMethod::Get, "/_cat/indices/logs-*");

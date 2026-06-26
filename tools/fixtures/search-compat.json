@@ -2426,6 +2426,16 @@
       "description": "[lexical] cat count json honors h alias for count"
     },
     {
+      "name": "cat_count_text_wildcard_alias_column",
+      "area": "cat",
+      "method": "GET",
+      "path": "/_cat/count/logs-compat?v=true&h=docs.*",
+      "accept": "text/plain",
+      "extract": "cat_indices_selected_columns",
+      "family": "lexical",
+      "description": "[lexical] cat count text expands wildcard aliases to concrete headers"
+    },
+    {
       "name": "dfs_query_then_fetch_search",
       "area": "search",
       "method": "POST",
