@@ -18219,24 +18219,27 @@ impl SteelNode {
             .query_params
             .get("v")
             .is_some_and(|value| value == "true");
+        let widths = cat_indices_text_widths(&display_columns, &rows, request, verbose);
         let mut lines = Vec::new();
         if verbose {
-            lines.push(
+            lines.push(cat_indices_format_text_cells(
                 display_columns
                     .iter()
-                    .map(|(_, display)| display.as_str())
-                    .collect::<Vec<_>>()
-                    .join(" "),
-            );
+                    .map(|(_, display)| display.as_str().to_string())
+                    .collect(),
+                &display_columns,
+                &widths,
+            ));
         }
         for row in &rows {
-            lines.push(
+            lines.push(cat_indices_format_text_cells(
                 display_columns
                     .iter()
                     .map(|(name, _)| cat_indices_cell_text(row, name, request))
-                    .collect::<Vec<_>>()
-                    .join(" "),
-            );
+                    .collect(),
+                &display_columns,
+                &widths,
+            ));
         }
         RestResponse::text(200, lines.join("\n") + "\n")
     }
@@ -30291,6 +30294,70 @@ fn cat_indices_cell_text(row: &Value, column: &str, request: &RestRequest) -> St
     value.to_string()
 }
 
+fn cat_indices_column_right_aligned(column: &str) -> bool {
+    matches!(
+        column,
+        "pri"
+            | "rep"
+            | "docs.count"
+            | "docs.deleted"
+            | "store.size"
+            | "pri.store.size"
+            | "search.open_contexts"
+            | "pri.search.open_contexts"
+            | "search.point_in_time_current"
+            | "pri.search.point_in_time_current"
+            | "search.point_in_time_time"
+            | "pri.search.point_in_time_time"
+            | "search.point_in_time_total"
+            | "pri.search.point_in_time_total"
+    )
+}
+
+fn cat_indices_text_widths(
+    display_columns: &[(&'static str, String)],
+    rows: &[Value],
+    request: &RestRequest,
+    verbose: bool,
+) -> Vec<usize> {
+    display_columns
+        .iter()
+        .map(|(column, display)| {
+            let header_width = if verbose { display.len() } else { 0 };
+            rows.iter()
+                .map(|row| cat_indices_cell_text(row, column, request).len())
+                .fold(header_width, usize::max)
+        })
+        .collect()
+}
+
+fn cat_indices_format_text_cells(
+    cells: Vec<String>,
+    display_columns: &[(&'static str, String)],
+    widths: &[usize],
+) -> String {
+    let last_index = cells.len().saturating_sub(1);
+    let mut output = String::new();
+    for (index, value) in cells.iter().enumerate() {
+        let column = display_columns[index].0;
+        let width = widths.get(index).copied().unwrap_or(value.len());
+        let padding = width.saturating_sub(value.len());
+        if cat_indices_column_right_aligned(column) {
+            output.push_str(&" ".repeat(padding));
+            output.push_str(value);
+        } else {
+            output.push_str(value);
+            if index != last_index {
+                output.push_str(&" ".repeat(padding));
+            }
+        }
+        if index != last_index {
+            output.push(' ');
+        }
+    }
+    output
+}
+
 fn cat_indices_display_columns(h_param: Option<&String>) -> Vec<(&'static str, String)> {
     let Some(h_param) = h_param else {
         return CAT_INDICES_DEFAULT_COLUMNS
@@ -35704,6 +35771,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             .collect::<Vec<_>>();
         assert_eq!(selected_text_lines[0], "idx dc");
         assert!(selected_text_lines.iter().any(|line| *line == "logs-000001 1"));
+        assert!(indices_selected_text.contains("logs-000001        1"));
 
         let mut indices_bytes_text_request =
             RestRequest::new(RestMethod::Get, "/_cat/indices/logs-000001");
