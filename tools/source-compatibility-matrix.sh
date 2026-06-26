@@ -253,11 +253,7 @@ search_registration_status() {
       ;;
     aggregation)
       case "${text}" in
-        *ReverseNestedAggregationBuilder.NAME*)
-          echo "planned"
-          return
-          ;;
-        *'TermsAggregationBuilder.NAME'*|*'DateHistogramAggregationBuilder.NAME'*|*'AutoDateHistogramAggregationBuilder.NAME'*|*'HistogramAggregationBuilder.NAME'*|*'VariableWidthHistogramAggregationBuilder.NAME'*|*'RangeAggregationBuilder.NAME'*|*'MinAggregationBuilder.NAME'*|*'MaxAggregationBuilder.NAME'*|*'SumAggregationBuilder.NAME'*|*'AvgAggregationBuilder.NAME'*|*'WeightedAvgAggregationBuilder.NAME'*|*'StatsAggregationBuilder.NAME'*|*'ExtendedStatsAggregationBuilder.NAME'*|*'PercentilesAggregationBuilder.NAME'*|*'PercentileRanksAggregationBuilder.NAME'*|*'MedianAbsoluteDeviationAggregationBuilder.NAME'*|*'CardinalityAggregationBuilder.NAME'*|*'ValueCountAggregationBuilder.NAME'*|*'GlobalAggregationBuilder.NAME'*|*'MissingAggregationBuilder.NAME'*|*'FilterAggregationBuilder.NAME'*|*'FiltersAggregationBuilder.NAME'*|*'AdjacencyMatrixAggregationBuilder.NAME'*|*'NestedAggregationBuilder.NAME'*|*'TopHitsAggregationBuilder.NAME'*|*'CompositeAggregationBuilder.NAME'*|*'SamplerAggregationBuilder.NAME'*|*'DiversifiedAggregationBuilder.NAME'*|*'RareTermsAggregationBuilder.NAME'*|*'SignificantTermsAggregationBuilder.NAME'*|*'SignificantTextAggregationBuilder.NAME'*|*'DateRangeAggregationBuilder.NAME'*|*'IpRangeAggregationBuilder.NAME'*|*'MultiTermsAggregationBuilder.NAME'*|*'GeoDistanceAggregationBuilder.NAME'*|*'GeoCentroidAggregationBuilder.NAME'*|*'ScriptedMetricAggregationBuilder.NAME'*)
+        *'TermsAggregationBuilder.NAME'*|*'DateHistogramAggregationBuilder.NAME'*|*'AutoDateHistogramAggregationBuilder.NAME'*|*'HistogramAggregationBuilder.NAME'*|*'VariableWidthHistogramAggregationBuilder.NAME'*|*'RangeAggregationBuilder.NAME'*|*'MinAggregationBuilder.NAME'*|*'MaxAggregationBuilder.NAME'*|*'SumAggregationBuilder.NAME'*|*'AvgAggregationBuilder.NAME'*|*'WeightedAvgAggregationBuilder.NAME'*|*'StatsAggregationBuilder.NAME'*|*'ExtendedStatsAggregationBuilder.NAME'*|*'PercentilesAggregationBuilder.NAME'*|*'PercentileRanksAggregationBuilder.NAME'*|*'MedianAbsoluteDeviationAggregationBuilder.NAME'*|*'CardinalityAggregationBuilder.NAME'*|*'ValueCountAggregationBuilder.NAME'*|*'GlobalAggregationBuilder.NAME'*|*'MissingAggregationBuilder.NAME'*|*'FilterAggregationBuilder.NAME'*|*'FiltersAggregationBuilder.NAME'*|*'AdjacencyMatrixAggregationBuilder.NAME'*|*'NestedAggregationBuilder.NAME'*|*'ReverseNestedAggregationBuilder.NAME'*|*'TopHitsAggregationBuilder.NAME'*|*'CompositeAggregationBuilder.NAME'*|*'SamplerAggregationBuilder.NAME'*|*'DiversifiedAggregationBuilder.NAME'*|*'RareTermsAggregationBuilder.NAME'*|*'SignificantTermsAggregationBuilder.NAME'*|*'SignificantTextAggregationBuilder.NAME'*|*'DateRangeAggregationBuilder.NAME'*|*'IpRangeAggregationBuilder.NAME'*|*'MultiTermsAggregationBuilder.NAME'*|*'GeoDistanceAggregationBuilder.NAME'*|*'GeoCentroidAggregationBuilder.NAME'*|*'ScriptedMetricAggregationBuilder.NAME'*)
           echo "implemented"
           return
           ;;
@@ -274,6 +270,14 @@ search_registration_status() {
     suggester)
       case "${text}" in
         *TermSuggestionBuilder.SUGGESTION_NAME*|*PhraseSuggestionBuilder.SUGGESTION_NAME*|*CompletionSuggestionBuilder.SUGGESTION_NAME*)
+          echo "implemented"
+          return
+          ;;
+      esac
+      ;;
+    score_function)
+      case "${text}" in
+        *ScriptScoreFunctionBuilder.NAME*|*GaussDecayFunctionBuilder.NAME*|*LinearDecayFunctionBuilder.NAME*|*ExponentialDecayFunctionBuilder.NAME*|*RandomScoreFunctionBuilder.NAME*|*FieldValueFactorFunctionBuilder.NAME*)
           echo "implemented"
           return
           ;;
