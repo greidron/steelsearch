@@ -20,6 +20,8 @@
         "common-baseline"
       ],
       "required_cases": [
+        "create_bulk_compat_index",
+        "seed_existing_bulk_doc",
         "global_bulk_optimistic_concurrency_success",
         "global_bulk_optimistic_concurrency_conflict",
         "global_bulk_auto_creates_missing_index",
@@ -29,21 +31,7 @@
         "get_bulk_routed_doc_after_wait_for_refresh",
         "global_bulk_external_version_create",
         "global_bulk_external_version_conflict",
-        "index_scoped_bulk_default_target_update_upsert_shape",
-        "bulk_routing_item_readback",
-        "bulk_external_version_success_item",
-        "bulk_external_version_conflict_item",
-        "bulk_seq_term_success_item",
-        "bulk_seq_term_conflict_item",
-        "bulk_pipeline_metadata_unsupported_error",
-        "bulk_version_without_external_policy_error",
-        "bulk_item_ordering_partial_failure_matrix",
-        "bulk_metadata_non_object_parse_error",
-        "bulk_closed_index_item_failure_matrix",
-        "bulk_refresh_false_readback_not_found",
-        "bulk_refresh_true_readback",
-        "bulk_refresh_wait_for_readback",
-        "bulk_repeated_create_replay_conflict"
+        "index_scoped_bulk_default_target_update_upsert_shape"
       ]
     },
     "security_parity": {

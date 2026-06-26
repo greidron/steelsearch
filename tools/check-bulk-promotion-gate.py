@@ -15,6 +15,11 @@ def parse_args() -> argparse.Namespace:
         nargs="?",
         default="tools/fixtures/bulk-promotion-gate.json",
     )
+    parser.add_argument(
+        "--bulk-compat-fixture",
+        default="tools/fixtures/bulk-compat.json",
+        help="Bulk compatibility fixture whose cases must be promoted.",
+    )
     return parser.parse_args()
 
 
@@ -27,6 +32,12 @@ def ensure_subset(name: str, actual: list[str], required: set[str]) -> None:
 def main() -> int:
     args = parse_args()
     fixture = json.loads(Path(args.fixture).read_text(encoding="utf-8"))
+    bulk_compat = json.loads(Path(args.bulk_compat_fixture).read_text(encoding="utf-8"))
+    required_cases = {
+        case["name"]
+        for case in bulk_compat.get("cases", [])
+        if isinstance(case, dict) and case.get("name")
+    }
 
     if fixture.get("source_area") != "REST `_bulk`":
         raise SystemExit("bulk promotion gate fixture has the wrong source_area")
@@ -62,33 +73,14 @@ def main() -> int:
     ensure_subset(
         "semantic_parity.required_cases",
         semantic.get("required_cases") or [],
-        {
-            "global_bulk_optimistic_concurrency_success",
-            "global_bulk_optimistic_concurrency_conflict",
-            "global_bulk_auto_creates_missing_index",
-            "global_bulk_create_into_data_stream_target",
-            "global_bulk_partial_failure_item_shape",
-            "global_bulk_refresh_pipeline_routing_shape",
-            "get_bulk_routed_doc_after_wait_for_refresh",
-            "global_bulk_external_version_create",
-            "global_bulk_external_version_conflict",
-            "index_scoped_bulk_default_target_update_upsert_shape",
-            "bulk_routing_item_readback",
-            "bulk_external_version_success_item",
-            "bulk_external_version_conflict_item",
-            "bulk_seq_term_success_item",
-            "bulk_seq_term_conflict_item",
-            "bulk_pipeline_metadata_unsupported_error",
-            "bulk_version_without_external_policy_error",
-            "bulk_item_ordering_partial_failure_matrix",
-            "bulk_metadata_non_object_parse_error",
-            "bulk_closed_index_item_failure_matrix",
-            "bulk_refresh_false_readback_not_found",
-            "bulk_refresh_true_readback",
-            "bulk_refresh_wait_for_readback",
-            "bulk_repeated_create_replay_conflict",
-        },
+        required_cases,
     )
+    stale_required_cases = sorted(set(semantic.get("required_cases") or []) - required_cases)
+    if stale_required_cases:
+        raise SystemExit(
+            "semantic_parity.required_cases contains non-bulk-compat entries: "
+            f"{stale_required_cases}"
+        )
     ensure_subset(
         "security_parity.report_paths",
         security.get("report_paths") or [],
