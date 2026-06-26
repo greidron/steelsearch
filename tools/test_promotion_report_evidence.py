@@ -184,6 +184,29 @@ class PromotionReportEvidenceTests(unittest.TestCase):
             metadata = cases[case_name].get("metadata") or {}
             self.assertEqual(set(metadata.get("evidence_classes") or []), evidence_classes)
 
+    def test_alias_fixture_carries_global_and_collection_route_variants(self):
+        fixture_path = Path(__file__).resolve().parents[1] / "tools" / "fixtures" / "alias-read-compat.json"
+        fixture = json.loads(fixture_path.read_text(encoding="utf-8"))
+        cases = {case["name"]: case for case in fixture["cases"]}
+
+        expected_routes = {
+            "head_global_alias_named_route": ("HEAD", "/_alias/logs-compat-write"),
+            "put_global_alias_named_route_with_index_body": ("PUT", "/_alias/logs-compat-global"),
+            "post_global_aliases_named_route_with_index_body": (
+                "POST",
+                "/_aliases/metrics-compat-global",
+            ),
+            "put_index_alias_collection_route_with_alias_body": (
+                "PUT",
+                "/logs-compat-alias-000001/_alias",
+            ),
+            "get_alias_global_collection_readback": ("GET", "/_alias"),
+        }
+        for case_name, (method, path) in expected_routes.items():
+            self.assertIn(case_name, cases)
+            self.assertEqual(cases[case_name]["method"], method)
+            self.assertEqual(cases[case_name]["path"], path)
+
 
 if __name__ == "__main__":
     unittest.main()

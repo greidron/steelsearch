@@ -219,6 +219,86 @@
       }
     },
     {
+      "name": "head_global_alias_named_route",
+      "method": "HEAD",
+      "path": "/_alias/logs-compat-write",
+      "compare": {
+        "expected_status": 200
+      }
+    },
+    {
+      "name": "put_global_alias_named_route_with_index_body",
+      "method": "PUT",
+      "path": "/_alias/logs-compat-global",
+      "body": {
+        "index": "logs-compat-alias-000001",
+        "routing": "global-r1"
+      },
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "acknowledged"
+        ],
+        "body_paths_equal": [
+          "acknowledged"
+        ]
+      }
+    },
+    {
+      "name": "post_global_aliases_named_route_with_index_body",
+      "method": "POST",
+      "path": "/_aliases/metrics-compat-global",
+      "body": {
+        "index": "metrics-compat-alias-000001",
+        "is_write_index": false
+      },
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "acknowledged"
+        ],
+        "body_paths_equal": [
+          "acknowledged"
+        ]
+      }
+    },
+    {
+      "name": "put_index_alias_collection_route_with_alias_body",
+      "method": "PUT",
+      "path": "/logs-compat-alias-000001/_alias",
+      "body": {
+        "alias": "logs-compat-collection",
+        "routing": "collection-r1"
+      },
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "acknowledged"
+        ],
+        "body_paths_equal": [
+          "acknowledged"
+        ]
+      }
+    },
+    {
+      "name": "get_alias_global_collection_readback",
+      "method": "GET",
+      "path": "/_alias",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "logs-compat-alias-000001.aliases.logs-compat-global.index_routing",
+          "metrics-compat-alias-000001.aliases.metrics-compat-global.is_write_index",
+          "logs-compat-alias-000001.aliases.logs-compat-collection.index_routing"
+        ],
+        "body_paths_equal": [
+          "logs-compat-alias-000001.aliases.logs-compat-global.index_routing",
+          "metrics-compat-alias-000001.aliases.metrics-compat-global.is_write_index",
+          "logs-compat-alias-000001.aliases.logs-compat-collection.index_routing"
+        ]
+      }
+    },
+    {
       "name": "delete_alias_after_bounded_bulk_mutation",
       "method": "DELETE",
       "path": "/logs-compat-alias-000001/_alias/logs-compat-search",
