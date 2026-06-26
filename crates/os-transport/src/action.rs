@@ -3164,30 +3164,54 @@ impl Default for CatShardsRequestWire {
 
 impl CatShardsRequestWire {
     pub fn write(&self, output: &mut StreamOutput) {
+        self.write_for_version(output, OPENSEARCH_3_7_0_TRANSPORT);
+    }
+
+    fn write_for_version(&self, output: &mut StreamOutput, version: Version) {
         write_parent_task_id(output, &self.parent_task_node, self.parent_task_id);
         self.cluster_manager_timeout.write(output);
         output.write_bool(self.local);
-        output.write_string_array(&self.indices);
-        write_optional_time_value(output, self.cancel_after_time_interval.as_ref());
-        output.write_bool(self.page_params.is_some());
-        if let Some(page_params) = &self.page_params {
-            page_params.write(output);
+        if version.on_or_after(OPENSEARCH_2_18_0) {
+            output.write_string_array(&self.indices);
+            write_optional_time_value(output, self.cancel_after_time_interval.as_ref());
+            output.write_bool(self.page_params.is_some());
+            if let Some(page_params) = &self.page_params {
+                page_params.write(output);
+            }
+            output.write_bool(self.request_limit_check_supported);
         }
-        output.write_bool(self.request_limit_check_supported);
     }
 
     pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        Self::read_for_version(bytes, OPENSEARCH_3_7_0_TRANSPORT)
+    }
+
+    fn read_for_version(
+        bytes: Bytes,
+        version: Version,
+    ) -> Result<Self, TransportActionWireError> {
         let mut input = StreamInput::new(bytes);
         let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
         let cluster_manager_timeout = TimeValueWire::read(&mut input)?;
         let local = input.read_bool()?;
-        let indices = input.read_string_array()?;
-        let cancel_after_time_interval = read_optional_time_value(&mut input)?;
-        let page_params = if input.read_bool()? {
-            Some(OpenSearchPageParamsWire::read(&mut input)?)
-        } else {
-            None
-        };
+        let (indices, cancel_after_time_interval, page_params, request_limit_check_supported) =
+            if version.on_or_after(OPENSEARCH_2_18_0) {
+                let indices = input.read_string_array()?;
+                let cancel_after_time_interval = read_optional_time_value(&mut input)?;
+                let page_params = if input.read_bool()? {
+                    Some(OpenSearchPageParamsWire::read(&mut input)?)
+                } else {
+                    None
+                };
+                (
+                    indices,
+                    cancel_after_time_interval,
+                    page_params,
+                    input.read_bool()?,
+                )
+            } else {
+                (Vec::new(), None, None, false)
+            };
         let request = Self {
             parent_task_node,
             parent_task_id,
@@ -3196,7 +3220,7 @@ impl CatShardsRequestWire {
             indices,
             cancel_after_time_interval,
             page_params,
-            request_limit_check_supported: input.read_bool()?,
+            request_limit_check_supported,
         };
         require_no_trailing_bytes(&input)?;
         Ok(request)
@@ -5040,7 +5064,7 @@ pub fn build_cat_shards_request_message(
     request: &CatShardsRequestWire,
 ) -> Result<BytesMut, TransportActionWireError> {
     let mut body = StreamOutput::new();
-    request.write(&mut body);
+    request.write_for_version(&mut body, version);
     let message = TransportMessage {
         request_id,
         status: TransportStatus::request(),
@@ -5069,7 +5093,7 @@ pub fn read_cat_shards_request_message(
             actual: header.action,
         });
     }
-    CatShardsRequestWire::read(message.body.clone().freeze())
+    CatShardsRequestWire::read_for_version(message.body.clone().freeze(), message.version)
 }
 
 pub fn build_nodes_info_request_message(
@@ -46138,6 +46162,71 @@ mod tests {
                 ..
             })
         ));
+    }
+
+    #[test]
+    fn cat_shards_request_tail_fields_follow_version_gate() {
+        let request = CatShardsRequestWire {
+            indices: vec!["logs".to_string()],
+            cancel_after_time_interval: Some(TimeValueWire::seconds(1)),
+            page_params: Some(OpenSearchPageParamsWire {
+                requested_token: Some("token".to_string()),
+                sort: Some("asc".to_string()),
+                size: 25,
+            }),
+            request_limit_check_supported: true,
+            ..CatShardsRequestWire::default()
+        };
+
+        let before_tail_version = Version::from_id(2_170_099);
+        let mut output = StreamOutput::new();
+        request.write_for_version(&mut output, before_tail_version);
+        let decoded =
+            CatShardsRequestWire::read_for_version(output.freeze(), before_tail_version).unwrap();
+        assert_eq!(decoded.indices, Vec::<String>::new());
+        assert_eq!(decoded.cancel_after_time_interval, None);
+        assert_eq!(decoded.page_params, None);
+        assert!(!decoded.request_limit_check_supported);
+
+        let mut output = StreamOutput::new();
+        request.write_for_version(&mut output, OPENSEARCH_2_18_0);
+        let decoded =
+            CatShardsRequestWire::read_for_version(output.freeze(), OPENSEARCH_2_18_0).unwrap();
+        assert_eq!(decoded.indices, vec!["logs".to_string()]);
+        assert_eq!(
+            decoded.cancel_after_time_interval,
+            Some(TimeValueWire::seconds(1))
+        );
+        assert_eq!(decoded.page_params, request.page_params);
+        assert!(decoded.request_limit_check_supported);
+    }
+
+    #[test]
+    fn cat_shards_transport_messages_apply_request_version_gate() {
+        let request = CatShardsRequestWire {
+            indices: vec!["logs".to_string()],
+            request_limit_check_supported: true,
+            ..CatShardsRequestWire::default()
+        };
+
+        let before_tail_version = Version::from_id(2_170_099);
+        let mut frame =
+            build_cat_shards_request_message(156, before_tail_version, &request).unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected cat-shards request message");
+        };
+        let decoded = read_cat_shards_request_message(&message).unwrap();
+        assert_eq!(decoded.indices, Vec::<String>::new());
+        assert!(!decoded.request_limit_check_supported);
+
+        let mut frame =
+            build_cat_shards_request_message(157, OPENSEARCH_2_18_0, &request).unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected cat-shards request message");
+        };
+        let decoded = read_cat_shards_request_message(&message).unwrap();
+        assert_eq!(decoded.indices, vec!["logs".to_string()]);
+        assert!(decoded.request_limit_check_supported);
     }
 
     #[test]
