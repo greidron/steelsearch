@@ -13019,6 +13019,204 @@ mod tests {
     }
 
     #[test]
+    fn search_transport_route_paginates_pit_with_field_sort_and_shard_doc_tiebreaker() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        let bindings = dev_transport_pit_bindings();
+        bindings
+            .contexts
+            .lock()
+            .expect("dev transport PIT contexts lock poisoned")
+            .clear();
+        bindings
+            .created_indices
+            .lock()
+            .expect("dev transport created indices lock poisoned")
+            .clear();
+        bindings
+            .documents
+            .lock()
+            .expect("dev transport documents lock poisoned")
+            .clear();
+        *bindings
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned") = serde_json::json!({
+            "indices": {
+                "logs-search-pit-field-page": {
+                    "settings": {
+                        "index": {
+                            "number_of_shards": "1"
+                        }
+                    }
+                }
+            }
+        });
+        bindings
+            .created_indices
+            .lock()
+            .expect("dev transport created indices lock poisoned")
+            .insert("logs-search-pit-field-page".to_string());
+
+        let pit_id = build_local_pit_id(702);
+        let pit_documents = (1..=3)
+            .map(|seq_no| {
+                (
+                    format!("logs-search-pit-field-page:doc-{seq_no}:"),
+                    StoredDocument {
+                        source: serde_json::json!({ "val": 123 }),
+                        version: 1,
+                        seq_no,
+                        primary_term: 1,
+                        routing: None,
+                        refreshed: true,
+                    },
+                )
+            })
+            .collect::<BTreeMap<_, _>>();
+        bindings
+            .contexts
+            .lock()
+            .expect("dev transport PIT contexts lock poisoned")
+            .insert(
+                pit_id.clone(),
+                PitContext {
+                    indices: vec!["logs-search-pit-field-page".to_string()],
+                    documents: pit_documents.clone(),
+                    keep_alive_millis: 60_000,
+                    expires_at_millis: transport_pit_expires_at_millis(now_epoch_ms(), 60_000),
+                    creation_time_millis: now_epoch_ms(),
+                },
+            );
+        {
+            let mut documents = bindings
+                .documents
+                .lock()
+                .expect("dev transport documents lock poisoned");
+            documents.extend(pit_documents);
+            documents.insert(
+                "logs-search-pit-field-page:doc-4:".to_string(),
+                StoredDocument {
+                    source: serde_json::json!({ "val": 123 }),
+                    version: 1,
+                    seq_no: 4,
+                    primary_term: 1,
+                    routing: None,
+                    refreshed: true,
+                },
+            );
+        }
+
+        let sorts = vec![
+            os_transport::action::OpenSearchSortBuilderWire::Field(
+                os_transport::action::OpenSearchFieldSortBuilderWire {
+                    field_name: "val".to_string(),
+                    nested_path: None,
+                    missing: serde_json::Value::Null,
+                    order: Some(os_transport::action::OpenSearchSortOrderWire::Asc),
+                    sort_mode: None,
+                    unmapped_type: None,
+                    numeric_type: None,
+                },
+            ),
+            os_transport::action::OpenSearchSortBuilderWire::ShardDoc(
+                os_transport::action::OpenSearchShardDocSortBuilderWire {
+                    order: os_transport::action::OpenSearchSortOrderWire::Asc,
+                },
+            ),
+        ];
+        let first_page_request = os_transport::action::OpenSearchSearchRequestWire {
+            source: Some(os_transport::action::OpenSearchSearchSourceBuilderWire {
+                size: 2,
+                point_in_time: Some(os_transport::action::OpenSearchPointInTimeBuilderWire {
+                    id: pit_id.clone(),
+                    keep_alive: Some(os_transport::action::TimeValueWire::minutes(1)),
+                }),
+                sorts: Some(sorts.clone()),
+                ..os_transport::action::OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..os_transport::action::OpenSearchSearchRequestWire::default()
+        };
+        let frame = os_transport::action::build_opensearch_search_request_message(
+            309,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &first_page_request,
+        )
+        .unwrap();
+        assert!(search_request_supports_local_execution_subset(&frame[6..]));
+        let response =
+            build_local_search_response(309, OPENSEARCH_3_7_0_TRANSPORT.id() as u32, &frame[6..]);
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected first PIT field-sort page response message");
+        };
+        let first_page = os_transport::action::read_opensearch_search_response_message(&message)
+            .expect("first PIT field-sort page response");
+        assert_eq!(first_page.total_hits, Some(3));
+        assert_eq!(
+            first_page
+                .hits
+                .iter()
+                .map(|hit| hit.id.as_deref().unwrap())
+                .collect::<Vec<_>>(),
+            vec!["doc-1", "doc-2"]
+        );
+        assert_eq!(
+            first_page.hits[0].sort_values,
+            vec![serde_json::json!(123), serde_json::json!(1)]
+        );
+        assert_eq!(
+            first_page.hits[1].sort_values,
+            vec![serde_json::json!(123), serde_json::json!(2)]
+        );
+
+        let second_page_request = os_transport::action::OpenSearchSearchRequestWire {
+            source: Some(os_transport::action::OpenSearchSearchSourceBuilderWire {
+                size: 2,
+                search_after: Some(first_page.hits[1].sort_values.clone()),
+                point_in_time: Some(os_transport::action::OpenSearchPointInTimeBuilderWire {
+                    id: pit_id.clone(),
+                    keep_alive: Some(os_transport::action::TimeValueWire::minutes(1)),
+                }),
+                sorts: Some(sorts),
+                ..os_transport::action::OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..os_transport::action::OpenSearchSearchRequestWire::default()
+        };
+        let frame = os_transport::action::build_opensearch_search_request_message(
+            310,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &second_page_request,
+        )
+        .unwrap();
+        assert!(search_request_supports_local_execution_subset(&frame[6..]));
+        let response =
+            build_local_search_response(310, OPENSEARCH_3_7_0_TRANSPORT.id() as u32, &frame[6..]);
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected second PIT field-sort page response message");
+        };
+        let second_page = os_transport::action::read_opensearch_search_response_message(&message)
+            .expect("second PIT field-sort page response");
+        assert_eq!(second_page.total_hits, Some(1));
+        assert_eq!(second_page.hits.len(), 1);
+        assert_eq!(second_page.hits[0].id.as_deref(), Some("doc-3"));
+        assert_eq!(
+            second_page.hits[0].sort_values,
+            vec![serde_json::json!(123), serde_json::json!(3)]
+        );
+    }
+
+    #[test]
     fn explain_transport_route_returns_local_match_explanation() {
         let _lock = dev_transport_pit_test_lock()
             .lock()
