@@ -1,5 +1,9 @@
 use bytes::{Bytes, BytesMut};
-use os_core::{Version, OPENSEARCH_2_12_0, OPENSEARCH_2_7_0, OPENSEARCH_3_7_0_TRANSPORT};
+use os_core::{
+    Version, OPENSEARCH_2_10_0, OPENSEARCH_2_12_0, OPENSEARCH_2_13_0, OPENSEARCH_2_14_0,
+    OPENSEARCH_2_18_0, OPENSEARCH_2_19_0, OPENSEARCH_2_7_0, OPENSEARCH_2_8_0,
+    OPENSEARCH_3_7_0_TRANSPORT,
+};
 use os_engine::{
     BulkWriteItemResponse, BulkWriteOperation, BulkWriteRequest, BulkWriteResponse,
     DeleteDocumentRequest, DocumentMetadata, GetDocumentRequest, GetDocumentResponse,
@@ -24448,7 +24452,7 @@ impl OpenSearchSearchRequestWire {
         write_optional_search_scroll(output, self.scroll.as_ref());
         output.write_bool(self.source.is_some());
         if let Some(source) = &self.source {
-            write_search_source_builder(output, source);
+            write_search_source_builder(output, source, version);
         }
         self.indices_options.write(output);
         write_optional_bool(output, self.request_cache);
@@ -24502,7 +24506,7 @@ impl OpenSearchSearchRequestWire {
         let preference = input.read_optional_string()?;
         let scroll = read_optional_search_scroll(input)?;
         let source = if input.read_bool()? {
-            Some(read_search_source_builder(input)?)
+            Some(read_search_source_builder(input, version)?)
         } else {
             None
         };
@@ -24927,6 +24931,7 @@ impl OpenSearchSearchSourceBuilderWire {
 fn write_search_source_builder(
     output: &mut StreamOutput,
     source: &OpenSearchSearchSourceBuilderWire,
+    stream_version: Version,
 ) {
     output.write_bool(false); // aggregations
     write_optional_bool(output, source.explain); // explain
@@ -24960,19 +24965,30 @@ fn write_search_source_builder(
     write_optional_int(output, source.track_total_hits_up_to); // track total hits up to
     write_optional_field_and_format_list(output, source.fetch_fields.as_deref()); // fetch fields
     write_optional_point_in_time_builder(output, source.point_in_time.as_ref()); // point in time
-    write_optional_generic_map(output, source.search_pipeline_source.as_ref())
-        .expect("validated search pipeline source must encode as a generic map"); // search pipeline source, OpenSearch 2.8+
-    write_optional_bool(output, source.include_named_queries_score); // include named queries score, OpenSearch 2.13+
-    write_optional_generic_map(output, source.derived_fields_object.as_ref())
-        .expect("validated derived fields object must encode as a generic map"); // derived fields object, OpenSearch 2.14+
-    write_optional_derived_fields(output, source.derived_fields.as_deref())
-        .expect("validated derived fields must encode as OpenSearch DerivedField values"); // derived fields, OpenSearch 2.14+
-    output.write_optional_string(source.search_pipeline.as_deref()); // search pipeline, OpenSearch 2.18+
-    output.write_bool(source.verbose_pipeline); // verbose pipeline, OpenSearch 2.19+
+    if stream_version.on_or_after(OPENSEARCH_2_8_0) {
+        write_optional_generic_map(output, source.search_pipeline_source.as_ref())
+            .expect("validated search pipeline source must encode as a generic map");
+    }
+    if stream_version.on_or_after(OPENSEARCH_2_13_0) {
+        write_optional_bool(output, source.include_named_queries_score);
+    }
+    if stream_version.on_or_after(OPENSEARCH_2_14_0) {
+        write_optional_generic_map(output, source.derived_fields_object.as_ref())
+            .expect("validated derived fields object must encode as a generic map");
+        write_optional_derived_fields(output, source.derived_fields.as_deref())
+            .expect("validated derived fields must encode as OpenSearch DerivedField values");
+    }
+    if stream_version.on_or_after(OPENSEARCH_2_18_0) {
+        output.write_optional_string(source.search_pipeline.as_deref());
+    }
+    if stream_version.on_or_after(OPENSEARCH_2_19_0) {
+        output.write_bool(source.verbose_pipeline);
+    }
 }
 
 fn read_search_source_builder(
     input: &mut StreamInput,
+    stream_version: Version,
 ) -> Result<OpenSearchSearchSourceBuilderWire, TransportActionWireError> {
     reject_absent_optional_writeable(input, "search request source aggregations")?;
     let explain = read_optional_bool(input)?;
@@ -25037,20 +25053,40 @@ fn read_search_source_builder(
     let fetch_fields =
         read_optional_field_and_format_list(input, "search request source fetch fields")?;
     let point_in_time = read_optional_point_in_time_builder(input)?;
-    let search_pipeline_source =
-        read_optional_generic_map(input, "search request source search pipeline source")?;
-    let include_named_queries_score = read_optional_bool(input)?;
-    let derived_fields_object =
-        read_optional_generic_map(input, "search request source derived fields object")?;
-    let derived_fields = read_optional_derived_fields(input)?;
-    let search_pipeline = input.read_optional_string()?;
+    let search_pipeline_source = if stream_version.on_or_after(OPENSEARCH_2_8_0) {
+        read_optional_generic_map(input, "search request source search pipeline source")?
+    } else {
+        None
+    };
+    let include_named_queries_score = if stream_version.on_or_after(OPENSEARCH_2_13_0) {
+        read_optional_bool(input)?
+    } else {
+        None
+    };
+    let (derived_fields_object, derived_fields) = if stream_version.on_or_after(OPENSEARCH_2_14_0) {
+        (
+            read_optional_generic_map(input, "search request source derived fields object")?,
+            read_optional_derived_fields(input)?,
+        )
+    } else {
+        (None, None)
+    };
+    let search_pipeline = if stream_version.on_or_after(OPENSEARCH_2_18_0) {
+        input.read_optional_string()?
+    } else {
+        None
+    };
     if search_pipeline.as_deref().is_some_and(str::is_empty) {
         return Err(TransportActionWireError::UnsupportedWireShape {
             shape: "search request source search pipeline",
             reason: "OpenSearch SearchSourceBuilder search pipeline must be non-empty when present",
         });
     }
-    let verbose_pipeline = input.read_bool()?;
+    let verbose_pipeline = if stream_version.on_or_after(OPENSEARCH_2_19_0) {
+        input.read_bool()?
+    } else {
+        false
+    };
     let source = OpenSearchSearchSourceBuilderWire {
         from,
         size,
@@ -31077,10 +31113,10 @@ impl OpenSearchSearchResponseWire {
         write_optional_bool(output, self.terminated_early);
         write_optional_empty_profile_results(output, self.profile_results_empty);
         output.write_vint(1);
-        if version.on_or_after(Version::from_id(2_100_099)) {
+        if version.on_or_after(OPENSEARCH_2_10_0) {
             write_search_ext_builders(output, &self.search_ext_builders)?;
         }
-        if version.on_or_after(Version::from_id(2_190_099)) {
+        if version.on_or_after(OPENSEARCH_2_19_0) {
             write_processor_results(output, &self.processor_results)?;
         }
         output.write_vint(self.total_shards);
@@ -31091,7 +31127,7 @@ impl OpenSearchSearchResponseWire {
         output.write_vint(0);
         output.write_optional_string(self.scroll_id.as_deref());
         output.write_vlong(self.took_millis);
-        if version.on_or_after(Version::from_id(2_120_099)) {
+        if version.on_or_after(OPENSEARCH_2_12_0) {
             write_optional_phase_took(output, &self.phase_took)?;
         }
         output.write_vint(self.skipped_shards);
@@ -31132,12 +31168,12 @@ impl OpenSearchSearchResponseWire {
                 reason: "only the single reduce phase response subset is decoded",
             });
         }
-        let search_ext_builders = if version.on_or_after(Version::from_id(2_100_099)) {
+        let search_ext_builders = if version.on_or_after(OPENSEARCH_2_10_0) {
             read_search_ext_builders(&mut input)?
         } else {
             Vec::new()
         };
-        let processor_results = if version.on_or_after(Version::from_id(2_190_099)) {
+        let processor_results = if version.on_or_after(OPENSEARCH_2_19_0) {
             read_processor_results(&mut input)?
         } else {
             Vec::new()
@@ -31185,7 +31221,7 @@ impl OpenSearchSearchResponseWire {
             took_millis: input.read_vlong()?,
             ..response
         };
-        if version.on_or_after(Version::from_id(2_120_099)) {
+        if version.on_or_after(OPENSEARCH_2_12_0) {
             response.phase_took = read_optional_phase_took(&mut input)?;
         }
         response.skipped_shards = input.read_vint()?;
@@ -68255,6 +68291,107 @@ mod tests {
                 .unwrap();
         assert_eq!(decoded.pipeline, Some("search-pipeline".to_string()));
         assert_eq!(decoded.phase_took, Some(true));
+    }
+
+    #[test]
+    fn opensearch_search_source_builder_follows_version_gates() {
+        let request = OpenSearchSearchRequestWire {
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                search_pipeline_source: Some(json!({
+                    "request_processors": [
+                        { "filter_query": { "tag": "tenant-filter" } }
+                    ]
+                })),
+                include_named_queries_score: Some(true),
+                derived_fields_object: Some(json!({
+                    "derived_status": {
+                        "type": "keyword",
+                        "script": { "source": "emit(params._source['status'])" }
+                    }
+                })),
+                derived_fields: Some(vec![OpenSearchDerivedFieldWire {
+                    name: "derived_latency".to_string(),
+                    field_type: "long".to_string(),
+                    script: OpenSearchInlineScriptWire {
+                        lang: Some("painless".to_string()),
+                        source: "emit(params._source['latency'])".to_string(),
+                        options: json!({}),
+                        params: json!({ "scale": 1 }),
+                    },
+                    properties: None,
+                    prefilter_field: Some("latency".to_string()),
+                    format: None,
+                    ignore_malformed: Some(false),
+                }]),
+                search_pipeline: Some("pipeline-a".to_string()),
+                verbose_pipeline: true,
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+
+        let mut output = StreamOutput::new();
+        request.write_for_version(&mut output, OPENSEARCH_2_7_0);
+        let decoded =
+            OpenSearchSearchRequestWire::read_for_version(output.freeze(), OPENSEARCH_2_7_0)
+                .unwrap();
+        let source = decoded.source.unwrap();
+        assert_eq!(source.search_pipeline_source, None);
+        assert_eq!(source.include_named_queries_score, None);
+        assert_eq!(source.derived_fields_object, None);
+        assert_eq!(source.derived_fields, None);
+        assert_eq!(source.search_pipeline, None);
+        assert!(!source.verbose_pipeline);
+
+        let mut output = StreamOutput::new();
+        request.write_for_version(&mut output, OPENSEARCH_2_8_0);
+        let decoded =
+            OpenSearchSearchRequestWire::read_for_version(output.freeze(), OPENSEARCH_2_8_0)
+                .unwrap();
+        let source = decoded.source.unwrap();
+        assert!(source.search_pipeline_source.is_some());
+        assert_eq!(source.include_named_queries_score, None);
+        assert_eq!(source.derived_fields, None);
+
+        let mut output = StreamOutput::new();
+        request.write_for_version(&mut output, OPENSEARCH_2_13_0);
+        let decoded =
+            OpenSearchSearchRequestWire::read_for_version(output.freeze(), OPENSEARCH_2_13_0)
+                .unwrap();
+        let source = decoded.source.unwrap();
+        assert_eq!(source.include_named_queries_score, Some(true));
+        assert_eq!(source.derived_fields, None);
+
+        let mut output = StreamOutput::new();
+        request.write_for_version(&mut output, OPENSEARCH_2_14_0);
+        let decoded =
+            OpenSearchSearchRequestWire::read_for_version(output.freeze(), OPENSEARCH_2_14_0)
+                .unwrap();
+        let source = decoded.source.unwrap();
+        assert!(source.derived_fields_object.is_some());
+        assert_eq!(
+            source.derived_fields.as_ref().map(Vec::len),
+            Some(1)
+        );
+        assert_eq!(source.search_pipeline, None);
+
+        let mut output = StreamOutput::new();
+        request.write_for_version(&mut output, OPENSEARCH_2_18_0);
+        let decoded =
+            OpenSearchSearchRequestWire::read_for_version(output.freeze(), OPENSEARCH_2_18_0)
+                .unwrap();
+        let source = decoded.source.unwrap();
+        assert_eq!(source.search_pipeline, Some("pipeline-a".to_string()));
+        assert!(!source.verbose_pipeline);
+
+        let mut output = StreamOutput::new();
+        request.write_for_version(&mut output, OPENSEARCH_2_19_0);
+        let decoded =
+            OpenSearchSearchRequestWire::read_for_version(output.freeze(), OPENSEARCH_2_19_0)
+                .unwrap();
+        let source = decoded.source.unwrap();
+        assert_eq!(source.search_pipeline, Some("pipeline-a".to_string()));
+        assert!(source.verbose_pipeline);
     }
 
     #[test]

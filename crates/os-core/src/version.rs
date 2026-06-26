@@ -11,11 +11,15 @@ pub struct Version {
 }
 
 pub const OPENSEARCH_2_7_0: Version = Version::from_id(2_070_099);
+pub const OPENSEARCH_2_8_0: Version = Version::from_id(2_080_099);
 pub const OPENSEARCH_2_9_0: Version = Version::from_id(2_090_099);
 pub const OPENSEARCH_2_10_0: Version = Version::from_id(2_100_099);
 pub const OPENSEARCH_2_12_0: Version = Version::from_id(2_120_099);
+pub const OPENSEARCH_2_13_0: Version = Version::from_id(2_130_099);
+pub const OPENSEARCH_2_14_0: Version = Version::from_id(2_140_099);
 pub const OPENSEARCH_2_17_0: Version = Version::from_id(2_170_099);
 pub const OPENSEARCH_2_18_0: Version = Version::from_id(2_180_099);
+pub const OPENSEARCH_2_19_0: Version = Version::from_id(2_190_099);
 pub const OPENSEARCH_3_0_0: Version = Version::from_id(3_000_099);
 pub const OPENSEARCH_3_6_0: Version = Version::from_id(3_060_099);
 pub const OPENSEARCH_3_7_0: Version = Version::from_id(3_070_099);
