@@ -6916,6 +6916,281 @@
       "description": "[ranking] scroll slice count is bounded by index.max_slices_per_scroll"
     },
     {
+      "name": "query_string_url_q_overrides_body_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search?q=catalog&df=message&default_operator=AND",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] URL q query string overrides body query and honors df/default_operator"
+    },
+    {
+      "name": "count_query_string_url_q_search",
+      "area": "search",
+      "method": "GET",
+      "path": "/logs-compat/_count?q=service:catalog",
+      "body": null,
+      "extract": "count_query",
+      "family": "lexical",
+      "description": "[lexical] count API honors bounded URL q query string"
+    },
+    {
+      "name": "track_scores_field_sort_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search?track_scores=true",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ],
+        "size": 2
+      },
+      "extract": "search_score_rendering",
+      "family": "lexical",
+      "description": "[lexical] track scores field sort search"
+    },
+    {
+      "name": "track_scores_body_field_sort_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "track_scores": true,
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ],
+        "size": 2
+      },
+      "extract": "search_score_rendering",
+      "family": "lexical",
+      "description": "[lexical] body track scores field sort search"
+    },
+    {
+      "name": "track_scores_query_param_overrides_body_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search?track_scores=false",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "track_scores": true,
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ],
+        "size": 2
+      },
+      "extract": "search_score_rendering",
+      "family": "lexical",
+      "description": "[lexical] track scores query param overrides body search"
+    },
+    {
+      "name": "indices_boost_object_numeric_string_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "indices_boost": {
+          "logs-compat": "2.0"
+        },
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ],
+        "track_scores": true,
+        "size": 2
+      },
+      "extract": "search_score_rendering",
+      "family": "lexical",
+      "description": "[lexical] deprecated object indices_boost numeric string coerces like OpenSearch"
+    },
+    {
+      "name": "indices_boost_array_string_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "indices_boost": [
+          {
+            "logs-compat": "2.0"
+          }
+        ]
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] array indices_boost rejects string boost like OpenSearch"
+    },
+    {
+      "name": "indices_boost_array_empty_object_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "indices_boost": [
+          {}
+        ]
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] array indices_boost rejects empty object like OpenSearch"
+    },
+    {
+      "name": "indices_boost_array_multi_field_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "indices_boost": [
+          {
+            "logs-compat": 2.0,
+            "logs-compat-read": 1.0
+          }
+        ]
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] array indices_boost rejects multiple fields per object like OpenSearch"
+    },
+    {
+      "name": "terminate_after_numeric_string_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "terminate_after": "1",
+        "sort": [
+          {
+            "ts": {
+              "order": "asc"
+            }
+          }
+        ],
+        "size": 2
+      },
+      "extract": "search_summary",
+      "family": "lexical",
+      "description": "[lexical] body terminate_after numeric string coerces like OpenSearch"
+    },
+    {
+      "name": "terminate_after_query_param_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search?terminate_after=1",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "sort": [
+          {
+            "ts": {
+              "order": "asc"
+            }
+          }
+        ],
+        "size": 2
+      },
+      "extract": "search_summary",
+      "family": "lexical",
+      "description": "[lexical] query-param terminate after search"
+    },
+    {
+      "name": "terminate_after_not_reached_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "terminate_after": 10,
+        "sort": [
+          {
+            "ts": {
+              "order": "asc"
+            }
+          }
+        ],
+        "size": 2
+      },
+      "extract": "search_summary",
+      "family": "lexical",
+      "description": "[lexical] terminate after not reached search"
+    },
+    {
+      "name": "terminate_after_zero_query_param_preserves_body_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search?terminate_after=0",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "terminate_after": 1,
+        "sort": [
+          {
+            "ts": {
+              "order": "asc"
+            }
+          }
+        ],
+        "size": 2
+      },
+      "extract": "search_summary",
+      "family": "lexical",
+      "description": "[lexical] zero query-param terminate after preserves body search"
+    },
+    {
       "name": "simple_query_string_search",
       "area": "search",
       "method": "POST",
