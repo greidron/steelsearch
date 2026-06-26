@@ -7,7 +7,9 @@ use os_cluster_state::{
     ShardRoutingStatePrefix,
 };
 use os_core::version::{Version, OPENSEARCH_3_7_0, OPENSEARCH_3_7_0_TRANSPORT};
-use os_node::standalone_runtime::{build_local_pit_id, PitContext, ScrollContext, StoredDocument};
+use os_node::standalone_runtime::{
+    build_local_pit_id, DocumentMap, PitContext, ScrollContext, StoredDocument,
+};
 use os_node::{
     apply_gateway_metadata_commit_state_to_manifest, apply_gateway_metadata_state_to_manifest,
     bind_rest_http_listener, collect_live_publication_acknowledgement_details,
@@ -110,7 +112,7 @@ struct DevTransportCoordinationState {
 #[derive(Clone, Debug)]
 struct DevTransportReaderContext {
     shard_id: os_transport::action::OpenSearchShardIdWire,
-    documents: BTreeMap<String, StoredDocument>,
+    documents: Arc<DocumentMap>,
     expires_at_millis: u128,
 }
 
@@ -120,7 +122,7 @@ struct DevTransportPitBindings {
     reader_contexts: Arc<Mutex<BTreeMap<(String, i64), DevTransportReaderContext>>>,
     next_id: Arc<Mutex<u64>>,
     created_indices: Arc<Mutex<BTreeSet<String>>>,
-    documents: Arc<Mutex<BTreeMap<String, StoredDocument>>>,
+    documents: Arc<Mutex<DocumentMap>>,
     metadata_manifest: Arc<Mutex<Value>>,
 }
 
@@ -150,7 +152,7 @@ fn bind_dev_transport_pit_store(
     contexts: Arc<Mutex<BTreeMap<String, PitContext>>>,
     next_id: Arc<Mutex<u64>>,
     created_indices: Arc<Mutex<BTreeSet<String>>>,
-    documents: Arc<Mutex<BTreeMap<String, StoredDocument>>>,
+    documents: Arc<Mutex<DocumentMap>>,
     metadata_manifest: Arc<Mutex<Value>>,
 ) {
     let _ = DEV_TRANSPORT_PIT_BINDINGS.set(DevTransportPitBindings {
@@ -4478,7 +4480,7 @@ fn local_field_capabilities_response_from_request(
 
 fn field_capabilities_response_from_metadata_and_documents(
     metadata_manifest: &Value,
-    documents: &BTreeMap<String, StoredDocument>,
+    documents: &DocumentMap,
     request: &os_transport::action::OpenSearchFieldCapabilitiesRequestWire,
 ) -> os_transport::action::OpenSearchFieldCapabilitiesResponseWire {
     let mut indices = Vec::new();
@@ -4930,21 +4932,33 @@ fn transport_pit_index_matches_options(
 fn transport_pit_document_snapshot(
     bindings: &DevTransportPitBindings,
     resolved_indices: &[String],
-) -> BTreeMap<String, StoredDocument> {
-    bindings
-        .documents
-        .lock()
-        .expect("dev transport documents lock poisoned")
-        .iter()
-        .filter_map(|(key, record)| {
-            let (doc_index, _, _) = split_transport_document_key(key)?;
-            resolved_indices
-                .iter()
-                .any(|candidate| candidate == doc_index)
-                .then_some(())?;
-            Some((key.clone(), record.clone()))
-        })
-        .collect()
+) -> Arc<DocumentMap> {
+    Arc::new(
+        bindings
+            .documents
+            .lock()
+            .expect("dev transport documents lock poisoned")
+            .iter()
+            .filter_map(|(key, record)| {
+                let (doc_index, _, _) = split_transport_document_key(key)?;
+                resolved_indices
+                    .iter()
+                    .any(|candidate| candidate == doc_index)
+                    .then_some(())?;
+                Some((key.clone(), Arc::clone(record)))
+            })
+            .collect(),
+    )
+}
+
+fn transport_live_document_snapshot(bindings: &DevTransportPitBindings) -> Arc<DocumentMap> {
+    Arc::new(
+        bindings
+            .documents
+            .lock()
+            .expect("dev transport documents lock poisoned")
+            .clone(),
+    )
 }
 
 fn transport_pit_total_primary_shards(
@@ -5717,7 +5731,10 @@ fn local_transport_search_response_from_request(
             .max_by(|left, right| left.partial_cmp(right).unwrap_or(std::cmp::Ordering::Equal))
             .unwrap_or(f32::NAN),
         hits,
-        sort_fields: local_transport_sort_fields_for_response(sorts, documents.values()),
+        sort_fields: local_transport_sort_fields_for_response(
+            sorts,
+            documents.values().map(AsRef::as_ref),
+        ),
         total_shards,
         successful_shards: total_shards,
         terminated_early: terminated_early.then_some(true),
@@ -6531,7 +6548,7 @@ fn opensearch_transport_terms_slice_hash(value: &[u8]) -> i64 {
 fn transport_search_documents_for_request(
     request: &os_transport::action::OpenSearchSearchRequestWire,
 ) -> Option<(
-    BTreeMap<String, StoredDocument>,
+    Arc<DocumentMap>,
     Vec<String>,
     Option<String>,
 )> {
@@ -6567,12 +6584,9 @@ fn transport_search_documents_for_request(
             Some(pit.id.clone()),
         ));
     }
-    let documents = dev_transport_pit_bindings()
-        .documents
-        .lock()
-        .expect("dev transport documents lock poisoned")
-        .clone();
-    let resolved_indices = dev_transport_pit_bindings()
+    let bindings = dev_transport_pit_bindings();
+    let documents = transport_live_document_snapshot(bindings);
+    let resolved_indices = bindings
         .created_indices
         .lock()
         .expect("dev transport created indices lock poisoned")
@@ -8632,8 +8646,8 @@ fn upsert_transport_pit_context_from_reader_update(
             context.indices.extend(indices.clone());
             context.indices.sort();
             context.indices.dedup();
-            for (key, document) in documents.clone() {
-                context.documents.insert(key, document);
+            for (key, document) in documents.iter() {
+                Arc::make_mut(&mut context.documents).insert(key.clone(), Arc::clone(document));
             }
             context.keep_alive_millis = context.keep_alive_millis.max(keep_alive_millis);
             context.expires_at_millis = context.expires_at_millis.max(expires_at_millis);

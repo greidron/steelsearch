@@ -3409,6 +3409,30 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "pit_open_default_allow_no_indices_empty_wildcard_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/missing-pit-default-*/_search/point_in_time?keep_alive=1m",
+      "body": null,
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] create PIT uses OpenSearch default allow_no_indices behavior for empty wildcard targets",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "pit_open_explicit_disallow_no_indices_empty_wildcard_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/missing-pit-default-*/_search/point_in_time?keep_alive=1m&allow_no_indices=false",
+      "body": null,
+      "expected_status": 404,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] create PIT honors explicit allow_no_indices=false for empty wildcard targets",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "pit_open_expand_wildcards_none_empty_search",
       "area": "search",
       "method": "POST",

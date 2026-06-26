@@ -11092,7 +11092,8 @@ impl SteelNode {
         let keep_alive_millis = normalize_pit_keep_alive_millis(parsed_keep_alive_millis);
         let ignore_unavailable =
             query_param_is_true(request.query_params.get("ignore_unavailable"));
-        let allow_no_indices = query_param_is_true(request.query_params.get("allow_no_indices"));
+        let allow_no_indices_param = request.query_params.get("allow_no_indices");
+        let allow_no_indices = query_param_is_true(allow_no_indices_param);
         let expand_wildcards = request
             .query_params
             .get("expand_wildcards")
@@ -11103,15 +11104,29 @@ impl SteelNode {
             .get("routing")
             .map(|routing| parse_routing_values(routing))
             .filter(|routing| !routing.is_empty());
-        let resolved_indices = match self.resolve_search_targets(
-            index,
-            ignore_unavailable,
-            allow_no_indices,
-            expand_wildcards,
-        ) {
-            Ok(indices) => indices,
-            Err(response) => return response,
-        };
+        let mut resolved_indices = Vec::new();
+        for selector in index.split(',').filter(|selector| !selector.is_empty()) {
+            let selector_uses_wildcard =
+                selector == "_all" || selector.contains('*') || selector.contains('?');
+            let effective_allow_no_indices = if ignore_unavailable {
+                true
+            } else if allow_no_indices_param.is_some() {
+                allow_no_indices
+            } else {
+                selector_uses_wildcard
+            };
+            match self.resolve_search_targets(
+                selector,
+                ignore_unavailable,
+                effective_allow_no_indices,
+                expand_wildcards,
+            ) {
+                Ok(mut indices) => resolved_indices.append(&mut indices),
+                Err(response) => return response,
+            }
+        }
+        resolved_indices.sort();
+        resolved_indices.dedup();
         if let Some(closed_index) = resolved_indices
             .iter()
             .find(|index_name| self.index_is_closed(index_name))
@@ -48344,6 +48359,30 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             open_then_none_pit.body["error"]["reason"],
             "invalid id: [null]"
+        );
+
+        let default_empty_wildcard_pit = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/missing-session-*/_search/point_in_time?keep_alive=1m",
+        ));
+        assert_eq!(default_empty_wildcard_pit.status, 400);
+        assert_eq!(
+            default_empty_wildcard_pit.body["error"]["type"],
+            "illegal_argument_exception"
+        );
+        assert_eq!(
+            default_empty_wildcard_pit.body["error"]["reason"],
+            "invalid id: [null]"
+        );
+
+        let explicit_disallow_empty_wildcard_pit = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/missing-session-*/_search/point_in_time?keep_alive=1m&allow_no_indices=false",
+        ));
+        assert_eq!(explicit_disallow_empty_wildcard_pit.status, 404);
+        assert_eq!(
+            explicit_disallow_empty_wildcard_pit.body["error"]["type"],
+            "index_not_found_exception"
         );
 
         let none_then_open_pit = node.handle_rest_request(RestRequest::new(
