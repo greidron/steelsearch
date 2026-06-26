@@ -5371,6 +5371,7 @@ fn local_transport_search_response_from_request(
         };
     }
     let sorts = request_source.and_then(|source| source.sorts.as_deref());
+    let render_scores = local_transport_should_render_scores(request_source, sorts);
     let search_after = request_source.and_then(|source| source.search_after.as_deref());
     let collapse = request_source.and_then(|source| source.collapse.as_ref());
     let fetch_source = request_source.and_then(|source| source.fetch_source.as_ref());
@@ -5464,6 +5465,7 @@ fn local_transport_search_response_from_request(
         .into_iter()
         .map(|candidate| {
             let (index, id, source, version, seq_no, primary_term, score) = candidate;
+            let rendered_score = if render_scores { score } else { f32::NAN };
             let sort_values = sorts
                 .map(|sorts| {
                     transport_search_sort_values_for_match(
@@ -5483,7 +5485,7 @@ fn local_transport_search_response_from_request(
             let source = local_transport_filter_hit_source(&source, fetch_source);
             os_transport::action::OpenSearchSearchHitWire {
                 id: Some(id),
-                score,
+                score: rendered_score,
                 nested_identity: None,
                 version: if include_version { version } else { -1 },
                 seq_no: if include_seq_no_and_primary_term {
@@ -5532,6 +5534,24 @@ fn local_transport_search_response_from_request(
             actual_total_hits,
         )
     }
+}
+
+fn local_transport_should_render_scores(
+    request_source: Option<&os_transport::action::OpenSearchSearchSourceBuilderWire>,
+    sorts: Option<&[os_transport::action::OpenSearchSortBuilderWire]>,
+) -> bool {
+    if request_source.is_some_and(|source| source.track_scores) {
+        return true;
+    }
+    let Some(sorts) = sorts else {
+        return true;
+    };
+    sorts.iter().any(|sort| {
+        matches!(
+            sort,
+            os_transport::action::OpenSearchSortBuilderWire::Score(_)
+        )
+    })
 }
 
 fn local_transport_index_boost_score(
@@ -16302,6 +16322,135 @@ mod tests {
         assert_eq!(response.hits[0].id.as_deref(), Some("doc-b"));
         assert_eq!(response.hits[0].score, 2.0);
         assert_eq!(response.hits[0].sort_values, vec![serde_json::json!(2.0)]);
+    }
+
+    #[test]
+    fn search_transport_route_honors_track_scores_with_field_sort() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        dev_transport_pit_bindings()
+            .created_indices
+            .lock()
+            .expect("dev transport created indices lock poisoned")
+            .clear();
+        dev_transport_pit_bindings()
+            .documents
+            .lock()
+            .expect("dev transport documents lock poisoned")
+            .clear();
+        *dev_transport_pit_bindings()
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned") = serde_json::json!({
+            "indices": {
+                "logs-track-scores": {
+                    "settings": {
+                        "index": {
+                            "number_of_shards": "1"
+                        }
+                    }
+                }
+            }
+        });
+        dev_transport_pit_bindings()
+            .created_indices
+            .lock()
+            .expect("dev transport created indices lock poisoned")
+            .insert("logs-track-scores".to_string());
+        dev_transport_pit_bindings()
+            .documents
+            .lock()
+            .expect("dev transport documents lock poisoned")
+            .insert(
+                "logs-track-scores:doc-1:".to_string(),
+                StoredDocument {
+                    source: serde_json::json!({ "ordinal": 1, "message": "track score" }),
+                    version: 1,
+                    seq_no: 1,
+                    primary_term: 1,
+                    routing: None,
+                    refreshed: true,
+                },
+            );
+
+        let sort = os_transport::action::OpenSearchSortBuilderWire::Field(
+            os_transport::action::OpenSearchFieldSortBuilderWire {
+                field_name: "ordinal".to_string(),
+                nested_path: None,
+                missing: serde_json::Value::Null,
+                order: Some(os_transport::action::OpenSearchSortOrderWire::Asc),
+                sort_mode: None,
+                unmapped_type: None,
+                numeric_type: Some("long".to_string()),
+            },
+        );
+        let request = os_transport::action::OpenSearchSearchRequestWire {
+            source: Some(os_transport::action::OpenSearchSearchSourceBuilderWire {
+                query: Some(os_transport::action::OpenSearchQueryBuilderWire::MatchAll(
+                    os_transport::action::OpenSearchMatchAllQueryBuilderWire::default(),
+                )),
+                sorts: Some(vec![sort.clone()]),
+                ..os_transport::action::OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..os_transport::action::OpenSearchSearchRequestWire::default()
+        };
+        let frame = os_transport::action::build_opensearch_search_request_message(
+            309,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(search_request_supports_local_execution_subset(&frame[6..]));
+        let response =
+            build_local_search_response(309, OPENSEARCH_3_7_0_TRANSPORT.id() as u32, &frame[6..]);
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected field-sort search response message");
+        };
+        let response = os_transport::action::read_opensearch_search_response_message(&message)
+            .expect("field-sort search response");
+        assert!(response.max_score.is_nan());
+        assert!(response.hits[0].score.is_nan());
+        assert_eq!(response.hits[0].sort_values, vec![serde_json::json!(1)]);
+
+        let tracked_request = os_transport::action::OpenSearchSearchRequestWire {
+            source: Some(os_transport::action::OpenSearchSearchSourceBuilderWire {
+                query: Some(os_transport::action::OpenSearchQueryBuilderWire::MatchAll(
+                    os_transport::action::OpenSearchMatchAllQueryBuilderWire::default(),
+                )),
+                sorts: Some(vec![sort]),
+                track_scores: true,
+                ..os_transport::action::OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..os_transport::action::OpenSearchSearchRequestWire::default()
+        };
+        let frame = os_transport::action::build_opensearch_search_request_message(
+            310,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &tracked_request,
+        )
+        .unwrap();
+        assert!(search_request_supports_local_execution_subset(&frame[6..]));
+        let response =
+            build_local_search_response(310, OPENSEARCH_3_7_0_TRANSPORT.id() as u32, &frame[6..]);
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected tracked field-sort search response message");
+        };
+        let response = os_transport::action::read_opensearch_search_response_message(&message)
+            .expect("tracked field-sort search response");
+        assert_eq!(response.max_score, 1.0);
+        assert_eq!(response.hits[0].score, 1.0);
+        assert_eq!(response.hits[0].sort_values, vec![serde_json::json!(1)]);
     }
 
     #[test]
