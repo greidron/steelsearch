@@ -2000,6 +2000,122 @@
       "description": "[admin-cat] targeted msearch GET summary"
     },
     {
+      "name": "msearch_pit_search",
+      "area": "search",
+      "extract": "msearch_pit_summary",
+      "steps": [
+        {
+          "name": "pit-open",
+          "method": "POST",
+          "path": "/logs-compat/_search/point_in_time?keep_alive=1m",
+          "body": null,
+          "expected_status": 200,
+          "extract": "pit_open",
+          "save": {
+            "pit_id": "body.pit_id"
+          }
+        },
+        {
+          "name": "msearch-pit",
+          "method": "POST",
+          "path": "/_msearch",
+          "raw": true,
+          "body": "{}\n{\"pit\":{\"id\":\"${saved.pit_id}\",\"keep_alive\":\"1m\"},\"query\":{\"match_all\":{}},\"sort\":[{\"ts\":{\"order\":\"asc\"}}],\"size\":1}\n",
+          "expected_status": 200,
+          "extract": "msearch_pit_summary"
+        }
+      ],
+      "family": "lexical",
+      "description": "[lexical] msearch PIT search follows OpenSearch preparePointInTime behavior"
+    },
+    {
+      "name": "msearch_pit_target_rejects_explicit_indices",
+      "area": "search",
+      "extract": "msearch_pit_summary",
+      "steps": [
+        {
+          "name": "pit-open",
+          "method": "POST",
+          "path": "/logs-compat/_search/point_in_time?keep_alive=1m",
+          "body": null,
+          "expected_status": 200,
+          "extract": "pit_open",
+          "save": {
+            "pit_id": "body.pit_id"
+          }
+        },
+        {
+          "name": "msearch-pit-targeted",
+          "method": "POST",
+          "path": "/logs-compat/_msearch",
+          "raw": true,
+          "body": "{}\n{\"pit\":{\"id\":\"${saved.pit_id}\",\"keep_alive\":\"1m\"},\"query\":{\"match_all\":{}},\"size\":1}\n",
+          "expected_status": 400,
+          "extract": "msearch_pit_summary"
+        }
+      ],
+      "family": "lexical",
+      "description": "[lexical] targeted msearch PIT rejects explicit indices like OpenSearch"
+    },
+    {
+      "name": "msearch_pit_rejects_ccs_minimize_roundtrips_true",
+      "area": "search",
+      "extract": "search_error_root_cause",
+      "steps": [
+        {
+          "name": "pit-open",
+          "method": "POST",
+          "path": "/logs-compat/_search/point_in_time?keep_alive=1m",
+          "body": null,
+          "expected_status": 200,
+          "extract": "pit_open",
+          "save": {
+            "pit_id": "body.pit_id"
+          }
+        },
+        {
+          "name": "msearch-pit-ccs-true",
+          "method": "POST",
+          "path": "/_msearch?ccs_minimize_roundtrips=true",
+          "raw": true,
+          "body": "{}\n{\"pit\":{\"id\":\"${saved.pit_id}\",\"keep_alive\":\"1m\"},\"query\":{\"match_all\":{}},\"size\":1}\n",
+          "expected_status": 400,
+          "extract": "search_error_root_cause"
+        }
+      ],
+      "family": "lexical",
+      "description": "[lexical] msearch PIT rejects ccs_minimize_roundtrips=true like OpenSearch preparePointInTime"
+    },
+    {
+      "name": "msearch_pit_rejects_metadata_routing_preference_indices_options",
+      "area": "search",
+      "extract": "search_error_root_cause",
+      "steps": [
+        {
+          "name": "pit-open",
+          "method": "POST",
+          "path": "/logs-compat/_search/point_in_time?keep_alive=1m",
+          "body": null,
+          "expected_status": 200,
+          "extract": "pit_open",
+          "save": {
+            "pit_id": "body.pit_id"
+          }
+        },
+        {
+          "name": "msearch-pit-metadata-options",
+          "method": "POST",
+          "path": "/_msearch",
+          "raw": true,
+          "body": "{\"routing\":\"tenant-a\",\"preference\":\"_local\",\"ignore_unavailable\":true}\n{\"pit\":{\"id\":\"${saved.pit_id}\",\"keep_alive\":\"1m\"},\"query\":{\"match_all\":{}},\"size\":1}\n",
+          "expected_status": 400,
+          "extract": "search_error_root_cause"
+        }
+      ],
+      "family": "lexical",
+      "description": "[lexical] msearch PIT rejects metadata routing, preference, and indices options like OpenSearch preparePointInTime"
+    },
+    {
       "name": "explain_target_get_doc",
       "area": "search",
       "method": "GET",
