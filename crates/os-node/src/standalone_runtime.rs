@@ -38156,7 +38156,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             .insert("format".to_string(), "json".to_string());
         selected_segments_json_request
             .query_params
-            .insert("h".to_string(), "idx,sh,p,seg,g,dc,si".to_string());
+            .insert("h".to_string(), "idx,sh,p,id,seg,g,dc,si".to_string());
         let selected_segments_json_response =
             node.handle_rest_request(selected_segments_json_request);
         assert_eq!(selected_segments_json_response.status, 200);
@@ -38166,6 +38166,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         );
         assert_eq!(selected_segments_json_response.body[0]["sh"], "0");
         assert_eq!(selected_segments_json_response.body[0]["p"], "p");
+        assert_eq!(selected_segments_json_response.body[0]["id"], "steel-node");
         assert_eq!(selected_segments_json_response.body[0]["seg"], "_0");
         assert_eq!(selected_segments_json_response.body[0]["g"], "0");
         assert_eq!(selected_segments_json_response.body[0]["dc"], "1");
@@ -38181,7 +38182,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             .insert("v".to_string(), "true".to_string());
         selected_segments_text_request
             .query_params
-            .insert("h".to_string(), "idx,sh,p,seg,g,dc,si".to_string());
+            .insert("h".to_string(), "idx,sh,p,id,seg,g,dc,si".to_string());
         let selected_segments_text_response =
             node.handle_rest_request(selected_segments_text_request);
         let selected_segments_text = selected_segments_text_response
@@ -38190,7 +38191,10 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             .expect("selected cat segments text body");
         assert_eq!(
             selected_segments_text.lines().collect::<Vec<_>>(),
-            vec!["idx sh p seg g dc si", "logs-000001 0 p _0 0 1 0b"]
+            vec![
+                "idx sh p id seg g dc si",
+                "logs-000001 0 p steel-node _0 0 1 0b"
+            ]
         );
     }
 
