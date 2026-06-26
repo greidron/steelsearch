@@ -41675,7 +41675,7 @@ mod tests {
                     request_wire_type: "CreatePitRequest",
                     response_wire_type: "CreatePitResponse",
                     adapter_stage: "search-pit",
-                    next_step: "map PIT creation onto Rust search context lifecycle",
+                    next_step: "expand local PIT lifecycle adapter toward distributed shard fanout and failure aggregation",
                 },
                 OpenSearchPriorityTransportActionSpec {
                     action_name: "indices:data/read/point_in_time/delete",
@@ -41684,7 +41684,7 @@ mod tests {
                     request_wire_type: "DeletePitRequest",
                     response_wire_type: "DeletePitResponse",
                     adapter_stage: "search-pit",
-                    next_step: "map PIT id invalidation onto Rust search context lifecycle",
+                    next_step: "expand local PIT invalidation adapter toward distributed node fanout",
                 },
                 OpenSearchPriorityTransportActionSpec {
                     action_name: "indices:data/read/point_in_time/readall",
@@ -41693,7 +41693,7 @@ mod tests {
                     request_wire_type: "GetAllPitNodesRequest",
                     response_wire_type: "GetAllPitNodesResponse",
                     adapter_stage: "search-pit",
-                    next_step: "map PIT listing onto Rust search context lifecycle and node fanout response rendering",
+                    next_step: "expand local PIT listing adapter toward distributed node fanout and failure aggregation",
                 },
                 OpenSearchPriorityTransportActionSpec {
                     action_name: "indices:admin/mappings/get",
@@ -42633,7 +42633,7 @@ mod tests {
         );
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_CREATE_PIT_ACTION_NAME).disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_DELETE_PIT_ACTION_NAME).disposition,
@@ -43075,6 +43075,7 @@ mod tests {
                 || spec.action_name == OPENSEARCH_FIND_DANGLING_INDEX_ACTION_NAME
                 || spec.action_name == OPENSEARCH_GET_ALL_PITS_ACTION_NAME
                 || spec.action_name == OPENSEARCH_DELETE_PIT_ACTION_NAME
+                || spec.action_name == OPENSEARCH_CREATE_PIT_ACTION_NAME
                 || spec.action_name == OPENSEARCH_CLEAR_SCROLL_ACTION_NAME
                 || spec.action_name == OPENSEARCH_GET_ALIASES_ACTION_NAME
                 || spec.action_name == OPENSEARCH_GET_SETTINGS_ACTION_NAME
@@ -43155,7 +43156,6 @@ mod tests {
                 || spec.action_name == OPENSEARCH_MULTI_SEARCH_ACTION_NAME
                 || spec.action_name == OPENSEARCH_SEARCH_SCROLL_ACTION_NAME
                 || spec.action_name == OPENSEARCH_EXPLAIN_ACTION_NAME
-                || spec.action_name == OPENSEARCH_CREATE_PIT_ACTION_NAME
             {
                 assert_eq!(
                     decision.disposition,
@@ -68880,7 +68880,7 @@ mod tests {
     #[test]
     fn opensearch_delete_pit_request_wire_round_trips_and_validates_id_subset() {
         let request = OpenSearchDeletePitRequestWire {
-            pit_ids: vec!["pit-context".to_string(), "_all".to_string()],
+            pit_ids: vec!["pit-context".to_string(), "pit-context-2".to_string()],
             ..OpenSearchDeletePitRequestWire::default()
         };
         let mut output = StreamOutput::new();
