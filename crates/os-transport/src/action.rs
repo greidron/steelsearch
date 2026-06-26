@@ -5866,6 +5866,36 @@ pub fn read_cluster_update_settings_request_message(
     ClusterUpdateSettingsRequestWire::read(message.body.clone().freeze())
 }
 
+pub fn build_cluster_update_settings_response_message(
+    request_id: i64,
+    version: Version,
+    response: &ClusterUpdateSettingsResponseWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    response.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::response(),
+        version,
+        variable_header: BytesMut::from(&ResponseVariableHeader::default().to_bytes()[..]),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_cluster_update_settings_response_message(
+    message: &TransportMessage,
+) -> Result<ClusterUpdateSettingsResponseWire, TransportActionWireError> {
+    if !message.status.is_response() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "response",
+            actual: message.status.bits(),
+        });
+    }
+    let _header = ResponseVariableHeader::read(message.variable_header.clone().freeze())?;
+    ClusterUpdateSettingsResponseWire::read(message.body.clone().freeze())
+}
+
 pub fn build_cluster_reroute_request_message(
     request_id: i64,
     version: Version,
@@ -12845,8 +12875,8 @@ impl ClusterUpdateSettingsRequestWire {
         write_parent_task_id(output, &self.parent_task_node, self.parent_task_id);
         self.cluster_manager_timeout.write(output);
         self.ack_timeout.write(output);
-        output.write_string_map(&self.transient_settings);
-        output.write_string_map(&self.persistent_settings);
+        write_opensearch_settings_string_map(output, &self.transient_settings);
+        write_opensearch_settings_string_map(output, &self.persistent_settings);
     }
 
     pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
@@ -12857,8 +12887,8 @@ impl ClusterUpdateSettingsRequestWire {
             parent_task_id,
             cluster_manager_timeout: TimeValueWire::read(&mut input)?,
             ack_timeout: TimeValueWire::read(&mut input)?,
-            transient_settings: input.read_string_map()?,
-            persistent_settings: input.read_string_map()?,
+            transient_settings: read_opensearch_settings_string_map(&mut input)?,
+            persistent_settings: read_opensearch_settings_string_map(&mut input)?,
         };
         require_no_trailing_bytes(&input)?;
         Ok(request)
@@ -12893,6 +12923,40 @@ impl ClusterUpdateSettingsRequestWire {
             shape: "cluster update settings execution",
             reason: "cluster settings mutation is not admitted through transport",
         })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ClusterUpdateSettingsResponseWire {
+    pub acknowledged: bool,
+    pub transient_settings: BTreeMap<String, String>,
+    pub persistent_settings: BTreeMap<String, String>,
+}
+
+impl ClusterUpdateSettingsResponseWire {
+    pub fn empty_acknowledged() -> Self {
+        Self {
+            acknowledged: true,
+            transient_settings: BTreeMap::new(),
+            persistent_settings: BTreeMap::new(),
+        }
+    }
+
+    pub fn write(&self, output: &mut StreamOutput) {
+        output.write_bool(self.acknowledged);
+        write_opensearch_settings_string_map(output, &self.transient_settings);
+        write_opensearch_settings_string_map(output, &self.persistent_settings);
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let response = Self {
+            acknowledged: input.read_bool()?,
+            transient_settings: read_opensearch_settings_string_map(&mut input)?,
+            persistent_settings: read_opensearch_settings_string_map(&mut input)?,
+        };
+        require_no_trailing_bytes(&input)?;
+        Ok(response)
     }
 }
 
@@ -49353,7 +49417,7 @@ mod tests {
     }
 
     #[test]
-    fn update_settings_request_and_ack_response_wire_round_trip() {
+    fn update_settings_request_and_response_wire_round_trip() {
         let request = ClusterUpdateSettingsRequestWire {
             transient_settings: BTreeMap::from([(
                 "cluster.routing.allocation.enable".to_string(),
@@ -49372,11 +49436,21 @@ mod tests {
             request
         );
 
-        let response = AcknowledgedResponseWire { acknowledged: true };
+        let response = ClusterUpdateSettingsResponseWire {
+            acknowledged: true,
+            transient_settings: BTreeMap::from([(
+                "cluster.routing.allocation.enable".to_string(),
+                "all".to_string(),
+            )]),
+            persistent_settings: BTreeMap::from([(
+                "cluster.max_shards_per_node".to_string(),
+                "1000".to_string(),
+            )]),
+        };
         let mut output = StreamOutput::new();
         response.write(&mut output);
         assert_eq!(
-            AcknowledgedResponseWire::read(output.freeze()).unwrap(),
+            ClusterUpdateSettingsResponseWire::read(output.freeze()).unwrap(),
             response
         );
     }
@@ -50046,6 +50120,28 @@ mod tests {
                 shape: "cluster update settings execution",
                 ..
             })
+        ));
+
+        let response = ClusterUpdateSettingsResponseWire::empty_acknowledged();
+        let mut frame = build_cluster_update_settings_response_message(
+            32,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &response,
+        )
+        .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected cluster update settings response message");
+        };
+        assert_eq!(
+            read_cluster_update_settings_response_message(&message).unwrap(),
+            response
+        );
+        assert!(matches!(
+            read_cluster_update_settings_request_message(&message).unwrap_err(),
+            TransportActionWireError::UnexpectedMessageStatus {
+                expected: "request",
+                ..
+            }
         ));
     }
 

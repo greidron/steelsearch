@@ -230,20 +230,20 @@ execution bottlenecks to measure after implementation are expected to be:
 As of the bulk transport adapter pass, the explicit dispatcher contract in
 `crates/os-transport/src/action.rs` accepts:
 
-- `cluster:monitor/main` (rejected fail-closed)
+- `cluster:monitor/main` (implemented local root-info subset)
 - `cluster:monitor/remote/info` (implemented empty remote-connection subset)
-- `internal:monitor/term` (rejected fail-closed)
+- `internal:monitor/term` (implemented current term/version subset)
 - `cluster:monitor/state`
 - `cluster:monitor/health`
 - `cluster:monitor/stats` (rejected fail-closed)
 - `cluster:monitor/shards` (rejected fail-closed)
 - `cluster:monitor/nodes/info` (implemented local node-info subset)
 - `cluster:monitor/nodes/stats` (implemented local empty-node-stats subset)
-- `cluster:monitor/wlm/stats` (rejected fail-closed)
-- `cluster:monitor/_remotestore/stats` (rejected fail-closed)
-- `cluster:admin/remote_store/metadata` (rejected fail-closed)
-- `cluster:monitor/nodes/usage` (rejected fail-closed)
-- `cluster:monitor/nodes/hot_threads` (rejected fail-closed)
+- `cluster:monitor/wlm/stats` (implemented local empty-workload-group subset)
+- `cluster:monitor/_remotestore/stats` (implemented empty remote-store-shards subset)
+- `cluster:admin/remote_store/metadata` (implemented empty remote-store-shards subset)
+- `cluster:monitor/nodes/usage` (implemented local empty-usage subset)
+- `cluster:monitor/nodes/hot_threads` (implemented local diagnostic text subset)
 - `cluster:admin/voting_config/add_exclusions` (implemented node_names subset)
 - `cluster:admin/voting_config/clear_exclusions` (implemented no-wait subset)
 - `cluster:monitor/allocation/explain` (rejected fail-closed)
@@ -252,7 +252,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `cluster:admin/filecache/prune` (rejected fail-closed)
 - `cluster:admin/nodes/reload_secure_settings` (rejected fail-closed)
 - `cluster:admin/repository/put` (rejected fail-closed)
-- `cluster:admin/repository/get` (rejected fail-closed)
+- `cluster:admin/repository/get` (implemented empty repository metadata subset)
 - `cluster:admin/repository/delete` (rejected fail-closed)
 - `cluster:admin/repository/verify` (rejected fail-closed)
 - `cluster:admin/repository/_cleanup` (rejected fail-closed)
@@ -441,8 +441,8 @@ The nodes-usage boundary covers:
 
 - OpenSearch `NodesUsageRequest` parent task, node ids, optional timeout,
   `restActions`, and `aggregations` flags at the wire decode/build layer;
-- explicit fail-closed classification for `cluster:monitor/nodes/usage` until
-  runtime usage telemetry mapping is implemented;
+- implemented `cluster:monitor/nodes/usage` default local-node response
+  rendering with empty REST-action and aggregation telemetry maps;
 - explicit rejection for concrete node payloads, node filters, timeout,
   `restActions`, `aggregations`, and nodes-usage execution.
 
@@ -531,7 +531,8 @@ The cluster-update-settings boundary covers:
 - OpenSearch `ClusterUpdateSettingsRequest` parent task, cluster-manager
   timeout, acknowledgement timeout, transient settings map, and persistent
   settings map at the wire decode/build layer;
-- OpenSearch acknowledged response boolean decode/build shape;
+- OpenSearch `ClusterUpdateSettingsResponse` acknowledged flag plus transient
+  and persistent settings maps at the wire decode/build layer;
 - explicit fail-closed classification for `cluster:admin/settings/update` until
   cluster-manager update, acknowledgement, and publication semantics are mapped
   for transport mutation;
