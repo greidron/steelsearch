@@ -25,6 +25,23 @@
         ]
       },
       {
+        "index": "sort-unmapped-a",
+        "features": [
+          "single_shard",
+          "no_replicas",
+          "keyword",
+          "long"
+        ]
+      },
+      {
+        "index": "sort-unmapped-b",
+        "features": [
+          "single_shard",
+          "no_replicas",
+          "keyword"
+        ]
+      },
+      {
         "index": "vectors-compat",
         "features": [
           "single_shard",
@@ -74,6 +91,19 @@
           "foo": "keyword",
           "age": "long",
           "rank_id": "long"
+        }
+      },
+      {
+        "index": "sort-unmapped-a",
+        "fields": {
+          "tenant": "keyword",
+          "rank": "long"
+        }
+      },
+      {
+        "index": "sort-unmapped-b",
+        "fields": {
+          "tenant": "keyword"
         }
       },
       {
@@ -147,6 +177,18 @@
         ]
       },
       {
+        "index": "sort-unmapped-a",
+        "ids": [
+          "doc-a"
+        ]
+      },
+      {
+        "index": "sort-unmapped-b",
+        "ids": [
+          "doc-b"
+        ]
+      },
+      {
         "index": "vectors-compat",
         "ids": [
           "vec-a",
@@ -192,6 +234,22 @@
           "42",
           "172",
           "missing-age"
+        ]
+      },
+      {
+        "name": "sort_unmapped_a_bulk",
+        "index": "sort-unmapped-a",
+        "format": "application/x-ndjson index actions with explicit _id values",
+        "document_ids": [
+          "doc-a"
+        ]
+      },
+      {
+        "name": "sort_unmapped_b_bulk",
+        "index": "sort-unmapped-b",
+        "format": "application/x-ndjson index actions with explicit _id values",
+        "document_ids": [
+          "doc-b"
         ]
       },
       {
@@ -451,6 +509,45 @@
           }
         }
       }
+    },
+    {
+      "name": "sort-unmapped-a",
+      "body": {
+        "settings": {
+          "index": {
+            "number_of_shards": 1,
+            "number_of_replicas": 0
+          }
+        },
+        "mappings": {
+          "properties": {
+            "tenant": {
+              "type": "keyword"
+            },
+            "rank": {
+              "type": "long"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "sort-unmapped-b",
+      "body": {
+        "settings": {
+          "index": {
+            "number_of_shards": 1,
+            "number_of_replicas": 0
+          }
+        },
+        "mappings": {
+          "properties": {
+            "tenant": {
+              "type": "keyword"
+            }
+          }
+        }
+      }
     }
   ],
   "bulk": [
@@ -600,6 +697,29 @@
           "_source": {
             "foo": "bar",
             "rank_id": 999
+          }
+        }
+      ]
+    },
+    {
+      "index": "sort-unmapped-a",
+      "documents": [
+        {
+          "_id": "doc-a",
+          "_source": {
+            "tenant": "tenant-a",
+            "rank": 10
+          }
+        }
+      ]
+    },
+    {
+      "index": "sort-unmapped-b",
+      "documents": [
+        {
+          "_id": "doc-b",
+          "_source": {
+            "tenant": "tenant-b"
           }
         }
       ]
@@ -6169,6 +6289,54 @@
       "extract": "search_hits",
       "family": "ranking",
       "description": "[ranking] search_after with missing _last sort follows OpenSearch",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "sort_unmapped_without_type_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/sort-unmapped-*/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "sort": [
+          {
+            "rank": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "expected_status": 200,
+      "extract": "search_summary",
+      "family": "ranking",
+      "description": "[ranking] sort on unmapped wildcard target without unmapped_type returns partial shard failure like OpenSearch",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "sort_unmapped_with_type_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/sort-unmapped-*/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "sort": [
+          {
+            "rank": {
+              "order": "asc",
+              "unmapped_type": "long"
+            }
+          }
+        ],
+        "size": 2
+      },
+      "expected_status": 200,
+      "extract": "search_hits",
+      "family": "ranking",
+      "description": "[ranking] sort with unmapped_type admits wildcard targets with unmapped fields",
       "strict_source_parity_required": true
     },
     {

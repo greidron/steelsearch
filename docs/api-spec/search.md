@@ -151,13 +151,14 @@ development-only staging surface.
   - `size`
   - `search_after` with one or more scalar sort keys for the documented field-sort subset
   - `search_after` against `missing: _last` field-sort results for the documented scalar subset
+  - `unmapped_type` field-sort admission and partial shard failure reporting for mixed mapped/unmapped wildcard targets
 - The current source-owned total-hits subset is bounded to:
   - `track_total_hits = true`
   - numeric `track_total_hits` threshold
   - default total-hit accounting for the documented subset
 - Current semantics gap:
-  - missing sort handling outside the documented `_last` scalar subset,
-    unmapped sort handling, and exact tie-breaking beyond the documented scalar
+  - missing sort handling outside the documented `_last` scalar subset, broader
+    unmapped sort options, and exact tie-breaking beyond the documented scalar
     field-sort subset are still narrower than OpenSearch
   - deep pagination semantics remain narrower than OpenSearch beyond the
     documented scroll / PIT / bounded `search_after` subset

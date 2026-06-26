@@ -9908,17 +9908,26 @@ impl SteelNode {
         {
             return response;
         }
-        if let Some(response) =
-            validate_search_sort_unmapped_fields_against_mappings(&body, &index_mappings)
+        let sort_unmapped_failures =
+            collect_search_sort_unmapped_field_failures(&body, &index_mappings);
+        if !sort_unmapped_failures.is_empty()
+            && sort_unmapped_failures.len() == resolved_indices.len()
         {
-            return response;
+            let field_name = sort_unmapped_failures
+                .values()
+                .next()
+                .map(String::as_str)
+                .unwrap_or_default();
+            return search_after_validation_error(format!(
+                "No mapping found for [{field_name}] in order to sort on"
+            ));
         }
         if let Some(response) =
             self.validate_knn_target_capabilities(&body["query"], &resolved_indices)
         {
             return response;
         }
-        let failed_indices = if let Some(field) = extract_geo_query_field(&body["query"]) {
+        let geo_failed_indices = if let Some(field) = extract_geo_query_field(&body["query"]) {
             let manifest = self
                 .metadata_manifest_state
                 .lock()
@@ -9936,6 +9945,8 @@ impl SteelNode {
         } else {
             std::collections::BTreeSet::new()
         };
+        let mut failed_indices = geo_failed_indices.clone();
+        failed_indices.extend(sort_unmapped_failures.keys().cloned());
         if pit_context.is_none()
             && !resolved_indices.is_empty()
             && failed_indices.is_empty()
@@ -10245,7 +10256,11 @@ impl SteelNode {
                 .get("allow_partial_search_results")
                 .is_some_and(|value| value == "false")
         {
-            return search_partial_shards_failure_response(&failed_indices);
+            return search_partial_shards_failure_response(
+                &failed_indices,
+                &geo_failed_indices,
+                &sort_unmapped_failures,
+            );
         }
         let skipped_shards = compute_can_match_skipped_shards(
             &body["query"],
@@ -10266,10 +10281,7 @@ impl SteelNode {
                             "shard": 0,
                             "index": index,
                             "status": "BAD_REQUEST",
-                            "reason": {
-                                "type": "query_shard_exception",
-                                "reason": "failed to execute geo_distance query on field [location]"
-                            }
+                            "reason": search_shard_failure_reason(index, &geo_failed_indices, &sort_unmapped_failures)
                         })
                     })
                     .collect::<Vec<_>>()
@@ -20768,6 +20780,8 @@ fn build_parsing_search_response_with_root_cause(reason: &str) -> RestResponse {
 
 fn search_partial_shards_failure_response(
     failed_indices: &std::collections::BTreeSet<String>,
+    geo_failed_indices: &std::collections::BTreeSet<String>,
+    sort_unmapped_failures: &std::collections::BTreeMap<String, String>,
 ) -> RestResponse {
     RestResponse::json(
         400,
@@ -20780,7 +20794,10 @@ fn search_partial_shards_failure_response(
                     .map(|index| {
                         serde_json::json!({
                             "type": "query_shard_exception",
-                            "reason": "failed to execute geo_distance query on field [location]",
+                            "reason": search_shard_failure_reason(index, geo_failed_indices, sort_unmapped_failures)
+                                .get("reason")
+                                .cloned()
+                                .unwrap_or_else(|| Value::String("failed to execute query".to_string())),
                             "index": index
                         })
                     })
@@ -23630,11 +23647,14 @@ fn validate_search_sort_modes_against_mappings(
     None
 }
 
-fn validate_search_sort_unmapped_fields_against_mappings(
+fn collect_search_sort_unmapped_field_failures(
     body: &Value,
     index_mappings: &std::collections::HashMap<String, Value>,
-) -> Option<RestResponse> {
-    let sort_fields = body.get("sort").and_then(search_sort_fields)?;
+) -> std::collections::BTreeMap<String, String> {
+    let Some(sort_fields) = body.get("sort").and_then(search_sort_fields) else {
+        return std::collections::BTreeMap::new();
+    };
+    let mut failures = std::collections::BTreeMap::new();
     for sort_field in &sort_fields {
         let Some(field_name) = sort_field_name(sort_field) else {
             continue;
@@ -23645,16 +23665,39 @@ fn validate_search_sort_unmapped_fields_against_mappings(
         {
             continue;
         }
-        if index_mappings
-            .values()
-            .any(|mappings| lookup_mapping_property(mappings, field_name).is_none())
-        {
-            return Some(search_after_validation_error(format!(
-                "No mapping found for [{field_name}] in order to sort on"
-            )));
+        for (index_name, mappings) in index_mappings {
+            if lookup_mapping_property(mappings, field_name).is_none() {
+                failures
+                    .entry(index_name.clone())
+                    .or_insert_with(|| field_name.to_string());
+            }
         }
     }
-    None
+    failures
+}
+
+fn search_shard_failure_reason(
+    index: &str,
+    geo_failed_indices: &std::collections::BTreeSet<String>,
+    sort_unmapped_failures: &std::collections::BTreeMap<String, String>,
+) -> Value {
+    if let Some(field_name) = sort_unmapped_failures.get(index) {
+        return serde_json::json!({
+            "type": "query_shard_exception",
+            "reason": format!("No mapping found for [{field_name}] in order to sort on"),
+            "index": index
+        });
+    }
+    if geo_failed_indices.contains(index) {
+        return serde_json::json!({
+            "type": "query_shard_exception",
+            "reason": "failed to execute geo_distance query on field [location]"
+        });
+    }
+    serde_json::json!({
+        "type": "query_shard_exception",
+        "reason": "failed to execute query"
+    })
 }
 
 fn request_scoped_sort_field_is_defined(body: &Value, field_name: &str) -> bool {
@@ -48156,6 +48199,101 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
     }
 
     #[test]
+    fn search_sort_unmapped_partial_shard_failure_matches_opensearch() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, "/sort-unmapped-a").with_json_body(
+                    serde_json::json!({
+                        "mappings": {
+                            "properties": {
+                                "tenant": { "type": "keyword" },
+                                "rank": { "type": "long" }
+                            }
+                        }
+                    }),
+                ),
+            )
+            .status,
+            200
+        );
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, "/sort-unmapped-b").with_json_body(
+                    serde_json::json!({
+                        "mappings": {
+                            "properties": {
+                                "tenant": { "type": "keyword" }
+                            }
+                        }
+                    }),
+                ),
+            )
+            .status,
+            200
+        );
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, "/sort-unmapped-a/_doc/doc-a")
+                    .with_json_body(serde_json::json!({ "tenant": "tenant-a", "rank": 10 })),
+            )
+            .status,
+            201
+        );
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, "/sort-unmapped-b/_doc/doc-b")
+                    .with_json_body(serde_json::json!({ "tenant": "tenant-b" })),
+            )
+            .status,
+            201
+        );
+
+        let partial = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/sort-unmapped-*/_search").with_json_body(
+                serde_json::json!({
+                    "query": { "match_all": {} },
+                    "sort": [{ "rank": { "order": "asc" } }]
+                }),
+            ),
+        );
+        assert_eq!(partial.status, 200);
+        assert_eq!(partial.body["_shards"]["total"], 2);
+        assert_eq!(partial.body["_shards"]["successful"], 1);
+        assert_eq!(partial.body["_shards"]["failed"], 1);
+        assert_eq!(
+            partial.body["_shards"]["failures"][0]["reason"]["reason"],
+            "No mapping found for [rank] in order to sort on"
+        );
+        assert_eq!(partial.body["hits"]["hits"][0]["_id"], "doc-a");
+
+        let admitted = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/sort-unmapped-*/_search").with_json_body(
+                serde_json::json!({
+                    "query": { "match_all": {} },
+                    "sort": [{ "rank": { "order": "asc", "unmapped_type": "long" } }],
+                    "size": 2
+                }),
+            ),
+        );
+        assert_eq!(admitted.status, 200);
+        assert_eq!(admitted.body["_shards"]["failed"], 0);
+        assert_eq!(
+            admitted.body["hits"]["hits"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|hit| hit["_id"].as_str().unwrap())
+                .collect::<Vec<_>>(),
+            vec!["doc-a", "doc-b"]
+        );
+    }
+
+    #[test]
     fn search_routes_support_geo_shape_query_subset() {
         let node = SteelNode::new(NodeInfo {
             name: "steel-node".to_string(),
@@ -50718,10 +50856,21 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 }),
             ),
         );
-        assert_eq!(unmapped_without_type_sort.status, 400);
+        assert_eq!(unmapped_without_type_sort.status, 200);
+        assert_eq!(unmapped_without_type_sort.body["_shards"]["total"], 2);
+        assert_eq!(unmapped_without_type_sort.body["_shards"]["successful"], 1);
+        assert_eq!(unmapped_without_type_sort.body["_shards"]["failed"], 1);
         assert_eq!(
-            unmapped_without_type_sort.body["error"]["root_cause"][0]["reason"],
+            unmapped_without_type_sort.body["_shards"]["failures"][0]["index"],
+            "logs-sort-unmapped-b"
+        );
+        assert_eq!(
+            unmapped_without_type_sort.body["_shards"]["failures"][0]["reason"]["reason"],
             "No mapping found for [rank] in order to sort on"
+        );
+        assert_eq!(
+            unmapped_without_type_sort.body["hits"]["hits"][0]["_id"],
+            "doc-a"
         );
 
         let unmapped_with_type_sort = node.handle_rest_request(
