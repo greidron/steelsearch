@@ -16279,6 +16279,18 @@ impl SteelNode {
     }
 
     fn handle_get_doc_route(&self, index: &str, id: &str, request: &RestRequest) -> RestResponse {
+        if request.query_params.contains_key("fields") {
+            return RestResponse::json(
+                400,
+                serde_json::json!({
+                    "error": {
+                        "type": "illegal_argument_exception",
+                        "reason": "the parameter [fields] is no longer supported, please use [stored_fields] to retrieve stored fields or [_source] to load the field from _source"
+                    },
+                    "status": 400
+                }),
+            );
+        }
         if request.query_params.contains_key("stored_fields") {
             return RestResponse::json(
                 400,
@@ -43541,6 +43553,23 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             stored_fields.body["error"]["reason"],
             Value::String("unsupported get document option [stored_fields]".to_string())
+        );
+
+        let legacy_fields = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/logs-get-options-probe/_doc/doc-1?fields=tenant",
+        ));
+        assert_eq!(legacy_fields.status, 400);
+        assert_eq!(
+            legacy_fields.body["error"]["type"],
+            Value::String("illegal_argument_exception".to_string())
+        );
+        assert_eq!(
+            legacy_fields.body["error"]["reason"],
+            Value::String(
+                "the parameter [fields] is no longer supported, please use [stored_fields] to retrieve stored fields or [_source] to load the field from _source"
+                    .to_string()
+            )
         );
     }
 
