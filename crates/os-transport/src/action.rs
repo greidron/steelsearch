@@ -71063,6 +71063,9 @@ mod tests {
             ccs_minimize_roundtrips: false,
             ..OpenSearchSearchRequestWire::default()
         };
+        ccs_minimize_disabled_with_pit
+            .validate_supported_execution_subset()
+            .unwrap();
         assert!(matches!(
             ccs_minimize_disabled_with_pit.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
@@ -71084,6 +71087,9 @@ mod tests {
             ccs_minimize_roundtrips: false,
             ..OpenSearchSearchRequestWire::default()
         };
+        rest_prepared_pit_search
+            .validate_supported_execution_subset()
+            .unwrap();
         assert!(matches!(
             rest_prepared_pit_search.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
@@ -71104,7 +71110,7 @@ mod tests {
             ..OpenSearchSearchRequestWire::default()
         };
         assert!(matches!(
-            routed_pit_search.reject_unsupported_execution(),
+            routed_pit_search.validate_supported_execution_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "search request routing",
                 ..
@@ -71123,7 +71129,7 @@ mod tests {
             ..OpenSearchSearchRequestWire::default()
         };
         assert!(matches!(
-            preference_pit_search.reject_unsupported_execution(),
+            preference_pit_search.validate_supported_execution_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "search request preference",
                 ..
@@ -71404,6 +71410,35 @@ mod tests {
         assert_eq!(decoded, request);
         assert!(matches!(
             decoded.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "multi-search execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_multi_search_admits_rest_prepared_pit_sub_requests() {
+        let request = OpenSearchMultiSearchRequestWire {
+            requests: vec![OpenSearchSearchRequestWire {
+                indices: vec!["logs-000001".to_string()],
+                source: Some(OpenSearchSearchSourceBuilderWire {
+                    point_in_time: Some(OpenSearchPointInTimeBuilderWire {
+                        id: "pit-context".to_string(),
+                        keep_alive: Some(TimeValueWire::minutes(1)),
+                    }),
+                    ..OpenSearchSearchSourceBuilderWire::default()
+                }),
+                indices_options: OpenSearchIndicesOptionsWire::point_in_time_search_prepared(),
+                ccs_minimize_roundtrips: false,
+                ..OpenSearchSearchRequestWire::default()
+            }],
+            ..OpenSearchMultiSearchRequestWire::default()
+        };
+
+        request.validate_supported_execution_subset().unwrap();
+        assert!(matches!(
+            request.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "multi-search execution",
                 ..

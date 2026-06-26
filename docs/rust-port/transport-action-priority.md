@@ -2365,6 +2365,10 @@ The create-PIT boundary covers:
   where request indices are populated from the decoded PIT id and indices
   options are tightened for PIT execution, while local execution rejects
   indices that do not match the stored PIT context;
+- search and multi-search wire tests now explicitly separate prepared-PIT
+  admission from the remaining search response execution boundary, and pin the
+  OpenSearch `preparePointInTime` rejection behavior for explicit routing and
+  preference alongside PIT;
 - PIT search execution keeps the OpenSearch REST `preparePointInTime`
   rejection boundary for explicit `routing` and `preference` alongside PIT;
 - PIT reader-context updates now decode OpenSearch `SearchContextId` PIT ids to
