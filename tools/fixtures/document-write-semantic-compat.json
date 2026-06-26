@@ -22,6 +22,10 @@
       "body": {}
     },
     {
+      "name": "logs-write-dest-task",
+      "body": {}
+    },
+    {
       "name": "logs-write-overwrite",
       "body": {}
     },
@@ -115,6 +119,30 @@
     },
     {
       "name": "logs-delete-query-slices",
+      "body": {
+        "mappings": {
+          "properties": {
+            "tenant": {
+              "type": "keyword"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "logs-update-query-task",
+      "body": {
+        "mappings": {
+          "properties": {
+            "tenant": {
+              "type": "keyword"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "logs-delete-query-task",
       "body": {
         "mappings": {
           "properties": {
@@ -288,6 +316,30 @@
       ]
     },
     {
+      "index": "logs-update-query-task",
+      "documents": [
+        {
+          "_id": "doc-1",
+          "_source": {
+            "tenant": "tenant-a",
+            "processed": false
+          }
+        }
+      ]
+    },
+    {
+      "index": "logs-delete-query-task",
+      "documents": [
+        {
+          "_id": "doc-1",
+          "_source": {
+            "tenant": "tenant-a",
+            "message": "delete query task"
+          }
+        }
+      ]
+    },
+    {
       "index": "logs-bulk-metadata-000001",
       "documents": [
         {
@@ -398,6 +450,35 @@
       },
       "expected_status": 200,
       "extract": "reindex_summary"
+    },
+    {
+      "name": "reindex_task_mode_result",
+      "area": "document-write",
+      "extract": "bulk_by_scroll_task_result",
+      "steps": [
+        {
+          "name": "reindex-task-submit",
+          "method": "POST",
+          "path": "/_reindex?wait_for_completion=false",
+          "body": {
+            "source": {
+              "index": "logs-write-source-a"
+            },
+            "dest": {
+              "index": "logs-write-dest-task"
+            }
+          },
+          "expected_status": 200,
+          "extract": "task_submit"
+        },
+        {
+          "name": "reindex-task-get",
+          "method": "GET",
+          "path": "/_tasks/${last.task}?wait_for_completion=true",
+          "expected_status": 200,
+          "extract": "bulk_by_scroll_task_result"
+        }
+      ]
     },
     {
       "name": "create_conflict_error",
@@ -699,6 +780,68 @@
       },
       "expected_status": 200,
       "extract": "reindex_summary"
+    },
+    {
+      "name": "update_by_query_task_mode_result",
+      "area": "document-write",
+      "extract": "bulk_by_scroll_task_result",
+      "steps": [
+        {
+          "name": "update-by-query-task-submit",
+          "method": "POST",
+          "path": "/logs-update-query-task/_update_by_query?wait_for_completion=false",
+          "body": {
+            "query": {
+              "term": {
+                "tenant": "tenant-a"
+              }
+            },
+            "script": {
+              "source": "ctx._source.processed = params.processed",
+              "params": {
+                "processed": true
+              }
+            }
+          },
+          "expected_status": 200,
+          "extract": "task_submit"
+        },
+        {
+          "name": "update-by-query-task-get",
+          "method": "GET",
+          "path": "/_tasks/${last.task}?wait_for_completion=true",
+          "expected_status": 200,
+          "extract": "bulk_by_scroll_task_result"
+        }
+      ]
+    },
+    {
+      "name": "delete_by_query_task_mode_result",
+      "area": "document-write",
+      "extract": "bulk_by_scroll_task_result",
+      "steps": [
+        {
+          "name": "delete-by-query-task-submit",
+          "method": "POST",
+          "path": "/logs-delete-query-task/_delete_by_query?wait_for_completion=false",
+          "body": {
+            "query": {
+              "term": {
+                "tenant": "tenant-a"
+              }
+            }
+          },
+          "expected_status": 200,
+          "extract": "task_submit"
+        },
+        {
+          "name": "delete-by-query-task-get",
+          "method": "GET",
+          "path": "/_tasks/${last.task}?wait_for_completion=true",
+          "expected_status": 200,
+          "extract": "bulk_by_scroll_task_result"
+        }
+      ]
     },
     {
       "name": "single_doc_update_missing_error",

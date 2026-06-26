@@ -997,6 +997,9 @@ def resolve_placeholders(
     if value == "${last.id}":
         body = previous_response.get("body") or {}
         return body.get("id") or body.get("pit_id")
+    if value == "${last.task}":
+        body = previous_response.get("body") or {}
+        return body.get("task")
     if value.startswith("${last.") and value.endswith("}"):
         return value_at_path(previous_response, value[len("${last.") : -1])
     if value.startswith("${saved.") and value.endswith("}"):
@@ -1009,6 +1012,9 @@ def resolve_placeholders(
             elif expression == "last.id":
                 body = previous_response.get("body") or {}
                 resolved = body.get("id") or body.get("pit_id")
+            elif expression == "last.task":
+                body = previous_response.get("body") or {}
+                resolved = body.get("task")
             elif expression.startswith("last."):
                 resolved = value_at_path(previous_response, expression[len("last.") :])
             elif expression.startswith("saved."):
@@ -1498,6 +1504,32 @@ def extract(kind: str, response: dict[str, Any]) -> Any:
             "version_conflicts": body.get("version_conflicts"),
             "noops": body.get("noops"),
             "failures_count": len(failures) if isinstance(failures, list) else None,
+        }
+    if kind == "task_submit":
+        return {
+            "status": response["status"],
+            "has_task": isinstance(body.get("task"), str) and ":" in body.get("task", ""),
+            "has_took": "took" in body,
+            "has_created": "created" in body,
+            "has_updated": "updated" in body,
+            "has_deleted": "deleted" in body,
+            "has_batches": "batches" in body,
+            "has_failures": "failures" in body,
+        }
+    if kind == "bulk_by_scroll_task_result":
+        task = body.get("task") if isinstance(body, dict) else None
+        task_response = body.get("response") if isinstance(body, dict) else None
+        return {
+            "status": response["status"],
+            "completed": body.get("completed") if isinstance(body, dict) else None,
+            "has_task": isinstance(task, dict),
+            "response_total": task_response.get("total") if isinstance(task_response, dict) else None,
+            "response_created": task_response.get("created") if isinstance(task_response, dict) else None,
+            "response_updated": task_response.get("updated") if isinstance(task_response, dict) else None,
+            "response_deleted": task_response.get("deleted") if isinstance(task_response, dict) else None,
+            "response_version_conflicts": task_response.get("version_conflicts")
+            if isinstance(task_response, dict)
+            else None,
         }
     if kind == "document_write_error":
         error = body.get("error") or {}

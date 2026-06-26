@@ -71,13 +71,11 @@ pub fn build_tasks_list_response(
 ) -> serde_json::Value {
     let mut nodes = serde_json::Map::new();
     for task in tasks {
-        let node_entry = nodes
-            .entry(task.node.to_string())
-            .or_insert_with(|| {
-                let mut seeded = node.clone();
-                seeded["tasks"] = serde_json::json!({});
-                seeded
-            });
+        let node_entry = nodes.entry(task.node.to_string()).or_insert_with(|| {
+            let mut seeded = node.clone();
+            seeded["tasks"] = serde_json::json!({});
+            seeded
+        });
         let task_key = format!("{}:{}", task.node, task.id);
         node_entry["tasks"][task_key] = build_bounded_task_envelope(task);
     }
@@ -173,7 +171,10 @@ pub fn invoke_tasks_list_live_route(body: &serde_json::Value) -> serde_json::Val
         .and_then(serde_json::Value::as_array)
         .cloned()
         .unwrap_or_default();
-    let node_metadata = body.get("node").cloned().unwrap_or_else(|| serde_json::json!({}));
+    let node_metadata = body
+        .get("node")
+        .cloned()
+        .unwrap_or_else(|| serde_json::json!({}));
     let nodes_metadata = body
         .get("nodes")
         .and_then(serde_json::Value::as_object)
@@ -185,16 +186,14 @@ pub fn invoke_tasks_list_live_route(body: &serde_json::Value) -> serde_json::Val
         let node = normalized["node"].as_str().unwrap_or("unknown");
         let id = normalized["id"].as_u64().unwrap_or_default();
         let task_key = format!("{node}:{id}");
-        let node_entry = nodes
-            .entry(node.to_string())
-            .or_insert_with(|| {
-                let mut seeded = nodes_metadata
-                    .get(node)
-                    .cloned()
-                    .unwrap_or_else(|| node_metadata.clone());
-                seeded["tasks"] = serde_json::json!({});
-                seeded
-            });
+        let node_entry = nodes.entry(node.to_string()).or_insert_with(|| {
+            let mut seeded = nodes_metadata
+                .get(node)
+                .cloned()
+                .unwrap_or_else(|| node_metadata.clone());
+            seeded["tasks"] = serde_json::json!({});
+            seeded
+        });
         node_entry["tasks"][task_key] = normalized;
     }
     serde_json::json!({ "nodes": nodes })
@@ -262,15 +261,27 @@ pub fn invoke_tasks_list_flat_live_route(body: &serde_json::Value) -> serde_json
 
 pub fn invoke_tasks_get_live_route(body: &serde_json::Value) -> serde_json::Value {
     let task = body.get("task").unwrap_or(body);
-    serde_json::json!({
+    let completed = task
+        .get("completed")
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false);
+    let mut response = serde_json::json!({
         "completed": false,
         "task": normalize_bounded_task_value(task),
-    })
+    });
+    response["completed"] = serde_json::Value::Bool(completed);
+    if let Some(task_response) = task.get("response") {
+        response["response"] = task_response.clone();
+    }
+    response
 }
 
 pub fn invoke_tasks_cancel_live_route(body: &serde_json::Value) -> serde_json::Value {
     let task = body.get("task").unwrap_or(body);
-    let node_metadata = body.get("node").cloned().unwrap_or_else(|| serde_json::json!({}));
+    let node_metadata = body
+        .get("node")
+        .cloned()
+        .unwrap_or_else(|| serde_json::json!({}));
     let normalized = normalize_bounded_task_value(task);
     let node = normalized["node"].as_str().unwrap_or("unknown");
     let id = normalized["id"].as_u64().unwrap_or_default();

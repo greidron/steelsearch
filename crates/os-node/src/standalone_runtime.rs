@@ -8242,10 +8242,11 @@ impl SteelNode {
                     let has_pit = parsed.body.get("pit").is_some();
                     let mut search_request =
                         RestRequest::new(RestMethod::Post, search_path).with_json_body(parsed.body);
-                        search_request.headers = request.headers.clone();
-                        search_request.query_params = request.query_params.clone();
-                        search_request.query_params.extend(parsed.query_params);
-                    let response = self.handle_index_search_route(effective_target, &search_request);
+                    search_request.headers = request.headers.clone();
+                    search_request.query_params = request.query_params.clone();
+                    search_request.query_params.extend(parsed.query_params);
+                    let response =
+                        self.handle_index_search_route(effective_target, &search_request);
                     if has_pit && is_msearch_pit_request_validation_response(&response) {
                         return response;
                     }
@@ -12722,6 +12723,15 @@ impl SteelNode {
         {
             return response;
         }
+        if let Some(response) =
+            validate_opensearch_boolean_query_param(request.query_params.get("wait_for_completion"))
+        {
+            return response;
+        }
+        let wait_for_completion = !request
+            .query_params
+            .get("wait_for_completion")
+            .is_some_and(|value| value == "false");
         if request
             .query_params
             .get("require_alias")
@@ -12830,31 +12840,48 @@ impl SteelNode {
         }
         self.persist_shared_runtime_state_to_disk();
 
-        RestResponse::json(
-            200,
-            serde_json::json!({
-                "took": 1,
-                "timed_out": false,
-                "total": total,
-                "updated": updated,
-                "created": created,
-                "deleted": 0,
-                "batches": if total == 0 { 0 } else { 1 },
-                "version_conflicts": 0,
-                "noops": 0,
-                "retries": {
-                    "bulk": 0,
-                    "search": 0
-                },
-                "throttled_millis": 0,
-                "requests_per_second": -1.0,
-                "throttled_until_millis": 0,
-                "failures": []
-            }),
-        )
+        let response = serde_json::json!({
+            "took": 1,
+            "timed_out": false,
+            "total": total,
+            "updated": updated,
+            "created": created,
+            "deleted": 0,
+            "batches": if total == 0 { 0 } else { 1 },
+            "version_conflicts": 0,
+            "noops": 0,
+            "retries": {
+                "bulk": 0,
+                "search": 0
+            },
+            "throttled_millis": 0,
+            "requests_per_second": -1.0,
+            "throttled_until_millis": 0,
+            "failures": []
+        });
+        if !wait_for_completion {
+            let task = self.record_completed_bulk_by_scroll_task(
+                "reindex from source",
+                "reindex",
+                "indices:data/write/reindex",
+                &response,
+            );
+            self.persist_shared_runtime_state_to_disk();
+            return RestResponse::json(200, serde_json::json!({ "task": task }));
+        }
+        RestResponse::json(200, response)
     }
 
     fn handle_delete_by_query_route(&self, index: &str, request: &RestRequest) -> RestResponse {
+        if let Some(response) =
+            validate_opensearch_boolean_query_param(request.query_params.get("wait_for_completion"))
+        {
+            return response;
+        }
+        let wait_for_completion = !request
+            .query_params
+            .get("wait_for_completion")
+            .is_some_and(|value| value == "false");
         if let Some(response) = self.refuse_task_submission_if_unavailable() {
             return response;
         }
@@ -12905,29 +12932,49 @@ impl SteelNode {
             }
         }
         self.persist_shared_runtime_state_to_disk();
-        RestResponse::json(
-            200,
-            serde_json::json!({
-                "took": 1,
-                "timed_out": false,
-                "total": deleted,
-                "deleted": deleted,
-                "batches": if deleted == 0 { 0 } else { 1 },
-                "version_conflicts": 0,
-                "noops": 0,
-                "retries": {
-                    "bulk": 0,
-                    "search": 0
-                },
-                "throttled_millis": 0,
-                "requests_per_second": -1.0,
-                "throttled_until_millis": 0,
-                "failures": []
-            }),
-        )
+        let response = serde_json::json!({
+            "took": 1,
+            "timed_out": false,
+            "total": deleted,
+            "deleted": deleted,
+            "batches": if deleted == 0 { 0 } else { 1 },
+            "version_conflicts": 0,
+            "noops": 0,
+            "retries": {
+                "bulk": 0,
+                "search": 0
+            },
+            "throttled_millis": 0,
+            "requests_per_second": -1.0,
+            "throttled_until_millis": 0,
+            "failures": []
+        });
+        if !wait_for_completion {
+            let mut task_response = response.clone();
+            task_response["created"] = serde_json::json!(0);
+            task_response["updated"] = serde_json::json!(0);
+            let task = self.record_completed_bulk_by_scroll_task(
+                format!("delete by query [{index}]"),
+                "delete_by_query",
+                "indices:data/write/delete/byquery",
+                &task_response,
+            );
+            self.persist_shared_runtime_state_to_disk();
+            return RestResponse::json(200, serde_json::json!({ "task": task }));
+        }
+        RestResponse::json(200, response)
     }
 
     fn handle_update_by_query_route(&self, index: &str, request: &RestRequest) -> RestResponse {
+        if let Some(response) =
+            validate_opensearch_boolean_query_param(request.query_params.get("wait_for_completion"))
+        {
+            return response;
+        }
+        let wait_for_completion = !request
+            .query_params
+            .get("wait_for_completion")
+            .is_some_and(|value| value == "false");
         if let Some(response) = self.refuse_task_submission_if_unavailable() {
             return response;
         }
@@ -12981,27 +13028,37 @@ impl SteelNode {
             }
         }
         self.persist_shared_runtime_state_to_disk();
-        RestResponse::json(
-            200,
-            serde_json::json!({
-                "took": 1,
-                "timed_out": false,
-                "total": total,
-                "updated": updated,
-                "deleted": 0,
-                "batches": if total == 0 { 0 } else { 1 },
-                "version_conflicts": 0,
-                "noops": noops,
-                "retries": {
-                    "bulk": 0,
-                    "search": 0
-                },
-                "throttled_millis": 0,
-                "requests_per_second": -1.0,
-                "throttled_until_millis": 0,
-                "failures": []
-            }),
-        )
+        let response = serde_json::json!({
+            "took": 1,
+            "timed_out": false,
+            "total": total,
+            "updated": updated,
+            "deleted": 0,
+            "batches": if total == 0 { 0 } else { 1 },
+            "version_conflicts": 0,
+            "noops": noops,
+            "retries": {
+                "bulk": 0,
+                "search": 0
+            },
+            "throttled_millis": 0,
+            "requests_per_second": -1.0,
+            "throttled_until_millis": 0,
+            "failures": []
+        });
+        if !wait_for_completion {
+            let mut task_response = response.clone();
+            task_response["created"] = serde_json::json!(0);
+            let task = self.record_completed_bulk_by_scroll_task(
+                format!("update by query [{index}]"),
+                "update_by_query",
+                "indices:data/write/update/byquery",
+                &task_response,
+            );
+            self.persist_shared_runtime_state_to_disk();
+            return RestResponse::json(200, serde_json::json!({ "task": task }));
+        }
+        RestResponse::json(200, response)
     }
 
     fn cluster_health_body(&self, target: Option<&str>) -> Option<Value> {
@@ -15053,6 +15110,10 @@ impl SteelNode {
                         .copied()
                         .unwrap_or(-1.0);
                     let action = self.task_action_for_kind(&record.task.kind);
+                    let completed = matches!(
+                        record.state,
+                        ClusterManagerTaskState::Acknowledged | ClusterManagerTaskState::Failed
+                    );
                     let mut status = Value::Object(
                         queue
                             .task_statuses
@@ -15060,13 +15121,16 @@ impl SteelNode {
                             .cloned()
                             .unwrap_or_default(),
                     );
+                    let task_response = status
+                        .as_object_mut()
+                        .and_then(|status| status.remove("_response"));
                     status["requests_per_second"] = serde_json::json!(requests_per_second);
                     if let ClusterManagerTaskKind::BackgroundWorker { worker, .. } =
                         &record.task.kind
                     {
                         status["background_worker"] = Value::String(worker.clone());
                     }
-                    serde_json::json!({
+                    let mut task = serde_json::json!({
                         "node": node_id,
                         "node_name": self.node_name_for_task_node(&node_id),
                         "id": record.task_id,
@@ -15090,8 +15154,13 @@ impl SteelNode {
                         "executing": record.state == ClusterManagerTaskState::InFlight,
                         "time_in_queue_millis": 0,
                         "time_in_queue": "0ms",
+                        "completed": completed,
                         "status": status
-                    })
+                    });
+                    if let Some(response) = task_response {
+                        task["response"] = response;
+                    }
+                    task
                 })
                 .collect();
         }
@@ -15187,6 +15256,59 @@ impl SteelNode {
                 })
             })
             .unwrap_or_else(|| serde_json::json!({}))
+    }
+
+    fn record_completed_bulk_by_scroll_task(
+        &self,
+        source: impl Into<String>,
+        worker: impl Into<String>,
+        action: impl Into<String>,
+        response: &Value,
+    ) -> String {
+        let node_id = self.local_task_node_id();
+        let mut queue_guard = self
+            .task_queue_state
+            .lock()
+            .expect("task queue state lock poisoned");
+        let queue = queue_guard.get_or_insert_with(PersistedClusterManagerTaskQueueState::default);
+        queue.next_task_id = queue.next_task_id.saturating_add(1);
+        let task_id = queue.next_task_id;
+        queue.task_node_ids.insert(task_id, node_id.clone());
+        let mut status = serde_json::Map::new();
+        for key in [
+            "total",
+            "updated",
+            "created",
+            "deleted",
+            "batches",
+            "version_conflicts",
+            "noops",
+            "throttled_millis",
+            "requests_per_second",
+            "throttled_until_millis",
+        ] {
+            if let Some(value) = response.get(key) {
+                status.insert(key.to_string(), value.clone());
+            }
+        }
+        status.insert("_response".to_string(), response.clone());
+        queue.task_statuses.insert(task_id, status);
+        queue.acknowledged.push(ClusterManagerTaskRecord {
+            task_id,
+            task: ClusterManagerTask {
+                source: source.into(),
+                kind: ClusterManagerTaskKind::BackgroundWorker {
+                    worker: worker.into(),
+                    action: action.into(),
+                },
+            },
+            state: ClusterManagerTaskState::Acknowledged,
+            parent_task_id: None,
+            headers: BTreeMap::new(),
+            failure_reason: None,
+        });
+        queue.prune_terminal_records(TERMINAL_TASK_RETENTION_LIMIT);
+        format!("{node_id}:{task_id}")
     }
 
     fn tasks_len(&self) -> u64 {
@@ -33545,7 +33667,10 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         ));
         assert_eq!(post_templates_target.status, 405);
         assert_eq!(
-            post_templates_target.headers.get("allow").map(String::as_str),
+            post_templates_target
+                .headers
+                .get("allow")
+                .map(String::as_str),
             Some("GET")
         );
         assert_eq!(
@@ -54487,12 +54612,10 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             duplicate.body["error"]["type"],
             "invalid_snapshot_name_exception"
         );
-        assert!(
-            duplicate.body["error"]["reason"]
-                .as_str()
-                .expect("duplicate snapshot reason")
-                .contains("snapshot with the same name already exists")
-        );
+        assert!(duplicate.body["error"]["reason"]
+            .as_str()
+            .expect("duplicate snapshot reason")
+            .contains("snapshot with the same name already exists"));
 
         let readback = node.handle_rest_request(RestRequest::new(
             RestMethod::Get,
@@ -54503,10 +54626,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             readback.body["snapshots"][0]["indices"],
             serde_json::json!(["logs-a"])
         );
-        assert_eq!(
-            readback.body["snapshots"][0]["metadata"]["owner"],
-            "first"
-        );
+        assert_eq!(readback.body["snapshots"][0]["metadata"]["owner"], "first");
     }
 
     #[test]
