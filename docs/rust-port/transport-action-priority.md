@@ -471,11 +471,11 @@ The remote-store-metadata boundary covers:
 
 - OpenSearch `RemoteStoreMetadataRequest` parent task, broadcast indices array,
   indices options, and shard id array at the wire decode/build layer;
-- explicit fail-closed classification for
-  `cluster:admin/remote_store/metadata` until remote store shard metadata
-  rendering is implemented;
+- OpenSearch `RemoteStoreMetadataResponse` broadcast counters plus empty
+  `RemoteStoreShardMetadata[]` rendering for the no-remote-store-shards
+  subset;
 - explicit rejection for index filters, non-default indices options, shard
-  filters, and remote-store-metadata execution.
+  filters, shard failures, and non-empty remote store shard metadata.
 
 The nodes-hot-threads boundary covers:
 
@@ -2796,7 +2796,7 @@ roughly 1.58M ops/s in the latest local release run, this boundary is not a
 material transport bottleneck; the first performance-sensitive work is remote
 store shard stats collection and response rendering.
 
-Current remote-store-metadata reject wire microbenchmark:
+Current remote-store-metadata empty-response wire microbenchmark:
 
 ```text
 cargo run -p os-transport --release --bin remote-store-metadata-reject-wire-benchmark
@@ -2806,12 +2806,13 @@ remote_store_metadata_reject_validation iterations=400000 elapsed_ms=249.019 ops
 remote_store_metadata_reject_wire_bottleneck_ops_per_second=1530664.17
 ```
 
-The current remote-store-metadata fail-closed boundary bottleneck is request
-encode. The payload includes the broadcast request envelope, indices options,
-and shard filter array before admission rejects execution. At roughly 1.53M
-ops/s in the latest local release run, this boundary is not a material
-transport bottleneck; the first performance-sensitive work is remote store
-shard metadata collection and response rendering.
+The current remote-store-metadata empty-subset boundary bottleneck is request
+encode. The request payload includes the broadcast request envelope, indices
+options, and shard filter array before admission builds an OpenSearch-shaped
+empty broadcast response. At roughly 1.53M ops/s in the latest local release
+run, this boundary is not a material transport bottleneck; the first
+performance-sensitive work is non-empty remote store shard metadata collection
+and response rendering.
 
 Current prune-file-cache reject wire microbenchmark:
 
