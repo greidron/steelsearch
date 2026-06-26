@@ -98,6 +98,30 @@
       }
     },
     {
+      "name": "logs-update-query-slices",
+      "body": {
+        "mappings": {
+          "properties": {
+            "tenant": {
+              "type": "keyword"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "logs-delete-query-slices",
+      "body": {
+        "mappings": {
+          "properties": {
+            "tenant": {
+              "type": "keyword"
+            }
+          }
+        }
+      }
+    },
+    {
       "name": "logs-bulk-metadata-000001",
       "body": {}
     }
@@ -231,6 +255,30 @@
           "_source": {
             "tenant": "tenant-a",
             "message": "delete query unmatched"
+          }
+        }
+      ]
+    },
+    {
+      "index": "logs-update-query-slices",
+      "documents": [
+        {
+          "_id": "doc-1",
+          "_source": {
+            "tenant": "tenant-a",
+            "processed": false
+          }
+        }
+      ]
+    },
+    {
+      "index": "logs-delete-query-slices",
+      "documents": [
+        {
+          "_id": "doc-1",
+          "_source": {
+            "tenant": "tenant-a",
+            "message": "delete query slices"
           }
         }
       ]
@@ -590,6 +638,42 @@
         "query": {
           "term": {
             "tenant": "tenant-z"
+          }
+        }
+      },
+      "expected_status": 200,
+      "extract": "reindex_summary"
+    },
+    {
+      "name": "update_by_query_slices_summary",
+      "area": "document-write",
+      "method": "POST",
+      "path": "/logs-update-query-slices/_update_by_query?slices=2&refresh=true",
+      "body": {
+        "query": {
+          "term": {
+            "tenant": "tenant-a"
+          }
+        },
+        "script": {
+          "source": "ctx._source.processed = params.processed",
+          "params": {
+            "processed": true
+          }
+        }
+      },
+      "expected_status": 200,
+      "extract": "reindex_summary"
+    },
+    {
+      "name": "delete_by_query_slices_summary",
+      "area": "document-write",
+      "method": "POST",
+      "path": "/logs-delete-query-slices/_delete_by_query?slices=2&refresh=true",
+      "body": {
+        "query": {
+          "term": {
+            "tenant": "tenant-a"
           }
         }
       },
