@@ -17684,6 +17684,12 @@ impl SteelNode {
             .documents_state
             .lock()
             .expect("documents state lock poisoned");
+        let pit_open_contexts_by_index = self.pit_open_context_counts_by_index();
+        let pit_total_contexts_by_index = self
+            .pit_total_contexts_by_index
+            .lock()
+            .expect("pit total contexts lock poisoned")
+            .clone();
         let mut rows = Vec::new();
         for index in created_indices {
             if target.is_some_and(|pattern| !wildcard_match(pattern, &index)) {
@@ -17693,6 +17699,14 @@ impl SteelNode {
                 .keys()
                 .filter(|key| key.starts_with(&format!("{index}:")))
                 .count();
+            let pit_current = pit_open_contexts_by_index
+                .get(&index)
+                .copied()
+                .unwrap_or_default();
+            let pit_total = pit_total_contexts_by_index
+                .get(&index)
+                .copied()
+                .unwrap_or_default();
             rows.push(serde_json::json!({
                 "health": "yellow",
                 "status": "open",
@@ -17703,7 +17717,15 @@ impl SteelNode {
                 "docs.count": doc_count.to_string(),
                 "docs.deleted": "0",
                 "store.size": "0b",
-                "pri.store.size": "0b"
+                "pri.store.size": "0b",
+                "search.open_contexts": pit_current.to_string(),
+                "pri.search.open_contexts": pit_current.to_string(),
+                "search.point_in_time_current": pit_current.to_string(),
+                "pri.search.point_in_time_current": pit_current.to_string(),
+                "search.point_in_time_time": "0s",
+                "pri.search.point_in_time_time": "0s",
+                "search.point_in_time_total": pit_total.to_string(),
+                "pri.search.point_in_time_total": pit_total.to_string()
             }));
         }
         rows.sort_by(|left, right| {
@@ -33249,6 +33271,23 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 },
             );
         }
+        node.pit_contexts
+            .lock()
+            .expect("pit contexts lock poisoned")
+            .insert(
+                build_local_pit_id(801),
+                PitContext {
+                    indices: vec!["logs-000001".to_string()],
+                    documents: BTreeMap::new(),
+                    keep_alive_millis: 60_000,
+                    expires_at_millis: current_epoch_millis() + 60_000,
+                    creation_time_millis: current_epoch_millis(),
+                },
+            );
+        node.pit_total_contexts_by_index
+            .lock()
+            .expect("pit total contexts lock poisoned")
+            .insert("logs-000001".to_string(), 4);
 
         let mut count_json_request = RestRequest::new(RestMethod::Get, "/_cat/count/logs-*");
         count_json_request
@@ -33292,6 +33331,27 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(indices_json_response.body[0]["uuid"], "_na_");
         assert_eq!(indices_json_response.body[0]["docs.deleted"], "0");
         assert_eq!(indices_json_response.body[0]["pri.store.size"], "0b");
+        assert_eq!(indices_json_response.body[0]["search.open_contexts"], "1");
+        assert_eq!(
+            indices_json_response.body[0]["pri.search.open_contexts"],
+            "1"
+        );
+        assert_eq!(
+            indices_json_response.body[0]["search.point_in_time_current"],
+            "1"
+        );
+        assert_eq!(
+            indices_json_response.body[0]["pri.search.point_in_time_current"],
+            "1"
+        );
+        assert_eq!(
+            indices_json_response.body[0]["search.point_in_time_total"],
+            "4"
+        );
+        assert_eq!(
+            indices_json_response.body[0]["pri.search.point_in_time_total"],
+            "4"
+        );
         assert!(indices_json_response.body[0].get("dataset.size").is_none());
         assert!(indices_json_response.body[0]
             .get("creation.date.string")
