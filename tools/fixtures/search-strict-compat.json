@@ -3168,6 +3168,18 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "pit_close_query_string_param_error_search",
+      "area": "search",
+      "method": "DELETE",
+      "path": "/_search/point_in_time?pit_id=QUERY_STRING,QUERY_STRING_1",
+      "body": null,
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] close PIT rejects pit_id query string params like OpenSearch RestDeletePitAction",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "pit_all_put_method_error_search",
       "area": "search",
       "method": "PUT",
