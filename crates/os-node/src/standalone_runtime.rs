@@ -18935,30 +18935,42 @@ impl SteelNode {
             .get("format")
             .is_some_and(|value| value == "json")
         {
-            return RestResponse::json(200, Value::Array(rows));
+            let display_columns = cat_pending_tasks_display_columns(request.query_params.get("h"));
+            let selected_rows = rows
+                .iter()
+                .map(|row| {
+                    let mut object = serde_json::Map::new();
+                    for (column, display) in &display_columns {
+                        object.insert(display.clone(), row[*column].clone());
+                    }
+                    Value::Object(object)
+                })
+                .collect();
+            return RestResponse::json(200, Value::Array(selected_rows));
         }
         let verbose = request
             .query_params
             .get("v")
             .is_some_and(|value| value == "true");
+        let display_columns = cat_pending_tasks_display_columns(request.query_params.get("h"));
         let mut lines = Vec::new();
         if verbose {
             lines.push(
-                "id insertOrder timeInQueue timeInQueueMillis priority source executing"
-                    .to_string(),
+                display_columns
+                    .iter()
+                    .map(|(_, display)| display.as_str())
+                    .collect::<Vec<_>>()
+                    .join(" "),
             );
         }
         for row in &rows {
-            lines.push(format!(
-                "{} {} {} {} {} {} {}",
-                row["id"].as_str().unwrap_or("0"),
-                row["insertOrder"].as_str().unwrap_or("0"),
-                row["timeInQueue"].as_str().unwrap_or("0ms"),
-                row["timeInQueueMillis"].as_str().unwrap_or("0"),
-                row["priority"].as_str().unwrap_or("URGENT"),
-                row["source"].as_str().unwrap_or(""),
-                row["executing"].as_str().unwrap_or("false"),
-            ));
+            lines.push(
+                display_columns
+                    .iter()
+                    .map(|(column, _)| row[*column].as_str().unwrap_or(""))
+                    .collect::<Vec<_>>()
+                    .join(" "),
+            );
         }
         RestResponse::text(200, lines.join("\n") + "\n")
     }
@@ -30827,6 +30839,54 @@ fn cat_nodeattrs_display_columns(h_param: Option<&String>) -> Vec<(&'static str,
     selected
 }
 
+fn cat_pending_tasks_display_columns(h_param: Option<&String>) -> Vec<(&'static str, String)> {
+    let Some(h_param) = h_param else {
+        return vec![
+            ("insertOrder", "insertOrder".to_string()),
+            ("timeInQueue", "timeInQueue".to_string()),
+            ("priority", "priority".to_string()),
+            ("source", "source".to_string()),
+        ];
+    };
+    let mut selected = Vec::new();
+    for requested in h_param
+        .split(',')
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        if requested.contains('*') {
+            for (column, aliases) in [
+                ("insertOrder", &["o"][..]),
+                ("timeInQueue", &["t"][..]),
+                ("priority", &["p"][..]),
+                ("source", &["s"][..]),
+            ] {
+                if wildcard_match(requested, column)
+                    || aliases.iter().any(|alias| wildcard_match(requested, alias))
+                {
+                    if !selected.iter().any(|(existing, _)| existing == &column) {
+                        selected.push((column, column.to_string()));
+                    }
+                }
+            }
+            continue;
+        }
+        let column = match requested {
+            "insertOrder" | "o" => Some("insertOrder"),
+            "timeInQueue" | "t" => Some("timeInQueue"),
+            "priority" | "p" => Some("priority"),
+            "source" | "s" => Some("source"),
+            _ => None,
+        };
+        if let Some(column) = column {
+            if !selected.iter().any(|(existing, _)| existing == &column) {
+                selected.push((column, requested.to_string()));
+            }
+        }
+    }
+    selected
+}
+
 fn cat_allocation_display_columns(h_param: Option<&String>) -> Vec<(&'static str, String)> {
     let Some(h_param) = h_param else {
         return vec![
@@ -37094,9 +37154,34 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             .insert("format".to_string(), "json".to_string());
         let pending_json_response = node.handle_rest_request(pending_json_request);
         assert_eq!(pending_json_response.status, 200);
-        assert_eq!(pending_json_response.body[0]["id"], "7");
+        assert_eq!(pending_json_response.body[0]["insertOrder"], "7");
         assert_eq!(pending_json_response.body[0]["source"], "reroute shards");
-        assert_eq!(pending_json_response.body[0]["timeInQueueMillis"], "0");
+        assert!(pending_json_response.body[0].get("id").is_none());
+        assert!(pending_json_response.body[0]
+            .get("timeInQueueMillis")
+            .is_none());
+
+        let mut selected_pending_json_request =
+            RestRequest::new(RestMethod::Get, "/_cat/pending_tasks");
+        selected_pending_json_request
+            .query_params
+            .insert("format".to_string(), "json".to_string());
+        selected_pending_json_request
+            .query_params
+            .insert("h".to_string(), "o,t,p,s".to_string());
+        let selected_pending_json_response =
+            node.handle_rest_request(selected_pending_json_request);
+        assert_eq!(selected_pending_json_response.status, 200);
+        assert_eq!(selected_pending_json_response.body[0]["o"], "7");
+        assert_eq!(selected_pending_json_response.body[0]["t"], "0ms");
+        assert_eq!(selected_pending_json_response.body[0]["p"], "URGENT");
+        assert_eq!(
+            selected_pending_json_response.body[0]["s"],
+            "reroute shards"
+        );
+        assert!(selected_pending_json_response.body[0]
+            .get("insertOrder")
+            .is_none());
 
         let mut pending_text_request = RestRequest::new(RestMethod::Get, "/_cat/pending_tasks");
         pending_text_request
@@ -37107,8 +37192,27 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             .body
             .as_str()
             .expect("cat pending tasks text body");
-        assert!(pending_text.contains("id insertOrder timeInQueue timeInQueueMillis"));
+        assert!(pending_text.contains("insertOrder timeInQueue priority source"));
         assert!(pending_text.contains("reroute shards"));
+
+        let mut selected_pending_text_request =
+            RestRequest::new(RestMethod::Get, "/_cat/pending_tasks");
+        selected_pending_text_request
+            .query_params
+            .insert("v".to_string(), "true".to_string());
+        selected_pending_text_request
+            .query_params
+            .insert("h".to_string(), "o,t,p".to_string());
+        let selected_pending_text_response =
+            node.handle_rest_request(selected_pending_text_request);
+        let selected_pending_text = selected_pending_text_response
+            .body
+            .as_str()
+            .expect("selected cat pending tasks text body");
+        assert_eq!(
+            selected_pending_text.lines().collect::<Vec<_>>(),
+            vec!["o t p", "7 0ms URGENT"]
+        );
 
         let mut shards_json_request = RestRequest::new(RestMethod::Get, "/_cat/shards/logs-*");
         shards_json_request
