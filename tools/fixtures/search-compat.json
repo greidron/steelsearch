@@ -4419,6 +4419,98 @@
       "description": "[lexical] close PIT rejects boolean pit_id like OpenSearch"
     },
     {
+      "name": "pit_close_null_id_search",
+      "area": "search",
+      "method": "DELETE",
+      "path": "/_search/point_in_time",
+      "body": {
+        "pit_id": null
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] close PIT rejects null pit_id like OpenSearch"
+    },
+    {
+      "name": "pit_close_array_null_id_error_search",
+      "area": "search",
+      "method": "DELETE",
+      "path": "/_search/point_in_time",
+      "body": {
+        "pit_id": [
+          "pit-1",
+          null
+        ]
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] close PIT rejects null pit_id array entries like OpenSearch"
+    },
+    {
+      "name": "pit_close_empty_id_search",
+      "area": "search",
+      "method": "DELETE",
+      "path": "/_search/point_in_time",
+      "body": {
+        "pit_id": ""
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] close PIT rejects empty pit_id like OpenSearch"
+    },
+    {
+      "name": "pit_close_array_empty_id_search",
+      "area": "search",
+      "method": "DELETE",
+      "path": "/_search/point_in_time",
+      "body": {
+        "pit_id": [
+          ""
+        ]
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] close PIT rejects empty pit_id array entries like OpenSearch"
+    },
+    {
+      "name": "pit_close_empty_array_id_search",
+      "area": "search",
+      "method": "DELETE",
+      "path": "/_search/point_in_time",
+      "body": {
+        "pit_id": []
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] close PIT rejects empty pit_id arrays like OpenSearch validation"
+    },
+    {
+      "name": "pit_close_source_query_param_search",
+      "area": "search",
+      "method": "DELETE",
+      "path": "/_search/point_in_time?source=%7B%22pit_id%22%3A%22pit-missing%22%7D&source_content_type=json",
+      "body": null,
+      "expected_status": 200,
+      "extract": "pit_clear",
+      "family": "lexical",
+      "description": "[lexical] close PIT accepts source query body like OpenSearch"
+    },
+    {
+      "name": "pit_close_lonely_source_content_type_error_search",
+      "area": "search",
+      "method": "DELETE",
+      "path": "/_search/point_in_time?source_content_type=json",
+      "body": null,
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] close PIT rejects source_content_type without source like OpenSearch"
+    },
+    {
       "name": "pit_search",
       "area": "search",
       "extract": "search_hits",
