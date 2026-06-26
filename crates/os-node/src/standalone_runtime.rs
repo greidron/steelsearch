@@ -14646,14 +14646,30 @@ impl SteelNode {
             .into_iter()
             .filter(|index| !index_metadata_is_hidden(&manifest["indices"][index]))
             .collect::<Vec<_>>();
+        drop(manifest);
         let created_index_count = created_indices.len();
+        let pit_open_contexts_by_index = self.pit_open_context_counts_by_index();
+        let total_pit_open_contexts = created_indices
+            .iter()
+            .map(|index| pit_open_contexts_by_index.get(index).copied().unwrap_or(0))
+            .sum::<u64>();
         let mut indices = serde_json::Map::new();
         for index in created_indices {
+            let pit_open_contexts = pit_open_contexts_by_index
+                .get(&index)
+                .copied()
+                .unwrap_or_default();
             indices.insert(
                 index,
                 serde_json::json!({
-                    "primaries": { "docs": { "count": 0 } },
-                    "total": { "docs": { "count": 0 } }
+                    "primaries": {
+                        "docs": { "count": 0 },
+                        "search": search_stats_body_for_open_pit_contexts(pit_open_contexts)
+                    },
+                    "total": {
+                        "docs": { "count": 0 },
+                        "search": search_stats_body_for_open_pit_contexts(pit_open_contexts)
+                    }
                 }),
             );
         }
@@ -14667,16 +14683,35 @@ impl SteelNode {
                 "primaries": {
                     "docs": {
                         "count": 0
-                    }
+                    },
+                    "search": search_stats_body_for_open_pit_contexts(total_pit_open_contexts)
                 },
                 "total": {
                     "docs": {
                         "count": 0
-                    }
+                    },
+                    "search": search_stats_body_for_open_pit_contexts(total_pit_open_contexts)
                 }
             },
             "indices": indices
         })
+    }
+
+    fn pit_open_context_counts_by_index(&self) -> BTreeMap<String, u64> {
+        let now_millis = current_epoch_millis();
+        let mut contexts = self
+            .pit_contexts
+            .lock()
+            .expect("pit contexts lock poisoned");
+        prune_expired_pit_contexts(&mut contexts, now_millis);
+        let mut counts = BTreeMap::new();
+        for context in contexts.values() {
+            for index in &context.indices {
+                let shard_contexts = self.index_primary_shard_count(index).max(1) as u64;
+                *counts.entry(index.clone()).or_insert(0) += shard_contexts;
+            }
+        }
+        counts
     }
 
     fn handle_index_stats_route(&self, target: Option<&str>) -> RestResponse {
@@ -25041,6 +25076,27 @@ fn pit_expires_at_millis(now_millis: u128, keep_alive_millis: u64) -> u128 {
 
 fn prune_expired_pit_contexts(contexts: &mut BTreeMap<String, PitContext>, now_millis: u128) {
     contexts.retain(|_, context| context.expires_at_millis > now_millis);
+}
+
+fn search_stats_body_for_open_pit_contexts(open_contexts: u64) -> Value {
+    serde_json::json!({
+        "open_contexts": open_contexts,
+        "query_total": 0,
+        "query_time_in_millis": 0,
+        "query_current": 0,
+        "fetch_total": 0,
+        "fetch_time_in_millis": 0,
+        "fetch_current": 0,
+        "scroll_total": 0,
+        "scroll_time_in_millis": 0,
+        "scroll_current": 0,
+        "point_in_time_total": open_contexts,
+        "point_in_time_time_in_millis": 0,
+        "point_in_time_current": open_contexts,
+        "suggest_total": 0,
+        "suggest_time_in_millis": 0,
+        "suggest_current": 0
+    })
 }
 
 fn format_time_value_millis(value: u64) -> String {
@@ -46881,6 +46937,94 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         ));
         assert_eq!(delete_all_pits.status, 200);
         assert_eq!(delete_all_pits.body["pits"], serde_json::json!([]));
+    }
+
+    #[test]
+    fn point_in_time_index_stats_track_open_contexts_per_shard_like_opensearch() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        let create = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/pit-stats-index").with_json_body(
+                serde_json::json!({
+                    "settings": {
+                        "index": {
+                            "number_of_shards": 2,
+                            "number_of_replicas": 0
+                        }
+                    }
+                }),
+            ),
+        );
+        assert_eq!(create.status, 200);
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, "/pit-stats-index/_doc/1")
+                    .with_json_body(serde_json::json!({ "field": "value" })),
+            )
+            .status,
+            201
+        );
+
+        let open_pit = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/pit-stats-index/_search/point_in_time?keep_alive=1m",
+        ));
+        assert_eq!(open_pit.status, 200);
+        let pit_id = open_pit.body["pit_id"].as_str().expect("pit id");
+
+        let index_stats =
+            node.handle_rest_request(RestRequest::new(RestMethod::Get, "/pit-stats-index/_stats"));
+        assert_eq!(index_stats.status, 200);
+        assert_eq!(
+            index_stats.body["indices"]["pit-stats-index"]["total"]["search"]
+                ["point_in_time_current"],
+            2
+        );
+        assert_eq!(
+            index_stats.body["indices"]["pit-stats-index"]["total"]["search"]["open_contexts"],
+            2
+        );
+        assert_eq!(
+            index_stats.body["indices"]["pit-stats-index"]["primaries"]["search"]
+                ["point_in_time_current"],
+            2
+        );
+        assert_eq!(
+            index_stats.body["_all"]["total"]["search"]["point_in_time_current"],
+            2
+        );
+
+        let global_stats =
+            node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_stats/search"));
+        assert_eq!(global_stats.status, 200);
+        assert_eq!(
+            global_stats.body["indices"]["pit-stats-index"]["total"]["search"]
+                ["point_in_time_current"],
+            2
+        );
+
+        let delete_pit = node.handle_rest_request(
+            RestRequest::new(RestMethod::Delete, "/_search/point_in_time")
+                .with_json_body(serde_json::json!({ "pit_id": [pit_id] })),
+        );
+        assert_eq!(delete_pit.status, 200);
+
+        let stats_after_delete =
+            node.handle_rest_request(RestRequest::new(RestMethod::Get, "/pit-stats-index/_stats"));
+        assert_eq!(stats_after_delete.status, 200);
+        assert_eq!(
+            stats_after_delete.body["indices"]["pit-stats-index"]["total"]["search"]
+                ["point_in_time_current"],
+            0
+        );
+        assert_eq!(
+            stats_after_delete.body["indices"]["pit-stats-index"]["total"]["search"]
+                ["open_contexts"],
+            0
+        );
     }
 
     #[test]
