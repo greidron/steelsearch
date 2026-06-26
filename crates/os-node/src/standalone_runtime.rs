@@ -47027,6 +47027,26 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             live_search.body["hits"]["hits"][0]["_source"]["status"],
             "updated"
         );
+        let live_original_term_search = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-pit-snapshot-000001/_search").with_json_body(
+                serde_json::json!({
+                    "size": 0,
+                    "query": { "term": { "status": "original" } }
+                }),
+            ),
+        );
+        assert_eq!(live_original_term_search.status, 200);
+        assert_eq!(live_original_term_search.body["hits"]["total"]["value"], 0);
+        let live_updated_term_search = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-pit-snapshot-000001/_search").with_json_body(
+                serde_json::json!({
+                    "size": 0,
+                    "query": { "term": { "status": "updated" } }
+                }),
+            ),
+        );
+        assert_eq!(live_updated_term_search.status, 200);
+        assert_eq!(live_updated_term_search.body["hits"]["total"]["value"], 1);
 
         let pit_search = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/_search").with_json_body(serde_json::json!({
@@ -47082,6 +47102,31 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             pit_second_page.body["hits"]["hits"][0]["sort"],
             serde_json::json!([20])
         );
+
+        let pit_original_term_search = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_search").with_json_body(serde_json::json!({
+                "pit": {
+                    "id": pit_id,
+                    "keep_alive": "1m"
+                },
+                "size": 0,
+                "query": { "term": { "status": "original" } }
+            })),
+        );
+        assert_eq!(pit_original_term_search.status, 200);
+        assert_eq!(pit_original_term_search.body["hits"]["total"]["value"], 2);
+        let pit_updated_term_search = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_search").with_json_body(serde_json::json!({
+                "pit": {
+                    "id": pit_id,
+                    "keep_alive": "1m"
+                },
+                "size": 0,
+                "query": { "term": { "status": "updated" } }
+            })),
+        );
+        assert_eq!(pit_updated_term_search.status, 200);
+        assert_eq!(pit_updated_term_search.body["hits"]["total"]["value"], 0);
     }
 
     #[test]
