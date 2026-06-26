@@ -46869,6 +46869,111 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
     }
 
     #[test]
+    fn point_in_time_shard_doc_search_after_resumes_from_middle_without_overlap() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        let create = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/sharddoc-resume").with_json_body(
+                serde_json::json!({
+                    "settings": {
+                        "number_of_shards": 2,
+                        "number_of_replicas": 0
+                    },
+                    "mappings": {
+                        "properties": {
+                            "v": { "type": "long" }
+                        }
+                    }
+                }),
+            ),
+        );
+        assert_eq!(create.status, 200);
+
+        for id in 1..=60 {
+            let doc = node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, &format!("/sharddoc-resume/_doc/{id}"))
+                    .with_json_body(serde_json::json!({ "v": id })),
+            );
+            assert_eq!(doc.status, 201, "{id}");
+        }
+
+        let open_pit = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/sharddoc-resume/_search/point_in_time?keep_alive=1m",
+        ));
+        assert_eq!(open_pit.status, 200);
+        let pit_id = open_pit.body["pit_id"].as_str().expect("pit id").to_string();
+
+        let first_page = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_search").with_json_body(serde_json::json!({
+                "size": 10,
+                "pit": {
+                    "id": pit_id,
+                    "keep_alive": "1m"
+                },
+                "sort": [
+                    { "_shard_doc": "asc" }
+                ],
+                "query": { "match_all": {} }
+            })),
+        );
+        assert_eq!(first_page.status, 200);
+        let first_hits = first_page.body["hits"]["hits"].as_array().expect("hits");
+        assert_eq!(first_hits.len(), 10);
+
+        let mid = 4;
+        let mut seen_ids = BTreeSet::new();
+        for hit in &first_hits[..=mid] {
+            let id = hit["_id"].as_str().expect("hit id").to_string();
+            assert!(seen_ids.insert(id));
+        }
+        let mut search_after = Some(first_hits[mid]["sort"].clone());
+        let page_size = 10;
+
+        loop {
+            let mut body = serde_json::json!({
+                "size": page_size,
+                "pit": {
+                    "id": pit_id,
+                    "keep_alive": "1m"
+                },
+                "sort": [
+                    { "_shard_doc": "asc" }
+                ],
+                "query": { "match_all": {} }
+            });
+            if let Some(after) = search_after.take() {
+                body["search_after"] = after;
+            }
+
+            let page = node.handle_rest_request(
+                RestRequest::new(RestMethod::Post, "/_search").with_json_body(body),
+            );
+            assert_eq!(page.status, 200, "{page:?}");
+            let hits = page.body["hits"]["hits"].as_array().expect("hits");
+            for hit in hits {
+                let id = hit["_id"].as_str().expect("hit id").to_string();
+                assert!(seen_ids.insert(id.clone()), "duplicate hit {id}");
+            }
+            if hits.len() < page_size {
+                break;
+            }
+            search_after = Some(hits[hits.len() - 1]["sort"].clone());
+        }
+
+        assert_eq!(seen_ids.len(), 60);
+
+        let close_pit = node.handle_rest_request(
+            RestRequest::new(RestMethod::Delete, "/_search/point_in_time")
+                .with_json_body(serde_json::json!({ "pit_id": [pit_id] })),
+        );
+        assert_eq!(close_pit.status, 200);
+    }
+
+    #[test]
     fn point_in_time_searches_allow_concurrent_keep_alive_extensions_like_opensearch() {
         let node = std::sync::Arc::new(SteelNode::new(NodeInfo {
             name: "steel-node".to_string(),
