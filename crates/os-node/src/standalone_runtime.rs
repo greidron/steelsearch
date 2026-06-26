@@ -11964,12 +11964,17 @@ impl SteelNode {
             .expect("cluster settings state lock poisoned")
             .clone();
         if let Err(reason) =
-            cluster_settings_route_registration::reject_unsupported_cluster_settings_params(&params)
+            cluster_settings_route_registration::reject_unsupported_cluster_settings_mutation_params(
+                &params,
+            )
         {
             return RestResponse::opensearch_error_kind(
                 os_rest::RestErrorKind::IllegalArgument,
                 reason,
             );
+        }
+        if let Some(response) = validate_cluster_settings_timeout_params(request) {
+            return response;
         }
         let current_persistent = current_state
             .get("persistent")
@@ -11988,8 +11993,20 @@ impl SteelNode {
         }
         let response_body =
             cluster_settings_route_registration::build_cluster_settings_mutation_response_body(
-                &render_cluster_settings_section(&next_persistent, false),
-                &render_cluster_settings_section(&next_transient, false),
+                &render_cluster_settings_section(
+                    &filter_cluster_settings_section(
+                        &next_persistent,
+                        request.query_params.get("settings_filter"),
+                    ),
+                    query_param_is_true(request.query_params.get("flat_settings")),
+                ),
+                &render_cluster_settings_section(
+                    &filter_cluster_settings_section(
+                        &next_transient,
+                        request.query_params.get("settings_filter"),
+                    ),
+                    query_param_is_true(request.query_params.get("flat_settings")),
+                ),
             );
         let mut next_state = self
             .cluster_settings_state
@@ -12012,6 +12029,7 @@ impl SteelNode {
         let body = self.cluster_settings_body(
             query_param_is_true(request.query_params.get("flat_settings")),
             query_param_is_true(request.query_params.get("include_defaults")),
+            request.query_params.get("settings_filter"),
         );
         match cluster_settings_route_registration::build_cluster_settings_rest_response(
             &body, &params,
@@ -13316,29 +13334,46 @@ impl SteelNode {
         })
     }
 
-    fn cluster_settings_body(&self, flat_settings: bool, include_defaults: bool) -> Value {
+    fn cluster_settings_body(
+        &self,
+        flat_settings: bool,
+        include_defaults: bool,
+        settings_filter: Option<&String>,
+    ) -> Value {
         let state = self
             .cluster_settings_state
             .lock()
             .expect("cluster settings state lock poisoned")
             .clone();
         let persistent = render_cluster_settings_section(
-            state
-                .get("persistent")
-                .unwrap_or(&Value::Object(serde_json::Map::new())),
+            &filter_cluster_settings_section(
+                state
+                    .get("persistent")
+                    .unwrap_or(&Value::Object(serde_json::Map::new())),
+                settings_filter,
+            ),
             flat_settings,
         );
         let transient = render_cluster_settings_section(
-            state
-                .get("transient")
-                .unwrap_or(&Value::Object(serde_json::Map::new())),
+            &filter_cluster_settings_section(
+                state
+                    .get("transient")
+                    .unwrap_or(&Value::Object(serde_json::Map::new())),
+                settings_filter,
+            ),
             flat_settings,
         );
         if include_defaults {
             return cluster_settings_route_registration::build_cluster_settings_response_body_with_defaults(
                 &persistent,
                 &transient,
-                &render_cluster_settings_section(&default_cluster_settings_defaults(), flat_settings),
+                &render_cluster_settings_section(
+                    &filter_cluster_settings_section(
+                        &default_cluster_settings_defaults(),
+                        settings_filter,
+                    ),
+                    flat_settings,
+                ),
             );
         }
         cluster_settings_route_registration::build_cluster_settings_response_body(
@@ -31582,6 +31617,23 @@ fn default_cluster_settings_defaults() -> Value {
     })
 }
 
+fn validate_cluster_settings_timeout_params(request: &RestRequest) -> Option<RestResponse> {
+    for param in ["timeout", "cluster_manager_timeout", "master_timeout"] {
+        let Some(raw_value) = request.query_params.get(param) else {
+            continue;
+        };
+        if parse_time_value_millis(raw_value).is_none() {
+            return Some(RestResponse::opensearch_error_kind(
+                os_rest::RestErrorKind::IllegalArgument,
+                format!(
+                    "failed to parse setting [{param}] with value [{raw_value}] as a time value"
+                ),
+            ));
+        }
+    }
+    None
+}
+
 fn merge_cluster_settings_section_flat(base: &Value, patch: &Value) -> Value {
     let mut merged = match base {
         Value::Object(map) => map.clone(),
@@ -31595,6 +31647,60 @@ fn merge_cluster_settings_section_flat(base: &Value, patch: &Value) -> Value {
         }
     }
     Value::Object(merged)
+}
+
+fn filter_cluster_settings_section(section: &Value, settings_filter: Option<&String>) -> Value {
+    let Some(settings_filter) = settings_filter else {
+        return section.clone();
+    };
+    if settings_filter.is_empty() {
+        return section.clone();
+    }
+    let patterns = settings_filter
+        .split(',')
+        .map(str::trim)
+        .filter(|pattern| !pattern.is_empty())
+        .collect::<Vec<_>>();
+    if patterns.is_empty() {
+        return section.clone();
+    }
+    let mut filtered = match section {
+        Value::Object(map) => map.clone(),
+        _ => return Value::Object(serde_json::Map::new()),
+    };
+    filtered.retain(|key, _| {
+        !patterns
+            .iter()
+            .any(|pattern| cluster_setting_filter_pattern_matches(pattern, key))
+    });
+    Value::Object(filtered)
+}
+
+fn cluster_setting_filter_pattern_matches(pattern: &str, key: &str) -> bool {
+    if pattern == key {
+        return true;
+    }
+    if !pattern.contains('*') {
+        return false;
+    }
+    let mut remaining = key;
+    let anchored_start = !pattern.starts_with('*');
+    let anchored_end = !pattern.ends_with('*');
+    let parts = pattern.split('*').collect::<Vec<_>>();
+    for (index, part) in parts.iter().filter(|part| !part.is_empty()).enumerate() {
+        if index == 0 && anchored_start {
+            let Some(next) = remaining.strip_prefix(part) else {
+                return false;
+            };
+            remaining = next;
+            continue;
+        }
+        let Some(position) = remaining.find(part) else {
+            return false;
+        };
+        remaining = &remaining[position + part.len()..];
+    }
+    !anchored_end || parts.last().map_or(true, |part| key.ends_with(part))
 }
 
 fn validate_pit_cluster_keep_alive_settings(
@@ -35356,6 +35462,86 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             flat_response.body["defaults"]["search.max_open_pit_context"],
             300
+        );
+    }
+
+    #[test]
+    fn cluster_settings_put_accepts_opensearch_timeout_and_format_params() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        let response = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Put,
+                "/_cluster/settings?timeout=30s&cluster_manager_timeout=30s&master_timeout=30s&flat_settings=true&settings_filter=cluster.info.*",
+            )
+            .with_json_body(serde_json::json!({
+                "persistent": {
+                    "cluster.routing.allocation.enable": "primaries"
+                },
+                "transient": {
+                    "cluster.info.update.interval": "45s",
+                    "search.default_keep_alive": "2m"
+                }
+            })),
+        );
+
+        assert_eq!(response.status, 200);
+        assert_eq!(response.body["acknowledged"], true);
+        assert_eq!(
+            response.body["persistent"]["cluster.routing.allocation.enable"],
+            "primaries"
+        );
+        assert_eq!(
+            response.body["transient"]["search.default_keep_alive"],
+            "2m"
+        );
+        assert!(response.body["transient"]
+            .as_object()
+            .expect("transient settings object")
+            .get("cluster.info.update.interval")
+            .is_none());
+
+        let readback = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_cluster/settings?flat_settings=true&settings_filter=cluster.routing.*",
+        ));
+        assert_eq!(readback.status, 200);
+        assert!(readback.body["persistent"]
+            .as_object()
+            .expect("persistent settings object")
+            .get("cluster.routing.allocation.enable")
+            .is_none());
+        assert_eq!(
+            readback.body["transient"]["cluster.info.update.interval"],
+            "45s"
+        );
+    }
+
+    #[test]
+    fn cluster_settings_put_rejects_invalid_timeout_like_opensearch() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        let response = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/_cluster/settings?timeout=soon").with_json_body(
+                serde_json::json!({
+                    "persistent": {
+                        "cluster.routing.allocation.enable": "primaries"
+                    }
+                }),
+            ),
+        );
+
+        assert_eq!(response.status, 400);
+        assert_eq!(response.body["error"]["type"], "illegal_argument_exception");
+        assert_eq!(
+            response.body["error"]["reason"],
+            "failed to parse setting [timeout] with value [soon] as a time value"
         );
     }
 

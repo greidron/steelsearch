@@ -12,8 +12,17 @@ pub const CLUSTER_SETTINGS_ROUTE_PATH: &str = "/_cluster/settings";
 /// Canonical fail-closed bucket for unsupported `GET /_cluster/settings` parameters.
 pub const CLUSTER_SETTINGS_UNSUPPORTED_PARAMETER_BUCKET: &str =
     "unsupported cluster-settings readback parameter";
-pub const CLUSTER_SETTINGS_SUPPORTED_QUERY_PARAMS: [&str; 2] =
-    ["flat_settings", "include_defaults"];
+pub const CLUSTER_SETTINGS_SUPPORTED_QUERY_PARAMS: [&str; 3] =
+    ["flat_settings", "include_defaults", "settings_filter"];
+pub const CLUSTER_SETTINGS_UNSUPPORTED_MUTATION_PARAMETER_BUCKET: &str =
+    "unsupported cluster-settings mutation parameter";
+pub const CLUSTER_SETTINGS_SUPPORTED_MUTATION_QUERY_PARAMS: [&str; 5] = [
+    "flat_settings",
+    "settings_filter",
+    "timeout",
+    "cluster_manager_timeout",
+    "master_timeout",
+];
 
 /// Canonical runnable readback subset for `GET /_cluster/settings`.
 pub const CLUSTER_SETTINGS_RUNNABLE_SUBSET_FIELDS: [&str; 2] = ["persistent", "transient"];
@@ -183,6 +192,18 @@ pub fn reject_unsupported_cluster_settings_params(params: &[&str]) -> Result<(),
     Ok(())
 }
 
+/// Reject unsupported query parameters for `PUT /_cluster/settings`.
+pub fn reject_unsupported_cluster_settings_mutation_params(
+    params: &[&str],
+) -> Result<(), &'static str> {
+    for param in params {
+        if !CLUSTER_SETTINGS_SUPPORTED_MUTATION_QUERY_PARAMS.contains(param) {
+            return Err(CLUSTER_SETTINGS_UNSUPPORTED_MUTATION_PARAMETER_BUCKET);
+        }
+    }
+    Ok(())
+}
+
 /// Canonical response-builder symbol for `GET /_cluster/settings`.
 pub fn build_cluster_settings_rest_response(
     body: &serde_json::Value,
@@ -223,7 +244,7 @@ pub fn apply_cluster_settings_mutation(
     persisted_state: &serde_json::Value,
     request: &ClusterSettingsMutationRequest<'_>,
 ) -> Result<serde_json::Value, &'static str> {
-    reject_unsupported_cluster_settings_params(request.params)?;
+    reject_unsupported_cluster_settings_mutation_params(request.params)?;
     let empty_section = serde_json::Value::Object(serde_json::Map::new());
     let current_persistent = persisted_state.get("persistent").unwrap_or(&empty_section);
     let current_transient = persisted_state.get("transient").unwrap_or(&empty_section);
@@ -522,8 +543,34 @@ mod tests {
             Ok(())
         );
         assert_eq!(
+            reject_unsupported_cluster_settings_params(&["settings_filter"]),
+            Ok(())
+        );
+        assert_eq!(
             reject_unsupported_cluster_settings_params(&["local"]),
             Err("unsupported cluster-settings readback parameter")
+        );
+    }
+
+    #[test]
+    fn cluster_settings_mutation_param_reject_helper_accepts_opensearch_update_params() {
+        assert_eq!(
+            reject_unsupported_cluster_settings_mutation_params(&[
+                "flat_settings",
+                "settings_filter",
+                "timeout",
+                "cluster_manager_timeout",
+                "master_timeout"
+            ]),
+            Ok(())
+        );
+        assert_eq!(
+            reject_unsupported_cluster_settings_mutation_params(&["include_defaults"]),
+            Err("unsupported cluster-settings mutation parameter")
+        );
+        assert_eq!(
+            reject_unsupported_cluster_settings_mutation_params(&["local"]),
+            Err("unsupported cluster-settings mutation parameter")
         );
     }
 
