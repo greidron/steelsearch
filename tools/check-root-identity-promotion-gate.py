@@ -15,6 +15,11 @@ def parse_args() -> argparse.Namespace:
         nargs="?",
         default="tools/fixtures/root-identity-promotion-gate.json",
     )
+    parser.add_argument(
+        "--root-compat-fixture",
+        default="tools/fixtures/root-cluster-node-compat.json",
+        help="Root/cluster-node compatibility fixture whose cases must be promoted.",
+    )
     return parser.parse_args()
 
 
@@ -27,6 +32,12 @@ def ensure_subset(name: str, actual: list[str], required: set[str]) -> None:
 def main() -> int:
     args = parse_args()
     fixture = json.loads(Path(args.fixture).read_text(encoding="utf-8"))
+    root_compat = json.loads(Path(args.root_compat_fixture).read_text(encoding="utf-8"))
+    required_cases = {
+        case["name"]
+        for case in root_compat.get("cases", [])
+        if isinstance(case, dict) and case.get("name")
+    }
 
     if fixture.get("source_area") != "Root and basic node identity":
         raise SystemExit("root identity promotion gate fixture has the wrong source_area")
@@ -71,13 +82,20 @@ def main() -> int:
     ensure_subset(
         "route_parity.required_cases",
         route.get("required_cases") or [],
-        {"root_info"},
+        required_cases,
     )
     ensure_subset(
         "semantic_parity.required_cases",
         semantic.get("required_cases") or [],
-        {"root_info"},
+        required_cases,
     )
+    for section_name, section in (("route_parity", route), ("semantic_parity", semantic)):
+        stale_required_cases = sorted(set(section.get("required_cases") or []) - required_cases)
+        if stale_required_cases:
+            raise SystemExit(
+                f"{section_name}.required_cases contains non-root-compat entries: "
+                f"{stale_required_cases}"
+            )
     ensure_subset(
         "security_parity.report_paths",
         security.get("report_paths") or [],
