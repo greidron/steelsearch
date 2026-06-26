@@ -1041,6 +1041,55 @@
       "description": "[admin-cat] cat snapshots text honors OpenSearch h aliases"
     },
     {
+      "name": "cat_recovery_text_selected_alias_columns",
+      "area": "cat",
+      "extract": "cat_selected_column_fields",
+      "steps": [
+        {
+          "name": "create-index",
+          "method": "PUT",
+          "path": "/logs-cat-recovery-selected",
+          "body": {},
+          "expected_status": 200
+        },
+        {
+          "name": "cat-recovery-selected",
+          "method": "GET",
+          "path": "/_cat/recovery/logs-cat-recovery-selected?v=true&h=i,s,start,start_millis,stop,stop_millis,t,ty,st,shost,snode,thost,tnode,rep,snap,f,fr,fp,tf,b,br,bp,tb,to,tor,top",
+          "body": null,
+          "expected_status": 200,
+          "accept": "text/plain",
+          "extract": "cat_selected_column_fields"
+        }
+      ],
+      "family": "admin-cat",
+      "description": "[admin-cat] cat recovery text honors OpenSearch h aliases"
+    },
+    {
+      "name": "cat_recovery_json_selected_alias_columns",
+      "area": "cat",
+      "extract": "cat_selected_column_fields",
+      "steps": [
+        {
+          "name": "create-index",
+          "method": "PUT",
+          "path": "/logs-cat-recovery-selected-json",
+          "body": {},
+          "expected_status": 200
+        },
+        {
+          "name": "cat-recovery-selected-json",
+          "method": "GET",
+          "path": "/_cat/recovery/logs-cat-recovery-selected-json?format=json&h=i,s,start,start_millis,stop,stop_millis,t,ty,st,shost,snode,thost,tnode,rep,snap,f,fr,fp,tf,b,br,bp,tb,to,tor,top",
+          "body": null,
+          "expected_status": 200,
+          "extract": "cat_selected_column_fields"
+        }
+      ],
+      "family": "admin-cat",
+      "description": "[admin-cat] cat recovery json honors OpenSearch h aliases"
+    },
+    {
       "name": "cat_snapshots_json_selected_alias_columns",
       "area": "cat",
       "extract": "cat_selected_column_fields",

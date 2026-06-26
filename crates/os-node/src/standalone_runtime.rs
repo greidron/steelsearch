@@ -19312,6 +19312,10 @@ impl SteelNode {
                 serde_json::json!({
                     "index": index,
                     "shard": "0",
+                    "start_time": "1970-01-01T00:00:00.000Z",
+                    "start_time_millis": "0",
+                    "stop_time": "1970-01-01T00:00:00.000Z",
+                    "stop_time_millis": "0",
                     "time": "0s",
                     "type": "peer",
                     "stage": "done",
@@ -19346,42 +19350,42 @@ impl SteelNode {
             .get("format")
             .is_some_and(|value| value == "json")
         {
-            return RestResponse::json(200, Value::Array(rows.clone()));
+            let display_columns = cat_recovery_display_columns(request.query_params.get("h"));
+            let selected_rows = rows
+                .iter()
+                .map(|row| {
+                    let mut object = serde_json::Map::new();
+                    for (column, display) in &display_columns {
+                        object.insert(display.clone(), row[*column].clone());
+                    }
+                    Value::Object(object)
+                })
+                .collect::<Vec<_>>();
+            return RestResponse::json(200, Value::Array(selected_rows));
         }
         let verbose = request
             .query_params
             .get("v")
             .is_some_and(|value| value == "true");
+        let display_columns = cat_recovery_display_columns(request.query_params.get("h"));
         let mut lines = Vec::new();
         if verbose {
-            lines.push("index shard time type stage source_host source_node target_host target_node repository snapshot files files_recovered files_percent files_total bytes bytes_recovered bytes_percent bytes_total translog_ops translog_ops_recovered translog_ops_percent".to_string());
+            lines.push(
+                display_columns
+                    .iter()
+                    .map(|(_, display)| display.as_str())
+                    .collect::<Vec<_>>()
+                    .join(" "),
+            );
         }
         for row in &rows {
-            lines.push(format!(
-                "{} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {}",
-                row["index"].as_str().unwrap_or(""),
-                row["shard"].as_str().unwrap_or("0"),
-                row["time"].as_str().unwrap_or("0s"),
-                row["type"].as_str().unwrap_or("peer"),
-                row["stage"].as_str().unwrap_or("done"),
-                row["source_host"].as_str().unwrap_or("127.0.0.1"),
-                row["source_node"].as_str().unwrap_or(""),
-                row["target_host"].as_str().unwrap_or("127.0.0.1"),
-                row["target_node"].as_str().unwrap_or(""),
-                row["repository"].as_str().unwrap_or("n/a"),
-                row["snapshot"].as_str().unwrap_or("n/a"),
-                row["files"].as_str().unwrap_or("0"),
-                row["files_recovered"].as_str().unwrap_or("0"),
-                row["files_percent"].as_str().unwrap_or("100.0%"),
-                row["files_total"].as_str().unwrap_or("0"),
-                row["bytes"].as_str().unwrap_or("0b"),
-                row["bytes_recovered"].as_str().unwrap_or("0b"),
-                row["bytes_percent"].as_str().unwrap_or("100.0%"),
-                row["bytes_total"].as_str().unwrap_or("0b"),
-                row["translog_ops"].as_str().unwrap_or("0"),
-                row["translog_ops_recovered"].as_str().unwrap_or("0"),
-                row["translog_ops_percent"].as_str().unwrap_or("100.0%"),
-            ));
+            lines.push(
+                display_columns
+                    .iter()
+                    .map(|(column, _)| row[*column].as_str().unwrap_or(""))
+                    .collect::<Vec<_>>()
+                    .join(" "),
+            );
         }
         RestResponse::text(200, lines.join("\n") + "\n")
     }
@@ -31150,6 +31154,119 @@ fn cat_nodes_display_columns(h_param: Option<&String>) -> Vec<(&'static str, Str
     selected
 }
 
+fn cat_recovery_display_columns(h_param: Option<&String>) -> Vec<(&'static str, String)> {
+    let Some(h_param) = h_param else {
+        return vec![
+            ("index", "index".to_string()),
+            ("shard", "shard".to_string()),
+            ("time", "time".to_string()),
+            ("type", "type".to_string()),
+            ("stage", "stage".to_string()),
+            ("source_host", "source_host".to_string()),
+            ("source_node", "source_node".to_string()),
+            ("target_host", "target_host".to_string()),
+            ("target_node", "target_node".to_string()),
+            ("repository", "repository".to_string()),
+            ("snapshot", "snapshot".to_string()),
+            ("files", "files".to_string()),
+            ("files_recovered", "files_recovered".to_string()),
+            ("files_percent", "files_percent".to_string()),
+            ("files_total", "files_total".to_string()),
+            ("bytes", "bytes".to_string()),
+            ("bytes_recovered", "bytes_recovered".to_string()),
+            ("bytes_percent", "bytes_percent".to_string()),
+            ("bytes_total", "bytes_total".to_string()),
+            ("translog_ops", "translog_ops".to_string()),
+            (
+                "translog_ops_recovered",
+                "translog_ops_recovered".to_string(),
+            ),
+            ("translog_ops_percent", "translog_ops_percent".to_string()),
+        ];
+    };
+    let mut selected = Vec::new();
+    for requested in h_param
+        .split(',')
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        if requested.contains('*') {
+            for (column, aliases) in [
+                ("index", &["i", "idx"][..]),
+                ("shard", &["s", "sh"][..]),
+                ("start_time", &["start"][..]),
+                ("start_time_millis", &["start_millis"][..]),
+                ("stop_time", &["stop"][..]),
+                ("stop_time_millis", &["stop_millis"][..]),
+                ("time", &["t", "ti"][..]),
+                ("type", &["ty"][..]),
+                ("stage", &["st"][..]),
+                ("source_host", &["shost"][..]),
+                ("source_node", &["snode"][..]),
+                ("target_host", &["thost"][..]),
+                ("target_node", &["tnode"][..]),
+                ("repository", &["rep"][..]),
+                ("snapshot", &["snap"][..]),
+                ("files", &["f"][..]),
+                ("files_recovered", &["fr"][..]),
+                ("files_percent", &["fp"][..]),
+                ("files_total", &["tf"][..]),
+                ("bytes", &["b"][..]),
+                ("bytes_recovered", &["br"][..]),
+                ("bytes_percent", &["bp"][..]),
+                ("bytes_total", &["tb"][..]),
+                ("translog_ops", &["to"][..]),
+                ("translog_ops_recovered", &["tor"][..]),
+                ("translog_ops_percent", &["top"][..]),
+            ] {
+                if wildcard_match(requested, column)
+                    || aliases.iter().any(|alias| wildcard_match(requested, alias))
+                {
+                    if !selected.iter().any(|(existing, _)| existing == &column) {
+                        selected.push((column, column.to_string()));
+                    }
+                }
+            }
+            continue;
+        }
+        let column = match requested {
+            "index" | "i" | "idx" => Some("index"),
+            "shard" | "s" | "sh" => Some("shard"),
+            "start_time" | "start" => Some("start_time"),
+            "start_time_millis" | "start_millis" => Some("start_time_millis"),
+            "stop_time" | "stop" => Some("stop_time"),
+            "stop_time_millis" | "stop_millis" => Some("stop_time_millis"),
+            "time" | "t" | "ti" => Some("time"),
+            "type" | "ty" => Some("type"),
+            "stage" | "st" => Some("stage"),
+            "source_host" | "shost" => Some("source_host"),
+            "source_node" | "snode" => Some("source_node"),
+            "target_host" | "thost" => Some("target_host"),
+            "target_node" | "tnode" => Some("target_node"),
+            "repository" | "rep" => Some("repository"),
+            "snapshot" | "snap" => Some("snapshot"),
+            "files" | "f" => Some("files"),
+            "files_recovered" | "fr" => Some("files_recovered"),
+            "files_percent" | "fp" => Some("files_percent"),
+            "files_total" | "tf" => Some("files_total"),
+            "bytes" | "b" => Some("bytes"),
+            "bytes_recovered" | "br" => Some("bytes_recovered"),
+            "bytes_percent" | "bp" => Some("bytes_percent"),
+            "bytes_total" | "tb" => Some("bytes_total"),
+            "translog_ops" | "to" => Some("translog_ops"),
+            "translog_ops_recovered" | "tor" => Some("translog_ops_recovered"),
+            "translog_ops_percent" | "top" => Some("translog_ops_percent"),
+            _ => None,
+        };
+        if let Some(column) = column {
+            if !selected.iter().any(|(existing, _)| existing == &column) {
+                selected.push((column, requested.to_string()));
+            }
+        }
+    }
+    selected
+}
+
 fn cat_repositories_display_columns(h_param: Option<&String>) -> Vec<(&'static str, String)> {
     let Some(h_param) = h_param else {
         return vec![("id", "id".to_string()), ("type", "type".to_string())];
@@ -38650,6 +38767,27 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 .len(),
             2
         );
+        assert!(recovery_json_response.body[0].get("start_time").is_none());
+
+        let mut selected_recovery_json_request =
+            RestRequest::new(RestMethod::Get, "/_cat/recovery");
+        selected_recovery_json_request
+            .query_params
+            .insert("format".to_string(), "json".to_string());
+        selected_recovery_json_request.query_params.insert(
+            "h".to_string(),
+            "i,s,start,start_millis,stop,stop_millis,t,ty,st,shost,snode,thost,tnode,rep,snap,f,fr,fp,tf,b,br,bp,tb,to,tor,top".to_string(),
+        );
+        let selected_recovery_json_response =
+            node.handle_rest_request(selected_recovery_json_request);
+        assert_eq!(selected_recovery_json_response.status, 200);
+        assert_eq!(selected_recovery_json_response.body[0]["i"], "logs-000001");
+        assert_eq!(selected_recovery_json_response.body[0]["start_millis"], "0");
+        assert_eq!(selected_recovery_json_response.body[0]["ty"], "peer");
+        assert_eq!(selected_recovery_json_response.body[0]["rep"], "n/a");
+        assert!(selected_recovery_json_response.body[0]
+            .get("index")
+            .is_none());
 
         let mut recovery_text_request = RestRequest::new(RestMethod::Get, "/_cat/recovery/logs-*");
         recovery_text_request
@@ -38663,6 +38801,30 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert!(recovery_text.contains("index shard time type stage source_host source_node target_host target_node repository snapshot files files_recovered files_percent files_total bytes bytes_recovered bytes_percent bytes_total translog_ops translog_ops_recovered translog_ops_percent"));
         assert!(recovery_text.contains("logs-000001"));
         assert!(!recovery_text.contains("metrics-000001"));
+
+        let mut selected_recovery_text_request =
+            RestRequest::new(RestMethod::Get, "/_cat/recovery/logs-*");
+        selected_recovery_text_request
+            .query_params
+            .insert("v".to_string(), "true".to_string());
+        selected_recovery_text_request.query_params.insert(
+            "h".to_string(),
+            "i,s,start,start_millis,stop,stop_millis,t,ty,st,shost,snode,thost,tnode,rep,snap,f,fr,fp,tf,b,br,bp,tb,to,tor,top".to_string(),
+        );
+        let selected_recovery_text_response =
+            node.handle_rest_request(selected_recovery_text_request);
+        let selected_recovery_text = selected_recovery_text_response
+            .body
+            .as_str()
+            .expect("selected cat recovery text body");
+        assert_eq!(
+            selected_recovery_text.lines().next(),
+            Some("i s start start_millis stop stop_millis t ty st shost snode thost tnode rep snap f fr fp tf b br bp tb to tor top")
+        );
+        assert!(selected_recovery_text.contains(
+            "logs-000001 0 1970-01-01T00:00:00.000Z 0 1970-01-01T00:00:00.000Z 0 0s peer done"
+        ));
+        assert!(!selected_recovery_text.contains("metrics-000001"));
     }
 
     #[test]
