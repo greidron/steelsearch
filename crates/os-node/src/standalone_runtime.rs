@@ -7576,7 +7576,14 @@ impl SteelNode {
                 .unwrap_or(false)
         };
         match repository_type {
-            "fs" if has_string_setting("location") => Ok(()),
+            "fs" if has_string_setting("location") => {
+                if let Err(response) =
+                    validate_fs_snapshot_repository_location(repository, &settings)
+                {
+                    return Err(response);
+                }
+                Ok(())
+            }
             "url"
                 if has_string_setting("url")
                     && settings.get("readonly").and_then(Value::as_bool) == Some(true) =>
@@ -28152,6 +28159,36 @@ fn build_missing_snapshot_repository_response(repository: &str) -> RestResponse 
             "status": 404
         }),
     )
+}
+
+fn validate_fs_snapshot_repository_location(
+    repository: &str,
+    settings: &Value,
+) -> Result<(), RestResponse> {
+    let Some(allowed_base) = env::var_os("SNAPSHOT_REPOSITORY_BASE_DIR") else {
+        return Ok(());
+    };
+    let Some(location) = settings.get("location").and_then(Value::as_str) else {
+        return Ok(());
+    };
+    let allowed_base = PathBuf::from(allowed_base);
+    let location_path = Path::new(location);
+    let candidate = if location_path.is_absolute() {
+        location_path.to_path_buf()
+    } else {
+        allowed_base.join(location_path)
+    };
+    if candidate.starts_with(&allowed_base) {
+        return Ok(());
+    }
+    Err(RestResponse::opensearch_error(
+        500,
+        "repository_exception",
+        format!(
+            "[{repository}] location [{location}] doesn't match any of the locations specified by path.repo because this node is configured with [{}]",
+            allowed_base.display()
+        ),
+    ))
 }
 
 fn build_missing_snapshot_response(repository: &str, snapshot: &str) -> RestResponse {
@@ -63642,6 +63679,53 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             restore_conflict.body["error"]["type"],
             Value::String("resource_already_exists_exception".to_string())
         );
+    }
+
+    #[test]
+    fn snapshot_repository_fs_location_respects_configured_path_repo_boundary() {
+        let _guard = security_env_lock();
+        let previous = env::var_os("SNAPSHOT_REPOSITORY_BASE_DIR");
+        env::set_var(
+            "SNAPSHOT_REPOSITORY_BASE_DIR",
+            "/tmp/steelsearch-allowed-snapshot-repositories",
+        );
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        let rejected = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/_snapshot/repo-outside-path-repo")
+                .with_json_body(serde_json::json!({
+                    "type": "fs",
+                    "settings": {"location": "/tmp/repo-outside-path-repo"}
+                })),
+        );
+        assert_eq!(rejected.status, 500);
+        assert_eq!(
+            rejected.body["error"]["type"],
+            Value::String("repository_exception".to_string())
+        );
+        assert!(rejected.body["error"]["reason"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("doesn't match any of the locations specified by path.repo"));
+
+        let accepted = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/_snapshot/repo-inside-path-repo").with_json_body(
+                serde_json::json!({
+                    "type": "fs",
+                    "settings": {"location": "repo-inside-path-repo"}
+                }),
+            ),
+        );
+        assert_eq!(accepted.status, 200);
+
+        if let Some(previous) = previous {
+            env::set_var("SNAPSHOT_REPOSITORY_BASE_DIR", previous);
+        } else {
+            env::remove_var("SNAPSHOT_REPOSITORY_BASE_DIR");
+        }
     }
 
     #[test]
