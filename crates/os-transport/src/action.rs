@@ -32267,7 +32267,7 @@ impl OpenSearchSearchHitWire {
         write_highlight_field_map(output, &self.highlight_fields)?;
         write_search_sort_values(output, &self.sort_values)?;
         write_search_sort_values(output, &self.sort_values)?;
-        write_matched_queries(output, &self.matched_queries)?;
+        write_matched_queries(output, &self.matched_queries, version)?;
         write_optional_search_shard_target(output, self.shard_target.as_ref())?;
         write_inner_hits(output, &self.inner_hits, version, depth + 1)?;
         Ok(())
@@ -32336,7 +32336,7 @@ impl OpenSearchSearchHitWire {
             sort_values: formatted_sort_values,
             ..hit
         };
-        let matched_queries = read_matched_queries(input, "search hit matched queries")?;
+        let matched_queries = read_matched_queries(input, version, "search hit matched queries")?;
         let hit = Self {
             matched_queries,
             ..hit
@@ -40505,26 +40505,40 @@ fn validate_search_hits_collapse_tail(
 fn write_matched_queries(
     output: &mut StreamOutput,
     queries: &BTreeMap<String, f32>,
+    version: Version,
 ) -> Result<(), TransportActionWireError> {
     output.write_vint(queries.len() as i32);
     if queries.is_empty() {
         return Ok(());
     }
-    output.write_vint(queries.len() as i32);
-    for (name, score) in queries {
-        output.write_string(name);
-        output.write_f32(*score);
+    if version.on_or_after(OPENSEARCH_2_13_0) {
+        output.write_vint(queries.len() as i32);
+        for (name, score) in queries {
+            output.write_string(name);
+            output.write_f32(*score);
+        }
+    } else {
+        for name in queries.keys() {
+            output.write_string(name);
+        }
     }
     Ok(())
 }
 
 fn read_matched_queries(
     input: &mut StreamInput,
+    version: Version,
     shape: &'static str,
 ) -> Result<BTreeMap<String, f32>, TransportActionWireError> {
     let expected_len = read_len(input)?;
     let mut queries = BTreeMap::new();
     if expected_len == 0 {
+        return Ok(queries);
+    }
+    if !version.on_or_after(OPENSEARCH_2_13_0) {
+        for _ in 0..expected_len {
+            queries.insert(input.read_string()?, f32::NAN);
+        }
         return Ok(queries);
     }
     let map_len = read_len(input)?;
@@ -68976,6 +68990,47 @@ mod tests {
                 child: None,
             })
         );
+    }
+
+    #[test]
+    fn opensearch_search_hit_matched_queries_follow_version_gate() {
+        let response = OpenSearchSearchResponseWire {
+            hits: vec![OpenSearchSearchHitWire {
+                id: Some("doc-1".to_string()),
+                score: 1.0,
+                nested_identity: None,
+                version: -1,
+                seq_no: OPENSEARCH_UNASSIGNED_SEQ_NO,
+                primary_term: 0,
+                source: Some(json!({ "message": "hello" })),
+                explanation: None,
+                fields: BTreeMap::new(),
+                meta_fields: BTreeMap::new(),
+                highlight_fields: BTreeMap::new(),
+                sort_values: Vec::new(),
+                matched_queries: BTreeMap::from([
+                    ("named-a".to_string(), 0.75),
+                    ("named-b".to_string(), 1.25),
+                ]),
+                shard_target: None,
+                inner_hits: BTreeMap::new(),
+            }],
+            ..OpenSearchSearchResponseWire::default()
+        };
+
+        let mut output = StreamOutput::new();
+        response.write(&mut output, OPENSEARCH_2_12_0).unwrap();
+        let decoded = OpenSearchSearchResponseWire::read(output.freeze(), OPENSEARCH_2_12_0)
+            .unwrap();
+        assert!(decoded.hits[0].matched_queries["named-a"].is_nan());
+        assert!(decoded.hits[0].matched_queries["named-b"].is_nan());
+
+        let mut output = StreamOutput::new();
+        response.write(&mut output, OPENSEARCH_2_13_0).unwrap();
+        let decoded = OpenSearchSearchResponseWire::read(output.freeze(), OPENSEARCH_2_13_0)
+            .unwrap();
+        assert_eq!(decoded.hits[0].matched_queries["named-a"], 0.75);
+        assert_eq!(decoded.hits[0].matched_queries["named-b"], 1.25);
     }
 
     #[test]
