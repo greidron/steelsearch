@@ -4437,8 +4437,15 @@ fn build_local_search_response(request_id: i64, header_version_id: u32, body: &[
 
 fn search_request_supports_local_execution_subset(body: &[u8]) -> bool {
     decode_search_request_from_transport_body(body)
-        .and_then(|request| request.validate_supported_execution_subset().ok())
-        .is_some()
+        .as_ref()
+        .is_some_and(search_request_matches_local_execution_subset)
+}
+
+fn search_request_matches_local_execution_subset(
+    request: &os_transport::action::OpenSearchSearchRequestWire,
+) -> bool {
+    request.validate_supported_execution_subset().is_ok()
+        && transport_search_pit_context_exists_for_request(request)
 }
 
 fn decode_search_request_from_transport_body(
@@ -4471,8 +4478,8 @@ fn build_local_stream_search_response(
 
 fn stream_search_request_supports_local_execution_subset(body: &[u8]) -> bool {
     decode_stream_search_request_from_transport_body(body)
-        .and_then(|request| request.validate_supported_execution_subset().ok())
-        .is_some()
+        .as_ref()
+        .is_some_and(search_request_matches_local_execution_subset)
 }
 
 fn decode_stream_search_request_from_transport_body(
@@ -4511,9 +4518,13 @@ fn build_local_multi_search_response(
 }
 
 fn multi_search_request_supports_local_execution_subset(body: &[u8]) -> bool {
-    decode_multi_search_request_from_transport_body(body)
-        .and_then(|request| request.validate_supported_execution_subset().ok())
-        .is_some()
+    decode_multi_search_request_from_transport_body(body).is_some_and(|request| {
+        request.validate_supported_execution_subset().is_ok()
+            && request
+                .requests
+                .iter()
+                .all(search_request_matches_local_execution_subset)
+    })
 }
 
 fn decode_multi_search_request_from_transport_body(
@@ -4960,16 +4971,25 @@ fn local_transport_search_response_from_request(
         .map(|source| source.size.max(0) as usize)
         .unwrap_or(10);
     let query = source.and_then(|source| source.query.as_ref());
-    let mut matched = dev_transport_pit_bindings()
-        .documents
-        .lock()
-        .expect("dev transport documents lock poisoned")
+    let Some((documents, resolved_indices, point_in_time_id)) =
+        transport_search_documents_for_request(request)
+    else {
+        return os_transport::action::OpenSearchSearchResponseWire::empty_with_total_hits(0);
+    };
+    let mut matched = documents
         .iter()
         .filter_map(|(key, record)| {
             if !record.refreshed {
                 return None;
             }
             let (index, id, _) = split_transport_document_key(key)?;
+            if !resolved_indices.is_empty()
+                && !resolved_indices
+                    .iter()
+                    .any(|candidate| candidate.as_str() == index)
+            {
+                return None;
+            }
             local_transport_query_matches(&record.source, id, query).then(|| {
                 (
                     index.to_string(),
@@ -5015,13 +5035,6 @@ fn local_transport_search_response_from_request(
             }
         })
         .collect::<Vec<_>>();
-    let resolved_indices = dev_transport_pit_bindings()
-        .created_indices
-        .lock()
-        .expect("dev transport created indices lock poisoned")
-        .iter()
-        .cloned()
-        .collect::<Vec<_>>();
     let total_shards =
         transport_pit_total_primary_shards(dev_transport_pit_bindings(), &resolved_indices).max(1)
             as i32;
@@ -5033,8 +5046,76 @@ fn local_transport_search_response_from_request(
         total_shards,
         successful_shards: total_shards,
         took_millis: 1,
+        point_in_time_id,
         ..os_transport::action::OpenSearchSearchResponseWire::empty_with_total_hits(total_hits)
     }
+}
+
+fn transport_search_documents_for_request(
+    request: &os_transport::action::OpenSearchSearchRequestWire,
+) -> Option<(
+    BTreeMap<String, StoredDocument>,
+    Vec<String>,
+    Option<String>,
+)> {
+    let pit = request
+        .source
+        .as_ref()
+        .and_then(|source| source.point_in_time.as_ref());
+    if let Some(pit) = pit {
+        let now_millis = now_epoch_ms();
+        let mut contexts = dev_transport_pit_bindings()
+            .contexts
+            .lock()
+            .expect("dev transport PIT contexts lock poisoned");
+        prune_expired_transport_pits(&mut contexts, now_millis);
+        let context = contexts.get_mut(&pit.id)?;
+        if let Some(keep_alive) = pit.keep_alive.as_ref() {
+            let keep_alive_millis = time_value_wire_to_millis(keep_alive).max(0) as u64;
+            if keep_alive_millis > 0 {
+                let effective_keep_alive = context.keep_alive_millis.max(keep_alive_millis);
+                context.keep_alive_millis = effective_keep_alive;
+                context.expires_at_millis =
+                    transport_pit_expires_at_millis(now_millis, effective_keep_alive);
+            }
+        }
+        return Some((
+            context.documents.clone(),
+            context.indices.clone(),
+            Some(pit.id.clone()),
+        ));
+    }
+    let documents = dev_transport_pit_bindings()
+        .documents
+        .lock()
+        .expect("dev transport documents lock poisoned")
+        .clone();
+    let resolved_indices = dev_transport_pit_bindings()
+        .created_indices
+        .lock()
+        .expect("dev transport created indices lock poisoned")
+        .iter()
+        .cloned()
+        .collect::<Vec<_>>();
+    Some((documents, resolved_indices, None))
+}
+
+fn transport_search_pit_context_exists_for_request(
+    request: &os_transport::action::OpenSearchSearchRequestWire,
+) -> bool {
+    let Some(pit) = request
+        .source
+        .as_ref()
+        .and_then(|source| source.point_in_time.as_ref())
+    else {
+        return true;
+    };
+    let mut contexts = dev_transport_pit_bindings()
+        .contexts
+        .lock()
+        .expect("dev transport PIT contexts lock poisoned");
+    prune_expired_transport_pits(&mut contexts, now_epoch_ms());
+    contexts.contains_key(&pit.id)
 }
 
 fn local_transport_query_matches(
@@ -12483,6 +12564,137 @@ mod tests {
         assert_eq!(response.responses[0].total_hits, Some(2));
         assert_eq!(response.responses[1].total_hits, Some(1));
         assert_eq!(response.responses[1].hits[0].id.as_deref(), Some("doc-1"));
+    }
+
+    #[test]
+    fn search_transport_route_uses_pit_snapshot_and_extends_keep_alive() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        let bindings = dev_transport_pit_bindings();
+        bindings
+            .contexts
+            .lock()
+            .expect("dev transport PIT contexts lock poisoned")
+            .clear();
+        bindings
+            .created_indices
+            .lock()
+            .expect("dev transport created indices lock poisoned")
+            .clear();
+        bindings
+            .documents
+            .lock()
+            .expect("dev transport documents lock poisoned")
+            .clear();
+        *bindings
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned") = serde_json::json!({
+            "indices": {
+                "logs-search-pit-transport": {
+                    "settings": {
+                        "index": {
+                            "number_of_shards": "1"
+                        }
+                    }
+                }
+            }
+        });
+        bindings
+            .created_indices
+            .lock()
+            .expect("dev transport created indices lock poisoned")
+            .insert("logs-search-pit-transport".to_string());
+
+        let pit_id = build_local_pit_id(700);
+        let before_doc = StoredDocument {
+            source: serde_json::json!({ "status": "before-pit" }),
+            version: 1,
+            seq_no: 1,
+            primary_term: 1,
+            routing: None,
+            refreshed: true,
+        };
+        bindings
+            .contexts
+            .lock()
+            .expect("dev transport PIT contexts lock poisoned")
+            .insert(
+                pit_id.clone(),
+                PitContext {
+                    indices: vec!["logs-search-pit-transport".to_string()],
+                    documents: BTreeMap::from([(
+                        "logs-search-pit-transport:doc-1:".to_string(),
+                        before_doc.clone(),
+                    )]),
+                    keep_alive_millis: 60_000,
+                    expires_at_millis: transport_pit_expires_at_millis(now_epoch_ms(), 60_000),
+                    creation_time_millis: now_epoch_ms(),
+                },
+            );
+        {
+            let mut documents = bindings
+                .documents
+                .lock()
+                .expect("dev transport documents lock poisoned");
+            documents.insert("logs-search-pit-transport:doc-1:".to_string(), before_doc);
+            documents.insert(
+                "logs-search-pit-transport:doc-2:".to_string(),
+                StoredDocument {
+                    source: serde_json::json!({ "status": "after-pit" }),
+                    version: 1,
+                    seq_no: 2,
+                    primary_term: 1,
+                    routing: None,
+                    refreshed: true,
+                },
+            );
+        }
+
+        let request = os_transport::action::OpenSearchSearchRequestWire {
+            source: Some(os_transport::action::OpenSearchSearchSourceBuilderWire {
+                point_in_time: Some(os_transport::action::OpenSearchPointInTimeBuilderWire {
+                    id: pit_id.clone(),
+                    keep_alive: Some(os_transport::action::TimeValueWire::minutes(2)),
+                }),
+                ..os_transport::action::OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..os_transport::action::OpenSearchSearchRequestWire::default()
+        };
+        let frame = os_transport::action::build_opensearch_search_request_message(
+            306,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(search_request_supports_local_execution_subset(&frame[6..]));
+        let response =
+            build_local_search_response(306, OPENSEARCH_3_7_0_TRANSPORT.id() as u32, &frame[6..]);
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected PIT search response message");
+        };
+        let response = os_transport::action::read_opensearch_search_response_message(&message)
+            .expect("PIT search response");
+        assert_eq!(response.point_in_time_id.as_deref(), Some(pit_id.as_str()));
+        assert_eq!(response.total_hits, Some(1));
+        assert_eq!(response.hits.len(), 1);
+        assert_eq!(response.hits[0].id.as_deref(), Some("doc-1"));
+        assert_eq!(
+            bindings
+                .contexts
+                .lock()
+                .expect("dev transport PIT contexts lock poisoned")
+                .get(&pit_id)
+                .expect("PIT context should remain")
+                .keep_alive_millis,
+            120_000
+        );
     }
 
     #[test]
