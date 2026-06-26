@@ -623,6 +623,9 @@ The cleanup-repository boundary covers:
   decode/build layer. The OpenSearch 3.7 request stream constructor and
   `writeTo` implementation only read and write the repository string, despite
   the request type extending `AcknowledgedRequest`;
+- OpenSearch `CleanupRepositoryResponse` cleanup result counters at the wire
+  decode/build layer, preserving the `RepositoryCleanupResult` stream order of
+  deleted bytes followed by deleted blobs;
 - explicit fail-closed classification for `cluster:admin/repository/_cleanup`
   until repository cleanup state coordination and cleanup result rendering are
   implemented;

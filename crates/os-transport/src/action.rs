@@ -6328,6 +6328,36 @@ pub fn read_cleanup_repository_request_message(
     CleanupRepositoryRequestWire::read(message.body.clone().freeze())
 }
 
+pub fn build_cleanup_repository_response_message(
+    request_id: i64,
+    version: Version,
+    response: &CleanupRepositoryResponseWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    response.write(&mut body)?;
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::response(),
+        version,
+        variable_header: BytesMut::from(&ResponseVariableHeader::default().to_bytes()[..]),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_cleanup_repository_response_message(
+    message: &TransportMessage,
+) -> Result<CleanupRepositoryResponseWire, TransportActionWireError> {
+    if !message.status.is_response() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "response",
+            actual: message.status.bits(),
+        });
+    }
+    let _header = ResponseVariableHeader::read(message.variable_header.clone().freeze())?;
+    CleanupRepositoryResponseWire::read(message.body.clone().freeze())
+}
+
 pub fn build_get_snapshots_request_message(
     request_id: i64,
     version: Version,
@@ -13402,6 +13432,55 @@ impl CleanupRepositoryRequestWire {
             shape: "cleanup repository execution",
             reason: "cleanup-repository transport execution requires repository cleanup state coordination and cleanup result rendering",
         })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CleanupRepositoryResponseWire {
+    pub bytes_deleted: i64,
+    pub blobs_deleted: i64,
+}
+
+impl CleanupRepositoryResponseWire {
+    pub fn zero() -> Self {
+        Self {
+            bytes_deleted: 0,
+            blobs_deleted: 0,
+        }
+    }
+
+    pub fn write(&self, output: &mut StreamOutput) -> Result<(), TransportActionWireError> {
+        self.validate_supported_subset()?;
+        output.write_i64(self.bytes_deleted);
+        output.write_i64(self.blobs_deleted);
+        Ok(())
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let response = Self {
+            bytes_deleted: input.read_i64()?,
+            blobs_deleted: input.read_i64()?,
+        };
+        require_no_trailing_bytes(&input)?;
+        response.validate_supported_subset()?;
+        Ok(response)
+    }
+
+    pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
+        if self.bytes_deleted < 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cleanup repository deleted bytes",
+                reason: "OpenSearch repository cleanup deleted byte count cannot be negative",
+            });
+        }
+        if self.blobs_deleted < 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cleanup repository deleted blobs",
+                reason: "OpenSearch repository cleanup deleted blob count cannot be negative",
+            });
+        }
+        Ok(())
     }
 }
 
@@ -50586,6 +50665,70 @@ mod tests {
                 .reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "cleanup repository execution",
+                ..
+            })
+        ));
+
+        let response = CleanupRepositoryResponseWire {
+            bytes_deleted: 128,
+            blobs_deleted: 2,
+        };
+        let mut frame =
+            build_cleanup_repository_response_message(36, OPENSEARCH_3_7_0_TRANSPORT, &response)
+                .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected cleanup repository response message");
+        };
+        assert_eq!(
+            read_cleanup_repository_response_message(&message).unwrap(),
+            response
+        );
+        assert!(matches!(
+            read_cleanup_repository_request_message(&message).unwrap_err(),
+            TransportActionWireError::UnexpectedMessageStatus {
+                expected: "request",
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn cleanup_repository_response_wire_round_trips_result_counts() {
+        let response = CleanupRepositoryResponseWire {
+            bytes_deleted: 4096,
+            blobs_deleted: 3,
+        };
+        let mut output = StreamOutput::new();
+        response.write(&mut output).unwrap();
+
+        assert_eq!(
+            CleanupRepositoryResponseWire::read(output.freeze()).unwrap(),
+            response
+        );
+        assert_eq!(CleanupRepositoryResponseWire::zero().bytes_deleted, 0);
+        assert_eq!(CleanupRepositoryResponseWire::zero().blobs_deleted, 0);
+    }
+
+    #[test]
+    fn cleanup_repository_response_rejects_negative_counts() {
+        let mut negative_bytes = StreamOutput::new();
+        negative_bytes.write_i64(-1);
+        negative_bytes.write_i64(0);
+        assert!(matches!(
+            CleanupRepositoryResponseWire::read(negative_bytes.freeze()),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cleanup repository deleted bytes",
+                ..
+            })
+        ));
+
+        let mut negative_blobs = StreamOutput::new();
+        negative_blobs.write_i64(0);
+        negative_blobs.write_i64(-1);
+        assert!(matches!(
+            CleanupRepositoryResponseWire::read(negative_blobs.freeze()),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cleanup repository deleted blobs",
                 ..
             })
         ));
