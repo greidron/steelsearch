@@ -5824,14 +5824,16 @@ fn local_transport_query_matches(
                 lookup_transport_source_value(source, &query.field_name).cloned()
             };
             value.is_some_and(|value| {
-                local_transport_value_matches_fuzzy(
-                    &value,
-                    query.value.as_str().unwrap_or_default(),
-                    local_transport_fuzziness(
-                        &query.fuzziness,
+                transport_any_actual_value_matches(&value, |candidate| {
+                    local_transport_value_matches_fuzzy(
+                        candidate,
                         query.value.as_str().unwrap_or_default(),
-                    ),
-                )
+                        local_transport_fuzziness(
+                            &query.fuzziness,
+                            query.value.as_str().unwrap_or_default(),
+                        ),
+                    )
+                })
             })
         }
         Some(os_transport::action::OpenSearchQueryBuilderWire::Ids(ids)) => {
@@ -5939,12 +5941,18 @@ fn local_transport_query_matches(
         }
         Some(os_transport::action::OpenSearchQueryBuilderWire::Prefix(prefix)) => {
             let value = if prefix.field_name == "_id" {
-                Some(id)
+                Some(Value::String(id.to_string()))
             } else {
-                lookup_transport_source_value(source, &prefix.field_name).and_then(Value::as_str)
+                lookup_transport_source_value(source, &prefix.field_name).cloned()
             };
             value.is_some_and(|value| {
-                local_transport_string_has_prefix(value, &prefix.value, prefix.case_insensitive)
+                transport_any_actual_string_matches(&value, |candidate| {
+                    local_transport_string_has_prefix(
+                        candidate,
+                        &prefix.value,
+                        prefix.case_insensitive,
+                    )
+                })
             })
         }
         Some(os_transport::action::OpenSearchQueryBuilderWire::QueryString(query)) => {
@@ -5973,16 +5981,26 @@ fn local_transport_query_matches(
             } else {
                 lookup_transport_source_value(source, &range.field_name).cloned()
             };
-            value.is_some_and(|value| local_transport_range_query_matches(&value, range))
+            value.is_some_and(|value| {
+                transport_any_actual_value_matches(&value, |candidate| {
+                    local_transport_range_query_matches(candidate, range)
+                })
+            })
         }
         Some(os_transport::action::OpenSearchQueryBuilderWire::Regexp(regexp)) => {
             let value = if regexp.field_name == "_id" {
-                Some(id)
+                Some(Value::String(id.to_string()))
             } else {
-                lookup_transport_source_value(source, &regexp.field_name).and_then(Value::as_str)
+                lookup_transport_source_value(source, &regexp.field_name).cloned()
             };
             value.is_some_and(|value| {
-                local_transport_regexp_query_matches(value, &regexp.value, regexp.case_insensitive)
+                transport_any_actual_string_matches(&value, |candidate| {
+                    local_transport_regexp_query_matches(
+                        candidate,
+                        &regexp.value,
+                        regexp.case_insensitive,
+                    )
+                })
             })
         }
         Some(os_transport::action::OpenSearchQueryBuilderWire::ScriptScore(query)) => {
@@ -6024,14 +6042,14 @@ fn local_transport_query_matches(
                 return value_matches_transport_term(&Value::String(id.to_string()), &term.value);
             }
             lookup_transport_source_value(source, &term.field_name)
-                .is_some_and(|value| value_matches_transport_term(value, &term.value))
+                .is_some_and(|value| transport_actual_matches_term(value, &term.value))
         }
         Some(os_transport::action::OpenSearchQueryBuilderWire::Term(term)) => {
             if term.field_name == "_id" {
                 return value_matches_transport_term(&Value::String(id.to_string()), &term.value);
             }
             lookup_transport_source_value(source, &term.field_name)
-                .is_some_and(|value| value_matches_transport_term(value, &term.value))
+                .is_some_and(|value| transport_actual_matches_term(value, &term.value))
         }
         Some(os_transport::action::OpenSearchQueryBuilderWire::Terms(terms)) => {
             if terms.field_name == "_id" {
@@ -6039,12 +6057,8 @@ fn local_transport_query_matches(
                     value_matches_transport_term(&Value::String(id.to_string()), value)
                 });
             }
-            lookup_transport_source_value(source, &terms.field_name).is_some_and(|actual| {
-                terms
-                    .values
-                    .iter()
-                    .any(|expected| value_matches_transport_term(actual, expected))
-            })
+            lookup_transport_source_value(source, &terms.field_name)
+                .is_some_and(|actual| transport_actual_matches_any_term(actual, &terms.values))
         }
         Some(os_transport::action::OpenSearchQueryBuilderWire::TermsSet(terms_set)) => {
             let value = if terms_set.field_name == "_id" {
@@ -6056,16 +6070,18 @@ fn local_transport_query_matches(
         }
         Some(os_transport::action::OpenSearchQueryBuilderWire::Wildcard(wildcard)) => {
             let value = if wildcard.field_name == "_id" {
-                Some(id)
+                Some(Value::String(id.to_string()))
             } else {
-                lookup_transport_source_value(source, &wildcard.field_name).and_then(Value::as_str)
+                lookup_transport_source_value(source, &wildcard.field_name).cloned()
             };
             value.is_some_and(|value| {
-                local_transport_wildcard_query_matches(
-                    value,
-                    &wildcard.value,
-                    wildcard.case_insensitive,
-                )
+                transport_any_actual_string_matches(&value, |candidate| {
+                    local_transport_wildcard_query_matches(
+                        candidate,
+                        &wildcard.value,
+                        wildcard.case_insensitive,
+                    )
+                })
             })
         }
         Some(os_transport::action::OpenSearchQueryBuilderWire::Wrapper(wrapper)) => {
@@ -6376,7 +6392,7 @@ fn local_transport_json_term_query_matches(
         return value_matches_transport_term(&Value::String(id.to_string()), expected);
     }
     lookup_transport_source_value(source, field)
-        .is_some_and(|value| value_matches_transport_term(value, expected))
+        .is_some_and(|value| transport_actual_matches_term(value, expected))
 }
 
 fn local_transport_json_terms_query_matches(
@@ -6416,7 +6432,11 @@ fn local_transport_json_range_query_matches(
     } else {
         lookup_transport_source_value(source, field).cloned()
     };
-    value.is_some_and(|value| local_transport_json_range_value_matches(&value, bounds))
+    value.is_some_and(|value| {
+        transport_any_actual_value_matches(&value, |candidate| {
+            local_transport_json_range_value_matches(candidate, bounds)
+        })
+    })
 }
 
 fn local_transport_json_range_value_matches(actual: &Value, bounds: &Value) -> bool {
@@ -6538,11 +6558,15 @@ fn local_transport_json_prefix_query_matches(
         .or_else(|| expected.get("value").and_then(Value::as_str))
         .unwrap_or_default();
     let value = if field == "_id" {
-        Some(id)
+        Some(Value::String(id.to_string()))
     } else {
-        lookup_transport_source_value(source, field).and_then(Value::as_str)
+        lookup_transport_source_value(source, field).cloned()
     };
-    value.is_some_and(|value| local_transport_string_has_prefix(value, expected, false))
+    value.is_some_and(|value| {
+        transport_any_actual_string_matches(&value, |candidate| {
+            local_transport_string_has_prefix(candidate, expected, false)
+        })
+    })
 }
 
 fn local_transport_json_wildcard_query_matches(
@@ -6562,12 +6586,14 @@ fn local_transport_json_wildcard_query_matches(
         .and_then(Value::as_bool)
         .unwrap_or(false);
     let value = if field == "_id" {
-        Some(id)
+        Some(Value::String(id.to_string()))
     } else {
-        lookup_transport_source_value(source, field).and_then(Value::as_str)
+        lookup_transport_source_value(source, field).cloned()
     };
     value.is_some_and(|value| {
-        local_transport_wildcard_query_matches(value, expected_value, case_insensitive)
+        transport_any_actual_string_matches(&value, |candidate| {
+            local_transport_wildcard_query_matches(candidate, expected_value, case_insensitive)
+        })
     })
 }
 
@@ -6588,12 +6614,14 @@ fn local_transport_json_regexp_query_matches(
         .and_then(Value::as_bool)
         .unwrap_or(false);
     let value = if field == "_id" {
-        Some(id)
+        Some(Value::String(id.to_string()))
     } else {
-        lookup_transport_source_value(source, field).and_then(Value::as_str)
+        lookup_transport_source_value(source, field).cloned()
     };
     value.is_some_and(|value| {
-        local_transport_regexp_query_matches(value, expected_value, case_insensitive)
+        transport_any_actual_string_matches(&value, |candidate| {
+            local_transport_regexp_query_matches(candidate, expected_value, case_insensitive)
+        })
     })
 }
 
@@ -6633,8 +6661,11 @@ fn local_transport_json_fuzzy_query_matches(
     } else {
         lookup_transport_source_value(source, field).cloned()
     };
-    value
-        .is_some_and(|value| local_transport_value_matches_fuzzy(&value, expected_value, fuzziness))
+    value.is_some_and(|value| {
+        transport_any_actual_value_matches(&value, |candidate| {
+            local_transport_value_matches_fuzzy(candidate, expected_value, fuzziness)
+        })
+    })
 }
 
 fn local_transport_json_terms_set_query_matches(
@@ -7415,6 +7446,21 @@ fn lookup_transport_source_value<'a>(source: &'a Value, field: &str) -> Option<&
         current = current.as_object()?.get(part)?;
     }
     Some(current)
+}
+
+fn transport_any_actual_value_matches(actual: &Value, predicate: impl Fn(&Value) -> bool) -> bool {
+    match actual {
+        Value::Array(values) => values.iter().any(predicate),
+        value => predicate(value),
+    }
+}
+
+fn transport_any_actual_string_matches(actual: &Value, predicate: impl Fn(&str) -> bool) -> bool {
+    match actual {
+        Value::String(text) => predicate(text),
+        Value::Array(values) => values.iter().filter_map(Value::as_str).any(predicate),
+        _ => false,
+    }
 }
 
 fn transport_actual_matches_any_term(actual: &Value, expected_values: &[Value]) -> bool {
@@ -17156,8 +17202,11 @@ mod tests {
                         "status": "reader-pit",
                         "tenant": "a",
                         "category": "prod-api",
+                        "categories": ["prod-api"],
                         "path": "/logs/app-1",
+                        "paths": ["/logs/app-1", "/archive/app-1"],
                         "message": "steel search reader pit transport",
+                        "spellings": ["steel", "search"],
                         "title": "steel search",
                         "description": "reader context transport filters",
                         "tags": ["search", "transport"],
@@ -17165,6 +17214,7 @@ mod tests {
                         "comments": [
                             { "author": "ann", "text": "nested transport" }
                         ],
+                        "ages": [3, 7],
                         "age": 7
                     }),
                     version: 1,
@@ -17185,8 +17235,11 @@ mod tests {
                         "status": "reader-pit",
                         "tenant": "b",
                         "category": "prod-api",
+                        "categories": ["prod-api"],
                         "path": "/logs/app-2",
+                        "paths": ["/logs/app-2", "/archive/app-2"],
                         "message": "steel search reader pit transport",
+                        "spellings": ["steel", "search"],
                         "title": "steel search",
                         "description": "reader context transport filters",
                         "tags": ["search", "transport"],
@@ -17194,6 +17247,7 @@ mod tests {
                         "comments": [
                             { "author": "ann", "text": "nested transport" }
                         ],
+                        "ages": [3, 7],
                         "age": 7
                     }),
                     version: 1,
@@ -17252,6 +17306,23 @@ mod tests {
                                             values: vec![serde_json::json!("a")],
                                         },
                                     ),
+                                    os_transport::action::OpenSearchQueryBuilderWire::Term(
+                                        os_transport::action::OpenSearchTermQueryBuilderWire {
+                                            boost: 1.0,
+                                            query_name: None,
+                                            field_name: "tags".to_string(),
+                                            value: serde_json::json!("search"),
+                                            case_insensitive: false,
+                                        },
+                                    ),
+                                    os_transport::action::OpenSearchQueryBuilderWire::Terms(
+                                        os_transport::action::OpenSearchTermsQueryBuilderWire {
+                                            boost: 1.0,
+                                            query_name: None,
+                                            field_name: "tags".to_string(),
+                                            values: vec![serde_json::json!("transport")],
+                                        },
+                                    ),
                                     os_transport::action::OpenSearchQueryBuilderWire::Prefix(
                                         os_transport::action::OpenSearchPrefixQueryBuilderWire {
                                             boost: 1.0,
@@ -17262,11 +17333,31 @@ mod tests {
                                             case_insensitive: false,
                                         },
                                     ),
+                                    os_transport::action::OpenSearchQueryBuilderWire::Prefix(
+                                        os_transport::action::OpenSearchPrefixQueryBuilderWire {
+                                            boost: 1.0,
+                                            query_name: None,
+                                            field_name: "paths".to_string(),
+                                            value: "/logs/".to_string(),
+                                            rewrite: None,
+                                            case_insensitive: false,
+                                        },
+                                    ),
                                     os_transport::action::OpenSearchQueryBuilderWire::Wildcard(
                                         os_transport::action::OpenSearchWildcardQueryBuilderWire {
                                             boost: 1.0,
                                             query_name: None,
                                             field_name: "path".to_string(),
+                                            value: "/logs/*".to_string(),
+                                            rewrite: None,
+                                            case_insensitive: false,
+                                        },
+                                    ),
+                                    os_transport::action::OpenSearchQueryBuilderWire::Wildcard(
+                                        os_transport::action::OpenSearchWildcardQueryBuilderWire {
+                                            boost: 1.0,
+                                            query_name: None,
+                                            field_name: "paths".to_string(),
                                             value: "/logs/*".to_string(),
                                             rewrite: None,
                                             case_insensitive: false,
@@ -17283,6 +17374,48 @@ mod tests {
                                             include_upper: true,
                                             format: None,
                                             relation: None,
+                                        },
+                                    ),
+                                    os_transport::action::OpenSearchQueryBuilderWire::Range(
+                                        os_transport::action::OpenSearchRangeQueryBuilderWire {
+                                            boost: 1.0,
+                                            query_name: None,
+                                            field_name: "ages".to_string(),
+                                            from: serde_json::json!(5),
+                                            to: serde_json::json!(10),
+                                            include_lower: true,
+                                            include_upper: true,
+                                            format: None,
+                                            relation: None,
+                                        },
+                                    ),
+                                    os_transport::action::OpenSearchQueryBuilderWire::Regexp(
+                                        os_transport::action::OpenSearchRegexpQueryBuilderWire {
+                                            boost: 1.0,
+                                            query_name: None,
+                                            field_name: "categories".to_string(),
+                                            value: "prod-.*".to_string(),
+                                            syntax_flags_value: 65535,
+                                            max_determinized_states: 10000,
+                                            rewrite: None,
+                                            case_insensitive: true,
+                                        },
+                                    ),
+                                    os_transport::action::OpenSearchQueryBuilderWire::Fuzzy(
+                                        os_transport::action::OpenSearchFuzzyQueryBuilderWire {
+                                            boost: 1.0,
+                                            query_name: None,
+                                            field_name: "spellings".to_string(),
+                                            value: serde_json::json!("searh"),
+                                            fuzziness:
+                                                os_transport::action::OpenSearchFuzzinessWire {
+                                                    value: "AUTO".to_string(),
+                                                    custom_auto: None,
+                                                },
+                                            prefix_length: 0,
+                                            max_expansions: 50,
+                                            transpositions: true,
+                                            rewrite: None,
                                         },
                                     ),
                                 ],
