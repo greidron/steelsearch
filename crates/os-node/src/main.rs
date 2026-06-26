@@ -4445,6 +4445,7 @@ fn search_request_matches_local_execution_subset(
     request: &os_transport::action::OpenSearchSearchRequestWire,
 ) -> bool {
     request.validate_supported_execution_subset().is_ok()
+        && transport_search_pit_keep_alive_within_limit(request)
         && transport_search_pit_context_exists_for_request(request)
 }
 
@@ -5299,7 +5300,11 @@ fn transport_search_documents_for_request(
         prune_expired_transport_pits(&mut contexts, now_millis);
         let context = contexts.get_mut(&pit.id)?;
         if let Some(keep_alive) = pit.keep_alive.as_ref() {
-            let keep_alive_millis = time_value_wire_to_millis(keep_alive).max(0) as u64;
+            let keep_alive_millis = time_value_wire_to_millis(keep_alive);
+            if keep_alive_millis > DEV_TRANSPORT_MAX_PIT_KEEP_ALIVE_MILLIS {
+                return None;
+            }
+            let keep_alive_millis = keep_alive_millis.max(0) as u64;
             if keep_alive_millis > 0 {
                 let effective_keep_alive = context.keep_alive_millis.max(keep_alive_millis);
                 context.keep_alive_millis = effective_keep_alive;
@@ -5326,6 +5331,19 @@ fn transport_search_documents_for_request(
         .cloned()
         .collect::<Vec<_>>();
     Some((documents, resolved_indices, None))
+}
+
+fn transport_search_pit_keep_alive_within_limit(
+    request: &os_transport::action::OpenSearchSearchRequestWire,
+) -> bool {
+    request
+        .source
+        .as_ref()
+        .and_then(|source| source.point_in_time.as_ref())
+        .and_then(|pit| pit.keep_alive.as_ref())
+        .map_or(true, |keep_alive| {
+            time_value_wire_to_millis(keep_alive) <= DEV_TRANSPORT_MAX_PIT_KEEP_ALIVE_MILLIS
+        })
 }
 
 fn transport_search_pit_context_exists_for_request(
@@ -12968,6 +12986,88 @@ mod tests {
                 .expect("PIT context should remain")
                 .keep_alive_millis,
             120_000
+        );
+    }
+
+    #[test]
+    fn search_transport_route_rejects_pit_keep_alive_above_limit() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        let bindings = dev_transport_pit_bindings();
+        bindings
+            .contexts
+            .lock()
+            .expect("dev transport PIT contexts lock poisoned")
+            .clear();
+        bindings
+            .created_indices
+            .lock()
+            .expect("dev transport created indices lock poisoned")
+            .clear();
+        bindings
+            .documents
+            .lock()
+            .expect("dev transport documents lock poisoned")
+            .clear();
+        bindings
+            .created_indices
+            .lock()
+            .expect("dev transport created indices lock poisoned")
+            .insert("logs-search-pit-keep-alive".to_string());
+
+        let pit_id = build_local_pit_id(704);
+        bindings
+            .contexts
+            .lock()
+            .expect("dev transport PIT contexts lock poisoned")
+            .insert(
+                pit_id.clone(),
+                PitContext {
+                    indices: vec!["logs-search-pit-keep-alive".to_string()],
+                    documents: BTreeMap::from([(
+                        "logs-search-pit-keep-alive:doc-1:".to_string(),
+                        StoredDocument {
+                            source: serde_json::json!({ "status": "active" }),
+                            version: 1,
+                            seq_no: 1,
+                            primary_term: 1,
+                            routing: None,
+                            refreshed: true,
+                        },
+                    )]),
+                    keep_alive_millis: 60_000,
+                    expires_at_millis: transport_pit_expires_at_millis(now_epoch_ms(), 60_000),
+                    creation_time_millis: now_epoch_ms(),
+                },
+            );
+
+        let request = os_transport::action::OpenSearchSearchRequestWire {
+            source: Some(os_transport::action::OpenSearchSearchSourceBuilderWire {
+                point_in_time: Some(os_transport::action::OpenSearchPointInTimeBuilderWire {
+                    id: pit_id.clone(),
+                    keep_alive: Some(os_transport::action::TimeValueWire::millis(90_000_000)),
+                }),
+                ..os_transport::action::OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..os_transport::action::OpenSearchSearchRequestWire::default()
+        };
+        let frame = os_transport::action::build_opensearch_search_request_message(
+            313,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(!search_request_supports_local_execution_subset(&frame[6..]));
+        assert_eq!(
+            bindings
+                .contexts
+                .lock()
+                .expect("dev transport PIT contexts lock poisoned")
+                .get(&pit_id)
+                .expect("PIT context should remain")
+                .keep_alive_millis,
+            60_000
         );
     }
 
