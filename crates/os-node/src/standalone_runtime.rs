@@ -24168,6 +24168,203 @@ fn validate_search_query_body(query: &Value) -> Option<RestResponse> {
     }
 }
 
+fn validate_function_score_body(spec: &serde_json::Map<String, Value>) -> Option<RestResponse> {
+    let Some(inner_query) = spec.get("query") else {
+        return Some(build_unsupported_search_response(
+            "unsupported function_score query shape",
+        ));
+    };
+    if spec.keys().any(|key| {
+        !matches!(
+            key.as_str(),
+            "query"
+                | "weight"
+                | "boost_mode"
+                | "score_mode"
+                | "functions"
+                | "field_value_factor"
+                | "random_score"
+        )
+    }) {
+        return Some(build_unsupported_search_response(
+            "unsupported function_score parameter",
+        ));
+    }
+    if let Some(response) = validate_positive_number_option(spec.get("weight"), "weight") {
+        return Some(response);
+    }
+    if let Some(boost_mode) = spec.get("boost_mode").and_then(Value::as_str) {
+        if boost_mode != "multiply" && boost_mode != "replace" {
+            return Some(build_unsupported_search_response(
+                "unsupported function_score boost_mode",
+            ));
+        }
+    }
+    if let Some(score_mode) = spec.get("score_mode").and_then(Value::as_str) {
+        if !matches!(
+            score_mode,
+            "multiply" | "sum" | "avg" | "max" | "min" | "first"
+        ) {
+            return Some(build_unsupported_search_response(
+                "unsupported function_score score_mode",
+            ));
+        }
+    }
+    if let Some(functions) = spec.get("functions") {
+        let Some(functions) = functions.as_array() else {
+            return Some(build_unsupported_search_response(
+                "unsupported function_score functions",
+            ));
+        };
+        for function in functions {
+            let Some(function) = function.as_object() else {
+                return Some(build_unsupported_search_response(
+                    "unsupported function_score function",
+                ));
+            };
+            if let Some(response) = validate_function_score_function(function) {
+                return Some(response);
+            }
+        }
+    }
+    if let Some(field_value_factor) = spec.get("field_value_factor") {
+        if let Some(response) = validate_field_value_factor_function(field_value_factor) {
+            return Some(response);
+        }
+    }
+    if let Some(random_score) = spec.get("random_score") {
+        if let Some(response) = validate_random_score_function(random_score) {
+            return Some(response);
+        }
+    }
+    if let Some(response) = validate_search_query_body(inner_query) {
+        return Some(response);
+    }
+    None
+}
+
+fn validate_function_score_function(
+    function: &serde_json::Map<String, Value>,
+) -> Option<RestResponse> {
+    if function.keys().any(|key| {
+        !matches!(
+            key.as_str(),
+            "filter" | "weight" | "field_value_factor" | "random_score"
+        )
+    }) {
+        return Some(build_unsupported_search_response(
+            "unsupported function_score function parameter",
+        ));
+    }
+    if let Some(response) = validate_positive_number_option(function.get("weight"), "weight") {
+        return Some(response);
+    }
+    if let Some(filter) = function.get("filter") {
+        if let Some(response) = validate_search_query_body(filter) {
+            return Some(response);
+        }
+    }
+    if let Some(field_value_factor) = function.get("field_value_factor") {
+        if let Some(response) = validate_field_value_factor_function(field_value_factor) {
+            return Some(response);
+        }
+    }
+    if let Some(random_score) = function.get("random_score") {
+        if let Some(response) = validate_random_score_function(random_score) {
+            return Some(response);
+        }
+    }
+    if !function.contains_key("weight")
+        && !function.contains_key("field_value_factor")
+        && !function.contains_key("random_score")
+    {
+        return Some(build_unsupported_search_response(
+            "unsupported function_score function",
+        ));
+    }
+    None
+}
+
+fn validate_positive_number_option(value: Option<&Value>, name: &str) -> Option<RestResponse> {
+    let Some(value) = value else {
+        return None;
+    };
+    let Some(number) = value.as_f64() else {
+        return Some(build_unsupported_search_response(&format!(
+            "unsupported function_score {name}"
+        )));
+    };
+    if number <= 0.0 {
+        return Some(build_unsupported_search_response(&format!(
+            "unsupported function_score {name}"
+        )));
+    }
+    None
+}
+
+fn validate_field_value_factor_function(value: &Value) -> Option<RestResponse> {
+    let Some(object) = value.as_object() else {
+        return Some(build_unsupported_search_response(
+            "unsupported field_value_factor function",
+        ));
+    };
+    if object
+        .keys()
+        .any(|key| !matches!(key.as_str(), "field" | "factor" | "missing" | "modifier"))
+    {
+        return Some(build_unsupported_search_response(
+            "unsupported field_value_factor parameter",
+        ));
+    }
+    let Some(field) = object.get("field").and_then(Value::as_str) else {
+        return Some(build_unsupported_search_response(
+            "unsupported field_value_factor field",
+        ));
+    };
+    if field.is_empty() {
+        return Some(build_unsupported_search_response(
+            "unsupported field_value_factor field",
+        ));
+    }
+    for option in ["factor", "missing"] {
+        if object.get(option).is_some_and(|value| !value.is_number()) {
+            return Some(build_unsupported_search_response(&format!(
+                "unsupported field_value_factor {option}"
+            )));
+        }
+    }
+    if let Some(modifier) = object.get("modifier").and_then(Value::as_str) {
+        if modifier != "none" {
+            return Some(build_unsupported_search_response(
+                "unsupported field_value_factor modifier",
+            ));
+        }
+    }
+    None
+}
+
+fn validate_random_score_function(value: &Value) -> Option<RestResponse> {
+    let Some(object) = value.as_object() else {
+        return Some(build_unsupported_search_response(
+            "unsupported random_score function",
+        ));
+    };
+    if object.keys().any(|key| !matches!(key.as_str(), "seed")) {
+        return Some(build_unsupported_search_response(
+            "unsupported random_score parameter",
+        ));
+    }
+    if object
+        .get("seed")
+        .is_some_and(|seed| !(seed.is_string() || seed.is_number()))
+    {
+        return Some(build_unsupported_search_response(
+            "unsupported random_score seed",
+        ));
+    }
+    None
+}
+
 fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
     if let Some(knn) = query.get("knn").and_then(Value::as_object) {
         let Some((_, spec)) = knn.iter().next() else {
@@ -24812,34 +25009,7 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
         }
     }
     if let Some(spec) = query.get("function_score").and_then(Value::as_object) {
-        let Some(inner_query) = spec.get("query") else {
-            return Some(build_unsupported_search_response(
-                "unsupported function_score query shape",
-            ));
-        };
-        if spec
-            .keys()
-            .any(|key| key != "query" && key != "weight" && key != "boost_mode")
-        {
-            return Some(build_unsupported_search_response(
-                "unsupported function_score parameter",
-            ));
-        }
-        if let Some(weight) = spec.get("weight").and_then(Value::as_f64) {
-            if weight <= 0.0 {
-                return Some(build_unsupported_search_response(
-                    "unsupported function_score weight",
-                ));
-            }
-        }
-        if let Some(boost_mode) = spec.get("boost_mode").and_then(Value::as_str) {
-            if boost_mode != "multiply" && boost_mode != "replace" {
-                return Some(build_unsupported_search_response(
-                    "unsupported function_score boost_mode",
-                ));
-            }
-        }
-        if let Some(response) = validate_search_query_body(inner_query) {
+        if let Some(response) = validate_function_score_body(spec) {
             return Some(response);
         }
     }
@@ -26674,18 +26844,16 @@ fn evaluate_search_query_source_with_mappings(
         if !matched {
             return Some((false, 0.0));
         }
-        let weight = function_score
-            .get("weight")
-            .and_then(Value::as_f64)
-            .unwrap_or(1.0);
+        let function_value =
+            evaluate_function_score_value(source, doc_id, function_score, mappings)?;
         let boost_mode = function_score
             .get("boost_mode")
             .and_then(Value::as_str)
             .unwrap_or("multiply");
         let score = if boost_mode == "replace" {
-            weight
+            function_value
         } else {
-            inner_score * weight
+            inner_score * function_value
         };
         return Some((true, score.max(1.0)));
     }
@@ -27678,6 +27846,134 @@ fn lookup_query_field_value<'a>(source: &'a Value, field: &str) -> Option<&'a Va
         return Some(current);
     }
     field.rsplit('.').next().and_then(|last| source.get(last))
+}
+
+fn evaluate_function_score_value(
+    source: &Value,
+    doc_id: &str,
+    function_score: &serde_json::Map<String, Value>,
+    mappings: &Value,
+) -> Option<f64> {
+    let mut values = Vec::new();
+    if let Some(weight) = function_score.get("weight").and_then(Value::as_f64) {
+        values.push(weight);
+    }
+    if let Some(value) = function_score
+        .get("field_value_factor")
+        .and_then(|spec| evaluate_field_value_factor_score(source, spec))
+    {
+        values.push(value);
+    }
+    if let Some(random_score) = function_score.get("random_score") {
+        values.push(evaluate_random_score(doc_id, random_score));
+    }
+    if let Some(functions) = function_score.get("functions").and_then(Value::as_array) {
+        for function in functions {
+            let Some(function) = function.as_object() else {
+                continue;
+            };
+            if let Some(filter) = function.get("filter") {
+                let (matched, _) =
+                    evaluate_search_query_source_with_mappings(source, doc_id, filter, mappings)?;
+                if !matched {
+                    continue;
+                }
+            }
+            if let Some(value) = evaluate_function_score_function(source, doc_id, function) {
+                values.push(value);
+            }
+        }
+    }
+    if values.is_empty() {
+        return Some(1.0);
+    }
+    let score_mode = function_score
+        .get("score_mode")
+        .and_then(Value::as_str)
+        .unwrap_or("multiply");
+    Some(combine_function_score_values(&values, score_mode))
+}
+
+fn evaluate_function_score_function(
+    source: &Value,
+    doc_id: &str,
+    function: &serde_json::Map<String, Value>,
+) -> Option<f64> {
+    let mut value = function
+        .get("weight")
+        .and_then(Value::as_f64)
+        .unwrap_or(1.0);
+    if let Some(field_score) = function
+        .get("field_value_factor")
+        .and_then(|spec| evaluate_field_value_factor_score(source, spec))
+    {
+        value *= field_score;
+    }
+    if let Some(random_score) = function.get("random_score") {
+        value *= evaluate_random_score(doc_id, random_score);
+    }
+    Some(value)
+}
+
+fn evaluate_field_value_factor_score(source: &Value, spec: &Value) -> Option<f64> {
+    let spec = spec.as_object()?;
+    let field = spec.get("field").and_then(Value::as_str)?;
+    let factor = spec.get("factor").and_then(Value::as_f64).unwrap_or(1.0);
+    let value = lookup_query_field_value(source, field)
+        .and_then(numeric_score_value)
+        .or_else(|| spec.get("missing").and_then(Value::as_f64))
+        .unwrap_or(1.0);
+    Some(value * factor)
+}
+
+fn numeric_score_value(value: &Value) -> Option<f64> {
+    if let Some(number) = value.as_f64() {
+        return Some(number);
+    }
+    value
+        .as_array()
+        .and_then(|values| values.iter().find_map(Value::as_f64))
+}
+
+fn evaluate_random_score(doc_id: &str, spec: &Value) -> f64 {
+    let seed = spec
+        .as_object()
+        .and_then(|object| object.get("seed"))
+        .map(canonical_random_seed)
+        .unwrap_or_default();
+    let hash = fnv1a64(&[doc_id.as_bytes(), seed.as_bytes()]);
+    (hash as f64 / u64::MAX as f64).max(f64::MIN_POSITIVE)
+}
+
+fn canonical_random_seed(value: &Value) -> String {
+    value
+        .as_str()
+        .map(str::to_string)
+        .unwrap_or_else(|| value.to_string())
+}
+
+fn fnv1a64(parts: &[&[u8]]) -> u64 {
+    let mut hash = 0xcbf29ce484222325u64;
+    for part in parts {
+        for byte in *part {
+            hash ^= u64::from(*byte);
+            hash = hash.wrapping_mul(0x100000001b3);
+        }
+        hash ^= 0xff;
+        hash = hash.wrapping_mul(0x100000001b3);
+    }
+    hash
+}
+
+fn combine_function_score_values(values: &[f64], score_mode: &str) -> f64 {
+    match score_mode {
+        "sum" => values.iter().sum(),
+        "avg" => values.iter().sum::<f64>() / values.len() as f64,
+        "max" => values.iter().copied().fold(f64::MIN, f64::max),
+        "min" => values.iter().copied().fold(f64::MAX, f64::min),
+        "first" => values.first().copied().unwrap_or(1.0),
+        _ => values.iter().product(),
+    }
 }
 
 fn script_filter_source(script: &Value) -> Option<&str> {
@@ -51390,6 +51686,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                     "mappings": {
                         "properties": {
                             "category": { "type": "keyword" },
+                            "priority": { "type": "long" },
                             "embedding": { "type": "knn_vector", "dimension": 3 }
                         }
                     }
@@ -51401,6 +51698,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                     "mappings": {
                         "properties": {
                             "category": { "type": "keyword" },
+                            "priority": { "type": "long" },
                             "embedding": {
                                 "type": "knn_vector",
                                 "dimension": 3,
@@ -51419,6 +51717,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                     "mappings": {
                         "properties": {
                             "category": { "type": "keyword" },
+                            "priority": { "type": "long" },
                             "embedding": {
                                 "type": "knn_vector",
                                 "dimension": 3,
@@ -51442,15 +51741,15 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             for (id, body) in [
                 (
                     "vec-a",
-                    serde_json::json!({ "category": "primary", "embedding": [2.0, 0.0, 0.0] }),
+                    serde_json::json!({ "category": "primary", "priority": 2, "embedding": [2.0, 0.0, 0.0] }),
                 ),
                 (
                     "vec-b",
-                    serde_json::json!({ "category": "secondary", "embedding": [0.0, 2.0, 0.0] }),
+                    serde_json::json!({ "category": "secondary", "priority": 1, "embedding": [0.0, 2.0, 0.0] }),
                 ),
                 (
                     "vec-c",
-                    serde_json::json!({ "category": "primary", "embedding": [1.0, 1.0, 0.0] }),
+                    serde_json::json!({ "category": "primary", "priority": 9, "embedding": [1.0, 1.0, 0.0] }),
                 ),
             ] {
                 assert_eq!(
@@ -51560,6 +51859,69 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                     .as_f64()
                     .unwrap_or_default()
         );
+
+        let field_value_factor = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/vectors-unit-rank-l2-000001/_search")
+                .with_json_body(serde_json::json!({
+                    "query": {
+                        "function_score": {
+                            "query": { "term": { "category": "primary" } },
+                            "functions": [
+                                {
+                                    "field_value_factor": {
+                                        "field": "priority",
+                                        "factor": 1.0,
+                                        "modifier": "none"
+                                    }
+                                }
+                            ],
+                            "score_mode": "sum",
+                            "boost_mode": "replace"
+                        }
+                    }
+                })),
+        );
+        assert_eq!(field_value_factor.status, 200);
+        assert_eq!(field_value_factor.body["hits"]["total"]["value"], 2);
+        assert_eq!(field_value_factor.body["hits"]["hits"][0]["_id"], "vec-c");
+        assert_eq!(field_value_factor.body["hits"]["hits"][1]["_id"], "vec-a");
+        assert!(
+            field_value_factor.body["hits"]["hits"][0]["_score"]
+                .as_f64()
+                .unwrap_or_default()
+                > field_value_factor.body["hits"]["hits"][1]["_score"]
+                    .as_f64()
+                    .unwrap_or_default()
+        );
+
+        let seeded_random_body = serde_json::json!({
+            "query": {
+                "function_score": {
+                    "query": { "term": { "category": "primary" } },
+                    "random_score": { "seed": 17 },
+                    "boost_mode": "replace"
+                }
+            }
+        });
+        let seeded_random = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/vectors-unit-rank-l2-000001/_search")
+                .with_json_body(seeded_random_body.clone()),
+        );
+        let seeded_random_repeat = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/vectors-unit-rank-l2-000001/_search")
+                .with_json_body(seeded_random_body),
+        );
+        assert_eq!(seeded_random.status, 200);
+        assert_eq!(seeded_random.body["hits"]["total"]["value"], 2);
+        assert_eq!(
+            seeded_random.body["hits"]["hits"],
+            seeded_random_repeat.body["hits"]["hits"]
+        );
+        assert!(seeded_random.body["hits"]["hits"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|hit| hit["_score"].as_f64().is_some()));
     }
 
     #[test]
