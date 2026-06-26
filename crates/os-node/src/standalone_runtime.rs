@@ -19462,21 +19462,72 @@ impl SteelNode {
     }
 
     fn handle_cat_repositories_route(&self, request: &RestRequest) -> RestResponse {
-        let rows: Vec<Value> = Vec::new();
+        let manifest = self
+            .metadata_manifest_state
+            .lock()
+            .expect("metadata manifest state lock poisoned");
+        let mut rows = manifest["snapshot_repositories"]
+            .as_object()
+            .map(|repositories| {
+                repositories
+                    .iter()
+                    .map(|(name, repository)| {
+                        serde_json::json!({
+                            "id": name,
+                            "type": repository["type"].as_str().unwrap_or("")
+                        })
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        drop(manifest);
+        rows.sort_by(|left, right| {
+            left["id"]
+                .as_str()
+                .unwrap_or_default()
+                .cmp(right["id"].as_str().unwrap_or_default())
+        });
         if request
             .query_params
             .get("format")
             .is_some_and(|value| value == "json")
         {
-            return RestResponse::json(200, Value::Array(rows));
+            let display_columns = cat_repositories_display_columns(request.query_params.get("h"));
+            let selected_rows = rows
+                .iter()
+                .map(|row| {
+                    let mut object = serde_json::Map::new();
+                    for (column, display) in &display_columns {
+                        object.insert(display.clone(), row[*column].clone());
+                    }
+                    Value::Object(object)
+                })
+                .collect::<Vec<_>>();
+            return RestResponse::json(200, Value::Array(selected_rows));
         }
         let verbose = request
             .query_params
             .get("v")
             .is_some_and(|value| value == "true");
+        let display_columns = cat_repositories_display_columns(request.query_params.get("h"));
         let mut lines = Vec::new();
         if verbose {
-            lines.push("id type".to_string());
+            lines.push(
+                display_columns
+                    .iter()
+                    .map(|(_, display)| display.as_str())
+                    .collect::<Vec<_>>()
+                    .join(" "),
+            );
+        }
+        for row in &rows {
+            lines.push(
+                display_columns
+                    .iter()
+                    .map(|(column, _)| row[*column].as_str().unwrap_or(""))
+                    .collect::<Vec<_>>()
+                    .join(" "),
+            );
         }
         RestResponse::text(200, lines.join("\n") + "\n")
     }
@@ -19752,25 +19803,42 @@ impl SteelNode {
             .get("format")
             .is_some_and(|value| value == "json")
         {
-            return RestResponse::json(200, Value::Array(rows.clone()));
+            let display_columns = cat_templates_display_columns(request.query_params.get("h"));
+            let selected_rows = rows
+                .iter()
+                .map(|row| {
+                    let mut object = serde_json::Map::new();
+                    for (column, display) in &display_columns {
+                        object.insert(display.clone(), row[*column].clone());
+                    }
+                    Value::Object(object)
+                })
+                .collect::<Vec<_>>();
+            return RestResponse::json(200, Value::Array(selected_rows));
         }
         let verbose = request
             .query_params
             .get("v")
             .is_some_and(|value| value == "true");
+        let display_columns = cat_templates_display_columns(request.query_params.get("h"));
         let mut lines = Vec::new();
         if verbose {
-            lines.push("name index_patterns order version composed_of".to_string());
+            lines.push(
+                display_columns
+                    .iter()
+                    .map(|(_, display)| display.as_str())
+                    .collect::<Vec<_>>()
+                    .join(" "),
+            );
         }
         for row in &rows {
-            lines.push(format!(
-                "{} {} {} {} {}",
-                row["name"].as_str().unwrap_or(""),
-                row["index_patterns"].as_str().unwrap_or("[]"),
-                row["order"].as_str().unwrap_or("0"),
-                row["version"].as_str().unwrap_or(""),
-                row["composed_of"].as_str().unwrap_or("[]"),
-            ));
+            lines.push(
+                display_columns
+                    .iter()
+                    .map(|(column, _)| row[*column].as_str().unwrap_or(""))
+                    .collect::<Vec<_>>()
+                    .join(" "),
+            );
         }
         RestResponse::text(200, lines.join("\n") + "\n")
     }
@@ -31049,6 +31117,93 @@ fn cat_nodes_display_columns(h_param: Option<&String>) -> Vec<(&'static str, Str
     selected
 }
 
+fn cat_repositories_display_columns(h_param: Option<&String>) -> Vec<(&'static str, String)> {
+    let Some(h_param) = h_param else {
+        return vec![("id", "id".to_string()), ("type", "type".to_string())];
+    };
+    let mut selected = Vec::new();
+    for requested in h_param
+        .split(',')
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        if requested.contains('*') {
+            for (column, aliases) in [("id", &["repoId"][..]), ("type", &["t"][..])] {
+                if wildcard_match(requested, column)
+                    || aliases.iter().any(|alias| wildcard_match(requested, alias))
+                {
+                    if !selected.iter().any(|(existing, _)| existing == &column) {
+                        selected.push((column, column.to_string()));
+                    }
+                }
+            }
+            continue;
+        }
+        let column = match requested {
+            "id" | "repoId" => Some("id"),
+            "type" | "t" => Some("type"),
+            _ => None,
+        };
+        if let Some(column) = column {
+            if !selected.iter().any(|(existing, _)| existing == &column) {
+                selected.push((column, requested.to_string()));
+            }
+        }
+    }
+    selected
+}
+
+fn cat_templates_display_columns(h_param: Option<&String>) -> Vec<(&'static str, String)> {
+    let Some(h_param) = h_param else {
+        return vec![
+            ("name", "name".to_string()),
+            ("index_patterns", "index_patterns".to_string()),
+            ("order", "order".to_string()),
+            ("version", "version".to_string()),
+            ("composed_of", "composed_of".to_string()),
+        ];
+    };
+    let mut selected = Vec::new();
+    for requested in h_param
+        .split(',')
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        if requested.contains('*') {
+            for (column, aliases) in [
+                ("name", &["n"][..]),
+                ("index_patterns", &["t"][..]),
+                ("order", &["o", "p"][..]),
+                ("version", &["v"][..]),
+                ("composed_of", &["c"][..]),
+            ] {
+                if wildcard_match(requested, column)
+                    || aliases.iter().any(|alias| wildcard_match(requested, alias))
+                {
+                    if !selected.iter().any(|(existing, _)| existing == &column) {
+                        selected.push((column, column.to_string()));
+                    }
+                }
+            }
+            continue;
+        }
+        let column = match requested {
+            "name" | "n" => Some("name"),
+            "index_patterns" | "t" => Some("index_patterns"),
+            "order" | "o" | "p" => Some("order"),
+            "version" | "v" => Some("version"),
+            "composed_of" | "c" => Some("composed_of"),
+            _ => None,
+        };
+        if let Some(column) = column {
+            if !selected.iter().any(|(existing, _)| existing == &column) {
+                selected.push((column, requested.to_string()));
+            }
+        }
+    }
+    selected
+}
+
 fn cat_pending_tasks_display_columns(h_param: Option<&String>) -> Vec<(&'static str, String)> {
     let Some(h_param) = h_param else {
         return vec![
@@ -38277,6 +38432,12 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             name: "steel-node".to_string(),
             version: OPENSEARCH_3_7_0_TRANSPORT,
         });
+        let repository_request = RestRequest::new(RestMethod::Put, "/_snapshot/repo-cat")
+            .with_json_body(serde_json::json!({
+                "type": "fs",
+                "settings": { "location": "/tmp/repo-cat" }
+            }));
+        assert_eq!(node.handle_rest_request(repository_request).status, 200);
 
         let mut repositories_json_request = RestRequest::new(RestMethod::Get, "/_cat/repositories");
         repositories_json_request
@@ -38284,7 +38445,27 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             .insert("format".to_string(), "json".to_string());
         let repositories_json_response = node.handle_rest_request(repositories_json_request);
         assert_eq!(repositories_json_response.status, 200);
-        assert_eq!(repositories_json_response.body, Value::Array(Vec::new()));
+        assert_eq!(repositories_json_response.body[0]["id"], "repo-cat");
+        assert_eq!(repositories_json_response.body[0]["type"], "fs");
+
+        let mut selected_repositories_json_request =
+            RestRequest::new(RestMethod::Get, "/_cat/repositories");
+        selected_repositories_json_request
+            .query_params
+            .insert("format".to_string(), "json".to_string());
+        selected_repositories_json_request
+            .query_params
+            .insert("h".to_string(), "repoId,t".to_string());
+        let selected_repositories_json_response =
+            node.handle_rest_request(selected_repositories_json_request);
+        assert_eq!(
+            selected_repositories_json_response.body[0]["repoId"],
+            "repo-cat"
+        );
+        assert_eq!(selected_repositories_json_response.body[0]["t"], "fs");
+        assert!(selected_repositories_json_response.body[0]
+            .get("id")
+            .is_none());
 
         let mut repositories_text_request = RestRequest::new(RestMethod::Get, "/_cat/repositories");
         repositories_text_request
@@ -38296,6 +38477,26 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             .as_str()
             .expect("cat repositories text body");
         assert!(repositories_text.contains("id type"));
+        assert!(repositories_text.contains("repo-cat fs"));
+
+        let mut selected_repositories_text_request =
+            RestRequest::new(RestMethod::Get, "/_cat/repositories");
+        selected_repositories_text_request
+            .query_params
+            .insert("v".to_string(), "true".to_string());
+        selected_repositories_text_request
+            .query_params
+            .insert("h".to_string(), "repoId,t".to_string());
+        let selected_repositories_text_response =
+            node.handle_rest_request(selected_repositories_text_request);
+        let selected_repositories_text = selected_repositories_text_response
+            .body
+            .as_str()
+            .expect("selected cat repositories text body");
+        assert_eq!(
+            selected_repositories_text.lines().collect::<Vec<_>>(),
+            vec!["repoId t", "repo-cat fs"]
+        );
     }
 
     #[test]
@@ -38472,6 +38673,23 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 .len(),
             2
         );
+        assert!(templates_json_response.body[0].get("name").is_some());
+
+        let mut selected_templates_json_request =
+            RestRequest::new(RestMethod::Get, "/_cat/templates");
+        selected_templates_json_request
+            .query_params
+            .insert("format".to_string(), "json".to_string());
+        selected_templates_json_request
+            .query_params
+            .insert("h".to_string(), "n,o,v,c".to_string());
+        let selected_templates_json_response =
+            node.handle_rest_request(selected_templates_json_request);
+        assert_eq!(selected_templates_json_response.status, 200);
+        assert!(selected_templates_json_response.body[0].get("n").is_some());
+        assert!(selected_templates_json_response.body[0]
+            .get("name")
+            .is_none());
 
         let mut templates_text_request =
             RestRequest::new(RestMethod::Get, "/_cat/templates/logs-*");
@@ -38486,6 +38704,25 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert!(templates_text.contains("name index_patterns order version composed_of"));
         assert!(templates_text.contains("logs-template"));
         assert!(!templates_text.contains("metrics-template"));
+
+        let mut selected_templates_text_request =
+            RestRequest::new(RestMethod::Get, "/_cat/templates/logs-*");
+        selected_templates_text_request
+            .query_params
+            .insert("v".to_string(), "true".to_string());
+        selected_templates_text_request
+            .query_params
+            .insert("h".to_string(), "n,o,v,c".to_string());
+        let selected_templates_text_response =
+            node.handle_rest_request(selected_templates_text_request);
+        let selected_templates_text = selected_templates_text_response
+            .body
+            .as_str()
+            .expect("selected cat templates text body");
+        assert_eq!(
+            selected_templates_text.lines().collect::<Vec<_>>(),
+            vec!["n o v c", "logs-template 7 1 []"]
+        );
 
         let post_templates_target = node.handle_rest_request(RestRequest::new(
             RestMethod::Post,
