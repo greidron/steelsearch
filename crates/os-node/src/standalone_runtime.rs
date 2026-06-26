@@ -18407,6 +18407,9 @@ impl SteelNode {
             "timestamp": "00:00:00",
             "count": count
         });
+        if let Err(response) = validate_cat_count_sort(request.query_params.get("s")) {
+            return response;
+        }
         if request
             .query_params
             .get("format")
@@ -30549,6 +30552,35 @@ fn cat_count_display_columns(h_param: Option<&String>) -> Vec<(&'static str, Str
     selected
 }
 
+fn cat_count_resolve_column(column: &str) -> Option<&'static str> {
+    match column {
+        "epoch" => Some("epoch"),
+        "timestamp" => Some("timestamp"),
+        "count" | "dc" | "docs.count" | "docsCount" => Some("count"),
+        _ => None,
+    }
+}
+
+fn validate_cat_count_sort(s_param: Option<&String>) -> Result<(), RestResponse> {
+    let Some(value) = s_param else {
+        return Ok(());
+    };
+    for raw_column in value.split(',').map(str::trim).filter(|value| !value.is_empty()) {
+        let column_name = raw_column
+            .strip_suffix(":desc")
+            .or_else(|| raw_column.strip_suffix(":asc"))
+            .unwrap_or(raw_column);
+        if cat_count_resolve_column(column_name).is_none() {
+            return Err(RestResponse::opensearch_error(
+                500,
+                "unsupported_operation_exception",
+                &format!("Unable to sort by unknown sort key `{column_name}`"),
+            ));
+        }
+    }
+    Ok(())
+}
+
 fn cat_count_selected_row(row: &Value, h_param: Option<&String>) -> Value {
     let mut object = serde_json::Map::new();
     for (column, display) in cat_count_display_columns(h_param) {
@@ -35936,6 +35968,43 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             count_wildcard_text.lines().collect::<Vec<_>>(),
             vec!["count", "1"]
+        );
+
+        let mut count_sorted_text_request =
+            RestRequest::new(RestMethod::Get, "/_cat/count/logs-*");
+        count_sorted_text_request
+            .query_params
+            .insert("v".to_string(), "true".to_string());
+        count_sorted_text_request
+            .query_params
+            .insert("h".to_string(), "dc".to_string());
+        count_sorted_text_request
+            .query_params
+            .insert("s".to_string(), "dc:desc".to_string());
+        let count_sorted_text_response = node.handle_rest_request(count_sorted_text_request);
+        let count_sorted_text = count_sorted_text_response
+            .body
+            .as_str()
+            .expect("cat count sorted text body");
+        assert_eq!(
+            count_sorted_text.lines().collect::<Vec<_>>(),
+            vec!["dc", "1"]
+        );
+
+        let mut count_unknown_sort_request =
+            RestRequest::new(RestMethod::Get, "/_cat/count/logs-*");
+        count_unknown_sort_request
+            .query_params
+            .insert("s".to_string(), "missing_column".to_string());
+        let count_unknown_sort_response = node.handle_rest_request(count_unknown_sort_request);
+        assert_eq!(count_unknown_sort_response.status, 500);
+        assert_eq!(
+            count_unknown_sort_response.body["error"]["type"],
+            "unsupported_operation_exception"
+        );
+        assert_eq!(
+            count_unknown_sort_response.body["error"]["reason"],
+            "Unable to sort by unknown sort key `missing_column`"
         );
 
         let mut indices_text_request = RestRequest::new(RestMethod::Get, "/_cat/indices/logs-*");

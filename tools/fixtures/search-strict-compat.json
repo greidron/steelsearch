@@ -1704,6 +1704,17 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "cat_count_text_selected_alias_sort_desc",
+      "area": "cat",
+      "method": "GET",
+      "path": "/_cat/count/logs-compat?v=true&h=dc&s=dc:desc",
+      "accept": "text/plain",
+      "extract": "cat_indices_selected_columns",
+      "family": "lexical",
+      "description": "[lexical] cat count text accepts s alias sort syntax",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "dfs_query_then_fetch_search",
       "area": "search",
       "method": "POST",
