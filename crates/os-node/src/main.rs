@@ -8801,7 +8801,6 @@ fn delete_pit_request_matches_local_lifecycle_subset(
     request: &os_transport::action::OpenSearchDeletePitRequestWire,
 ) -> bool {
     request.validate_supported_subset().is_ok()
-        && !request.pit_ids.iter().any(|pit_id| pit_id.is_empty())
 }
 
 fn ids_use_all_only_as_standalone(ids: &[String]) -> bool {
@@ -22093,7 +22092,7 @@ mod tests {
     }
 
     #[test]
-    fn delete_pit_transport_route_rejects_empty_id_entries() {
+    fn delete_pit_transport_route_round_trips_empty_id_entries_like_wire() {
         let _lock = dev_transport_pit_test_lock()
             .lock()
             .expect("dev transport PIT test lock poisoned");
@@ -22112,7 +22111,7 @@ mod tests {
             &request,
         )
         .unwrap();
-        assert!(!delete_pit_request_supports_local_lifecycle_subset(
+        assert!(delete_pit_request_supports_local_lifecycle_subset(
             &frame[6..]
         ));
 
@@ -22127,10 +22126,13 @@ mod tests {
                 .unwrap()
                 .unwrap()
         else {
-            panic!("expected delete-PIT fallback response message");
+            panic!("expected delete-PIT response message");
         };
-        assert_eq!(message.request_id, 198);
-        assert!(message.body.is_empty());
+        let response =
+            os_transport::action::read_opensearch_delete_pit_response_message(&message).unwrap();
+        assert_eq!(response.results.len(), 1);
+        assert_eq!(response.results[0].pit_id, "");
+        assert!(response.results[0].successful);
     }
 
     #[test]
