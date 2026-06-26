@@ -18,6 +18,10 @@
       "body": {}
     },
     {
+      "name": "logs-write-dest-slices",
+      "body": {}
+    },
+    {
       "name": "logs-write-overwrite",
       "body": {}
     },
@@ -378,6 +382,22 @@
           "extract": "get_document"
         }
       ]
+    },
+    {
+      "name": "reindex_slices_summary",
+      "area": "document-write",
+      "method": "POST",
+      "path": "/_reindex?slices=2&refresh=true",
+      "body": {
+        "source": {
+          "index": "logs-write-source-a"
+        },
+        "dest": {
+          "index": "logs-write-dest-slices"
+        }
+      },
+      "expected_status": 200,
+      "extract": "reindex_summary"
     },
     {
       "name": "create_conflict_error",
