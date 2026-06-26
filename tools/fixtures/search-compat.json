@@ -6589,6 +6589,333 @@
       "description": "[lexical] scroll initial search"
     },
     {
+      "name": "root_search_put_method_error_search",
+      "area": "search",
+      "method": "PUT",
+      "path": "/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        }
+      },
+      "expected_status": 405,
+      "extract": "method_not_allowed_error",
+      "family": "lexical",
+      "description": "[lexical] root search path rejects PUT with OpenSearch method error"
+    },
+    {
+      "name": "root_search_patch_method_error_search",
+      "area": "search",
+      "method": "PATCH",
+      "path": "/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        }
+      },
+      "expected_status": 405,
+      "extract": "method_not_allowed_error",
+      "family": "lexical",
+      "description": "[lexical] root search path rejects PATCH with OpenSearch method error"
+    },
+    {
+      "name": "index_search_put_method_error_search",
+      "area": "search",
+      "method": "PUT",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        }
+      },
+      "expected_status": 405,
+      "extract": "method_not_allowed_error",
+      "family": "lexical",
+      "description": "[lexical] index search path rejects PUT with OpenSearch method error"
+    },
+    {
+      "name": "index_search_patch_method_error_search",
+      "area": "search",
+      "method": "PATCH",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        }
+      },
+      "expected_status": 405,
+      "extract": "method_not_allowed_error",
+      "family": "lexical",
+      "description": "[lexical] index search path rejects PATCH with OpenSearch method error"
+    },
+    {
+      "name": "scroll_put_method_error_search",
+      "area": "search",
+      "method": "PUT",
+      "path": "/_search/scroll",
+      "body": {
+        "scroll_id": "missing",
+        "scroll": "1m"
+      },
+      "expected_status": 405,
+      "extract": "method_not_allowed_error",
+      "family": "lexical",
+      "description": "[lexical] scroll path rejects PUT with OpenSearch method error"
+    },
+    {
+      "name": "scroll_patch_method_error_search",
+      "area": "search",
+      "method": "PATCH",
+      "path": "/_search/scroll",
+      "body": {
+        "scroll_id": "missing"
+      },
+      "expected_status": 405,
+      "extract": "method_not_allowed_error",
+      "family": "lexical",
+      "description": "[lexical] scroll path rejects PATCH with OpenSearch method error"
+    },
+    {
+      "name": "scroll_id_put_method_error_search",
+      "area": "search",
+      "method": "PUT",
+      "path": "/_search/scroll/missing-scroll-id",
+      "body": null,
+      "expected_status": 405,
+      "extract": "method_not_allowed_error",
+      "family": "lexical",
+      "description": "[lexical] scroll id path rejects PUT with OpenSearch method error"
+    },
+    {
+      "name": "scroll_rejects_disabled_track_total_hits_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search?scroll=1m",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "track_total_hits": false
+      },
+      "expected_status": 400,
+      "extract": "search_error",
+      "family": "lexical",
+      "description": "[lexical] scroll rejects disabled track_total_hits"
+    },
+    {
+      "name": "scroll_rejects_disabled_track_total_hits_numeric_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search?scroll=1m",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "track_total_hits": -1
+      },
+      "expected_status": 400,
+      "extract": "search_error",
+      "family": "lexical",
+      "description": "[lexical] scroll rejects numeric disabled track_total_hits"
+    },
+    {
+      "name": "scroll_rejects_request_cache_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search?scroll=1m&request_cache=true",
+      "body": {
+        "query": {
+          "match_all": {}
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error",
+      "family": "lexical",
+      "description": "[lexical] scroll rejects request_cache"
+    },
+    {
+      "name": "scroll_rejects_rescore_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search?scroll=1m",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "rescore": {
+          "window_size": 2,
+          "query": {
+            "rescore_query": {
+              "match": {
+                "message": "timeout"
+              }
+            }
+          }
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error",
+      "family": "lexical",
+      "description": "[lexical] scroll rejects rescore"
+    },
+    {
+      "name": "scroll_rejects_oversized_batch_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search?scroll=1m",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "size": 10001
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] scroll batch size is bounded by index.max_result_window"
+    },
+    {
+      "name": "scroll_rejects_size_zero_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search?scroll=1m",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "size": 0
+      },
+      "expected_status": 400,
+      "extract": "search_error",
+      "family": "lexical",
+      "description": "[lexical] scroll rejects zero size"
+    },
+    {
+      "name": "stored_fields_none_with_source_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "stored_fields": [
+          "_none_"
+        ],
+        "_source": true
+      },
+      "expected_status": 500,
+      "expected_steelsearch_status": 500,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] stored_fields _none_ rejects explicit source fetch"
+    },
+    {
+      "name": "stored_fields_none_with_fields_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "stored_fields": [
+          "_none_"
+        ],
+        "fields": [
+          "service"
+        ]
+      },
+      "expected_status": 500,
+      "expected_steelsearch_status": 500,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] stored_fields _none_ rejects fields fetch"
+    },
+    {
+      "name": "stored_fields_none_combined_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "stored_fields": [
+          "_none_",
+          "service"
+        ]
+      },
+      "expected_status": 400,
+      "extract": "search_error",
+      "family": "lexical",
+      "description": "[lexical] stored_fields _none_ cannot be combined with other fields"
+    },
+    {
+      "name": "collapse_with_scroll_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search?scroll=1m",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "collapse": {
+          "field": "service"
+        }
+      },
+      "expected_status": 500,
+      "expected_steelsearch_status": 500,
+      "extract": "search_error_root_cause",
+      "family": "ranking",
+      "description": "[ranking] collapse with scroll is rejected"
+    },
+    {
+      "name": "search_after_with_scroll_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search?scroll=1m",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "sort": [
+          {
+            "ts": {
+              "order": "asc"
+            }
+          }
+        ],
+        "search_after": [
+          "2026-04-22T00:00:00Z"
+        ]
+      },
+      "expected_status": 500,
+      "expected_steelsearch_status": 500,
+      "extract": "search_error_root_cause",
+      "family": "ranking",
+      "description": "[ranking] search_after with scroll is rejected"
+    },
+    {
+      "name": "slice_scroll_limit_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search?scroll=1m",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "slice": {
+          "id": 0,
+          "max": 1025
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "ranking",
+      "description": "[ranking] scroll slice count is bounded by index.max_slices_per_scroll"
+    },
+    {
       "name": "simple_query_string_search",
       "area": "search",
       "method": "POST",
