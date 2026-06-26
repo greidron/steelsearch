@@ -15,6 +15,11 @@ def parse_args() -> argparse.Namespace:
         nargs="?",
         default="tools/fixtures/search-promotion-gate.json",
     )
+    parser.add_argument(
+        "--search-compat-fixture",
+        default="tools/fixtures/search-compat.json",
+        help="Search compatibility fixture whose area=search cases must be promoted.",
+    )
     return parser.parse_args()
 
 
@@ -27,6 +32,12 @@ def ensure_subset(name: str, actual: list[str], required: set[str]) -> None:
 def main() -> int:
     args = parse_args()
     fixture = json.loads(Path(args.fixture).read_text(encoding="utf-8"))
+    search_compat = json.loads(Path(args.search_compat_fixture).read_text(encoding="utf-8"))
+    required_semantic_cases = {
+        case["name"]
+        for case in search_compat.get("cases", [])
+        if case.get("area") in {"search", "aggregation"}
+    }
 
     if fixture.get("source_area") != "REST `_search`":
         raise SystemExit("search promotion gate fixture has the wrong source_area")
@@ -61,7 +72,8 @@ def main() -> int:
     ensure_subset(
         "semantic_parity.required_cases",
         semantic.get("required_cases") or [],
-        {
+        required_semantic_cases
+        | {
             "exists_query_search",
             "source_filtering_search",
             "validate_query_empty_search",
@@ -154,10 +166,17 @@ def main() -> int:
             "sum_bucket_pipeline_aggregation",
             "scripted_metric_aggregation",
             "partial_shard_failure_geo_search",
-            "allow_partial_search_results_execution_summary",
             "expand_wildcards_closed_fail_closed",
         },
     )
+    stale_required_cases = sorted(
+        set(semantic.get("required_cases") or []) - required_semantic_cases
+    )
+    if stale_required_cases:
+        raise SystemExit(
+            "semantic_parity.required_cases contains entries outside search/aggregation compat: "
+            f"{stale_required_cases}"
+        )
     ensure_subset(
         "security_parity.report_paths",
         security.get("report_paths") or [],
