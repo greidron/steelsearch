@@ -7,19 +7,7 @@ import argparse
 import json
 from pathlib import Path
 
-from promotion_report_evidence import validate_report_evidence
-
-
-def resolve_report_path(path: str) -> Path | None:
-    direct = Path(path)
-    if direct.exists():
-        return direct
-    matches = sorted(
-        Path("target").glob(f"**/{direct.name}"),
-        key=lambda candidate: candidate.stat().st_mtime,
-        reverse=True,
-    )
-    return matches[0] if matches else None
+from promotion_report_evidence import resolve_required_report_paths, validate_report_evidence
 
 
 def parse_args() -> argparse.Namespace:
@@ -111,18 +99,11 @@ def main() -> int:
         report_paths = gate.get("required_reports") or []
     if not report_paths:
         raise SystemExit("at least one k-NN compatibility report is required")
-    resolved_reports = [resolve_report_path(path) for path in report_paths]
-    missing_reports = sorted(
-        str(path)
-        for path, resolved_report in zip(report_paths, resolved_reports)
-        if resolved_report is None
-    )
-    if missing_reports:
-        raise SystemExit(f"k-NN compatibility reports do not exist: {missing_reports}")
+    resolved_reports = resolve_required_report_paths(report_paths)
 
     if report_paths:
         report_errors = validate_report_evidence(
-            [report for report in resolved_reports if report is not None],
+            resolved_reports,
             required_cases,
             required_evidence_classes,
         )
@@ -150,7 +131,7 @@ def main() -> int:
             {
                 "fixture": str(Path(args.fixture)),
                 "profile": fixture["profile"],
-                "reports": [str(report) for report in resolved_reports if report is not None],
+                "reports": [str(report) for report in resolved_reports],
                 "source_area": fixture["source_area"],
                 "status": "ok",
             },

@@ -11,6 +11,34 @@ from typing import Any
 PASS_STATUSES = {"passed", "canonical_equal", "strict_equal", "semantic_equal"}
 
 
+def resolve_report_path(path: str) -> Path | None:
+    direct = Path(path)
+    if direct.exists():
+        return direct
+    repo_root = Path(__file__).resolve().parents[1]
+    root_relative = repo_root / path
+    if root_relative.exists():
+        return root_relative
+    matches = sorted(
+        [*Path("target").glob(f"**/{direct.name}"), *repo_root.glob(f"target/**/{direct.name}")],
+        key=lambda candidate: candidate.stat().st_mtime,
+        reverse=True,
+    )
+    return matches[0] if matches else None
+
+
+def resolve_required_report_paths(report_paths: list[str]) -> list[Path]:
+    resolved_reports = [resolve_report_path(path) for path in report_paths]
+    missing_reports = sorted(
+        str(path)
+        for path, resolved_report in zip(report_paths, resolved_reports)
+        if resolved_report is None
+    )
+    if missing_reports:
+        raise SystemExit(f"compatibility reports do not exist: {missing_reports}")
+    return [report for report in resolved_reports if report is not None]
+
+
 def _as_list(value: Any) -> list[Any]:
     if value is None:
         return []
