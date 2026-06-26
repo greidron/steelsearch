@@ -5424,6 +5424,7 @@ fn local_transport_search_response_from_request(
                     transport_search_sort_values_for_match(&index, &id, &source, seq_no, sorts)
                 })
                 .unwrap_or_default();
+            let fields = local_transport_hit_fields(&source, request_source);
             let source = local_transport_filter_hit_source(&source, fetch_source);
             os_transport::action::OpenSearchSearchHitWire {
                 id: Some(id),
@@ -5442,7 +5443,7 @@ fn local_transport_search_response_from_request(
                 },
                 source,
                 explanation: None,
-                fields: BTreeMap::new(),
+                fields,
                 meta_fields: BTreeMap::new(),
                 highlight_fields: BTreeMap::new(),
                 sort_values,
@@ -5482,6 +5483,101 @@ fn local_transport_total_hits(
         Some(limit) if actual_total_hits > i64::from(limit) => (Some(i64::from(limit)), 1),
         _ => (Some(actual_total_hits), 0),
     }
+}
+
+fn local_transport_hit_fields(
+    source: &Value,
+    request_source: Option<&os_transport::action::OpenSearchSearchSourceBuilderWire>,
+) -> BTreeMap<String, Vec<Value>> {
+    let Some(request_source) = request_source else {
+        return BTreeMap::new();
+    };
+    let mut fields = BTreeMap::new();
+    for field in request_source
+        .doc_value_fields
+        .as_deref()
+        .unwrap_or_default()
+        .iter()
+        .chain(request_source.fetch_fields.as_deref().unwrap_or_default())
+    {
+        local_transport_insert_field_values(source, &mut fields, &field.field);
+    }
+    if let Some(stored_fields) = &request_source.stored_fields {
+        if stored_fields.fetch_fields {
+            for field in stored_fields.field_names.as_deref().unwrap_or_default() {
+                local_transport_insert_field_values(source, &mut fields, field);
+            }
+        }
+    }
+    for script_field in request_source
+        .script_fields
+        .as_deref()
+        .unwrap_or_default()
+        .iter()
+    {
+        if let Some(value) = local_transport_script_field_value(source, script_field) {
+            fields.insert(script_field.field_name.clone(), vec![value]);
+        }
+    }
+    fields
+}
+
+fn local_transport_insert_field_values(
+    source: &Value,
+    fields: &mut BTreeMap<String, Vec<Value>>,
+    field: &str,
+) {
+    let Some(value) = lookup_transport_source_value(source, field) else {
+        return;
+    };
+    let values = match value {
+        Value::Array(values) => values.clone(),
+        value => vec![value.clone()],
+    };
+    if !values.is_empty() {
+        fields.insert(field.to_string(), values);
+    }
+}
+
+fn local_transport_script_field_value(
+    source: &Value,
+    script_field: &os_transport::action::OpenSearchScriptFieldWire,
+) -> Option<Value> {
+    let script = script_field.script.source.trim();
+    let emitted = script.strip_prefix("emit(")?.strip_suffix(')')?.trim();
+    if let Some(field) = emitted
+        .strip_prefix("params._source['")
+        .and_then(|value| value.strip_suffix("']"))
+        .or_else(|| {
+            emitted
+                .strip_prefix("params._source[\"")
+                .and_then(|value| value.strip_suffix("\"]"))
+        })
+    {
+        return lookup_transport_source_value(source, field).cloned();
+    }
+    emitted
+        .strip_prefix('\'')
+        .and_then(|value| value.strip_suffix('\''))
+        .or_else(|| {
+            emitted
+                .strip_prefix('"')
+                .and_then(|value| value.strip_suffix('"'))
+        })
+        .map(|value| Value::String(value.to_string()))
+        .or_else(|| {
+            emitted
+                .parse::<i64>()
+                .ok()
+                .map(|value| Value::Number(value.into()))
+        })
+        .or_else(|| {
+            emitted
+                .parse::<f64>()
+                .ok()
+                .and_then(serde_json::Number::from_f64)
+                .map(Value::Number)
+        })
 }
 
 fn local_transport_filter_hit_source(
@@ -18097,6 +18193,40 @@ mod tests {
                     includes: vec!["message".to_string(), "comments.*".to_string()],
                     excludes: vec!["comments.text".to_string()],
                 }),
+                doc_value_fields: Some(vec![os_transport::action::OpenSearchFieldAndFormatWire {
+                    field: "age".to_string(),
+                    format: None,
+                }]),
+                fetch_fields: Some(vec![os_transport::action::OpenSearchFieldAndFormatWire {
+                    field: "status".to_string(),
+                    format: None,
+                }]),
+                stored_fields: Some(os_transport::action::OpenSearchStoredFieldsContextWire {
+                    fetch_fields: true,
+                    field_names: Some(vec!["category".to_string()]),
+                }),
+                script_fields: Some(vec![
+                    os_transport::action::OpenSearchScriptFieldWire {
+                        field_name: "tenant_copy".to_string(),
+                        script: os_transport::action::OpenSearchInlineScriptWire {
+                            lang: Some("painless".to_string()),
+                            source: "emit(params._source['tenant'])".to_string(),
+                            options: serde_json::json!({}),
+                            params: serde_json::json!({}),
+                        },
+                        ignore_failure: false,
+                    },
+                    os_transport::action::OpenSearchScriptFieldWire {
+                        field_name: "literal_field".to_string(),
+                        script: os_transport::action::OpenSearchInlineScriptWire {
+                            lang: Some("painless".to_string()),
+                            source: "emit('literal')".to_string(),
+                            options: serde_json::json!({}),
+                            params: serde_json::json!({}),
+                        },
+                        ignore_failure: false,
+                    },
+                ]),
                 ..os_transport::action::OpenSearchSearchSourceBuilderWire::default()
             }),
             indices_options:
@@ -18146,6 +18276,19 @@ mod tests {
                     { "author": "ann" }
                 ]
             }))
+        );
+        assert_eq!(
+            search_response.hits[0].fields,
+            BTreeMap::from([
+                ("age".to_string(), vec![serde_json::json!(7)]),
+                ("category".to_string(), vec![serde_json::json!("prod-api")]),
+                (
+                    "literal_field".to_string(),
+                    vec![serde_json::json!("literal")]
+                ),
+                ("status".to_string(), vec![serde_json::json!("reader-pit")]),
+                ("tenant_copy".to_string(), vec![serde_json::json!("a")]),
+            ])
         );
 
         let metadata_request = os_transport::action::OpenSearchSearchRequestWire {
