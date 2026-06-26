@@ -20,10 +20,26 @@
         "vector-ml"
       ],
       "required_cases": [
-        "ml_model_lifecycle_shape",
+        "register_model",
+        "get_model",
+        "deploy_model",
+        "predict_model",
+        "search_model",
+        "create_neural_index",
+        "put_neural_doc_a",
+        "put_neural_doc_b",
+        "put_neural_pipeline",
         "neural_query_search",
+        "create_rerank_index",
+        "put_rerank_doc_a",
+        "put_rerank_doc_b",
+        "put_rerank_pipeline",
         "rerank_pipeline_search",
-        "sparse_encoder_search"
+        "create_sparse_index",
+        "put_sparse_doc_a",
+        "put_sparse_doc_b",
+        "sparse_encoder_search",
+        "undeploy_model"
       ],
       "required_evidence_classes": [
         "task-lifecycle",

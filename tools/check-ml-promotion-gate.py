@@ -18,6 +18,11 @@ def parse_args() -> argparse.Namespace:
         default="tools/fixtures/ml-promotion-gate.json",
     )
     parser.add_argument(
+        "--ml-compat-fixture",
+        default="tools/fixtures/ml-model-surface-compat.json",
+        help="ML model surface compatibility fixture whose cases must be promoted.",
+    )
+    parser.add_argument(
         "--report",
         action="append",
         default=[],
@@ -35,6 +40,7 @@ def ensure_subset(name: str, actual: list[str], required: set[str]) -> None:
 def main() -> int:
     args = parse_args()
     fixture = json.loads(Path(args.fixture).read_text(encoding="utf-8"))
+    ml_compat = json.loads(Path(args.ml_compat_fixture).read_text(encoding="utf-8"))
 
     if fixture.get("source_area") != "ML Commons, neural search, and model serving":
         raise SystemExit("ML promotion gate fixture has the wrong source_area")
@@ -56,10 +62,9 @@ def main() -> int:
     semantic = sections["semantic_parity"]
     security = sections["security_parity"]
     semantic_required_cases = {
-        "ml_model_lifecycle_shape",
-        "neural_query_search",
-        "rerank_pipeline_search",
-        "sparse_encoder_search",
+        case["name"]
+        for case in ml_compat.get("cases", [])
+        if isinstance(case, dict) and case.get("name")
     }
     semantic_required_evidence_classes = {
         "task-lifecycle",
@@ -93,6 +98,14 @@ def main() -> int:
         semantic.get("required_cases") or [],
         semantic_required_cases,
     )
+    stale_semantic_required_cases = sorted(
+        set(semantic.get("required_cases") or []) - semantic_required_cases
+    )
+    if stale_semantic_required_cases:
+        raise SystemExit(
+            "semantic_parity.required_cases contains non-ml-compat entries: "
+            f"{stale_semantic_required_cases}"
+        )
     ensure_subset(
         "semantic_parity.required_evidence_classes",
         semantic.get("required_evidence_classes") or [],
