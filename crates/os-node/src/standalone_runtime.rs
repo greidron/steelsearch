@@ -37,6 +37,10 @@ use os_node_rest_core::{
     AuthenticationUsersFile, RestServerConfig,
 };
 use os_rest::{RestMethod, RestRequest, RestResponse};
+use os_transport::action::{
+    OpenSearchGetScriptContextResponseWire, OpenSearchGetScriptLanguageResponseWire,
+    OpenSearchScriptContextMethodInfoWire,
+};
 use os_transport::internal_transport::{RemoteTransportQueueGate, RemoteTransportQueueSnapshot};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -14152,80 +14156,40 @@ impl SteelNode {
     }
 
     fn handle_script_context_route(&self) -> RestResponse {
-        RestResponse::json(
-            200,
-            serde_json::json!({
-                "contexts": [
-                    {
-                        "name": "filter",
-                        "methods": [
-                            {"name": "execute", "return_type": "boolean", "params": []},
-                            {"name": "getDoc", "return_type": "java.util.Map", "params": []},
-                            {"name": "getParams", "return_type": "java.util.Map", "params": []}
-                        ]
-                    },
-                    {
-                        "name": "ingest",
-                        "methods": [
-                            {"name": "execute", "return_type": "void", "params": [{"type": "java.util.Map", "name": "ctx"}]},
-                            {"name": "getParams", "return_type": "java.util.Map", "params": []}
-                        ]
-                    },
-                    {
-                        "name": "score",
-                        "methods": [
-                            {"name": "execute", "return_type": "double", "params": [{"type": "org.opensearch.script.ScoreScript$ExplanationHolder", "name": "explanation"}]},
-                            {"name": "getDoc", "return_type": "java.util.Map", "params": []},
-                            {"name": "getParams", "return_type": "java.util.Map", "params": []},
-                            {"name": "get_score", "return_type": "double", "params": []}
-                        ]
-                    },
-                    {
-                        "name": "search",
-                        "methods": [
-                            {"name": "execute", "return_type": "void", "params": [{"type": "java.util.Map", "name": "ctx"}]},
-                            {"name": "getParams", "return_type": "java.util.Map", "params": []}
-                        ]
-                    },
-                    {
-                        "name": "template",
-                        "methods": [
-                            {"name": "execute", "return_type": "java.lang.String", "params": []},
-                            {"name": "getParams", "return_type": "java.util.Map", "params": []}
-                        ]
-                    },
-                    {
-                        "name": "update",
-                        "methods": [
-                            {"name": "execute", "return_type": "void", "params": []},
-                            {"name": "getCtx", "return_type": "java.util.Map", "params": []},
-                            {"name": "getParams", "return_type": "java.util.Map", "params": []}
-                        ]
-                    }
-                ]
-            }),
-        )
+        let response = OpenSearchGetScriptContextResponseWire::default();
+        let contexts = response
+            .contexts
+            .iter()
+            .map(|context| {
+                let mut methods = Vec::with_capacity(1 + context.getters.len());
+                methods.push(script_context_method_json(&context.execute));
+                methods.extend(context.getters.iter().map(script_context_method_json));
+                serde_json::json!({
+                    "name": context.name.clone(),
+                    "methods": methods
+                })
+            })
+            .collect::<Vec<_>>();
+        RestResponse::json(200, serde_json::json!({ "contexts": contexts }))
     }
 
     fn handle_script_language_route(&self) -> RestResponse {
+        let response = OpenSearchGetScriptLanguageResponseWire::default();
+        let language_contexts = response
+            .language_contexts
+            .iter()
+            .map(|(language, contexts)| {
+                serde_json::json!({
+                    "language": language.clone(),
+                    "contexts": contexts.clone()
+                })
+            })
+            .collect::<Vec<_>>();
         RestResponse::json(
             200,
             serde_json::json!({
-                "types_allowed": ["inline", "stored"],
-                "language_contexts": [
-                    {
-                        "language": "expression",
-                        "contexts": ["field", "filter", "score", "terms_set"]
-                    },
-                    {
-                        "language": "mustache",
-                        "contexts": ["template"]
-                    },
-                    {
-                        "language": "painless",
-                        "contexts": ["filter", "ingest", "score", "search", "template", "update"]
-                    }
-                ]
+                "types_allowed": response.types_allowed.clone(),
+                "language_contexts": language_contexts
             }),
         )
     }
@@ -22747,6 +22711,24 @@ fn request_uri_with_query(request: &RestRequest) -> String {
         .collect::<Vec<_>>()
         .join("&");
     format!("{}?{}", request.path, query)
+}
+
+fn script_context_method_json(method: &OpenSearchScriptContextMethodInfoWire) -> Value {
+    let params = method
+        .parameters
+        .iter()
+        .map(|parameter| {
+            serde_json::json!({
+                "type": parameter.r#type.clone(),
+                "name": parameter.name.clone()
+            })
+        })
+        .collect::<Vec<_>>();
+    serde_json::json!({
+        "name": method.name.clone(),
+        "return_type": method.return_type.clone(),
+        "params": params
+    })
 }
 
 fn unsupported_pit_id_version_response() -> RestResponse {
