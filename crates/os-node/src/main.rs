@@ -5951,7 +5951,8 @@ fn get_all_pits_node_ids_match_local(
     match node_ids {
         None => true,
         Some(node_ids) => node_ids.iter().all(|node_id| {
-            node_id == "_local"
+            node_id == "_all"
+                || node_id == "_local"
                 || node_id == &transport_identity.node_id
                 || node_id == &transport_identity.node_name
         }),
@@ -15940,6 +15941,22 @@ mod tests {
             .unwrap();
         assert!(get_all_pits_request_supports_local_lifecycle_subset(
             &local_node_id_frame[6..],
+            &transport_identity
+        ));
+
+        let all_node_id_request = os_transport::action::OpenSearchGetAllPitsRequestWire {
+            node_ids: Some(vec!["_all".to_string()]),
+            ..os_transport::action::OpenSearchGetAllPitsRequestWire::default()
+        };
+        let all_node_id_frame =
+            os_transport::action::build_opensearch_get_all_pits_request_message(
+                100,
+                OPENSEARCH_3_7_0_TRANSPORT,
+                &all_node_id_request,
+            )
+            .unwrap();
+        assert!(get_all_pits_request_supports_local_lifecycle_subset(
+            &all_node_id_frame[6..],
             &transport_identity
         ));
 
