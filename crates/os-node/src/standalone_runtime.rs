@@ -18524,32 +18524,42 @@ impl SteelNode {
             .get("format")
             .is_some_and(|value| value == "json")
         {
-            return RestResponse::json(200, Value::Array(rows));
+            let display_columns = cat_allocation_display_columns(request.query_params.get("h"));
+            let selected_rows = rows
+                .iter()
+                .map(|row| {
+                    let mut object = serde_json::Map::new();
+                    for (column, display) in &display_columns {
+                        object.insert(display.clone(), row[*column].clone());
+                    }
+                    Value::Object(object)
+                })
+                .collect();
+            return RestResponse::json(200, Value::Array(selected_rows));
         }
         let verbose = request
             .query_params
             .get("v")
             .is_some_and(|value| value == "true");
+        let display_columns = cat_allocation_display_columns(request.query_params.get("h"));
         let mut lines = Vec::new();
         if verbose {
             lines.push(
-                "shards disk.indices disk.used disk.avail disk.total disk.percent host ip node"
-                    .to_string(),
+                display_columns
+                    .iter()
+                    .map(|(_, display)| display.as_str())
+                    .collect::<Vec<_>>()
+                    .join(" "),
             );
         }
         for row in &rows {
-            lines.push(format!(
-                "{} {} {} {} {} {} {} {} {}",
-                row["shards"].as_str().unwrap_or("0"),
-                row["disk.indices"].as_str().unwrap_or("0b"),
-                row["disk.used"].as_str().unwrap_or("0b"),
-                row["disk.avail"].as_str().unwrap_or("0b"),
-                row["disk.total"].as_str().unwrap_or("0b"),
-                row["disk.percent"].as_str().unwrap_or("0"),
-                row["host"].as_str().unwrap_or("127.0.0.1"),
-                row["ip"].as_str().unwrap_or("127.0.0.1"),
-                row["node"].as_str().unwrap_or(""),
-            ));
+            lines.push(
+                display_columns
+                    .iter()
+                    .map(|(column, _)| row[*column].as_str().unwrap_or(""))
+                    .collect::<Vec<_>>()
+                    .join(" "),
+            );
         }
         RestResponse::text(200, lines.join("\n") + "\n")
     }
@@ -30305,15 +30315,17 @@ fn compare_cat_indices_values(left: &Value, right: &Value) -> std::cmp::Ordering
     }
 }
 
-fn sort_cat_indices_rows(
-    rows: &mut [Value],
-    s_param: Option<&String>,
-) -> Result<(), RestResponse> {
+fn sort_cat_indices_rows(rows: &mut [Value], s_param: Option<&String>) -> Result<(), RestResponse> {
     let ordering = match s_param {
         Some(value) => {
             let mut ordering = Vec::new();
-            for raw_column in value.split(',').map(str::trim).filter(|value| !value.is_empty()) {
-                let (column_name, reverse) = if let Some(column) = raw_column.strip_suffix(":desc") {
+            for raw_column in value
+                .split(',')
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+            {
+                let (column_name, reverse) = if let Some(column) = raw_column.strip_suffix(":desc")
+                {
                     (column, true)
                 } else if let Some(column) = raw_column.strip_suffix(":asc") {
                     (column, false)
@@ -30359,8 +30371,7 @@ fn cat_indices_cell_text(row: &Value, column: &str, request: &RestRequest) -> St
             | "pri.completion.size"
             | "segments.memory"
             | "pri.segments.memory"
-    )
-        && request.query_params.contains_key("bytes")
+    ) && request.query_params.contains_key("bytes")
     {
         return value.trim_end_matches('b').to_string();
     }
@@ -30461,11 +30472,13 @@ fn cat_indices_display_columns(
             .map(|column| (*column, (*column).to_string()))
             .collect();
     };
-    let include_primary_sibling = query_params
-        .get("pri")
-        .is_some_and(|value| value == "true");
+    let include_primary_sibling = query_params.get("pri").is_some_and(|value| value == "true");
     let mut selected = Vec::new();
-    for requested in h_param.split(',').map(str::trim).filter(|value| !value.is_empty()) {
+    for requested in h_param
+        .split(',')
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
         if requested.contains('*') {
             for column in CAT_INDICES_ALL_COLUMNS {
                 if wildcard_match(requested, column)
@@ -30526,7 +30539,11 @@ fn cat_count_display_columns(h_param: Option<&String>) -> Vec<(&'static str, Str
         ];
     };
     let mut selected = Vec::new();
-    for requested in h_param.split(',').map(str::trim).filter(|value| !value.is_empty()) {
+    for requested in h_param
+        .split(',')
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
         if requested.contains('*') {
             for (column, aliases) in [
                 ("epoch", &[][..]),
@@ -30580,7 +30597,11 @@ fn validate_cat_count_sort(s_param: Option<&String>) -> Result<(), RestResponse>
     let Some(value) = s_param else {
         return Ok(());
     };
-    for raw_column in value.split(',').map(str::trim).filter(|value| !value.is_empty()) {
+    for raw_column in value
+        .split(',')
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
         let column_name = raw_column
             .strip_suffix(":desc")
             .or_else(|| raw_column.strip_suffix(":asc"))
@@ -30604,6 +30625,69 @@ fn cat_count_selected_row(row: &Value, h_param: Option<&String>) -> Value {
     Value::Object(object)
 }
 
+fn cat_allocation_display_columns(h_param: Option<&String>) -> Vec<(&'static str, String)> {
+    let Some(h_param) = h_param else {
+        return vec![
+            ("shards", "shards".to_string()),
+            ("disk.indices", "disk.indices".to_string()),
+            ("disk.used", "disk.used".to_string()),
+            ("disk.avail", "disk.avail".to_string()),
+            ("disk.total", "disk.total".to_string()),
+            ("disk.percent", "disk.percent".to_string()),
+            ("host", "host".to_string()),
+            ("ip", "ip".to_string()),
+            ("node", "node".to_string()),
+        ];
+    };
+    let mut selected = Vec::new();
+    for requested in h_param
+        .split(',')
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        if requested.contains('*') {
+            for (column, aliases) in [
+                ("shards", &["s"][..]),
+                ("disk.indices", &["di", "diskIndices"][..]),
+                ("disk.used", &["du", "diskUsed"][..]),
+                ("disk.avail", &["da", "diskAvail"][..]),
+                ("disk.total", &["dt", "diskTotal"][..]),
+                ("disk.percent", &["dp", "diskPercent"][..]),
+                ("host", &["h"][..]),
+                ("ip", &[][..]),
+                ("node", &["n"][..]),
+            ] {
+                if wildcard_match(requested, column)
+                    || aliases.iter().any(|alias| wildcard_match(requested, alias))
+                {
+                    if !selected.iter().any(|(existing, _)| existing == &column) {
+                        selected.push((column, column.to_string()));
+                    }
+                }
+            }
+            continue;
+        }
+        let column = match requested {
+            "shards" | "s" => Some("shards"),
+            "disk.indices" | "di" | "diskIndices" => Some("disk.indices"),
+            "disk.used" | "du" | "diskUsed" => Some("disk.used"),
+            "disk.avail" | "da" | "diskAvail" => Some("disk.avail"),
+            "disk.total" | "dt" | "diskTotal" => Some("disk.total"),
+            "disk.percent" | "dp" | "diskPercent" => Some("disk.percent"),
+            "host" | "h" => Some("host"),
+            "ip" => Some("ip"),
+            "node" | "n" => Some("node"),
+            _ => None,
+        };
+        if let Some(column) = column {
+            if !selected.iter().any(|(existing, _)| existing == &column) {
+                selected.push((column, requested.to_string()));
+            }
+        }
+    }
+    selected
+}
+
 fn cat_aliases_display_columns(h_param: Option<&String>) -> Vec<(&'static str, String)> {
     let Some(h_param) = h_param else {
         return vec![
@@ -30616,7 +30700,11 @@ fn cat_aliases_display_columns(h_param: Option<&String>) -> Vec<(&'static str, S
         ];
     };
     let mut selected = Vec::new();
-    for requested in h_param.split(',').map(str::trim).filter(|value| !value.is_empty()) {
+    for requested in h_param
+        .split(',')
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
         if requested.contains('*') {
             for (column, aliases) in [
                 ("alias", &["a"][..]),
@@ -36067,8 +36155,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             vec!["count", "1"]
         );
 
-        let mut count_sorted_text_request =
-            RestRequest::new(RestMethod::Get, "/_cat/count/logs-*");
+        let mut count_sorted_text_request = RestRequest::new(RestMethod::Get, "/_cat/count/logs-*");
         count_sorted_text_request
             .query_params
             .insert("v".to_string(), "true".to_string());
@@ -36139,7 +36226,9 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             .map(str::trim)
             .collect::<Vec<_>>();
         assert_eq!(selected_text_lines[0], "idx dc");
-        assert!(selected_text_lines.iter().any(|line| *line == "logs-000001 1"));
+        assert!(selected_text_lines
+            .iter()
+            .any(|line| *line == "logs-000001 1"));
         assert!(indices_selected_text.contains("logs-000001        1"));
 
         let mut indices_bytes_text_request =
@@ -36204,10 +36293,9 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         indices_optional_text_request
             .query_params
             .insert("v".to_string(), "true".to_string());
-        indices_optional_text_request.query_params.insert(
-            "h".to_string(),
-            "cs,ft,ftt,sc,sm".to_string(),
-        );
+        indices_optional_text_request
+            .query_params
+            .insert("h".to_string(), "cs,ft,ftt,sc,sm".to_string());
         indices_optional_text_request
             .query_params
             .insert("pri".to_string(), "true".to_string());
@@ -36237,10 +36325,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             .collect::<Vec<_>>();
         assert_eq!(
             optional_text_fields,
-            vec![
-                "cs", "pri.cs", "ft", "pri.ft", "ftt", "pri.ftt", "sc", "pri.sc", "sm",
-                "pri.sm"
-            ]
+            vec!["cs", "pri.cs", "ft", "pri.ft", "ftt", "pri.ftt", "sc", "pri.sc", "sm", "pri.sm"]
         );
         assert_eq!(
             optional_text_values,
@@ -36263,10 +36348,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             .body
             .as_str()
             .expect("cat indices time text body");
-        let time_text_lines = indices_time_text
-            .lines()
-            .map(str::trim)
-            .collect::<Vec<_>>();
+        let time_text_lines = indices_time_text.lines().map(str::trim).collect::<Vec<_>>();
         assert_eq!(time_text_lines, vec!["search.point_in_time_time", "0"]);
 
         let mut indices_sorted_text_request =
@@ -36358,7 +36440,9 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(indices_selected_json_response.status, 200);
         assert_eq!(indices_selected_json_response.body[0]["idx"], "logs-000001");
         assert_eq!(indices_selected_json_response.body[0]["dc"], "1");
-        assert!(indices_selected_json_response.body[0].get("index").is_none());
+        assert!(indices_selected_json_response.body[0]
+            .get("index")
+            .is_none());
         assert!(indices_selected_json_response.body[0]
             .get("docs.count")
             .is_none());
@@ -36581,6 +36665,29 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(allocation_json_response.status, 200);
         assert_eq!(allocation_json_response.body[0]["node"], "steel-node-a");
 
+        let mut selected_allocation_json_request =
+            RestRequest::new(RestMethod::Get, "/_cat/allocation/steel-*");
+        selected_allocation_json_request
+            .query_params
+            .insert("format".to_string(), "json".to_string());
+        selected_allocation_json_request
+            .query_params
+            .insert("h".to_string(), "s,n".to_string());
+        let selected_allocation_json_response =
+            node.handle_rest_request(selected_allocation_json_request);
+        assert_eq!(selected_allocation_json_response.status, 200);
+        assert_eq!(selected_allocation_json_response.body[0]["s"], "2");
+        assert_eq!(
+            selected_allocation_json_response.body[0]["n"],
+            "steel-node-a"
+        );
+        assert!(selected_allocation_json_response.body[0]
+            .get("shards")
+            .is_none());
+        assert!(selected_allocation_json_response.body[0]
+            .get("node")
+            .is_none());
+
         let mut allocation_text_request =
             RestRequest::new(RestMethod::Get, "/_cat/allocation/steel-*");
         allocation_text_request
@@ -36593,6 +36700,25 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             .expect("cat allocation text body");
         assert!(allocation_text.contains("disk.indices"));
         assert!(allocation_text.contains("steel-node-a"));
+
+        let mut selected_allocation_text_request =
+            RestRequest::new(RestMethod::Get, "/_cat/allocation/steel-*");
+        selected_allocation_text_request
+            .query_params
+            .insert("v".to_string(), "true".to_string());
+        selected_allocation_text_request
+            .query_params
+            .insert("h".to_string(), "s,n".to_string());
+        let selected_allocation_text_response =
+            node.handle_rest_request(selected_allocation_text_request);
+        let selected_allocation_text = selected_allocation_text_response
+            .body
+            .as_str()
+            .expect("selected cat allocation text body");
+        assert_eq!(
+            selected_allocation_text.lines().collect::<Vec<_>>(),
+            vec!["s n", "2 steel-node-a"]
+        );
 
         let mut fielddata_json_request =
             RestRequest::new(RestMethod::Get, "/_cat/fielddata/message,user");

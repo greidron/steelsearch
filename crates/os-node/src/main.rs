@@ -6547,11 +6547,7 @@ fn opensearch_transport_terms_slice_hash(value: &[u8]) -> i64 {
 
 fn transport_search_documents_for_request(
     request: &os_transport::action::OpenSearchSearchRequestWire,
-) -> Option<(
-    Arc<DocumentMap>,
-    Vec<String>,
-    Option<String>,
-)> {
+) -> Option<(Arc<DocumentMap>, Vec<String>, Option<String>)> {
     let pit = request
         .source
         .as_ref()
