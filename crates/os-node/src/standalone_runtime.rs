@@ -46206,6 +46206,75 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
     }
 
     #[test]
+    fn create_pit_uses_route_query_options_and_ignores_body_like_opensearch() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(RestMethod::Put, "/logs-pit-body-ignored"))
+                .status,
+            200
+        );
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, "/logs-pit-body-ignored/_doc/doc-1")
+                    .with_json_body(serde_json::json!({ "message": "visible" })),
+            )
+            .status,
+            201
+        );
+
+        let missing_query_keep_alive = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/logs-pit-body-ignored/_search/point_in_time",
+            )
+            .with_json_body(serde_json::json!({
+                "keep_alive": "1m"
+            })),
+        );
+        assert_eq!(missing_query_keep_alive.status, 400);
+        assert_eq!(
+            missing_query_keep_alive.body["error"]["root_cause"][0]["reason"],
+            "Validation Failed: 1: keep alive not specified;"
+        );
+
+        let opened = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/logs-pit-body-ignored/_search/point_in_time?keep_alive=1m",
+            )
+            .with_json_body(serde_json::json!({
+                "pit_id": "ignored",
+                "keep_alive": "25h",
+                "query": {
+                    "match_none": {}
+                }
+            })),
+        );
+        assert_eq!(opened.status, 200);
+        let pit_id = local_pit_id(&opened.body["pit_id"]);
+        assert_ne!(pit_id, "ignored");
+        assert_eq!(opened.body["_shards"]["successful"], 1);
+
+        let pit_search = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_search").with_json_body(serde_json::json!({
+                "pit": {
+                    "id": pit_id,
+                    "keep_alive": "1m"
+                },
+                "query": {
+                    "match_all": {}
+                }
+            })),
+        );
+        assert_eq!(pit_search.status, 200);
+        assert_eq!(pit_search.body["hits"]["total"]["value"], 1);
+    }
+
+    #[test]
     fn cluster_settings_validate_pit_default_keep_alive_against_max_like_opensearch() {
         let node = SteelNode::new(NodeInfo {
             name: "steel-node".to_string(),
