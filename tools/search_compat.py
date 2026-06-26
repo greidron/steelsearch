@@ -2188,6 +2188,20 @@ def extract(kind: str, response: dict[str, Any]) -> Any:
             "fields": fields,
             "rows": rows,
         }
+    if kind == "cat_pit_segments_selected_columns":
+        selected = extract("cat_indices_selected_columns", response)
+        fields = selected.get("fields") or []
+        volatile_positions = {
+            index for index, field in enumerate(fields) if field in {"id", "node_id", "nodeId"}
+        }
+        selected["rows"] = [
+            [
+                "<node-id>" if index in volatile_positions else value
+                for index, value in enumerate(row)
+            ]
+            for row in selected.get("rows", [])
+        ]
+        return selected
     if kind == "cat_selected_column_fields":
         if isinstance(body, list):
             fields = sorted(body[0].keys()) if body and isinstance(body[0], dict) else []

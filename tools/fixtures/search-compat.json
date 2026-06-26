@@ -1794,7 +1794,7 @@
       "method": "GET",
       "path": "/_cat/pit_segments/_all?v=true&h=i,seg,dc,sm,id",
       "accept": "text/plain",
-      "extract": "cat_indices_selected_columns",
+      "extract": "cat_pit_segments_selected_columns",
       "family": "admin-cat",
       "description": "[admin-cat] cat pit segments text honors h aliases"
     },
@@ -1842,7 +1842,7 @@
     {
       "name": "cat_pit_segments_json_selected_alias_columns",
       "area": "cat",
-      "extract": "cat_indices_selected_columns",
+      "extract": "cat_pit_segments_selected_columns",
       "steps": [
         {
           "name": "pit-open",
@@ -1863,7 +1863,7 @@
             "pit_id": "${saved.pit_id}"
           },
           "expected_status": 200,
-          "extract": "cat_indices_selected_columns"
+          "extract": "cat_pit_segments_selected_columns"
         }
       ],
       "family": "admin-cat",
