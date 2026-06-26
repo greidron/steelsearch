@@ -2346,6 +2346,10 @@ The create-PIT boundary covers:
 - REST and local transport create-PIT normalize non-positive keep-alive values
   to the OpenSearch-compatible 30s local keep-alive value, while wire decoding
   still rejects unknown keep-alive units.
+- local transport PIT keep-alive conversion now matches OpenSearch
+  `TimeValue.millis()` truncation for nanosecond and microsecond wire values,
+  so sub-millisecond create-PIT keep-alive values enter the same non-positive
+  normalization boundary as OpenSearch.
 - local transport create-reader-context and update-reader-context reject
   keep-alive values above the OpenSearch default
   `point_in_time.max_keep_alive` of `24h`, matching the runtime

@@ -5835,8 +5835,8 @@ fn wildcard_match_inner(pattern: &[u8], candidate: &[u8]) -> bool {
 
 fn time_value_wire_to_millis(time_value: &os_transport::action::TimeValueWire) -> i64 {
     match time_value.time_unit_ordinal {
-        0 => (time_value.duration.saturating_add(999_999)) / 1_000_000,
-        1 => (time_value.duration.saturating_add(999)) / 1_000,
+        0 => time_value.duration / 1_000_000,
+        1 => time_value.duration / 1_000,
         2 => time_value.duration,
         3 => time_value.duration.saturating_mul(1_000),
         4 => time_value.duration.saturating_mul(60_000),
@@ -16316,6 +16316,103 @@ mod tests {
                 .get(&response.pit_id)
                 .cloned()
                 .expect("non-positive keep-alive PIT context should be allocated");
+            assert_eq!(
+                context.keep_alive_millis,
+                DEV_TRANSPORT_NON_POSITIVE_PIT_KEEP_ALIVE_MILLIS
+            );
+        }
+    }
+
+    #[test]
+    fn create_pit_transport_route_truncates_submillis_keep_alive_like_opensearch() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        let bindings = dev_transport_pit_bindings();
+        bindings
+            .contexts
+            .lock()
+            .expect("dev transport PIT contexts lock poisoned")
+            .clear();
+        bindings
+            .created_indices
+            .lock()
+            .expect("dev transport created indices lock poisoned")
+            .clear();
+        bindings
+            .documents
+            .lock()
+            .expect("dev transport documents lock poisoned")
+            .clear();
+        *bindings
+            .next_id
+            .lock()
+            .expect("dev transport next PIT id lock poisoned") = 0;
+        *bindings
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned") = serde_json::json!({
+            "indices": {
+                "logs-submillis-pit-000001": {
+                    "settings": {
+                        "index": {
+                            "number_of_shards": "1"
+                        }
+                    }
+                }
+            }
+        });
+
+        for (request_id, keep_alive) in [
+            (
+                306,
+                os_transport::action::TimeValueWire {
+                    duration: 999_999,
+                    time_unit_ordinal: 0,
+                },
+            ),
+            (
+                307,
+                os_transport::action::TimeValueWire {
+                    duration: 999,
+                    time_unit_ordinal: 1,
+                },
+            ),
+        ] {
+            let request = os_transport::action::OpenSearchCreatePitRequestWire {
+                indices: vec!["logs-submillis-pit-000001".to_string()],
+                keep_alive,
+                ..os_transport::action::OpenSearchCreatePitRequestWire::default()
+            };
+            let frame = os_transport::action::build_opensearch_create_pit_request_message(
+                request_id,
+                OPENSEARCH_3_7_0_TRANSPORT,
+                &request,
+            )
+            .unwrap();
+            let response = build_local_create_pit_response(
+                request_id,
+                OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+                &frame[6..],
+            );
+            let mut frame = BytesMut::from(&response[..]);
+            let os_transport::frame::DecodedFrame::Message(message) =
+                os_transport::frame::decode_frame(&mut frame)
+                    .unwrap()
+                    .unwrap()
+            else {
+                panic!("expected create-PIT response message");
+            };
+            let response =
+                os_transport::action::read_opensearch_create_pit_response_message(&message)
+                    .unwrap();
+            let context = bindings
+                .contexts
+                .lock()
+                .expect("dev transport PIT contexts lock poisoned")
+                .get(&response.pit_id)
+                .cloned()
+                .expect("submillis keep-alive PIT context should be allocated");
             assert_eq!(
                 context.keep_alive_millis,
                 DEV_TRANSPORT_NON_POSITIVE_PIT_KEEP_ALIVE_MILLIS
