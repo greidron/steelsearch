@@ -107,9 +107,15 @@ struct DevTransportCoordinationState {
 }
 
 #[derive(Clone, Debug)]
+struct DevTransportReaderContext {
+    shard_id: os_transport::action::OpenSearchShardIdWire,
+    documents: BTreeMap<String, StoredDocument>,
+}
+
+#[derive(Clone, Debug)]
 struct DevTransportPitBindings {
     contexts: Arc<Mutex<BTreeMap<String, PitContext>>>,
-    reader_contexts: Arc<Mutex<BTreeSet<(String, i64)>>>,
+    reader_contexts: Arc<Mutex<BTreeMap<(String, i64), DevTransportReaderContext>>>,
     next_id: Arc<Mutex<u64>>,
     created_indices: Arc<Mutex<BTreeSet<String>>>,
     documents: Arc<Mutex<BTreeMap<String, StoredDocument>>>,
@@ -124,7 +130,7 @@ struct DevTransportScrollBindings {
 fn dev_transport_pit_bindings() -> &'static DevTransportPitBindings {
     DEV_TRANSPORT_PIT_BINDINGS.get_or_init(|| DevTransportPitBindings {
         contexts: Arc::new(Mutex::new(BTreeMap::new())),
-        reader_contexts: Arc::new(Mutex::new(BTreeSet::new())),
+        reader_contexts: Arc::new(Mutex::new(BTreeMap::new())),
         next_id: Arc::new(Mutex::new(0)),
         created_indices: Arc::new(Mutex::new(BTreeSet::new())),
         documents: Arc::new(Mutex::new(BTreeMap::new())),
@@ -147,7 +153,7 @@ fn bind_dev_transport_pit_store(
 ) {
     let _ = DEV_TRANSPORT_PIT_BINDINGS.set(DevTransportPitBindings {
         contexts,
-        reader_contexts: Arc::new(Mutex::new(BTreeSet::new())),
+        reader_contexts: Arc::new(Mutex::new(BTreeMap::new())),
         next_id,
         created_indices,
         documents,
@@ -8273,11 +8279,18 @@ fn build_local_create_reader_context_response(
             format!("steelsearch-pit-reader-{}", *next_id),
             i64::try_from(*next_id).unwrap_or(i64::MAX),
         );
+        let reader_context = DevTransportReaderContext {
+            shard_id: request.shard_id.clone(),
+            documents: transport_pit_document_snapshot(
+                bindings,
+                std::slice::from_ref(&request.shard_id.index_name),
+            ),
+        };
         bindings
             .reader_contexts
             .lock()
             .expect("dev transport reader contexts lock poisoned")
-            .insert(reader_context_key(&context_id));
+            .insert(reader_context_key(&context_id), reader_context);
         context_id
     };
     os_transport::action::build_opensearch_create_reader_context_response_message(
@@ -8398,8 +8411,18 @@ fn upsert_transport_pit_context_from_reader_update(
         now_millis
     };
     let expires_at_millis = transport_pit_expires_at_millis(now_millis, keep_alive_millis);
-    let indices = transport_pit_indices_from_id(&request.pit_id).unwrap_or_default();
-    let documents = transport_pit_document_snapshot(dev_transport_pit_bindings(), &indices);
+    let reader_context = transport_reader_context(&request.search_context_id);
+    let mut indices = transport_pit_indices_from_id(&request.pit_id).unwrap_or_default();
+    if indices.is_empty() {
+        if let Some(reader_context) = reader_context.as_ref() {
+            indices.push(reader_context.shard_id.index_name.clone());
+        }
+    }
+    indices.sort();
+    indices.dedup();
+    let documents = reader_context
+        .map(|context| context.documents)
+        .unwrap_or_default();
     let mut contexts = dev_transport_pit_bindings()
         .contexts
         .lock()
@@ -8408,11 +8431,11 @@ fn upsert_transport_pit_context_from_reader_update(
     contexts
         .entry(request.pit_id.clone())
         .and_modify(|context| {
-            if context.indices.is_empty() && !indices.is_empty() {
-                context.indices = indices.clone();
-            }
-            if context.documents.is_empty() && !documents.is_empty() {
-                context.documents = documents.clone();
+            context.indices.extend(indices.clone());
+            context.indices.sort();
+            context.indices.dedup();
+            for (key, document) in documents.clone() {
+                context.documents.insert(key, document);
             }
             context.keep_alive_millis = context.keep_alive_millis.max(keep_alive_millis);
             context.expires_at_millis = context.expires_at_millis.max(expires_at_millis);
@@ -8486,7 +8509,18 @@ fn reader_context_exists(
         .reader_contexts
         .lock()
         .expect("dev transport reader contexts lock poisoned")
-        .contains(&reader_context_key(context_id))
+        .contains_key(&reader_context_key(context_id))
+}
+
+fn transport_reader_context(
+    context_id: &os_transport::action::OpenSearchShardSearchContextIdWire,
+) -> Option<DevTransportReaderContext> {
+    dev_transport_pit_bindings()
+        .reader_contexts
+        .lock()
+        .expect("dev transport reader contexts lock poisoned")
+        .get(&reader_context_key(context_id))
+        .cloned()
 }
 
 fn can_allocate_reader_context(bindings: &DevTransportPitBindings) -> bool {
@@ -18386,6 +18420,39 @@ mod tests {
             remote_transport_queue_gate: Arc::new(RemoteTransportQueueGate::new(1, 1000)),
             task_queue_state: None,
         };
+        bindings
+            .documents
+            .lock()
+            .expect("dev transport documents lock poisoned")
+            .insert(
+                "logs-reader-pit:doc-1:".to_string(),
+                StoredDocument {
+                    source: serde_json::json!({
+                        "status": "reader-pit",
+                        "tenant": "a",
+                        "category": "prod-api",
+                        "categories": ["prod-api"],
+                        "path": "/logs/app-1",
+                        "paths": ["/logs/app-1", "/archive/app-1"],
+                        "message": "steel search reader pit transport",
+                        "spellings": ["steel", "search"],
+                        "title": "steel search",
+                        "description": "reader context transport filters",
+                        "tags": ["search", "transport"],
+                        "location": { "lat": 37.7749, "lon": -122.4194 },
+                        "comments": [
+                            { "author": "ann", "text": "nested transport" }
+                        ],
+                        "ages": [3, 7],
+                        "age": 7
+                    }),
+                    version: 1,
+                    seq_no: 1,
+                    primary_term: 1,
+                    routing: None,
+                    refreshed: true,
+                },
+            );
 
         let create_context_request =
             os_transport::action::OpenSearchCreateReaderContextRequestWire::new(
@@ -18431,7 +18498,7 @@ mod tests {
             .reader_contexts
             .lock()
             .expect("dev transport reader contexts lock poisoned")
-            .contains(&reader_context_key(&create_response.context_id)));
+            .contains_key(&reader_context_key(&create_response.context_id)));
         bindings
             .documents
             .lock()
@@ -19634,6 +19701,226 @@ mod tests {
     }
 
     #[test]
+    fn pit_reader_context_transport_update_preserves_create_time_snapshot() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        let bindings = dev_transport_pit_bindings();
+        bindings
+            .contexts
+            .lock()
+            .expect("dev transport PIT contexts lock poisoned")
+            .clear();
+        bindings
+            .reader_contexts
+            .lock()
+            .expect("dev transport reader contexts lock poisoned")
+            .clear();
+        bindings
+            .created_indices
+            .lock()
+            .expect("dev transport created indices lock poisoned")
+            .clear();
+        bindings
+            .created_indices
+            .lock()
+            .expect("dev transport created indices lock poisoned")
+            .insert("logs-reader-snapshot".to_string());
+        bindings
+            .documents
+            .lock()
+            .expect("dev transport documents lock poisoned")
+            .clear();
+        bindings
+            .documents
+            .lock()
+            .expect("dev transport documents lock poisoned")
+            .insert(
+                "logs-reader-snapshot:doc-1:".to_string(),
+                StoredDocument {
+                    source: serde_json::json!({ "status": "before-reader" }),
+                    version: 1,
+                    seq_no: 1,
+                    primary_term: 1,
+                    routing: None,
+                    refreshed: true,
+                },
+            );
+        *bindings
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned") = serde_json::json!({
+            "indices": {
+                "logs-reader-snapshot": {
+                    "settings": {
+                        "index": {
+                            "number_of_shards": "1"
+                        }
+                    }
+                }
+            }
+        });
+
+        let create_context_request =
+            os_transport::action::OpenSearchCreateReaderContextRequestWire::new(
+                os_transport::action::OpenSearchShardIdWire {
+                    index_name: "logs-reader-snapshot".to_string(),
+                    index_uuid: "uuid-reader-snapshot".to_string(),
+                    shard_id: 0,
+                },
+                os_transport::action::TimeValueWire::minutes(1),
+            );
+        let create_frame =
+            os_transport::action::build_opensearch_create_reader_context_request_message(
+                316,
+                OPENSEARCH_3_7_0_TRANSPORT,
+                &create_context_request,
+            )
+            .unwrap();
+        assert!(create_reader_context_request_supports_local_subset(
+            &create_frame[6..]
+        ));
+        let create_response = build_local_create_reader_context_response(
+            316,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &create_frame[6..],
+        );
+        let mut frame = BytesMut::from(&create_response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected create-reader-context response");
+        };
+        let create_response =
+            os_transport::action::read_opensearch_create_reader_context_response_message(&message)
+                .unwrap();
+
+        {
+            let mut documents = bindings
+                .documents
+                .lock()
+                .expect("dev transport documents lock poisoned");
+            documents.insert(
+                "logs-reader-snapshot:doc-1:".to_string(),
+                StoredDocument {
+                    source: serde_json::json!({ "status": "after-reader" }),
+                    version: 2,
+                    seq_no: 2,
+                    primary_term: 1,
+                    routing: None,
+                    refreshed: true,
+                },
+            );
+            documents.insert(
+                "logs-reader-snapshot:doc-2:".to_string(),
+                StoredDocument {
+                    source: serde_json::json!({ "status": "after-reader" }),
+                    version: 1,
+                    seq_no: 3,
+                    primary_term: 1,
+                    routing: None,
+                    refreshed: true,
+                },
+            );
+        }
+
+        let encoded_pit_id =
+            os_transport::action::OpenSearchSearchContextIdWire::new(BTreeMap::from([(
+                os_transport::action::OpenSearchShardIdWire {
+                    index_name: "logs-reader-snapshot".to_string(),
+                    index_uuid: "uuid-reader-snapshot".to_string(),
+                    shard_id: 0,
+                },
+                os_transport::action::OpenSearchSearchContextIdForNodeWire {
+                    node: "steel-node-id".to_string(),
+                    cluster_alias: None,
+                    search_context_id: create_response.context_id.clone(),
+                },
+            )]))
+            .encode(OPENSEARCH_3_7_0_TRANSPORT)
+            .unwrap();
+        let update_request = os_transport::action::OpenSearchUpdateReaderContextRequestWire {
+            parent_task_node: String::new(),
+            parent_task_id: None,
+            pit_id: encoded_pit_id.clone(),
+            keep_alive_millis: 60_000,
+            creation_time_millis: 1_700_000_000_000,
+            search_context_id: create_response.context_id,
+        };
+        let update_frame =
+            os_transport::action::build_opensearch_update_reader_context_request_message(
+                317,
+                OPENSEARCH_3_7_0_TRANSPORT,
+                &update_request,
+            )
+            .unwrap();
+        assert!(update_reader_context_request_supports_local_subset(
+            &update_frame[6..]
+        ));
+        let _ = build_local_update_reader_context_response(
+            317,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &update_frame[6..],
+        );
+
+        let search_request = os_transport::action::OpenSearchSearchRequestWire {
+            source: Some(os_transport::action::OpenSearchSearchSourceBuilderWire {
+                point_in_time: Some(os_transport::action::OpenSearchPointInTimeBuilderWire {
+                    id: encoded_pit_id.clone(),
+                    keep_alive: Some(os_transport::action::TimeValueWire::minutes(1)),
+                }),
+                query: Some(os_transport::action::OpenSearchQueryBuilderWire::MatchAll(
+                    os_transport::action::OpenSearchMatchAllQueryBuilderWire::default(),
+                )),
+                version: Some(true),
+                ..os_transport::action::OpenSearchSearchSourceBuilderWire::default()
+            }),
+            indices_options:
+                os_transport::action::OpenSearchIndicesOptionsWire::point_in_time_search_prepared(),
+            ccs_minimize_roundtrips: false,
+            ..os_transport::action::OpenSearchSearchRequestWire::default()
+        };
+        let search_frame = os_transport::action::build_opensearch_search_request_message(
+            318,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &search_request,
+        )
+        .unwrap();
+        assert!(search_request_supports_local_execution_subset(
+            &search_frame[6..]
+        ));
+        let search_response = build_local_search_response(
+            318,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &search_frame[6..],
+        );
+        let mut frame = BytesMut::from(&search_response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected reader-snapshot PIT search response");
+        };
+        let search_response =
+            os_transport::action::read_opensearch_search_response_message(&message).unwrap();
+        assert_eq!(
+            search_response.point_in_time_id.as_deref(),
+            Some(encoded_pit_id.as_str())
+        );
+        assert_eq!(search_response.total_hits, Some(1));
+        assert_eq!(search_response.hits.len(), 1);
+        assert_eq!(search_response.hits[0].id.as_deref(), Some("doc-1"));
+        assert_eq!(search_response.hits[0].version, 1);
+        assert_eq!(
+            search_response.hits[0].source.as_ref(),
+            Some(&serde_json::json!({ "status": "before-reader" }))
+        );
+    }
+
+    #[test]
     fn free_pit_context_transport_route_allows_empty_wire_strings_like_opensearch() {
         let _lock = dev_transport_pit_test_lock()
             .lock()
@@ -19824,7 +20111,17 @@ mod tests {
                 .expect("dev transport reader contexts lock poisoned");
             reader_contexts.clear();
             for id in 0..DEV_TRANSPORT_MAX_OPEN_PIT_CONTEXTS {
-                reader_contexts.insert((format!("reader-session-{id}"), id as i64));
+                reader_contexts.insert(
+                    (format!("reader-session-{id}"), id as i64),
+                    DevTransportReaderContext {
+                        shard_id: os_transport::action::OpenSearchShardIdWire {
+                            index_name: "logs-reader-max-open".to_string(),
+                            index_uuid: "uuid-reader-max-open".to_string(),
+                            shard_id: 0,
+                        },
+                        documents: BTreeMap::new(),
+                    },
+                );
             }
         }
         bindings
