@@ -177,8 +177,8 @@ The source-derived transport inventory currently has 160 rows:
 
 | Status | Count | Meaning |
 | --- | ---: | --- |
-| `implemented` | 61 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
-| `partial` | 99 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
+| `implemented` | 62 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
+| `partial` | 98 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
 | `planned` | 0 | No source-derived transport action remains unclassified. |
 
 The k-NN plugin action sweep is complete at the boundary layer. All 12
@@ -807,13 +807,11 @@ The get-search-pipeline boundary covers:
 - OpenSearch `GetSearchPipelineResponse` pipeline count and repeated search
   `PipelineConfiguration` id, config bytes, and media type at the wire
   decode/build layer;
-- explicit fail-closed classification for
-  `cluster:admin/search/pipeline/get` until search pipeline metadata lookup,
-  id/wildcard resolution, local read semantics, and response rendering are
-  implemented;
+- implemented manifest-backed `cluster:admin/search/pipeline/get` response
+  rendering for all ids, explicit ids, and simple wildcard id selectors;
 - explicit rejection for custom cluster-manager timeout, local cluster-state
-  reads, blank pipeline id selectors, get-search-pipeline execution, unknown
-  response media types, and negative response pipeline counts.
+  reads, blank pipeline id selectors, unknown response media types, and
+  negative response pipeline counts.
 
 The delete-search-pipeline boundary covers:
 
@@ -3348,24 +3346,23 @@ performance-sensitive work is search pipeline source parsing and validation,
 node search pipeline capability lookup, cluster-state publication, and
 acknowledgement rendering.
 
-Current get-search-pipeline reject wire microbenchmark:
+Current get-search-pipeline wire microbenchmark:
 
 ```text
 cargo run -p os-transport --release --bin get-search-pipeline-reject-wire-benchmark
-get_search_pipeline_reject_request_encode iterations=400000 elapsed_ms=277.449 ops_per_second=1441705.91 nanos_per_op=693.62
-get_search_pipeline_reject_request_decode iterations=400000 elapsed_ms=256.314 ops_per_second=1560587.96 nanos_per_op=640.78
-get_search_pipeline_reject_validation iterations=400000 elapsed_ms=257.732 ops_per_second=1551996.95 nanos_per_op=644.33
-get_search_pipeline_response_decode iterations=400000 elapsed_ms=225.717 ops_per_second=1772131.53 nanos_per_op=564.29
-get_search_pipeline_reject_wire_bottleneck_ops_per_second=1441705.91
+get_search_pipeline_reject_request_encode iterations=400000 elapsed_ms=278.774 ops_per_second=1434855.43 nanos_per_op=696.93
+get_search_pipeline_reject_request_decode iterations=400000 elapsed_ms=258.461 ops_per_second=1547619.52 nanos_per_op=646.15
+get_search_pipeline_reject_validation iterations=400000 elapsed_ms=259.333 ops_per_second=1542420.18 nanos_per_op=648.33
+get_search_pipeline_response_decode iterations=400000 elapsed_ms=227.618 ops_per_second=1757330.80 nanos_per_op=569.04
+get_search_pipeline_reject_wire_bottleneck_ops_per_second=1434855.43
 ```
 
-The current get-search-pipeline fail-closed boundary bottleneck is request
+The current get-search-pipeline implemented read-path bottleneck is request
 encode. The payload includes the cluster-manager read request envelope, local
-flag, and pipeline id selectors before admission rejects execution. At roughly
-1.44M ops/s in the latest local release run, this boundary is not a material
-transport bottleneck; the first performance-sensitive work is search pipeline
-metadata lookup, id/wildcard resolution, local read semantics, and response
-rendering.
+flag, and pipeline id selectors before manifest-backed response rendering. At
+roughly 1.43M ops/s in the latest local release run, this boundary is not a
+material transport bottleneck; the remaining production-sensitive work is
+authoritative cluster-state search pipeline lookup and local read semantics.
 
 Current delete-search-pipeline reject wire microbenchmark:
 
