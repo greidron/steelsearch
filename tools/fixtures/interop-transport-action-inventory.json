@@ -1080,8 +1080,8 @@
       "transport_action": "ResolveIndexAction.TransportAction",
       "request_wire_type": "ResolveIndexAction.Request",
       "response_wire_type": "ResolveIndexAction.Response",
-      "disposition": "rejected",
-      "reason": "Resolve-index transport execution requires index abstraction metadata response rendering before Steelsearch can serve OpenSearch resolve-index semantics."
+      "disposition": "implemented",
+      "reason": "Resolve-index transport adapter renders OpenSearch-shaped index abstraction metadata from the Rust manifest."
     },
     {
       "action_name": "cluster:admin/views/create",

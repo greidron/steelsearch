@@ -2306,8 +2306,8 @@ pub fn classify_opensearch_transport_action(
         },
         OPENSEARCH_RESOLVE_INDEX_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
-            disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "resolve-index transport execution requires index abstraction metadata response rendering",
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "resolve-index transport adapter renders OpenSearch-shaped index abstraction metadata from the Rust manifest",
         },
         OPENSEARCH_CREATE_VIEW_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -11239,6 +11239,35 @@ pub fn read_opensearch_resolve_index_request_message(
         });
     }
     OpenSearchResolveIndexRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_opensearch_resolve_index_response_message(
+    request_id: i64,
+    version: Version,
+    response: &OpenSearchResolveIndexResponseWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    response.write(&mut body)?;
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::response(),
+        version,
+        variable_header: BytesMut::new(),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_resolve_index_response_message(
+    message: &TransportMessage,
+) -> Result<OpenSearchResolveIndexResponseWire, TransportActionWireError> {
+    if message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "response",
+            actual: message.status.bits(),
+        });
+    }
+    OpenSearchResolveIndexResponseWire::read(message.body.clone().freeze())
 }
 
 pub fn build_opensearch_create_view_request_message(
@@ -25688,7 +25717,7 @@ impl OpenSearchResolveIndexRequestWire {
         Ok(request)
     }
 
-    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+    pub fn validate_supported_execution_subset(&self) -> Result<(), TransportActionWireError> {
         if self.names.is_empty() {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "resolve index empty names",
@@ -25702,11 +25731,239 @@ impl OpenSearchResolveIndexRequestWire {
                     "custom resolve-index options require index abstraction resolution semantics",
             });
         }
+        Ok(())
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        self.validate_supported_execution_subset()?;
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "resolve index execution",
-            reason:
-                "resolve-index transport execution requires index abstraction metadata response rendering",
+            reason: "use validate_supported_execution_subset for the implemented manifest-backed resolve-index adapter",
         })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchResolvedIndexWire {
+    pub name: String,
+    pub aliases: Vec<String>,
+    pub attributes: Vec<String>,
+    pub data_stream: Option<String>,
+}
+
+impl OpenSearchResolvedIndexWire {
+    fn write(&self, output: &mut StreamOutput) -> Result<(), TransportActionWireError> {
+        self.validate()?;
+        output.write_string(&self.name);
+        output.write_string_array(&self.aliases);
+        output.write_string_array(&self.attributes);
+        output.write_optional_string(self.data_stream.as_deref());
+        Ok(())
+    }
+
+    fn read(input: &mut StreamInput) -> Result<Self, TransportActionWireError> {
+        let value = Self {
+            name: input.read_string()?,
+            aliases: input.read_string_array()?,
+            attributes: input.read_string_array()?,
+            data_stream: input.read_optional_string()?,
+        };
+        value.validate()?;
+        Ok(value)
+    }
+
+    fn validate(&self) -> Result<(), TransportActionWireError> {
+        if self.name.trim().is_empty() {
+            return Err(TransportActionWireError::MissingRequiredField {
+                field: "resolve index response index name",
+            });
+        }
+        for alias in &self.aliases {
+            if alias.trim().is_empty() {
+                return Err(TransportActionWireError::MissingRequiredField {
+                    field: "resolve index response alias name",
+                });
+            }
+        }
+        for attribute in &self.attributes {
+            if attribute.trim().is_empty() {
+                return Err(TransportActionWireError::MissingRequiredField {
+                    field: "resolve index response attribute",
+                });
+            }
+        }
+        if self
+            .data_stream
+            .as_ref()
+            .is_some_and(|data_stream| data_stream.trim().is_empty())
+        {
+            return Err(TransportActionWireError::MissingRequiredField {
+                field: "resolve index response data stream name",
+            });
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchResolvedAliasWire {
+    pub name: String,
+    pub indices: Vec<String>,
+}
+
+impl OpenSearchResolvedAliasWire {
+    fn write(&self, output: &mut StreamOutput) -> Result<(), TransportActionWireError> {
+        self.validate()?;
+        output.write_string(&self.name);
+        output.write_string_array(&self.indices);
+        Ok(())
+    }
+
+    fn read(input: &mut StreamInput) -> Result<Self, TransportActionWireError> {
+        let value = Self {
+            name: input.read_string()?,
+            indices: input.read_string_array()?,
+        };
+        value.validate()?;
+        Ok(value)
+    }
+
+    fn validate(&self) -> Result<(), TransportActionWireError> {
+        if self.name.trim().is_empty() {
+            return Err(TransportActionWireError::MissingRequiredField {
+                field: "resolve index response alias name",
+            });
+        }
+        for index in &self.indices {
+            if index.trim().is_empty() {
+                return Err(TransportActionWireError::MissingRequiredField {
+                    field: "resolve index response alias index",
+                });
+            }
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchResolvedDataStreamWire {
+    pub name: String,
+    pub backing_indices: Vec<String>,
+    pub timestamp_field: String,
+}
+
+impl OpenSearchResolvedDataStreamWire {
+    fn write(&self, output: &mut StreamOutput) -> Result<(), TransportActionWireError> {
+        self.validate()?;
+        output.write_string(&self.name);
+        output.write_string_array(&self.backing_indices);
+        output.write_string(&self.timestamp_field);
+        Ok(())
+    }
+
+    fn read(input: &mut StreamInput) -> Result<Self, TransportActionWireError> {
+        let value = Self {
+            name: input.read_string()?,
+            backing_indices: input.read_string_array()?,
+            timestamp_field: input.read_string()?,
+        };
+        value.validate()?;
+        Ok(value)
+    }
+
+    fn validate(&self) -> Result<(), TransportActionWireError> {
+        if self.name.trim().is_empty() {
+            return Err(TransportActionWireError::MissingRequiredField {
+                field: "resolve index response data stream name",
+            });
+        }
+        if self.timestamp_field.trim().is_empty() {
+            return Err(TransportActionWireError::MissingRequiredField {
+                field: "resolve index response timestamp field",
+            });
+        }
+        for index in &self.backing_indices {
+            if index.trim().is_empty() {
+                return Err(TransportActionWireError::MissingRequiredField {
+                    field: "resolve index response backing index",
+                });
+            }
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchResolveIndexResponseWire {
+    pub indices: Vec<OpenSearchResolvedIndexWire>,
+    pub aliases: Vec<OpenSearchResolvedAliasWire>,
+    pub data_streams: Vec<OpenSearchResolvedDataStreamWire>,
+}
+
+impl OpenSearchResolveIndexResponseWire {
+    pub fn empty() -> Self {
+        Self {
+            indices: Vec::new(),
+            aliases: Vec::new(),
+            data_streams: Vec::new(),
+        }
+    }
+
+    pub fn write(&self, output: &mut StreamOutput) -> Result<(), TransportActionWireError> {
+        self.validate()?;
+        output.write_vint(self.indices.len() as i32);
+        for index in &self.indices {
+            index.write(output)?;
+        }
+        output.write_vint(self.aliases.len() as i32);
+        for alias in &self.aliases {
+            alias.write(output)?;
+        }
+        output.write_vint(self.data_streams.len() as i32);
+        for data_stream in &self.data_streams {
+            data_stream.write(output)?;
+        }
+        Ok(())
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let index_count = read_len(&mut input)?;
+        let mut indices = Vec::with_capacity(index_count);
+        for _ in 0..index_count {
+            indices.push(OpenSearchResolvedIndexWire::read(&mut input)?);
+        }
+        let alias_count = read_len(&mut input)?;
+        let mut aliases = Vec::with_capacity(alias_count);
+        for _ in 0..alias_count {
+            aliases.push(OpenSearchResolvedAliasWire::read(&mut input)?);
+        }
+        let data_stream_count = read_len(&mut input)?;
+        let mut data_streams = Vec::with_capacity(data_stream_count);
+        for _ in 0..data_stream_count {
+            data_streams.push(OpenSearchResolvedDataStreamWire::read(&mut input)?);
+        }
+        require_no_trailing_bytes(&input)?;
+        let response = Self {
+            indices,
+            aliases,
+            data_streams,
+        };
+        response.validate()?;
+        Ok(response)
+    }
+
+    pub fn validate(&self) -> Result<(), TransportActionWireError> {
+        for index in &self.indices {
+            index.validate()?;
+        }
+        for alias in &self.aliases {
+            alias.validate()?;
+        }
+        for data_stream in &self.data_streams {
+            data_stream.validate()?;
+        }
+        Ok(())
     }
 }
 
@@ -46505,7 +46762,7 @@ mod tests {
         );
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_RESOLVE_INDEX_ACTION_NAME).disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_CREATE_VIEW_ACTION_NAME).disposition,
@@ -65940,20 +66197,14 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_resolve_index_request_wire_round_trips_and_rejects_execution_boundary() {
+    fn opensearch_resolve_index_request_wire_round_trips_and_validates_execution_subset() {
         let request = OpenSearchResolveIndexRequestWire::default();
         let mut output = StreamOutput::new();
         request.write(&mut output);
 
         let decoded = OpenSearchResolveIndexRequestWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, request);
-        assert!(matches!(
-            decoded.reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "resolve index execution",
-                ..
-            })
-        ));
+        decoded.validate_supported_execution_subset().unwrap();
     }
 
     #[test]
@@ -65987,7 +66238,35 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_resolve_index_transport_messages_bind_rejected_action_frame() {
+    fn opensearch_resolve_index_response_wire_round_trips_index_alias_and_data_stream() {
+        let response = OpenSearchResolveIndexResponseWire {
+            indices: vec![OpenSearchResolvedIndexWire {
+                name: "logs-000001".to_string(),
+                aliases: vec!["logs".to_string()],
+                attributes: vec!["open".to_string()],
+                data_stream: Some("logs-ds".to_string()),
+            }],
+            aliases: vec![OpenSearchResolvedAliasWire {
+                name: "logs".to_string(),
+                indices: vec!["logs-000001".to_string()],
+            }],
+            data_streams: vec![OpenSearchResolvedDataStreamWire {
+                name: "logs-ds".to_string(),
+                backing_indices: vec!["logs-000001".to_string()],
+                timestamp_field: "@timestamp".to_string(),
+            }],
+        };
+        let mut output = StreamOutput::new();
+        response.write(&mut output).unwrap();
+
+        assert_eq!(
+            OpenSearchResolveIndexResponseWire::read(output.freeze()).unwrap(),
+            response
+        );
+    }
+
+    #[test]
+    fn opensearch_resolve_index_transport_messages_bind_action_frame_and_response() {
         let request = OpenSearchResolveIndexRequestWire::default();
         let mut frame = build_opensearch_resolve_index_request_message(
             45,
@@ -66002,15 +66281,25 @@ mod tests {
             read_opensearch_resolve_index_request_message(&message).unwrap(),
             request
         );
-        assert!(matches!(
-            read_opensearch_resolve_index_request_message(&message)
-                .unwrap()
-                .reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "resolve index execution",
-                ..
-            })
-        ));
+        read_opensearch_resolve_index_request_message(&message)
+            .unwrap()
+            .validate_supported_execution_subset()
+            .unwrap();
+
+        let response = OpenSearchResolveIndexResponseWire::empty();
+        let mut frame = build_opensearch_resolve_index_response_message(
+            45,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &response,
+        )
+        .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected resolve index response message");
+        };
+        assert_eq!(
+            read_opensearch_resolve_index_response_message(&message).unwrap(),
+            response
+        );
     }
 
     #[test]

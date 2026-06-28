@@ -1458,6 +1458,32 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end,
             &mut connection_end_at_ms,
         )?;
+    } else if is_request
+        && normalized_action_hint == Some("indices:admin/resolve/index")
+        && resolve_index_request_supports_manifest_subset(&body)
+    {
+        let response = build_resolve_index_response(request_id, header_version_id, &body);
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("indices:admin/resolve/index"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
     } else if is_request && normalized_action_hint == Some("indices:monitor/settings/get") {
         let response = build_get_settings_response(request_id, header_version_id, &body);
         response_frame = summarize_transport_response_frame_for_action(
@@ -6047,6 +6073,276 @@ fn indices_exist_in_metadata_manifest(
                         .is_some_and(|aliases| aliases.contains_key(target))
                 })
         }
+    })
+}
+
+fn build_resolve_index_response(request_id: i64, header_version_id: u32, body: &[u8]) -> Vec<u8> {
+    let Some(request) = decode_resolve_index_request_from_transport_body(body) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    if request.validate_supported_execution_subset().is_err() {
+        return build_empty_transport_response(request_id, header_version_id);
+    }
+    let bindings = dev_transport_pit_bindings();
+    let metadata_manifest = bindings
+        .metadata_manifest
+        .lock()
+        .expect("dev transport metadata manifest lock poisoned");
+    let response = resolve_index_response_from_metadata_manifest(&metadata_manifest, &request);
+    os_transport::action::build_opensearch_resolve_index_response_message(
+        request_id,
+        Version::from_id(header_version_id as i32),
+        &response,
+    )
+    .map(|frame| frame.to_vec())
+    .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
+}
+
+fn resolve_index_request_supports_manifest_subset(body: &[u8]) -> bool {
+    decode_resolve_index_request_from_transport_body(body)
+        .as_ref()
+        .is_some_and(|request| request.validate_supported_execution_subset().is_ok())
+}
+
+fn decode_resolve_index_request_from_transport_body(
+    body: &[u8],
+) -> Option<os_transport::action::OpenSearchResolveIndexRequestWire> {
+    let message = decode_transport_message_from_body(body)?;
+    os_transport::action::read_opensearch_resolve_index_request_message(&message).ok()
+}
+
+fn resolve_index_response_from_metadata_manifest(
+    metadata_manifest: &Value,
+    request: &os_transport::action::OpenSearchResolveIndexRequestWire,
+) -> os_transport::action::OpenSearchResolveIndexResponseWire {
+    let mut response = os_transport::action::OpenSearchResolveIndexResponseWire::empty();
+    let Some(indices) = metadata_manifest.get("indices").and_then(Value::as_object) else {
+        return response;
+    };
+    let mut seen_indices = BTreeSet::new();
+    let mut seen_aliases = BTreeSet::new();
+    let mut seen_data_streams = BTreeSet::new();
+    for selector in &request.names {
+        let selector = selector.trim();
+        if selector.is_empty() {
+            continue;
+        }
+        collect_resolved_indices_for_selector(
+            selector,
+            indices,
+            metadata_manifest,
+            &mut response,
+            &mut seen_indices,
+            &mut seen_aliases,
+            &mut seen_data_streams,
+        );
+    }
+    response
+        .indices
+        .sort_by(|left, right| left.name.cmp(&right.name));
+    response
+        .aliases
+        .sort_by(|left, right| left.name.cmp(&right.name));
+    response
+        .data_streams
+        .sort_by(|left, right| left.name.cmp(&right.name));
+    response
+}
+
+fn collect_resolved_indices_for_selector(
+    selector: &str,
+    indices: &serde_json::Map<String, Value>,
+    metadata_manifest: &Value,
+    response: &mut os_transport::action::OpenSearchResolveIndexResponseWire,
+    seen_indices: &mut BTreeSet<String>,
+    seen_aliases: &mut BTreeSet<String>,
+    seen_data_streams: &mut BTreeSet<String>,
+) {
+    let wildcard = selector == "_all" || selector.contains('*') || selector.contains('?');
+    for (index_name, index_metadata) in indices {
+        if resolve_index_name_matches(selector, wildcard, index_name) {
+            push_resolved_index(index_name, index_metadata, response, seen_indices);
+        }
+        if let Some(aliases) = index_metadata.get("aliases").and_then(Value::as_object) {
+            for alias_name in aliases.keys() {
+                if resolve_index_name_matches(selector, wildcard, alias_name) {
+                    push_resolved_alias(alias_name, indices, response, seen_aliases);
+                }
+            }
+        }
+    }
+    for (data_stream_name, data_stream_metadata) in
+        resolve_index_data_stream_entries(metadata_manifest)
+    {
+        if resolve_index_name_matches(selector, wildcard, &data_stream_name) {
+            push_resolved_data_stream(
+                &data_stream_name,
+                data_stream_metadata,
+                response,
+                seen_data_streams,
+            );
+        }
+    }
+}
+
+fn resolve_index_name_matches(selector: &str, wildcard: bool, candidate: &str) -> bool {
+    if selector == "_all" {
+        true
+    } else if wildcard {
+        wildcard_match(selector, candidate)
+    } else {
+        selector == candidate
+    }
+}
+
+fn push_resolved_index(
+    index_name: &str,
+    index_metadata: &Value,
+    response: &mut os_transport::action::OpenSearchResolveIndexResponseWire,
+    seen_indices: &mut BTreeSet<String>,
+) {
+    if !seen_indices.insert(index_name.to_string()) {
+        return;
+    }
+    let mut aliases = index_metadata
+        .get("aliases")
+        .and_then(Value::as_object)
+        .map(|aliases| aliases.keys().cloned().collect::<Vec<_>>())
+        .unwrap_or_default();
+    aliases.sort();
+    let mut attributes = Vec::new();
+    attributes.push(
+        index_metadata
+            .get("state")
+            .and_then(Value::as_str)
+            .unwrap_or("open")
+            .to_ascii_lowercase(),
+    );
+    if manifest_bool_at(
+        index_metadata,
+        &["hidden", "settings/index/hidden", "settings/index.hidden"],
+    ) {
+        attributes.push("hidden".to_string());
+    }
+    if manifest_bool_at(
+        index_metadata,
+        &["frozen", "settings/index/frozen", "settings/index.frozen"],
+    ) {
+        attributes.push("frozen".to_string());
+    }
+    attributes.sort();
+    response
+        .indices
+        .push(os_transport::action::OpenSearchResolvedIndexWire {
+            name: index_name.to_string(),
+            aliases,
+            attributes,
+            data_stream: index_metadata
+                .get("data_stream")
+                .or_else(|| index_metadata.get("dataStream"))
+                .and_then(Value::as_str)
+                .map(ToString::to_string),
+        });
+}
+
+fn push_resolved_alias(
+    alias_name: &str,
+    indices: &serde_json::Map<String, Value>,
+    response: &mut os_transport::action::OpenSearchResolveIndexResponseWire,
+    seen_aliases: &mut BTreeSet<String>,
+) {
+    if !seen_aliases.insert(alias_name.to_string()) {
+        return;
+    }
+    let mut alias_indices = indices
+        .iter()
+        .filter_map(|(index_name, index_metadata)| {
+            index_metadata
+                .get("aliases")
+                .and_then(Value::as_object)
+                .is_some_and(|aliases| aliases.contains_key(alias_name))
+                .then(|| index_name.clone())
+        })
+        .collect::<Vec<_>>();
+    alias_indices.sort();
+    response
+        .aliases
+        .push(os_transport::action::OpenSearchResolvedAliasWire {
+            name: alias_name.to_string(),
+            indices: alias_indices,
+        });
+}
+
+fn push_resolved_data_stream(
+    data_stream_name: &str,
+    data_stream_metadata: &Value,
+    response: &mut os_transport::action::OpenSearchResolveIndexResponseWire,
+    seen_data_streams: &mut BTreeSet<String>,
+) {
+    if !seen_data_streams.insert(data_stream_name.to_string()) {
+        return;
+    }
+    let mut backing_indices = data_stream_metadata
+        .get("backing_indices")
+        .or_else(|| data_stream_metadata.get("backingIndices"))
+        .or_else(|| data_stream_metadata.get("indices"))
+        .and_then(Value::as_array)
+        .map(|indices| {
+            indices
+                .iter()
+                .filter_map(Value::as_str)
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    backing_indices.sort();
+    let timestamp_field = data_stream_metadata
+        .get("timestamp_field")
+        .or_else(|| data_stream_metadata.get("timestampField"))
+        .and_then(Value::as_str)
+        .unwrap_or("@timestamp")
+        .to_string();
+    response
+        .data_streams
+        .push(os_transport::action::OpenSearchResolvedDataStreamWire {
+            name: data_stream_name.to_string(),
+            backing_indices,
+            timestamp_field,
+        });
+}
+
+fn resolve_index_data_stream_entries(metadata_manifest: &Value) -> Vec<(String, &Value)> {
+    [
+        "/data_streams",
+        "/metadata/data_streams",
+        "/metadata/dataStreams",
+        "/templates/data_streams",
+    ]
+    .iter()
+    .filter_map(|pointer| {
+        metadata_manifest
+            .pointer(pointer)
+            .and_then(Value::as_object)
+    })
+    .flat_map(|data_streams| {
+        data_streams
+            .iter()
+            .map(|(name, value)| (name.clone(), value))
+            .collect::<Vec<_>>()
+    })
+    .collect()
+}
+
+fn manifest_bool_at(value: &Value, candidates: &[&str]) -> bool {
+    candidates.iter().any(|candidate| {
+        let nested = candidate
+            .split('/')
+            .try_fold(value, |current, key| current.get(key));
+        nested.is_some_and(|value| match value {
+            Value::Bool(value) => *value,
+            Value::String(value) => value == "true",
+            _ => false,
+        })
     })
 }
 
@@ -13730,6 +14026,15 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
             header_version_id,
             body,
         )),
+        Some("indices:admin/resolve/index")
+            if resolve_index_request_supports_manifest_subset(body) =>
+        {
+            Some(build_resolve_index_response(
+                request_id,
+                header_version_id,
+                body,
+            ))
+        }
         Some("indices:monitor/settings/get") => Some(build_get_settings_response(
             request_id,
             header_version_id,
@@ -18541,6 +18846,86 @@ mod tests {
             response.empty_alias_indices,
             vec!["logs-no-alias-000001", "metrics-no-alias-000001"]
         );
+    }
+
+    #[test]
+    fn resolve_index_transport_route_builds_manifest_backed_response() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        *dev_transport_pit_bindings()
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned") = serde_json::json!({
+            "indices": {
+                "logs-000001": {
+                    "state": "open",
+                    "aliases": {
+                        "logs-read": {}
+                    },
+                    "data_stream": "logs-ds"
+                },
+                "metrics-000001": {
+                    "state": "open",
+                    "settings": {
+                        "index": {
+                            "hidden": "true"
+                        }
+                    },
+                    "aliases": {}
+                }
+            },
+            "data_streams": {
+                "logs-ds": {
+                    "backing_indices": ["logs-000001"],
+                    "timestamp_field": "@timestamp"
+                }
+            }
+        });
+        let request = os_transport::action::OpenSearchResolveIndexRequestWire {
+            names: vec!["logs*".to_string(), "metrics-000001".to_string()],
+            ..os_transport::action::OpenSearchResolveIndexRequestWire::default()
+        };
+        let frame = os_transport::action::build_opensearch_resolve_index_request_message(
+            83,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(resolve_index_request_supports_manifest_subset(&frame[6..]));
+
+        let response =
+            build_resolve_index_response(83, OPENSEARCH_3_7_0_TRANSPORT.id() as u32, &frame[6..]);
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected resolve-index response message");
+        };
+
+        assert_eq!(message.request_id, 83);
+        assert!(!message.status.is_request());
+        let response =
+            os_transport::action::read_opensearch_resolve_index_response_message(&message).unwrap();
+        assert_eq!(response.indices.len(), 2);
+        assert_eq!(response.indices[0].name, "logs-000001");
+        assert_eq!(response.indices[0].aliases, vec!["logs-read"]);
+        assert_eq!(response.indices[0].attributes, vec!["open"]);
+        assert_eq!(response.indices[0].data_stream.as_deref(), Some("logs-ds"));
+        assert_eq!(response.indices[1].name, "metrics-000001");
+        assert_eq!(response.indices[1].attributes, vec!["hidden", "open"]);
+        assert_eq!(response.aliases.len(), 1);
+        assert_eq!(response.aliases[0].name, "logs-read");
+        assert_eq!(response.aliases[0].indices, vec!["logs-000001"]);
+        assert_eq!(response.data_streams.len(), 1);
+        assert_eq!(response.data_streams[0].name, "logs-ds");
+        assert_eq!(
+            response.data_streams[0].backing_indices,
+            vec!["logs-000001"]
+        );
+        assert_eq!(response.data_streams[0].timestamp_field, "@timestamp");
     }
 
     #[test]

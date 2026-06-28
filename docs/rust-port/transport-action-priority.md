@@ -291,7 +291,8 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `indices:admin/data_stream/delete` (rejected fail-closed)
 - `indices:admin/data_stream/get` (implemented empty data-stream list subset)
 - `indices:monitor/data_stream/stats` (implemented empty data-stream-stats subset)
-- `indices:admin/resolve/index` (rejected fail-closed)
+- `indices:admin/resolve/index` (implemented manifest-backed index abstraction
+  metadata subset)
 - `cluster:admin/views/create` (rejected fail-closed)
 - `cluster:admin/views/delete` (rejected fail-closed)
 - `views:data/read/get` (rejected fail-closed)
@@ -1938,10 +1939,10 @@ The resolve-index boundary covers:
 
 - OpenSearch `ResolveIndexAction.Request` parent task, names array, and
   `IndicesOptions.strictExpandOpen()` at the wire decode/build layer;
-- explicit fail-closed classification for `indices:admin/resolve/index` until
-  index abstraction metadata response rendering is implemented;
-- explicit rejection for empty name arrays, custom indices options, and
-  resolve-index execution.
+- manifest-backed transport execution for `indices:admin/resolve/index`,
+  rendering OpenSearch-shaped resolved index, alias, and data-stream lists from
+  Rust metadata;
+- explicit rejection for empty name arrays and custom indices options.
 
 The create-view boundary covers:
 
@@ -4831,22 +4832,23 @@ strict open forbid-closed index options, and an empty
 release run, it stays in the lightweight admin transport range and does not
 expose a material response-codec bottleneck.
 
-Current resolve-index reject wire microbenchmark:
+Current resolve-index wire microbenchmark:
 
 ```text
 cargo run -p os-transport --release --bin resolve-index-reject-wire-benchmark
-resolve_index_reject_request_encode iterations=400000 elapsed_ms=224.325 ops_per_second=1783126.69 nanos_per_op=560.81
-resolve_index_reject_request_decode iterations=400000 elapsed_ms=250.029 ops_per_second=1599811.71 nanos_per_op=625.07
-resolve_index_reject_validation iterations=400000 elapsed_ms=251.138 ops_per_second=1592749.33 nanos_per_op=627.85
-resolve_index_reject_wire_bottleneck_ops_per_second=1592749.33
+resolve_index_request_encode iterations=400000 elapsed_ms=221.648 ops_per_second=1804659.62 nanos_per_op=554.12
+resolve_index_request_decode iterations=400000 elapsed_ms=248.776 ops_per_second=1607873.81 nanos_per_op=621.94
+resolve_index_request_validate iterations=400000 elapsed_ms=254.580 ops_per_second=1571217.33 nanos_per_op=636.45
+resolve_index_response_decode iterations=400000 elapsed_ms=66.074 ops_per_second=6053853.08 nanos_per_op=165.18
+resolve_index_wire_bottleneck_ops_per_second=1571217.33
 ```
 
-The current resolve-index fail-closed boundary bottleneck is validation. This
+The current resolve-index wire boundary bottleneck is request validation. This
 path carries the ActionRequest parent task, wildcard name array, and strict open
-index options before rejecting at admission. At roughly 1.57M ops/s in the
+index options before manifest-backed execution. At roughly 1.57M ops/s in the
 latest local release run, it stays in the lightweight metadata transport range;
-the extra wildcard string and indices-options comparison make it slightly
-heavier than the smallest BroadcastRequest reject paths.
+the next performance-sensitive work is keeping manifest index, alias, and
+data-stream matching cheap as metadata grows.
 
 Current create-view reject wire microbenchmark:
 
