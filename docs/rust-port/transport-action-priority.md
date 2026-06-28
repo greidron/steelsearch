@@ -2408,6 +2408,10 @@ The create-PIT boundary covers:
   back to sequence number alone, so `search_after` remains stable when a PIT
   snapshot contains multiple shard/routing partitions with the same sequence
   number.
+- local transport search admission now preserves OpenSearch `search_after`
+  failure boundaries for scroll requests, non-zero `from`, missing sort fields,
+  and mismatched `search_after`/sort value counts before executing the local
+  search subset.
 - local transport create-reader-context and update-reader-context reject
   keep-alive values above the OpenSearch default
   `point_in_time.max_keep_alive` of `24h`, matching the runtime

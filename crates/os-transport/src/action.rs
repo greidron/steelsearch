@@ -25591,6 +25591,12 @@ impl OpenSearchSearchRequestWire {
                         reason: "OpenSearch scroll does not allow from greater than zero",
                     });
                 }
+                if source.search_after.is_some() {
+                    return Err(TransportActionWireError::UnsupportedWireShape {
+                        shape: "search request scroll search after",
+                        reason: "OpenSearch search_after cannot be used in a scroll context",
+                    });
+                }
                 if source.size == 0 {
                     return Err(TransportActionWireError::UnsupportedWireShape {
                         shape: "search request scroll size",
@@ -25640,6 +25646,28 @@ impl OpenSearchSearchRequestWire {
                     shape: "search request source shard doc sort",
                     reason: "OpenSearch SearchRequest permits at most one _shard_doc sort",
                 });
+            }
+            if let Some(search_after) = source.search_after.as_deref() {
+                if source.from > 0 {
+                    return Err(TransportActionWireError::UnsupportedWireShape {
+                        shape: "search request source search after from",
+                        reason: "OpenSearch requires from to be zero when search_after is used",
+                    });
+                }
+                let sort_count = source.sorts.as_ref().map(Vec::len).unwrap_or(0);
+                if sort_count == 0 {
+                    return Err(TransportActionWireError::UnsupportedWireShape {
+                        shape: "search request source search after sort",
+                        reason: "OpenSearch search_after requires at least one sort field",
+                    });
+                }
+                if sort_count != search_after.len() {
+                    return Err(TransportActionWireError::UnsupportedWireShape {
+                        shape: "search request source search after sort",
+                        reason:
+                            "OpenSearch search_after value count must match the sort field count",
+                    });
+                }
             }
         }
         let default_indices_options =
@@ -67180,7 +67208,7 @@ mod tests {
 
         let source_request = OpenSearchSearchRequestWire {
             source: Some(OpenSearchSearchSourceBuilderWire {
-                from: 3,
+                from: 0,
                 size: 25,
                 explain: Some(true),
                 fetch_source: Some(OpenSearchFetchSourceContextWire {
@@ -70304,6 +70332,74 @@ mod tests {
             })
         ));
 
+        let search_after_without_sort = OpenSearchSearchRequestWire {
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                search_after: Some(vec![json!(1)]),
+                point_in_time: Some(OpenSearchPointInTimeBuilderWire {
+                    id: "pit-context".to_string(),
+                    keep_alive: Some(TimeValueWire::minutes(1)),
+                }),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        assert!(matches!(
+            search_after_without_sort.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source search after sort",
+                ..
+            })
+        ));
+
+        let search_after_with_from = OpenSearchSearchRequestWire {
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                from: 1,
+                search_after: Some(vec![json!(1)]),
+                point_in_time: Some(OpenSearchPointInTimeBuilderWire {
+                    id: "pit-context".to_string(),
+                    keep_alive: Some(TimeValueWire::minutes(1)),
+                }),
+                sorts: Some(vec![OpenSearchSortBuilderWire::ShardDoc(
+                    OpenSearchShardDocSortBuilderWire {
+                        order: OpenSearchSortOrderWire::Asc,
+                    },
+                )]),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        assert!(matches!(
+            search_after_with_from.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source search after from",
+                ..
+            })
+        ));
+
+        let search_after_sort_count_mismatch = OpenSearchSearchRequestWire {
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                search_after: Some(vec![json!(1), json!(2)]),
+                point_in_time: Some(OpenSearchPointInTimeBuilderWire {
+                    id: "pit-context".to_string(),
+                    keep_alive: Some(TimeValueWire::minutes(1)),
+                }),
+                sorts: Some(vec![OpenSearchSortBuilderWire::ShardDoc(
+                    OpenSearchShardDocSortBuilderWire {
+                        order: OpenSearchSortOrderWire::Asc,
+                    },
+                )]),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        assert!(matches!(
+            search_after_sort_count_mismatch.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source search after sort",
+                ..
+            })
+        ));
+
         let empty_sort_field = OpenSearchSearchRequestWire {
             source: Some(OpenSearchSearchSourceBuilderWire {
                 sorts: Some(vec![OpenSearchSortBuilderWire::Field(
@@ -70555,6 +70651,35 @@ mod tests {
             scroll_with_request_cache.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "search request scroll cache",
+                ..
+            })
+        ));
+
+        let scroll_with_search_after = OpenSearchSearchRequestWire {
+            scroll: Some(OpenSearchScrollWire {
+                keep_alive: TimeValueWire::minutes(1),
+            }),
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                search_after: Some(vec![json!(1)]),
+                sorts: Some(vec![OpenSearchSortBuilderWire::Field(
+                    OpenSearchFieldSortBuilderWire {
+                        field_name: "ordinal".to_string(),
+                        nested_path: None,
+                        missing: Value::Null,
+                        order: Some(OpenSearchSortOrderWire::Asc),
+                        sort_mode: None,
+                        unmapped_type: None,
+                        numeric_type: None,
+                    },
+                )]),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        assert!(matches!(
+            scroll_with_search_after.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request scroll search after",
                 ..
             })
         ));
