@@ -2058,8 +2058,8 @@ pub fn classify_opensearch_transport_action(
         },
         OPENSEARCH_PUT_STORED_SCRIPT_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
-            disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "put-stored-script transport execution requires script source parsing, context validation, cluster metadata mutation, and ack rendering",
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "put-stored-script transport adapter stores Rust stored-script metadata and renders OpenSearch AcknowledgedResponse",
         },
         OPENSEARCH_GET_STORED_SCRIPT_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -9604,6 +9604,35 @@ pub fn read_opensearch_put_stored_script_request_message(
         });
     }
     OpenSearchPutStoredScriptRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_opensearch_put_stored_script_response_message(
+    request_id: i64,
+    version: Version,
+    response: &AcknowledgedResponseWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    response.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::response(),
+        version,
+        variable_header: BytesMut::new(),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_put_stored_script_response_message(
+    message: &TransportMessage,
+) -> Result<AcknowledgedResponseWire, TransportActionWireError> {
+    if message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "response",
+            actual: message.status.bits(),
+        });
+    }
+    AcknowledgedResponseWire::read(message.body.clone().freeze())
 }
 
 pub fn build_opensearch_get_stored_script_request_message(
@@ -21447,7 +21476,7 @@ impl OpenSearchPutStoredScriptRequestWire {
         })
     }
 
-    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+    pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
         if self.cluster_manager_timeout != TimeValueWire::seconds(30) {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "put stored script cluster-manager timeout",
@@ -21517,9 +21546,14 @@ impl OpenSearchPutStoredScriptRequestWire {
                 reason: "stored script compiler options require script compiler option validation semantics",
             });
         }
+        Ok(())
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        self.validate_supported_subset()?;
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "put stored script execution",
-            reason: "put-stored-script transport execution requires script source parsing, context validation, cluster metadata mutation, and ack rendering",
+            reason: "use validate_supported_subset for the implemented manifest-backed put-stored-script adapter",
         })
     }
 }
@@ -47238,7 +47272,7 @@ mod tests {
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_PUT_STORED_SCRIPT_ACTION_NAME)
                 .disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_GET_STORED_SCRIPT_ACTION_NAME)
@@ -47601,6 +47635,7 @@ mod tests {
                 || spec.action_name == OPENSEARCH_PUT_COMPOSABLE_INDEX_TEMPLATE_ACTION_NAME
                 || spec.action_name == OPENSEARCH_GET_COMPOSABLE_INDEX_TEMPLATE_ACTION_NAME
                 || spec.action_name == OPENSEARCH_DELETE_COMPOSABLE_INDEX_TEMPLATE_ACTION_NAME
+                || spec.action_name == OPENSEARCH_PUT_STORED_SCRIPT_ACTION_NAME
                 || spec.action_name == OPENSEARCH_GET_STORED_SCRIPT_ACTION_NAME
                 || spec.action_name == OPENSEARCH_DELETE_STORED_SCRIPT_ACTION_NAME
                 || spec.action_name == OPENSEARCH_GET_SCRIPT_CONTEXT_ACTION_NAME
@@ -47643,7 +47678,6 @@ mod tests {
                 || spec.action_name == OPENSEARCH_ANALYZE_ACTION_NAME
                 || spec.action_name == OPENSEARCH_CREATE_INDEX_ACTION_NAME
                 || spec.action_name == OPENSEARCH_AUTO_CREATE_ACTION_NAME
-                || spec.action_name == OPENSEARCH_PUT_STORED_SCRIPT_ACTION_NAME
                 || spec.action_name == OPENSEARCH_RESIZE_ACTION_NAME
                 || spec.action_name == OPENSEARCH_ROLLOVER_ACTION_NAME
                 || spec.action_name == OPENSEARCH_DELETE_INDEX_ACTION_NAME
@@ -60577,7 +60611,7 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_put_stored_script_request_wire_round_trips_and_rejects_execution_boundary() {
+    fn opensearch_put_stored_script_request_wire_round_trips_and_validates_manifest_subset() {
         let request = OpenSearchPutStoredScriptRequestWire::default();
         let mut output = StreamOutput::new();
         request.write(&mut output);
@@ -60587,13 +60621,7 @@ mod tests {
         assert_eq!(decoded.id.as_deref(), Some("stored-script-1"));
         assert_eq!(decoded.media_type, "application/json; charset=UTF-8");
         assert_eq!(decoded.source.lang, "painless");
-        assert!(matches!(
-            decoded.reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "put stored script execution",
-                ..
-            })
-        ));
+        decoded.validate_supported_subset().unwrap();
     }
 
     #[test]
@@ -60603,7 +60631,7 @@ mod tests {
             ..OpenSearchPutStoredScriptRequestWire::default()
         };
         assert!(matches!(
-            cluster_manager_timeout.reject_unsupported_execution(),
+            cluster_manager_timeout.validate_supported_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "put stored script cluster-manager timeout",
                 ..
@@ -60615,7 +60643,7 @@ mod tests {
             ..OpenSearchPutStoredScriptRequestWire::default()
         };
         assert!(matches!(
-            ack_timeout.reject_unsupported_execution(),
+            ack_timeout.validate_supported_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "put stored script ack timeout",
                 ..
@@ -60627,7 +60655,7 @@ mod tests {
             ..OpenSearchPutStoredScriptRequestWire::default()
         };
         assert!(matches!(
-            missing_id.reject_unsupported_execution(),
+            missing_id.validate_supported_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "put stored script missing id",
                 ..
@@ -60639,7 +60667,7 @@ mod tests {
             ..OpenSearchPutStoredScriptRequestWire::default()
         };
         assert!(matches!(
-            invalid_id.reject_unsupported_execution(),
+            invalid_id.validate_supported_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "put stored script id",
                 ..
@@ -60651,7 +60679,7 @@ mod tests {
             ..OpenSearchPutStoredScriptRequestWire::default()
         };
         assert!(matches!(
-            missing_content.reject_unsupported_execution(),
+            missing_content.validate_supported_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "put stored script content",
                 ..
@@ -60663,7 +60691,7 @@ mod tests {
             ..OpenSearchPutStoredScriptRequestWire::default()
         };
         assert!(matches!(
-            media_type.reject_unsupported_execution(),
+            media_type.validate_supported_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "put stored script media type",
                 ..
@@ -60675,7 +60703,7 @@ mod tests {
             ..OpenSearchPutStoredScriptRequestWire::default()
         };
         assert!(matches!(
-            context.reject_unsupported_execution(),
+            context.validate_supported_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "put stored script context",
                 ..
@@ -60690,7 +60718,7 @@ mod tests {
             ..OpenSearchPutStoredScriptRequestWire::default()
         };
         assert!(matches!(
-            lang.reject_unsupported_execution(),
+            lang.validate_supported_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "put stored script lang",
                 ..
@@ -60705,7 +60733,7 @@ mod tests {
             ..OpenSearchPutStoredScriptRequestWire::default()
         };
         assert!(matches!(
-            source.reject_unsupported_execution(),
+            source.validate_supported_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "put stored script source",
                 ..
@@ -60722,7 +60750,7 @@ mod tests {
             ..OpenSearchPutStoredScriptRequestWire::default()
         };
         assert!(matches!(
-            options.reject_unsupported_execution(),
+            options.validate_supported_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "put stored script options",
                 ..
@@ -60731,7 +60759,7 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_put_stored_script_transport_messages_bind_rejected_action_frame() {
+    fn opensearch_put_stored_script_transport_messages_bind_action_frame_and_ack_response() {
         let request = OpenSearchPutStoredScriptRequestWire::default();
         let mut frame = build_opensearch_put_stored_script_request_message(
             69,
@@ -60746,21 +60774,31 @@ mod tests {
             classify_opensearch_transport_request_message(&message)
                 .unwrap()
                 .disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             read_opensearch_put_stored_script_request_message(&message).unwrap(),
             request
         );
-        assert!(matches!(
-            read_opensearch_put_stored_script_request_message(&message)
-                .unwrap()
-                .reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "put stored script execution",
-                ..
-            })
-        ));
+        read_opensearch_put_stored_script_request_message(&message)
+            .unwrap()
+            .validate_supported_subset()
+            .unwrap();
+
+        let response = AcknowledgedResponseWire { acknowledged: true };
+        let mut frame = build_opensearch_put_stored_script_response_message(
+            69,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &response,
+        )
+        .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected put stored script response message");
+        };
+        assert_eq!(
+            read_opensearch_put_stored_script_response_message(&message).unwrap(),
+            response
+        );
     }
 
     #[test]

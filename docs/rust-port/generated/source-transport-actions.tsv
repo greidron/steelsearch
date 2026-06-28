@@ -97,7 +97,7 @@ implemented	RecoveryAction.INSTANCE	TransportRecoveryAction.class	/home/ubuntu/O
 implemented	SegmentReplicationStatsAction.INSTANCE	TransportSegmentReplicationStatsAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	764
 partial	NodesReloadSecureSettingsAction.INSTANCE	TransportNodesReloadSecureSettingsAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	765
 partial	AutoCreateAction.INSTANCE	AutoCreateAction.TransportAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	766
-partial	PutStoredScriptAction.INSTANCE	TransportPutStoredScriptAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	769
+implemented	PutStoredScriptAction.INSTANCE	TransportPutStoredScriptAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	769
 implemented	GetStoredScriptAction.INSTANCE	TransportGetStoredScriptAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	770
 implemented	DeleteStoredScriptAction.INSTANCE	TransportDeleteStoredScriptAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	771
 implemented	GetScriptContextAction.INSTANCE	TransportGetScriptContextAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	772

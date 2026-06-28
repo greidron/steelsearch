@@ -177,8 +177,8 @@ The source-derived transport inventory currently has 160 rows:
 
 | Status | Count | Meaning |
 | --- | ---: | --- |
-| `implemented` | 88 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
-| `partial` | 72 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
+| `implemented` | 89 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
+| `partial` | 71 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
 | `planned` | 0 | No source-derived transport action remains unclassified. |
 
 The k-NN plugin action sweep is complete at the boundary layer. All 12
@@ -331,7 +331,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `indices:data/write/delete`
 - `indices:admin/create` (rejected fail-closed)
 - `indices:admin/auto_create` (rejected fail-closed)
-- `cluster:admin/script/put` (rejected fail-closed)
+- `cluster:admin/script/put` (implemented manifest-backed stored-script metadata write subset)
 - `cluster:admin/script/get` (implemented manifest-backed stored-script metadata read subset)
 - `cluster:admin/script/delete` (manifest-backed stored-script deletion)
 - `cluster:admin/script_context/get` (implemented Rust-supported script context catalog subset)
@@ -1310,13 +1310,13 @@ The put-stored-script boundary covers:
   `BytesReference`, media type string, optional context, and
   `StoredScriptSource` language/source/options at the OpenSearch 3.x wire
   decode/build layer;
-- explicit fail-closed classification for `cluster:admin/script/put` until
-  script source parsing, script context validation, cluster metadata mutation,
-  and acknowledgement response rendering are implemented;
+- implemented `cluster:admin/script/put` request admission for the supported
+  metadata subset, manifest-backed stored script upsert, and acknowledgement
+  response rendering;
 - explicit rejection for custom cluster-manager timeouts, custom
   acknowledgement timeouts, missing or invalid ids, empty content, non-JSON
   media types, explicit script contexts, missing language/source fields,
-  compiler options, and put-stored-script execution.
+  and compiler options.
 
 The get-stored-script boundary covers:
 
@@ -4033,24 +4033,26 @@ local release run, the future performance-sensitive work is auto-create
 index/data-stream resolution, cluster-manager metadata mutation, active-shards
 wait, and response rendering.
 
-Current put-stored-script reject wire microbenchmark:
+Current put-stored-script wire microbenchmark:
 
 ```text
-cargo run -p os-transport --release --bin put-stored-script-reject-wire-benchmark
-put_stored_script_reject_request_encode iterations=400000 elapsed_ms=481.887 ops_per_second=830069.93 nanos_per_op=1204.72
-put_stored_script_reject_request_decode iterations=400000 elapsed_ms=480.088 ops_per_second=833181.05 nanos_per_op=1200.22
-put_stored_script_reject_validation iterations=400000 elapsed_ms=494.523 ops_per_second=808860.27 nanos_per_op=1236.31
-put_stored_script_reject_wire_bottleneck_ops_per_second=808860.27
+cargo run -p os-transport --release --bin put-stored-script-wire-benchmark
+put_stored_script_request_encode iterations=400000 elapsed_ms=476.505 ops_per_second=839444.79 nanos_per_op=1191.26
+put_stored_script_request_decode iterations=400000 elapsed_ms=479.333 ops_per_second=834492.35 nanos_per_op=1198.33
+put_stored_script_request_validate iterations=400000 elapsed_ms=493.865 ops_per_second=809937.43 nanos_per_op=1234.66
+put_stored_script_response_decode iterations=400000 elapsed_ms=54.084 ops_per_second=7395942.05 nanos_per_op=135.21
+put_stored_script_wire_bottleneck_ops_per_second=809937.43
 ```
 
-The current put-stored-script fail-closed boundary bottleneck is validation.
+The current put-stored-script wire bottleneck is validation.
 The path decodes an acknowledged cluster-manager request, optional id, script
 content `BytesReference`, media type string, optional context, and
-`StoredScriptSource` language/source/options before rejecting execution. At
+`StoredScriptSource` language/source/options before the manifest-backed
+metadata upsert. At
 roughly 0.81M ops/s in the latest local release run, current overhead is still
-bounded wire validation; future performance-sensitive work is script source
-parsing, script context validation, cluster metadata mutation, and ack
-rendering.
+bounded wire validation; future performance-sensitive work is broader script
+source parsing, script context validation, cluster metadata publication, and
+ack rendering.
 
 Current get-stored-script wire microbenchmark:
 

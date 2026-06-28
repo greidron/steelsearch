@@ -316,8 +316,8 @@ name = "auto-create-reject-wire-benchmark"
 path = "benchmarks/auto_create_reject_wire.rs"
 
 [[bin]]
-name = "put-stored-script-reject-wire-benchmark"
-path = "benchmarks/put_stored_script_reject_wire.rs"
+name = "put-stored-script-wire-benchmark"
+path = "benchmarks/put_stored_script_wire.rs"
 
 [[bin]]
 name = "get-stored-script-wire-benchmark"

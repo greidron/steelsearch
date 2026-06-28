@@ -1718,6 +1718,32 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end_at_ms,
         )?;
     } else if is_request
+        && normalized_action_hint == Some("cluster:admin/script/put")
+        && put_stored_script_request_supports_manifest_subset(&body)
+    {
+        let response = build_put_stored_script_response(request_id, header_version_id, &body);
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("cluster:admin/script/put"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request
         && normalized_action_hint == Some("cluster:admin/script/delete")
         && delete_stored_script_request_supports_manifest_subset(&body)
     {
@@ -8289,6 +8315,45 @@ fn build_get_stored_script_response(
     .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
 }
 
+fn build_put_stored_script_response(
+    request_id: i64,
+    header_version_id: u32,
+    body: &[u8],
+) -> Vec<u8> {
+    let Some(request) = decode_put_stored_script_request_from_transport_body(body) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    if request.validate_supported_subset().is_err() {
+        return build_empty_transport_response(request_id, header_version_id);
+    }
+    put_stored_script_into_metadata_manifest(
+        &mut dev_transport_pit_bindings()
+            .metadata_manifest
+            .lock()
+            .expect("metadata manifest lock poisoned"),
+        &request,
+    );
+    os_transport::action::build_opensearch_put_stored_script_response_message(
+        request_id,
+        Version::from_id(header_version_id as i32),
+        &os_transport::action::AcknowledgedResponseWire { acknowledged: true },
+    )
+    .map(|frame| frame.to_vec())
+    .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
+}
+
+fn put_stored_script_request_supports_manifest_subset(body: &[u8]) -> bool {
+    decode_put_stored_script_request_from_transport_body(body)
+        .is_some_and(|request| request.validate_supported_subset().is_ok())
+}
+
+fn decode_put_stored_script_request_from_transport_body(
+    body: &[u8],
+) -> Option<os_transport::action::OpenSearchPutStoredScriptRequestWire> {
+    let message = decode_transport_message_from_body(body)?;
+    os_transport::action::read_opensearch_put_stored_script_request_message(&message).ok()
+}
+
 fn decode_get_stored_script_request_from_transport_body(
     body: &[u8],
 ) -> Option<os_transport::action::OpenSearchGetStoredScriptRequestWire> {
@@ -8346,6 +8411,33 @@ fn delete_stored_script_from_metadata_manifest(
         .and_then(Value::as_object_mut)
         .and_then(|scripts| scripts.remove(script_id))
         .is_some()
+}
+
+fn put_stored_script_into_metadata_manifest(
+    metadata_manifest: &mut Value,
+    request: &os_transport::action::OpenSearchPutStoredScriptRequestWire,
+) {
+    let script_id = request
+        .id
+        .as_deref()
+        .expect("validated put stored script request has id");
+    let object = metadata_manifest
+        .as_object_mut()
+        .expect("metadata manifest should be object");
+    let stored_scripts = object
+        .entry("stored_scripts".to_string())
+        .or_insert_with(|| Value::Object(serde_json::Map::new()));
+    stored_scripts
+        .as_object_mut()
+        .expect("stored_scripts manifest entry should be object")
+        .insert(
+            script_id.to_string(),
+            serde_json::json!({
+                "lang": request.source.lang.clone(),
+                "source": request.source.source.clone(),
+                "options": request.source.options.clone(),
+            }),
+        );
 }
 
 fn get_stored_script_response_from_metadata_manifest(
@@ -16453,6 +16545,15 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
             header_version_id,
             body,
         )),
+        Some("cluster:admin/script/put")
+            if put_stored_script_request_supports_manifest_subset(body) =>
+        {
+            Some(build_put_stored_script_response(
+                request_id,
+                header_version_id,
+                body,
+            ))
+        }
         Some("cluster:admin/script/delete")
             if delete_stored_script_request_supports_manifest_subset(body) =>
         {
@@ -21896,6 +21997,100 @@ mod tests {
                 .unwrap();
         assert_eq!(response.id, "missing-template");
         assert!(response.source.is_none());
+    }
+
+    #[test]
+    fn put_stored_script_transport_route_upserts_manifest_entry() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        *dev_transport_pit_bindings()
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned") = serde_json::json!({});
+
+        let request = os_transport::action::OpenSearchPutStoredScriptRequestWire {
+            id: Some("transport-put-template".to_string()),
+            source: os_transport::action::OpenSearchStoredScriptSourceWire {
+                lang: "mustache".to_string(),
+                source: "hello {{name}}".to_string(),
+                options: BTreeMap::new(),
+            },
+            ..os_transport::action::OpenSearchPutStoredScriptRequestWire::default()
+        };
+        let frame = os_transport::action::build_opensearch_put_stored_script_request_message(
+            197,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(put_stored_script_request_supports_manifest_subset(
+            &frame[6..]
+        ));
+
+        let response = build_put_stored_script_response(
+            197,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &frame[6..],
+        );
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected put stored script response message");
+        };
+        assert_eq!(message.request_id, 197);
+        assert!(!message.status.is_request());
+        let response =
+            os_transport::action::read_opensearch_put_stored_script_response_message(&message)
+                .unwrap();
+        assert!(response.acknowledged);
+
+        let get_request = os_transport::action::OpenSearchGetStoredScriptRequestWire {
+            id: "transport-put-template".to_string(),
+            ..os_transport::action::OpenSearchGetStoredScriptRequestWire::default()
+        };
+        let frame = os_transport::action::build_opensearch_get_stored_script_request_message(
+            198,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &get_request,
+        )
+        .unwrap();
+        let response = build_get_stored_script_response(
+            198,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &frame[6..],
+        );
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected get stored script response message");
+        };
+        let response =
+            os_transport::action::read_opensearch_get_stored_script_response_message(&message)
+                .unwrap();
+        let source = response.source.expect("stored script source");
+        assert_eq!(source.lang, "mustache");
+        assert_eq!(source.source, "hello {{name}}");
+
+        let unsupported = os_transport::action::OpenSearchPutStoredScriptRequestWire {
+            id: Some(String::new()),
+            ..os_transport::action::OpenSearchPutStoredScriptRequestWire::default()
+        };
+        let frame = os_transport::action::build_opensearch_put_stored_script_request_message(
+            199,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &unsupported,
+        )
+        .unwrap();
+        assert!(!put_stored_script_request_supports_manifest_subset(
+            &frame[6..]
+        ));
     }
 
     #[test]
