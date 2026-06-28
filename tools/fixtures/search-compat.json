@@ -11261,6 +11261,74 @@
       ],
       "family": "document-update",
       "description": "[document-update] update _source=false omits get response like OpenSearch"
+    },
+    {
+      "name": "update_source_include_exclude_overlap_rejected_parity",
+      "area": "document",
+      "extract": "status_only",
+      "compare_step": "update-source-include-exclude-overlap",
+      "steps": [
+        {
+          "name": "create-update-source-include-exclude-index",
+          "method": "PUT",
+          "path": "/logs-update-source-include-exclude-compat",
+          "expected_status": 200,
+          "body": {}
+        },
+        {
+          "name": "update-source-include-exclude-overlap",
+          "method": "POST",
+          "path": "/logs-update-source-include-exclude-compat/_update/1?_source_includes=foo,bar&_source_excludes=bar",
+          "expected_status": 400,
+          "body": {
+            "doc": {
+              "foo": "updated"
+            },
+            "upsert": {
+              "foo": "bar",
+              "bar": "hidden",
+              "baz": "excluded"
+            }
+          },
+          "extract": "status_only"
+        }
+      ],
+      "family": "document-update",
+      "description": "[document-update] update rejects overlapping source include/exclude filters like OpenSearch"
+    },
+    {
+      "name": "update_source_include_exclude_get_response_parity",
+      "area": "document",
+      "extract": "single_doc_write_result",
+      "compare_step": "update-source-include-exclude",
+      "steps": [
+        {
+          "name": "create-update-source-include-exclude-ok-index",
+          "method": "PUT",
+          "path": "/logs-update-source-include-exclude-ok-compat",
+          "expected_status": 200,
+          "body": {}
+        },
+        {
+          "name": "update-source-include-exclude",
+          "method": "POST",
+          "path": "/logs-update-source-include-exclude-ok-compat/_update/1?_source_includes=foo,bar&_source_excludes=baz",
+          "expected_status": 201,
+          "body": {
+            "doc": {
+              "foo": "updated"
+            },
+            "upsert": {
+              "foo": "bar",
+              "bar": "visible",
+              "baz": "excluded"
+            }
+          },
+          "extract": "single_doc_write_result"
+        }
+      ],
+      "family": "document-update",
+      "description": "[document-update] update source include/exclude filters get source like OpenSearch"
     }
   ],
   "requests": [

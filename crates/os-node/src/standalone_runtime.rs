@@ -17054,6 +17054,9 @@ impl SteelNode {
         {
             return response;
         }
+        if let Some(response) = validate_fetch_source_query_filter_overlap(request) {
+            return response;
+        }
         let resolved_index = match self.resolve_write_target(index, false) {
             Ok(resolved_index) => resolved_index,
             Err(reason) => {
@@ -24983,6 +24986,41 @@ fn source_fetch_explicitly_requested(body: &Value) -> bool {
         || body.get("_source_include").is_some()
         || body.get("_source_excludes").is_some()
         || body.get("_source_exclude").is_some()
+}
+
+fn validate_fetch_source_query_filter_overlap(request: &RestRequest) -> Option<RestResponse> {
+    let includes = request
+        .query_params
+        .get("_source_includes")
+        .or_else(|| request.query_params.get("_source_include"))
+        .map(|value| split_rest_csv_values(value))
+        .or_else(|| {
+            request.query_params.get("_source").and_then(|value| {
+                if value == "true" || value == "false" {
+                    None
+                } else {
+                    Some(split_rest_csv_values(value))
+                }
+            })
+        })
+        .unwrap_or_default();
+    if includes.is_empty() {
+        return None;
+    }
+    let excludes = request
+        .query_params
+        .get("_source_excludes")
+        .or_else(|| request.query_params.get("_source_exclude"))
+        .map(|value| split_rest_csv_values(value))
+        .unwrap_or_default();
+    for exclude in excludes {
+        if includes.iter().any(|include| include == &exclude) {
+            return Some(delete_pit_illegal_argument(format!(
+                "The same entry [{exclude}] cannot be both included and excluded in _source."
+            )));
+        }
+    }
+    None
 }
 
 fn stored_field_names(stored_fields: &Value) -> Vec<&str> {
@@ -48273,6 +48311,23 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(noop.status, 200);
         assert_eq!(noop.body["result"], "noop");
         assert_eq!(noop.body["_version"], 1);
+
+        let overlapping_source_filters = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/logs-update-probe/_update/doc-1?_source_includes=message,tenant&_source_excludes=tenant",
+            )
+            .with_json_body(serde_json::json!({
+                "doc": {
+                    "processed": false
+                }
+            })),
+        );
+        assert_eq!(overlapping_source_filters.status, 400);
+        assert_eq!(
+            overlapping_source_filters.body["error"]["reason"],
+            "The same entry [tenant] cannot be both included and excluded in _source."
+        );
 
         let scripted = node.handle_rest_request(
             RestRequest::new(
