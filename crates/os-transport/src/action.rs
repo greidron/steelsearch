@@ -2123,8 +2123,8 @@ pub fn classify_opensearch_transport_action(
         },
         OPENSEARCH_CLOSE_INDEX_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
-            disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "close-index transport execution requires index metadata mutation, shard state transition, and close response rendering",
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "close-index transport adapter mutates manifest-backed concrete index state for default-option requests and renders CloseIndexResponse",
         },
         OPENSEARCH_ADD_INDEX_BLOCK_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -10565,6 +10565,35 @@ pub fn read_opensearch_close_index_request_message(
         });
     }
     OpenSearchCloseIndexRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_opensearch_close_index_response_message(
+    request_id: i64,
+    version: Version,
+    response: &OpenSearchCloseIndexResponseWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    response.write(&mut body)?;
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::response(),
+        version,
+        variable_header: BytesMut::new(),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_close_index_response_message(
+    message: &TransportMessage,
+) -> Result<OpenSearchCloseIndexResponseWire, TransportActionWireError> {
+    if message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "response",
+            actual: message.status.bits(),
+        });
+    }
+    OpenSearchCloseIndexResponseWire::read(message.body.clone().freeze())
 }
 
 pub fn build_opensearch_add_index_block_request_message(
@@ -23554,7 +23583,7 @@ impl OpenSearchCloseIndexRequestWire {
         Ok(request)
     }
 
-    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+    pub fn validate_supported_execution_subset(&self) -> Result<(), TransportActionWireError> {
         if self.cluster_manager_timeout != TimeValueWire::seconds(30) {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "close index cluster-manager timeout",
@@ -23593,10 +23622,107 @@ impl OpenSearchCloseIndexRequestWire {
                     "custom wait-for-active-shards requires shard state acknowledgement semantics",
             });
         }
+        Ok(())
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        self.validate_supported_execution_subset()?;
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "close index execution",
             reason:
-                "close-index transport execution requires index metadata mutation, shard state transition, and close response rendering",
+                "use validate_supported_execution_subset for the implemented manifest-backed close-index adapter",
+        })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchCloseIndexResponseWire {
+    pub acknowledged: bool,
+    pub shards_acknowledged: bool,
+    pub indices: Vec<OpenSearchCloseIndexResultWire>,
+}
+
+impl OpenSearchCloseIndexResponseWire {
+    pub fn success(indices: &[String]) -> Self {
+        Self {
+            acknowledged: true,
+            shards_acknowledged: true,
+            indices: indices
+                .iter()
+                .map(|index| OpenSearchCloseIndexResultWire::success(index))
+                .collect(),
+        }
+    }
+
+    pub fn write(&self, output: &mut StreamOutput) -> Result<(), TransportActionWireError> {
+        output.write_bool(self.acknowledged);
+        output.write_bool(self.shards_acknowledged);
+        output.write_vint(self.indices.len() as i32);
+        for index in &self.indices {
+            index.write(output)?;
+        }
+        Ok(())
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let acknowledged = input.read_bool()?;
+        let shards_acknowledged = input.read_bool()?;
+        let index_count = input.read_vint()?;
+        if index_count < 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "close index response index count",
+                reason: "negative close-index response index counts are invalid",
+            });
+        }
+        let mut indices = Vec::with_capacity(index_count as usize);
+        for _ in 0..index_count {
+            indices.push(OpenSearchCloseIndexResultWire::read(&mut input)?);
+        }
+        let response = Self {
+            acknowledged,
+            shards_acknowledged,
+            indices,
+        };
+        require_no_trailing_bytes(&input)?;
+        Ok(response)
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchCloseIndexResultWire {
+    pub index: OpenSearchIndexIdentityWire,
+    pub exception: Option<TransportError>,
+    pub shard_count: Option<i32>,
+}
+
+impl OpenSearchCloseIndexResultWire {
+    fn success(index: &str) -> Self {
+        Self {
+            index: OpenSearchIndexIdentityWire {
+                name: index.to_string(),
+                uuid: format!("{index}-uuid"),
+            },
+            exception: None,
+            shard_count: None,
+        }
+    }
+
+    fn write(&self, output: &mut StreamOutput) -> Result<(), TransportActionWireError> {
+        self.index.write(output);
+        write_optional_transport_exception(output, self.exception.as_ref())?;
+        write_optional_close_index_shard_results(output, self.shard_count)?;
+        Ok(())
+    }
+
+    fn read(input: &mut StreamInput) -> Result<Self, TransportActionWireError> {
+        let index = OpenSearchIndexIdentityWire::read(input)?;
+        let exception = read_exception(input)?;
+        let shard_count = read_optional_close_index_shard_results(input)?;
+        Ok(Self {
+            index,
+            exception,
+            shard_count,
         })
     }
 }
@@ -45268,6 +45394,61 @@ fn read_optional_index_identity(
     }
 }
 
+fn write_optional_transport_exception(
+    output: &mut StreamOutput,
+    error: Option<&TransportError>,
+) -> Result<(), TransportActionWireError> {
+    if error.is_some() {
+        return Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "transport exception encode",
+            reason: "encoding transport exception payloads is not implemented for this response",
+        });
+    }
+    output.write_bool(false);
+    Ok(())
+}
+
+fn write_optional_close_index_shard_results(
+    output: &mut StreamOutput,
+    shard_count: Option<i32>,
+) -> Result<(), TransportActionWireError> {
+    if let Some(shard_count) = shard_count {
+        if shard_count != 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "close index shard result payload",
+                reason: "encoding close-index shard result payloads is not implemented yet",
+            });
+        }
+        output.write_bool(true);
+        output.write_vint(shard_count);
+    } else {
+        output.write_bool(false);
+    }
+    Ok(())
+}
+
+fn read_optional_close_index_shard_results(
+    input: &mut StreamInput,
+) -> Result<Option<i32>, TransportActionWireError> {
+    if !input.read_bool()? {
+        return Ok(None);
+    }
+    let shard_count = input.read_vint()?;
+    if shard_count < 0 {
+        return Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "close index shard result count",
+            reason: "negative close-index shard result counts are invalid",
+        });
+    }
+    if shard_count != 0 {
+        return Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "close index shard result payload",
+            reason: "close-index shard failure result payload decoding is not implemented yet",
+        });
+    }
+    Ok(Some(shard_count))
+}
+
 fn write_optional_time_value(output: &mut StreamOutput, value: Option<&TimeValueWire>) {
     if let Some(value) = value {
         output.write_bool(true);
@@ -63026,6 +63207,7 @@ mod tests {
         assert_eq!(decoded, request);
         assert_eq!(decoded.indices, vec!["logs-000001"]);
         assert_eq!(decoded.wait_for_active_shards, 0);
+        decoded.validate_supported_execution_subset().unwrap();
         assert!(matches!(
             decoded.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
@@ -63111,7 +63293,7 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_close_index_transport_messages_bind_rejected_action_frame() {
+    fn opensearch_close_index_transport_messages_bind_action_frame_and_response() {
         let request = OpenSearchCloseIndexRequestWire::default();
         let mut frame =
             build_opensearch_close_index_request_message(69, OPENSEARCH_3_7_0_TRANSPORT, &request)
@@ -63123,6 +63305,10 @@ mod tests {
             read_opensearch_close_index_request_message(&message).unwrap(),
             request
         );
+        assert_eq!(
+            classify_opensearch_transport_action(OPENSEARCH_CLOSE_INDEX_ACTION_NAME).disposition,
+            OpenSearchTransportActionDisposition::Implemented
+        );
         assert!(matches!(
             read_opensearch_close_index_request_message(&message)
                 .unwrap()
@@ -63131,6 +63317,28 @@ mod tests {
                 shape: "close index execution",
                 ..
             })
+        ));
+
+        let response = OpenSearchCloseIndexResponseWire::success(&request.indices);
+        let mut frame = build_opensearch_close_index_response_message(
+            70,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &response,
+        )
+        .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected close index response message");
+        };
+        assert_eq!(
+            read_opensearch_close_index_response_message(&message).unwrap(),
+            response
+        );
+        assert!(matches!(
+            read_opensearch_close_index_request_message(&message).unwrap_err(),
+            TransportActionWireError::UnexpectedMessageStatus {
+                expected: "request",
+                ..
+            }
         ));
     }
 

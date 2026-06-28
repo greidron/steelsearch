@@ -368,8 +368,8 @@ name = "open-index-wire-benchmark"
 path = "benchmarks/open_index_wire.rs"
 
 [[bin]]
-name = "close-index-reject-wire-benchmark"
-path = "benchmarks/close_index_reject_wire.rs"
+name = "close-index-wire-benchmark"
+path = "benchmarks/close_index_wire.rs"
 
 [[bin]]
 name = "add-index-block-reject-wire-benchmark"
