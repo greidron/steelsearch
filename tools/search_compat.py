@@ -757,9 +757,30 @@ def run_case(
         response, steps = run_case_request(url, fixture, case, timeout)
         if case.get("steps"):
             steps.extend(cleanup_case_step_indices(url, fixture, case, timeout))
+        compare_step_name = case.get("compare_step")
+        compare_step = None
+        if isinstance(compare_step_name, str):
+            compare_step = next(
+                (step for step in steps if step.get("name") == compare_step_name),
+                None,
+            )
+            if compare_step is None:
+                steps.append(
+                    {
+                        "name": f"missing-compare-step:{compare_step_name}",
+                        "status": 0,
+                        "expected_status": "present",
+                        "passed": False,
+                        "extract": {"missing_compare_step": compare_step_name},
+                    }
+                )
         target_results[name] = {
-            "status": response["status"],
-            "extract": extract(case["extract"], response),
+            "status": compare_step.get("status") if compare_step else response["status"],
+            "extract": (
+                compare_step.get("extract")
+                if compare_step
+                else extract(case["extract"], response)
+            ),
             "raw_error": response.get("error"),
             "raw_response": raw_response(response),
             "normalized_response": normalized_response(response),

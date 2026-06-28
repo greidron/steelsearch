@@ -2287,6 +2287,123 @@
       "description": "[lexical] msearch PIT search follows OpenSearch preparePointInTime behavior"
     },
     {
+      "name": "msearch_pit_snapshot_after_update_delete_search",
+      "area": "search",
+      "extract": "msearch_pit_summary",
+      "compare_step": "msearch-pit-snapshot",
+      "steps": [
+        {
+          "name": "create-msearch-pit-snapshot-index",
+          "method": "PUT",
+          "path": "/logs-msearch-pit-snapshot-compat",
+          "body": {
+            "mappings": {
+              "properties": {
+                "status": {
+                  "type": "keyword"
+                },
+                "ordinal": {
+                  "type": "long"
+                }
+              }
+            }
+          },
+          "expected_status": 200
+        },
+        {
+          "name": "index-doc-1-before-pit",
+          "method": "PUT",
+          "path": "/logs-msearch-pit-snapshot-compat/_doc/doc-1",
+          "body": {
+            "status": "active",
+            "ordinal": 1
+          },
+          "expected_status": 201
+        },
+        {
+          "name": "index-doc-2-before-pit",
+          "method": "PUT",
+          "path": "/logs-msearch-pit-snapshot-compat/_doc/doc-2",
+          "body": {
+            "status": "active",
+            "ordinal": 2
+          },
+          "expected_status": 201
+        },
+        {
+          "name": "refresh-before-pit",
+          "method": "POST",
+          "path": "/logs-msearch-pit-snapshot-compat/_refresh",
+          "body": {},
+          "expected_status": 200
+        },
+        {
+          "name": "pit-open",
+          "method": "POST",
+          "path": "/logs-msearch-pit-snapshot-compat/_search/point_in_time?keep_alive=1m",
+          "body": null,
+          "expected_status": 200,
+          "extract": "pit_open",
+          "save": {
+            "pit_id": "body.pit_id"
+          }
+        },
+        {
+          "name": "update-doc-1-after-pit",
+          "method": "PUT",
+          "path": "/logs-msearch-pit-snapshot-compat/_doc/doc-1",
+          "body": {
+            "status": "archived",
+            "ordinal": 1
+          },
+          "expected_status": 200
+        },
+        {
+          "name": "delete-doc-2-after-pit",
+          "method": "DELETE",
+          "path": "/logs-msearch-pit-snapshot-compat/_doc/doc-2",
+          "expected_status": 200
+        },
+        {
+          "name": "index-doc-3-after-pit",
+          "method": "PUT",
+          "path": "/logs-msearch-pit-snapshot-compat/_doc/doc-3",
+          "body": {
+            "status": "active",
+            "ordinal": 3
+          },
+          "expected_status": 201
+        },
+        {
+          "name": "refresh-after-mutations",
+          "method": "POST",
+          "path": "/logs-msearch-pit-snapshot-compat/_refresh",
+          "body": {},
+          "expected_status": 200
+        },
+        {
+          "name": "msearch-pit-snapshot",
+          "method": "POST",
+          "path": "/_msearch",
+          "raw": true,
+          "body": "{}\n{\"pit\":{\"id\":\"${saved.pit_id}\",\"keep_alive\":\"1m\"},\"query\":{\"term\":{\"status\":\"active\"}},\"sort\":[{\"ordinal\":{\"order\":\"asc\"}}],\"size\":10}\n",
+          "expected_status": 200,
+          "extract": "msearch_pit_summary"
+        },
+        {
+          "name": "close-pit",
+          "method": "DELETE",
+          "path": "/_search/point_in_time",
+          "body": {
+            "pit_id": "${saved.pit_id}"
+          },
+          "expected_status": 200
+        }
+      ],
+      "family": "lexical",
+      "description": "[lexical] msearch PIT keeps the open-time snapshot after later update/delete mutations"
+    },
+    {
       "name": "msearch_pit_target_rejects_explicit_indices",
       "area": "search",
       "extract": "msearch_pit_summary",
