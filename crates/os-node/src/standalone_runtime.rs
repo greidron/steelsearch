@@ -18705,6 +18705,7 @@ impl SteelNode {
                 "/_cat/snapshots/{repository}",
                 "/_cat/templates",
                 "/_cat/pit_segments",
+                "/_cat/pit_segments/{pit_id}",
                 "/_cat/pit_segments/_all",
             ]
             .join("\n")
@@ -37087,7 +37088,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             assert!(body.contains("/_cat/aliases"), "path {path}");
             assert!(body.contains("/_cat/health"), "path {path}");
             assert!(body.contains("/_cat/pit_segments/_all"), "path {path}");
-            assert!(!body.contains("/_cat/pit_segments/{pit_id}"), "path {path}");
+            assert!(body.contains("/_cat/pit_segments/{pit_id}"), "path {path}");
         }
     }
 
