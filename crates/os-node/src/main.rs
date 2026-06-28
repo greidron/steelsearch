@@ -2105,6 +2105,33 @@ fn handle_transport_seed_connection<S: TransportConnection>(
         )?;
     } else if is_request
         && normalized_action_hint == Some("indices:data/read/point_in_time/create")
+        && create_pit_request_exceeds_local_open_context_limit(&body)
+    {
+        let response =
+            build_create_pit_too_many_open_contexts_error_response(request_id, header_version_id);
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("indices:data/read/point_in_time/create"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request
+        && normalized_action_hint == Some("indices:data/read/point_in_time/create")
         && create_pit_request_supports_local_lifecycle_subset(&body)
     {
         let response = build_local_create_pit_response(request_id, header_version_id, &body);
@@ -4908,7 +4935,10 @@ fn build_local_create_pit_response(
         prune_expired_transport_pits(&mut contexts, now_millis);
         prune_unavailable_transport_pits(&mut contexts);
         if contexts.len() >= DEV_TRANSPORT_MAX_OPEN_PIT_CONTEXTS {
-            return build_empty_transport_response(request_id, header_version_id);
+            return build_create_pit_too_many_open_contexts_error_response(
+                request_id,
+                header_version_id,
+            );
         }
     }
     let documents = transport_pit_document_snapshot(bindings, &resolved_indices);
@@ -8701,6 +8731,27 @@ fn create_pit_request_exceeds_local_keep_alive_limit(body: &[u8]) -> bool {
         })
 }
 
+fn create_pit_request_exceeds_local_open_context_limit(body: &[u8]) -> bool {
+    let Some(request) = decode_create_pit_request_from_transport_body(body) else {
+        return false;
+    };
+    if request.validate_supported_subset().is_err() {
+        return false;
+    }
+    let bindings = dev_transport_pit_bindings();
+    if transport_pit_indices(bindings, &request).is_none() {
+        return false;
+    }
+    let now_millis = now_epoch_ms();
+    let mut contexts = bindings
+        .contexts
+        .lock()
+        .expect("dev transport PIT contexts lock poisoned");
+    prune_expired_transport_pits(&mut contexts, now_millis);
+    prune_unavailable_transport_pits(&mut contexts);
+    contexts.len() >= DEV_TRANSPORT_MAX_OPEN_PIT_CONTEXTS
+}
+
 fn build_create_pit_keep_alive_too_large_error_response(
     request_id: i64,
     header_version_id: u32,
@@ -8728,6 +8779,19 @@ fn build_pit_keep_alive_too_large_error_response(
     );
     let mut output = StreamOutput::new();
     os_transport::error::write_illegal_argument_exception(&mut output, Some(&reason));
+    build_transport_error_response_frame(request_id, header_version_id, output.freeze().to_vec())
+}
+
+fn build_create_pit_too_many_open_contexts_error_response(
+    request_id: i64,
+    header_version_id: u32,
+) -> Vec<u8> {
+    let reason = format!(
+        "Trying to create too many Point In Time contexts. Must be less than or equal to: [{}]. This limit can be set by changing the [search.max_open_pit_context] setting.",
+        DEV_TRANSPORT_MAX_OPEN_PIT_CONTEXTS
+    );
+    let mut output = StreamOutput::new();
+    os_transport::error::write_rejected_execution_exception(&mut output, Some(&reason));
     build_transport_error_response_frame(request_id, header_version_id, output.freeze().to_vec())
 }
 
@@ -11603,6 +11667,14 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
                 request_id,
                 header_version_id,
                 body,
+            ))
+        }
+        Some("indices:data/read/point_in_time/create")
+            if create_pit_request_exceeds_local_open_context_limit(body) =>
+        {
+            Some(build_create_pit_too_many_open_contexts_error_response(
+                request_id,
+                header_version_id,
             ))
         }
         Some("indices:data/read/point_in_time/create")
@@ -22996,6 +23068,9 @@ mod tests {
             &request,
         )
         .unwrap();
+        assert!(create_pit_request_exceeds_local_open_context_limit(
+            &frame[6..]
+        ));
         let response = build_local_create_pit_response(
             194,
             OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
@@ -23007,11 +23082,21 @@ mod tests {
                 .unwrap()
                 .unwrap()
         else {
-            panic!("expected create-PIT fallback response frame");
+            panic!("expected create-PIT rejected response frame");
         };
 
         assert_eq!(message.request_id, 194);
-        assert!(message.body.is_empty());
+        assert!(message.status.is_error());
+        let error = os_transport::error::TransportError::read(message.body.freeze())
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            error.class_name,
+            "org.opensearch.common.util.concurrent.OpenSearchRejectedExecutionException"
+        );
+        let reason = error.message.as_deref().unwrap();
+        assert!(reason.contains("Trying to create too many Point In Time contexts"));
+        assert!(reason.contains("search.max_open_pit_context"));
         assert_eq!(
             bindings
                 .contexts
