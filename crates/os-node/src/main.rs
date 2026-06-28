@@ -5127,7 +5127,8 @@ fn build_local_create_pit_response_for_node(
             );
         }
     }
-    let documents = transport_pit_document_snapshot(bindings, &resolved_indices);
+    let documents =
+        transport_pit_document_snapshot(bindings, &resolved_indices, request.routing.as_deref());
     let total_shards = transport_pit_total_primary_shards(bindings, &resolved_indices);
     let pit_id = {
         let mut next_id = bindings
@@ -5429,7 +5430,9 @@ fn transport_pit_index_matches_options(
 fn transport_pit_document_snapshot(
     bindings: &DevTransportPitBindings,
     resolved_indices: &[String],
+    routing: Option<&str>,
 ) -> Arc<DocumentMap> {
+    let requested_routings = routing.map(parse_transport_routing_values);
     Arc::new(
         bindings
             .documents
@@ -5437,15 +5440,70 @@ fn transport_pit_document_snapshot(
             .expect("dev transport documents lock poisoned")
             .iter()
             .filter_map(|(key, record)| {
-                let (doc_index, _, _) = split_transport_document_key(key)?;
+                let (doc_index, doc_id, doc_routing) = split_transport_document_key(key)?;
                 resolved_indices
                     .iter()
                     .any(|candidate| candidate == doc_index)
                     .then_some(())?;
+                if let Some(requested_routings) = requested_routings.as_ref() {
+                    transport_document_matches_requested_routing_shards(
+                        bindings,
+                        doc_index,
+                        doc_id,
+                        doc_routing,
+                        requested_routings,
+                    )
+                    .then_some(())?;
+                }
                 Some((key.clone(), Arc::clone(record)))
             })
             .collect(),
     )
+}
+
+fn parse_transport_routing_values(routing: &str) -> Vec<String> {
+    routing
+        .split(',')
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned)
+        .collect()
+}
+
+fn transport_document_matches_requested_routing_shards(
+    bindings: &DevTransportPitBindings,
+    index: &str,
+    doc_id: &str,
+    doc_routing: &str,
+    requested_routings: &[String],
+) -> bool {
+    if requested_routings.is_empty() {
+        return true;
+    }
+    let shard_count = transport_pit_primary_shard_count(bindings, index);
+    let doc_shard = transport_routing_shard_id(
+        shard_count,
+        transport_effective_routing(doc_id, doc_routing),
+    );
+    requested_routings
+        .iter()
+        .any(|routing| transport_routing_shard_id(shard_count, routing.as_str()) == doc_shard)
+}
+
+fn transport_effective_routing<'a>(doc_id: &'a str, doc_routing: &'a str) -> &'a str {
+    if doc_routing.is_empty() {
+        doc_id
+    } else {
+        doc_routing
+    }
+}
+
+fn transport_routing_shard_id(shard_count: usize, routing: &str) -> i64 {
+    if shard_count == 0 {
+        0
+    } else {
+        opensearch_transport_routing_hash(routing).rem_euclid(shard_count as i64)
+    }
 }
 
 fn transport_live_document_snapshot(bindings: &DevTransportPitBindings) -> Arc<DocumentMap> {
@@ -9385,6 +9443,7 @@ fn build_local_create_reader_context_response(
             documents: transport_pit_document_snapshot(
                 bindings,
                 std::slice::from_ref(&request.shard_id.index_name),
+                None,
             ),
             expires_at_millis: transport_pit_expires_at_millis(now_millis, keep_alive_millis),
             pit_id: None,
@@ -20784,43 +20843,50 @@ mod tests {
                 }
             }
         });
+        let routing_a = "tenant-a".to_string();
+        let routing_b = (1..100)
+            .map(|suffix| format!("tenant-b-{suffix}"))
+            .find(|routing| {
+                transport_routing_shard_id(3, &routing_a) != transport_routing_shard_id(3, routing)
+            })
+            .expect("fixture should find a routing on a distinct shard slot");
         dev_transport_pit_bindings()
             .documents
             .lock()
             .expect("dev transport documents lock poisoned")
             .extend([
                 (
-                    "logs-routed-pit-000001:doc-a:tenant-a".to_string(),
+                    format!("logs-routed-pit-000001:doc-a:{routing_a}"),
                     StoredDocument {
                         source: serde_json::json!({ "tenant": "a" }),
                         version: 1,
                         seq_no: 3,
                         primary_term: 1,
-                        routing: Some("tenant-a".to_string()),
+                        routing: Some(routing_a.clone()),
                         refreshed: true,
                     }
                     .into(),
                 ),
                 (
-                    "logs-routed-pit-000001:doc-b:tenant-b".to_string(),
+                    format!("logs-routed-pit-000001:doc-b:{routing_b}"),
                     StoredDocument {
                         source: serde_json::json!({ "tenant": "b" }),
                         version: 1,
                         seq_no: 4,
                         primary_term: 1,
-                        routing: Some("tenant-b".to_string()),
+                        routing: Some(routing_b.clone()),
                         refreshed: true,
                     }
                     .into(),
                 ),
                 (
-                    "metrics-routed-pit-000001:doc-c:tenant-a".to_string(),
+                    format!("metrics-routed-pit-000001:doc-c:{routing_a}"),
                     StoredDocument {
                         source: serde_json::json!({ "tenant": "metric" }),
                         version: 1,
                         seq_no: 5,
                         primary_term: 1,
-                        routing: Some("tenant-a".to_string()),
+                        routing: Some(routing_a.clone()),
                         refreshed: true,
                     }
                     .into(),
@@ -20828,7 +20894,7 @@ mod tests {
             ]);
         let routed_create_request = os_transport::action::OpenSearchCreatePitRequestWire {
             indices: vec!["logs-routed*".to_string()],
-            routing: Some("tenant-a".to_string()),
+            routing: Some(routing_a.clone()),
             preference: Some("_local".to_string()),
             allow_partial_pit_creation: Some(false),
             ..os_transport::action::OpenSearchCreatePitRequestWire::default()
@@ -20906,13 +20972,54 @@ mod tests {
         );
         assert!(routed_pit_context
             .documents
-            .contains_key("logs-routed-pit-000001:doc-a:tenant-a"));
-        assert!(routed_pit_context
-            .documents
-            .contains_key("logs-routed-pit-000001:doc-b:tenant-b"));
+            .contains_key(&format!("logs-routed-pit-000001:doc-a:{routing_a}")));
         assert!(!routed_pit_context
             .documents
-            .contains_key("metrics-routed-pit-000001:doc-c:tenant-a"));
+            .contains_key(&format!("logs-routed-pit-000001:doc-b:{routing_b}")));
+        assert!(!routed_pit_context
+            .documents
+            .contains_key(&format!("metrics-routed-pit-000001:doc-c:{routing_a}")));
+        let routed_pit_search = os_transport::action::OpenSearchSearchRequestWire {
+            source: Some(os_transport::action::OpenSearchSearchSourceBuilderWire {
+                point_in_time: Some(os_transport::action::OpenSearchPointInTimeBuilderWire {
+                    id: routed_pit_id.clone(),
+                    keep_alive: None,
+                }),
+                ..os_transport::action::OpenSearchSearchSourceBuilderWire::default()
+            }),
+            indices: vec!["logs-routed-pit-000001".to_string()],
+            indices_options:
+                os_transport::action::OpenSearchIndicesOptionsWire::point_in_time_search_prepared(),
+            ccs_minimize_roundtrips: false,
+            ..os_transport::action::OpenSearchSearchRequestWire::default()
+        };
+        let routed_pit_search_frame =
+            os_transport::action::build_opensearch_search_request_message(
+                99,
+                OPENSEARCH_3_7_0_TRANSPORT,
+                &routed_pit_search,
+            )
+            .unwrap();
+        assert!(search_request_supports_local_execution_subset(
+            &routed_pit_search_frame[6..]
+        ));
+        let routed_pit_search_response = build_local_search_response(
+            99,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &routed_pit_search_frame[6..],
+        );
+        let mut frame = BytesMut::from(&routed_pit_search_response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected routed PIT search response message");
+        };
+        let search_response =
+            os_transport::action::read_opensearch_search_response_message(&message).unwrap();
+        assert_eq!(search_response.total_hits, Some(1));
+        assert_eq!(search_response.hits[0].id.as_deref(), Some("doc-a"));
 
         let hidden_indices = transport_pit_indices(
             dev_transport_pit_bindings(),

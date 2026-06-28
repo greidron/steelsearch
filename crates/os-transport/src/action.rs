@@ -2423,7 +2423,7 @@ pub fn classify_opensearch_transport_action(
         OPENSEARCH_CREATE_PIT_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Implemented,
-            reason: "create-pit transport adapter creates local PIT lifecycle contexts for the default all-indices request subset",
+            reason: "create-pit transport adapter resolves requested indices and routing onto local PIT lifecycle contexts and renders OpenSearch SearchContextId PIT ids",
         },
         OPENSEARCH_DELETE_PIT_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -45094,11 +45094,11 @@ mod tests {
         );
         assert_eq!(
             classify_opensearch_transport_action(REMOTE_STORE_STATS_ACTION_NAME).disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             classify_opensearch_transport_action(REMOTE_STORE_METADATA_ACTION_NAME).disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             classify_opensearch_transport_action(PRUNE_FILE_CACHE_ACTION_NAME).disposition,
@@ -45140,12 +45140,12 @@ mod tests {
         assert_eq!(
             classify_opensearch_transport_action(ADD_VOTING_CONFIG_EXCLUSIONS_ACTION_NAME)
                 .disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             classify_opensearch_transport_action(CLEAR_VOTING_CONFIG_EXCLUSIONS_ACTION_NAME)
                 .disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             classify_opensearch_transport_action(CLUSTER_ALLOCATION_EXPLAIN_ACTION_NAME)
@@ -45363,7 +45363,7 @@ mod tests {
         );
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_GET_PIPELINE_ACTION_NAME).disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_DELETE_PIPELINE_ACTION_NAME)
