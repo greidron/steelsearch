@@ -392,10 +392,12 @@ The get-term-version boundary covers:
 
 - OpenSearch `GetTermVersionRequest` parent task, cluster-manager timeout, and
   local flag at the wire decode/build layer;
-- explicit fail-closed classification for `internal:monitor/term` until cluster
-  term/version and remote-publication response rendering are implemented;
-- explicit rejection for custom cluster-manager timeout, local execution, and
-  get-term-version execution.
+- OpenSearch `GetTermVersionResponse` cluster name, cluster UUID, term,
+  version, and remote-state-present optional boolean at the wire
+  decode/build layer;
+- implemented `internal:monitor/term` request admission and local
+  term/version response rendering from the current coordination state;
+- explicit rejection for custom cluster-manager timeout and local execution.
 
 The cluster-stats boundary covers:
 
@@ -459,10 +461,13 @@ The wlm-stats boundary covers:
 - OpenSearch `WlmStatsRequest` parent task, node ids, optional timeout,
   workload group id array, and optional breach flag at the wire decode/build
   layer;
-- explicit fail-closed classification for `cluster:monitor/wlm/stats` until
-  workload group runtime telemetry mapping is implemented;
+- OpenSearch `WlmStatsResponse` cluster name, one local node entry with an
+  empty workload-group stats map, and node failure array at the wire
+  decode/build layer;
+- implemented `cluster:monitor/wlm/stats` request admission and local empty
+  workload-group response rendering;
 - explicit rejection for concrete node payloads, node filters, timeout,
-  workload group filters, breach filters, and wlm-stats execution.
+  workload group filters, and breach filters.
 
 The remote-store-stats boundary covers:
 
@@ -2791,21 +2796,22 @@ for a parent-task-only request and empty remote connection list response. The
 first performance-sensitive work beyond this boundary is non-empty remote
 connection info collection and response rendering.
 
-Current get-term-version reject wire microbenchmark:
+Current get-term-version wire microbenchmark:
 
 ```text
-cargo run -p os-transport --release --bin get-term-version-reject-wire-benchmark
-get_term_version_reject_request_encode iterations=400000 elapsed_ms=182.897 ops_per_second=2187025.16 nanos_per_op=457.24
-get_term_version_reject_request_decode iterations=400000 elapsed_ms=179.348 ops_per_second=2230304.23 nanos_per_op=448.37
-get_term_version_reject_validation iterations=400000 elapsed_ms=180.954 ops_per_second=2210507.69 nanos_per_op=452.38
-get_term_version_reject_wire_bottleneck_ops_per_second=2187025.16
+cargo run -p os-transport --release --bin get-term-version-wire-benchmark
+get_term_version_request_encode iterations=400000 elapsed_ms=195.650 ops_per_second=2044469.16 nanos_per_op=489.12
+get_term_version_request_decode iterations=400000 elapsed_ms=175.306 ops_per_second=2281719.62 nanos_per_op=438.27
+get_term_version_request_validate iterations=400000 elapsed_ms=179.211 ops_per_second=2232010.16 nanos_per_op=448.03
+get_term_version_response_encode iterations=400000 elapsed_ms=157.896 ops_per_second=2533308.37 nanos_per_op=394.74
+get_term_version_response_decode iterations=400000 elapsed_ms=149.409 ops_per_second=2677206.79 nanos_per_op=373.52
+get_term_version_wire_bottleneck_ops_per_second=2044469.16
 ```
 
-The current get-term-version fail-closed boundary bottleneck is request encode
-over the parent-task, cluster-manager-timeout, and local-flag request frame. At
-roughly 2.19M ops/s in the latest local release run, this boundary is not a
-material performance bottleneck; the first performance-sensitive work is
-cluster term/version lookup and response rendering.
+The current get-term-version boundary bottleneck is request encode over the
+parent-task, cluster-manager-timeout, and local-flag request frame. At roughly
+2.04M ops/s in the latest local release run, this adapter is not a material
+transport-wire bottleneck for term/version probes.
 
 Current cluster-stats reject wire microbenchmark:
 
@@ -2873,22 +2879,23 @@ telemetry groups and rendering full stats responses. At roughly 1.65M ops/s in
 the latest local run, this path does not introduce a new transport admission
 hotspot.
 
-Current wlm-stats reject wire microbenchmark:
+Current wlm-stats wire microbenchmark:
 
 ```text
-cargo run -p os-transport --release --bin wlm-stats-reject-wire-benchmark
-wlm_stats_reject_request_encode iterations=400000 elapsed_ms=198.339 ops_per_second=2016752.00 nanos_per_op=495.85
-wlm_stats_reject_request_decode iterations=400000 elapsed_ms=213.768 ops_per_second=1871191.12 nanos_per_op=534.42
-wlm_stats_reject_validation iterations=400000 elapsed_ms=214.693 ops_per_second=1863122.80 nanos_per_op=536.73
-wlm_stats_reject_wire_bottleneck_ops_per_second=1863122.80
+cargo run -p os-transport --release --bin wlm-stats-wire-benchmark
+wlm_stats_request_encode iterations=400000 elapsed_ms=193.165 ops_per_second=2070773.38 nanos_per_op=482.91
+wlm_stats_request_decode iterations=400000 elapsed_ms=204.696 ops_per_second=1954112.60 nanos_per_op=511.74
+wlm_stats_request_validate iterations=400000 elapsed_ms=204.566 ops_per_second=1955357.50 nanos_per_op=511.42
+wlm_stats_response_encode iterations=400000 elapsed_ms=590.592 ops_per_second=677286.17 nanos_per_op=1476.48
+wlm_stats_response_decode iterations=400000 elapsed_ms=607.408 ops_per_second=658535.70 nanos_per_op=1518.52
+wlm_stats_wire_bottleneck_ops_per_second=658535.70
 ```
 
-The current wlm-stats fail-closed boundary bottleneck is validation. The path
-checks node routing, timeout, workload group filters, and breach filter before
-rejecting execution. At roughly 1.86M ops/s in the latest local release run,
-this boundary is not a material transport bottleneck; the first
-performance-sensitive work is workload group runtime telemetry collection and
-response rendering.
+The current wlm-stats boundary bottleneck is response decode over the local
+node entry and empty workload-group stats map. At roughly 659k ops/s in the
+latest local release run, this adapter is not the expected first bottleneck;
+the first performance-sensitive expansion is non-empty workload group runtime
+telemetry collection and response rendering.
 
 Current remote-store-stats reject wire microbenchmark:
 

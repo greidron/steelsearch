@@ -40,8 +40,8 @@ name = "remote-info-wire-benchmark"
 path = "benchmarks/remote_info_wire.rs"
 
 [[bin]]
-name = "get-term-version-reject-wire-benchmark"
-path = "benchmarks/get_term_version_reject_wire.rs"
+name = "get-term-version-wire-benchmark"
+path = "benchmarks/get_term_version_wire.rs"
 
 [[bin]]
 name = "cluster-stats-wire-benchmark"
@@ -60,8 +60,8 @@ name = "nodes-stats-wire-benchmark"
 path = "benchmarks/nodes_stats_wire.rs"
 
 [[bin]]
-name = "wlm-stats-reject-wire-benchmark"
-path = "benchmarks/wlm_stats_reject_wire.rs"
+name = "wlm-stats-wire-benchmark"
+path = "benchmarks/wlm_stats_wire.rs"
 
 [[bin]]
 name = "remote-store-stats-reject-wire-benchmark"
