@@ -6,7 +6,7 @@ gap pass, index-visibility/count/stats pass, cluster-state shape pass, and
 significant-terms pass.
 
 Latest report:
-`target/unified-opensearch-e2e-current/unified-opensearch-e2e-report.json`
+`target/unified-opensearch-e2e-collector-fix-20260628/unified-opensearch-e2e-report.json`
 
 Latest audit report:
 `target/unified-opensearch-e2e-audit/unified-opensearch-e2e-report.json`
@@ -18,13 +18,13 @@ Latest audit report:
 - Repeated in both `search-compat` and `search-strict`: 0 cases.
 - Strict-only: none.
 - Basic-only: none.
-- `search-compat`: 226 passed, 0 failed, 20 skipped.
-- `search-strict`: 146 passed, 0 failed, 5 skipped.
+- `search-compat`: 500 passed, 0 failed, 20 skipped.
+- `search-strict`: 422 passed, 0 failed, 5 skipped.
 - `search-semantic`: 49 passed, 0 failed, 0 skipped.
 - `vector-search`: 16 passed, 0 failed, 0 skipped.
 - Combined required classification:
-  `canonical_equal=287`, `strict_equal=146`, `semantic_equal=4`,
-  `failed=0`, `missing=0`.
+  `canonical_equal=491`, `strict_equal=422`, `semantic_equal=9`,
+  `known_gap_or_skipped=25`, `failed=0`, `missing=0`.
 
 ## Remaining Gaps
 
@@ -37,13 +37,13 @@ Current generated reports:
 
 - `target/rest-api-coverage-head.json`
 - `target/transport-action-coverage-head.json`
-- `target/unified-opensearch-e2e-current/unified-opensearch-e2e-report.json`
+- `target/unified-opensearch-e2e-collector-fix-20260628/unified-opensearch-e2e-report.json`
 
 Current status:
 
 | Area | Current evidence | Exhaustive-compatibility result |
 | --- | --- | --- |
-| Live required OpenSearch E2E suites | `failed=0`, `missing=0`, `known_gap_or_skipped=25` across `226` canonical and `146` strict equal cases | Covered cases pass, but skipped/deferred cases remain. |
+| Live required OpenSearch E2E suites | `failed=0`, `missing=0`, `known_gap_or_skipped=25` across `491` canonical, `9` semantic, and `422` strict equal cases | Covered cases pass, but skipped/deferred cases remain. |
 | REST source inventory fixture coverage | `371/371` in-scope source routes matched by fixtures | Fixture inventory is closed, but this is not the same as positive/negative live comparison for every route. |
 | REST live-required source-route mapping | `142/371` in-scope source routes matched by live-required fixture routes | Live-required coverage is representative, not exhaustive. |
 | REST source statuses | `implemented=371`, `out-of-scope=18` | Source-derived route classification is closed, while full positive/negative live comparison still needs to expand across the route surface. |
@@ -95,6 +95,11 @@ the broader exhaustive-compatibility conclusion above.
 | `index_stats_shape` | Global stats now excludes hidden indices, SteelSearch-only case-created indices are cleaned up, and delete wildcard handling keeps visible indices when `expand_wildcards=hidden`. |
 | `cluster_state_readback` | Cluster-state metadata aliases now match OpenSearch's alias-name array shape, and started routing shards no longer emit `recovery_source`. |
 | `significant_terms_aggregation` / `significant_terms_background_filter_aggregation` | Fallback search aggregation now emits bounded significant terms buckets and honors OpenSearch's default `min_doc_count` threshold for this profile. |
+| canonical `cat_*_selected_alias_columns` | Selected-column comparison now normalizes volatile cluster/shard values and row ordering while preserving column alias coverage. |
+| `segments_target_shape` | Segment shape comparison now excludes the volatile committed flag and keeps index/segment shape coverage. |
+| `search_template_*_get_summary` / `msearch_template_*_get_summary` | Template summary requests now include deterministic `ts` sorting before comparing the top hits. |
+| `msearch_template_named_root_search` | The fixture now installs the named mustache script before named template execution, so the case compares actual template execution instead of missing-script error drift. |
+| `search-strict` unified collection | The unified collector now accepts the generic `search-compat-report.json` emitted by the shared harness when the embedded fixture path matches `search-strict-compat.json`. |
 
 ## Next Fix Order
 

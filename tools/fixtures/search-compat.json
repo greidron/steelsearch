@@ -424,6 +424,31 @@
       }
     ]
   },
+  "stored_scripts": [
+    {
+      "id": "logs-compat-template",
+      "body": {
+        "script": {
+          "lang": "mustache",
+          "source": {
+            "query": {
+              "term": {
+                "service": "{{service}}"
+              }
+            },
+            "sort": [
+              {
+                "ts": {
+                  "order": "asc"
+                }
+              }
+            ],
+            "size": 10
+          }
+        }
+      }
+    }
+  ],
   "indices": [
     {
       "name": "logs-compat",
@@ -2518,6 +2543,13 @@
               "service": "{{service}}"
             }
           },
+          "sort": [
+            {
+              "ts": {
+                "order": "asc"
+              }
+            }
+          ],
           "size": 2
         },
         "params": {
@@ -2540,6 +2572,13 @@
               "service": "{{service}}"
             }
           },
+          "sort": [
+            {
+              "ts": {
+                "order": "asc"
+              }
+            }
+          ],
           "size": 2
         },
         "params": {
@@ -2556,7 +2595,7 @@
       "method": "GET",
       "path": "/_msearch/template",
       "raw": true,
-      "body": "{}\n{\"source\":{\"query\":{\"term\":{\"service\":\"{{service}}\"}},\"size\":2},\"params\":{\"service\":\"checkout\"}}\n",
+      "body": "{}\n{\"source\":{\"query\":{\"term\":{\"service\":\"{{service}}\"}},\"sort\":[{\"ts\":{\"order\":\"asc\"}}],\"size\":2},\"params\":{\"service\":\"checkout\"}}\n",
       "extract": "msearch_summary",
       "family": "admin-cat",
       "description": "[admin-cat] root msearch template GET summary"
@@ -2567,7 +2606,7 @@
       "method": "GET",
       "path": "/logs-compat/_msearch/template",
       "raw": true,
-      "body": "{}\n{\"source\":{\"query\":{\"term\":{\"service\":\"{{service}}\"}},\"size\":2},\"params\":{\"service\":\"checkout\"}}\n",
+      "body": "{}\n{\"source\":{\"query\":{\"term\":{\"service\":\"{{service}}\"}},\"sort\":[{\"ts\":{\"order\":\"asc\"}}],\"size\":2},\"params\":{\"service\":\"checkout\"}}\n",
       "extract": "msearch_summary",
       "family": "admin-cat",
       "description": "[admin-cat] targeted msearch template GET summary"

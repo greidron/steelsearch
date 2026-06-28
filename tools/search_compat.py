@@ -2284,6 +2284,7 @@ def extract(kind: str, response: dict[str, Any]) -> Any:
             },
             "<volatile>",
         )
+        selected["rows"] = sorted(selected.get("rows") or [])
         return selected
     if kind == "cat_pit_segments_selected_columns":
         selected = extract("cat_indices_selected_columns", response)
@@ -2306,17 +2307,19 @@ def extract(kind: str, response: dict[str, Any]) -> Any:
         selected = extract("cat_indices_selected_columns", response)
         normalize_selected_column_values(
             selected,
-            {"cluster", "cl"},
-            "<cluster-name>",
+            {"cluster", "cl", "shards", "sh", "pending_tasks", "pt", "active_shards_percent", "asp"},
+            "<volatile>",
         )
+        selected["rows"] = sorted(selected.get("rows") or [])
         return selected
     if kind == "cat_allocation_selected_columns":
         selected = extract("cat_indices_selected_columns", response)
         normalize_selected_column_values(
             selected,
-            {"node", "n"},
-            "<node-name>",
+            {"node", "n", "shards", "s"},
+            "<volatile>",
         )
+        selected["rows"] = sorted(selected.get("rows") or [])
         return selected
     if kind == "cat_nodeattrs_selected_columns":
         selected = extract("cat_indices_selected_columns", response)
@@ -2924,7 +2927,6 @@ def extract(kind: str, response: dict[str, Any]) -> Any:
             "status": response["status"],
             "indices": indices,
             "first_segment": first_segment_name,
-            "first_committed": first_segment.get("committed") if isinstance(first_segment, dict) else None,
         }
     if kind == "segments_api_index_list":
         indices_body = body.get("indices") if isinstance(body, dict) else {}

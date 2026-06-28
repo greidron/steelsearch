@@ -11,7 +11,7 @@ import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Sequence
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -196,7 +196,7 @@ def collect_suite(
     fixture_path = ROOT / suite.fixture
     fixture = load_json(fixture_path)
     report_path, source, report, unusable_path = load_best_report(
-        suite.report,
+        report_names_for_suite(suite),
         fixture_path,
         output_dir,
         recursive_target_scan,
@@ -216,27 +216,36 @@ def collect_suite(
     return result
 
 
+def report_names_for_suite(suite: Suite) -> tuple[str, ...]:
+    names = [suite.report]
+    if suite.runner == "tools/search_compat.py" and suite.report != "search-compat-report.json":
+        names.append("search-compat-report.json")
+    return tuple(names)
+
+
 def load_best_report(
-    report_name: str,
+    report_name: str | Sequence[str],
     fixture_path: Path,
     output_dir: Path,
     recursive_target_scan: bool,
     exclude_paths: set[Path] | None = None,
     max_report_age_seconds: float | None = None,
 ) -> tuple[Path | None, str | None, dict[str, Any] | None, Path | None]:
+    report_names = (report_name,) if isinstance(report_name, str) else tuple(report_name)
     candidates: list[tuple[Path, str]] = []
-    output_report = output_dir / report_name
-    if output_report.exists():
-        candidates.append((output_report, "output-dir"))
-    target_report = ROOT / "target" / report_name
-    if target_report.exists():
-        candidates.append((target_report, "target"))
-    if recursive_target_scan:
-        candidates.extend(
-            (path, "target-recursive")
-            for path in (ROOT / "target").glob(f"**/{report_name}")
-            if path.is_file()
-        )
+    for candidate_report_name in report_names:
+        output_report = output_dir / candidate_report_name
+        if output_report.exists():
+            candidates.append((output_report, "output-dir"))
+        target_report = ROOT / "target" / candidate_report_name
+        if target_report.exists():
+            candidates.append((target_report, "target"))
+        if recursive_target_scan:
+            candidates.extend(
+                (path, "target-recursive")
+                for path in (ROOT / "target").glob(f"**/{candidate_report_name}")
+                if path.is_file()
+            )
     if not candidates:
         return None, None, None, None
 

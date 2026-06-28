@@ -314,6 +314,57 @@ class UnifiedOpenSearchE2EReportTests(unittest.TestCase):
             self.assertIsNone(unusable)
             self.assertEqual(report["summary"]["failed"], 0)
 
+    def test_search_compat_suite_collects_generic_harness_report_name_by_fixture(self):
+        runner = load_module(RUNNER_PATH, "run_unified_opensearch_e2e_generic_search_report")
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            temp_dir = Path(temp_dir_value)
+            fixture_path = temp_dir / "search-strict-compat.json"
+            fixture_path.write_text(
+                """
+{
+  "cases": [
+    { "name": "strict-case" }
+  ]
+}
+""".strip(),
+                encoding="utf-8",
+            )
+            output_dir = temp_dir / "out"
+            output_dir.mkdir()
+            recursive_dir = temp_dir / "target" / "strict-harness" / "compare"
+            recursive_dir.mkdir(parents=True)
+            generic_report = recursive_dir / "search-compat-report.json"
+            generic_report.write_text(
+                """
+{
+  "fixture": "__FIXTURE__",
+  "targets": { "steelsearch": "s", "opensearch": "o" },
+  "summary": { "passed": 1, "failed": 0, "skipped": 0 },
+  "cases": [
+    { "name": "strict-case", "status": "passed" }
+  ]
+}
+""".replace("__FIXTURE__", str(fixture_path)),
+                encoding="utf-8",
+            )
+
+            previous_root = runner.ROOT
+            runner.ROOT = temp_dir
+            try:
+                path, source, report, unusable = runner.load_best_report(
+                    ("search-strict-compat-report.json", "search-compat-report.json"),
+                    fixture_path,
+                    output_dir,
+                    recursive_target_scan=True,
+                )
+            finally:
+                runner.ROOT = previous_root
+
+            self.assertEqual(path, generic_report)
+            self.assertEqual(source, "target-recursive")
+            self.assertIsNone(unusable)
+            self.assertEqual(report["summary"]["passed"], 1)
+
     def test_load_best_report_rejects_stale_complete_report_when_age_gate_is_set(self):
         runner = load_module(RUNNER_PATH, "run_unified_opensearch_e2e_stale_report")
         with tempfile.TemporaryDirectory() as temp_dir_value:
