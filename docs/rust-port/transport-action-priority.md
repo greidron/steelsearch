@@ -2396,6 +2396,10 @@ The create-PIT boundary covers:
 - manifest-backed create-PIT index option handling for unavailable targets,
   `allow_no_indices`, ignored aliases, alias fanout guards, open/closed
   wildcard expansion, and hidden wildcard expansion;
+- local transport create-PIT now renders an OpenSearch `IndexNotFoundException`
+  transport error for strict concrete-index requests whose target is absent,
+  while lenient `ignore_unavailable` requests continue through the empty
+  resolved-index subset;
 - local transport create-PIT resolves explicit `_all` and wildcard selectors
   against the union of manifest-backed indices and locally-created open
   indices, matching cluster-state-backed resolution for the standalone adapter
@@ -5336,12 +5340,12 @@ Current create-PIT wire microbenchmark:
 
 ```text
 cargo run -p os-transport --release --bin create-pit-wire-benchmark
-create_pit_request_encode iterations=400000 elapsed_ms=327.570 ops_per_second=1221113.15 nanos_per_op=818.92
-create_pit_request_decode iterations=400000 elapsed_ms=266.458 ops_per_second=1501175.41 nanos_per_op=666.14
-create_pit_request_validate iterations=400000 elapsed_ms=267.444 ops_per_second=1495640.90 nanos_per_op=668.61
-create_pit_response_encode iterations=400000 elapsed_ms=124.376 ops_per_second=3216057.93 nanos_per_op=310.94
-create_pit_response_decode iterations=400000 elapsed_ms=104.123 ops_per_second=3841620.92 nanos_per_op=260.31
-create_pit_wire_bottleneck_ops_per_second=1221113.15
+create_pit_request_encode iterations=400000 elapsed_ms=282.199 ops_per_second=1417437.70 nanos_per_op=705.50
+create_pit_request_decode iterations=400000 elapsed_ms=268.805 ops_per_second=1488069.84 nanos_per_op=672.01
+create_pit_request_validate iterations=400000 elapsed_ms=263.904 ops_per_second=1515700.03 nanos_per_op=659.76
+create_pit_response_encode iterations=400000 elapsed_ms=123.653 ops_per_second=3234848.53 nanos_per_op=309.13
+create_pit_response_decode iterations=400000 elapsed_ms=104.366 ops_per_second=3832663.86 nanos_per_op=260.92
+create_pit_wire_bottleneck_ops_per_second=1417437.70
 ```
 
 The current create-PIT wire subset bottleneck is request encode. This path

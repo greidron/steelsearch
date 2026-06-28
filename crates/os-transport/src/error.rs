@@ -102,6 +102,23 @@ pub fn write_search_context_missing_exception(
     output.write_string(session_id);
 }
 
+pub fn write_index_not_found_exception(output: &mut StreamOutput, index: &str) {
+    output.write_bool(true);
+    output.write_vint(0);
+    output.write_vint(16);
+    output.write_optional_string(Some(&format!("no such index [{index}]")));
+    output.write_bool(false);
+    write_empty_stack_trace(output);
+    write_empty_string_list_map(output);
+    output.write_vint(2);
+    output.write_string("opensearch.index");
+    output.write_vint(1);
+    output.write_string(index);
+    output.write_string("opensearch.index_uuid");
+    output.write_vint(1);
+    output.write_string("_na_");
+}
+
 fn read_jvm_exception(
     input: &mut StreamInput,
     class_name: &str,
@@ -233,6 +250,7 @@ fn read_non_negative_len(input: &mut StreamInput) -> Result<usize, TransportErro
 
 fn opensearch_exception_class_name(id: i32) -> &'static str {
     match id {
+        16 => "org.opensearch.index.IndexNotFoundException",
         24 => "org.opensearch.search.SearchContextMissingException",
         19 => "org.opensearch.ResourceNotFoundException",
         68 => "org.opensearch.OpenSearchException",
@@ -325,6 +343,24 @@ mod tests {
         assert_eq!(
             error.message.as_deref(),
             Some("No search context found for id [42]")
+        );
+        assert!(error.cause.is_none());
+    }
+
+    #[test]
+    fn writes_opensearch_index_not_found_exception_message() {
+        let mut output = StreamOutput::new();
+        super::write_index_not_found_exception(&mut output, "logs-missing");
+
+        let error = TransportError::read(output.freeze()).unwrap().unwrap();
+
+        assert_eq!(
+            error.class_name,
+            "org.opensearch.index.IndexNotFoundException"
+        );
+        assert_eq!(
+            error.message.as_deref(),
+            Some("no such index [logs-missing]")
         );
         assert!(error.cause.is_none());
     }
