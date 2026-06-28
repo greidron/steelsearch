@@ -16684,7 +16684,8 @@ mod tests {
                     primary_term: 1,
                     routing: None,
                     refreshed: true,
-                },
+                }
+                .into(),
             );
             documents.insert(
                 "logs-search-transport:doc-2:".to_string(),
@@ -16695,7 +16696,8 @@ mod tests {
                     primary_term: 1,
                     routing: None,
                     refreshed: true,
-                },
+                }
+                .into(),
             );
         }
 
@@ -16967,7 +16969,8 @@ mod tests {
                     primary_term: 1,
                     routing: None,
                     refreshed: true,
-                },
+                }
+                .into(),
             );
             documents.insert(
                 "logs-collapse-transport:doc-2:".to_string(),
@@ -16978,7 +16981,8 @@ mod tests {
                     primary_term: 1,
                     routing: None,
                     refreshed: true,
-                },
+                }
+                .into(),
             );
             documents.insert(
                 "logs-collapse-transport:doc-3:".to_string(),
@@ -16989,7 +16993,8 @@ mod tests {
                     primary_term: 1,
                     routing: None,
                     refreshed: true,
-                },
+                }
+                .into(),
             );
         }
 
@@ -17111,7 +17116,8 @@ mod tests {
                     primary_term: 1,
                     routing: None,
                     refreshed: true,
-                },
+                }
+                .into(),
             );
             documents.insert(
                 "logs-boost-b:doc-b:".to_string(),
@@ -17122,7 +17128,8 @@ mod tests {
                     primary_term: 1,
                     routing: None,
                     refreshed: true,
-                },
+                }
+                .into(),
             );
         }
 
@@ -17222,7 +17229,8 @@ mod tests {
                     primary_term: 1,
                     routing: None,
                     refreshed: true,
-                },
+                }
+                .into(),
             );
 
         let sort = os_transport::action::OpenSearchSortBuilderWire::Field(
@@ -17351,7 +17359,8 @@ mod tests {
                     primary_term: 1,
                     routing: None,
                     refreshed: true,
-                },
+                }
+                .into(),
             );
 
         let request = os_transport::action::OpenSearchSearchRequestWire {
@@ -17483,14 +17492,15 @@ mod tests {
             .insert("logs-search-pit-transport".to_string());
 
         let pit_id = build_local_pit_id(700);
-        let before_doc = StoredDocument {
+        let before_doc: Arc<StoredDocument> = StoredDocument {
             source: serde_json::json!({ "status": "before-pit" }),
             version: 1,
             seq_no: 1,
             primary_term: 1,
             routing: None,
             refreshed: true,
-        };
+        }
+        .into();
         bindings
             .contexts
             .lock()
@@ -17499,10 +17509,10 @@ mod tests {
                 pit_id.clone(),
                 PitContext {
                     indices: vec!["logs-search-pit-transport".to_string()],
-                    documents: BTreeMap::from([(
+                    documents: Arc::new(BTreeMap::from([(
                         "logs-search-pit-transport:doc-1:".to_string(),
                         before_doc.clone(),
-                    )]),
+                    )])),
                     keep_alive_millis: 60_000,
                     expires_at_millis: transport_pit_expires_at_millis(now_epoch_ms(), 60_000),
                     creation_time_millis: now_epoch_ms(),
@@ -17523,7 +17533,8 @@ mod tests {
                     primary_term: 1,
                     routing: None,
                     refreshed: true,
-                },
+                }
+                .into(),
             );
         }
 
@@ -17630,7 +17641,7 @@ mod tests {
                 pit_id.clone(),
                 PitContext {
                     indices: vec!["logs-search-pit-keep-alive".to_string()],
-                    documents: BTreeMap::from([(
+                    documents: Arc::new(BTreeMap::from([(
                         "logs-search-pit-keep-alive:doc-1:".to_string(),
                         StoredDocument {
                             source: serde_json::json!({ "status": "active" }),
@@ -17639,8 +17650,9 @@ mod tests {
                             primary_term: 1,
                             routing: None,
                             refreshed: true,
-                        },
-                    )]),
+                        }
+                        .into(),
+                    )])),
                     keep_alive_millis: 60_000,
                     expires_at_millis: transport_pit_expires_at_millis(now_epoch_ms(), 60_000),
                     creation_time_millis: now_epoch_ms(),
@@ -17717,7 +17729,7 @@ mod tests {
                 pit_id.clone(),
                 PitContext {
                     indices: vec!["logs-search-pit-deleted-index".to_string()],
-                    documents: BTreeMap::from([(
+                    documents: Arc::new(BTreeMap::from([(
                         "logs-search-pit-deleted-index:doc-1:".to_string(),
                         StoredDocument {
                             source: serde_json::json!({ "status": "active" }),
@@ -17726,8 +17738,9 @@ mod tests {
                             primary_term: 1,
                             routing: None,
                             refreshed: true,
-                        },
-                    )]),
+                        }
+                        .into(),
+                    )])),
                     keep_alive_millis: 60_000,
                     expires_at_millis: transport_pit_expires_at_millis(now_epoch_ms(), 60_000),
                     creation_time_millis: now_epoch_ms(),
@@ -17814,7 +17827,7 @@ mod tests {
                 pit_id.clone(),
                 PitContext {
                     indices: vec!["logs-search-pit-closed-index".to_string()],
-                    documents: BTreeMap::from([(
+                    documents: Arc::new(BTreeMap::from([(
                         "logs-search-pit-closed-index:doc-1:".to_string(),
                         StoredDocument {
                             source: serde_json::json!({ "status": "active" }),
@@ -17823,8 +17836,9 @@ mod tests {
                             primary_term: 1,
                             routing: None,
                             refreshed: true,
-                        },
-                    )]),
+                        }
+                        .into(),
+                    )])),
                     keep_alive_millis: 60_000,
                     expires_at_millis: transport_pit_expires_at_millis(now_epoch_ms(), 60_000),
                     creation_time_millis: now_epoch_ms(),
@@ -17908,7 +17922,8 @@ mod tests {
                         primary_term: 1,
                         routing: None,
                         refreshed: true,
-                    },
+                    }
+                    .into(),
                 )
             })
             .collect::<BTreeMap<_, _>>();
@@ -17920,7 +17935,7 @@ mod tests {
                 pit_id.clone(),
                 PitContext {
                     indices: vec!["logs-search-pit-page".to_string()],
-                    documents: pit_documents.clone(),
+                    documents: Arc::new(pit_documents.clone()),
                     keep_alive_millis: 60_000,
                     expires_at_millis: transport_pit_expires_at_millis(now_epoch_ms(), 60_000),
                     creation_time_millis: now_epoch_ms(),
@@ -17941,7 +17956,8 @@ mod tests {
                     primary_term: 1,
                     routing: None,
                     refreshed: true,
-                },
+                }
+                .into(),
             );
         }
 
@@ -18091,7 +18107,8 @@ mod tests {
                         primary_term: 1,
                         routing: None,
                         refreshed: true,
-                    },
+                    }
+                    .into(),
                 )
             })
             .collect::<BTreeMap<_, _>>();
@@ -18103,7 +18120,7 @@ mod tests {
                 pit_id.clone(),
                 PitContext {
                     indices: vec!["logs-search-pit-field-page".to_string()],
-                    documents: pit_documents.clone(),
+                    documents: Arc::new(pit_documents.clone()),
                     keep_alive_millis: 60_000,
                     expires_at_millis: transport_pit_expires_at_millis(now_epoch_ms(), 60_000),
                     creation_time_millis: now_epoch_ms(),
@@ -18124,7 +18141,8 @@ mod tests {
                     primary_term: 1,
                     routing: None,
                     refreshed: true,
-                },
+                }
+                .into(),
             );
         }
 
@@ -18300,7 +18318,8 @@ mod tests {
                         primary_term: 1,
                         routing: None,
                         refreshed: true,
-                    },
+                    }
+                    .into(),
                 )
             })
             .collect::<BTreeMap<_, _>>();
@@ -18312,7 +18331,7 @@ mod tests {
                 pit_id.clone(),
                 PitContext {
                     indices: vec!["logs-search-pit-slice".to_string()],
-                    documents: pit_documents.clone(),
+                    documents: Arc::new(pit_documents.clone()),
                     keep_alive_millis: 60_000,
                     expires_at_millis: transport_pit_expires_at_millis(now_epoch_ms(), 60_000),
                     creation_time_millis: now_epoch_ms(),
@@ -18333,7 +18352,8 @@ mod tests {
                     primary_term: 1,
                     routing: None,
                     refreshed: true,
-                },
+                }
+                .into(),
             );
         }
 
@@ -18443,7 +18463,8 @@ mod tests {
                     primary_term: 1,
                     routing: None,
                     refreshed: true,
-                },
+                }
+                .into(),
             );
 
         let request = os_transport::action::OpenSearchExplainRequestWire {
@@ -18825,7 +18846,8 @@ mod tests {
                     primary_term: 1,
                     routing: None,
                     refreshed: true,
-                },
+                }
+                .into(),
             );
         *dev_transport_pit_bindings()
             .metadata_manifest
@@ -18903,7 +18925,8 @@ mod tests {
                     primary_term: 1,
                     routing: None,
                     refreshed: true,
-                },
+                }
+                .into(),
             );
         let pit_context = dev_transport_pit_bindings()
             .contexts
@@ -19055,7 +19078,8 @@ mod tests {
                         primary_term: 1,
                         routing: Some("tenant-a".to_string()),
                         refreshed: true,
-                    },
+                    }
+                    .into(),
                 ),
                 (
                     "logs-routed-pit-000001:doc-b:tenant-b".to_string(),
@@ -19066,7 +19090,8 @@ mod tests {
                         primary_term: 1,
                         routing: Some("tenant-b".to_string()),
                         refreshed: true,
-                    },
+                    }
+                    .into(),
                 ),
                 (
                     "metrics-routed-pit-000001:doc-c:tenant-a".to_string(),
@@ -19077,7 +19102,8 @@ mod tests {
                         primary_term: 1,
                         routing: Some("tenant-a".to_string()),
                         refreshed: true,
-                    },
+                    }
+                    .into(),
                 ),
             ]);
         let routed_create_request = os_transport::action::OpenSearchCreatePitRequestWire {
@@ -19273,7 +19299,8 @@ mod tests {
                     primary_term: 1,
                     routing: None,
                     refreshed: true,
-                },
+                }
+                .into(),
             );
 
         let create_context_request =
@@ -19352,7 +19379,8 @@ mod tests {
                     primary_term: 1,
                     routing: None,
                     refreshed: true,
-                },
+                }
+                .into(),
             );
         bindings
             .documents
@@ -19385,7 +19413,8 @@ mod tests {
                     primary_term: 1,
                     routing: None,
                     refreshed: true,
-                },
+                }
+                .into(),
             );
         let encoded_pit_id =
             os_transport::action::OpenSearchSearchContextIdWire::with_alias_filters(
@@ -20387,24 +20416,26 @@ mod tests {
         assert_eq!(min_score_response.total_hits, Some(0));
         assert!(min_score_response.hits.is_empty());
 
-        bindings
+        let mut contexts = bindings
             .contexts
             .lock()
-            .expect("dev transport PIT contexts lock poisoned")
+            .expect("dev transport PIT contexts lock poisoned");
+        let context = contexts
             .get_mut(&encoded_pit_id)
-            .expect("encoded PIT context should remain")
-            .documents
-            .insert(
-                "logs-reader-pit:doc-4:".to_string(),
-                StoredDocument {
-                    source: serde_json::json!({ "tenant": "a" }),
-                    version: 1,
-                    seq_no: 4,
-                    primary_term: 1,
-                    routing: None,
-                    refreshed: true,
-                },
-            );
+            .expect("encoded PIT context should remain");
+        Arc::make_mut(&mut context.documents).insert(
+            "logs-reader-pit:doc-4:".to_string(),
+            StoredDocument {
+                source: serde_json::json!({ "tenant": "a" }),
+                version: 1,
+                seq_no: 4,
+                primary_term: 1,
+                routing: None,
+                refreshed: true,
+            }
+            .into(),
+        );
+        drop(contexts);
         let terminate_request = os_transport::action::OpenSearchSearchRequestWire {
             source: Some(os_transport::action::OpenSearchSearchSourceBuilderWire {
                 point_in_time: Some(os_transport::action::OpenSearchPointInTimeBuilderWire {
@@ -20568,7 +20599,8 @@ mod tests {
                     primary_term: 1,
                     routing: None,
                     refreshed: true,
-                },
+                }
+                .into(),
             );
         *bindings
             .metadata_manifest
@@ -20635,7 +20667,8 @@ mod tests {
                     primary_term: 1,
                     routing: None,
                     refreshed: true,
-                },
+                }
+                .into(),
             );
             documents.insert(
                 "logs-reader-snapshot:doc-2:".to_string(),
@@ -20646,7 +20679,8 @@ mod tests {
                     primary_term: 1,
                     routing: None,
                     refreshed: true,
-                },
+                }
+                .into(),
             );
         }
 
@@ -20786,7 +20820,7 @@ mod tests {
                 encoded_pit_id.clone(),
                 PitContext {
                     indices: vec!["logs-delete-pit-reader".to_string()],
-                    documents: BTreeMap::new(),
+                    documents: Arc::new(BTreeMap::new()),
                     keep_alive_millis: 60_000,
                     expires_at_millis: now_epoch_ms() + 60_000,
                     creation_time_millis: now_epoch_ms(),
@@ -20804,7 +20838,7 @@ mod tests {
                         index_uuid: "uuid-delete-pit-reader".to_string(),
                         shard_id: 0,
                     },
-                    documents: BTreeMap::new(),
+                    documents: Arc::new(BTreeMap::new()),
                     expires_at_millis: now_epoch_ms() + 60_000,
                 },
             );
@@ -20880,7 +20914,7 @@ mod tests {
                         index_uuid: "uuid-orphan-pit-reader".to_string(),
                         shard_id: 0,
                     },
-                    documents: BTreeMap::new(),
+                    documents: Arc::new(BTreeMap::new()),
                     expires_at_millis: now_epoch_ms() + 60_000,
                 },
             );
@@ -20942,7 +20976,7 @@ mod tests {
                 "transport-pit-stays".to_string(),
                 PitContext {
                     indices: Vec::new(),
-                    documents: BTreeMap::new(),
+                    documents: Arc::new(BTreeMap::new()),
                     keep_alive_millis: 60_000,
                     expires_at_millis: now_epoch_ms() + 60_000,
                     creation_time_millis: now_epoch_ms(),
@@ -21214,7 +21248,7 @@ mod tests {
                             index_uuid: "uuid-reader-max-open".to_string(),
                             shard_id: 0,
                         },
-                        documents: BTreeMap::new(),
+                        documents: Arc::new(BTreeMap::new()),
                         expires_at_millis: now_epoch_ms() + 60_000,
                     },
                 );
@@ -21317,7 +21351,7 @@ mod tests {
                             index_uuid: "uuid-reader-expired-max-open".to_string(),
                             shard_id: 0,
                         },
-                        documents: BTreeMap::new(),
+                        documents: Arc::new(BTreeMap::new()),
                         expires_at_millis: expired_at,
                     },
                 );
@@ -21473,7 +21507,7 @@ mod tests {
                         index_uuid: "uuid-reader-expired-update".to_string(),
                         shard_id: 0,
                     },
-                    documents: BTreeMap::new(),
+                    documents: Arc::new(BTreeMap::new()),
                     expires_at_millis: now_epoch_ms().saturating_sub(1),
                 },
             );
@@ -21556,7 +21590,7 @@ mod tests {
                         index_uuid: "uuid-reader-extend-update".to_string(),
                         shard_id: 0,
                     },
-                    documents: BTreeMap::new(),
+                    documents: Arc::new(BTreeMap::new()),
                     expires_at_millis: initial_expires_at,
                 },
             );
@@ -21852,7 +21886,7 @@ mod tests {
                     format!("pit-open-{id}"),
                     PitContext {
                         indices: vec!["logs-max-pit-000001".to_string()],
-                        documents: BTreeMap::new(),
+                        documents: Arc::new(BTreeMap::new()),
                         keep_alive_millis: 60_000,
                         expires_at_millis: now + 60_000,
                         creation_time_millis: now,
@@ -22290,7 +22324,7 @@ mod tests {
                 "pit-context".to_string(),
                 PitContext {
                     indices: Vec::new(),
-                    documents: BTreeMap::new(),
+                    documents: Arc::new(BTreeMap::new()),
                     keep_alive_millis: 60_000,
                     expires_at_millis: now_epoch_ms() + 60_000,
                     creation_time_millis: now_epoch_ms(),
@@ -22441,6 +22475,7 @@ mod tests {
                 ScrollContext {
                     remaining_hits: Vec::new(),
                     page_size: 10,
+                    total_hits: 0,
                 },
             );
         let request = os_transport::action::OpenSearchClearScrollRequestWire {
@@ -22513,6 +22548,7 @@ mod tests {
                         }),
                     ],
                     page_size: 1,
+                    total_hits: 1,
                 },
             );
         let request = os_transport::action::OpenSearchSearchScrollRequestWire {
@@ -22585,6 +22621,7 @@ mod tests {
                 ScrollContext {
                     remaining_hits: Vec::new(),
                     page_size: 10,
+                    total_hits: 0,
                 },
             );
         let request = os_transport::action::OpenSearchClearScrollRequestWire {
@@ -22854,7 +22891,7 @@ mod tests {
                 "pit-live-a".to_string(),
                 PitContext {
                     indices: vec!["logs-pit-000001".to_string()],
-                    documents: BTreeMap::new(),
+                    documents: Arc::new(BTreeMap::new()),
                     keep_alive_millis: 60_000,
                     expires_at_millis: now + 60_000,
                     creation_time_millis: now - 1_000,
@@ -22864,7 +22901,7 @@ mod tests {
                 "pit-expired".to_string(),
                 PitContext {
                     indices: vec!["logs-pit-000001".to_string()],
-                    documents: BTreeMap::new(),
+                    documents: Arc::new(BTreeMap::new()),
                     keep_alive_millis: 1,
                     expires_at_millis: now.saturating_sub(1),
                     creation_time_millis: now.saturating_sub(2_000),
@@ -22967,7 +23004,7 @@ mod tests {
                     pit_id.to_string(),
                     PitContext {
                         indices: vec![index.to_string()],
-                        documents: BTreeMap::new(),
+                        documents: Arc::new(BTreeMap::new()),
                         keep_alive_millis: 60_000,
                         expires_at_millis: now + 60_000,
                         creation_time_millis: now,
@@ -23049,7 +23086,7 @@ mod tests {
                 pit_id.to_string(),
                 PitContext {
                     indices: vec!["logs-expired-pit-000001".to_string()],
-                    documents: BTreeMap::new(),
+                    documents: Arc::new(BTreeMap::new()),
                     keep_alive_millis: 1,
                     expires_at_millis: now.saturating_sub(1),
                     creation_time_millis: now.saturating_sub(10),
@@ -23245,7 +23282,7 @@ mod tests {
                 pit_id.to_string(),
                 PitContext {
                     indices: vec!["logs-pit-segments-000001".to_string()],
-                    documents: BTreeMap::new(),
+                    documents: Arc::new(BTreeMap::new()),
                     keep_alive_millis: 60_000,
                     expires_at_millis: now_epoch_ms() + 60_000,
                     creation_time_millis: now_epoch_ms(),
@@ -23385,7 +23422,7 @@ mod tests {
                 pit_id.to_string(),
                 PitContext {
                     indices: vec!["logs-pit-segments-000001".to_string()],
-                    documents: BTreeMap::new(),
+                    documents: Arc::new(BTreeMap::new()),
                     keep_alive_millis: 60_000,
                     expires_at_millis: now_epoch_ms() + 60_000,
                     creation_time_millis: now_epoch_ms(),
