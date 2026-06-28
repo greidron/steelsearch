@@ -2422,6 +2422,10 @@ The create-PIT boundary covers:
   against the union of manifest-backed indices and locally-created open
   indices, matching cluster-state-backed resolution for the standalone adapter
   when no manifest entry exists;
+- local transport create-PIT applies OpenSearch-style negative wildcard
+  selectors after a prior wildcard selector, so expressions such as
+  `logs-*,-logs-secret-*` remove previously matched targets before the PIT
+  snapshot is allocated;
 - local transport create-PIT resolves manifest-backed data stream selectors to
   their backing indices before allocating the PIT `SearchContextId` and
   snapshot, matching OpenSearch index-abstraction resolution for PIT targets;
@@ -5358,12 +5362,12 @@ Current create-PIT wire microbenchmark:
 
 ```text
 cargo run -p os-transport --release --bin create-pit-wire-benchmark
-create_pit_request_encode iterations=400000 elapsed_ms=282.559 ops_per_second=1415635.01 nanos_per_op=706.40
-create_pit_request_decode iterations=400000 elapsed_ms=263.783 ops_per_second=1516396.04 nanos_per_op=659.46
-create_pit_request_validate iterations=400000 elapsed_ms=264.457 ops_per_second=1512535.18 nanos_per_op=661.14
-create_pit_response_encode iterations=400000 elapsed_ms=123.436 ops_per_second=3240534.00 nanos_per_op=308.59
-create_pit_response_decode iterations=400000 elapsed_ms=104.960 ops_per_second=3810984.61 nanos_per_op=262.40
-create_pit_wire_bottleneck_ops_per_second=1415635.01
+create_pit_request_encode iterations=400000 elapsed_ms=282.026 ops_per_second=1418311.24 nanos_per_op=705.06
+create_pit_request_decode iterations=400000 elapsed_ms=266.283 ops_per_second=1502162.84 nanos_per_op=665.71
+create_pit_request_validate iterations=400000 elapsed_ms=267.015 ops_per_second=1498045.41 nanos_per_op=667.54
+create_pit_response_encode iterations=400000 elapsed_ms=124.435 ops_per_second=3214521.02 nanos_per_op=311.09
+create_pit_response_decode iterations=400000 elapsed_ms=104.141 ops_per_second=3840930.77 nanos_per_op=260.35
+create_pit_wire_bottleneck_ops_per_second=1418311.24
 ```
 
 The current create-PIT wire subset bottleneck is request encode. This path

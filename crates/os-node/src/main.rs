@@ -7994,12 +7994,25 @@ fn transport_pit_indices(
     let indices = transport_pit_index_catalog(bindings, manifest_indices);
     let mut resolved = Vec::new();
     if !indices.is_empty() {
+        let mut wildcard_seen = false;
         for selector in selectors.iter().filter(|selector| !selector.is_empty()) {
-            let wildcard_selector =
-                selector == "_all" || selector.contains('*') || selector.contains('?');
-            let effective_selector = if selector == "_all" { "*" } else { selector };
+            let exclude_selector = selector.starts_with('-') && wildcard_seen;
+            let selector_expression = if exclude_selector {
+                &selector[1..]
+            } else {
+                selector.as_str()
+            };
+            let wildcard_selector = selector_expression == "_all"
+                || selector_expression.contains('*')
+                || selector_expression.contains('?');
+            let effective_selector = if selector_expression == "_all" {
+                "*"
+            } else {
+                selector_expression
+            };
             let mut selector_matched = false;
             let mut selector_alias_matches = 0_usize;
+            let mut selector_resolved = Vec::new();
             for (index_name, index_body) in indices.iter() {
                 if effective_selector == index_name
                     || wildcard_match(effective_selector, index_name.as_str())
@@ -8010,13 +8023,13 @@ fn transport_pit_indices(
                         wildcard_selector,
                         &request.indices_options,
                     )? {
-                        resolved.push(index_name.clone());
+                        selector_resolved.push(index_name.clone());
                     }
                     continue;
                 }
                 if !request.indices_options.ignore_aliases {
                     if let Some(aliases) = index_body["aliases"].as_object() {
-                        if aliases.contains_key(selector)
+                        if aliases.contains_key(selector_expression)
                             || aliases
                                 .keys()
                                 .any(|alias| wildcard_match(effective_selector, alias))
@@ -8028,7 +8041,7 @@ fn transport_pit_indices(
                                 wildcard_selector,
                                 &request.indices_options,
                             )? {
-                                resolved.push(index_name.clone());
+                                selector_resolved.push(index_name.clone());
                             }
                         }
                     }
@@ -8049,7 +8062,7 @@ fn transport_pit_indices(
                             wildcard_selector,
                             &request.indices_options,
                         )? {
-                            resolved.push(backing_index.clone());
+                            selector_resolved.push(backing_index.clone());
                         }
                     }
                 }
@@ -8064,6 +8077,15 @@ fn transport_pit_indices(
                     || (!wildcard_selector && !request.indices_options.ignore_unavailable))
             {
                 return None;
+            }
+            if exclude_selector {
+                resolved
+                    .retain(|index| !selector_resolved.iter().any(|candidate| candidate == index));
+            } else {
+                resolved.extend(selector_resolved);
+            }
+            if wildcard_selector {
+                wildcard_seen = true;
             }
         }
     } else if !request.indices.is_empty() {
@@ -26300,6 +26322,7 @@ mod tests {
                 .lock()
                 .expect("dev transport created indices lock poisoned");
             created_indices.insert("logs-created-pit-000001".to_string());
+            created_indices.insert("logs-created-secret-000001".to_string());
             created_indices.insert("metrics-created-pit-000001".to_string());
         }
         bindings
@@ -26330,6 +26353,18 @@ mod tests {
                     source: serde_json::json!({ "kind": "metric" }),
                     version: 1,
                     seq_no: 2,
+                    primary_term: 1,
+                    routing: None,
+                    refreshed: true,
+                }
+                .into(),
+            );
+            documents.insert(
+                "logs-created-secret-000001:doc-secret:".to_string(),
+                StoredDocument {
+                    source: serde_json::json!({ "kind": "secret" }),
+                    version: 1,
+                    seq_no: 3,
                     primary_term: 1,
                     routing: None,
                     refreshed: true,
@@ -26373,7 +26408,7 @@ mod tests {
         };
         let explicit_all_response =
             os_transport::action::read_opensearch_create_pit_response_message(&message).unwrap();
-        assert_eq!(explicit_all_response.total_shards, 2);
+        assert_eq!(explicit_all_response.total_shards, 3);
         let explicit_all_context = bindings
             .contexts
             .lock()
@@ -26385,13 +26420,14 @@ mod tests {
             explicit_all_context.indices,
             vec![
                 "logs-created-pit-000001".to_string(),
+                "logs-created-secret-000001".to_string(),
                 "metrics-created-pit-000001".to_string()
             ]
         );
-        assert_eq!(explicit_all_context.documents.len(), 2);
+        assert_eq!(explicit_all_context.documents.len(), 3);
 
         let wildcard_request = os_transport::action::OpenSearchCreatePitRequestWire {
-            indices: vec!["logs-created-*".to_string()],
+            indices: vec!["logs-created-pit-*".to_string()],
             ..os_transport::action::OpenSearchCreatePitRequestWire::default()
         };
         let wildcard_frame = os_transport::action::build_opensearch_create_pit_request_message(
@@ -26431,6 +26467,55 @@ mod tests {
         assert!(wildcard_context
             .documents
             .contains_key("logs-created-pit-000001:doc-1:"));
+
+        let negative_wildcard_request = os_transport::action::OpenSearchCreatePitRequestWire {
+            indices: vec![
+                "logs-created-*".to_string(),
+                "-logs-created-secret-*".to_string(),
+            ],
+            ..os_transport::action::OpenSearchCreatePitRequestWire::default()
+        };
+        let negative_wildcard_frame =
+            os_transport::action::build_opensearch_create_pit_request_message(
+                329,
+                OPENSEARCH_3_7_0_TRANSPORT,
+                &negative_wildcard_request,
+            )
+            .unwrap();
+        let negative_wildcard_response = build_local_create_pit_response(
+            329,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &negative_wildcard_frame[6..],
+        );
+        let mut frame = BytesMut::from(&negative_wildcard_response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected negative wildcard create-PIT response");
+        };
+        let negative_wildcard_response =
+            os_transport::action::read_opensearch_create_pit_response_message(&message).unwrap();
+        assert_eq!(negative_wildcard_response.total_shards, 1);
+        let negative_wildcard_context = bindings
+            .contexts
+            .lock()
+            .expect("dev transport PIT contexts lock poisoned")
+            .get(&negative_wildcard_response.pit_id)
+            .cloned()
+            .expect("negative wildcard PIT context should be allocated");
+        assert_eq!(
+            negative_wildcard_context.indices,
+            vec!["logs-created-pit-000001".to_string()]
+        );
+        assert_eq!(negative_wildcard_context.documents.len(), 1);
+        assert!(negative_wildcard_context
+            .documents
+            .contains_key("logs-created-pit-000001:doc-1:"));
+        assert!(!negative_wildcard_context
+            .documents
+            .contains_key("logs-created-secret-000001:doc-secret:"));
     }
 
     #[test]
