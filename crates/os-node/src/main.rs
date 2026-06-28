@@ -8547,6 +8547,10 @@ fn usize_to_i32_saturating(value: usize) -> i32 {
 
 fn create_pit_request_supports_local_lifecycle_subset(body: &[u8]) -> bool {
     decode_create_pit_request_from_transport_body(body)
+        .filter(|request| {
+            time_value_wire_to_millis(&request.keep_alive)
+                <= DEV_TRANSPORT_MAX_PIT_KEEP_ALIVE_MILLIS
+        })
         .and_then(|request| request.validate_supported_subset().ok())
         .is_some()
 }
@@ -22754,6 +22758,10 @@ mod tests {
             &request,
         )
         .unwrap();
+        assert!(!create_pit_request_supports_local_lifecycle_subset(
+            &frame[6..]
+        ));
+
         let response = build_local_create_pit_response(
             195,
             OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
