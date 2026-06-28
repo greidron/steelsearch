@@ -1703,6 +1703,33 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end_at_ms,
         )?;
     } else if is_request
+        && normalized_action_hint == Some("indices:admin/template/delete")
+        && delete_index_template_request_supports_manifest_execution_subset(&body)
+    {
+        let response =
+            build_local_delete_index_template_response(request_id, header_version_id, &body);
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("indices:admin/template/delete"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request
         && normalized_action_hint == Some("cluster:admin/component_template/get")
         && get_component_template_request_supports_manifest_subset(&body)
     {
@@ -1710,6 +1737,33 @@ fn handle_transport_seed_connection<S: TransportConnection>(
         response_frame = summarize_transport_response_frame_for_action(
             &response,
             Some("cluster:admin/component_template/get"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request
+        && normalized_action_hint == Some("cluster:admin/component_template/delete")
+        && delete_component_template_request_supports_manifest_execution_subset(&body)
+    {
+        let response =
+            build_local_delete_component_template_response(request_id, header_version_id, &body);
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("cluster:admin/component_template/delete"),
         );
         stream.write_all(&response)?;
         stream.flush()?;
@@ -1737,6 +1791,36 @@ fn handle_transport_seed_connection<S: TransportConnection>(
         response_frame = summarize_transport_response_frame_for_action(
             &response,
             Some("indices:admin/index_template/get"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request
+        && normalized_action_hint == Some("indices:admin/index_template/delete")
+        && delete_composable_index_template_request_supports_manifest_execution_subset(&body)
+    {
+        let response = build_local_delete_composable_index_template_response(
+            request_id,
+            header_version_id,
+            &body,
+        );
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("indices:admin/index_template/delete"),
         );
         stream.write_all(&response)?;
         stream.flush()?;
@@ -5590,6 +5674,38 @@ fn decode_get_index_templates_request_from_transport_body(
     os_transport::action::read_opensearch_get_index_templates_request_message(&message).ok()
 }
 
+fn build_local_delete_index_template_response(
+    request_id: i64,
+    header_version_id: u32,
+    body: &[u8],
+) -> Vec<u8> {
+    let Some(request) = decode_delete_index_template_request_from_transport_body(body) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    if request.validate_supported_execution_subset().is_err() {
+        return build_empty_transport_response(request_id, header_version_id);
+    }
+    apply_manifest_delete_legacy_index_template(&request.name);
+    build_acknowledged_template_response(
+        request_id,
+        header_version_id,
+        os_transport::action::build_opensearch_delete_index_template_response_message,
+    )
+}
+
+fn delete_index_template_request_supports_manifest_execution_subset(body: &[u8]) -> bool {
+    decode_delete_index_template_request_from_transport_body(body)
+        .as_ref()
+        .is_some_and(|request| request.validate_supported_execution_subset().is_ok())
+}
+
+fn decode_delete_index_template_request_from_transport_body(
+    body: &[u8],
+) -> Option<os_transport::action::OpenSearchDeleteIndexTemplateRequestWire> {
+    let message = decode_transport_message_from_body(body)?;
+    os_transport::action::read_opensearch_delete_index_template_request_message(&message).ok()
+}
+
 fn get_index_templates_response_from_metadata_manifest(
     metadata_manifest: &Value,
 ) -> os_transport::action::OpenSearchGetIndexTemplatesResponseWire {
@@ -5642,6 +5758,38 @@ fn decode_get_component_template_request_from_transport_body(
 ) -> Option<os_transport::action::OpenSearchGetComponentTemplateRequestWire> {
     let message = decode_transport_message_from_body(body)?;
     os_transport::action::read_opensearch_get_component_template_request_message(&message).ok()
+}
+
+fn build_local_delete_component_template_response(
+    request_id: i64,
+    header_version_id: u32,
+    body: &[u8],
+) -> Vec<u8> {
+    let Some(request) = decode_delete_component_template_request_from_transport_body(body) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    if request.validate_supported_execution_subset().is_err() {
+        return build_empty_transport_response(request_id, header_version_id);
+    }
+    apply_manifest_delete_template_entry("component_templates", &request.name);
+    build_acknowledged_template_response(
+        request_id,
+        header_version_id,
+        os_transport::action::build_opensearch_delete_component_template_response_message,
+    )
+}
+
+fn delete_component_template_request_supports_manifest_execution_subset(body: &[u8]) -> bool {
+    decode_delete_component_template_request_from_transport_body(body)
+        .as_ref()
+        .is_some_and(|request| request.validate_supported_execution_subset().is_ok())
+}
+
+fn decode_delete_component_template_request_from_transport_body(
+    body: &[u8],
+) -> Option<os_transport::action::OpenSearchDeleteComponentTemplateRequestWire> {
+    let message = decode_transport_message_from_body(body)?;
+    os_transport::action::read_opensearch_delete_component_template_request_message(&message).ok()
 }
 
 fn get_component_template_response_from_metadata_manifest(
@@ -5747,6 +5895,42 @@ fn decode_get_composable_index_template_request_from_transport_body(
 ) -> Option<os_transport::action::OpenSearchGetComposableIndexTemplateRequestWire> {
     let message = decode_transport_message_from_body(body)?;
     os_transport::action::read_opensearch_get_composable_index_template_request_message(&message)
+        .ok()
+}
+
+fn build_local_delete_composable_index_template_response(
+    request_id: i64,
+    header_version_id: u32,
+    body: &[u8],
+) -> Vec<u8> {
+    let Some(request) = decode_delete_composable_index_template_request_from_transport_body(body)
+    else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    if request.validate_supported_execution_subset().is_err() {
+        return build_empty_transport_response(request_id, header_version_id);
+    }
+    apply_manifest_delete_template_entry("index_templates", &request.name);
+    build_acknowledged_template_response(
+        request_id,
+        header_version_id,
+        os_transport::action::build_opensearch_delete_composable_index_template_response_message,
+    )
+}
+
+fn delete_composable_index_template_request_supports_manifest_execution_subset(
+    body: &[u8],
+) -> bool {
+    decode_delete_composable_index_template_request_from_transport_body(body)
+        .as_ref()
+        .is_some_and(|request| request.validate_supported_execution_subset().is_ok())
+}
+
+fn decode_delete_composable_index_template_request_from_transport_body(
+    body: &[u8],
+) -> Option<os_transport::action::OpenSearchDeleteComposableIndexTemplateRequestWire> {
+    let message = decode_transport_message_from_body(body)?;
+    os_transport::action::read_opensearch_delete_composable_index_template_request_message(&message)
         .ok()
 }
 
@@ -6747,6 +6931,24 @@ fn build_acknowledged_data_stream_response(
     .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
 }
 
+fn build_acknowledged_template_response(
+    request_id: i64,
+    header_version_id: u32,
+    builder: fn(
+        i64,
+        Version,
+        &os_transport::action::AcknowledgedResponseWire,
+    ) -> Result<BytesMut, os_transport::action::TransportActionWireError>,
+) -> Vec<u8> {
+    builder(
+        request_id,
+        Version::from_id(header_version_id as i32),
+        &os_transport::action::AcknowledgedResponseWire { acknowledged: true },
+    )
+    .map(|frame| frame.to_vec())
+    .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
+}
+
 fn apply_manifest_create_data_stream(name: &str) {
     let backing_index = format!(".ds-{name}-000001");
     let bindings = dev_transport_pit_bindings();
@@ -6787,6 +6989,33 @@ fn apply_manifest_create_data_stream(name: &str) {
         .lock()
         .expect("dev transport created indices lock poisoned")
         .insert(backing_index);
+}
+
+fn apply_manifest_delete_legacy_index_template(name: &str) {
+    let bindings = dev_transport_pit_bindings();
+    let mut manifest = bindings
+        .metadata_manifest
+        .lock()
+        .expect("dev transport metadata manifest lock poisoned");
+    remove_object_entry_at_pointer(&mut manifest, "/templates/legacy_index_templates", name);
+    remove_object_entry_at_pointer(&mut manifest, "/metadata/templates", name);
+    remove_object_entry_at_pointer(&mut manifest, "/legacy_templates", name);
+    remove_object_entry_at_pointer(&mut manifest, "/index_templates", name);
+}
+
+fn apply_manifest_delete_template_entry(section: &str, name: &str) {
+    let bindings = dev_transport_pit_bindings();
+    let mut manifest = bindings
+        .metadata_manifest
+        .lock()
+        .expect("dev transport metadata manifest lock poisoned");
+    remove_object_entry_at_pointer(&mut manifest, &format!("/templates/{section}"), name);
+}
+
+fn remove_object_entry_at_pointer(manifest: &mut Value, pointer: &str, name: &str) {
+    if let Some(object) = manifest.pointer_mut(pointer).and_then(Value::as_object_mut) {
+        object.remove(name);
+    }
 }
 
 fn apply_manifest_delete_data_streams(names: &[String]) {
@@ -14514,6 +14743,15 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
                 body,
             ))
         }
+        Some("indices:admin/template/delete")
+            if delete_index_template_request_supports_manifest_execution_subset(body) =>
+        {
+            Some(build_local_delete_index_template_response(
+                request_id,
+                header_version_id,
+                body,
+            ))
+        }
         Some("cluster:admin/component_template/get")
             if get_component_template_request_supports_manifest_subset(body) =>
         {
@@ -14523,10 +14761,30 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
                 body,
             ))
         }
+        Some("cluster:admin/component_template/delete")
+            if delete_component_template_request_supports_manifest_execution_subset(body) =>
+        {
+            Some(build_local_delete_component_template_response(
+                request_id,
+                header_version_id,
+                body,
+            ))
+        }
         Some("indices:admin/index_template/get")
             if get_composable_index_template_request_supports_manifest_subset(body) =>
         {
             Some(build_get_composable_index_template_response(
+                request_id,
+                header_version_id,
+                body,
+            ))
+        }
+        Some("indices:admin/index_template/delete")
+            if delete_composable_index_template_request_supports_manifest_execution_subset(
+                body,
+            ) =>
+        {
+            Some(build_local_delete_composable_index_template_response(
                 request_id,
                 header_version_id,
                 body,
@@ -21135,6 +21393,160 @@ mod tests {
             .lock()
             .expect("dev transport documents lock poisoned")
             .is_empty());
+    }
+
+    #[test]
+    fn template_delete_transport_routes_mutate_manifest_backed_metadata() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        let bindings = dev_transport_pit_bindings();
+        *bindings
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned") = serde_json::json!({
+            "templates": {
+                "legacy_index_templates": {
+                    "legacy-transport-template": {
+                        "index_patterns": ["legacy-*"],
+                        "settings": {}
+                    }
+                },
+                "component_templates": {
+                    "component-transport-template": {
+                        "component_template": {
+                            "template": { "settings": {} }
+                        }
+                    }
+                },
+                "index_templates": {
+                    "composable-transport-template": {
+                        "index_template": {
+                            "index_patterns": ["composable-*"],
+                            "template": { "settings": {} },
+                            "composed_of": []
+                        }
+                    }
+                }
+            }
+        });
+
+        let legacy_request = os_transport::action::OpenSearchDeleteIndexTemplateRequestWire {
+            name: "legacy-transport-template".to_string(),
+            ..os_transport::action::OpenSearchDeleteIndexTemplateRequestWire::default()
+        };
+        let frame = os_transport::action::build_opensearch_delete_index_template_request_message(
+            201,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &legacy_request,
+        )
+        .unwrap();
+        assert!(delete_index_template_request_supports_manifest_execution_subset(&frame[6..]));
+        let response = build_local_delete_index_template_response(
+            201,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &frame[6..],
+        );
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected delete-index-template response message");
+        };
+        assert_eq!(
+            os_transport::action::read_opensearch_delete_index_template_response_message(&message)
+                .unwrap(),
+            os_transport::action::AcknowledgedResponseWire { acknowledged: true }
+        );
+
+        let component_request =
+            os_transport::action::OpenSearchDeleteComponentTemplateRequestWire {
+                name: "component-transport-template".to_string(),
+                ..os_transport::action::OpenSearchDeleteComponentTemplateRequestWire::default()
+            };
+        let frame =
+            os_transport::action::build_opensearch_delete_component_template_request_message(
+                202,
+                OPENSEARCH_3_7_0_TRANSPORT,
+                &component_request,
+            )
+            .unwrap();
+        assert!(delete_component_template_request_supports_manifest_execution_subset(&frame[6..]));
+        let response = build_local_delete_component_template_response(
+            202,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &frame[6..],
+        );
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected delete-component-template response message");
+        };
+        assert_eq!(
+            os_transport::action::read_opensearch_delete_component_template_response_message(
+                &message
+            )
+            .unwrap(),
+            os_transport::action::AcknowledgedResponseWire { acknowledged: true }
+        );
+
+        let composable_request =
+            os_transport::action::OpenSearchDeleteComposableIndexTemplateRequestWire {
+                name: "composable-transport-template".to_string(),
+                ..os_transport::action::OpenSearchDeleteComposableIndexTemplateRequestWire::default(
+                )
+            };
+        let frame =
+            os_transport::action::build_opensearch_delete_composable_index_template_request_message(
+                203,
+                OPENSEARCH_3_7_0_TRANSPORT,
+                &composable_request,
+            )
+            .unwrap();
+        assert!(
+            delete_composable_index_template_request_supports_manifest_execution_subset(
+                &frame[6..]
+            )
+        );
+        let response = build_local_delete_composable_index_template_response(
+            203,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &frame[6..],
+        );
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected delete-composable-index-template response message");
+        };
+        assert_eq!(
+            os_transport::action::read_opensearch_delete_composable_index_template_response_message(
+                &message
+            )
+            .unwrap(),
+            os_transport::action::AcknowledgedResponseWire { acknowledged: true }
+        );
+
+        let manifest = bindings
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned");
+        assert!(
+            manifest["templates"]["legacy_index_templates"]["legacy-transport-template"].is_null()
+        );
+        assert!(
+            manifest["templates"]["component_templates"]["component-transport-template"].is_null()
+        );
+        assert!(
+            manifest["templates"]["index_templates"]["composable-transport-template"].is_null()
+        );
     }
 
     #[test]

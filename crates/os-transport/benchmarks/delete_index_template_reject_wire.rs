@@ -1,7 +1,9 @@
 use os_core::OPENSEARCH_3_7_0_TRANSPORT;
 use os_transport::action::{
     build_opensearch_delete_index_template_request_message,
+    build_opensearch_delete_index_template_response_message,
     read_opensearch_delete_index_template_request_message,
+    read_opensearch_delete_index_template_response_message, AcknowledgedResponseWire,
     OpenSearchDeleteIndexTemplateRequestWire,
 };
 use os_transport::frame::{decode_frame, DecodedFrame};
@@ -12,20 +14,17 @@ const ITERATIONS: usize = 400_000;
 
 fn main() {
     let request = OpenSearchDeleteIndexTemplateRequestWire::default();
+    let response = AcknowledgedResponseWire { acknowledged: true };
 
-    let request_encode = measure(
-        "delete_index_template_reject_request_encode",
-        ITERATIONS,
-        || {
-            let frame = build_opensearch_delete_index_template_request_message(
-                61,
-                OPENSEARCH_3_7_0_TRANSPORT,
-                black_box(&request),
-            )
-            .expect("delete-index-template request encode should succeed");
-            black_box(frame);
-        },
-    );
+    let request_encode = measure("delete_index_template_request_encode", ITERATIONS, || {
+        let frame = build_opensearch_delete_index_template_request_message(
+            61,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            black_box(&request),
+        )
+        .expect("delete-index-template request encode should succeed");
+        black_box(frame);
+    });
 
     let request_frame = build_opensearch_delete_index_template_request_message(
         61,
@@ -34,42 +33,45 @@ fn main() {
     )
     .expect("delete-index-template request encode should succeed");
 
-    let request_decode = measure(
-        "delete_index_template_reject_request_decode",
-        ITERATIONS,
-        || {
-            let mut frame = black_box(request_frame.clone());
-            let message = decode_message(&mut frame);
-            let decoded =
-                read_opensearch_delete_index_template_request_message(black_box(&message))
-                    .expect("delete-index-template request decode");
-            black_box(decoded);
-        },
-    );
+    let request_decode = measure("delete_index_template_request_decode", ITERATIONS, || {
+        let mut frame = black_box(request_frame.clone());
+        let message = decode_message(&mut frame);
+        let decoded = read_opensearch_delete_index_template_request_message(black_box(&message))
+            .expect("delete-index-template request decode");
+        black_box(decoded);
+    });
 
-    let reject_validate = measure(
-        "delete_index_template_reject_validation",
-        ITERATIONS,
-        || {
-            let mut frame = black_box(request_frame.clone());
-            let message = decode_message(&mut frame);
-            let decoded =
-                read_opensearch_delete_index_template_request_message(black_box(&message))
-                    .expect("delete-index-template request decode");
-            let err = decoded
-                .reject_unsupported_execution()
-                .expect_err("delete-index-template execution should reject");
-            black_box(err);
-        },
-    );
+    let request_validate = measure("delete_index_template_request_validate", ITERATIONS, || {
+        let mut frame = black_box(request_frame.clone());
+        let message = decode_message(&mut frame);
+        let decoded = read_opensearch_delete_index_template_request_message(black_box(&message))
+            .expect("delete-index-template request decode");
+        decoded
+            .validate_supported_execution_subset()
+            .expect("delete-index-template subset should validate");
+    });
+
+    let response_frame = build_opensearch_delete_index_template_response_message(
+        61,
+        OPENSEARCH_3_7_0_TRANSPORT,
+        &response,
+    )
+    .expect("delete-index-template response encode should succeed");
+
+    let response_decode = measure("delete_index_template_response_decode", ITERATIONS, || {
+        let mut frame = black_box(response_frame.clone());
+        let message = decode_message(&mut frame);
+        let decoded = read_opensearch_delete_index_template_response_message(black_box(&message))
+            .expect("delete-index-template response decode");
+        black_box(decoded);
+    });
 
     let combined_ops_per_second = request_encode
         .ops_per_second
         .min(request_decode.ops_per_second)
-        .min(reject_validate.ops_per_second);
-    println!(
-        "delete_index_template_reject_wire_bottleneck_ops_per_second={combined_ops_per_second:.2}"
-    );
+        .min(request_validate.ops_per_second)
+        .min(response_decode.ops_per_second);
+    println!("delete_index_template_wire_bottleneck_ops_per_second={combined_ops_per_second:.2}");
 }
 
 #[derive(Clone, Copy)]

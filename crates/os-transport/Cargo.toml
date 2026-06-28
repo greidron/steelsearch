@@ -388,7 +388,7 @@ name = "put-index-template-reject-wire-benchmark"
 path = "benchmarks/put_index_template_reject_wire.rs"
 
 [[bin]]
-name = "delete-index-template-reject-wire-benchmark"
+name = "delete-index-template-wire-benchmark"
 path = "benchmarks/delete_index_template_reject_wire.rs"
 
 [[bin]]
@@ -400,7 +400,7 @@ name = "get-component-template-reject-wire-benchmark"
 path = "benchmarks/get_component_template_reject_wire.rs"
 
 [[bin]]
-name = "delete-component-template-reject-wire-benchmark"
+name = "delete-component-template-wire-benchmark"
 path = "benchmarks/delete_component_template_reject_wire.rs"
 
 [[bin]]
@@ -412,7 +412,7 @@ name = "get-composable-index-template-reject-wire-benchmark"
 path = "benchmarks/get_composable_index_template_reject_wire.rs"
 
 [[bin]]
-name = "delete-composable-index-template-reject-wire-benchmark"
+name = "delete-composable-index-template-wire-benchmark"
 path = "benchmarks/delete_composable_index_template_reject_wire.rs"
 
 [[bin]]

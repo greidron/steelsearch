@@ -271,13 +271,13 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `indices:admin/get` (rejected fail-closed)
 - `indices:admin/exists` (rejected fail-closed)
 - `indices:admin/template/get` (implemented default all-template legacy metadata subset)
-- `indices:admin/template/delete` (rejected fail-closed)
+- `indices:admin/template/delete` (implemented manifest-backed metadata mutation subset)
 - `cluster:admin/component_template/get` (implemented manifest-backed
   settings-only component-template subset)
-- `cluster:admin/component_template/delete` (rejected fail-closed)
+- `cluster:admin/component_template/delete` (implemented manifest-backed metadata mutation subset)
 - `indices:admin/index_template/get` (implemented manifest-backed
   settings-only composable-template subset)
-- `indices:admin/index_template/delete` (rejected fail-closed)
+- `indices:admin/index_template/delete` (implemented manifest-backed metadata mutation subset)
 - `indices:admin/aliases/get` (implemented empty alias metadata subset)
 - `indices:monitor/settings/get` (implemented metadata-backed index-settings subset)
 - `indices:admin/shards/search_shards` (implemented empty search-shards subset)
@@ -1562,11 +1562,11 @@ The delete-index-template boundary covers:
 
 - OpenSearch `DeleteIndexTemplateRequest` parent task, cluster-manager timeout,
   and template name at the wire decode/build layer;
-- explicit fail-closed classification for `indices:admin/template/delete`
-  until legacy index-template metadata mutation and acknowledged response
-  rendering are implemented against Rust cluster metadata;
-- explicit rejection for custom cluster-manager timeouts and
-  delete-index-template execution.
+- manifest-backed transport execution for `indices:admin/template/delete`,
+  removing the named legacy index-template metadata entry from Rust cluster
+  metadata and rendering OpenSearch `AcknowledgedResponse`;
+- explicit rejection for custom cluster-manager timeouts and blank template
+  names.
 
 The put-component-template boundary covers:
 
@@ -1601,12 +1601,12 @@ The delete-component-template boundary covers:
 - OpenSearch `DeleteComponentTemplateAction.Request` parent task,
   cluster-manager timeout, and component-template name at the wire decode/build
   layer;
-- explicit fail-closed classification for
-  `cluster:admin/component_template/delete` until component-template metadata
-  mutation and acknowledged response rendering are implemented against Rust
-  cluster metadata;
-- explicit rejection for custom cluster-manager timeouts and
-  delete-component-template execution.
+- manifest-backed transport execution for
+  `cluster:admin/component_template/delete`, removing the named component
+  template metadata entry from Rust cluster metadata and rendering OpenSearch
+  `AcknowledgedResponse`;
+- explicit rejection for custom cluster-manager timeouts and blank template
+  names.
 
 The put-composable-index-template boundary covers:
 
@@ -1642,12 +1642,11 @@ The delete-composable-index-template boundary covers:
 - OpenSearch `DeleteComposableIndexTemplateAction.Request` parent task,
   cluster-manager timeout, and composable index-template name at the wire
   decode/build layer;
-- explicit fail-closed classification for
-  `indices:admin/index_template/delete` until composable index-template
-  metadata mutation and acknowledged response rendering are implemented against
-  Rust cluster metadata;
-- explicit rejection for custom cluster-manager timeouts and
-  delete-composable-index-template execution.
+- manifest-backed transport execution for `indices:admin/index_template/delete`,
+  removing the named composable index-template metadata entry from Rust cluster
+  metadata and rendering OpenSearch `AcknowledgedResponse`;
+- explicit rejection for custom cluster-manager timeouts and blank template
+  names.
 
 The simulate-index-template boundary covers:
 
@@ -4341,20 +4340,22 @@ mutation. At roughly 1.26M ops/s in the latest local release run, the remaining
 performance-sensitive work is template validation, metadata publication, and
 acknowledged response rendering.
 
-Current delete-index-template reject wire microbenchmark:
+Current delete-index-template wire microbenchmark:
 
 ```text
-cargo run -p os-transport --release --bin delete-index-template-reject-wire-benchmark
-delete_index_template_reject_request_encode iterations=400000 elapsed_ms=307.438 ops_per_second=1301073.85 nanos_per_op=768.60
-delete_index_template_reject_request_decode iterations=400000 elapsed_ms=265.167 ops_per_second=1508481.56 nanos_per_op=662.92
-delete_index_template_reject_validation iterations=400000 elapsed_ms=255.597 ops_per_second=1564964.69 nanos_per_op=638.99
-delete_index_template_reject_wire_bottleneck_ops_per_second=1301073.85
+cargo run -p os-transport --release --bin delete-index-template-wire-benchmark
+delete_index_template_request_encode iterations=400000 elapsed_ms=288.491 ops_per_second=1386525.89 nanos_per_op=721.23
+delete_index_template_request_decode iterations=400000 elapsed_ms=243.822 ops_per_second=1640541.58 nanos_per_op=609.55
+delete_index_template_request_validate iterations=400000 elapsed_ms=247.952 ops_per_second=1613212.34 nanos_per_op=619.88
+delete_index_template_response_decode iterations=400000 elapsed_ms=54.738 ops_per_second=7307580.31 nanos_per_op=136.84
+delete_index_template_wire_bottleneck_ops_per_second=1386525.89
 ```
 
-The current delete-index-template fail-closed boundary bottleneck is request
-encode. This path stays cheap because validation checks only the default
-timeout before failing closed; the future performance-sensitive work is
-template metadata mutation, publication, and acknowledged response rendering.
+The current delete-index-template transport boundary bottleneck is request
+encode. The supported execution subset performs default-timeout validation,
+manifest-backed metadata removal in the node adapter, and acknowledged response
+rendering; future performance-sensitive work is metadata publication across
+distributed cluster-state ownership.
 
 Current put-component-template reject wire microbenchmark:
 
@@ -4390,21 +4391,22 @@ OpenSearch all-component-templates request shape; the future
 performance-sensitive work is component-template metadata matching and response
 rendering.
 
-Current delete-component-template reject wire microbenchmark:
+Current delete-component-template wire microbenchmark:
 
 ```text
-cargo run -p os-transport --release --bin delete-component-template-reject-wire-benchmark
-delete_component_template_reject_request_encode iterations=400000 elapsed_ms=371.948 ops_per_second=1075418.58 nanos_per_op=929.87
-delete_component_template_reject_request_decode iterations=400000 elapsed_ms=297.206 ops_per_second=1345866.73 nanos_per_op=743.02
-delete_component_template_reject_validation iterations=400000 elapsed_ms=340.260 ops_per_second=1175570.74 nanos_per_op=850.65
-delete_component_template_reject_wire_bottleneck_ops_per_second=1075418.58
+cargo run -p os-transport --release --bin delete-component-template-wire-benchmark
+delete_component_template_request_encode iterations=400000 elapsed_ms=333.624 ops_per_second=1198955.90 nanos_per_op=834.06
+delete_component_template_request_decode iterations=400000 elapsed_ms=290.446 ops_per_second=1377191.16 nanos_per_op=726.12
+delete_component_template_request_validate iterations=400000 elapsed_ms=296.870 ops_per_second=1347391.00 nanos_per_op=742.18
+delete_component_template_response_decode iterations=400000 elapsed_ms=54.559 ops_per_second=7331458.92 nanos_per_op=136.40
+delete_component_template_wire_bottleneck_ops_per_second=1198955.90
 ```
 
-The current delete-component-template fail-closed boundary bottleneck is
-request encode. This path stays cheap because validation checks only the
-default timeout before failing closed; the future performance-sensitive work is
-component-template metadata mutation, publication, and acknowledged response
-rendering.
+The current delete-component-template transport boundary bottleneck is request
+encode. The supported execution subset performs default-timeout validation,
+manifest-backed component-template metadata removal in the node adapter, and
+acknowledged response rendering; future performance-sensitive work is metadata
+publication across distributed cluster-state ownership.
 
 Current put-composable-index-template reject wire microbenchmark:
 
@@ -4441,21 +4443,22 @@ the OpenSearch all-composable-index-templates request shape; the future
 performance-sensitive work is composable index-template metadata matching and
 response rendering.
 
-Current delete-composable-index-template reject wire microbenchmark:
+Current delete-composable-index-template wire microbenchmark:
 
 ```text
-cargo run -p os-transport --release --bin delete-composable-index-template-reject-wire-benchmark
-delete_composable_index_template_reject_request_encode iterations=400000 elapsed_ms=308.430 ops_per_second=1296888.69 nanos_per_op=771.08
-delete_composable_index_template_reject_request_decode iterations=400000 elapsed_ms=278.515 ops_per_second=1436186.11 nanos_per_op=696.29
-delete_composable_index_template_reject_validation iterations=400000 elapsed_ms=279.260 ops_per_second=1432358.57 nanos_per_op=698.15
-delete_composable_index_template_reject_wire_bottleneck_ops_per_second=1296888.69
+cargo run -p os-transport --release --bin delete-composable-index-template-wire-benchmark
+delete_composable_index_template_request_encode iterations=400000 elapsed_ms=310.291 ops_per_second=1289114.00 nanos_per_op=775.73
+delete_composable_index_template_request_decode iterations=400000 elapsed_ms=276.029 ops_per_second=1449122.33 nanos_per_op=690.07
+delete_composable_index_template_request_validate iterations=400000 elapsed_ms=279.702 ops_per_second=1430091.09 nanos_per_op=699.26
+delete_composable_index_template_response_decode iterations=400000 elapsed_ms=54.239 ops_per_second=7374724.27 nanos_per_op=135.60
+delete_composable_index_template_wire_bottleneck_ops_per_second=1289114.00
 ```
 
-The current delete-composable-index-template fail-closed boundary bottleneck is
-request encode. This path stays cheap because validation checks only the
-default timeout before failing closed; the future performance-sensitive work is
-composable index-template metadata mutation, publication, and acknowledged
-response rendering.
+The current delete-composable-index-template transport boundary bottleneck is
+request encode. The supported execution subset performs default-timeout
+validation, manifest-backed composable index-template metadata removal in the
+node adapter, and acknowledged response rendering; future performance-sensitive
+work is metadata publication across distributed cluster-state ownership.
 
 Current simulate-index-template reject wire microbenchmark:
 

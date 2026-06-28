@@ -2155,8 +2155,8 @@ pub fn classify_opensearch_transport_action(
         },
         OPENSEARCH_DELETE_INDEX_TEMPLATE_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
-            disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "delete-index-template transport execution requires template metadata mutation and ack rendering",
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "delete-index-template transport adapter removes manifest-backed legacy template metadata and renders OpenSearch AcknowledgedResponse",
         },
         OPENSEARCH_PUT_COMPONENT_TEMPLATE_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -2170,8 +2170,8 @@ pub fn classify_opensearch_transport_action(
         },
         OPENSEARCH_DELETE_COMPONENT_TEMPLATE_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
-            disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "delete-component-template transport execution requires component template metadata mutation and ack rendering",
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "delete-component-template transport adapter removes manifest-backed component template metadata and renders OpenSearch AcknowledgedResponse",
         },
         OPENSEARCH_PUT_COMPOSABLE_INDEX_TEMPLATE_ACTION_NAME => {
             OpenSearchTransportDispatchDecision {
@@ -2190,8 +2190,8 @@ pub fn classify_opensearch_transport_action(
         OPENSEARCH_DELETE_COMPOSABLE_INDEX_TEMPLATE_ACTION_NAME => {
             OpenSearchTransportDispatchDecision {
                 action_name: action_name.to_string(),
-                disposition: OpenSearchTransportActionDisposition::Rejected,
-                reason: "delete-composable-index-template transport execution requires composable index template metadata mutation and ack rendering",
+                disposition: OpenSearchTransportActionDisposition::Implemented,
+                reason: "delete-composable-index-template transport adapter removes manifest-backed composable index template metadata and renders OpenSearch AcknowledgedResponse",
             }
         }
         OPENSEARCH_SIMULATE_INDEX_TEMPLATE_ACTION_NAME => OpenSearchTransportDispatchDecision {
@@ -10350,6 +10350,35 @@ pub fn read_opensearch_delete_index_template_request_message(
     OpenSearchDeleteIndexTemplateRequestWire::read(message.body.clone().freeze())
 }
 
+pub fn build_opensearch_delete_index_template_response_message(
+    request_id: i64,
+    version: Version,
+    response: &AcknowledgedResponseWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    response.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::response(),
+        version,
+        variable_header: BytesMut::new(),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_delete_index_template_response_message(
+    message: &TransportMessage,
+) -> Result<AcknowledgedResponseWire, TransportActionWireError> {
+    if message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "response",
+            actual: message.status.bits(),
+        });
+    }
+    AcknowledgedResponseWire::read(message.body.clone().freeze())
+}
+
 pub fn build_opensearch_put_component_template_request_message(
     request_id: i64,
     version: Version,
@@ -10492,6 +10521,35 @@ pub fn read_opensearch_delete_component_template_request_message(
         });
     }
     OpenSearchDeleteComponentTemplateRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_opensearch_delete_component_template_response_message(
+    request_id: i64,
+    version: Version,
+    response: &AcknowledgedResponseWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    response.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::response(),
+        version,
+        variable_header: BytesMut::new(),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_delete_component_template_response_message(
+    message: &TransportMessage,
+) -> Result<AcknowledgedResponseWire, TransportActionWireError> {
+    if message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "response",
+            actual: message.status.bits(),
+        });
+    }
+    AcknowledgedResponseWire::read(message.body.clone().freeze())
 }
 
 pub fn build_opensearch_put_composable_index_template_request_message(
@@ -10638,6 +10696,35 @@ pub fn read_opensearch_delete_composable_index_template_request_message(
         });
     }
     OpenSearchDeleteComposableIndexTemplateRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_opensearch_delete_composable_index_template_response_message(
+    request_id: i64,
+    version: Version,
+    response: &AcknowledgedResponseWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    response.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::response(),
+        version,
+        variable_header: BytesMut::new(),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_delete_composable_index_template_response_message(
+    message: &TransportMessage,
+) -> Result<AcknowledgedResponseWire, TransportActionWireError> {
+    if message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "response",
+            actual: message.status.bits(),
+        });
+    }
+    AcknowledgedResponseWire::read(message.body.clone().freeze())
 }
 
 pub fn build_opensearch_simulate_index_template_request_message(
@@ -23058,7 +23145,7 @@ impl OpenSearchDeleteIndexTemplateRequestWire {
         Ok(request)
     }
 
-    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+    pub fn validate_supported_execution_subset(&self) -> Result<(), TransportActionWireError> {
         if self.cluster_manager_timeout != TimeValueWire::seconds(30) {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "delete index template cluster-manager timeout",
@@ -23066,10 +23153,21 @@ impl OpenSearchDeleteIndexTemplateRequestWire {
                     "custom cluster-manager timeout is not mapped by the delete-index-template adapter yet",
             });
         }
+        if self.name.trim().is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "delete index template empty name",
+                reason:
+                    "OpenSearch delete-index-template requests require a non-empty template name",
+            });
+        }
+        Ok(())
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        self.validate_supported_execution_subset()?;
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "delete index template execution",
-            reason:
-                "delete-index-template transport execution requires template metadata mutation and ack rendering",
+            reason: "use validate_supported_execution_subset for the implemented manifest-backed delete-index-template adapter",
         })
     }
 }
@@ -23474,7 +23572,7 @@ impl OpenSearchDeleteComponentTemplateRequestWire {
         Ok(request)
     }
 
-    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+    pub fn validate_supported_execution_subset(&self) -> Result<(), TransportActionWireError> {
         if self.cluster_manager_timeout != TimeValueWire::seconds(30) {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "delete component template cluster-manager timeout",
@@ -23482,10 +23580,20 @@ impl OpenSearchDeleteComponentTemplateRequestWire {
                     "custom cluster-manager timeout is not mapped by the delete-component-template adapter yet",
             });
         }
+        if self.name.trim().is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "delete component template empty name",
+                reason: "OpenSearch delete-component-template requests require a non-empty template name",
+            });
+        }
+        Ok(())
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        self.validate_supported_execution_subset()?;
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "delete component template execution",
-            reason:
-                "delete-component-template transport execution requires component template metadata mutation and ack rendering",
+            reason: "use validate_supported_execution_subset for the implemented manifest-backed delete-component-template adapter",
         })
     }
 }
@@ -23978,7 +24086,7 @@ impl OpenSearchDeleteComposableIndexTemplateRequestWire {
         Ok(request)
     }
 
-    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+    pub fn validate_supported_execution_subset(&self) -> Result<(), TransportActionWireError> {
         if self.cluster_manager_timeout != TimeValueWire::seconds(30) {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "delete composable index template cluster-manager timeout",
@@ -23986,10 +24094,20 @@ impl OpenSearchDeleteComposableIndexTemplateRequestWire {
                     "custom cluster-manager timeout is not mapped by the delete-composable-index-template adapter yet",
             });
         }
+        if self.name.trim().is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "delete composable index template empty name",
+                reason: "OpenSearch delete-composable-index-template requests require a non-empty template name",
+            });
+        }
+        Ok(())
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        self.validate_supported_execution_subset()?;
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "delete composable index template execution",
-            reason:
-                "delete-composable-index-template transport execution requires composable index template metadata mutation and ack rendering",
+            reason: "use validate_supported_execution_subset for the implemented manifest-backed delete-composable-index-template adapter",
         })
     }
 }
@@ -47069,7 +47187,7 @@ mod tests {
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_DELETE_INDEX_TEMPLATE_ACTION_NAME)
                 .disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_PUT_COMPONENT_TEMPLATE_ACTION_NAME)
@@ -47084,7 +47202,7 @@ mod tests {
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_DELETE_COMPONENT_TEMPLATE_ACTION_NAME)
                 .disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             classify_opensearch_transport_action(
@@ -47105,7 +47223,7 @@ mod tests {
                 OPENSEARCH_DELETE_COMPOSABLE_INDEX_TEMPLATE_ACTION_NAME
             )
             .disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_SIMULATE_INDEX_TEMPLATE_ACTION_NAME)
@@ -62415,7 +62533,7 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_delete_index_template_request_wire_round_trips_and_rejects_execution_boundary() {
+    fn opensearch_delete_index_template_request_wire_round_trips_and_validates_execution_subset() {
         let request = OpenSearchDeleteIndexTemplateRequestWire::default();
         let mut output = StreamOutput::new();
         request.write(&mut output);
@@ -62423,13 +62541,7 @@ mod tests {
         let decoded = OpenSearchDeleteIndexTemplateRequestWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, request);
         assert_eq!(decoded.name, "logs-template");
-        assert!(matches!(
-            decoded.reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "delete index template execution",
-                ..
-            })
-        ));
+        decoded.validate_supported_execution_subset().unwrap();
     }
 
     #[test]
@@ -62451,16 +62563,16 @@ mod tests {
             ..OpenSearchDeleteIndexTemplateRequestWire::default()
         };
         assert!(matches!(
-            empty_name.reject_unsupported_execution(),
+            empty_name.validate_supported_execution_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "delete index template execution",
+                shape: "delete index template empty name",
                 ..
             })
         ));
     }
 
     #[test]
-    fn opensearch_delete_index_template_transport_messages_bind_rejected_action_frame() {
+    fn opensearch_delete_index_template_transport_messages_bind_action_frame_and_ack_response() {
         let request = OpenSearchDeleteIndexTemplateRequestWire::default();
         let mut frame = build_opensearch_delete_index_template_request_message(
             61,
@@ -62475,15 +62587,24 @@ mod tests {
             read_opensearch_delete_index_template_request_message(&message).unwrap(),
             request
         );
-        assert!(matches!(
-            read_opensearch_delete_index_template_request_message(&message)
-                .unwrap()
-                .reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "delete index template execution",
-                ..
-            })
-        ));
+        read_opensearch_delete_index_template_request_message(&message)
+            .unwrap()
+            .validate_supported_execution_subset()
+            .unwrap();
+        let response = AcknowledgedResponseWire { acknowledged: true };
+        let mut frame = build_opensearch_delete_index_template_response_message(
+            61,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &response,
+        )
+        .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected delete index template response message");
+        };
+        assert_eq!(
+            read_opensearch_delete_index_template_response_message(&message).unwrap(),
+            response
+        );
     }
 
     #[test]
@@ -62855,7 +62976,7 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_delete_component_template_request_wire_round_trips_and_rejects_execution_boundary(
+    fn opensearch_delete_component_template_request_wire_round_trips_and_validates_execution_subset(
     ) {
         let request = OpenSearchDeleteComponentTemplateRequestWire::default();
         let mut output = StreamOutput::new();
@@ -62864,13 +62985,7 @@ mod tests {
         let decoded = OpenSearchDeleteComponentTemplateRequestWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, request);
         assert_eq!(decoded.name, "logs-component-template");
-        assert!(matches!(
-            decoded.reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "delete component template execution",
-                ..
-            })
-        ));
+        decoded.validate_supported_execution_subset().unwrap();
     }
 
     #[test]
@@ -62892,16 +63007,17 @@ mod tests {
             ..OpenSearchDeleteComponentTemplateRequestWire::default()
         };
         assert!(matches!(
-            empty_name.reject_unsupported_execution(),
+            empty_name.validate_supported_execution_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "delete component template execution",
+                shape: "delete component template empty name",
                 ..
             })
         ));
     }
 
     #[test]
-    fn opensearch_delete_component_template_transport_messages_bind_rejected_action_frame() {
+    fn opensearch_delete_component_template_transport_messages_bind_action_frame_and_ack_response()
+    {
         let request = OpenSearchDeleteComponentTemplateRequestWire::default();
         let mut frame = build_opensearch_delete_component_template_request_message(
             63,
@@ -62916,15 +63032,24 @@ mod tests {
             read_opensearch_delete_component_template_request_message(&message).unwrap(),
             request
         );
-        assert!(matches!(
-            read_opensearch_delete_component_template_request_message(&message)
-                .unwrap()
-                .reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "delete component template execution",
-                ..
-            })
-        ));
+        read_opensearch_delete_component_template_request_message(&message)
+            .unwrap()
+            .validate_supported_execution_subset()
+            .unwrap();
+        let response = AcknowledgedResponseWire { acknowledged: true };
+        let mut frame = build_opensearch_delete_component_template_response_message(
+            63,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &response,
+        )
+        .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected delete component template response message");
+        };
+        assert_eq!(
+            read_opensearch_delete_component_template_response_message(&message).unwrap(),
+            response
+        );
     }
 
     #[test]
@@ -63410,7 +63535,7 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_delete_composable_index_template_request_wire_round_trips_and_rejects_execution_boundary(
+    fn opensearch_delete_composable_index_template_request_wire_round_trips_and_validates_execution_subset(
     ) {
         let request = OpenSearchDeleteComposableIndexTemplateRequestWire::default();
         let mut output = StreamOutput::new();
@@ -63420,13 +63545,7 @@ mod tests {
             OpenSearchDeleteComposableIndexTemplateRequestWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, request);
         assert_eq!(decoded.name, "logs-index-template");
-        assert!(matches!(
-            decoded.reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "delete composable index template execution",
-                ..
-            })
-        ));
+        decoded.validate_supported_execution_subset().unwrap();
     }
 
     #[test]
@@ -63448,16 +63567,17 @@ mod tests {
             ..OpenSearchDeleteComposableIndexTemplateRequestWire::default()
         };
         assert!(matches!(
-            empty_name.reject_unsupported_execution(),
+            empty_name.validate_supported_execution_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "delete composable index template execution",
+                shape: "delete composable index template empty name",
                 ..
             })
         ));
     }
 
     #[test]
-    fn opensearch_delete_composable_index_template_transport_messages_bind_rejected_action_frame() {
+    fn opensearch_delete_composable_index_template_transport_messages_bind_action_frame_and_ack_response(
+    ) {
         let request = OpenSearchDeleteComposableIndexTemplateRequestWire::default();
         let mut frame = build_opensearch_delete_composable_index_template_request_message(
             65,
@@ -63472,15 +63592,24 @@ mod tests {
             read_opensearch_delete_composable_index_template_request_message(&message).unwrap(),
             request
         );
-        assert!(matches!(
-            read_opensearch_delete_composable_index_template_request_message(&message)
-                .unwrap()
-                .reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "delete composable index template execution",
-                ..
-            })
-        ));
+        read_opensearch_delete_composable_index_template_request_message(&message)
+            .unwrap()
+            .validate_supported_execution_subset()
+            .unwrap();
+        let response = AcknowledgedResponseWire { acknowledged: true };
+        let mut frame = build_opensearch_delete_composable_index_template_response_message(
+            65,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &response,
+        )
+        .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected delete composable index template response message");
+        };
+        assert_eq!(
+            read_opensearch_delete_composable_index_template_response_message(&message).unwrap(),
+            response
+        );
     }
 
     #[test]
