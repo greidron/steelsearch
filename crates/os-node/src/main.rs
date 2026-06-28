@@ -1792,12 +1792,72 @@ fn handle_transport_seed_connection<S: TransportConnection>(
         )?;
     } else if is_request
         && normalized_action_hint == Some("indices:data/read/search")
+        && search_request_exceeds_local_pit_keep_alive_limit(&body)
+    {
+        let response = build_search_pit_keep_alive_too_large_error_response(
+            request_id,
+            header_version_id,
+            &body,
+        );
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("indices:data/read/search"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request
+        && normalized_action_hint == Some("indices:data/read/search")
         && search_request_supports_local_execution_subset(&body)
     {
         let response = build_local_search_response(request_id, header_version_id, &body);
         response_frame = summarize_transport_response_frame_for_action(
             &response,
             Some("indices:data/read/search"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request
+        && normalized_action_hint == Some("indices:data/read/search/stream")
+        && stream_search_request_exceeds_local_pit_keep_alive_limit(&body)
+    {
+        let response = build_stream_search_pit_keep_alive_too_large_error_response(
+            request_id,
+            header_version_id,
+            &body,
+        );
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("indices:data/read/search/stream"),
         );
         stream.write_all(&response)?;
         stream.flush()?;
@@ -5215,6 +5275,12 @@ fn search_request_supports_local_execution_subset(body: &[u8]) -> bool {
         .is_some_and(search_request_matches_local_execution_subset)
 }
 
+fn search_request_exceeds_local_pit_keep_alive_limit(body: &[u8]) -> bool {
+    decode_search_request_from_transport_body(body)
+        .as_ref()
+        .is_some_and(search_request_pit_keep_alive_exceeds_limit)
+}
+
 fn search_request_matches_local_execution_subset(
     request: &os_transport::action::OpenSearchSearchRequestWire,
 ) -> bool {
@@ -5228,6 +5294,21 @@ fn decode_search_request_from_transport_body(
 ) -> Option<os_transport::action::OpenSearchSearchRequestWire> {
     let message = decode_transport_message_from_body(body)?;
     os_transport::action::read_opensearch_search_request_message(&message).ok()
+}
+
+fn build_search_pit_keep_alive_too_large_error_response(
+    request_id: i64,
+    header_version_id: u32,
+    body: &[u8],
+) -> Vec<u8> {
+    let Some(request) = decode_search_request_from_transport_body(body) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    build_search_request_pit_keep_alive_too_large_error_response(
+        request_id,
+        header_version_id,
+        &request,
+    )
 }
 
 fn build_local_stream_search_response(
@@ -5257,11 +5338,60 @@ fn stream_search_request_supports_local_execution_subset(body: &[u8]) -> bool {
         .is_some_and(search_request_matches_local_execution_subset)
 }
 
+fn stream_search_request_exceeds_local_pit_keep_alive_limit(body: &[u8]) -> bool {
+    decode_stream_search_request_from_transport_body(body)
+        .as_ref()
+        .is_some_and(search_request_pit_keep_alive_exceeds_limit)
+}
+
 fn decode_stream_search_request_from_transport_body(
     body: &[u8],
 ) -> Option<os_transport::action::OpenSearchSearchRequestWire> {
     let message = decode_transport_message_from_body(body)?;
     os_transport::action::read_opensearch_stream_search_request_message(&message).ok()
+}
+
+fn build_stream_search_pit_keep_alive_too_large_error_response(
+    request_id: i64,
+    header_version_id: u32,
+    body: &[u8],
+) -> Vec<u8> {
+    let Some(request) = decode_stream_search_request_from_transport_body(body) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    build_search_request_pit_keep_alive_too_large_error_response(
+        request_id,
+        header_version_id,
+        &request,
+    )
+}
+
+fn search_request_pit_keep_alive_exceeds_limit(
+    request: &os_transport::action::OpenSearchSearchRequestWire,
+) -> bool {
+    request
+        .source
+        .as_ref()
+        .and_then(|source| source.point_in_time.as_ref())
+        .and_then(|pit| pit.keep_alive.as_ref())
+        .is_some_and(|keep_alive| {
+            time_value_wire_to_millis(keep_alive) > DEV_TRANSPORT_MAX_PIT_KEEP_ALIVE_MILLIS
+        })
+}
+
+fn build_search_request_pit_keep_alive_too_large_error_response(
+    request_id: i64,
+    header_version_id: u32,
+    request: &os_transport::action::OpenSearchSearchRequestWire,
+) -> Vec<u8> {
+    let keep_alive_millis = request
+        .source
+        .as_ref()
+        .and_then(|source| source.point_in_time.as_ref())
+        .and_then(|pit| pit.keep_alive.as_ref())
+        .map(time_value_wire_to_millis)
+        .unwrap_or_default();
+    build_pit_keep_alive_too_large_error_response(request_id, header_version_id, keep_alive_millis)
 }
 
 fn build_local_multi_search_response(
@@ -11570,9 +11700,27 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
             ))
         }
         Some("indices:data/read/search")
+            if search_request_exceeds_local_pit_keep_alive_limit(body) =>
+        {
+            Some(build_search_pit_keep_alive_too_large_error_response(
+                request_id,
+                header_version_id,
+                body,
+            ))
+        }
+        Some("indices:data/read/search")
             if search_request_supports_local_execution_subset(body) =>
         {
             Some(build_local_search_response(
+                request_id,
+                header_version_id,
+                body,
+            ))
+        }
+        Some("indices:data/read/search/stream")
+            if stream_search_request_exceeds_local_pit_keep_alive_limit(body) =>
+        {
+            Some(build_stream_search_pit_keep_alive_too_large_error_response(
                 request_id,
                 header_version_id,
                 body,
@@ -18173,7 +18321,67 @@ mod tests {
             &request,
         )
         .unwrap();
+        assert!(search_request_exceeds_local_pit_keep_alive_limit(
+            &frame[6..]
+        ));
         assert!(!search_request_supports_local_execution_subset(&frame[6..]));
+        let response = build_search_pit_keep_alive_too_large_error_response(
+            313,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &frame[6..],
+        );
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected PIT search keep-alive error response frame");
+        };
+        assert_eq!(message.request_id, 313);
+        assert!(message.status.is_error());
+        let error = os_transport::error::TransportError::read(message.body.freeze())
+            .unwrap()
+            .unwrap();
+        assert_eq!(error.class_name, "java.lang.IllegalArgumentException");
+        let reason = error.message.as_deref().unwrap();
+        assert!(reason.contains("Keep alive for request (25h) is too large"));
+        assert!(reason.contains("point_in_time.max_keep_alive"));
+
+        let stream_frame = os_transport::action::build_opensearch_stream_search_request_message(
+            314,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(stream_search_request_exceeds_local_pit_keep_alive_limit(
+            &stream_frame[6..]
+        ));
+        assert!(!stream_search_request_supports_local_execution_subset(
+            &stream_frame[6..]
+        ));
+        let stream_response = build_stream_search_pit_keep_alive_too_large_error_response(
+            314,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &stream_frame[6..],
+        );
+        let mut frame = BytesMut::from(&stream_response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected PIT stream-search keep-alive error response frame");
+        };
+        assert_eq!(message.request_id, 314);
+        assert!(message.status.is_error());
+        let error = os_transport::error::TransportError::read(message.body.freeze())
+            .unwrap()
+            .unwrap();
+        assert_eq!(error.class_name, "java.lang.IllegalArgumentException");
+        let reason = error.message.as_deref().unwrap();
+        assert!(reason.contains("Keep alive for request (25h) is too large"));
+        assert!(reason.contains("point_in_time.max_keep_alive"));
         assert_eq!(
             bindings
                 .contexts
