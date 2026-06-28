@@ -2400,6 +2400,9 @@ The create-PIT boundary covers:
   transport error for strict concrete-index requests whose target is absent,
   while lenient `ignore_unavailable` requests continue through the empty
   resolved-index subset;
+- local transport create-PIT now renders the OpenSearch
+  `IllegalArgumentException` boundary for explicit alias targets when
+  `ignore_aliases=true` and index resolution is configured to fail;
 - local transport create-PIT now renders an OpenSearch `IndexClosedException`
   transport error for strict concrete-index requests whose target is closed,
   while lenient `ignore_unavailable` requests skip that closed target;
@@ -5349,12 +5352,12 @@ Current create-PIT wire microbenchmark:
 
 ```text
 cargo run -p os-transport --release --bin create-pit-wire-benchmark
-create_pit_request_encode iterations=400000 elapsed_ms=281.484 ops_per_second=1421040.86 nanos_per_op=703.71
-create_pit_request_decode iterations=400000 elapsed_ms=263.582 ops_per_second=1517557.05 nanos_per_op=658.95
-create_pit_request_validate iterations=400000 elapsed_ms=263.869 ops_per_second=1515904.83 nanos_per_op=659.67
-create_pit_response_encode iterations=400000 elapsed_ms=122.730 ops_per_second=3259176.29 nanos_per_op=306.83
-create_pit_response_decode iterations=400000 elapsed_ms=104.322 ops_per_second=3834277.06 nanos_per_op=260.81
-create_pit_wire_bottleneck_ops_per_second=1421040.86
+create_pit_request_encode iterations=400000 elapsed_ms=281.753 ops_per_second=1419683.51 nanos_per_op=704.38
+create_pit_request_decode iterations=400000 elapsed_ms=266.859 ops_per_second=1498920.26 nanos_per_op=667.15
+create_pit_request_validate iterations=400000 elapsed_ms=266.653 ops_per_second=1500075.33 nanos_per_op=666.63
+create_pit_response_encode iterations=400000 elapsed_ms=124.021 ops_per_second=3225256.86 nanos_per_op=310.05
+create_pit_response_decode iterations=400000 elapsed_ms=103.802 ops_per_second=3853507.41 nanos_per_op=259.50
+create_pit_wire_bottleneck_ops_per_second=1419683.51
 ```
 
 The current create-PIT wire subset bottleneck is request encode. This path
