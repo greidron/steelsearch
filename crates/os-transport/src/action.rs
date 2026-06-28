@@ -36822,17 +36822,21 @@ impl OpenSearchGetAllPitsRequestWire {
 
     pub fn supports_local_lifecycle_subset(&self) -> Result<(), TransportActionWireError> {
         self.validate_supported_subset()?;
-        if self
-            .node_ids
-            .as_ref()
-            .is_some_and(|node_ids| !node_ids.is_empty())
-        {
+        if self.node_ids.as_ref().is_some_and(|node_ids| {
+            !node_ids
+                .iter()
+                .all(|node_id| node_id == "_all" || node_id == "_local")
+        }) {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "get all pits node filter",
                 reason: "node-scoped PIT listing requires runtime node fanout semantics",
             });
         }
-        if self.concrete_nodes.is_some() {
+        if self
+            .concrete_nodes
+            .as_ref()
+            .is_some_and(|concrete_nodes| concrete_nodes.len() > 1)
+        {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "get all pits concrete nodes",
                 reason: "concrete-node PIT listing requires runtime node fanout semantics",
@@ -76046,6 +76050,15 @@ mod tests {
             })
         ));
 
+        let unscoped_node_filter = OpenSearchGetAllPitsRequestWire {
+            node_ids: Some(vec!["_all".to_string(), "_local".to_string()]),
+            ..OpenSearchGetAllPitsRequestWire::default()
+        };
+        unscoped_node_filter.validate_supported_subset().unwrap();
+        unscoped_node_filter
+            .supports_local_lifecycle_subset()
+            .unwrap();
+
         let timeout = OpenSearchGetAllPitsRequestWire {
             timeout: Some(TimeValueWire::seconds(30)),
             ..OpenSearchGetAllPitsRequestWire::default()
@@ -76099,8 +76112,14 @@ mod tests {
         let decoded = OpenSearchGetAllPitsRequestWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, concrete_node);
         decoded.validate_supported_subset().unwrap();
+        decoded.supports_local_lifecycle_subset().unwrap();
+
+        let concrete_node_fanout = OpenSearchGetAllPitsRequestWire {
+            concrete_nodes: Some(vec![test_discovery_node_wire(), test_discovery_node_wire()]),
+            ..OpenSearchGetAllPitsRequestWire::default()
+        };
         assert!(matches!(
-            decoded.reject_unsupported_execution(),
+            concrete_node_fanout.supports_local_lifecycle_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "get all pits concrete nodes",
                 ..
