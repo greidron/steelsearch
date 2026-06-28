@@ -8245,9 +8245,7 @@ fn create_pit_invalid_index_name(
         .indices
         .iter()
         .filter(|selector| !selector.is_empty())
-        .filter(|selector| {
-            selector.as_str() != "_all" && !selector.contains('*') && !selector.contains('?')
-        })
+        .filter(|selector| selector.as_str() != "_all")
         .find(|selector| selector.starts_with('_'))
         .cloned()
 }
@@ -30154,6 +30152,55 @@ mod tests {
         assert_eq!(
             error.message.as_deref(),
             Some("Invalid index name [_bad-pit], must not start with '_'.")
+        );
+
+        let wildcard_request = os_transport::action::OpenSearchCreatePitRequestWire {
+            indices: vec!["_bad-*".to_string()],
+            indices_options: os_transport::action::OpenSearchIndicesOptionsWire {
+                allow_no_indices: false,
+                ..os_transport::action::OpenSearchIndicesOptionsWire::strict_expand_open_forbid_closed()
+            },
+            ..os_transport::action::OpenSearchCreatePitRequestWire::default()
+        };
+        let wildcard_frame = os_transport::action::build_opensearch_create_pit_request_message(
+            334,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &wildcard_request,
+        )
+        .unwrap();
+        assert_eq!(
+            create_pit_request_invalid_index_name_error(&wildcard_frame[6..]).as_deref(),
+            Some("_bad-*")
+        );
+        assert!(create_pit_request_wildcard_no_indices_error(
+            &wildcard_frame[6..]
+        ));
+
+        let wildcard_response = build_create_pit_invalid_index_name_error_response(
+            334,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &wildcard_frame[6..],
+        );
+        let mut wildcard_frame = BytesMut::from(&wildcard_response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut wildcard_frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected wildcard invalid-index-name create-PIT error response frame");
+        };
+        assert_eq!(message.request_id, 334);
+        assert!(message.status.is_error());
+        let error = os_transport::error::TransportError::read(message.body.freeze())
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            error.class_name,
+            "org.opensearch.indices.InvalidIndexNameException"
+        );
+        assert_eq!(
+            error.message.as_deref(),
+            Some("Invalid index name [_bad-*], must not start with '_'.")
         );
     }
 
