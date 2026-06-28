@@ -3177,6 +3177,16 @@ fn daemon_point_in_time_search_preserves_snapshot_over_real_socket() {
     assert_eq!(refresh_before_pit["status"], 200, "{refresh_before_pit}");
     assert_eq!(refresh_before_pit["body"]["_shards"]["failed"], 0);
 
+    let initial_list = http_response(port, "GET", "/_search/point_in_time/_all", None);
+    assert_eq!(initial_list["status"], 200, "{initial_list}");
+    assert_eq!(
+        initial_list["body"]["pits"]
+            .as_array()
+            .expect("initial pits"),
+        &Vec::<Value>::new(),
+        "PIT list must reflect the initially empty runtime store"
+    );
+
     let open_pit = http_response(
         port,
         "POST",
@@ -3250,6 +3260,17 @@ fn daemon_point_in_time_search_preserves_snapshot_over_real_socket() {
     assert_eq!(close["status"], 200, "{close}");
     assert_eq!(close["body"]["pits"][0]["successful"], true);
     assert_eq!(close["body"]["pits"][0]["pit_id"], pit_id);
+
+    let post_close_list = http_response(port, "GET", "/_search/point_in_time/_all", None);
+    assert_eq!(post_close_list["status"], 200, "{post_close_list}");
+    assert!(
+        !post_close_list["body"]["pits"]
+            .as_array()
+            .expect("post-close pits")
+            .iter()
+            .any(|pit| pit["pit_id"] == pit_id),
+        "closed PIT must be removed from the runtime store-backed listing"
+    );
 
     let closed_search = http_response(port, "POST", "/_search", Some(pit_search_body.as_bytes()));
     assert_eq!(closed_search["status"], 404, "{closed_search}");
