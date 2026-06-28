@@ -300,8 +300,8 @@ name = "scale-index-reject-wire-benchmark"
 path = "benchmarks/scale_index_reject_wire.rs"
 
 [[bin]]
-name = "analyze-reject-wire-benchmark"
-path = "benchmarks/analyze_reject_wire.rs"
+name = "analyze-wire-benchmark"
+path = "benchmarks/analyze_wire.rs"
 
 [[bin]]
 name = "get-index-wire-benchmark"

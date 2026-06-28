@@ -2043,8 +2043,8 @@ pub fn classify_opensearch_transport_action(
         },
         OPENSEARCH_ANALYZE_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
-            disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "analyze transport execution requires analyzer resolution, token generation, and response rendering",
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "analyze transport adapter renders the bounded default/standard analyzer token response subset",
         },
         OPENSEARCH_CREATE_INDEX_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -9308,6 +9308,36 @@ pub fn read_opensearch_analyze_request_message(
         });
     }
     OpenSearchAnalyzeRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_opensearch_analyze_response_message(
+    request_id: i64,
+    version: Version,
+    response: &OpenSearchAnalyzeResponseWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    response.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::response(),
+        version,
+        variable_header: BytesMut::from(&ResponseVariableHeader::default().to_bytes()[..]),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_analyze_response_message(
+    message: &TransportMessage,
+) -> Result<OpenSearchAnalyzeResponseWire, TransportActionWireError> {
+    if !message.status.is_response() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "response",
+            actual: message.status.bits(),
+        });
+    }
+    let _header = ResponseVariableHeader::read(message.variable_header.clone().freeze())?;
+    OpenSearchAnalyzeResponseWire::read(message.body.clone().freeze())
 }
 
 pub fn build_opensearch_get_index_request_message(
@@ -20341,7 +20371,7 @@ impl OpenSearchAnalyzeRequestWire {
         Ok(request)
     }
 
-    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+    pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
         if self.text.is_empty() || self.text.iter().any(|text| text.trim().is_empty()) {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "analyze missing text",
@@ -20358,6 +20388,22 @@ impl OpenSearchAnalyzeRequestWire {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "analyze normalizer components",
                 reason: "OpenSearch analyze normalizer requests cannot combine tokenizer or analyzer components",
+            });
+        }
+        if self.normalizer.is_some() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "analyze normalizer",
+                reason: "normalizer analyze requests require index analyzer registry semantics",
+            });
+        }
+        if self
+            .analyzer
+            .as_deref()
+            .is_some_and(|analyzer| analyzer != "standard")
+        {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "analyze analyzer",
+                reason: "only default/standard analyzer transport requests are implemented",
             });
         }
         if self.analyzer.is_some()
@@ -20379,6 +20425,12 @@ impl OpenSearchAnalyzeRequestWire {
                 shape: "analyze field components",
                 reason:
                     "field-specific analyzer requests cannot combine custom analyzer components",
+            });
+        }
+        if self.field.is_some() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "analyze field",
+                reason: "field-specific analyzer requests require mapping analyzer lookup",
             });
         }
         if self.tokenizer.is_some()
@@ -20403,10 +20455,103 @@ impl OpenSearchAnalyzeRequestWire {
                 reason: "attribute-filtered analyze responses require token attribute rendering",
             });
         }
+        Ok(())
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        self.validate_supported_subset()?;
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "analyze execution",
-            reason: "analyze transport execution requires analyzer resolution, token generation, and response rendering",
+            reason: "use validate_supported_subset for the implemented local analyze adapter",
         })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchAnalyzeTokenWire {
+    pub term: String,
+    pub start_offset: i32,
+    pub end_offset: i32,
+    pub position: i32,
+    pub position_length: i32,
+    pub token_type: Option<String>,
+}
+
+impl OpenSearchAnalyzeTokenWire {
+    pub fn write(&self, output: &mut StreamOutput) {
+        output.write_string(&self.term);
+        output.write_i32(self.start_offset);
+        output.write_i32(self.end_offset);
+        output.write_vint(self.position);
+        write_optional_vint(
+            output,
+            (self.position_length > 1).then_some(self.position_length),
+        );
+        output.write_optional_string(self.token_type.as_deref());
+        write_empty_generic_map(output);
+    }
+
+    pub fn read(input: &mut StreamInput) -> Result<Self, TransportActionWireError> {
+        let term = input.read_string()?;
+        let start_offset = input.read_i32()?;
+        let end_offset = input.read_i32()?;
+        let position = input.read_vint()?;
+        let position_length = read_optional_vint(input)?.unwrap_or(1);
+        let token_type = input.read_optional_string()?;
+        read_empty_generic_map(input)?;
+        Ok(Self {
+            term,
+            start_offset,
+            end_offset,
+            position,
+            position_length,
+            token_type,
+        })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchAnalyzeResponseWire {
+    pub tokens: Vec<OpenSearchAnalyzeTokenWire>,
+}
+
+impl OpenSearchAnalyzeResponseWire {
+    pub fn write(&self, output: &mut StreamOutput) {
+        output.write_bool(true);
+        output.write_vint(self.tokens.len() as i32);
+        for token in &self.tokens {
+            token.write(output);
+        }
+        output.write_bool(false);
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        if !input.read_bool()? {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "analyze response missing tokens",
+                reason: "the implemented analyze response subset requires simple token arrays",
+            });
+        }
+        let token_count = input.read_vint()?;
+        if token_count < 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "analyze response tokens",
+                reason: "token array length must not be negative",
+            });
+        }
+        let mut tokens = Vec::with_capacity(token_count as usize);
+        for _ in 0..token_count {
+            tokens.push(OpenSearchAnalyzeTokenWire::read(&mut input)?);
+        }
+        if input.read_bool()? {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "analyze response detail",
+                reason: "detailed analyze responses are outside the implemented response subset",
+            });
+        }
+        require_no_trailing_bytes(&input)?;
+        Ok(Self { tokens })
     }
 }
 
@@ -44070,6 +44215,29 @@ fn read_optional_vlong(input: &mut StreamInput) -> Result<Option<i64>, Transport
     }
 }
 
+fn write_empty_generic_map(output: &mut StreamOutput) {
+    output.write_byte(10);
+    output.write_vint(0);
+}
+
+fn read_empty_generic_map(input: &mut StreamInput) -> Result<(), TransportActionWireError> {
+    let tag = input.read_byte()?;
+    if tag != 10 {
+        return Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "generic map",
+            reason: "the implemented analyze token subset only decodes empty generic maps",
+        });
+    }
+    let size = input.read_vint()?;
+    if size != 0 {
+        return Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "generic map entries",
+            reason: "the implemented analyze token subset only decodes empty attributes",
+        });
+    }
+    Ok(())
+}
+
 fn write_optional_bool(output: &mut StreamOutput, value: Option<bool>) {
     match value {
         Some(false) => output.write_byte(0),
@@ -59624,7 +59792,7 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_analyze_request_wire_round_trips_and_rejects_execution_boundary() {
+    fn opensearch_analyze_request_wire_round_trips_and_validates_subset() {
         let request = OpenSearchAnalyzeRequestWire::default();
         let mut output = StreamOutput::new();
         request.write(&mut output);
@@ -59633,13 +59801,7 @@ mod tests {
         assert_eq!(decoded, request);
         assert_eq!(decoded.text, ["hello world"]);
         assert_eq!(decoded.analyzer.as_deref(), Some("standard"));
-        assert!(matches!(
-            decoded.reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "analyze execution",
-                ..
-            })
-        ));
+        assert!(decoded.validate_supported_subset().is_ok());
     }
 
     #[test]
@@ -59683,6 +59845,32 @@ mod tests {
             })
         ));
 
+        let normalizer = OpenSearchAnalyzeRequestWire {
+            index: Some("logs-000001".to_string()),
+            analyzer: None,
+            normalizer: Some("lowercase".to_string()),
+            ..OpenSearchAnalyzeRequestWire::default()
+        };
+        assert!(matches!(
+            normalizer.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "analyze normalizer",
+                ..
+            })
+        ));
+
+        let unsupported_analyzer = OpenSearchAnalyzeRequestWire {
+            analyzer: Some("keyword".to_string()),
+            ..OpenSearchAnalyzeRequestWire::default()
+        };
+        assert!(matches!(
+            unsupported_analyzer.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "analyze analyzer",
+                ..
+            })
+        ));
+
         let analyzer_components = OpenSearchAnalyzeRequestWire {
             tokenizer: Some(OpenSearchNameOrDefinitionWire::named("standard")),
             ..OpenSearchAnalyzeRequestWire::default()
@@ -59705,6 +59893,19 @@ mod tests {
             field_components.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "analyze field components",
+                ..
+            })
+        ));
+
+        let field = OpenSearchAnalyzeRequestWire {
+            analyzer: None,
+            field: Some("message".to_string()),
+            ..OpenSearchAnalyzeRequestWire::default()
+        };
+        assert!(matches!(
+            field.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "analyze field",
                 ..
             })
         ));
@@ -59763,7 +59964,7 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_analyze_transport_messages_bind_rejected_action_frame() {
+    fn opensearch_analyze_transport_messages_bind_action_and_simple_response_frame() {
         let request = OpenSearchAnalyzeRequestWire::default();
         let mut frame =
             build_opensearch_analyze_request_message(42, OPENSEARCH_3_7_0_TRANSPORT, &request)
@@ -59775,15 +59976,43 @@ mod tests {
             read_opensearch_analyze_request_message(&message).unwrap(),
             request
         );
-        assert!(matches!(
-            read_opensearch_analyze_request_message(&message)
-                .unwrap()
-                .reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "analyze execution",
-                ..
-            })
-        ));
+        assert!(read_opensearch_analyze_request_message(&message)
+            .unwrap()
+            .validate_supported_subset()
+            .is_ok());
+
+        let response = OpenSearchAnalyzeResponseWire {
+            tokens: vec![
+                OpenSearchAnalyzeTokenWire {
+                    term: "hello".to_string(),
+                    start_offset: 0,
+                    end_offset: 5,
+                    position: 0,
+                    position_length: 1,
+                    token_type: Some("word".to_string()),
+                },
+                OpenSearchAnalyzeTokenWire {
+                    term: "world".to_string(),
+                    start_offset: 6,
+                    end_offset: 11,
+                    position: 1,
+                    position_length: 1,
+                    token_type: Some("word".to_string()),
+                },
+            ],
+        };
+        let mut response_frame =
+            build_opensearch_analyze_response_message(42, OPENSEARCH_3_7_0_TRANSPORT, &response)
+                .unwrap();
+        let DecodedFrame::Message(response_message) =
+            decode_frame(&mut response_frame).unwrap().unwrap()
+        else {
+            panic!("expected analyze response message");
+        };
+        assert_eq!(
+            read_opensearch_analyze_response_message(&response_message).unwrap(),
+            response
+        );
     }
 
     #[test]

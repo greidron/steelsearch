@@ -1912,6 +1912,30 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end_at_ms,
         )?;
     } else if is_request
+        && normalized_action_hint == Some("indices:admin/analyze")
+        && analyze_request_supports_local_subset(&body)
+    {
+        let response = build_analyze_response(request_id, header_version_id, &body);
+        response_frame =
+            summarize_transport_response_frame_for_action(&response, Some("indices:admin/analyze"));
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request
         && normalized_action_hint == Some("indices:admin/mapping/put")
         && put_mapping_request_supports_manifest_subset(&body)
     {
@@ -7877,6 +7901,90 @@ fn decode_get_field_mappings_request_from_transport_body(
 ) -> Option<os_transport::action::OpenSearchGetFieldMappingsRequestWire> {
     let message = decode_transport_message_from_body(body)?;
     os_transport::action::read_opensearch_get_field_mappings_request_message(&message).ok()
+}
+
+fn build_analyze_response(request_id: i64, header_version_id: u32, body: &[u8]) -> Vec<u8> {
+    let Some(request) = decode_analyze_request_from_transport_body(body) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    if !analyze_request_supported_by_manifest(&request) {
+        return build_empty_transport_response(request_id, header_version_id);
+    }
+    let response = os_transport::action::OpenSearchAnalyzeResponseWire {
+        tokens: transport_analyze_tokens(&request.text),
+    };
+    os_transport::action::build_opensearch_analyze_response_message(
+        request_id,
+        Version::from_id(header_version_id as i32),
+        &response,
+    )
+    .map(|frame| frame.to_vec())
+    .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
+}
+
+fn analyze_request_supports_local_subset(body: &[u8]) -> bool {
+    decode_analyze_request_from_transport_body(body)
+        .is_some_and(|request| analyze_request_supported_by_manifest(&request))
+}
+
+fn analyze_request_supported_by_manifest(
+    request: &os_transport::action::OpenSearchAnalyzeRequestWire,
+) -> bool {
+    if request.validate_supported_subset().is_err() {
+        return false;
+    }
+    let Some(index) = request.index.as_deref() else {
+        return true;
+    };
+    dev_transport_pit_bindings()
+        .metadata_manifest
+        .lock()
+        .expect("dev transport metadata manifest lock poisoned")["indices"]
+        .as_object()
+        .is_some_and(|indices| indices.contains_key(index))
+}
+
+fn decode_analyze_request_from_transport_body(
+    body: &[u8],
+) -> Option<os_transport::action::OpenSearchAnalyzeRequestWire> {
+    let message = decode_transport_message_from_body(body)?;
+    os_transport::action::read_opensearch_analyze_request_message(&message).ok()
+}
+
+fn transport_analyze_tokens(
+    texts: &[String],
+) -> Vec<os_transport::action::OpenSearchAnalyzeTokenWire> {
+    let text = texts.join(" ");
+    let mut offset = 0usize;
+    transport_tokenize_search_text(&text)
+        .into_iter()
+        .enumerate()
+        .map(|(position, token)| {
+            let start_offset = text[offset..]
+                .to_ascii_lowercase()
+                .find(&token)
+                .map(|delta| offset + delta)
+                .unwrap_or(offset);
+            let end_offset = start_offset + token.len();
+            offset = end_offset;
+            os_transport::action::OpenSearchAnalyzeTokenWire {
+                term: token,
+                start_offset: start_offset as i32,
+                end_offset: end_offset as i32,
+                position: position as i32,
+                position_length: 1,
+                token_type: Some("word".to_string()),
+            }
+        })
+        .collect()
+}
+
+fn transport_tokenize_search_text(input: &str) -> Vec<String> {
+    input
+        .split(|character: char| !character.is_ascii_alphanumeric())
+        .map(|token| token.to_ascii_lowercase())
+        .filter(|token| !token.is_empty())
+        .collect()
 }
 
 fn get_field_mappings_response_from_metadata_manifest(
@@ -17220,6 +17328,9 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
             header_version_id,
             body,
         )),
+        Some("indices:admin/analyze") if analyze_request_supports_local_subset(body) => {
+            Some(build_analyze_response(request_id, header_version_id, body))
+        }
         Some("indices:admin/mapping/put") if put_mapping_request_supports_manifest_subset(body) => {
             Some(build_put_mapping_response(
                 request_id,
@@ -22651,6 +22762,60 @@ mod tests {
         );
         assert!(!response.index_settings["logs-settings-000001"]
             .contains_key("index.number_of_replicas"));
+    }
+
+    #[test]
+    fn analyze_transport_route_builds_simple_token_response() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        *dev_transport_pit_bindings()
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned") = serde_json::json!({
+            "indices": {
+                "logs-analyze-000001": {
+                    "settings": {},
+                    "mappings": {},
+                    "aliases": {}
+                }
+            }
+        });
+
+        let request = os_transport::action::OpenSearchAnalyzeRequestWire {
+            index: Some("logs-analyze-000001".to_string()),
+            text: vec!["Quick Fox".to_string()],
+            ..os_transport::action::OpenSearchAnalyzeRequestWire::default()
+        };
+        let frame = os_transport::action::build_opensearch_analyze_request_message(
+            88,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(analyze_request_supports_local_subset(&frame[6..]));
+
+        let response =
+            build_analyze_response(88, OPENSEARCH_3_7_0_TRANSPORT.id() as u32, &frame[6..]);
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected analyze response message");
+        };
+        let response =
+            os_transport::action::read_opensearch_analyze_response_message(&message).unwrap();
+        let terms = response
+            .tokens
+            .iter()
+            .map(|token| token.term.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(terms, vec!["quick", "fox"]);
+        assert_eq!(response.tokens[0].start_offset, 0);
+        assert_eq!(response.tokens[0].end_offset, 5);
+        assert_eq!(response.tokens[1].position, 1);
     }
 
     #[test]

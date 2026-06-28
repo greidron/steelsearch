@@ -177,8 +177,8 @@ The source-derived transport inventory currently has 160 rows:
 
 | Status | Count | Meaning |
 | --- | ---: | --- |
-| `implemented` | 93 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
-| `partial` | 67 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
+| `implemented` | 94 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
+| `partial` | 66 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
 | `planned` | 0 | No source-derived transport action remains unclassified. |
 
 The k-NN plugin action sweep is complete at the boundary layer. All 12
@@ -275,6 +275,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `indices:admin/template/put` (implemented manifest-backed metadata mutation subset)
 - `indices:admin/template/delete` (implemented manifest-backed metadata mutation subset)
 - `indices:admin/aliases` (implemented manifest-backed add/remove alias metadata subset)
+- `indices:admin/analyze` (implemented bounded default/standard analyzer token subset)
 - `cluster:admin/component_template/get` (implemented manifest-backed
   settings-only component-template subset)
 - `cluster:admin/component_template/put` (implemented manifest-backed metadata mutation subset)
@@ -1284,12 +1285,18 @@ The analyze boundary covers:
   `NameOrDefinition`, token filter list, char filter list, optional field,
   `explain`, attributes array, and optional normalizer at the OpenSearch 3.x
   wire decode/build layer;
-- explicit fail-closed classification for `indices:admin/analyze` until analyzer
-  resolution, token generation, and response rendering are implemented;
+- implemented local execution classification for `indices:admin/analyze` when
+  the request has no internal shard id, an absent or manifest-backed concrete
+  index, non-empty text, no field or normalizer, no custom tokenizer/token
+  filters/char filters, absent or `standard` analyzer, `explain=false`, and no
+  requested attributes;
+- OpenSearch-shaped response rendering for the bounded token-array subset,
+  including term, offsets, position, optional token type, and an empty attribute
+  map per token;
 - explicit rejection for internal shard-id payloads, missing text, normalizers
   without indices, invalid normalizer/analyzer/field component combinations,
-  custom analyzer components, explain responses, attribute-filtered responses,
-  and analyze execution.
+  custom analyzer components, non-standard analyzers, field-backed analyzer
+  lookup, explain/detail responses, and attribute-filtered responses.
 
 The create-index boundary covers:
 
@@ -4005,23 +4012,26 @@ wire work; future performance-sensitive work is search-only state validation,
 shard sync coordination, metadata mutation, and acknowledged response
 rendering.
 
-Current analyze reject wire microbenchmark:
+Current analyze wire microbenchmark:
 
 ```text
-cargo run -p os-transport --release --bin analyze-reject-wire-benchmark
-analyze_reject_request_encode iterations=400000 elapsed_ms=328.042 ops_per_second=1219354.63 nanos_per_op=820.11
-analyze_reject_request_decode iterations=400000 elapsed_ms=311.325 ops_per_second=1284830.36 nanos_per_op=778.31
-analyze_reject_validation iterations=400000 elapsed_ms=317.401 ops_per_second=1260236.41 nanos_per_op=793.50
-analyze_reject_wire_bottleneck_ops_per_second=1219354.63
+cargo run -q -p os-transport --release --bin analyze-wire-benchmark
+analyze_request_encode iterations=400000 elapsed_ms=302.074 ops_per_second=1324179.25 nanos_per_op=755.18
+analyze_request_decode iterations=400000 elapsed_ms=307.459 ops_per_second=1300986.82 nanos_per_op=768.65
+analyze_request_validate iterations=400000 elapsed_ms=313.205 ops_per_second=1277119.09 nanos_per_op=783.01
+analyze_response_encode iterations=400000 elapsed_ms=205.124 ops_per_second=1950039.34 nanos_per_op=512.81
+analyze_response_decode iterations=400000 elapsed_ms=223.889 ops_per_second=1786597.65 nanos_per_op=559.72
+analyze_wire_bottleneck_ops_per_second=1277119.09
 ```
 
-The current analyze fail-closed boundary bottleneck is request encode. The path
-writes the single-shard request envelope, optional index, text array, analyzer
-selection, custom component lists, explain flag, attributes, and normalizer
-before rejecting execution. At roughly 1.22M ops/s in the latest local release
-run, the current overhead remains transport wire work; future
-performance-sensitive work is analyzer resolution, token generation, and
-response rendering.
+The current analyze local transport subset bottleneck is request validation.
+The path writes and reads the single-shard request envelope, optional index,
+text array, analyzer selection, custom component lists, explain flag,
+attributes, and normalizer, then renders the bounded token-array response. At
+roughly 1.28M ops/s in the latest local release run, the current overhead
+remains lightweight transport validation and wire work; future
+performance-sensitive work is broader analyzer resolution, field-backed
+analyzer lookup, detail responses, and richer token attributes.
 
 Current create-index reject wire microbenchmark:
 
