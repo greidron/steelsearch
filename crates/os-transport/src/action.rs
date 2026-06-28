@@ -25951,27 +25951,6 @@ impl OpenSearchSearchSourceBuilderWire {
         )?;
         if let Some(stored_fields) = &self.stored_fields {
             stored_fields.validate_supported_subset()?;
-            if !stored_fields.fetch_fields {
-                let source_requested = self
-                    .fetch_source
-                    .as_ref()
-                    .map(|fetch_source| fetch_source.fetch_source)
-                    .unwrap_or(true);
-                if source_requested {
-                    return Err(TransportActionWireError::UnsupportedWireShape {
-                        shape: "search request source stored fields",
-                        reason:
-                            "OpenSearch stored_fields cannot be disabled when _source is requested",
-                    });
-                }
-                if self.fetch_fields.is_some() {
-                    return Err(TransportActionWireError::UnsupportedWireShape {
-                        shape: "search request source stored fields",
-                        reason:
-                            "OpenSearch stored_fields cannot be disabled when fields are requested",
-                    });
-                }
-            }
         }
         validate_optional_generic_map(
             self.search_pipeline_source.as_ref(),
@@ -26005,6 +25984,29 @@ impl OpenSearchSearchSourceBuilderWire {
         self.validate_supported_wire_subset()?;
         if let Some(point_in_time) = &self.point_in_time {
             point_in_time.validate_supported_subset()?;
+        }
+        if let Some(stored_fields) = &self.stored_fields {
+            if !stored_fields.fetch_fields {
+                let source_requested = self
+                    .fetch_source
+                    .as_ref()
+                    .map(|fetch_source| fetch_source.fetch_source)
+                    .unwrap_or(true);
+                if source_requested {
+                    return Err(TransportActionWireError::UnsupportedWireShape {
+                        shape: "search request source stored fields",
+                        reason:
+                            "OpenSearch stored_fields cannot be disabled when _source is requested",
+                    });
+                }
+                if self.fetch_fields.is_some() {
+                    return Err(TransportActionWireError::UnsupportedWireShape {
+                        shape: "search request source stored fields",
+                        reason:
+                            "OpenSearch stored_fields cannot be disabled when fields are requested",
+                    });
+                }
+            }
         }
         Ok(())
     }
@@ -30290,18 +30292,9 @@ fn read_optional_field_and_format_list(
 }
 
 fn validate_field_and_format_list(
-    values: Option<&[OpenSearchFieldAndFormatWire]>,
-    shape: &'static str,
+    _values: Option<&[OpenSearchFieldAndFormatWire]>,
+    _shape: &'static str,
 ) -> Result<(), TransportActionWireError> {
-    let Some(values) = values else {
-        return Ok(());
-    };
-    if values.iter().any(|value| value.field.is_empty()) {
-        return Err(TransportActionWireError::UnsupportedWireShape {
-            shape,
-            reason: "OpenSearch FieldAndFormat field names must be non-empty",
-        });
-    }
     Ok(())
 }
 
@@ -71163,7 +71156,7 @@ mod tests {
             })
         ));
 
-        let invalid_doc_value_fields = OpenSearchSearchRequestWire {
+        let empty_doc_value_field_name = OpenSearchSearchRequestWire {
             source: Some(OpenSearchSearchSourceBuilderWire {
                 doc_value_fields: Some(vec![OpenSearchFieldAndFormatWire {
                     field: String::new(),
@@ -71173,15 +71166,21 @@ mod tests {
             }),
             ..OpenSearchSearchRequestWire::default()
         };
+        let mut empty_doc_value_field_name_output = StreamOutput::new();
+        empty_doc_value_field_name.write(&mut empty_doc_value_field_name_output);
+        assert_eq!(
+            OpenSearchSearchRequestWire::read(empty_doc_value_field_name_output.freeze()).unwrap(),
+            empty_doc_value_field_name
+        );
         assert!(matches!(
-            invalid_doc_value_fields.reject_unsupported_execution(),
+            empty_doc_value_field_name.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "search request source doc value fields",
+                shape: "search request execution",
                 ..
             })
         ));
 
-        let invalid_fetch_fields = OpenSearchSearchRequestWire {
+        let empty_fetch_field_name = OpenSearchSearchRequestWire {
             source: Some(OpenSearchSearchSourceBuilderWire {
                 fetch_fields: Some(vec![OpenSearchFieldAndFormatWire {
                     field: String::new(),
@@ -71191,10 +71190,16 @@ mod tests {
             }),
             ..OpenSearchSearchRequestWire::default()
         };
+        let mut empty_fetch_field_name_output = StreamOutput::new();
+        empty_fetch_field_name.write(&mut empty_fetch_field_name_output);
+        assert_eq!(
+            OpenSearchSearchRequestWire::read(empty_fetch_field_name_output.freeze()).unwrap(),
+            empty_fetch_field_name
+        );
         assert!(matches!(
-            invalid_fetch_fields.reject_unsupported_execution(),
+            empty_fetch_field_name.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "search request source fetch fields",
+                shape: "search request execution",
                 ..
             })
         ));
