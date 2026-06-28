@@ -1071,6 +1071,7 @@ version = "0.2.4"
 dependencies = [
  "base64 0.22.1",
  "bytes",
+ "crc32fast",
  "flate2",
  "os-core",
  "os-engine",

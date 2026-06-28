@@ -783,8 +783,8 @@
       "transport_action": "TransportGetIndexAction",
       "request_wire_type": "GetIndexRequest",
       "response_wire_type": "GetIndexResponse",
-      "disposition": "rejected",
-      "reason": "Get-index transport execution requires index metadata response rendering before Steelsearch can serve OpenSearch index metadata read semantics."
+      "disposition": "implemented",
+      "reason": "Get-index transport execution is served for default all-index metadata reads with settings, mappings, aliases, data-stream, and context response rendering."
     },
     {
       "action_name": "indices:admin/exists",

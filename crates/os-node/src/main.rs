@@ -1426,6 +1426,30 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end,
             &mut connection_end_at_ms,
         )?;
+    } else if is_request
+        && normalized_action_hint == Some("indices:admin/get")
+        && get_index_request_supports_local_execution_subset(&body)
+    {
+        let response = build_get_index_response(request_id, header_version_id, &body);
+        response_frame =
+            summarize_transport_response_frame_for_action(&response, Some("indices:admin/get"));
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
     } else if is_request && normalized_action_hint == Some("indices:admin/mappings/fields/get") {
         let response = build_get_field_mappings_response(request_id, header_version_id, &body);
         response_frame = summarize_transport_response_frame_for_action(
@@ -4672,6 +4696,125 @@ fn flatten_string_settings(
         }
         _ => {}
     }
+}
+
+fn build_get_index_response(request_id: i64, header_version_id: u32, body: &[u8]) -> Vec<u8> {
+    let Some(request) = decode_get_index_request_from_transport_body(body) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    if request.validate_supported_subset().is_err() {
+        return build_empty_transport_response(request_id, header_version_id);
+    }
+    let response = get_index_response_from_metadata_manifest(
+        &dev_transport_pit_bindings()
+            .metadata_manifest
+            .lock()
+            .expect("metadata manifest lock poisoned"),
+    );
+    os_transport::action::build_opensearch_get_index_response_message(
+        request_id,
+        Version::from_id(header_version_id as i32),
+        &response,
+    )
+    .map(|frame| frame.to_vec())
+    .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
+}
+
+fn get_index_request_supports_local_execution_subset(body: &[u8]) -> bool {
+    decode_get_index_request_from_transport_body(body)
+        .as_ref()
+        .is_some_and(|request| request.validate_supported_subset().is_ok())
+}
+
+fn decode_get_index_request_from_transport_body(
+    body: &[u8],
+) -> Option<os_transport::action::OpenSearchGetIndexRequestWire> {
+    let message = decode_transport_message_from_body(body)?;
+    os_transport::action::read_opensearch_get_index_request_message(&message).ok()
+}
+
+fn get_index_response_from_metadata_manifest(
+    metadata_manifest: &Value,
+) -> os_transport::action::OpenSearchGetIndexResponseWire {
+    let Some(indices) = metadata_manifest["indices"].as_object() else {
+        return os_transport::action::OpenSearchGetIndexResponseWire::empty();
+    };
+    let mut response = os_transport::action::OpenSearchGetIndexResponseWire::empty();
+    response.indices = indices.keys().cloned().collect();
+    response.indices.sort();
+    for (index, entry) in indices {
+        if let Some(mappings) = entry.get("mappings").filter(|value| !value.is_null()) {
+            response.mappings.insert(
+                index.clone(),
+                os_transport::action::OpenSearchMappingMetadataWire::new(mappings.clone()),
+            );
+        }
+        let mut settings = BTreeMap::new();
+        flatten_json_settings_value(entry.get("settings").unwrap_or(&Value::Null), &mut settings);
+        response.settings.insert(index.clone(), settings);
+        if let Some(aliases) = entry.get("aliases").and_then(Value::as_object) {
+            response.aliases.insert(
+                index.clone(),
+                aliases
+                    .iter()
+                    .map(|(alias, metadata)| alias_metadata_wire_from_manifest(alias, metadata))
+                    .collect(),
+            );
+        } else {
+            response.aliases.insert(index.clone(), Vec::new());
+        }
+        if let Some(data_stream) = entry.get("data_stream").and_then(Value::as_str) {
+            response
+                .data_streams
+                .insert(index.clone(), Some(data_stream.to_string()));
+        }
+        if let Some(context) = entry.get("context").filter(|value| !value.is_null()) {
+            response
+                .contexts
+                .insert(index.clone(), Some(context.clone()));
+        }
+    }
+    response
+}
+
+fn flatten_json_settings_value(value: &Value, flattened: &mut BTreeMap<String, Value>) {
+    let mut string_settings = BTreeMap::new();
+    flatten_string_settings(None, value, &mut string_settings);
+    for (key, value) in string_settings {
+        flattened.insert(key, Value::String(value));
+    }
+}
+
+fn alias_metadata_wire_from_manifest(
+    alias: &str,
+    metadata: &Value,
+) -> os_transport::action::OpenSearchAliasMetadataWire {
+    let mut wire = os_transport::action::OpenSearchAliasMetadataWire::new(alias);
+    if let Some(filter) = metadata.get("filter").filter(|value| !value.is_null()) {
+        wire.filter = Some(filter.clone());
+    }
+    wire.index_routing = metadata
+        .get("index_routing")
+        .or_else(|| metadata.get("indexRouting"))
+        .or_else(|| metadata.get("routing"))
+        .and_then(Value::as_str)
+        .map(str::to_string);
+    wire.search_routing = metadata
+        .get("search_routing")
+        .or_else(|| metadata.get("searchRouting"))
+        .or_else(|| metadata.get("routing"))
+        .and_then(Value::as_str)
+        .map(str::to_string);
+    wire.write_index = metadata
+        .get("is_write_index")
+        .or_else(|| metadata.get("write_index"))
+        .or_else(|| metadata.get("writeIndex"))
+        .and_then(Value::as_bool);
+    wire.is_hidden = metadata
+        .get("is_hidden")
+        .or_else(|| metadata.get("isHidden"))
+        .and_then(Value::as_bool);
+    wire
 }
 
 fn build_get_mappings_response(request_id: i64, header_version_id: u32, body: &[u8]) -> Vec<u8> {
@@ -12377,6 +12520,13 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
             header_version_id,
             body,
         )),
+        Some("indices:admin/get") if get_index_request_supports_local_execution_subset(body) => {
+            Some(build_get_index_response(
+                request_id,
+                header_version_id,
+                body,
+            ))
+        }
         Some("indices:admin/mappings/fields/get") => Some(build_get_field_mappings_response(
             request_id,
             header_version_id,
@@ -17333,6 +17483,88 @@ mod tests {
         assert_eq!(
             response.empty_mapping_indices,
             vec!["logs-empty-mapping-000001", "metrics-empty-mapping-000001"]
+        );
+    }
+
+    #[test]
+    fn get_index_transport_route_builds_metadata_response() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        *dev_transport_pit_bindings()
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned") = serde_json::json!({
+            "indices": {
+                "logs-get-index-000001": {
+                    "settings": {
+                        "index": {
+                            "number_of_shards": "1",
+                            "number_of_replicas": "0"
+                        }
+                    },
+                    "mappings": {
+                        "properties": {
+                            "message": { "type": "text" }
+                        }
+                    },
+                    "aliases": {
+                        "logs-get-index-read": {
+                            "is_write_index": true,
+                            "is_hidden": false
+                        }
+                    },
+                    "context": {
+                        "name": "logs-context"
+                    }
+                }
+            }
+        });
+        let request = os_transport::action::OpenSearchGetIndexRequestWire::default();
+        let frame = os_transport::action::build_opensearch_get_index_request_message(
+            184,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(get_index_request_supports_local_execution_subset(
+            &frame[6..]
+        ));
+        let response =
+            build_get_index_response(184, OPENSEARCH_3_7_0_TRANSPORT.id() as u32, &frame[6..]);
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected get index response message");
+        };
+
+        assert_eq!(message.request_id, 184);
+        assert!(!message.status.is_request());
+        let response =
+            os_transport::action::read_opensearch_get_index_response_message(&message).unwrap();
+        assert_eq!(response.indices, vec!["logs-get-index-000001"]);
+        assert_eq!(
+            response.mappings["logs-get-index-000001"].source,
+            serde_json::json!({
+                "properties": {
+                    "message": { "type": "text" }
+                }
+            })
+        );
+        assert_eq!(
+            response.settings["logs-get-index-000001"]["index.number_of_shards"],
+            Value::String("1".to_string())
+        );
+        let alias = &response.aliases["logs-get-index-000001"][0];
+        assert_eq!(alias.alias, "logs-get-index-read");
+        assert_eq!(alias.write_index, Some(true));
+        assert_eq!(alias.is_hidden, Some(false));
+        assert_eq!(
+            response.contexts["logs-get-index-000001"],
+            Some(serde_json::json!({ "name": "logs-context" }))
         );
     }
 

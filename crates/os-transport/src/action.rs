@@ -1,6 +1,9 @@
 use base64::engine::general_purpose::{URL_SAFE, URL_SAFE_NO_PAD};
 use base64::Engine;
 use bytes::{Bytes, BytesMut};
+use flate2::read::DeflateDecoder;
+use flate2::write::DeflateEncoder;
+use flate2::Compression;
 use os_core::{
     Version, OPENSEARCH_2_10_0, OPENSEARCH_2_12_0, OPENSEARCH_2_13_0, OPENSEARCH_2_14_0,
     OPENSEARCH_2_18_0, OPENSEARCH_2_19_0, OPENSEARCH_2_7_0, OPENSEARCH_2_8_0,
@@ -19,6 +22,7 @@ use os_wire::TransportStatus;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
+use std::io::Write;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use thiserror::Error;
 
@@ -2129,8 +2133,9 @@ pub fn classify_opensearch_transport_action(
         },
         OPENSEARCH_GET_INDEX_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
-            disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "get-index transport execution requires index metadata response rendering",
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason:
+                "metadata-backed get-index transport adapter supports default all-index settings, mappings, aliases, data-stream, and context response rendering",
         },
         OPENSEARCH_INDICES_EXISTS_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -8873,6 +8878,36 @@ pub fn read_opensearch_get_index_request_message(
         });
     }
     OpenSearchGetIndexRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_opensearch_get_index_response_message(
+    request_id: i64,
+    version: Version,
+    response: &OpenSearchGetIndexResponseWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    response.write(&mut body)?;
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::response(),
+        version,
+        variable_header: BytesMut::from(&ResponseVariableHeader::default().to_bytes()[..]),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_get_index_response_message(
+    message: &TransportMessage,
+) -> Result<OpenSearchGetIndexResponseWire, TransportActionWireError> {
+    if !message.status.is_response() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "response",
+            actual: message.status.bits(),
+        });
+    }
+    let _header = ResponseVariableHeader::read(message.variable_header.clone().freeze())?;
+    OpenSearchGetIndexResponseWire::read(message.body.clone().freeze())
 }
 
 pub fn build_opensearch_indices_exists_request_message(
@@ -19503,7 +19538,7 @@ impl OpenSearchGetIndexRequestWire {
         Ok(request)
     }
 
-    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+    pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
         if self.cluster_manager_timeout != TimeValueWire::seconds(30) {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "get index cluster-manager timeout",
@@ -19547,9 +19582,242 @@ impl OpenSearchGetIndexRequestWire {
                 reason: "default setting expansion is not mapped by this adapter",
             });
         }
+        Ok(())
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        self.validate_supported_subset()?;
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "get index execution",
-            reason: "get-index transport execution requires index metadata response rendering",
+            reason: "use validate_supported_subset for the implemented get-index adapter",
+        })
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct OpenSearchGetIndexResponseWire {
+    pub indices: Vec<String>,
+    pub mappings: BTreeMap<String, OpenSearchMappingMetadataWire>,
+    pub aliases: BTreeMap<String, Vec<OpenSearchAliasMetadataWire>>,
+    pub settings: BTreeMap<String, BTreeMap<String, Value>>,
+    pub default_settings: BTreeMap<String, BTreeMap<String, Value>>,
+    pub data_streams: BTreeMap<String, Option<String>>,
+    pub contexts: BTreeMap<String, Option<Value>>,
+}
+
+impl OpenSearchGetIndexResponseWire {
+    pub fn empty() -> Self {
+        Self {
+            indices: Vec::new(),
+            mappings: BTreeMap::new(),
+            aliases: BTreeMap::new(),
+            settings: BTreeMap::new(),
+            default_settings: BTreeMap::new(),
+            data_streams: BTreeMap::new(),
+            contexts: BTreeMap::new(),
+        }
+    }
+
+    pub fn write(&self, output: &mut StreamOutput) -> Result<(), TransportActionWireError> {
+        output.write_string_array(&self.indices);
+        output.write_vint(self.mappings.len() as i32);
+        for (index, mapping) in &self.mappings {
+            output.write_string(index);
+            mapping.write_optional(output)?;
+        }
+        output.write_vint(self.aliases.len() as i32);
+        for (index, aliases) in &self.aliases {
+            output.write_string(index);
+            output.write_vint(aliases.len() as i32);
+            for alias in aliases {
+                alias.write(output)?;
+            }
+        }
+        write_get_index_settings_map(output, &self.settings)?;
+        write_get_index_settings_map(output, &self.default_settings)?;
+        output.write_vint(self.data_streams.len() as i32);
+        for (index, data_stream) in &self.data_streams {
+            output.write_string(index);
+            output.write_optional_string(data_stream.as_deref());
+        }
+        output.write_vint(self.contexts.len() as i32);
+        for (index, context) in &self.contexts {
+            output.write_string(index);
+            if let Some(context) = context {
+                output.write_bool(true);
+                write_json_bytes_reference(output, context)?;
+            } else {
+                output.write_bool(false);
+            }
+        }
+        Ok(())
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let indices = input.read_string_array()?;
+        let mapping_count = read_len(&mut input)?;
+        let mut mappings = BTreeMap::new();
+        for _ in 0..mapping_count {
+            let index = input.read_string()?;
+            if let Some(mapping) = OpenSearchMappingMetadataWire::read_optional(&mut input)? {
+                mappings.insert(index, mapping);
+            }
+        }
+        let alias_count = read_len(&mut input)?;
+        let mut aliases = BTreeMap::new();
+        for _ in 0..alias_count {
+            let index = input.read_string()?;
+            let alias_len = read_len(&mut input)?;
+            let mut index_aliases = Vec::with_capacity(alias_len);
+            for _ in 0..alias_len {
+                index_aliases.push(OpenSearchAliasMetadataWire::read(&mut input)?);
+            }
+            aliases.insert(index, index_aliases);
+        }
+        let settings = read_get_index_settings_map(&mut input)?;
+        let default_settings = read_get_index_settings_map(&mut input)?;
+        let data_stream_count = read_len(&mut input)?;
+        let mut data_streams = BTreeMap::new();
+        for _ in 0..data_stream_count {
+            data_streams.insert(input.read_string()?, input.read_optional_string()?);
+        }
+        let context_count = read_len(&mut input)?;
+        let mut contexts = BTreeMap::new();
+        for _ in 0..context_count {
+            let index = input.read_string()?;
+            let context = if input.read_bool()? {
+                Some(read_json_bytes_reference(&mut input)?)
+            } else {
+                None
+            };
+            contexts.insert(index, context);
+        }
+        require_no_trailing_bytes(&input)?;
+        Ok(Self {
+            indices,
+            mappings,
+            aliases,
+            settings,
+            default_settings,
+            data_streams,
+            contexts,
+        })
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct OpenSearchMappingMetadataWire {
+    pub mapping_type: String,
+    pub source: Value,
+    pub routing_required: bool,
+}
+
+impl OpenSearchMappingMetadataWire {
+    pub fn new(source: Value) -> Self {
+        Self {
+            mapping_type: "_doc".to_string(),
+            source,
+            routing_required: false,
+        }
+    }
+
+    fn write_optional(&self, output: &mut StreamOutput) -> Result<(), TransportActionWireError> {
+        output.write_bool(true);
+        output.write_string(&self.mapping_type);
+        write_compressed_xcontent(output, &self.source)?;
+        output.write_bool(self.routing_required);
+        Ok(())
+    }
+
+    fn read_optional(input: &mut StreamInput) -> Result<Option<Self>, TransportActionWireError> {
+        if !input.read_bool()? {
+            return Ok(None);
+        }
+        let mapping_type = input.read_string()?;
+        let source = read_compressed_xcontent(input)?;
+        let routing_required = input.read_bool()?;
+        Ok(Some(Self {
+            mapping_type,
+            source,
+            routing_required,
+        }))
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchAliasMetadataWire {
+    pub alias: String,
+    pub filter: Option<Value>,
+    pub index_routing: Option<String>,
+    pub search_routing: Option<String>,
+    pub write_index: Option<bool>,
+    pub is_hidden: Option<bool>,
+}
+
+impl OpenSearchAliasMetadataWire {
+    pub fn new(alias: impl Into<String>) -> Self {
+        Self {
+            alias: alias.into(),
+            filter: None,
+            index_routing: None,
+            search_routing: None,
+            write_index: None,
+            is_hidden: None,
+        }
+    }
+
+    fn write(&self, output: &mut StreamOutput) -> Result<(), TransportActionWireError> {
+        output.write_string(&self.alias);
+        if let Some(filter) = &self.filter {
+            output.write_bool(true);
+            write_compressed_xcontent(output, filter)?;
+        } else {
+            output.write_bool(false);
+        }
+        if let Some(index_routing) = &self.index_routing {
+            output.write_bool(true);
+            output.write_string(index_routing);
+        } else {
+            output.write_bool(false);
+        }
+        if let Some(search_routing) = &self.search_routing {
+            output.write_bool(true);
+            output.write_string(search_routing);
+        } else {
+            output.write_bool(false);
+        }
+        write_optional_bool(output, self.write_index);
+        write_optional_bool(output, self.is_hidden);
+        Ok(())
+    }
+
+    fn read(input: &mut StreamInput) -> Result<Self, TransportActionWireError> {
+        let alias = input.read_string()?;
+        let filter = if input.read_bool()? {
+            Some(read_compressed_xcontent(input)?)
+        } else {
+            None
+        };
+        let index_routing = if input.read_bool()? {
+            Some(input.read_string()?)
+        } else {
+            None
+        };
+        let search_routing = if input.read_bool()? {
+            Some(input.read_string()?)
+        } else {
+            None
+        };
+        let write_index = read_optional_bool(input)?;
+        let is_hidden = read_optional_bool(input)?;
+        Ok(Self {
+            alias,
+            filter,
+            index_routing,
+            search_routing,
+            write_index,
+            is_hidden,
         })
     }
 }
@@ -43594,6 +43862,91 @@ fn read_json_bytes_reference(input: &mut StreamInput) -> Result<Value, Transport
     serde_json::from_slice(&value).map_err(TransportActionWireError::JsonDecode)
 }
 
+fn write_compressed_xcontent(
+    output: &mut StreamOutput,
+    value: &Value,
+) -> Result<(), TransportActionWireError> {
+    let encoded = serde_json::to_vec(value).map_err(TransportActionWireError::JsonEncode)?;
+    let mut hasher = crc32fast::Hasher::new();
+    hasher.update(&encoded);
+    output.write_i32(hasher.finalize() as i32);
+
+    let mut compressed = Vec::new();
+    compressed.extend_from_slice(b"DFL\0");
+    let mut encoder = DeflateEncoder::new(Vec::new(), Compression::new(3));
+    encoder
+        .write_all(&encoded)
+        .map_err(|_| TransportActionWireError::UnsupportedWireShape {
+            shape: "compressed xcontent",
+            reason: "failed to deflate OpenSearch compressed XContent",
+        })?;
+    let deflated =
+        encoder
+            .finish()
+            .map_err(|_| TransportActionWireError::UnsupportedWireShape {
+                shape: "compressed xcontent",
+                reason: "failed to finish OpenSearch compressed XContent",
+            })?;
+    compressed.extend_from_slice(&deflated);
+    output.write_bytes_reference(&compressed);
+    Ok(())
+}
+
+fn read_compressed_xcontent(input: &mut StreamInput) -> Result<Value, TransportActionWireError> {
+    let _crc32 = input.read_i32()?;
+    let compressed = input.read_bytes_reference()?;
+    if !compressed.starts_with(b"DFL\0") {
+        return Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "compressed xcontent",
+            reason: "only OpenSearch DEFLATE compressed XContent is decoded",
+        });
+    }
+    let mut decoder = DeflateDecoder::new(&compressed[4..]);
+    let mut decoded = Vec::new();
+    std::io::Read::read_to_end(&mut decoder, &mut decoded).map_err(|_| {
+        TransportActionWireError::UnsupportedWireShape {
+            shape: "compressed xcontent",
+            reason: "failed to inflate OpenSearch compressed XContent",
+        }
+    })?;
+    serde_json::from_slice(&decoded).map_err(TransportActionWireError::JsonDecode)
+}
+
+fn write_get_index_settings_map(
+    output: &mut StreamOutput,
+    settings: &BTreeMap<String, BTreeMap<String, Value>>,
+) -> Result<(), TransportActionWireError> {
+    output.write_vint(settings.len() as i32);
+    for (index, values) in settings {
+        output.write_string(index);
+        output.write_vint(values.len() as i32);
+        for (key, value) in values {
+            output.write_string(key);
+            write_generic_json_value(output, value)?;
+        }
+    }
+    Ok(())
+}
+
+fn read_get_index_settings_map(
+    input: &mut StreamInput,
+) -> Result<BTreeMap<String, BTreeMap<String, Value>>, TransportActionWireError> {
+    let index_count = read_len(input)?;
+    let mut settings = BTreeMap::new();
+    for _ in 0..index_count {
+        let index = input.read_string()?;
+        let setting_count = read_len(input)?;
+        let mut index_settings = BTreeMap::new();
+        for _ in 0..setting_count {
+            let key = input.read_string()?;
+            let value = read_generic_json_value(input, "get index setting")?;
+            index_settings.insert(key, value);
+        }
+        settings.insert(index, index_settings);
+    }
+    Ok(settings)
+}
+
 fn write_json_section_map(
     output: &mut StreamOutput,
     sections: &BTreeMap<String, Value>,
@@ -57777,7 +58130,7 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_get_index_request_wire_round_trips_and_rejects_execution_boundary() {
+    fn opensearch_get_index_request_and_response_wire_round_trip() {
         let request = OpenSearchGetIndexRequestWire::default();
         let mut output = StreamOutput::new();
         request.write(&mut output);
@@ -57785,13 +58138,37 @@ mod tests {
         let decoded = OpenSearchGetIndexRequestWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, request);
         assert_eq!(decoded.features, OPENSEARCH_GET_INDEX_DEFAULT_FEATURES);
-        assert!(matches!(
-            decoded.reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "get index execution",
-                ..
-            })
-        ));
+        decoded.validate_supported_subset().unwrap();
+
+        let mut response = OpenSearchGetIndexResponseWire::empty();
+        response.indices = vec!["logs-get-index-000001".to_string()];
+        response.mappings.insert(
+            "logs-get-index-000001".to_string(),
+            OpenSearchMappingMetadataWire::new(serde_json::json!({
+                "properties": {
+                    "message": { "type": "text" }
+                }
+            })),
+        );
+        response.aliases.insert(
+            "logs-get-index-000001".to_string(),
+            vec![OpenSearchAliasMetadataWire::new("logs-get-index-read")],
+        );
+        response.settings.insert(
+            "logs-get-index-000001".to_string(),
+            BTreeMap::from([(
+                "index.number_of_shards".to_string(),
+                Value::String("1".to_string()),
+            )]),
+        );
+        response.contexts.insert(
+            "logs-get-index-000001".to_string(),
+            Some(serde_json::json!({ "name": "logs-context" })),
+        );
+        let mut output = StreamOutput::new();
+        response.write(&mut output).unwrap();
+        let decoded = OpenSearchGetIndexResponseWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, response);
     }
 
     #[test]
@@ -57903,7 +58280,7 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_get_index_transport_messages_bind_rejected_action_frame() {
+    fn opensearch_get_index_transport_messages_bind_supported_action_frame_and_response() {
         let request = OpenSearchGetIndexRequestWire::default();
         let mut frame =
             build_opensearch_get_index_request_message(58, OPENSEARCH_3_7_0_TRANSPORT, &request)
@@ -57915,15 +58292,30 @@ mod tests {
             read_opensearch_get_index_request_message(&message).unwrap(),
             request
         );
-        assert!(matches!(
-            read_opensearch_get_index_request_message(&message)
-                .unwrap()
-                .reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "get index execution",
-                ..
-            })
-        ));
+        read_opensearch_get_index_request_message(&message)
+            .unwrap()
+            .validate_supported_subset()
+            .unwrap();
+
+        let mut response = OpenSearchGetIndexResponseWire::empty();
+        response.indices = vec!["logs-get-index-000001".to_string()];
+        response.settings.insert(
+            "logs-get-index-000001".to_string(),
+            BTreeMap::from([(
+                "index.number_of_replicas".to_string(),
+                Value::String("0".to_string()),
+            )]),
+        );
+        let mut frame =
+            build_opensearch_get_index_response_message(58, OPENSEARCH_3_7_0_TRANSPORT, &response)
+                .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected get index response message");
+        };
+        assert_eq!(
+            read_opensearch_get_index_response_message(&message).unwrap(),
+            response
+        );
     }
 
     #[test]
