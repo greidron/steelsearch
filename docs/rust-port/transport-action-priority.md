@@ -2399,6 +2399,10 @@ The create-PIT boundary covers:
   `TimeValue.millis()` truncation for nanosecond and microsecond wire values,
   so sub-millisecond create-PIT keep-alive values enter the same non-positive
   normalization boundary as OpenSearch.
+- REST PIT keep-alive parsing now applies the same millisecond truncation for
+  nanosecond and microsecond values before create-PIT normalization, so
+  sub-millisecond REST keep-alive values follow the same non-positive local PIT
+  lifecycle boundary as OpenSearch `TimeValue.millis()`.
 - local transport create-reader-context and update-reader-context reject
   keep-alive values above the OpenSearch default
   `point_in_time.max_keep_alive` of `24h`, matching the runtime

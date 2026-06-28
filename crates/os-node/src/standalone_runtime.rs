@@ -27323,29 +27323,28 @@ fn parse_time_value_millis(value: &str) -> Option<u64> {
         return None;
     }
     let units = [
-        ("micros", 1_u64),
-        ("nanos", 0_u64),
-        ("ms", 1_u64),
-        ("s", 1_000_u64),
-        ("m", 60_000_u64),
-        ("h", 3_600_000_u64),
-        ("d", 86_400_000_u64),
+        ("micros", 1_u64, 1_000_u64),
+        ("nanos", 1_u64, 1_000_000_u64),
+        ("ms", 1_u64, 1_u64),
+        ("s", 1_000_u64, 1_u64),
+        ("m", 60_000_u64, 1_u64),
+        ("h", 3_600_000_u64, 1_u64),
+        ("d", 86_400_000_u64, 1_u64),
     ];
-    let (number, multiplier) = units.iter().find_map(|(suffix, multiplier)| {
-        trimmed
-            .strip_suffix(suffix)
-            .map(|number| (number, *multiplier))
-    })?;
+    let (number, multiplier, divisor) =
+        units.iter().find_map(|(suffix, multiplier, divisor)| {
+            trimmed
+                .strip_suffix(suffix)
+                .map(|number| (number, *multiplier, *divisor))
+        })?;
     let amount = number.parse::<i128>().ok()?;
     if amount <= 0 {
         return Some(0);
     }
-    if multiplier == 0 {
-        return Some(1);
-    }
     u64::try_from(amount)
         .ok()
         .and_then(|amount| amount.checked_mul(multiplier))
+        .map(|millis| millis / divisor)
 }
 
 fn keep_alive_parse_error_reason(value: &str) -> String {
@@ -51322,6 +51321,24 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_ne!(zero_keep_alive_pit_id, negative_keep_alive_pit_id);
         assert_eq!(negative_keep_alive_pit.body["_shards"]["successful"], 1);
 
+        let nanos_keep_alive_pit = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/logs-pit-keep-alive/_search/point_in_time?keep_alive=1nanos",
+        ));
+        assert_eq!(nanos_keep_alive_pit.status, 200);
+        let nanos_keep_alive_pit_id = local_pit_id(&nanos_keep_alive_pit.body["pit_id"]);
+        assert_ne!(negative_keep_alive_pit_id, nanos_keep_alive_pit_id);
+        assert_eq!(nanos_keep_alive_pit.body["_shards"]["successful"], 1);
+
+        let micros_keep_alive_pit = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/logs-pit-keep-alive/_search/point_in_time?keep_alive=999micros",
+        ));
+        assert_eq!(micros_keep_alive_pit.status, 200);
+        let micros_keep_alive_pit_id = local_pit_id(&micros_keep_alive_pit.body["pit_id"]);
+        assert_ne!(nanos_keep_alive_pit_id, micros_keep_alive_pit_id);
+        assert_eq!(micros_keep_alive_pit.body["_shards"]["successful"], 1);
+
         let listed_pits = node.handle_rest_request(RestRequest::new(
             RestMethod::Get,
             "/_search/point_in_time/_all",
@@ -51329,6 +51346,8 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(listed_pits.status, 200);
         assert_eq!(listed_pits.body["pits"][0]["keep_alive"], 30000);
         assert_eq!(listed_pits.body["pits"][1]["keep_alive"], 30000);
+        assert_eq!(listed_pits.body["pits"][2]["keep_alive"], 30000);
+        assert_eq!(listed_pits.body["pits"][3]["keep_alive"], 30000);
 
         let fractional_keep_alive_pit = node.handle_rest_request(RestRequest::new(
             RestMethod::Post,
