@@ -279,8 +279,8 @@
       "transport_action": "GetSearchPipelineTransportAction",
       "request_wire_type": "GetSearchPipelineRequest",
       "response_wire_type": "GetSearchPipelineResponse",
-      "disposition": "rejected",
-      "reason": "Get-search-pipeline transport execution requires search pipeline metadata lookup, id/wildcard resolution, local read semantics, and response rendering before Steelsearch can serve OpenSearch search pipeline get semantics."
+      "disposition": "implemented",
+      "reason": "Get-search-pipeline transport adapter renders OpenSearch-shaped search pipeline metadata from the Rust manifest."
     },
     {
       "action_name": "cluster:admin/search/pipeline/delete",

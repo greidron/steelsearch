@@ -1888,8 +1888,8 @@ pub fn classify_opensearch_transport_action(
         },
         GET_SEARCH_PIPELINE_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
-            disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "get-search-pipeline transport execution requires search pipeline metadata lookup, id/wildcard resolution, local read semantics, and response rendering",
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "get-search-pipeline transport adapter renders OpenSearch-shaped search pipeline metadata from the Rust manifest",
         },
         DELETE_SEARCH_PIPELINE_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -15048,7 +15048,7 @@ impl GetSearchPipelineRequestWire {
         Ok(request)
     }
 
-    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+    pub fn validate_supported_execution_subset(&self) -> Result<(), TransportActionWireError> {
         if self.cluster_manager_timeout != TimeValueWire::seconds(30) {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "get search pipeline cluster-manager timeout",
@@ -15069,9 +15069,14 @@ impl GetSearchPipelineRequestWire {
                 reason: "blank id selector handling belongs to search pipeline id resolution",
             });
         }
+        Ok(())
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        self.validate_supported_execution_subset()?;
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "get search pipeline execution",
-            reason: "get-search-pipeline transport execution requires search pipeline metadata lookup, id/wildcard resolution, local read semantics, and response rendering",
+            reason: "use validate_supported_execution_subset for the implemented manifest-backed get-search-pipeline adapter",
         })
     }
 }
@@ -53267,7 +53272,7 @@ mod tests {
     }
 
     #[test]
-    fn get_search_pipeline_request_wire_round_trips_and_rejects_execution_boundary() {
+    fn get_search_pipeline_request_wire_round_trips_and_validates_manifest_subset() {
         let request = GetSearchPipelineRequestWire {
             parent_task_node: "cluster-manager".to_string(),
             parent_task_id: Some(43),
@@ -53279,25 +53284,13 @@ mod tests {
 
         let decoded = GetSearchPipelineRequestWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, request);
-        assert!(matches!(
-            decoded.reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "get search pipeline execution",
-                ..
-            })
-        ));
+        decoded.validate_supported_execution_subset().unwrap();
 
         let all_pipelines = GetSearchPipelineRequestWire {
             ids: Vec::new(),
             ..GetSearchPipelineRequestWire::default()
         };
-        assert!(matches!(
-            all_pipelines.reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "get search pipeline execution",
-                ..
-            })
-        ));
+        all_pipelines.validate_supported_execution_subset().unwrap();
     }
 
     #[test]
@@ -53307,7 +53300,7 @@ mod tests {
             ..GetSearchPipelineRequestWire::default()
         };
         assert!(matches!(
-            cluster_manager_timeout.reject_unsupported_execution(),
+            cluster_manager_timeout.validate_supported_execution_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "get search pipeline cluster-manager timeout",
                 ..
@@ -53319,7 +53312,7 @@ mod tests {
             ..GetSearchPipelineRequestWire::default()
         };
         assert!(matches!(
-            local.reject_unsupported_execution(),
+            local.validate_supported_execution_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "get search pipeline local flag",
                 ..
@@ -53331,7 +53324,7 @@ mod tests {
             ..GetSearchPipelineRequestWire::default()
         };
         assert!(matches!(
-            blank_id.reject_unsupported_execution(),
+            blank_id.validate_supported_execution_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "get search pipeline blank id",
                 ..
@@ -53390,7 +53383,7 @@ mod tests {
     }
 
     #[test]
-    fn get_search_pipeline_transport_messages_bind_rejected_action_frame_and_response() {
+    fn get_search_pipeline_transport_messages_bind_supported_action_frame_and_response() {
         let request = GetSearchPipelineRequestWire::default();
         let mut frame =
             build_get_search_pipeline_request_message(43, OPENSEARCH_3_7_0_TRANSPORT, &request)
@@ -53402,21 +53395,16 @@ mod tests {
             classify_opensearch_transport_request_message(&message)
                 .unwrap()
                 .disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             read_get_search_pipeline_request_message(&message).unwrap(),
             request
         );
-        assert!(matches!(
-            read_get_search_pipeline_request_message(&message)
-                .unwrap()
-                .reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "get search pipeline execution",
-                ..
-            })
-        ));
+        read_get_search_pipeline_request_message(&message)
+            .unwrap()
+            .validate_supported_execution_subset()
+            .unwrap();
 
         let response = GetSearchPipelineResponseWire::default();
         let mut frame =

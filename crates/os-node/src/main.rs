@@ -1334,6 +1334,32 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end,
             &mut connection_end_at_ms,
         )?;
+    } else if is_request
+        && normalized_action_hint == Some("cluster:admin/search/pipeline/get")
+        && get_search_pipeline_request_supports_manifest_subset(&body)
+    {
+        let response = build_get_search_pipeline_response(request_id, header_version_id, &body);
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("cluster:admin/search/pipeline/get"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
     } else if is_request && normalized_action_hint == Some("cluster:admin/repository/get") {
         let response = build_empty_get_repositories_response(request_id, header_version_id);
         response_frame = summarize_transport_response_frame_for_action(
@@ -4675,6 +4701,34 @@ fn get_pipeline_response_from_metadata_manifest(
     }
 }
 
+fn selected_pipeline_entries<'a>(
+    pipelines: &'a serde_json::Map<String, Value>,
+    ids: &[String],
+) -> Vec<(String, &'a Value)> {
+    let mut selected = Vec::new();
+    if ids.is_empty() {
+        for (id, pipeline) in pipelines {
+            selected.push((id.clone(), pipeline));
+        }
+        return selected;
+    }
+    let mut seen = BTreeSet::new();
+    for pattern in ids {
+        if is_simple_wildcard_pattern(pattern) {
+            for (id, pipeline) in pipelines {
+                if wildcard_match(pattern, id) && seen.insert(id.clone()) {
+                    selected.push((id.clone(), pipeline));
+                }
+            }
+        } else if let Some(pipeline) = pipelines.get(pattern) {
+            if seen.insert(pattern.clone()) {
+                selected.push((pattern.clone(), pipeline));
+            }
+        }
+    }
+    selected
+}
+
 fn ingest_pipeline_configuration_from_json(
     id: &str,
     pipeline: &Value,
@@ -4684,6 +4738,79 @@ fn ingest_pipeline_configuration_from_json(
         id: id.to_string(),
         config: Bytes::from(config),
         media_type: "application/json; charset=UTF-8".to_string(),
+    })
+}
+
+fn build_get_search_pipeline_response(
+    request_id: i64,
+    header_version_id: u32,
+    body: &[u8],
+) -> Vec<u8> {
+    let Some(request) = decode_get_search_pipeline_request_from_transport_body(body) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    if request.validate_supported_execution_subset().is_err() {
+        return build_empty_transport_response(request_id, header_version_id);
+    }
+    let response = get_search_pipeline_response_from_metadata_manifest(
+        &dev_transport_pit_bindings()
+            .metadata_manifest
+            .lock()
+            .expect("metadata manifest lock poisoned"),
+        &request,
+    );
+    os_transport::action::build_get_search_pipeline_response_message(
+        request_id,
+        Version::from_id(header_version_id as i32),
+        &response,
+    )
+    .map(|frame| frame.to_vec())
+    .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
+}
+
+fn get_search_pipeline_request_supports_manifest_subset(body: &[u8]) -> bool {
+    decode_get_search_pipeline_request_from_transport_body(body)
+        .as_ref()
+        .is_some_and(|request| request.validate_supported_execution_subset().is_ok())
+}
+
+fn decode_get_search_pipeline_request_from_transport_body(
+    body: &[u8],
+) -> Option<os_transport::action::GetSearchPipelineRequestWire> {
+    let message = decode_transport_message_from_body(body)?;
+    os_transport::action::read_get_search_pipeline_request_message(&message).ok()
+}
+
+fn get_search_pipeline_response_from_metadata_manifest(
+    metadata_manifest: &Value,
+    request: &os_transport::action::GetSearchPipelineRequestWire,
+) -> os_transport::action::GetSearchPipelineResponseWire {
+    let Some(pipelines) = metadata_manifest
+        .get("search_pipelines")
+        .and_then(Value::as_object)
+    else {
+        return os_transport::action::GetSearchPipelineResponseWire {
+            pipelines: Vec::new(),
+        };
+    };
+    let response_pipelines = selected_pipeline_entries(pipelines, &request.ids)
+        .into_iter()
+        .filter_map(|(id, pipeline)| search_pipeline_configuration_from_json(&id, pipeline))
+        .collect();
+    os_transport::action::GetSearchPipelineResponseWire {
+        pipelines: response_pipelines,
+    }
+}
+
+fn search_pipeline_configuration_from_json(
+    id: &str,
+    pipeline: &Value,
+) -> Option<os_transport::action::SearchPipelineConfigurationWire> {
+    let config = serde_json::to_vec(pipeline).ok()?;
+    Some(os_transport::action::SearchPipelineConfigurationWire {
+        id: id.to_string(),
+        config: Bytes::from(config),
+        media_type: os_transport::action::OpenSearchXContentTypeWire::Json,
     })
 }
 
@@ -12991,6 +13118,15 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
             if get_pipeline_request_supports_empty_subset(body) =>
         {
             Some(build_empty_get_pipeline_response(
+                request_id,
+                header_version_id,
+                body,
+            ))
+        }
+        Some("cluster:admin/search/pipeline/get")
+            if get_search_pipeline_request_supports_manifest_subset(body) =>
+        {
+            Some(build_get_search_pipeline_response(
                 request_id,
                 header_version_id,
                 body,
@@ -27606,6 +27742,101 @@ mod tests {
         };
         assert_eq!(message.request_id, 203);
         assert!(message.body.is_empty());
+    }
+
+    #[test]
+    fn get_search_pipeline_transport_route_builds_manifest_backed_filtered_response() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        *dev_transport_pit_bindings()
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned") = serde_json::json!({
+            "search_pipelines": {
+                "neural-defaults": {
+                    "request_processors": [
+                        { "neural_query_enricher": { "default_model_id": "model-a" } }
+                    ],
+                    "response_processors": []
+                },
+                "rerank-defaults": {
+                    "request_processors": [],
+                    "response_processors": [
+                        { "rerank": { "ml_opensearch": { "model_id": "model-b" } } }
+                    ]
+                }
+            }
+        });
+        let request = os_transport::action::GetSearchPipelineRequestWire {
+            ids: vec!["neural-*".to_string()],
+            ..os_transport::action::GetSearchPipelineRequestWire::default()
+        };
+        let frame = os_transport::action::build_get_search_pipeline_request_message(
+            205,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(get_search_pipeline_request_supports_manifest_subset(
+            &frame[6..]
+        ));
+
+        let response = build_get_search_pipeline_response(
+            205,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &frame[6..],
+        );
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected get-search-pipeline response message");
+        };
+        assert_eq!(message.request_id, 205);
+        assert!(!message.status.is_request());
+        let response =
+            os_transport::action::read_get_search_pipeline_response_message(&message).unwrap();
+        assert_eq!(response.pipelines.len(), 1);
+        assert_eq!(response.pipelines[0].id, "neural-defaults");
+        assert_eq!(
+            response.pipelines[0].media_type,
+            os_transport::action::OpenSearchXContentTypeWire::Json
+        );
+        let config: Value = serde_json::from_slice(&response.pipelines[0].config).unwrap();
+        assert_eq!(
+            config["request_processors"][0]["neural_query_enricher"]["default_model_id"],
+            "model-a"
+        );
+
+        let request = os_transport::action::GetSearchPipelineRequestWire {
+            ids: Vec::new(),
+            ..os_transport::action::GetSearchPipelineRequestWire::default()
+        };
+        let frame = os_transport::action::build_get_search_pipeline_request_message(
+            206,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        let response = build_get_search_pipeline_response(
+            206,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &frame[6..],
+        );
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected all get-search-pipeline response message");
+        };
+        let response =
+            os_transport::action::read_get_search_pipeline_response_message(&message).unwrap();
+        assert_eq!(response.pipelines.len(), 2);
     }
 
     #[test]

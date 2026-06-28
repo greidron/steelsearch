@@ -66,6 +66,13 @@
       "response_evidence": "crates/os-transport/src/action.rs::opensearch_get_stored_script_transport_messages_bind_supported_action_frame_and_response"
     },
     {
+      "action_name": "cluster:admin/search/pipeline/get",
+      "disposition": "implemented",
+      "evidence_kind": "wire_round_trip",
+      "request_evidence": "crates/os-transport/src/action.rs::get_search_pipeline_transport_messages_bind_supported_action_frame_and_response",
+      "response_evidence": "crates/os-transport/src/action.rs::get_search_pipeline_transport_messages_bind_supported_action_frame_and_response"
+    },
+    {
       "action_name": "indices:admin/refresh",
       "disposition": "implemented",
       "evidence_kind": "wire_round_trip",
