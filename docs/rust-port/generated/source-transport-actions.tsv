@@ -100,8 +100,8 @@ partial	AutoCreateAction.INSTANCE	AutoCreateAction.TransportAction.class	/home/u
 partial	PutStoredScriptAction.INSTANCE	TransportPutStoredScriptAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	769
 implemented	GetStoredScriptAction.INSTANCE	TransportGetStoredScriptAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	770
 partial	DeleteStoredScriptAction.INSTANCE	TransportDeleteStoredScriptAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	771
-partial	GetScriptContextAction.INSTANCE	TransportGetScriptContextAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	772
-partial	GetScriptLanguageAction.INSTANCE	TransportGetScriptLanguageAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	773
+implemented	GetScriptContextAction.INSTANCE	TransportGetScriptContextAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	772
+implemented	GetScriptLanguageAction.INSTANCE	TransportGetScriptLanguageAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	773
 implemented	FieldCapabilitiesAction.INSTANCE	TransportFieldCapabilitiesAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	775
 partial	PutPipelineAction.INSTANCE	PutPipelineTransportAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	781
 implemented	GetPipelineAction.INSTANCE	GetPipelineTransportAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	782

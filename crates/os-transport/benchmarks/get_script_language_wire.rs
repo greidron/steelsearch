@@ -16,19 +16,15 @@ const ITERATIONS: usize = 400_000;
 fn main() {
     let request = OpenSearchGetScriptLanguageRequestWire::default();
 
-    let request_encode = measure(
-        "get_script_language_reject_request_encode",
-        ITERATIONS,
-        || {
-            let frame = build_opensearch_get_script_language_request_message(
-                73,
-                OPENSEARCH_3_7_0_TRANSPORT,
-                black_box(&request),
-            )
-            .expect("get-script-language request encode should succeed");
-            black_box(frame);
-        },
-    );
+    let request_encode = measure("get_script_language_request_encode", ITERATIONS, || {
+        let frame = build_opensearch_get_script_language_request_message(
+            73,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            black_box(&request),
+        )
+        .expect("get-script-language request encode should succeed");
+        black_box(frame);
+    });
 
     let request_frame = build_opensearch_get_script_language_request_message(
         73,
@@ -37,27 +33,23 @@ fn main() {
     )
     .expect("get-script-language request encode should succeed");
 
-    let request_decode = measure(
-        "get_script_language_reject_request_decode",
-        ITERATIONS,
-        || {
-            let mut frame = black_box(request_frame.clone());
-            let message = decode_message(&mut frame);
-            let decoded = read_opensearch_get_script_language_request_message(black_box(&message))
-                .expect("get-script-language request decode");
-            black_box(decoded);
-        },
-    );
-
-    let reject_validate = measure("get_script_language_reject_validation", ITERATIONS, || {
+    let request_decode = measure("get_script_language_request_decode", ITERATIONS, || {
         let mut frame = black_box(request_frame.clone());
         let message = decode_message(&mut frame);
         let decoded = read_opensearch_get_script_language_request_message(black_box(&message))
             .expect("get-script-language request decode");
-        let err = decoded
-            .reject_unsupported_execution()
-            .expect_err("get-script-language execution should reject");
-        black_box(err);
+        black_box(decoded);
+    });
+
+    let request_validate = measure("get_script_language_request_validate", ITERATIONS, || {
+        let mut frame = black_box(request_frame.clone());
+        let message = decode_message(&mut frame);
+        let decoded = read_opensearch_get_script_language_request_message(black_box(&message))
+            .expect("get-script-language request decode");
+        decoded
+            .validate_supported_subset()
+            .expect("get-script-language supported subset should validate");
+        black_box(decoded);
     });
 
     let response = OpenSearchGetScriptLanguageResponseWire {
@@ -73,6 +65,16 @@ fn main() {
             ),
         ]),
     };
+    let response_encode = measure("get_script_language_response_encode", ITERATIONS, || {
+        let frame = build_opensearch_get_script_language_response_message(
+            73,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            black_box(&response),
+        )
+        .expect("get-script-language response encode should succeed");
+        black_box(frame);
+    });
+
     let response_frame = build_opensearch_get_script_language_response_message(
         73,
         OPENSEARCH_3_7_0_TRANSPORT,
@@ -91,11 +93,10 @@ fn main() {
     let combined_ops_per_second = request_encode
         .ops_per_second
         .min(request_decode.ops_per_second)
-        .min(reject_validate.ops_per_second)
+        .min(request_validate.ops_per_second)
+        .min(response_encode.ops_per_second)
         .min(response_decode.ops_per_second);
-    println!(
-        "get_script_language_reject_wire_bottleneck_ops_per_second={combined_ops_per_second:.2}"
-    );
+    println!("get_script_language_wire_bottleneck_ops_per_second={combined_ops_per_second:.2}");
 }
 
 #[derive(Clone, Copy)]

@@ -328,12 +328,12 @@ name = "delete-stored-script-reject-wire-benchmark"
 path = "benchmarks/delete_stored_script_reject_wire.rs"
 
 [[bin]]
-name = "get-script-context-reject-wire-benchmark"
-path = "benchmarks/get_script_context_reject_wire.rs"
+name = "get-script-context-wire-benchmark"
+path = "benchmarks/get_script_context_wire.rs"
 
 [[bin]]
-name = "get-script-language-reject-wire-benchmark"
-path = "benchmarks/get_script_language_reject_wire.rs"
+name = "get-script-language-wire-benchmark"
+path = "benchmarks/get_script_language_wire.rs"
 
 [[bin]]
 name = "put-pipeline-reject-wire-benchmark"

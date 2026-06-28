@@ -177,8 +177,8 @@ The source-derived transport inventory currently has 160 rows:
 
 | Status | Count | Meaning |
 | --- | ---: | --- |
-| `implemented` | 67 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
-| `partial` | 93 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
+| `implemented` | 69 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
+| `partial` | 91 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
 | `planned` | 0 | No source-derived transport action remains unclassified. |
 
 The k-NN plugin action sweep is complete at the boundary layer. All 12
@@ -334,8 +334,8 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `cluster:admin/script/put` (rejected fail-closed)
 - `cluster:admin/script/get` (implemented manifest-backed stored-script metadata read subset)
 - `cluster:admin/script/delete` (rejected fail-closed)
-- `cluster:admin/script_context/get` (rejected fail-closed)
-- `cluster:admin/script_language/get` (rejected fail-closed)
+- `cluster:admin/script_context/get` (implemented Rust-supported script context catalog subset)
+- `cluster:admin/script_language/get` (implemented Rust-supported script language catalog subset)
 - `cluster:admin/ingest/pipeline/put` (rejected fail-closed)
 - `cluster:admin/ingest/pipeline/get` (implemented empty pipeline metadata-read subset)
 - `cluster:admin/ingest/pipeline/delete` (rejected fail-closed)
@@ -1354,12 +1354,10 @@ The get-script-context boundary covers:
 - OpenSearch `GetScriptContextResponse` context count and `ScriptContextInfo`
   name, execute method, getter methods, and method parameter metadata at the
   wire decode/build layer;
-- default response rendering for the same Rust-supported script context catalog
-  exposed by REST `GET /_script_context`;
-- explicit fail-closed classification for `cluster:admin/script_context/get`
-  until a local transport execution adapter is wired to the catalog renderer;
-- explicit rejection for get-script-context execution, plus defensive decode
-  rejection for negative context, getter, and parameter counts.
+- implemented local transport adapter rendering for the same Rust-supported
+  script context catalog exposed by REST `GET /_script_context`;
+- request subset validation for `cluster:admin/script_context/get`;
+- defensive decode rejection for negative context, getter, and parameter counts.
 
 The get-script-language boundary covers:
 
@@ -1368,12 +1366,10 @@ The get-script-language boundary covers:
 - OpenSearch `GetScriptLanguageResponse` / `ScriptLanguagesInfo`
   `types_allowed` string collection and language-to-contexts string collection
   map at the wire decode/build layer;
-- default response rendering for the same Rust-supported script language
-  catalog exposed by REST `GET /_script_language`;
-- explicit fail-closed classification for `cluster:admin/script_language/get`
-  until a local transport execution adapter is wired to the catalog renderer;
-- explicit rejection for get-script-language execution, plus defensive decode
-  rejection for negative type, language, and context counts.
+- implemented local transport adapter rendering for the same Rust-supported
+  script language catalog exposed by REST `GET /_script_language`;
+- request subset validation for `cluster:admin/script_language/get`;
+- defensive decode rejection for negative type, language, and context counts.
 
 The put-pipeline boundary covers:
 
@@ -4097,43 +4093,44 @@ latest local release run, current overhead is transport serialization; future
 performance-sensitive work is script metadata mutation, delete-task throttling,
 and ack rendering.
 
-Current get-script-context reject wire microbenchmark:
+Current get-script-context wire microbenchmark:
 
 ```text
-cargo run -p os-transport --release --bin get-script-context-reject-wire-benchmark
-get_script_context_reject_request_encode iterations=400000 elapsed_ms=222.431 ops_per_second=1798308.72 nanos_per_op=556.08
-get_script_context_reject_request_decode iterations=400000 elapsed_ms=223.940 ops_per_second=1786189.27 nanos_per_op=559.85
-get_script_context_reject_validation iterations=400000 elapsed_ms=249.352 ops_per_second=1604159.30 nanos_per_op=623.38
-get_script_context_response_decode iterations=400000 elapsed_ms=384.613 ops_per_second=1040005.61 nanos_per_op=961.53
-get_script_context_reject_wire_bottleneck_ops_per_second=1040005.61
+cargo run -p os-transport --release --bin get-script-context-wire-benchmark
+get_script_context_request_encode iterations=400000 elapsed_ms=218.401 ops_per_second=1831495.20 nanos_per_op=546.00
+get_script_context_request_decode iterations=400000 elapsed_ms=199.815 ops_per_second=2001852.00 nanos_per_op=499.54
+get_script_context_request_validate iterations=400000 elapsed_ms=199.335 ops_per_second=2006672.53 nanos_per_op=498.34
+get_script_context_response_encode iterations=400000 elapsed_ms=349.188 ops_per_second=1145514.03 nanos_per_op=872.97
+get_script_context_response_decode iterations=400000 elapsed_ms=443.246 ops_per_second=902433.98 nanos_per_op=1108.11
+get_script_context_wire_bottleneck_ops_per_second=902433.98
 ```
 
-The current get-script-context fail-closed boundary bottleneck is response
-decode. The request path is thin, but the response path expands
-`ScriptContextInfo` method and parameter metadata before execution is rejected.
-At roughly 1.04M ops/s in the latest local release run, current overhead is
-script context response structure decoding. Future performance-sensitive work is
-building the Rust script context catalog without repeated allocation-heavy
-method metadata expansion.
+The current get-script-context implemented subset bottleneck is response
+decode. The request path is thin, while the response path expands
+`ScriptContextInfo` method and parameter metadata. At roughly 902K ops/s in the
+latest local release run, current overhead is script context response structure
+decoding. Future performance-sensitive work is building the Rust script context
+catalog without repeated allocation-heavy method metadata expansion.
 
-Current get-script-language reject wire microbenchmark:
+Current get-script-language wire microbenchmark:
 
 ```text
-cargo run -p os-transport --release --bin get-script-language-reject-wire-benchmark
-get_script_language_reject_request_encode iterations=400000 elapsed_ms=211.420 ops_per_second=1891966.13 nanos_per_op=528.55
-get_script_language_reject_request_decode iterations=400000 elapsed_ms=202.714 ops_per_second=1973219.13 nanos_per_op=506.79
-get_script_language_reject_validation iterations=400000 elapsed_ms=202.727 ops_per_second=1973099.22 nanos_per_op=506.82
-get_script_language_response_decode iterations=400000 elapsed_ms=415.345 ops_per_second=963054.44 nanos_per_op=1038.36
-get_script_language_reject_wire_bottleneck_ops_per_second=963054.44
+cargo run -p os-transport --release --bin get-script-language-wire-benchmark
+get_script_language_request_encode iterations=400000 elapsed_ms=212.159 ops_per_second=1885378.33 nanos_per_op=530.40
+get_script_language_request_decode iterations=400000 elapsed_ms=203.960 ops_per_second=1961169.90 nanos_per_op=509.90
+get_script_language_request_validate iterations=400000 elapsed_ms=227.651 ops_per_second=1757079.23 nanos_per_op=569.13
+get_script_language_response_encode iterations=400000 elapsed_ms=392.743 ops_per_second=1018477.23 nanos_per_op=981.86
+get_script_language_response_decode iterations=400000 elapsed_ms=413.468 ops_per_second=967426.57 nanos_per_op=1033.67
+get_script_language_wire_bottleneck_ops_per_second=967426.57
 ```
 
-The current get-script-language fail-closed boundary bottleneck is response
-decode. The request path is thin, but the response path expands allowed script
-types plus the language-to-contexts map before execution is rejected. At roughly
-963K ops/s in the latest local release run, current overhead is script language
-catalog response decoding. Future performance-sensitive work is building and
-serving the Rust script language catalog without repeated allocation-heavy
-string collection expansion.
+The current get-script-language implemented subset bottleneck is response
+decode. The request path is thin, while the response path expands allowed script
+types plus the language-to-contexts map. At roughly 967K ops/s in the latest
+local release run, current overhead is script language catalog response
+decoding. Future performance-sensitive work is building and serving the Rust
+script language catalog without repeated allocation-heavy string collection
+expansion.
 
 Current put-pipeline reject wire microbenchmark:
 
