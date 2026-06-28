@@ -2403,6 +2403,9 @@ The create-PIT boundary covers:
 - local transport create-PIT now renders the OpenSearch
   `IllegalArgumentException` boundary for explicit alias targets when
   `ignore_aliases=true` and index resolution is configured to fail;
+- local transport create-PIT now renders the OpenSearch
+  `IllegalArgumentException` boundary for explicit aliases that fan out to
+  multiple indices when `forbid_aliases_to_multiple_indices=true`;
 - local transport create-PIT now renders an OpenSearch `IndexClosedException`
   transport error for strict concrete-index requests whose target is closed,
   while lenient `ignore_unavailable` requests skip that closed target;
@@ -5352,12 +5355,12 @@ Current create-PIT wire microbenchmark:
 
 ```text
 cargo run -p os-transport --release --bin create-pit-wire-benchmark
-create_pit_request_encode iterations=400000 elapsed_ms=281.753 ops_per_second=1419683.51 nanos_per_op=704.38
-create_pit_request_decode iterations=400000 elapsed_ms=266.859 ops_per_second=1498920.26 nanos_per_op=667.15
-create_pit_request_validate iterations=400000 elapsed_ms=266.653 ops_per_second=1500075.33 nanos_per_op=666.63
-create_pit_response_encode iterations=400000 elapsed_ms=124.021 ops_per_second=3225256.86 nanos_per_op=310.05
-create_pit_response_decode iterations=400000 elapsed_ms=103.802 ops_per_second=3853507.41 nanos_per_op=259.50
-create_pit_wire_bottleneck_ops_per_second=1419683.51
+create_pit_request_encode iterations=400000 elapsed_ms=285.150 ops_per_second=1402768.05 nanos_per_op=712.88
+create_pit_request_decode iterations=400000 elapsed_ms=268.254 ops_per_second=1491121.79 nanos_per_op=670.64
+create_pit_request_validate iterations=400000 elapsed_ms=268.878 ops_per_second=1487663.23 nanos_per_op=672.20
+create_pit_response_encode iterations=400000 elapsed_ms=123.399 ops_per_second=3241520.38 nanos_per_op=308.50
+create_pit_response_decode iterations=400000 elapsed_ms=104.946 ops_per_second=3811466.93 nanos_per_op=262.37
+create_pit_wire_bottleneck_ops_per_second=1402768.05
 ```
 
 The current create-PIT wire subset bottleneck is request encode. This path

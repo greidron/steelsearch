@@ -2928,6 +2928,36 @@ fn handle_transport_seed_connection<S: TransportConnection>(
         )?;
     } else if is_request
         && normalized_action_hint == Some("indices:data/read/point_in_time/create")
+        && create_pit_request_alias_multiple_indices_error(&body).is_some()
+    {
+        let response = build_create_pit_alias_multiple_indices_error_response(
+            request_id,
+            header_version_id,
+            &body,
+        );
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("indices:data/read/point_in_time/create"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request
+        && normalized_action_hint == Some("indices:data/read/point_in_time/create")
         && create_pit_request_missing_concrete_index(&body).is_some()
     {
         let response =
@@ -8138,6 +8168,46 @@ fn create_pit_ignored_alias(
         .cloned()
 }
 
+fn create_pit_alias_multiple_indices(
+    request: &os_transport::action::OpenSearchCreatePitRequestWire,
+) -> Option<(String, Vec<String>)> {
+    if request.indices_options.ignore_aliases
+        || !request.indices_options.forbid_aliases_to_multiple_indices
+    {
+        return None;
+    }
+    let bindings = dev_transport_pit_bindings();
+    let manifest_indices = {
+        let manifest = bindings
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned");
+        manifest["indices"].as_object().cloned()
+    };
+    let indices = transport_pit_index_catalog(bindings, manifest_indices);
+    request
+        .indices
+        .iter()
+        .filter(|selector| !selector.is_empty())
+        .filter(|selector| {
+            selector.as_str() != "_all" && !selector.contains('*') && !selector.contains('?')
+        })
+        .find_map(|selector| {
+            let mut matching_indices = indices
+                .iter()
+                .filter_map(|(index_name, index_body)| {
+                    index_body["aliases"]
+                        .as_object()
+                        .is_some_and(|aliases| aliases.contains_key(selector.as_str()))
+                        .then(|| index_name.clone())
+                })
+                .collect::<Vec<_>>();
+            matching_indices.sort();
+            matching_indices.dedup();
+            (matching_indices.len() > 1).then(|| (selector.clone(), matching_indices))
+        })
+}
+
 fn create_pit_closed_only_wildcard_forbid_error(
     request: &os_transport::action::OpenSearchCreatePitRequestWire,
 ) -> bool {
@@ -12393,6 +12463,31 @@ fn build_create_pit_ignored_alias_error_response(
     build_transport_error_response_frame(request_id, header_version_id, output.freeze().to_vec())
 }
 
+fn create_pit_request_alias_multiple_indices_error(body: &[u8]) -> Option<(String, Vec<String>)> {
+    let request = decode_create_pit_request_from_transport_body(body)?;
+    if request.validate_supported_subset().is_err() {
+        return None;
+    }
+    create_pit_alias_multiple_indices(&request)
+}
+
+fn build_create_pit_alias_multiple_indices_error_response(
+    request_id: i64,
+    header_version_id: u32,
+    body: &[u8],
+) -> Vec<u8> {
+    let Some((alias, indices)) = create_pit_request_alias_multiple_indices_error(body) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    let reason = format!(
+        "alias [{alias}] has more than one index associated with it [{}], can't execute a single index op",
+        indices.join(", ")
+    );
+    let mut output = StreamOutput::new();
+    os_transport::error::write_illegal_argument_exception(&mut output, Some(&reason));
+    build_transport_error_response_frame(request_id, header_version_id, output.freeze().to_vec())
+}
+
 fn create_pit_request_missing_concrete_index(body: &[u8]) -> Option<String> {
     let request = decode_create_pit_request_from_transport_body(body)?;
     if request.validate_supported_subset().is_err() {
@@ -15981,6 +16076,15 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
             if create_pit_request_ignored_alias_error(body).is_some() =>
         {
             Some(build_create_pit_ignored_alias_error_response(
+                request_id,
+                header_version_id,
+                body,
+            ))
+        }
+        Some("indices:data/read/point_in_time/create")
+            if create_pit_request_alias_multiple_indices_error(body).is_some() =>
+        {
+            Some(build_create_pit_alias_multiple_indices_error_response(
                 request_id,
                 header_version_id,
                 body,
@@ -29792,6 +29896,114 @@ mod tests {
             .unwrap();
         assert_eq!(
             create_pit_request_ignored_alias_error(&allow_no_indices_frame[6..]),
+            None
+        );
+    }
+
+    #[test]
+    fn create_pit_transport_route_reports_alias_multiple_indices_like_opensearch() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        dev_transport_pit_bindings()
+            .created_indices
+            .lock()
+            .expect("dev transport created indices lock poisoned")
+            .clear();
+        *dev_transport_pit_bindings()
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned") = serde_json::json!({
+            "indices": {
+                "logs-alias-fanout-a-pit": {
+                    "aliases": {
+                        "logs-fanout-alias-pit": {}
+                    },
+                    "settings": {
+                        "index": {
+                            "number_of_shards": "1"
+                        }
+                    }
+                },
+                "logs-alias-fanout-b-pit": {
+                    "aliases": {
+                        "logs-fanout-alias-pit": {}
+                    },
+                    "settings": {
+                        "index": {
+                            "number_of_shards": "1"
+                        }
+                    }
+                }
+            }
+        });
+        let request = os_transport::action::OpenSearchCreatePitRequestWire {
+            indices: vec!["logs-fanout-alias-pit".to_string()],
+            indices_options: os_transport::action::OpenSearchIndicesOptionsWire {
+                forbid_aliases_to_multiple_indices: true,
+                ..os_transport::action::OpenSearchIndicesOptionsWire::strict_expand_open_forbid_closed()
+            },
+            ..os_transport::action::OpenSearchCreatePitRequestWire::default()
+        };
+        let frame = os_transport::action::build_opensearch_create_pit_request_message(
+            331,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert_eq!(
+            create_pit_request_alias_multiple_indices_error(&frame[6..]),
+            Some((
+                "logs-fanout-alias-pit".to_string(),
+                vec![
+                    "logs-alias-fanout-a-pit".to_string(),
+                    "logs-alias-fanout-b-pit".to_string()
+                ]
+            ))
+        );
+
+        let response = build_create_pit_alias_multiple_indices_error_response(
+            331,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &frame[6..],
+        );
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected alias-fanout create-PIT error response frame");
+        };
+        assert_eq!(message.request_id, 331);
+        assert!(message.status.is_error());
+        let error = os_transport::error::TransportError::read(message.body.freeze())
+            .unwrap()
+            .unwrap();
+        assert_eq!(error.class_name, "java.lang.IllegalArgumentException");
+        assert_eq!(
+            error.message.as_deref(),
+            Some(
+                "alias [logs-fanout-alias-pit] has more than one index associated with it [logs-alias-fanout-a-pit, logs-alias-fanout-b-pit], can't execute a single index op"
+            )
+        );
+
+        let allowed_request = os_transport::action::OpenSearchCreatePitRequestWire {
+            indices: vec!["logs-fanout-alias-pit".to_string()],
+            indices_options: os_transport::action::OpenSearchIndicesOptionsWire {
+                forbid_aliases_to_multiple_indices: false,
+                ..os_transport::action::OpenSearchIndicesOptionsWire::strict_expand_open_forbid_closed()
+            },
+            ..os_transport::action::OpenSearchCreatePitRequestWire::default()
+        };
+        let allowed_frame = os_transport::action::build_opensearch_create_pit_request_message(
+            332,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &allowed_request,
+        )
+        .unwrap();
+        assert_eq!(
+            create_pit_request_alias_multiple_indices_error(&allowed_frame[6..]),
             None
         );
     }
