@@ -1878,8 +1878,8 @@ pub fn classify_opensearch_transport_action(
         },
         DELETE_DECOMMISSION_STATE_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
-            disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "delete-decommission-state transport execution requires recommission coordination, decommission metadata removal, cluster-state publication, and acknowledgement rendering",
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "delete-decommission-state transport adapter removes Rust manifest decommission metadata and renders OpenSearch-shaped acknowledgement",
         },
         PUT_SEARCH_PIPELINE_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -15473,18 +15473,15 @@ impl DeleteDecommissionStateRequestWire {
         Ok(request)
     }
 
-    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+    pub fn validate_supported_execution_subset(&self) -> Result<(), TransportActionWireError> {
         if self.cluster_manager_timeout != TimeValueWire::seconds(30) {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "delete decommission state cluster-manager timeout",
                 reason:
-                    "custom cluster-manager timeout requires recommission coordination semantics",
+                    "custom cluster-manager timeout is outside the supported local manifest execution subset",
             });
         }
-        Err(TransportActionWireError::UnsupportedWireShape {
-            shape: "delete decommission state execution",
-            reason: "delete-decommission-state transport execution requires recommission coordination, decommission metadata removal, cluster-state publication, and acknowledgement rendering",
-        })
+        Ok(())
     }
 }
 
@@ -54248,7 +54245,7 @@ mod tests {
     }
 
     #[test]
-    fn delete_decommission_state_request_wire_round_trips_and_rejects_execution_boundary() {
+    fn delete_decommission_state_request_wire_round_trips_and_validates_execution_subset() {
         let request = DeleteDecommissionStateRequestWire {
             parent_task_node: "cluster-manager".to_string(),
             parent_task_id: Some(41),
@@ -54259,13 +54256,7 @@ mod tests {
 
         let decoded = DeleteDecommissionStateRequestWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, request);
-        assert!(matches!(
-            decoded.reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "delete decommission state execution",
-                ..
-            })
-        ));
+        decoded.validate_supported_execution_subset().unwrap();
     }
 
     #[test]
@@ -54275,7 +54266,7 @@ mod tests {
             ..DeleteDecommissionStateRequestWire::default()
         };
         assert!(matches!(
-            cluster_manager_timeout.reject_unsupported_execution(),
+            cluster_manager_timeout.validate_supported_execution_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "delete decommission state cluster-manager timeout",
                 ..
@@ -54292,7 +54283,7 @@ mod tests {
     }
 
     #[test]
-    fn delete_decommission_state_transport_messages_bind_rejected_action_frame_and_ack_response() {
+    fn delete_decommission_state_transport_messages_bind_action_frame_and_ack_response() {
         let request = DeleteDecommissionStateRequestWire::default();
         let mut frame = build_delete_decommission_state_request_message(
             41,
@@ -54307,21 +54298,16 @@ mod tests {
             classify_opensearch_transport_request_message(&message)
                 .unwrap()
                 .disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             read_delete_decommission_state_request_message(&message).unwrap(),
             request
         );
-        assert!(matches!(
-            read_delete_decommission_state_request_message(&message)
-                .unwrap()
-                .reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "delete decommission state execution",
-                ..
-            })
-        ));
+        read_delete_decommission_state_request_message(&message)
+            .unwrap()
+            .validate_supported_execution_subset()
+            .unwrap();
 
         let response = AcknowledgedResponseWire { acknowledged: true };
         let mut frame = build_delete_decommission_state_response_message(

@@ -16,7 +16,7 @@ fn main() {
     let request = DeleteDecommissionStateRequestWire::default();
 
     let request_encode = measure(
-        "delete_decommission_state_reject_request_encode",
+        "delete_decommission_state_request_encode",
         ITERATIONS,
         || {
             let frame = build_delete_decommission_state_request_message(
@@ -34,7 +34,7 @@ fn main() {
             .expect("delete-decommission-state request encode should succeed");
 
     let request_decode = measure(
-        "delete_decommission_state_reject_request_decode",
+        "delete_decommission_state_request_decode",
         ITERATIONS,
         || {
             let mut frame = black_box(request_frame.clone());
@@ -45,18 +45,17 @@ fn main() {
         },
     );
 
-    let reject_validate = measure(
-        "delete_decommission_state_reject_validation",
+    let request_validate = measure(
+        "delete_decommission_state_request_validate",
         ITERATIONS,
         || {
             let mut frame = black_box(request_frame.clone());
             let message = decode_message(&mut frame);
             let decoded = read_delete_decommission_state_request_message(black_box(&message))
                 .expect("delete-decommission-state request decode");
-            let err = decoded
-                .reject_unsupported_execution()
-                .expect_err("delete-decommission-state execution should reject");
-            black_box(err);
+            decoded
+                .validate_supported_execution_subset()
+                .expect("delete-decommission-state execution subset should validate");
         },
     );
 
@@ -80,10 +79,10 @@ fn main() {
     let combined_ops_per_second = request_encode
         .ops_per_second
         .min(request_decode.ops_per_second)
-        .min(reject_validate.ops_per_second)
+        .min(request_validate.ops_per_second)
         .min(response_decode.ops_per_second);
     println!(
-        "delete_decommission_state_reject_wire_bottleneck_ops_per_second={combined_ops_per_second:.2}"
+        "delete_decommission_state_wire_bottleneck_ops_per_second={combined_ops_per_second:.2}"
     );
 }
 

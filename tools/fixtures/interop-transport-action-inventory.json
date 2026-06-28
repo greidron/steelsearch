@@ -261,8 +261,8 @@
       "transport_action": "TransportDeleteDecommissionStateAction",
       "request_wire_type": "DeleteDecommissionStateRequest",
       "response_wire_type": "DeleteDecommissionStateResponse",
-      "disposition": "rejected",
-      "reason": "Delete-decommission-state transport execution requires recommission coordination, decommission metadata removal, cluster-state publication, and acknowledgement rendering before Steelsearch can serve OpenSearch decommission delete semantics."
+      "disposition": "implemented",
+      "reason": "Delete-decommission-state transport adapter removes Rust manifest decommission metadata and renders OpenSearch-shaped acknowledgement."
     },
     {
       "action_name": "cluster:admin/search/pipeline/put",

@@ -177,8 +177,8 @@ The source-derived transport inventory currently has 160 rows:
 
 | Status | Count | Meaning |
 | --- | ---: | --- |
-| `implemented` | 64 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
-| `partial` | 96 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
+| `implemented` | 65 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
+| `partial` | 95 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
 | `planned` | 0 | No source-derived transport action remains unclassified. |
 
 The k-NN plugin action sweep is complete at the boundary layer. All 12
@@ -777,12 +777,12 @@ The delete-decommission-state boundary covers:
   timeout at the wire decode/build layer;
 - OpenSearch `DeleteDecommissionStateResponse` acknowledged response payload
   at the wire decode/build layer;
-- explicit fail-closed classification for
-  `cluster:admin/decommission/awareness/delete` until recommission
-  coordination, decommission metadata removal, cluster-state publication, and
-  acknowledgement rendering are implemented;
-- explicit rejection for custom cluster-manager timeout, delete-state
-  execution, and acknowledgement response rendering.
+- manifest-backed transport execution for
+  `cluster:admin/decommission/awareness/delete`, clearing OpenSearch
+  `decommissionedAttribute` metadata aliases and the Rust
+  `/cluster_admin_state/decommission_awareness` entry before returning an
+  acknowledged response;
+- explicit rejection for custom cluster-manager timeout values.
 
 The put-search-pipeline boundary covers:
 
@@ -3308,23 +3308,24 @@ release run, this boundary is not a material transport bottleneck; the next
 performance-sensitive work is keeping manifest/custom-metadata lookup cheap as
 the cluster metadata document grows.
 
-Current delete-decommission-state reject wire microbenchmark:
+Current delete-decommission-state wire microbenchmark:
 
 ```text
 cargo run -p os-transport --release --bin delete-decommission-state-reject-wire-benchmark
-delete_decommission_state_reject_request_encode iterations=400000 elapsed_ms=231.121 ops_per_second=1730693.90 nanos_per_op=577.80
-delete_decommission_state_reject_request_decode iterations=400000 elapsed_ms=229.797 ops_per_second=1740669.81 nanos_per_op=574.49
-delete_decommission_state_reject_validation iterations=400000 elapsed_ms=230.574 ops_per_second=1734803.64 nanos_per_op=576.43
-delete_decommission_state_ack_response_decode iterations=400000 elapsed_ms=56.465 ops_per_second=7084068.23 nanos_per_op=141.16
-delete_decommission_state_reject_wire_bottleneck_ops_per_second=1730693.90
+delete_decommission_state_request_encode iterations=400000 elapsed_ms=231.323 ops_per_second=1729184.51 nanos_per_op=578.31
+delete_decommission_state_request_decode iterations=400000 elapsed_ms=225.602 ops_per_second=1773032.82 nanos_per_op=564.01
+delete_decommission_state_request_validate iterations=400000 elapsed_ms=225.575 ops_per_second=1773246.62 nanos_per_op=563.94
+delete_decommission_state_ack_response_decode iterations=400000 elapsed_ms=54.494 ops_per_second=7340220.33 nanos_per_op=136.24
+delete_decommission_state_wire_bottleneck_ops_per_second=1729184.51
 ```
 
-The current delete-decommission-state fail-closed boundary bottleneck is
-request encode. The payload includes only the cluster-manager request envelope
-before admission rejects execution. At roughly 1.73M ops/s in the latest
-local release run, this boundary is not a material transport bottleneck; the
-first performance-sensitive work is recommission coordination, decommission
-metadata removal, cluster-state publication, and acknowledgement rendering.
+The current delete-decommission-state boundary bottleneck is request encode.
+The payload includes only the cluster-manager request envelope before the local
+manifest mutation clears decommission state and renders an acknowledgement.
+At roughly 1.73M ops/s in the latest local release run, this boundary is not a
+material transport bottleneck; the next performance-sensitive work is keeping
+manifest mutation and follow-up decommission-state reads cheap as cluster
+metadata grows.
 
 Current put-search-pipeline reject wire microbenchmark:
 
