@@ -25552,7 +25552,14 @@ impl OpenSearchSearchRequestWire {
                 reason: "dfs_query_then_fetch search requires distributed term-stat mapping",
             });
         }
-        if !self.indices.is_empty() && !has_point_in_time {
+        if !self.indices.is_empty() && has_point_in_time {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request point in time indices",
+                reason:
+                    "OpenSearch SearchRequest rejects explicit indices when point-in-time is used",
+            });
+        }
+        if !self.indices.is_empty() {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "search request index filter",
                 reason: "index-scoped search requires OpenSearch index resolution semantics",
@@ -71458,7 +71465,6 @@ mod tests {
         ));
 
         let rest_prepared_pit_search = OpenSearchSearchRequestWire {
-            indices: vec!["logs-000001".to_string()],
             source: Some(OpenSearchSearchSourceBuilderWire {
                 point_in_time: Some(OpenSearchPointInTimeBuilderWire {
                     id: "pit-context".to_string(),
@@ -71477,6 +71483,27 @@ mod tests {
             rest_prepared_pit_search.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "search request execution",
+                ..
+            })
+        ));
+
+        let indexed_pit_search = OpenSearchSearchRequestWire {
+            indices: vec!["logs-000001".to_string()],
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                point_in_time: Some(OpenSearchPointInTimeBuilderWire {
+                    id: "pit-context".to_string(),
+                    keep_alive: Some(TimeValueWire::minutes(1)),
+                }),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            indices_options: OpenSearchIndicesOptionsWire::point_in_time_search_prepared(),
+            ccs_minimize_roundtrips: false,
+            ..OpenSearchSearchRequestWire::default()
+        };
+        assert!(matches!(
+            indexed_pit_search.validate_supported_execution_subset(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request point in time indices",
                 ..
             })
         ));
@@ -71804,7 +71831,6 @@ mod tests {
     fn opensearch_multi_search_admits_rest_prepared_pit_sub_requests() {
         let request = OpenSearchMultiSearchRequestWire {
             requests: vec![OpenSearchSearchRequestWire {
-                indices: vec!["logs-000001".to_string()],
                 source: Some(OpenSearchSearchSourceBuilderWire {
                     point_in_time: Some(OpenSearchPointInTimeBuilderWire {
                         id: "pit-context".to_string(),
@@ -71824,6 +71850,30 @@ mod tests {
             request.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "multi-search execution",
+                ..
+            })
+        ));
+
+        let indexed_pit_request = OpenSearchMultiSearchRequestWire {
+            requests: vec![OpenSearchSearchRequestWire {
+                indices: vec!["logs-000001".to_string()],
+                source: Some(OpenSearchSearchSourceBuilderWire {
+                    point_in_time: Some(OpenSearchPointInTimeBuilderWire {
+                        id: "pit-context".to_string(),
+                        keep_alive: Some(TimeValueWire::minutes(1)),
+                    }),
+                    ..OpenSearchSearchSourceBuilderWire::default()
+                }),
+                indices_options: OpenSearchIndicesOptionsWire::point_in_time_search_prepared(),
+                ccs_minimize_roundtrips: false,
+                ..OpenSearchSearchRequestWire::default()
+            }],
+            ..OpenSearchMultiSearchRequestWire::default()
+        };
+        assert!(matches!(
+            indexed_pit_request.validate_supported_execution_subset(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request point in time indices",
                 ..
             })
         ));
