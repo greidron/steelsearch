@@ -56,6 +56,29 @@ transport action still needs an owner-level implementation classification plus
 positive and negative live comparison evidence, or an explicit out-of-scope
 decision.
 
+## 2026-06-28 Route-Parity Refresh
+
+The root/cluster/node route-parity subset was rerun against live Steelsearch and
+OpenSearch targets at
+`target/route-parity-cluster-health-current-20260628/compare`.
+
+Current rerun result:
+
+| Suite | Passed | Failed |
+| --- | ---: | ---: |
+| `cluster-health` | 9 | 0 |
+| `allocation-explain` | 2 | 0 |
+| `cluster-settings` | 8 | 0 |
+| `cluster-state` | 19 | 0 |
+| `root-cluster-node` | 12 | 0 |
+| `tasks` | 14 | 0 |
+| `stats` | 12 | 0 |
+
+This refresh converts the previously stale/missing route-parity evidence for
+cluster-health invalid parameters, cluster-state validation, task validation,
+and stats validation into current live comparison evidence. It does not change
+the broader exhaustive-compatibility conclusion above.
+
 ## Fixed In This Pass
 
 | Case | Resolution |
