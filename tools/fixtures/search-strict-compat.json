@@ -819,7 +819,7 @@
       "method": "GET",
       "path": "/_cat/health?v=true&h=cl,st,dcm,sh,p,asp",
       "accept": "text/plain",
-      "extract": "cat_indices_selected_columns",
+      "extract": "cat_health_selected_columns",
       "family": "admin-cat",
       "description": "[admin-cat] cat health text honors h aliases",
       "strict_source_parity_required": true
@@ -1001,7 +1001,7 @@
       "method": "GET",
       "path": "/_cat/allocation?v=true&h=s,n",
       "accept": "text/plain",
-      "extract": "cat_indices_selected_columns",
+      "extract": "cat_allocation_selected_columns",
       "family": "admin-cat",
       "description": "[admin-cat] cat allocation text honors h aliases",
       "strict_source_parity_required": true
@@ -1011,7 +1011,7 @@
       "area": "cat",
       "method": "GET",
       "path": "/_cat/allocation?format=json&h=s,n",
-      "extract": "cat_indices_selected_columns",
+      "extract": "cat_allocation_selected_columns",
       "family": "admin-cat",
       "description": "[admin-cat] cat allocation json honors h aliases",
       "strict_source_parity_required": true

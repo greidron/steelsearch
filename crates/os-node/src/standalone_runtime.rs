@@ -6962,6 +6962,52 @@ impl SteelNode {
         entry
     }
 
+    fn matching_data_stream_template_entry(manifest: &Value, name: &str) -> Option<Value> {
+        manifest["templates"]["index_templates"]
+            .as_object()
+            .into_iter()
+            .flat_map(|templates| templates.values())
+            .filter(|template| Self::data_stream_template_matches(name, template))
+            .max_by_key(|template| {
+                template["index_template"]
+                    .get("priority")
+                    .and_then(Value::as_i64)
+                    .unwrap_or(0)
+            })
+            .cloned()
+    }
+
+    fn build_data_stream_backing_index_entry(
+        manifest: &Value,
+        data_stream: &str,
+        backing_index: &str,
+    ) -> Value {
+        let mut entry = serde_json::json!({
+            "mappings": {
+                "properties": {
+                    "@timestamp": { "type": "date" }
+                }
+            },
+            "aliases": {}
+        });
+        let Some(template_entry) = Self::matching_data_stream_template_entry(manifest, data_stream)
+        else {
+            return entry;
+        };
+        let index_template = &template_entry["index_template"];
+        if let Some(component_names) = index_template["composed_of"].as_array() {
+            for component_name in component_names.iter().filter_map(Value::as_str) {
+                let component_template = &manifest["templates"]["component_templates"]
+                    [component_name]["component_template"];
+                if component_template.is_object() {
+                    merge_object_with_null_reset(&mut entry, &component_template["template"]);
+                }
+            }
+        }
+        merge_object_with_null_reset(&mut entry, &index_template["template"]);
+        Self::normalize_index_manifest_entry(backing_index, entry)
+    }
+
     fn ensure_minimal_index_exists(&self, index: &str) {
         let already_created = {
             let mut created = self
@@ -7281,8 +7327,9 @@ impl SteelNode {
             .metadata_manifest_state
             .lock()
             .expect("metadata manifest state lock poisoned");
-        manifest["indices"][&backing_index] =
-            Self::create_minimal_index_manifest_entry(&backing_index);
+        let backing_entry =
+            Self::build_data_stream_backing_index_entry(&manifest, name, &backing_index);
+        manifest["indices"][&backing_index] = backing_entry;
         manifest["data_streams"][name] = serde_json::json!({
             "generation": 1,
             "template": template_name,
@@ -7408,7 +7455,7 @@ impl SteelNode {
                 .expect("created indices state lock poisoned")
                 .insert(next_index.clone());
             manifest["indices"][&next_index] =
-                Self::create_minimal_index_manifest_entry(&next_index);
+                Self::build_data_stream_backing_index_entry(&manifest, target, &next_index);
             drop(manifest);
             self.persist_shared_runtime_state_to_disk();
             return RestResponse::json(200, response);
@@ -9193,10 +9240,12 @@ impl SteelNode {
         }
         let requested_target = target.unwrap_or("_all");
         let resolved_indices = if requested_target == "_all" {
-            Some(match self.resolve_search_targets("*", false, true, "open") {
-                Ok(indices) => indices,
-                Err(response) => return response,
-            })
+            Some(
+                match self.resolve_search_targets("*", false, true, "open") {
+                    Ok(indices) => indices,
+                    Err(response) => return response,
+                },
+            )
         } else {
             let ignore_unavailable =
                 query_param_is_true(request.query_params.get("ignore_unavailable"));
@@ -10394,12 +10443,9 @@ impl SteelNode {
         let mut paged_hits: Vec<Value> = hits.iter().skip(from).take(size).cloned().collect();
         append_search_hit_sort_values(&mut paged_hits, body.get("sort"));
         let render_scores = search_response_should_render_scores(&body);
-        let scroll_id = request
-            .query_params
-            .get("scroll")
-            .map(|keep_alive| {
-                self.store_scroll_context(remaining_hits.clone(), size, total_value, keep_alive)
-            });
+        let scroll_id = request.query_params.get("scroll").map(|keep_alive| {
+            self.store_scroll_context(remaining_hits.clone(), size, total_value, keep_alive)
+        });
         if let Some(highlight) = body.get("highlight") {
             for hit in &mut paged_hits {
                 let Some(hit_object) = hit.as_object_mut() else {
@@ -13444,32 +13490,35 @@ impl SteelNode {
             .lock()
             .expect("metadata manifest state lock poisoned")
             .clone();
-        let (open_count, closed_count) =
-            selected_indices.iter().fold((0_u64, 0_u64), |acc, index| {
+        let (open_primary_shards, open_replica_shards, closed_count) = selected_indices
+            .iter()
+            .fold((0_u64, 0_u64, 0_u64), |acc, index| {
                 let is_closed = manifest["indices"][index]["state"]
                     .as_str()
                     .is_some_and(|state| state == "close");
                 if is_closed {
-                    (acc.0, acc.1 + 1)
+                    (acc.0, acc.1, acc.2 + 1)
                 } else {
-                    (acc.0 + 1, acc.1)
+                    let primary_shards = self.index_primary_shard_count(index) as u64;
+                    let replica_shards = primary_shards * self.index_replica_count(index) as u64;
+                    (acc.0 + primary_shards, acc.1 + replica_shards, acc.2)
                 }
             });
-        let unassigned_shards = if open_count > 0 && node_count == 1 {
-            open_count
+        let unassigned_shards = if open_primary_shards > 0 && node_count == 1 {
+            open_replica_shards
         } else {
             0
         };
-        let active_primary_shards = open_count;
-        let active_shards = open_count;
-        let status = if open_count == 0 && closed_count > 0 {
+        let active_primary_shards = open_primary_shards;
+        let active_shards = open_primary_shards;
+        let status = if open_primary_shards == 0 && closed_count > 0 {
             "red"
         } else if unassigned_shards > 0 {
             "yellow"
         } else {
             "green"
         };
-        let active_shards_percent = if open_count == 0 && closed_count > 0 {
+        let active_shards_percent = if open_primary_shards == 0 && closed_count > 0 {
             0.0
         } else if selected_indices.is_empty() {
             100.0
@@ -18192,9 +18241,8 @@ impl SteelNode {
                     .any(|token| token == "hidden" || token == "all")
             })
             .unwrap_or(false)
-            || target.is_some_and(|target| {
-                !target.contains('*') && hidden_indices.contains(target)
-            });
+            || target
+                .is_some_and(|target| !target.contains('*') && hidden_indices.contains(target));
         let pit_open_contexts_by_index = self.pit_open_context_counts_by_index();
         let pit_total_contexts_by_index = self
             .pit_total_contexts_by_index
@@ -18530,12 +18578,30 @@ impl SteelNode {
                     local: true,
                 }]
             });
-        let shards = self
+        let created_indices = self
             .created_indices_state
             .lock()
             .expect("created indices state lock poisoned")
-            .len()
-            .to_string();
+            .iter()
+            .cloned()
+            .collect::<Vec<_>>();
+        let assigned_primary_shards = created_indices
+            .iter()
+            .filter(|index| !self.index_is_closed(index))
+            .map(|index| self.index_primary_shard_count(index))
+            .sum::<usize>();
+        let unassigned_replica_shards = if nodes.len() == 1 {
+            created_indices
+                .iter()
+                .filter(|index| !self.index_is_closed(index))
+                .map(|index| {
+                    self.index_primary_shard_count(index) * self.index_replica_count(index)
+                })
+                .sum::<usize>()
+        } else {
+            0
+        };
+        let shards = assigned_primary_shards.to_string();
         let mut rows = nodes
             .into_iter()
             .filter(|node| {
@@ -18566,11 +18632,29 @@ impl SteelNode {
                 })
             })
             .collect::<Vec<_>>();
+        if unassigned_replica_shards > 0
+            && target
+                .map(|pattern| wildcard_match(pattern, "UNASSIGNED"))
+                .unwrap_or(true)
+        {
+            rows.push(serde_json::json!({
+                "shards": unassigned_replica_shards.to_string(),
+                "disk.indices": null,
+                "disk.used": null,
+                "disk.avail": null,
+                "disk.total": null,
+                "disk.percent": null,
+                "host": null,
+                "ip": null,
+                "node": "UNASSIGNED",
+            }));
+        }
         rows.sort_by(|left, right| {
-            left["node"]
-                .as_str()
-                .unwrap_or_default()
-                .cmp(right["node"].as_str().unwrap_or_default())
+            let left_node = left["node"].as_str().unwrap_or_default();
+            let right_node = right["node"].as_str().unwrap_or_default();
+            (left_node == "UNASSIGNED")
+                .cmp(&(right_node == "UNASSIGNED"))
+                .then_with(|| left_node.cmp(right_node))
         });
         if request
             .query_params
@@ -21155,7 +21239,11 @@ impl SteelNode {
                     .is_some_and(|(doc_index, _)| doc_index == index)
                     .then_some(document)
             })
-            .map(|document| serde_json::to_vec(&document.source).unwrap_or_default().len())
+            .map(|document| {
+                serde_json::to_vec(&document.source)
+                    .unwrap_or_default()
+                    .len()
+            })
             .sum::<usize>();
         if source_bytes == 0 {
             return 0;
@@ -35549,6 +35637,18 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         ));
         assert_eq!(get_response.status, 200);
         assert_eq!(get_response.body["data_streams"][0]["name"], "logs-ds-prod");
+        let backing_index = get_response.body["data_streams"][0]["indices"][0]["index_name"]
+            .as_str()
+            .expect("data stream backing index");
+        let get_backing_index = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            &format!("/{backing_index}"),
+        ));
+        assert_eq!(get_backing_index.status, 200);
+        assert_eq!(
+            get_backing_index.body[backing_index]["settings"]["index"]["number_of_replicas"],
+            Value::from(0)
+        );
 
         let stats_response =
             node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_data_stream/_stats"));
@@ -37984,7 +38084,9 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             .map(str::trim)
             .collect::<Vec<_>>();
         assert_eq!(
-            selected_text_lines[0].split_whitespace().collect::<Vec<_>>(),
+            selected_text_lines[0]
+                .split_whitespace()
+                .collect::<Vec<_>>(),
             vec!["idx", "dc"]
         );
         assert!(selected_text_lines
@@ -37999,15 +38101,15 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         nested_indices_text_request
             .query_params
             .insert("h".to_string(), "idx,dc".to_string());
-        let nested_indices_text_response =
-            node.handle_rest_request(nested_indices_text_request);
+        let nested_indices_text_response = node.handle_rest_request(nested_indices_text_request);
         let nested_indices_text = nested_indices_text_response
             .body
             .as_str()
             .expect("nested cat indices selected text body");
         assert!(nested_indices_text
             .lines()
-            .any(|line| line.split_whitespace().collect::<Vec<_>>() == vec!["logs-nested-000001", "3"]));
+            .any(|line| line.split_whitespace().collect::<Vec<_>>()
+                == vec!["logs-nested-000001", "3"]));
 
         let mut indices_bytes_text_request =
             RestRequest::new(RestMethod::Get, "/_cat/indices/logs-000001");
@@ -38068,10 +38170,10 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             .split_whitespace()
             .collect::<Vec<_>>();
         assert_eq!(primary_bytes_text_fields, vec!["ss", "pri.ss"]);
-        assert_eq!(primary_bytes_text_values, vec![
-            store_size_bytes.to_string(),
-            store_size_bytes.to_string()
-        ]);
+        assert_eq!(
+            primary_bytes_text_values,
+            vec![store_size_bytes.to_string(), store_size_bytes.to_string()]
+        );
 
         let mut indices_optional_text_request =
             RestRequest::new(RestMethod::Get, "/_cat/indices/logs-000001");
@@ -38191,7 +38293,9 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             indices_json_response.body[0]["pri.store.size"],
             format_cat_byte_size(store_size_bytes)
         );
-        assert!(indices_json_response.body[0].get("search.open_contexts").is_none());
+        assert!(indices_json_response.body[0]
+            .get("search.open_contexts")
+            .is_none());
         assert!(indices_json_response.body[0].get("dataset.size").is_none());
         assert!(indices_json_response.body[0]
             .get("creation.date.string")
@@ -38214,8 +38318,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             ]
             .join(","),
         );
-        let indices_search_json_response =
-            node.handle_rest_request(indices_search_json_request);
+        let indices_search_json_response = node.handle_rest_request(indices_search_json_request);
         assert_eq!(indices_search_json_response.status, 200);
         assert_eq!(
             indices_search_json_response.body[0]["search.open_contexts"],
@@ -63732,11 +63835,12 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         });
 
         let rejected = node.handle_rest_request(
-            RestRequest::new(RestMethod::Put, "/_snapshot/repo-outside-path-repo")
-                .with_json_body(serde_json::json!({
+            RestRequest::new(RestMethod::Put, "/_snapshot/repo-outside-path-repo").with_json_body(
+                serde_json::json!({
                     "type": "fs",
                     "settings": {"location": "/tmp/repo-outside-path-repo"}
-                })),
+                }),
+            ),
         );
         assert_eq!(rejected.status, 500);
         assert_eq!(

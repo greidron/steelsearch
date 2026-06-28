@@ -2245,6 +2245,22 @@ def extract(kind: str, response: dict[str, Any]) -> Any:
         selected = extract("cat_indices_selected_columns", response)
         normalize_selected_column_values(selected, {"node_name", "nn"}, "<node-name>")
         return selected
+    if kind == "cat_health_selected_columns":
+        selected = extract("cat_indices_selected_columns", response)
+        normalize_selected_column_values(
+            selected,
+            {"cluster", "cl"},
+            "<cluster-name>",
+        )
+        return selected
+    if kind == "cat_allocation_selected_columns":
+        selected = extract("cat_indices_selected_columns", response)
+        normalize_selected_column_values(
+            selected,
+            {"node", "n"},
+            "<node-name>",
+        )
+        return selected
     if kind == "cat_nodeattrs_selected_columns":
         selected = extract("cat_indices_selected_columns", response)
         normalize_selected_column_values(
