@@ -600,7 +600,7 @@ name = "explain-reject-wire-benchmark"
 path = "benchmarks/explain_reject_wire.rs"
 
 [[bin]]
-name = "create-pit-reject-wire-benchmark"
+name = "create-pit-wire-benchmark"
 path = "benchmarks/create_pit_reject_wire.rs"
 
 [[bin]]

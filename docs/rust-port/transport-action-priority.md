@@ -5322,16 +5322,16 @@ context listing.
 Current create-PIT wire microbenchmark:
 
 ```text
-cargo run -p os-transport --release --bin create-pit-reject-wire-benchmark
-create_pit_request_encode iterations=400000 elapsed_ms=284.419 ops_per_second=1406375.58 nanos_per_op=711.05
-create_pit_request_decode iterations=400000 elapsed_ms=349.232 ops_per_second=1145371.28 nanos_per_op=873.08
-create_pit_request_validate iterations=400000 elapsed_ms=273.944 ops_per_second=1460152.09 nanos_per_op=684.86
-create_pit_response_encode iterations=400000 elapsed_ms=129.219 ops_per_second=3095527.20 nanos_per_op=323.05
-create_pit_response_decode iterations=400000 elapsed_ms=108.274 ops_per_second=3694318.02 nanos_per_op=270.69
-create_pit_wire_bottleneck_ops_per_second=1145371.28
+cargo run -p os-transport --release --bin create-pit-wire-benchmark
+create_pit_request_encode iterations=400000 elapsed_ms=277.893 ops_per_second=1439402.74 nanos_per_op=694.73
+create_pit_request_decode iterations=400000 elapsed_ms=264.984 ops_per_second=1509525.37 nanos_per_op=662.46
+create_pit_request_validate iterations=400000 elapsed_ms=264.814 ops_per_second=1510493.75 nanos_per_op=662.04
+create_pit_response_encode iterations=400000 elapsed_ms=123.938 ops_per_second=3227426.57 nanos_per_op=309.84
+create_pit_response_decode iterations=400000 elapsed_ms=104.923 ops_per_second=3812311.84 nanos_per_op=262.31
+create_pit_wire_bottleneck_ops_per_second=1439402.74
 ```
 
-The current create-PIT wire subset bottleneck is request decode. This path
+The current create-PIT wire subset bottleneck is request encode. This path
 carries the ActionRequest parent task, index target controls, keep-alive, and
 optional partial-creation flag before admitting the local transport PIT
 lifecycle subset. Runtime create-PIT now also resolves index/alias/wildcard and
