@@ -1819,6 +1819,33 @@ fn handle_transport_seed_connection<S: TransportConnection>(
         )?;
     } else if is_request
         && normalized_action_hint == Some("indices:data/read/search")
+        && search_request_has_missing_pit_context(&body)
+    {
+        let response =
+            build_search_missing_pit_context_error_response(request_id, header_version_id, &body);
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("indices:data/read/search"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request
+        && normalized_action_hint == Some("indices:data/read/search")
         && search_request_exceeds_local_pit_keep_alive_limit(&body)
     {
         let response = build_search_pit_keep_alive_too_large_error_response(
@@ -1879,6 +1906,36 @@ fn handle_transport_seed_connection<S: TransportConnection>(
     {
         let response =
             build_stream_search_invalid_pit_id_error_response(request_id, header_version_id, &body);
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("indices:data/read/search/stream"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request
+        && normalized_action_hint == Some("indices:data/read/search/stream")
+        && stream_search_request_has_missing_pit_context(&body)
+    {
+        let response = build_stream_search_missing_pit_context_error_response(
+            request_id,
+            header_version_id,
+            &body,
+        );
         response_frame = summarize_transport_response_frame_for_action(
             &response,
             Some("indices:data/read/search/stream"),
@@ -5335,6 +5392,12 @@ fn search_request_has_invalid_pit_id(body: &[u8]) -> bool {
         .is_some_and(search_request_pit_id_is_invalid)
 }
 
+fn search_request_has_missing_pit_context(body: &[u8]) -> bool {
+    decode_search_request_from_transport_body(body)
+        .as_ref()
+        .is_some_and(search_request_pit_context_is_missing)
+}
+
 fn search_request_exceeds_local_pit_keep_alive_limit(body: &[u8]) -> bool {
     decode_search_request_from_transport_body(body)
         .as_ref()
@@ -5415,6 +5478,12 @@ fn stream_search_request_has_invalid_pit_id(body: &[u8]) -> bool {
         .is_some_and(search_request_pit_id_is_invalid)
 }
 
+fn stream_search_request_has_missing_pit_context(body: &[u8]) -> bool {
+    decode_stream_search_request_from_transport_body(body)
+        .as_ref()
+        .is_some_and(search_request_pit_context_is_missing)
+}
+
 fn stream_search_request_exceeds_local_pit_keep_alive_limit(body: &[u8]) -> bool {
     decode_stream_search_request_from_transport_body(body)
         .as_ref()
@@ -5473,6 +5542,23 @@ fn search_request_pit_id_is_invalid(
     os_transport::action::OpenSearchSearchContextIdWire::decode(pit_id).is_err()
 }
 
+fn search_request_pit_context_is_missing(
+    request: &os_transport::action::OpenSearchSearchRequestWire,
+) -> bool {
+    let Some(pit_id) = search_request_pit_id(request) else {
+        return false;
+    };
+    if os_transport::action::OpenSearchSearchContextIdWire::decode(pit_id).is_err() {
+        return false;
+    }
+    let mut contexts = dev_transport_pit_bindings()
+        .contexts
+        .lock()
+        .expect("dev transport PIT contexts lock poisoned");
+    prune_expired_transport_pits(&mut contexts, now_epoch_ms());
+    remove_transport_pit_if_indices_missing(&mut contexts, pit_id).is_none()
+}
+
 fn build_search_request_invalid_pit_id_error_response(
     request_id: i64,
     header_version_id: u32,
@@ -5483,6 +5569,59 @@ fn build_search_request_invalid_pit_id_error_response(
     let mut output = StreamOutput::new();
     os_transport::error::write_illegal_argument_exception(&mut output, Some(&reason));
     build_transport_error_response_frame(request_id, header_version_id, output.freeze().to_vec())
+}
+
+fn build_search_missing_pit_context_error_response(
+    request_id: i64,
+    header_version_id: u32,
+    body: &[u8],
+) -> Vec<u8> {
+    let Some(request) = decode_search_request_from_transport_body(body) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    build_search_request_missing_pit_context_error_response(request_id, header_version_id, &request)
+}
+
+fn build_stream_search_missing_pit_context_error_response(
+    request_id: i64,
+    header_version_id: u32,
+    body: &[u8],
+) -> Vec<u8> {
+    let Some(request) = decode_stream_search_request_from_transport_body(body) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    build_search_request_missing_pit_context_error_response(request_id, header_version_id, &request)
+}
+
+fn build_search_request_missing_pit_context_error_response(
+    request_id: i64,
+    header_version_id: u32,
+    request: &os_transport::action::OpenSearchSearchRequestWire,
+) -> Vec<u8> {
+    let pit_id = search_request_pit_id(request).unwrap_or_default();
+    let context_id = first_search_context_id_from_pit_id(pit_id).unwrap_or_else(|| {
+        os_transport::action::OpenSearchShardSearchContextIdWire::new(String::new(), -1)
+    });
+    let reason = format!("No search context found for id [{}]", context_id.id);
+    let mut output = StreamOutput::new();
+    os_transport::error::write_search_context_missing_exception(
+        &mut output,
+        Some(&reason),
+        &context_id.session_id,
+        context_id.id,
+    );
+    build_transport_error_response_frame(request_id, header_version_id, output.freeze().to_vec())
+}
+
+fn first_search_context_id_from_pit_id(
+    pit_id: &str,
+) -> Option<os_transport::action::OpenSearchShardSearchContextIdWire> {
+    let context_id = os_transport::action::OpenSearchSearchContextIdWire::decode(pit_id).ok()?;
+    context_id
+        .shards
+        .values()
+        .next()
+        .map(|context| context.search_context_id.clone())
 }
 
 fn search_request_pit_keep_alive_exceeds_limit(
@@ -11821,6 +11960,9 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
         Some("indices:data/read/search") if search_request_has_invalid_pit_id(body) => Some(
             build_search_invalid_pit_id_error_response(request_id, header_version_id, body),
         ),
+        Some("indices:data/read/search") if search_request_has_missing_pit_context(body) => Some(
+            build_search_missing_pit_context_error_response(request_id, header_version_id, body),
+        ),
         Some("indices:data/read/search")
             if search_request_exceeds_local_pit_keep_alive_limit(body) =>
         {
@@ -11843,6 +11985,15 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
             if stream_search_request_has_invalid_pit_id(body) =>
         {
             Some(build_stream_search_invalid_pit_id_error_response(
+                request_id,
+                header_version_id,
+                body,
+            ))
+        }
+        Some("indices:data/read/search/stream")
+            if stream_search_request_has_missing_pit_context(body) =>
+        {
+            Some(build_stream_search_missing_pit_context_error_response(
                 request_id,
                 header_version_id,
                 body,
@@ -18601,6 +18752,136 @@ mod tests {
                 .expect("PIT context should remain")
                 .keep_alive_millis,
             60_000
+        );
+    }
+
+    #[test]
+    fn search_transport_route_rejects_missing_pit_context_like_opensearch() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        let bindings = dev_transport_pit_bindings();
+        bindings
+            .contexts
+            .lock()
+            .expect("dev transport PIT contexts lock poisoned")
+            .clear();
+        bindings
+            .reader_contexts
+            .lock()
+            .expect("dev transport reader contexts lock poisoned")
+            .clear();
+        bindings
+            .created_indices
+            .lock()
+            .expect("dev transport created indices lock poisoned")
+            .clear();
+        bindings
+            .documents
+            .lock()
+            .expect("dev transport documents lock poisoned")
+            .clear();
+
+        let search_context_id =
+            os_transport::action::OpenSearchShardSearchContextIdWire::new("session-missing", 707);
+        let pit_id = os_transport::action::OpenSearchSearchContextIdWire::new(BTreeMap::from([(
+            os_transport::action::OpenSearchShardIdWire {
+                index_name: "logs-search-pit-missing".to_string(),
+                index_uuid: "uuid-logs-search-pit-missing".to_string(),
+                shard_id: 0,
+            },
+            os_transport::action::OpenSearchSearchContextIdForNodeWire {
+                node: "node-a".to_string(),
+                cluster_alias: None,
+                search_context_id: search_context_id.clone(),
+            },
+        )]))
+        .encode(OPENSEARCH_3_7_0_TRANSPORT)
+        .unwrap();
+
+        let request = os_transport::action::OpenSearchSearchRequestWire {
+            source: Some(os_transport::action::OpenSearchSearchSourceBuilderWire {
+                point_in_time: Some(os_transport::action::OpenSearchPointInTimeBuilderWire {
+                    id: pit_id,
+                    keep_alive: Some(os_transport::action::TimeValueWire::millis(90_000_000)),
+                }),
+                ..os_transport::action::OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..os_transport::action::OpenSearchSearchRequestWire::default()
+        };
+        let frame = os_transport::action::build_opensearch_search_request_message(
+            315,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(!search_request_has_invalid_pit_id(&frame[6..]));
+        assert!(search_request_has_missing_pit_context(&frame[6..]));
+        assert!(search_request_exceeds_local_pit_keep_alive_limit(
+            &frame[6..]
+        ));
+        assert!(!search_request_supports_local_execution_subset(&frame[6..]));
+        let response = build_search_missing_pit_context_error_response(
+            315,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &frame[6..],
+        );
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected PIT search missing-context error response frame");
+        };
+        assert_eq!(message.request_id, 315);
+        assert!(message.status.is_error());
+        let error = os_transport::error::TransportError::read(message.body.freeze())
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            error.class_name,
+            "org.opensearch.search.SearchContextMissingException"
+        );
+        assert_eq!(
+            error.message.as_deref(),
+            Some("No search context found for id [707]")
+        );
+
+        let stream_frame = os_transport::action::build_opensearch_stream_search_request_message(
+            316,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(stream_search_request_has_missing_pit_context(
+            &stream_frame[6..]
+        ));
+        let stream_response = build_stream_search_missing_pit_context_error_response(
+            316,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &stream_frame[6..],
+        );
+        let mut frame = BytesMut::from(&stream_response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected PIT stream-search missing-context error response frame");
+        };
+        assert_eq!(message.request_id, 316);
+        assert!(message.status.is_error());
+        let error = os_transport::error::TransportError::read(message.body.freeze())
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            error.class_name,
+            "org.opensearch.search.SearchContextMissingException"
+        );
+        assert_eq!(
+            error.message.as_deref(),
+            Some("No search context found for id [707]")
         );
     }
 

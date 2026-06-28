@@ -84,6 +84,24 @@ pub fn write_rejected_execution_exception(output: &mut StreamOutput, message: Op
     write_empty_stack_trace(output);
 }
 
+pub fn write_search_context_missing_exception(
+    output: &mut StreamOutput,
+    message: Option<&str>,
+    session_id: &str,
+    context_id: i64,
+) {
+    output.write_bool(true);
+    output.write_vint(0);
+    output.write_vint(24);
+    output.write_optional_string(message);
+    output.write_bool(false);
+    write_empty_stack_trace(output);
+    write_empty_string_list_map(output);
+    write_empty_string_list_map(output);
+    output.write_i64(context_id);
+    output.write_string(session_id);
+}
+
 fn read_jvm_exception(
     input: &mut StreamInput,
     class_name: &str,
@@ -137,6 +155,10 @@ fn read_opensearch_exception(
             skip_optional_transport_address(input)?;
             let _action = input.read_optional_string()?;
         }
+        24 => {
+            let _context_id = input.read_i64()?;
+            let _session_id = input.read_string()?;
+        }
         _ => {}
     }
 
@@ -165,6 +187,10 @@ fn skip_stack_trace(input: &mut StreamInput) -> Result<(), TransportErrorDecodeE
 
 fn write_empty_stack_trace(output: &mut StreamOutput) {
     output.write_vint(0);
+    output.write_vint(0);
+}
+
+fn write_empty_string_list_map(output: &mut StreamOutput) {
     output.write_vint(0);
 }
 
@@ -207,6 +233,7 @@ fn read_non_negative_len(input: &mut StreamInput) -> Result<usize, TransportErro
 
 fn opensearch_exception_class_name(id: i32) -> &'static str {
     match id {
+        24 => "org.opensearch.search.SearchContextMissingException",
         19 => "org.opensearch.ResourceNotFoundException",
         68 => "org.opensearch.OpenSearchException",
         71 => "org.opensearch.action.FailedNodeException",
@@ -276,6 +303,29 @@ mod tests {
             "org.opensearch.common.util.concurrent.OpenSearchRejectedExecutionException"
         );
         assert_eq!(error.message.as_deref(), Some("too many contexts"));
+        assert!(error.cause.is_none());
+    }
+
+    #[test]
+    fn writes_opensearch_search_context_missing_exception_message() {
+        let mut output = StreamOutput::new();
+        super::write_search_context_missing_exception(
+            &mut output,
+            Some("No search context found for id [42]"),
+            "session-a",
+            42,
+        );
+
+        let error = TransportError::read(output.freeze()).unwrap().unwrap();
+
+        assert_eq!(
+            error.class_name,
+            "org.opensearch.search.SearchContextMissingException"
+        );
+        assert_eq!(
+            error.message.as_deref(),
+            Some("No search context found for id [42]")
+        );
         assert!(error.cause.is_none());
     }
 
