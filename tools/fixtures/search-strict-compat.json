@@ -5641,6 +5641,42 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "pit_null_body_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/_search",
+      "body": {
+        "pit": null,
+        "query": {
+          "match_all": {}
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] PIT rejects null body values like OpenSearch",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "pit_array_body_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/_search",
+      "body": {
+        "pit": [
+          "pit-missing"
+        ],
+        "query": {
+          "match_all": {}
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] PIT rejects array body values like OpenSearch",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "pit_missing_id_error_search",
       "area": "search",
       "method": "POST",
