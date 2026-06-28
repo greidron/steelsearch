@@ -177,8 +177,8 @@ The source-derived transport inventory currently has 160 rows:
 
 | Status | Count | Meaning |
 | --- | ---: | --- |
-| `implemented` | 95 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
-| `partial` | 65 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
+| `implemented` | 96 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
+| `partial` | 64 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
 | `planned` | 0 | No source-derived transport action remains unclassified. |
 
 The k-NN plugin action sweep is complete at the boundary layer. All 12
@@ -333,7 +333,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `indices:data/write/update`
 - `indices:data/write/delete`
 - `indices:admin/create` (implemented default manifest-backed index metadata mutation subset)
-- `indices:admin/auto_create` (rejected fail-closed)
+- `indices:admin/auto_create` (implemented default manifest-backed auto-create index metadata mutation subset)
 - `cluster:admin/script/put` (implemented manifest-backed stored-script metadata write subset)
 - `cluster:admin/script/get` (implemented manifest-backed stored-script metadata read subset)
 - `cluster:admin/script/delete` (manifest-backed stored-script deletion)
@@ -1321,13 +1321,16 @@ The auto-create boundary covers:
   acknowledgement timeout, cause, target index, string-valued settings map,
   mappings string, alias count, `ActiveShardCount`, and absent context marker at
   the OpenSearch 3.x wire decode/build layer;
-- explicit fail-closed classification for `indices:admin/auto_create` until
-  auto-create index/data-stream resolution, cluster-manager metadata mutation,
-  active-shards wait, and create-index response rendering are implemented;
+- implemented classification for the default request subset with standard
+  timeouts, empty cause, a valid concrete target index name, empty settings,
+  empty mappings, no aliases, default wait-for-active-shards, and no context;
+- manifest-backed index metadata mutation plus OpenSearch-shaped
+  `CreateIndexResponse` rendering with acknowledgement, shard acknowledgement,
+  and index name fields;
 - explicit rejection for custom cluster-manager timeouts, custom
   acknowledgement timeouts, missing index names, custom cause strings,
   settings, mappings, aliases, custom wait-for-active-shards, context payloads,
-  and auto-create execution.
+  duplicate index names, and invalid index names.
 
 The put-stored-script boundary covers:
 
@@ -4064,23 +4067,25 @@ ops/s in the latest local release run, the next performance-sensitive work is
 broader metadata validation and publication behavior, not response wire
 rendering.
 
-Current auto-create reject wire microbenchmark:
+Current auto-create wire microbenchmark:
 
 ```text
-cargo run -p os-transport --release --bin auto-create-reject-wire-benchmark
-auto_create_reject_request_encode iterations=400000 elapsed_ms=275.880 ops_per_second=1449907.21 nanos_per_op=689.70
-auto_create_reject_request_decode iterations=400000 elapsed_ms=268.132 ops_per_second=1491804.71 nanos_per_op=670.33
-auto_create_reject_validation iterations=400000 elapsed_ms=272.505 ops_per_second=1467860.97 nanos_per_op=681.26
-auto_create_reject_wire_bottleneck_ops_per_second=1449907.21
+cargo run -q -p os-transport --release --bin auto-create-wire-benchmark
+auto_create_request_encode iterations=400000 elapsed_ms=275.198 ops_per_second=1453499.14 nanos_per_op=687.99
+auto_create_request_decode iterations=400000 elapsed_ms=269.968 ops_per_second=1481654.49 nanos_per_op=674.92
+auto_create_request_validate iterations=400000 elapsed_ms=276.191 ops_per_second=1448274.95 nanos_per_op=690.48
+auto_create_response_encode iterations=400000 elapsed_ms=97.047 ops_per_second=4121714.35 nanos_per_op=242.62
+auto_create_response_decode iterations=400000 elapsed_ms=96.314 ops_per_second=4153093.36 nanos_per_op=240.78
+auto_create_wire_bottleneck_ops_per_second=1448274.95
 ```
 
-The current auto-create fail-closed boundary bottleneck is request encode. It
-uses the same `CreateIndexRequest` wire shape as create-index with the
-`indices:admin/auto_create` action frame, so the current overhead remains
-transport frame/request serialization. At roughly 1.45M ops/s in the latest
-local release run, the future performance-sensitive work is auto-create
-index/data-stream resolution, cluster-manager metadata mutation, active-shards
-wait, and response rendering.
+The current auto-create transport bottleneck is request validation. It uses the
+same `CreateIndexRequest` wire shape as create-index with the
+`indices:admin/auto_create` action frame, then the node adapter mutates
+manifest-backed metadata and renders `CreateIndexResponse`. At roughly 1.45M
+request ops/s and roughly 4.1M response ops/s in the latest local release run,
+the next performance-sensitive work is broader auto-create template resolution,
+metadata validation, and publication behavior.
 
 Current put-stored-script wire microbenchmark:
 

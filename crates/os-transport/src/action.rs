@@ -2053,8 +2053,8 @@ pub fn classify_opensearch_transport_action(
         },
         OPENSEARCH_AUTO_CREATE_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
-            disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "auto-create transport execution requires auto-create index/data-stream resolution, cluster-manager metadata mutation, active-shards wait, and response rendering",
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "auto-create transport adapter mutates manifest-backed index metadata for the default request subset and renders CreateIndexResponse",
         },
         OPENSEARCH_PUT_STORED_SCRIPT_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -21577,7 +21577,9 @@ impl OpenSearchCreateIndexRequestWire {
         })
     }
 
-    pub fn reject_unsupported_auto_create_execution(&self) -> Result<(), TransportActionWireError> {
+    pub fn validate_supported_auto_create_execution_subset(
+        &self,
+    ) -> Result<(), TransportActionWireError> {
         if self.cluster_manager_timeout != TimeValueWire::seconds(30) {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "auto create cluster-manager timeout",
@@ -21633,9 +21635,15 @@ impl OpenSearchCreateIndexRequestWire {
                 reason: "auto-create context requires context metadata mutation semantics",
             });
         }
+        Ok(())
+    }
+
+    pub fn reject_unsupported_auto_create_execution(&self) -> Result<(), TransportActionWireError> {
+        self.validate_supported_auto_create_execution_subset()?;
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "auto create execution",
-            reason: "auto-create transport execution requires auto-create index/data-stream resolution, cluster-manager metadata mutation, active-shards wait, and create-index response rendering",
+            reason:
+                "use validate_supported_auto_create_execution_subset for the implemented manifest-backed auto-create adapter",
         })
     }
 }
@@ -60919,6 +60927,9 @@ mod tests {
         assert_eq!(decoded, request);
         assert_eq!(decoded.index, "logs-000001");
         assert_eq!(decoded.mappings, "{}");
+        decoded
+            .validate_supported_auto_create_execution_subset()
+            .unwrap();
         assert!(matches!(
             decoded.reject_unsupported_auto_create_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
@@ -61045,7 +61056,7 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_auto_create_transport_messages_bind_rejected_action_frame() {
+    fn opensearch_auto_create_transport_messages_bind_action_frame_and_response() {
         let request = OpenSearchCreateIndexRequestWire::default();
         let mut frame =
             build_opensearch_auto_create_request_message(68, OPENSEARCH_3_7_0_TRANSPORT, &request)
@@ -61057,7 +61068,7 @@ mod tests {
             classify_opensearch_transport_request_message(&message)
                 .unwrap()
                 .disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             read_opensearch_auto_create_request_message(&message).unwrap(),
@@ -61071,6 +61082,28 @@ mod tests {
                 shape: "auto create execution",
                 ..
             })
+        ));
+
+        let response = OpenSearchCreateIndexResponseWire::success("logs-000001");
+        let mut frame = build_opensearch_create_index_response_message(
+            68,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &response,
+        )
+        .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected auto-create response message");
+        };
+        assert_eq!(
+            read_opensearch_create_index_response_message(&message).unwrap(),
+            response
+        );
+        assert!(matches!(
+            read_opensearch_auto_create_request_message(&message).unwrap_err(),
+            TransportActionWireError::UnexpectedMessageStatus {
+                expected: "request",
+                ..
+            }
         ));
     }
 

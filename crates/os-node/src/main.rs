@@ -1960,6 +1960,32 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end_at_ms,
         )?;
     } else if is_request
+        && normalized_action_hint == Some("indices:admin/auto_create")
+        && auto_create_request_supports_manifest_subset(&body)
+    {
+        let response = build_auto_create_response(request_id, header_version_id, &body);
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("indices:admin/auto_create"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request
         && normalized_action_hint == Some("indices:admin/mapping/put")
         && put_mapping_request_supports_manifest_subset(&body)
     {
@@ -7995,9 +8021,34 @@ fn build_create_index_response(request_id: i64, header_version_id: u32, body: &[
     .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
 }
 
+fn build_auto_create_response(request_id: i64, header_version_id: u32, body: &[u8]) -> Vec<u8> {
+    let Some(request) = decode_auto_create_request_from_transport_body(body) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    if !auto_create_request_matches_manifest_subset(&request) {
+        return build_empty_transport_response(request_id, header_version_id);
+    }
+    if !insert_transport_created_index(&request) {
+        return build_empty_transport_response(request_id, header_version_id);
+    }
+    let response = os_transport::action::OpenSearchCreateIndexResponseWire::success(&request.index);
+    os_transport::action::build_opensearch_create_index_response_message(
+        request_id,
+        Version::from_id(header_version_id as i32),
+        &response,
+    )
+    .map(|frame| frame.to_vec())
+    .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
+}
+
 fn create_index_request_supports_manifest_subset(body: &[u8]) -> bool {
     decode_create_index_request_from_transport_body(body)
         .is_some_and(|request| create_index_request_matches_manifest_subset(&request))
+}
+
+fn auto_create_request_supports_manifest_subset(body: &[u8]) -> bool {
+    decode_auto_create_request_from_transport_body(body)
+        .is_some_and(|request| auto_create_request_matches_manifest_subset(&request))
 }
 
 fn create_index_request_matches_manifest_subset(
@@ -8008,11 +8059,28 @@ fn create_index_request_matches_manifest_subset(
         && !transport_index_exists(&request.index)
 }
 
+fn auto_create_request_matches_manifest_subset(
+    request: &os_transport::action::OpenSearchCreateIndexRequestWire,
+) -> bool {
+    request
+        .validate_supported_auto_create_execution_subset()
+        .is_ok()
+        && transport_create_index_name_is_valid(&request.index)
+        && !transport_index_exists(&request.index)
+}
+
 fn decode_create_index_request_from_transport_body(
     body: &[u8],
 ) -> Option<os_transport::action::OpenSearchCreateIndexRequestWire> {
     let message = decode_transport_message_from_body(body)?;
     os_transport::action::read_opensearch_create_index_request_message(&message).ok()
+}
+
+fn decode_auto_create_request_from_transport_body(
+    body: &[u8],
+) -> Option<os_transport::action::OpenSearchCreateIndexRequestWire> {
+    let message = decode_transport_message_from_body(body)?;
+    os_transport::action::read_opensearch_auto_create_request_message(&message).ok()
 }
 
 fn transport_create_index_name_is_valid(index: &str) -> bool {
@@ -17477,6 +17545,13 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
                 body,
             ))
         }
+        Some("indices:admin/auto_create") if auto_create_request_supports_manifest_subset(body) => {
+            Some(build_auto_create_response(
+                request_id,
+                header_version_id,
+                body,
+            ))
+        }
         Some("indices:admin/mapping/put") if put_mapping_request_supports_manifest_subset(body) => {
             Some(build_put_mapping_response(
                 request_id,
@@ -23032,6 +23107,78 @@ mod tests {
         )
         .unwrap();
         assert!(!create_index_request_supports_manifest_subset(
+            &duplicate_frame[6..]
+        ));
+    }
+
+    #[test]
+    fn auto_create_transport_route_mutates_manifest_and_renders_response() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        let bindings = dev_transport_pit_bindings();
+        bindings
+            .created_indices
+            .lock()
+            .expect("dev transport created indices lock poisoned")
+            .clear();
+        bindings
+            .documents
+            .lock()
+            .expect("dev transport documents lock poisoned")
+            .clear();
+        *bindings
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned") =
+            serde_json::json!({ "indices": {} });
+
+        let request = os_transport::action::OpenSearchCreateIndexRequestWire {
+            index: "logs-auto-created-transport-000001".to_string(),
+            ..os_transport::action::OpenSearchCreateIndexRequestWire::default()
+        };
+        let frame = os_transport::action::build_opensearch_auto_create_request_message(
+            91,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(auto_create_request_supports_manifest_subset(&frame[6..]));
+
+        let response =
+            build_auto_create_response(91, OPENSEARCH_3_7_0_TRANSPORT.id() as u32, &frame[6..]);
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected auto-create response message");
+        };
+        let response =
+            os_transport::action::read_opensearch_create_index_response_message(&message).unwrap();
+        assert_eq!(response.index, "logs-auto-created-transport-000001");
+        assert!(response.acknowledged);
+        assert!(response.shards_acknowledged);
+        assert!(bindings
+            .created_indices
+            .lock()
+            .expect("dev transport created indices lock poisoned")
+            .contains("logs-auto-created-transport-000001"));
+        assert!(bindings
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned")["indices"]
+            .as_object()
+            .is_some_and(|indices| indices.contains_key("logs-auto-created-transport-000001")));
+
+        let duplicate_frame = os_transport::action::build_opensearch_auto_create_request_message(
+            92,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(!auto_create_request_supports_manifest_subset(
             &duplicate_frame[6..]
         ));
     }

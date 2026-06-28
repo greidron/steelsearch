@@ -312,8 +312,8 @@ name = "create-index-wire-benchmark"
 path = "benchmarks/create_index_wire.rs"
 
 [[bin]]
-name = "auto-create-reject-wire-benchmark"
-path = "benchmarks/auto_create_reject_wire.rs"
+name = "auto-create-wire-benchmark"
+path = "benchmarks/auto_create_wire.rs"
 
 [[bin]]
 name = "put-stored-script-wire-benchmark"
