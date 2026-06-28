@@ -7359,6 +7359,11 @@ fn transport_search_documents_for_request(
                 context.keep_alive_millis = effective_keep_alive;
                 context.expires_at_millis =
                     transport_pit_expires_at_millis(now_millis, effective_keep_alive);
+                extend_transport_reader_contexts_for_pit_id(
+                    &pit.id,
+                    context.expires_at_millis,
+                    now_millis,
+                );
             }
         }
         return Some((
@@ -10184,6 +10189,34 @@ fn remove_transport_reader_contexts_for_pit_id(pit_id: &str) {
         .lock()
         .expect("dev transport reader contexts lock poisoned")
         .retain(|key, _| !context_keys.contains(&format!("{}:{}", key.0, key.1)));
+}
+
+fn extend_transport_reader_contexts_for_pit_id(
+    pit_id: &str,
+    expires_at_millis: u128,
+    now_millis: u128,
+) {
+    let Ok(context_id) = os_transport::action::OpenSearchSearchContextIdWire::decode(pit_id) else {
+        return;
+    };
+    let context_keys = context_id
+        .shards
+        .values()
+        .map(|context| reader_context_key(&context.search_context_id))
+        .collect::<BTreeSet<_>>();
+    if context_keys.is_empty() {
+        return;
+    }
+    let mut reader_contexts = dev_transport_pit_bindings()
+        .reader_contexts
+        .lock()
+        .expect("dev transport reader contexts lock poisoned");
+    prune_expired_transport_reader_contexts(&mut reader_contexts, now_millis);
+    for context_key in context_keys {
+        if let Some(context) = reader_contexts.get_mut(&context_key) {
+            context.expires_at_millis = context.expires_at_millis.max(expires_at_millis);
+        }
+    }
 }
 
 fn get_all_transport_pits_response(
@@ -20452,7 +20485,7 @@ mod tests {
             .values()
             .map(|context| reader_context_key(&context.search_context_id))
             .collect::<BTreeSet<_>>();
-        {
+        let initial_reader_context_expiries = {
             let reader_contexts = dev_transport_pit_bindings()
                 .reader_contexts
                 .lock()
@@ -20467,7 +20500,11 @@ mod tests {
             assert!(reader_contexts.values().all(|context| {
                 context.creation_time_millis == Some(create_response.creation_time_millis as u128)
             }));
-        }
+            reader_contexts
+                .iter()
+                .map(|(key, context)| (key.clone(), context.expires_at_millis))
+                .collect::<BTreeMap<_, _>>()
+        };
         dev_transport_pit_bindings()
             .documents
             .lock()
@@ -20499,7 +20536,7 @@ mod tests {
             source: Some(os_transport::action::OpenSearchSearchSourceBuilderWire {
                 point_in_time: Some(os_transport::action::OpenSearchPointInTimeBuilderWire {
                     id: pit_id.clone(),
-                    keep_alive: Some(os_transport::action::TimeValueWire::minutes(1)),
+                    keep_alive: Some(os_transport::action::TimeValueWire::minutes(2)),
                 }),
                 ..os_transport::action::OpenSearchSearchSourceBuilderWire::default()
             }),
@@ -20537,6 +20574,34 @@ mod tests {
         assert_eq!(search_response.total_hits, Some(1));
         assert_eq!(search_response.hits.len(), 1);
         assert_eq!(search_response.hits[0].id.as_deref(), Some("doc-1"));
+        {
+            let pit_context = dev_transport_pit_bindings()
+                .contexts
+                .lock()
+                .expect("dev transport PIT contexts lock poisoned")
+                .get(&pit_id)
+                .cloned()
+                .expect("pit context should still be allocated after search");
+            assert_eq!(pit_context.keep_alive_millis, 120_000);
+            let reader_contexts = dev_transport_pit_bindings()
+                .reader_contexts
+                .lock()
+                .expect("dev transport reader contexts lock poisoned");
+            assert_eq!(reader_contexts.len(), 2);
+            for key in &decoded_reader_context_keys {
+                let initial_expiry = initial_reader_context_expiries
+                    .get(key)
+                    .expect("reader context initial expiry should be captured");
+                let reader_context = reader_contexts
+                    .get(key)
+                    .expect("reader context should survive PIT search keep-alive update");
+                assert_eq!(
+                    reader_context.expires_at_millis,
+                    pit_context.expires_at_millis
+                );
+                assert!(reader_context.expires_at_millis > *initial_expiry);
+            }
+        }
 
         let list_response = build_local_get_all_pits_response(
             95,
