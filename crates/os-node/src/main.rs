@@ -10424,7 +10424,13 @@ fn build_local_pit_segments_node_response(
     if request.validate_supported_subset().is_err() || !transport_pit_segment_ids_exist(&request) {
         return build_empty_transport_response(request_id, header_version_id);
     }
-    build_empty_indices_segments_node_response(request_id, header_version_id, transport_identity)
+    let shard_segments = local_pit_segment_shards_for_request(&request, transport_identity);
+    build_pit_segments_node_response(
+        request_id,
+        header_version_id,
+        transport_identity,
+        &shard_segments,
+    )
 }
 
 fn transport_pit_segment_ids_exist(
@@ -10447,6 +10453,97 @@ fn transport_pit_segment_ids_exist(
         .iter()
         .filter(|pit_id| seen_ids.insert((*pit_id).clone()))
         .all(|pit_id| pit_id == "_all" || contexts.contains_key(pit_id))
+}
+
+fn local_pit_segment_shards_for_request(
+    request: &os_transport::action::OpenSearchPitSegmentsRequestWire,
+    transport_identity: &DevTransportIdentity,
+) -> Vec<os_transport::action::OpenSearchShardIdWire> {
+    let bindings = dev_transport_pit_bindings();
+    let mut contexts = bindings
+        .contexts
+        .lock()
+        .expect("dev transport PIT contexts lock poisoned");
+    let now_millis = now_epoch_ms();
+    prune_expired_transport_pits(&mut contexts, now_millis);
+    prune_unavailable_transport_pits(&mut contexts);
+    let selected_pit_ids = if request.pit_ids.len() == 1 && request.pit_ids[0] == "_all" {
+        contexts.keys().cloned().collect::<Vec<_>>()
+    } else {
+        request
+            .pit_ids
+            .iter()
+            .cloned()
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect::<Vec<_>>()
+    };
+    let mut shards = BTreeMap::new();
+    for pit_id in selected_pit_ids {
+        if let Ok(search_context_id) =
+            os_transport::action::OpenSearchSearchContextIdWire::decode(&pit_id)
+        {
+            for (shard_id, context) in search_context_id.shards {
+                if context.cluster_alias.is_none()
+                    && context.search_context_id.id >= 0
+                    && context.node == transport_identity.node_id
+                {
+                    shards.insert((shard_id.index_name.clone(), shard_id.shard_id), shard_id);
+                }
+            }
+            continue;
+        }
+        let Some(context) = contexts.get(&pit_id) else {
+            continue;
+        };
+        for index in &context.indices {
+            for shard_id in 0..transport_pit_primary_shard_count(bindings, index) {
+                let shard_id = os_transport::action::OpenSearchShardIdWire {
+                    index_name: index.clone(),
+                    index_uuid: transport_pit_index_uuid(bindings, index),
+                    shard_id: shard_id as i32,
+                };
+                shards.insert((shard_id.index_name.clone(), shard_id.shard_id), shard_id);
+            }
+        }
+    }
+    shards.into_values().collect()
+}
+
+fn build_pit_segments_node_response(
+    request_id: i64,
+    header_version_id: u32,
+    transport_identity: &DevTransportIdentity,
+    shard_segments: &[os_transport::action::OpenSearchShardIdWire],
+) -> Vec<u8> {
+    let mut payload = Vec::new();
+    write_string(&mut payload, &transport_identity.node_id);
+    write_transport_vint_to(&mut payload, shard_segments.len() as u32);
+    write_transport_vint_to(&mut payload, shard_segments.len() as u32);
+    for shard_id in shard_segments {
+        write_bool(&mut payload, true);
+        write_pit_shard_segments_wire(&mut payload, shard_id, transport_identity);
+    }
+    write_bool(&mut payload, false);
+    build_transport_response_frame(request_id, header_version_id, payload)
+}
+
+fn write_pit_shard_segments_wire(
+    out: &mut Vec<u8>,
+    shard_id: &os_transport::action::OpenSearchShardIdWire,
+    transport_identity: &DevTransportIdentity,
+) {
+    write_string(out, &shard_id.index_name);
+    write_string(out, &shard_id.index_uuid);
+    write_transport_vint_to(out, shard_id.shard_id.max(0) as u32);
+    write_optional_string_to(out, Some(&transport_identity.node_id));
+    write_optional_string_to(out, None);
+    write_bool(out, true);
+    write_bool(out, false);
+    out.push(3);
+    write_optional_writeable_absent(out);
+    write_optional_writeable_absent(out);
+    write_transport_vint_to(out, 0);
 }
 
 fn segment_replication_stats_request_supports_empty_subset(body: &[u8]) -> bool {
@@ -13721,6 +13818,19 @@ fn write_transport_zlong_to(out: &mut Vec<u8>, value: i64) {
 
 fn write_bool(out: &mut Vec<u8>, value: bool) {
     out.push(if value { 1 } else { 0 });
+}
+
+fn write_optional_writeable_absent(out: &mut Vec<u8>) {
+    write_bool(out, false);
+}
+
+fn write_optional_string_to(out: &mut Vec<u8>, value: Option<&str>) {
+    if let Some(value) = value {
+        write_bool(out, true);
+        write_string(out, value);
+    } else {
+        write_bool(out, false);
+    }
 }
 
 fn write_string(out: &mut Vec<u8>, value: &str) {
@@ -26729,7 +26839,22 @@ mod tests {
         assert_eq!(message.request_id, 98);
         let mut input = StreamInput::new(message.body.freeze());
         assert_eq!(input.read_string().unwrap(), "steel-node-id");
+        assert_eq!(input.read_vint().unwrap(), 1);
+        assert_eq!(input.read_vint().unwrap(), 1);
+        assert!(input.read_bool().unwrap());
+        assert_eq!(input.read_string().unwrap(), "logs-pit-segments-000001");
+        assert_eq!(input.read_string().unwrap(), "_na_");
         assert_eq!(input.read_vint().unwrap(), 0);
+        assert_eq!(
+            input.read_optional_string().unwrap().as_deref(),
+            Some("steel-node-id")
+        );
+        assert_eq!(input.read_optional_string().unwrap(), None);
+        assert!(input.read_bool().unwrap());
+        assert!(!input.read_bool().unwrap());
+        assert_eq!(input.read_byte().unwrap(), 3);
+        assert!(!input.read_bool().unwrap());
+        assert!(!input.read_bool().unwrap());
         assert_eq!(input.read_vint().unwrap(), 0);
         assert!(!input.read_bool().unwrap());
         assert_eq!(input.remaining(), 0);
@@ -26764,7 +26889,22 @@ mod tests {
         assert_eq!(message.request_id, 100);
         let mut input = StreamInput::new(message.body.freeze());
         assert_eq!(input.read_string().unwrap(), "steel-node-id");
+        assert_eq!(input.read_vint().unwrap(), 1);
+        assert_eq!(input.read_vint().unwrap(), 1);
+        assert!(input.read_bool().unwrap());
+        assert_eq!(input.read_string().unwrap(), "logs-pit-segments-000001");
+        assert_eq!(input.read_string().unwrap(), "_na_");
         assert_eq!(input.read_vint().unwrap(), 0);
+        assert_eq!(
+            input.read_optional_string().unwrap().as_deref(),
+            Some("steel-node-id")
+        );
+        assert_eq!(input.read_optional_string().unwrap(), None);
+        assert!(input.read_bool().unwrap());
+        assert!(!input.read_bool().unwrap());
+        assert_eq!(input.read_byte().unwrap(), 3);
+        assert!(!input.read_bool().unwrap());
+        assert!(!input.read_bool().unwrap());
         assert_eq!(input.read_vint().unwrap(), 0);
         assert!(!input.read_bool().unwrap());
         assert_eq!(input.remaining(), 0);

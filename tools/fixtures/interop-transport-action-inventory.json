@@ -1027,7 +1027,7 @@
       "request_wire_type": "PitSegmentsRequest",
       "response_wire_type": "IndicesSegmentResponse",
       "disposition": "implemented",
-      "reason": "Pit-segments transport adapter returns an OpenSearch-shaped empty segment response for the _all request when no PIT contexts are present"
+      "reason": "Pit-segments transport adapter renders OpenSearch-shaped node shard results for local PIT contexts"
     },
     {
       "action_name": "indices:monitor/shard_stores",

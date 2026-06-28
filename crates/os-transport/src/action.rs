@@ -2277,7 +2277,7 @@ pub fn classify_opensearch_transport_action(
         OPENSEARCH_PIT_SEGMENTS_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Implemented,
-            reason: "pit-segments transport adapter returns an OpenSearch-shaped empty segment response for the _all request when no PIT contexts are present",
+            reason: "pit-segments transport adapter renders OpenSearch-shaped node shard results for local PIT contexts",
         },
         OPENSEARCH_INDICES_SHARD_STORES_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -24638,8 +24638,7 @@ impl OpenSearchPitSegmentsRequestWire {
         self.validate_supported_subset()?;
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "pit segments execution",
-            reason:
-                "use validate_supported_subset for the implemented empty pit-segments _all adapter",
+            reason: "use validate_supported_subset for the implemented local pit-segments adapter",
         })
     }
 }
