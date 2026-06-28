@@ -12319,7 +12319,7 @@ fn delete_pit_request_supports_local_lifecycle_subset(body: &[u8]) -> bool {
 fn delete_pit_request_matches_local_lifecycle_subset(
     request: &os_transport::action::OpenSearchDeletePitRequestWire,
 ) -> bool {
-    request.validate_supported_subset().is_ok()
+    request.validate_supported_subset().is_ok() && ids_use_all_only_as_standalone(&request.pit_ids)
 }
 
 fn ids_use_all_only_as_standalone(ids: &[String]) -> bool {
@@ -29216,7 +29216,7 @@ mod tests {
     }
 
     #[test]
-    fn delete_pit_transport_route_treats_mixed_all_as_explicit_id_like_opensearch() {
+    fn delete_pit_transport_route_rejects_mixed_all_at_local_execution_boundary() {
         let _lock = dev_transport_pit_test_lock()
             .lock()
             .expect("dev transport PIT test lock poisoned");
@@ -29247,7 +29247,7 @@ mod tests {
             &request,
         )
         .unwrap();
-        assert!(delete_pit_request_supports_local_lifecycle_subset(
+        assert!(!delete_pit_request_supports_local_lifecycle_subset(
             &frame[6..]
         ));
 
@@ -29264,13 +29264,8 @@ mod tests {
         else {
             panic!("expected delete-PIT response message");
         };
-        let response =
-            os_transport::action::read_opensearch_delete_pit_response_message(&message).unwrap();
-        assert_eq!(response.results.len(), 2);
-        assert_eq!(response.results[0].pit_id, "_all");
-        assert_eq!(response.results[1].pit_id, "pit-context");
-        assert!(response.results.iter().all(|result| result.successful));
-        assert!(!dev_transport_pit_bindings()
+        assert!(message.body.is_empty());
+        assert!(dev_transport_pit_bindings()
             .contexts
             .lock()
             .expect("dev transport PIT contexts lock poisoned")

@@ -2292,8 +2292,9 @@ The delete-PIT boundary covers:
   duplicate explicit ids collapsed for both missing and existing contexts like
   the REST close-PIT route;
 - standalone `_all` delete prunes expired local PIT contexts before rendering
-  active deletion results, while `_all` mixed with explicit ids stays on the
-  explicit-id path like OpenSearch's delete-PIT transport action;
+  active deletion results, while `_all` mixed with explicit ids is not admitted
+  into the local execution subset because OpenSearch routes that shape through
+  the explicit-id path and fails while decoding `_all` as a PIT id;
 - explicit local lifecycle rejection for empty PIT id arrays, while wire-level
   empty PIT id entries still decode and local transport delete-PIT renders
   OpenSearch-shaped `DeletePitInfo` results for them.
@@ -5294,17 +5295,17 @@ Current delete-PIT wire microbenchmark:
 
 ```text
 cargo run -p os-transport --release --bin delete-pit-wire-benchmark
-delete_pit_request_encode iterations=400000 elapsed_ms=327.484 ops_per_second=1221433.72 nanos_per_op=818.71
-delete_pit_request_decode iterations=400000 elapsed_ms=317.667 ops_per_second=1259179.46 nanos_per_op=794.17
-delete_pit_request_validate iterations=400000 elapsed_ms=317.501 ops_per_second=1259840.51 nanos_per_op=793.75
-delete_pit_response_encode iterations=400000 elapsed_ms=161.419 ops_per_second=2478022.43 nanos_per_op=403.55
-delete_pit_response_decode iterations=400000 elapsed_ms=150.957 ops_per_second=2649762.95 nanos_per_op=377.39
-delete_pit_wire_bottleneck_ops_per_second=1221433.72
+delete_pit_request_encode iterations=400000 elapsed_ms=387.436 ops_per_second=1032429.01 nanos_per_op=968.59
+delete_pit_request_decode iterations=400000 elapsed_ms=332.445 ops_per_second=1203207.30 nanos_per_op=831.11
+delete_pit_request_validate iterations=400000 elapsed_ms=317.111 ops_per_second=1261389.23 nanos_per_op=792.78
+delete_pit_response_encode iterations=400000 elapsed_ms=181.432 ops_per_second=2204686.37 nanos_per_op=453.58
+delete_pit_response_decode iterations=400000 elapsed_ms=308.293 ops_per_second=1297468.20 nanos_per_op=770.73
+delete_pit_wire_bottleneck_ops_per_second=1032429.01
 ```
 
 The current delete-PIT wire subset bottleneck is request encode with explicit
 PIT ids. The non-empty response encode/decode path for two `DeletePitInfo`
-entries remains above 2.4M ops/s in the latest local release run, so response
+entries remains above 1.29M ops/s in the latest local release run, so response
 rendering is not the first bottleneck. The first performance point to inspect
 while expanding execution is lock hold time and allocation in shared PIT context
 invalidation.
