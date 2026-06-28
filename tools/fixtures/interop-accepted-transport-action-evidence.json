@@ -122,6 +122,13 @@
       "response_evidence": "crates/os-transport/src/action.rs::opensearch_get_component_template_transport_messages_bind_supported_action_frame_and_response"
     },
     {
+      "action_name": "indices:admin/index_template/get",
+      "disposition": "implemented",
+      "evidence_kind": "wire_round_trip",
+      "request_evidence": "crates/os-transport/src/action.rs::opensearch_get_composable_index_template_transport_messages_bind_supported_action_frame_and_response",
+      "response_evidence": "crates/os-transport/src/action.rs::opensearch_get_composable_index_template_transport_messages_bind_supported_action_frame_and_response"
+    },
+    {
       "action_name": "indices:admin/flush",
       "disposition": "implemented",
       "evidence_kind": "wire_round_trip",

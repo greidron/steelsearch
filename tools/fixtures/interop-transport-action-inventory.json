@@ -864,8 +864,8 @@
       "transport_action": "TransportGetComposableIndexTemplateAction",
       "request_wire_type": "GetComposableIndexTemplateAction.Request",
       "response_wire_type": "GetComposableIndexTemplateAction.Response",
-      "disposition": "rejected",
-      "reason": "Get-composable-index-template transport execution requires composable index-template metadata response rendering before Steelsearch can serve OpenSearch composable index-template reads."
+      "disposition": "implemented",
+      "reason": "Get-composable-index-template transport adapter renders OpenSearch-shaped settings-only composable index template metadata from the Rust manifest."
     },
     {
       "action_name": "indices:admin/index_template/delete",

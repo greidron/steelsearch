@@ -1623,6 +1623,33 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end,
             &mut connection_end_at_ms,
         )?;
+    } else if is_request
+        && normalized_action_hint == Some("indices:admin/index_template/get")
+        && get_composable_index_template_request_supports_manifest_subset(&body)
+    {
+        let response =
+            build_get_composable_index_template_response(request_id, header_version_id, &body);
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("indices:admin/index_template/get"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
     } else if is_request && normalized_action_hint == Some("indices:admin/mappings/fields/get") {
         let response = build_get_field_mappings_response(request_id, header_version_id, &body);
         response_frame = summarize_transport_response_frame_for_action(
@@ -5397,6 +5424,163 @@ fn component_template_wire_from_manifest(
         },
         version: component_template.get("version").and_then(Value::as_i64),
         metadata_count: 0,
+    })
+}
+
+fn build_get_composable_index_template_response(
+    request_id: i64,
+    header_version_id: u32,
+    body: &[u8],
+) -> Vec<u8> {
+    let Some(request) = decode_get_composable_index_template_request_from_transport_body(body)
+    else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    if request.validate_supported_subset().is_err() {
+        return build_empty_transport_response(request_id, header_version_id);
+    }
+    let response = get_composable_index_template_response_from_metadata_manifest(
+        &dev_transport_pit_bindings()
+            .metadata_manifest
+            .lock()
+            .expect("metadata manifest lock poisoned"),
+    );
+    os_transport::action::build_opensearch_get_composable_index_template_response_message(
+        request_id,
+        Version::from_id(header_version_id as i32),
+        &response,
+    )
+    .map(|frame| frame.to_vec())
+    .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
+}
+
+fn get_composable_index_template_request_supports_manifest_subset(body: &[u8]) -> bool {
+    decode_get_composable_index_template_request_from_transport_body(body)
+        .as_ref()
+        .is_some_and(|request| request.validate_supported_subset().is_ok())
+}
+
+fn decode_get_composable_index_template_request_from_transport_body(
+    body: &[u8],
+) -> Option<os_transport::action::OpenSearchGetComposableIndexTemplateRequestWire> {
+    let message = decode_transport_message_from_body(body)?;
+    os_transport::action::read_opensearch_get_composable_index_template_request_message(&message)
+        .ok()
+}
+
+fn get_composable_index_template_response_from_metadata_manifest(
+    metadata_manifest: &Value,
+) -> os_transport::action::OpenSearchGetComposableIndexTemplateResponseWire {
+    let mut response =
+        os_transport::action::OpenSearchGetComposableIndexTemplateResponseWire::empty();
+    let Some(templates) = metadata_manifest.pointer("/templates/index_templates") else {
+        return response;
+    };
+    let Some(object) = templates.as_object() else {
+        return response;
+    };
+    for (name, template_entry) in object {
+        if let Some(index_template) = composable_index_template_wire_from_manifest(template_entry) {
+            response
+                .index_templates
+                .insert(name.clone(), index_template);
+        }
+    }
+    response
+}
+
+fn composable_index_template_wire_from_manifest(
+    template_entry: &Value,
+) -> Option<os_transport::action::OpenSearchComposableIndexTemplateWire> {
+    let index_template = template_entry
+        .get("index_template")
+        .unwrap_or(template_entry);
+    if index_template
+        .get("_meta")
+        .or_else(|| index_template.get("metadata"))
+        .filter(|value| !value.is_null())
+        .is_some()
+        || index_template
+            .get("data_stream")
+            .filter(|value| !value.is_null())
+            .is_some()
+        || index_template
+            .get("context")
+            .filter(|value| !value.is_null())
+            .is_some()
+    {
+        return None;
+    }
+    let index_patterns = index_template
+        .get("index_patterns")
+        .or_else(|| index_template.get("indexPatterns"))
+        .and_then(Value::as_array)?
+        .iter()
+        .map(Value::as_str)
+        .collect::<Option<Vec<_>>>()?
+        .into_iter()
+        .map(str::to_string)
+        .collect::<Vec<_>>();
+    if index_patterns.is_empty()
+        || index_patterns
+            .iter()
+            .any(|pattern| pattern.trim().is_empty())
+    {
+        return None;
+    }
+    let template = index_template
+        .get("template")
+        .and_then(template_wire_from_manifest);
+    let composed_of = index_template
+        .get("composed_of")
+        .or_else(|| index_template.get("composedOf"))
+        .and_then(Value::as_array)
+        .map(|values| {
+            values
+                .iter()
+                .map(Value::as_str)
+                .collect::<Option<Vec<_>>>()
+                .map(|values| values.into_iter().map(str::to_string).collect::<Vec<_>>())
+        })
+        .unwrap_or(Some(Vec::new()))?;
+    Some(
+        os_transport::action::OpenSearchComposableIndexTemplateWire {
+            index_patterns,
+            template,
+            composed_of: Some(composed_of),
+            priority: index_template.get("priority").and_then(Value::as_i64),
+            version: index_template.get("version").and_then(Value::as_i64),
+            metadata_count: 0,
+            data_stream_template_present: false,
+            context_present: false,
+        },
+    )
+}
+
+fn template_wire_from_manifest(
+    template: &Value,
+) -> Option<os_transport::action::OpenSearchTemplateWire> {
+    if template
+        .get("mappings")
+        .filter(|value| !value.is_null())
+        .is_some()
+        || template
+            .get("aliases")
+            .filter(|value| !value.is_null())
+            .is_some()
+    {
+        return None;
+    }
+    let mut settings = BTreeMap::new();
+    flatten_string_settings(
+        None,
+        template.get("settings").unwrap_or(&Value::Null),
+        &mut settings,
+    );
+    Some(os_transport::action::OpenSearchTemplateWire {
+        settings,
+        mappings: None,
+        aliases_count: 0,
     })
 }
 
@@ -13436,6 +13620,15 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
                 body,
             ))
         }
+        Some("indices:admin/index_template/get")
+            if get_composable_index_template_request_supports_manifest_subset(body) =>
+        {
+            Some(build_get_composable_index_template_response(
+                request_id,
+                header_version_id,
+                body,
+            ))
+        }
         Some("indices:admin/mappings/fields/get") => Some(build_get_field_mappings_response(
             request_id,
             header_version_id,
@@ -18804,6 +18997,83 @@ mod tests {
         assert_eq!(component.version, Some(7));
         assert_eq!(
             component.template.settings["index.number_of_shards"],
+            "1".to_string()
+        );
+    }
+
+    #[test]
+    fn get_composable_index_template_transport_route_builds_manifest_backed_settings_response() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        *dev_transport_pit_bindings()
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned") = serde_json::json!({
+            "templates": {
+                "index_templates": {
+                    "logs-template": {
+                        "index_template": {
+                            "index_patterns": ["logs-*"],
+                            "composed_of": ["logs-component"],
+                            "priority": 100,
+                            "version": 7,
+                            "template": {
+                                "settings": {
+                                    "index": {
+                                        "number_of_shards": "1"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        });
+        let request =
+            os_transport::action::OpenSearchGetComposableIndexTemplateRequestWire::default();
+        let frame =
+            os_transport::action::build_opensearch_get_composable_index_template_request_message(
+                210,
+                OPENSEARCH_3_7_0_TRANSPORT,
+                &request,
+            )
+            .unwrap();
+        assert!(get_composable_index_template_request_supports_manifest_subset(&frame[6..]));
+        let response = build_get_composable_index_template_response(
+            210,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &frame[6..],
+        );
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected get composable index template response message");
+        };
+
+        assert_eq!(message.request_id, 210);
+        assert!(!message.status.is_request());
+        let response =
+            os_transport::action::read_opensearch_get_composable_index_template_response_message(
+                &message,
+            )
+            .unwrap();
+        let template = response
+            .index_templates
+            .get("logs-template")
+            .expect("logs index template");
+        assert_eq!(template.index_patterns, vec!["logs-*"]);
+        assert_eq!(
+            template.composed_of,
+            Some(vec!["logs-component".to_string()])
+        );
+        assert_eq!(template.priority, Some(100));
+        assert_eq!(template.version, Some(7));
+        assert_eq!(
+            template.template.as_ref().expect("template").settings["index.number_of_shards"],
             "1".to_string()
         );
     }
