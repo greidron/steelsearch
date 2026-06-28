@@ -1360,6 +1360,32 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end,
             &mut connection_end_at_ms,
         )?;
+    } else if is_request
+        && normalized_action_hint == Some("cluster:admin/routing/awareness/weights/get")
+        && get_weighted_routing_request_supports_manifest_subset(&body)
+    {
+        let response = build_get_weighted_routing_response(request_id, header_version_id, &body);
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("cluster:admin/routing/awareness/weights/get"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
     } else if is_request && normalized_action_hint == Some("cluster:admin/repository/get") {
         let response = build_empty_get_repositories_response(request_id, header_version_id);
         response_frame = summarize_transport_response_frame_for_action(
@@ -4812,6 +4838,88 @@ fn search_pipeline_configuration_from_json(
         config: Bytes::from(config),
         media_type: os_transport::action::OpenSearchXContentTypeWire::Json,
     })
+}
+
+fn build_get_weighted_routing_response(
+    request_id: i64,
+    header_version_id: u32,
+    body: &[u8],
+) -> Vec<u8> {
+    let Some(request) = decode_get_weighted_routing_request_from_transport_body(body) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    if request.validate_supported_execution_subset().is_err() {
+        return build_empty_transport_response(request_id, header_version_id);
+    }
+    let response = get_weighted_routing_response_from_metadata_manifest(
+        &dev_transport_pit_bindings()
+            .metadata_manifest
+            .lock()
+            .expect("metadata manifest lock poisoned"),
+        &request.awareness_attribute,
+    );
+    os_transport::action::build_cluster_get_weighted_routing_response_message(
+        request_id,
+        Version::from_id(header_version_id as i32),
+        &response,
+    )
+    .map(|frame| frame.to_vec())
+    .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
+}
+
+fn get_weighted_routing_request_supports_manifest_subset(body: &[u8]) -> bool {
+    decode_get_weighted_routing_request_from_transport_body(body)
+        .as_ref()
+        .is_some_and(|request| request.validate_supported_execution_subset().is_ok())
+}
+
+fn decode_get_weighted_routing_request_from_transport_body(
+    body: &[u8],
+) -> Option<os_transport::action::ClusterGetWeightedRoutingRequestWire> {
+    let message = decode_transport_message_from_body(body)?;
+    os_transport::action::read_cluster_get_weighted_routing_request_message(&message).ok()
+}
+
+fn get_weighted_routing_response_from_metadata_manifest(
+    metadata_manifest: &Value,
+    awareness_attribute: &str,
+) -> os_transport::action::ClusterGetWeightedRoutingResponseWire {
+    let Some(state) = metadata_manifest
+        .pointer("/cluster_admin_state/weighted_routing")
+        .and_then(|weighted_routing| weighted_routing.get(awareness_attribute))
+    else {
+        return os_transport::action::ClusterGetWeightedRoutingResponseWire::empty();
+    };
+    let weights = state
+        .get("weights")
+        .and_then(Value::as_object)
+        .map(|weights| {
+            weights
+                .iter()
+                .filter_map(|(zone, weight)| {
+                    let value = weight.as_f64()?;
+                    value.is_finite().then(|| (zone.clone(), value))
+                })
+                .collect::<BTreeMap<_, _>>()
+        })
+        .unwrap_or_default();
+    if weights.is_empty() {
+        return os_transport::action::ClusterGetWeightedRoutingResponseWire::empty();
+    }
+    let version = metadata_manifest
+        .pointer("/cluster_admin_state/weighted_routing_version")
+        .and_then(Value::as_i64)
+        .unwrap_or(-1);
+    let discovered_cluster_manager = state
+        .get("discovered_cluster_manager")
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
+    os_transport::action::ClusterGetWeightedRoutingResponseWire::weighted(
+        awareness_attribute,
+        weights,
+        version,
+        Some(discovered_cluster_manager),
+    )
 }
 
 fn is_simple_wildcard_pattern(pattern: &str) -> bool {
@@ -13127,6 +13235,15 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
             if get_search_pipeline_request_supports_manifest_subset(body) =>
         {
             Some(build_get_search_pipeline_response(
+                request_id,
+                header_version_id,
+                body,
+            ))
+        }
+        Some("cluster:admin/routing/awareness/weights/get")
+            if get_weighted_routing_request_supports_manifest_subset(body) =>
+        {
+            Some(build_get_weighted_routing_response(
                 request_id,
                 header_version_id,
                 body,
@@ -27837,6 +27954,98 @@ mod tests {
         let response =
             os_transport::action::read_get_search_pipeline_response_message(&message).unwrap();
         assert_eq!(response.pipelines.len(), 2);
+    }
+
+    #[test]
+    fn get_weighted_routing_transport_route_builds_manifest_backed_response() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        *dev_transport_pit_bindings()
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned") = serde_json::json!({
+            "cluster_admin_state": {
+                "weighted_routing_version": 11,
+                "weighted_routing": {
+                    "zone": {
+                        "weights": {
+                            "zone-a": 1.0,
+                            "zone-b": 0.5
+                        },
+                        "discovered_cluster_manager": true
+                    }
+                }
+            }
+        });
+        let request = os_transport::action::ClusterGetWeightedRoutingRequestWire {
+            awareness_attribute: "zone".to_string(),
+            ..os_transport::action::ClusterGetWeightedRoutingRequestWire::default()
+        };
+        let frame = os_transport::action::build_cluster_get_weighted_routing_request_message(
+            207,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(get_weighted_routing_request_supports_manifest_subset(
+            &frame[6..]
+        ));
+
+        let response = build_get_weighted_routing_response(
+            207,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &frame[6..],
+        );
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected get-weighted-routing response message");
+        };
+        assert_eq!(message.request_id, 207);
+        assert!(!message.status.is_request());
+        let response =
+            os_transport::action::read_cluster_get_weighted_routing_response_message(&message)
+                .unwrap();
+        assert_eq!(response.attribute_name.as_deref(), Some("zone"));
+        assert_eq!(response.version, Some(11));
+        assert_eq!(response.discovered_cluster_manager, Some(true));
+        assert_eq!(response.weights.get("zone-a"), Some(&1.0));
+        assert_eq!(response.weights.get("zone-b"), Some(&0.5));
+
+        let missing_request = os_transport::action::ClusterGetWeightedRoutingRequestWire {
+            awareness_attribute: "rack".to_string(),
+            ..os_transport::action::ClusterGetWeightedRoutingRequestWire::default()
+        };
+        let frame = os_transport::action::build_cluster_get_weighted_routing_request_message(
+            208,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &missing_request,
+        )
+        .unwrap();
+        let response = build_get_weighted_routing_response(
+            208,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &frame[6..],
+        );
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected empty get-weighted-routing response message");
+        };
+        let response =
+            os_transport::action::read_cluster_get_weighted_routing_response_message(&message)
+                .unwrap();
+        assert_eq!(
+            response,
+            os_transport::action::ClusterGetWeightedRoutingResponseWire::empty()
+        );
     }
 
     #[test]

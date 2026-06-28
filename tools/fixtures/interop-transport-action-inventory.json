@@ -468,8 +468,8 @@
       "transport_action": "TransportGetWeightedRoutingAction",
       "request_wire_type": "ClusterGetWeightedRoutingRequest",
       "response_wire_type": "ClusterGetWeightedRoutingResponse",
-      "disposition": "rejected",
-      "reason": "Get-weighted-routing transport execution requires weighted routing metadata lookup and response rendering before Steelsearch can serve OpenSearch weighted routing get semantics."
+      "disposition": "implemented",
+      "reason": "Get-weighted-routing transport adapter renders OpenSearch-shaped weighted routing metadata from the Rust manifest."
     },
     {
       "action_name": "cluster:admin/routing/awareness/weights/delete",
