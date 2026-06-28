@@ -2033,8 +2033,8 @@ pub fn classify_opensearch_transport_action(
         },
         OPENSEARCH_UPDATE_SETTINGS_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
-            disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "index update-settings transport execution requires index resolution, settings validation, metadata mutation, and ack rendering",
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "index update-settings transport adapter resolves manifest indices, mutates local index settings, and renders acknowledged responses",
         },
         OPENSEARCH_SCALE_INDEX_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -9143,6 +9143,35 @@ pub fn read_opensearch_update_settings_request_message(
         });
     }
     OpenSearchUpdateSettingsRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_opensearch_update_settings_response_message(
+    request_id: i64,
+    version: Version,
+    response: &AcknowledgedResponseWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    response.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::response(),
+        version,
+        variable_header: BytesMut::new(),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_update_settings_response_message(
+    message: &TransportMessage,
+) -> Result<AcknowledgedResponseWire, TransportActionWireError> {
+    if message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "response",
+            actual: message.status.bits(),
+        });
+    }
+    AcknowledgedResponseWire::read(message.body.clone().freeze())
 }
 
 pub fn build_opensearch_scale_index_request_message(
@@ -19965,7 +19994,7 @@ impl OpenSearchUpdateSettingsRequestWire {
         Ok(request)
     }
 
-    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+    pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
         if self.cluster_manager_timeout != TimeValueWire::seconds(30) {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "index update settings cluster-manager timeout",
@@ -20015,9 +20044,14 @@ impl OpenSearchUpdateSettingsRequestWire {
                 reason: "preserve-existing index setting updates require merge-with-existing metadata semantics",
             });
         }
+        Ok(())
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        self.validate_supported_subset()?;
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "index update settings execution",
-            reason: "index update-settings transport execution requires index resolution, settings validation, metadata mutation, and ack rendering",
+            reason: "use validate_supported_subset for the implemented local index update-settings adapter",
         })
     }
 }
@@ -47251,7 +47285,7 @@ mod tests {
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_UPDATE_SETTINGS_ACTION_NAME)
                 .disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_SCALE_INDEX_ACTION_NAME).disposition,
@@ -59211,7 +59245,7 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_update_settings_request_wire_round_trips_and_rejects_execution_boundary() {
+    fn opensearch_update_settings_request_wire_round_trips_and_validates_subset() {
         let request = OpenSearchUpdateSettingsRequestWire::default();
         let mut output = StreamOutput::new();
         request.write(&mut output);
@@ -59223,13 +59257,7 @@ mod tests {
             decoded.settings.get("index.refresh_interval"),
             Some(&"1s".to_string())
         );
-        assert!(matches!(
-            decoded.reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "index update settings execution",
-                ..
-            })
-        ));
+        decoded.validate_supported_subset().unwrap();
     }
 
     #[test]
@@ -59348,7 +59376,7 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_update_settings_transport_messages_bind_rejected_action_frame() {
+    fn opensearch_update_settings_transport_messages_bind_action_and_ack_response_frames() {
         let request = OpenSearchUpdateSettingsRequestWire::default();
         let mut frame = build_opensearch_update_settings_request_message(
             40,
@@ -59363,15 +59391,26 @@ mod tests {
             read_opensearch_update_settings_request_message(&message).unwrap(),
             request
         );
-        assert!(matches!(
-            read_opensearch_update_settings_request_message(&message)
-                .unwrap()
-                .reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "index update settings execution",
-                ..
-            })
-        ));
+        read_opensearch_update_settings_request_message(&message)
+            .unwrap()
+            .validate_supported_subset()
+            .unwrap();
+
+        let response = AcknowledgedResponseWire { acknowledged: true };
+        let mut frame = build_opensearch_update_settings_response_message(
+            40,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &response,
+        )
+        .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected update settings response message");
+        };
+        assert_eq!(
+            read_opensearch_update_settings_response_message(&message).unwrap(),
+            response
+        );
+        assert!(read_opensearch_update_settings_request_message(&message).is_err());
     }
 
     #[test]

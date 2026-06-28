@@ -177,8 +177,8 @@ The source-derived transport inventory currently has 160 rows:
 
 | Status | Count | Meaning |
 | --- | ---: | --- |
-| `implemented` | 89 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
-| `partial` | 71 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
+| `implemented` | 90 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
+| `partial` | 70 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
 | `planned` | 0 | No source-derived transport action remains unclassified. |
 
 The k-NN plugin action sweep is complete at the boundary layer. All 12
@@ -1240,13 +1240,13 @@ The index update-settings boundary covers:
   string array, `IndicesOptions.fromOptions(false, false, true, true)`,
   string-valued Settings generic map, and `preserveExisting` at the OpenSearch
   3.x wire decode/build layer;
-- explicit fail-closed classification for `indices:admin/settings/update`
-  until index resolution, settings validation, metadata mutation, and
-  acknowledged response rendering are implemented;
+- implemented classification for `indices:admin/settings/update` when the
+  request uses the default timeouts/options, concrete or wildcard manifest
+  indices, non-empty `index.*` string settings, and `preserveExisting=false`;
 - explicit rejection for custom cluster-manager timeouts, custom
   acknowledgement timeouts, missing index targets, custom indices options,
   empty settings maps, non-index setting keys, non-string generic setting
-  values, preserve-existing updates, and index update-settings execution.
+  values, and preserve-existing updates.
 
 The scale-index boundary covers:
 
@@ -3943,23 +3943,25 @@ the current overhead remains lightweight transport shape validation; future
 performance-sensitive work is alias metadata mutation, remove-index sub-action
 handling, and acknowledged response rendering.
 
-Current index update-settings reject wire microbenchmark:
+Current index update-settings wire microbenchmark:
 
 ```text
-cargo run -p os-transport --release --bin update-settings-reject-wire-benchmark
-update_settings_reject_request_encode iterations=400000 elapsed_ms=423.666 ops_per_second=944140.46 nanos_per_op=1059.16
-update_settings_reject_request_decode iterations=400000 elapsed_ms=389.513 ops_per_second=1026923.13 nanos_per_op=973.78
-update_settings_reject_validation iterations=400000 elapsed_ms=404.031 ops_per_second=990022.58 nanos_per_op=1010.08
-update_settings_reject_wire_bottleneck_ops_per_second=944140.46
+cargo run -p os-transport --release --bin update-settings-wire-benchmark
+update_settings_request_encode iterations=400000 elapsed_ms=415.689 ops_per_second=962258.04 nanos_per_op=1039.22
+update_settings_request_decode iterations=400000 elapsed_ms=393.626 ops_per_second=1016193.59 nanos_per_op=984.06
+update_settings_request_validate iterations=400000 elapsed_ms=408.251 ops_per_second=979789.10 nanos_per_op=1020.63
+update_settings_response_encode iterations=400000 elapsed_ms=48.943 ops_per_second=8172708.12 nanos_per_op=122.36
+update_settings_response_decode iterations=400000 elapsed_ms=53.942 ops_per_second=7415351.03 nanos_per_op=134.86
+update_settings_wire_bottleneck_ops_per_second=962258.04
 ```
 
-The current index update-settings fail-closed boundary bottleneck is request
-encode. The path writes the acknowledged-request envelope, target index array,
-indices options, and a string-valued OpenSearch Settings generic map before
-rejecting execution. At roughly 0.94M ops/s in the latest local release run,
-the current overhead remains transport wire work; future performance-sensitive
-work is index resolution, setting validation, metadata mutation, and
-acknowledged response rendering.
+The current index update-settings transport path bottleneck is request encode.
+It validates the acknowledged request envelope, resolves manifest-backed target
+indices, mutates nested `settings.index.*` metadata, and renders an OpenSearch
+acknowledged response. Ack response encode/decode stays above 7.19M ops/s in
+the latest local release run, so the first runtime performance point to inspect
+while expanding the path is repeated manifest target resolution and
+dotted-setting merge cost for larger index sets.
 
 Current scale-index reject wire microbenchmark:
 

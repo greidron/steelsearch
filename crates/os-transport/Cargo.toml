@@ -292,8 +292,8 @@ name = "indices-aliases-reject-wire-benchmark"
 path = "benchmarks/indices_aliases_reject_wire.rs"
 
 [[bin]]
-name = "update-settings-reject-wire-benchmark"
-path = "benchmarks/update_settings_reject_wire.rs"
+name = "update-settings-wire-benchmark"
+path = "benchmarks/update_settings_wire.rs"
 
 [[bin]]
 name = "scale-index-reject-wire-benchmark"
