@@ -8278,18 +8278,26 @@ impl SteelNode {
         stored_fields: &[String],
     ) -> Value {
         let resolved_index = self.resolve_index_or_alias(requested_index);
-        let key = format!("{resolved_index}:{id}:{routing}");
-        let record = docs.get(&key);
+        let record = self.lookup_document_record(docs, &resolved_index, id, routing);
         if let Some(record) = record {
+            let include_source =
+                stored_fields.is_empty() || stored_fields.iter().any(|field| field == "_source");
             let mut response = serde_json::json!({
                 "_index": self.write_response_index(requested_index, &resolved_index),
                 "_id": id,
                 "_version": record.version,
                 "_seq_no": record.seq_no,
                 "_primary_term": record.primary_term,
-                "found": true,
-                "_source": record.source
+                "found": true
             });
+            if include_source {
+                response["_source"] = record.source.clone();
+            }
+            if let Some(fields) =
+                self.build_stored_fields_response(&resolved_index, &record.source, stored_fields)
+            {
+                response["fields"] = fields;
+            }
             if stored_fields.iter().any(|field| field == "_routing") {
                 if let Some(routing) = record.routing.as_deref() {
                     response["_routing"] = Value::String(routing.to_string());
@@ -16656,22 +16664,6 @@ impl SteelNode {
             .get("stored_fields")
             .map(|fields| split_rest_csv_values(fields))
             .unwrap_or_default();
-        if !requested_stored_fields.is_empty()
-            && !requested_stored_fields
-                .iter()
-                .all(|field| field == "_routing")
-        {
-            return RestResponse::json(
-                400,
-                serde_json::json!({
-                    "error": {
-                        "type": "illegal_argument_exception",
-                        "reason": "unsupported get document option [stored_fields]"
-                    },
-                    "status": 400
-                }),
-            );
-        }
         let resolved_index = self.resolve_index_or_alias(index);
         let routing = request
             .query_params
@@ -16679,7 +16671,6 @@ impl SteelNode {
             .cloned()
             .or_else(|| self.resolve_alias_read_routing(index))
             .unwrap_or_default();
-        let key = format!("{resolved_index}:{id}:{routing}");
         let docs = self
             .documents_state
             .lock()
@@ -16688,7 +16679,9 @@ impl SteelNode {
             .query_params
             .get("realtime")
             .map_or(true, |value| value != "false");
-        let record = docs.get(&key).filter(|record| realtime || record.refreshed);
+        let record = self
+            .lookup_document_record(&docs, &resolved_index, id, &routing)
+            .filter(|record| realtime || record.refreshed);
         if let Some(record) = record {
             let mut source = record.source.clone();
             let source_requested = request
@@ -16706,6 +16699,9 @@ impl SteelNode {
                     .map_or(true, |value| value != "false")
             } else {
                 source_requested
+                    || requested_stored_fields
+                        .iter()
+                        .any(|field| field == "_source")
             };
             if include_source {
                 if let Some(includes) = request
@@ -16742,6 +16738,13 @@ impl SteelNode {
             if include_source {
                 response["_source"] = source;
             }
+            if let Some(fields) = self.build_stored_fields_response(
+                &resolved_index,
+                &record.source,
+                &requested_stored_fields,
+            ) {
+                response["fields"] = fields;
+            }
             if requested_stored_fields
                 .iter()
                 .any(|field| field == "_routing")
@@ -16759,6 +16762,63 @@ impl SteelNode {
                 id,
             ),
         )
+    }
+
+    fn build_stored_fields_response(
+        &self,
+        index: &str,
+        source: &Value,
+        stored_fields: &[String],
+    ) -> Option<Value> {
+        let manifest = self
+            .metadata_manifest_state
+            .lock()
+            .expect("metadata manifest state lock poisoned");
+        let mappings = &manifest["indices"][index]["mappings"];
+        let mut fields = serde_json::Map::new();
+        for field in stored_fields {
+            if field == "_source" || field == "_routing" || field == "_none_" {
+                continue;
+            }
+            let Some(mapping) = lookup_mapping_property(mappings, field).and_then(Value::as_object)
+            else {
+                continue;
+            };
+            if mapping.get("store").and_then(Value::as_bool) != Some(true) {
+                continue;
+            }
+            if let Some(value) = extract_source_path_value(source, field) {
+                fields.insert(field.clone(), search_field_values(value));
+            }
+        }
+        (!fields.is_empty()).then_some(Value::Object(fields))
+    }
+
+    fn lookup_document_record<'a>(
+        &self,
+        docs: &'a DocumentMap,
+        resolved_index: &str,
+        id: &str,
+        routing: &str,
+    ) -> Option<&'a SharedStoredDocument> {
+        let key = format!("{resolved_index}:{id}:{routing}");
+        if let Some(record) = docs.get(&key) {
+            return Some(record);
+        }
+        if !routing.is_empty() {
+            return None;
+        }
+        let shard_count = self.index_primary_shard_count(resolved_index).max(1);
+        let requested_shard = opensearch_routing_shard(id, shard_count);
+        docs.iter()
+            .find(|(candidate, record)| {
+                if !candidate.starts_with(&format!("{resolved_index}:{id}:")) {
+                    return false;
+                }
+                let doc_routing = record.routing.as_deref().unwrap_or(id);
+                opensearch_routing_shard(doc_routing, shard_count) == requested_shard
+            })
+            .map(|(_, record)| record)
     }
 
     fn handle_head_doc_route(&self, index: &str, id: &str, request: &RestRequest) -> RestResponse {
@@ -48239,15 +48299,10 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             RestMethod::Get,
             "/logs-get-options-probe/_doc/doc-1?stored_fields=tenant",
         ));
-        assert_eq!(stored_fields.status, 400);
-        assert_eq!(
-            stored_fields.body["error"]["type"],
-            Value::String("illegal_argument_exception".to_string())
-        );
-        assert_eq!(
-            stored_fields.body["error"]["reason"],
-            Value::String("unsupported get document option [stored_fields]".to_string())
-        );
+        assert_eq!(stored_fields.status, 200);
+        assert_eq!(stored_fields.body["found"], Value::Bool(true));
+        assert!(stored_fields.body.get("_source").is_none());
+        assert!(stored_fields.body.get("fields").is_none());
 
         let legacy_fields = node.handle_rest_request(RestRequest::new(
             RestMethod::Get,
@@ -48526,6 +48581,34 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(missing_without_routing.status, 404);
         assert_eq!(missing_without_routing.body["found"], Value::Bool(false));
 
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(
+                RestMethod::Put,
+                "/logs-routing-meta-one-shard"
+            ))
+            .status,
+            200
+        );
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(
+                    RestMethod::Put,
+                    "/logs-routing-meta-one-shard/_doc/1?routing=tenant-a",
+                )
+                .with_json_body(serde_json::json!({
+                    "foo": "one-shard"
+                })),
+            )
+            .status,
+            201
+        );
+        let same_shard_without_routing = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/logs-routing-meta-one-shard/_doc/1",
+        ));
+        assert_eq!(same_shard_without_routing.status, 200);
+        assert_eq!(same_shard_without_routing.body["found"], Value::Bool(true));
+
         let routed_mget = node.handle_rest_request(
             RestRequest::new(
                 RestMethod::Post,
@@ -48545,6 +48628,87 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(docs[1]["found"], Value::Bool(false));
         assert_eq!(docs[2]["found"], Value::Bool(true));
         assert_eq!(docs[2]["_routing"], Value::String("5".to_string()));
+    }
+
+    #[test]
+    fn get_and_mget_stored_fields_return_stored_source_fields_like_opensearch() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, "/logs-stored-fields").with_json_body(
+                    serde_json::json!({
+                        "mappings": {
+                            "properties": {
+                                "foo": { "type": "keyword", "store": true },
+                                "count": { "type": "integer", "store": true },
+                                "tenant": { "type": "keyword" }
+                            }
+                        }
+                    }),
+                ),
+            )
+            .status,
+            200
+        );
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, "/logs-stored-fields/_doc/1").with_json_body(
+                    serde_json::json!({
+                        "foo": "bar",
+                        "count": 1,
+                        "tenant": "tenant-a"
+                    }),
+                ),
+            )
+            .status,
+            201
+        );
+
+        let get_foo = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/logs-stored-fields/_doc/1?stored_fields=foo",
+        ));
+        assert_eq!(get_foo.status, 200);
+        assert_eq!(get_foo.body["fields"]["foo"], serde_json::json!(["bar"]));
+        assert!(get_foo.body.get("_source").is_none());
+
+        let get_with_source = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/logs-stored-fields/_doc/1?stored_fields=foo,count,_source",
+        ));
+        assert_eq!(get_with_source.status, 200);
+        assert_eq!(
+            get_with_source.body["fields"],
+            serde_json::json!({
+                "foo": ["bar"],
+                "count": [1]
+            })
+        );
+        assert_eq!(get_with_source.body["_source"]["foo"], "bar");
+
+        let mget = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-stored-fields/_mget").with_json_body(
+                serde_json::json!({
+                    "docs": [
+                        { "_id": "1" },
+                        { "_id": "1", "stored_fields": "foo" },
+                        { "_id": "1", "stored_fields": ["foo", "_source"] }
+                    ]
+                }),
+            ),
+        );
+        assert_eq!(mget.status, 200);
+        let docs = mget.body["docs"].as_array().unwrap();
+        assert_eq!(docs[0]["_source"]["foo"], "bar");
+        assert!(docs[0].get("fields").is_none());
+        assert_eq!(docs[1]["fields"]["foo"], serde_json::json!(["bar"]));
+        assert!(docs[1].get("_source").is_none());
+        assert_eq!(docs[2]["fields"]["foo"], serde_json::json!(["bar"]));
+        assert_eq!(docs[2]["_source"]["foo"], "bar");
     }
 
     #[test]

@@ -1022,14 +1022,11 @@
       "extract": "get_document"
     },
     {
-      "name": "single_doc_stored_fields_unsupported_error",
+      "name": "single_doc_unstored_stored_fields_omits_fields",
       "area": "document-write",
       "method": "GET",
       "path": "/logs-write-source-a/_doc/doc-1?stored_fields=tenant",
-      "extract": "document_write_error",
-      "comparison": "steelsearch_only",
-      "expected_steelsearch_status": 400,
-      "reason": "Steelsearch explicit deny fixture for stored_fields on GET document."
+      "extract": "get_document"
     },
     {
       "name": "single_doc_create_unrefreshed",

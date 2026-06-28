@@ -1511,6 +1511,7 @@ def extract(kind: str, response: dict[str, Any]) -> Any:
             "found": body.get("found"),
             "_id": body.get("_id"),
             "_routing": body.get("_routing"),
+            "fields": body.get("fields"),
             "_source": body.get("_source"),
         }
     if kind == "source_summary":
@@ -1650,6 +1651,8 @@ def extract(kind: str, response: dict[str, Any]) -> Any:
             "indices": [doc.get("_index") for doc in docs if isinstance(doc, dict)],
             "found": [doc.get("found") for doc in docs if isinstance(doc, dict)],
             "routing": [doc.get("_routing") for doc in docs if isinstance(doc, dict)],
+            "fields": [doc.get("fields") for doc in docs if isinstance(doc, dict)],
+            "sources": [doc.get("_source") for doc in docs if isinstance(doc, dict)],
         }
     if kind == "mtermvectors_summary":
         docs = body.get("docs") if isinstance(body, dict) else []

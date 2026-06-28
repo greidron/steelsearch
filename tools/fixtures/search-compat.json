@@ -11036,6 +11036,125 @@
       ],
       "family": "document-routing",
       "description": "[document-routing] mget stored_fields _routing follows routed document lookup semantics"
+    },
+    {
+      "name": "get_stored_fields_source_field_parity",
+      "area": "document",
+      "extract": "get_document",
+      "compare_step": "get-stored-fields",
+      "steps": [
+        {
+          "name": "create-stored-fields-index",
+          "method": "PUT",
+          "path": "/logs-stored-fields-compat",
+          "expected_status": 200,
+          "body": {
+            "mappings": {
+              "properties": {
+                "foo": {
+                  "type": "keyword",
+                  "store": true
+                },
+                "count": {
+                  "type": "integer",
+                  "store": true
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "index-stored-fields-doc",
+          "method": "PUT",
+          "path": "/logs-stored-fields-compat/_doc/1",
+          "expected_status": 201,
+          "body": {
+            "foo": "bar",
+            "count": 1
+          }
+        },
+        {
+          "name": "refresh-stored-fields-index",
+          "method": "POST",
+          "path": "/logs-stored-fields-compat/_refresh",
+          "expected_status": 200
+        },
+        {
+          "name": "get-stored-fields",
+          "method": "GET",
+          "path": "/logs-stored-fields-compat/_doc/1?stored_fields=foo,count,_source",
+          "expected_status": 200,
+          "extract": "get_document"
+        }
+      ],
+      "family": "document-stored-fields",
+      "description": "[document-stored-fields] get stored_fields returns fields and honors _source"
+    },
+    {
+      "name": "mget_stored_fields_source_field_parity",
+      "area": "document",
+      "extract": "mget_summary",
+      "compare_step": "mget-stored-fields",
+      "steps": [
+        {
+          "name": "create-mget-stored-fields-index",
+          "method": "PUT",
+          "path": "/logs-mget-stored-fields-compat",
+          "expected_status": 200,
+          "body": {
+            "mappings": {
+              "properties": {
+                "foo": {
+                  "type": "keyword",
+                  "store": true
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "index-mget-stored-fields-doc",
+          "method": "PUT",
+          "path": "/logs-mget-stored-fields-compat/_doc/1",
+          "expected_status": 201,
+          "body": {
+            "foo": "bar"
+          }
+        },
+        {
+          "name": "refresh-mget-stored-fields-index",
+          "method": "POST",
+          "path": "/logs-mget-stored-fields-compat/_refresh",
+          "expected_status": 200
+        },
+        {
+          "name": "mget-stored-fields",
+          "method": "POST",
+          "path": "/logs-mget-stored-fields-compat/_mget",
+          "expected_status": 200,
+          "body": {
+            "docs": [
+              {
+                "_id": "1"
+              },
+              {
+                "_id": "1",
+                "stored_fields": "foo"
+              },
+              {
+                "_id": "1",
+                "stored_fields": [
+                  "foo",
+                  "_source"
+                ]
+              }
+            ]
+          },
+          "extract": "mget_summary"
+        }
+      ],
+      "family": "document-stored-fields",
+      "description": "[document-stored-fields] mget stored_fields returns fields and suppresses source unless requested"
     }
   ],
   "requests": [
