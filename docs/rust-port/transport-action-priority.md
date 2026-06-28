@@ -177,8 +177,8 @@ The source-derived transport inventory currently has 160 rows:
 
 | Status | Count | Meaning |
 | --- | ---: | --- |
-| `implemented` | 82 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
-| `partial` | 78 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
+| `implemented` | 83 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
+| `partial` | 77 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
 | `planned` | 0 | No source-derived transport action remains unclassified. |
 
 The k-NN plugin action sweep is complete at the boundary layer. All 12
@@ -1615,15 +1615,13 @@ The put-composable-index-template boundary covers:
   composed-of list, optional priority, optional version, absent metadata map,
   absent data stream marker, and absent context marker at the OpenSearch 3.x
   wire decode/build layer;
-- explicit fail-closed classification for `indices:admin/index_template/put`
-  until composable index-template validation, metadata mutation, and
-  acknowledged response rendering are implemented against Rust cluster
-  metadata;
+- manifest-backed transport execution for `indices:admin/index_template/put`,
+  inserting or replacing settings-only composable index-template metadata in
+  Rust cluster metadata and rendering OpenSearch `AcknowledgedResponse`;
 - explicit rejection for custom cluster-manager timeouts, missing template
   names, missing index patterns, custom causes, create-only writes, settings,
   mappings, aliases, composed-of component references, priorities, versions,
-  metadata payloads, data stream templates, contexts, and
-  put-composable-index-template execution.
+  metadata payloads, data stream templates, and contexts.
 
 The get-composable-index-template boundary covers:
 
@@ -4464,17 +4462,18 @@ manifest-backed component-template metadata removal in the node adapter, and
 acknowledged response rendering; future performance-sensitive work is metadata
 publication across distributed cluster-state ownership.
 
-Current put-composable-index-template reject wire microbenchmark:
+Current put-composable-index-template wire microbenchmark:
 
 ```text
-cargo run -p os-transport --release --bin put-composable-index-template-reject-wire-benchmark
-put_composable_index_template_reject_request_encode iterations=400000 elapsed_ms=355.942 ops_per_second=1123778.17 nanos_per_op=889.86
-put_composable_index_template_reject_request_decode iterations=400000 elapsed_ms=338.706 ops_per_second=1180965.02 nanos_per_op=846.77
-put_composable_index_template_reject_validation iterations=400000 elapsed_ms=349.263 ops_per_second=1145267.34 nanos_per_op=873.16
-put_composable_index_template_reject_wire_bottleneck_ops_per_second=1123778.17
+cargo run -q -p os-transport --release --bin put-composable-index-template-wire-benchmark
+put_composable_index_template_request_encode iterations=400000 elapsed_ms=352.957 ops_per_second=1133281.53 nanos_per_op=882.39
+put_composable_index_template_request_decode iterations=400000 elapsed_ms=340.713 ops_per_second=1174008.50 nanos_per_op=851.78
+put_composable_index_template_request_validate iterations=400000 elapsed_ms=346.628 ops_per_second=1153975.50 nanos_per_op=866.57
+put_composable_index_template_response_decode iterations=400000 elapsed_ms=54.720 ops_per_second=7309942.46 nanos_per_op=136.80
+put_composable_index_template_wire_bottleneck_ops_per_second=1133281.53
 ```
 
-The current put-composable-index-template fail-closed boundary bottleneck is
+The current put-composable-index-template supported wire subset bottleneck is
 request encode. The default benchmark writes the cluster-manager request
 envelope, template name, absent cause, create flag, one index pattern, absent
 nested template, absent composed-of list, absent priority/version, absent

@@ -404,8 +404,8 @@ name = "delete-component-template-wire-benchmark"
 path = "benchmarks/delete_component_template_wire.rs"
 
 [[bin]]
-name = "put-composable-index-template-reject-wire-benchmark"
-path = "benchmarks/put_composable_index_template_reject_wire.rs"
+name = "put-composable-index-template-wire-benchmark"
+path = "benchmarks/put_composable_index_template_wire.rs"
 
 [[bin]]
 name = "get-composable-index-template-wire-benchmark"

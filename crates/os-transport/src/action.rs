@@ -1130,7 +1130,7 @@ pub const OPENSEARCH_PRIORITY_TRANSPORT_ACTIONS: &[OpenSearchPriorityTransportAc
         request_wire_type: "PutComposableIndexTemplateAction.Request",
         response_wire_type: "AcknowledgedResponse",
         adapter_stage: "metadata-write",
-        next_step: "map composable index-template creation and updates onto Rust template metadata mutation and ack rendering",
+        next_step: "expand composable index-template writes beyond the settings-only manifest subset",
     },
     OpenSearchPriorityTransportActionSpec {
         action_name: OPENSEARCH_GET_COMPOSABLE_INDEX_TEMPLATE_ACTION_NAME,
@@ -2176,8 +2176,8 @@ pub fn classify_opensearch_transport_action(
         OPENSEARCH_PUT_COMPOSABLE_INDEX_TEMPLATE_ACTION_NAME => {
             OpenSearchTransportDispatchDecision {
                 action_name: action_name.to_string(),
-                disposition: OpenSearchTransportActionDisposition::Rejected,
-                reason: "put-composable-index-template transport execution requires composable index template validation, metadata mutation, and ack rendering",
+                disposition: OpenSearchTransportActionDisposition::Implemented,
+                reason: "put-composable-index-template transport adapter mutates manifest-backed composable index template metadata and renders OpenSearch AcknowledgedResponse",
             }
         }
         OPENSEARCH_GET_COMPOSABLE_INDEX_TEMPLATE_ACTION_NAME => {
@@ -10647,6 +10647,35 @@ pub fn read_opensearch_put_composable_index_template_request_message(
         });
     }
     OpenSearchPutComposableIndexTemplateRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_opensearch_put_composable_index_template_response_message(
+    request_id: i64,
+    version: Version,
+    response: &AcknowledgedResponseWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    response.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::response(),
+        version,
+        variable_header: BytesMut::new(),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_put_composable_index_template_response_message(
+    message: &TransportMessage,
+) -> Result<AcknowledgedResponseWire, TransportActionWireError> {
+    if message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "response",
+            actual: message.status.bits(),
+        });
+    }
+    AcknowledgedResponseWire::read(message.body.clone().freeze())
 }
 
 pub fn build_opensearch_get_composable_index_template_request_message(
@@ -23800,7 +23829,7 @@ impl OpenSearchPutComposableIndexTemplateRequestWire {
         })
     }
 
-    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+    pub fn validate_supported_execution_subset(&self) -> Result<(), TransportActionWireError> {
         if self.cluster_manager_timeout != TimeValueWire::seconds(30) {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "put composable index template cluster-manager timeout",
@@ -23907,10 +23936,15 @@ impl OpenSearchPutComposableIndexTemplateRequestWire {
                 reason: "composable index-template contexts require context metadata semantics",
             });
         }
+        Ok(())
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        self.validate_supported_execution_subset()?;
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "put composable index template execution",
             reason:
-                "put-composable-index-template transport execution requires composable index template metadata mutation and ack rendering",
+                "use validate_supported_execution_subset for the implemented manifest-backed put-composable-index-template adapter",
         })
     }
 }
@@ -46403,7 +46437,7 @@ mod tests {
                     request_wire_type: "PutComposableIndexTemplateAction.Request",
                     response_wire_type: "AcknowledgedResponse",
                     adapter_stage: "metadata-write",
-                    next_step: "map composable index-template creation and updates onto Rust template metadata mutation and ack rendering",
+                    next_step: "expand composable index-template writes beyond the settings-only manifest subset",
                 },
                 OpenSearchPriorityTransportActionSpec {
                     action_name: "indices:admin/index_template/get",
@@ -47258,7 +47292,7 @@ mod tests {
                 OPENSEARCH_PUT_COMPOSABLE_INDEX_TEMPLATE_ACTION_NAME
             )
             .disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             classify_opensearch_transport_action(
@@ -63058,7 +63092,7 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_put_composable_index_template_request_wire_round_trips_and_rejects_execution_boundary(
+    fn opensearch_put_composable_index_template_request_wire_round_trips_and_validates_manifest_subset(
     ) {
         let request = OpenSearchPutComposableIndexTemplateRequestWire::default();
         let mut output = StreamOutput::new();
@@ -63069,13 +63103,7 @@ mod tests {
         assert_eq!(decoded, request);
         assert_eq!(decoded.name, "logs-composable-template");
         assert_eq!(decoded.index_template.index_patterns, vec!["logs-*"]);
-        assert!(matches!(
-            decoded.reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "put composable index template execution",
-                ..
-            })
-        ));
+        decoded.validate_supported_execution_subset().unwrap();
     }
 
     #[test]
@@ -63085,7 +63113,7 @@ mod tests {
             ..OpenSearchPutComposableIndexTemplateRequestWire::default()
         };
         assert!(matches!(
-            timeout.reject_unsupported_execution(),
+            timeout.validate_supported_execution_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "put composable index template cluster-manager timeout",
                 ..
@@ -63097,7 +63125,7 @@ mod tests {
             ..OpenSearchPutComposableIndexTemplateRequestWire::default()
         };
         assert!(matches!(
-            missing_name.reject_unsupported_execution(),
+            missing_name.validate_supported_execution_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "put composable index template missing name",
                 ..
@@ -63112,7 +63140,7 @@ mod tests {
             ..OpenSearchPutComposableIndexTemplateRequestWire::default()
         };
         assert!(matches!(
-            missing_patterns.reject_unsupported_execution(),
+            missing_patterns.validate_supported_execution_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "put composable index template missing patterns",
                 ..
@@ -63124,7 +63152,7 @@ mod tests {
             ..OpenSearchPutComposableIndexTemplateRequestWire::default()
         };
         assert!(matches!(
-            custom_cause.reject_unsupported_execution(),
+            custom_cause.validate_supported_execution_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "put composable index template custom cause",
                 ..
@@ -63136,7 +63164,7 @@ mod tests {
             ..OpenSearchPutComposableIndexTemplateRequestWire::default()
         };
         assert!(matches!(
-            create_flag.reject_unsupported_execution(),
+            create_flag.validate_supported_execution_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "put composable index template create flag",
                 ..
@@ -63156,7 +63184,7 @@ mod tests {
             ..OpenSearchPutComposableIndexTemplateRequestWire::default()
         };
         assert!(matches!(
-            custom_settings.reject_unsupported_execution(),
+            custom_settings.validate_supported_execution_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "composable index template settings",
                 ..
@@ -63174,7 +63202,7 @@ mod tests {
             ..OpenSearchPutComposableIndexTemplateRequestWire::default()
         };
         assert!(matches!(
-            mappings.reject_unsupported_execution(),
+            mappings.validate_supported_execution_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "composable index template mappings",
                 ..
@@ -63192,7 +63220,7 @@ mod tests {
             ..OpenSearchPutComposableIndexTemplateRequestWire::default()
         };
         assert!(matches!(
-            aliases.reject_unsupported_execution(),
+            aliases.validate_supported_execution_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "composable index template aliases",
                 ..
@@ -63207,7 +63235,7 @@ mod tests {
             ..OpenSearchPutComposableIndexTemplateRequestWire::default()
         };
         assert!(matches!(
-            composed_of.reject_unsupported_execution(),
+            composed_of.validate_supported_execution_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "composable index template composed-of",
                 ..
@@ -63222,7 +63250,7 @@ mod tests {
             ..OpenSearchPutComposableIndexTemplateRequestWire::default()
         };
         assert!(matches!(
-            priority.reject_unsupported_execution(),
+            priority.validate_supported_execution_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "composable index template priority",
                 ..
@@ -63237,7 +63265,7 @@ mod tests {
             ..OpenSearchPutComposableIndexTemplateRequestWire::default()
         };
         assert!(matches!(
-            version.reject_unsupported_execution(),
+            version.validate_supported_execution_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "composable index template version",
                 ..
@@ -63252,7 +63280,7 @@ mod tests {
             ..OpenSearchPutComposableIndexTemplateRequestWire::default()
         };
         assert!(matches!(
-            metadata.reject_unsupported_execution(),
+            metadata.validate_supported_execution_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "composable index template metadata",
                 ..
@@ -63267,7 +63295,7 @@ mod tests {
             ..OpenSearchPutComposableIndexTemplateRequestWire::default()
         };
         assert!(matches!(
-            data_stream.reject_unsupported_execution(),
+            data_stream.validate_supported_execution_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "composable index template data stream",
                 ..
@@ -63282,7 +63310,7 @@ mod tests {
             ..OpenSearchPutComposableIndexTemplateRequestWire::default()
         };
         assert!(matches!(
-            context.reject_unsupported_execution(),
+            context.validate_supported_execution_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "composable index template context",
                 ..
@@ -63357,7 +63385,7 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_put_composable_index_template_transport_messages_bind_rejected_action_frame() {
+    fn opensearch_put_composable_index_template_transport_messages_bind_action_frames() {
         let request = OpenSearchPutComposableIndexTemplateRequestWire::default();
         let mut frame = build_opensearch_put_composable_index_template_request_message(
             65,
@@ -63372,15 +63400,24 @@ mod tests {
             read_opensearch_put_composable_index_template_request_message(&message).unwrap(),
             request
         );
-        assert!(matches!(
-            read_opensearch_put_composable_index_template_request_message(&message)
-                .unwrap()
-                .reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "put composable index template execution",
-                ..
-            })
-        ));
+        read_opensearch_put_composable_index_template_request_message(&message)
+            .unwrap()
+            .validate_supported_execution_subset()
+            .unwrap();
+        let response = AcknowledgedResponseWire { acknowledged: true };
+        let mut frame = build_opensearch_put_composable_index_template_response_message(
+            65,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &response,
+        )
+        .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected put composable index template response message");
+        };
+        assert_eq!(
+            read_opensearch_put_composable_index_template_response_message(&message).unwrap(),
+            response
+        );
     }
 
     #[test]
