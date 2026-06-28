@@ -604,6 +604,10 @@ name = "create-pit-wire-benchmark"
 path = "benchmarks/create_pit_wire.rs"
 
 [[bin]]
+name = "pit-reader-context-wire-benchmark"
+path = "benchmarks/pit_reader_context_wire.rs"
+
+[[bin]]
 name = "delete-pit-wire-benchmark"
 path = "benchmarks/delete_pit_wire.rs"
 
