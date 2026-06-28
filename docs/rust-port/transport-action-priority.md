@@ -177,8 +177,8 @@ The source-derived transport inventory currently has 160 rows:
 
 | Status | Count | Meaning |
 | --- | ---: | --- |
-| `implemented` | 84 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
-| `partial` | 76 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
+| `implemented` | 85 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
+| `partial` | 75 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
 | `planned` | 0 | No source-derived transport action remains unclassified. |
 
 The k-NN plugin action sweep is complete at the boundary layer. All 12
@@ -336,7 +336,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `cluster:admin/script/delete` (rejected fail-closed)
 - `cluster:admin/script_context/get` (implemented Rust-supported script context catalog subset)
 - `cluster:admin/script_language/get` (implemented Rust-supported script language catalog subset)
-- `cluster:admin/ingest/pipeline/put` (rejected fail-closed)
+- `cluster:admin/ingest/pipeline/put` (implemented manifest-backed metadata-write subset)
 - `cluster:admin/ingest/pipeline/get` (implemented empty pipeline metadata-read subset)
 - `cluster:admin/ingest/pipeline/delete` (implemented manifest-backed metadata-write subset)
 - `cluster:admin/ingest/pipeline/simulate` (rejected fail-closed)
@@ -1378,13 +1378,12 @@ The put-pipeline boundary covers:
   OpenSearch 3.x wire decode/build layer;
 - OpenSearch `AcknowledgedResponse` decode/build for the put-pipeline response
   acknowledgement bit;
-- explicit fail-closed classification for
-  `cluster:admin/ingest/pipeline/put` until ingest pipeline validation,
-  processor availability checks, cluster metadata mutation, throttling, and ack
-  rendering are implemented;
+- manifest-backed transport execution for
+  `cluster:admin/ingest/pipeline/put`, storing JSON pipeline source in Rust
+  manifest `ingest_pipelines` entries and returning an acknowledged response;
 - explicit rejection for custom cluster-manager timeouts, custom
   acknowledgement timeouts, missing ids, missing source bytes, non-JSON media
-  types, and put-pipeline execution.
+  types, and malformed JSON source bytes.
 
 The get-pipeline boundary covers:
 
@@ -4131,24 +4130,24 @@ decoding. Future performance-sensitive work is building and serving the Rust
 script language catalog without repeated allocation-heavy string collection
 expansion.
 
-Current put-pipeline reject wire microbenchmark:
+Current put-pipeline wire microbenchmark:
 
 ```text
-cargo run -p os-transport --release --bin put-pipeline-reject-wire-benchmark
-put_pipeline_reject_request_encode iterations=400000 elapsed_ms=404.405 ops_per_second=989108.66 nanos_per_op=1011.01
-put_pipeline_reject_request_decode iterations=400000 elapsed_ms=374.548 ops_per_second=1067954.06 nanos_per_op=936.37
-put_pipeline_reject_validation iterations=400000 elapsed_ms=377.719 ops_per_second=1058987.13 nanos_per_op=944.30
-put_pipeline_ack_response_decode iterations=400000 elapsed_ms=54.074 ops_per_second=7397212.13 nanos_per_op=135.19
-put_pipeline_reject_wire_bottleneck_ops_per_second=989108.66
+cargo run -q -p os-transport --release --bin put-pipeline-wire-benchmark
+put_pipeline_request_encode iterations=400000 elapsed_ms=396.601 ops_per_second=1008571.04 nanos_per_op=991.50
+put_pipeline_request_decode iterations=400000 elapsed_ms=367.738 ops_per_second=1087730.57 nanos_per_op=919.35
+put_pipeline_request_validate iterations=400000 elapsed_ms=372.683 ops_per_second=1073297.14 nanos_per_op=931.71
+put_pipeline_response_decode iterations=400000 elapsed_ms=54.531 ops_per_second=7335256.06 nanos_per_op=136.33
+put_pipeline_wire_bottleneck_ops_per_second=1008571.04
 ```
 
-The current put-pipeline fail-closed boundary bottleneck is request encode. The
+The current put-pipeline supported wire subset bottleneck is request encode. The
 request path carries the acknowledged cluster-manager envelope, pipeline id,
-source bytes, and media type before rejecting execution. At roughly 989K ops/s
+source bytes, and media type before validating execution. At roughly 1.01M ops/s
 in the latest local release run, current overhead is transport serialization.
 Future performance-sensitive work is ingest pipeline source parsing, processor
-availability validation, cluster metadata mutation, throttling, and ack
-rendering.
+availability validation, metadata persistence, cluster-manager throttling, and
+ack rendering.
 
 Current get-pipeline reject wire microbenchmark:
 

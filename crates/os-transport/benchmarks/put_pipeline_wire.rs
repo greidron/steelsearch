@@ -13,7 +13,7 @@ const ITERATIONS: usize = 400_000;
 fn main() {
     let request = OpenSearchPutPipelineRequestWire::default();
 
-    let request_encode = measure("put_pipeline_reject_request_encode", ITERATIONS, || {
+    let request_encode = measure("put_pipeline_request_encode", ITERATIONS, || {
         let frame = build_opensearch_put_pipeline_request_message(
             74,
             OPENSEARCH_3_7_0_TRANSPORT,
@@ -27,7 +27,7 @@ fn main() {
         build_opensearch_put_pipeline_request_message(74, OPENSEARCH_3_7_0_TRANSPORT, &request)
             .expect("put-pipeline request encode should succeed");
 
-    let request_decode = measure("put_pipeline_reject_request_decode", ITERATIONS, || {
+    let request_decode = measure("put_pipeline_request_decode", ITERATIONS, || {
         let mut frame = black_box(request_frame.clone());
         let message = decode_message(&mut frame);
         let decoded = read_opensearch_put_pipeline_request_message(black_box(&message))
@@ -35,15 +35,14 @@ fn main() {
         black_box(decoded);
     });
 
-    let reject_validate = measure("put_pipeline_reject_validation", ITERATIONS, || {
+    let request_validate = measure("put_pipeline_request_validate", ITERATIONS, || {
         let mut frame = black_box(request_frame.clone());
         let message = decode_message(&mut frame);
         let decoded = read_opensearch_put_pipeline_request_message(black_box(&message))
             .expect("put-pipeline request decode");
-        let err = decoded
-            .reject_unsupported_execution()
-            .expect_err("put-pipeline execution should reject");
-        black_box(err);
+        decoded
+            .validate_supported_execution_subset()
+            .expect("put-pipeline manifest-backed subset should validate");
     });
 
     let response = AcknowledgedResponseWire { acknowledged: true };
@@ -51,7 +50,7 @@ fn main() {
         build_opensearch_put_pipeline_response_message(74, OPENSEARCH_3_7_0_TRANSPORT, &response)
             .expect("put-pipeline response encode should succeed");
 
-    let response_decode = measure("put_pipeline_ack_response_decode", ITERATIONS, || {
+    let response_decode = measure("put_pipeline_response_decode", ITERATIONS, || {
         let mut frame = black_box(response_frame.clone());
         let message = decode_message(&mut frame);
         let decoded = read_opensearch_put_pipeline_response_message(black_box(&message))
@@ -62,9 +61,9 @@ fn main() {
     let combined_ops_per_second = request_encode
         .ops_per_second
         .min(request_decode.ops_per_second)
-        .min(reject_validate.ops_per_second)
+        .min(request_validate.ops_per_second)
         .min(response_decode.ops_per_second);
-    println!("put_pipeline_reject_wire_bottleneck_ops_per_second={combined_ops_per_second:.2}");
+    println!("put_pipeline_wire_bottleneck_ops_per_second={combined_ops_per_second:.2}");
 }
 
 #[derive(Clone, Copy)]
