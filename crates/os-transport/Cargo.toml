@@ -601,7 +601,7 @@ path = "benchmarks/explain_reject_wire.rs"
 
 [[bin]]
 name = "create-pit-wire-benchmark"
-path = "benchmarks/create_pit_reject_wire.rs"
+path = "benchmarks/create_pit_wire.rs"
 
 [[bin]]
 name = "delete-pit-wire-benchmark"

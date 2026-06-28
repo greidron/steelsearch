@@ -5383,12 +5383,12 @@ Current create-PIT wire microbenchmark:
 
 ```text
 cargo run -p os-transport --release --bin create-pit-wire-benchmark
-create_pit_request_encode iterations=400000 elapsed_ms=282.594 ops_per_second=1415456.66 nanos_per_op=706.49
-create_pit_request_decode iterations=400000 elapsed_ms=263.746 ops_per_second=1516611.99 nanos_per_op=659.36
-create_pit_request_validate iterations=400000 elapsed_ms=263.325 ops_per_second=1519033.52 nanos_per_op=658.31
-create_pit_response_encode iterations=400000 elapsed_ms=124.077 ops_per_second=3223798.00 nanos_per_op=310.19
-create_pit_response_decode iterations=400000 elapsed_ms=104.434 ops_per_second=3830160.46 nanos_per_op=261.09
-create_pit_wire_bottleneck_ops_per_second=1415456.66
+create_pit_request_encode iterations=400000 elapsed_ms=283.153 ops_per_second=1412666.18 nanos_per_op=707.88
+create_pit_request_decode iterations=400000 elapsed_ms=276.198 ops_per_second=1448236.09 nanos_per_op=690.50
+create_pit_request_validate iterations=400000 elapsed_ms=276.533 ops_per_second=1446482.48 nanos_per_op=691.33
+create_pit_response_encode iterations=400000 elapsed_ms=124.701 ops_per_second=3207683.45 nanos_per_op=311.75
+create_pit_response_decode iterations=400000 elapsed_ms=104.212 ops_per_second=3838316.70 nanos_per_op=260.53
+create_pit_wire_bottleneck_ops_per_second=1412666.18
 ```
 
 The current create-PIT wire subset bottleneck is request encode. This path
@@ -5398,9 +5398,12 @@ lifecycle subset. Runtime create-PIT now also resolves index/alias/wildcard and
 data-stream targets with OpenSearch-style index option guards, applies routing
 filters, and captures the shared SteelNode document snapshot while accepting
 create-PIT preference and explicit partial-creation flags for the local
-all-success shard subset; the first runtime performance point to inspect while
-expanding the path is lock hold time and snapshot allocation around larger
-document sets.
+all-success shard subset. The transport reader-context path is covered
+separately: create-reader-context allocates a local snapshot, update-reader-context
+attaches the final PIT id/creation time/keep-alive, PIT search reuses that
+snapshot and extends keep-alive, and free-PIT-context clears both reader and PIT
+context state. The first runtime performance point to inspect while expanding
+the path is lock hold time and snapshot allocation around larger document sets.
 
 Current PIT-segments wire microbenchmark:
 
