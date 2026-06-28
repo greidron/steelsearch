@@ -177,8 +177,8 @@ The source-derived transport inventory currently has 160 rows:
 
 | Status | Count | Meaning |
 | --- | ---: | --- |
-| `implemented` | 91 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
-| `partial` | 69 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
+| `implemented` | 92 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
+| `partial` | 68 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
 | `planned` | 0 | No source-derived transport action remains unclassified. |
 
 The k-NN plugin action sweep is complete at the boundary layer. All 12
@@ -273,6 +273,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `indices:admin/template/get` (implemented default all-template legacy metadata subset)
 - `indices:admin/template/put` (implemented manifest-backed metadata mutation subset)
 - `indices:admin/template/delete` (implemented manifest-backed metadata mutation subset)
+- `indices:admin/aliases` (implemented manifest-backed add/remove alias metadata subset)
 - `cluster:admin/component_template/get` (implemented manifest-backed
   settings-only component-template subset)
 - `cluster:admin/component_template/put` (implemented manifest-backed metadata mutation subset)
@@ -1229,14 +1230,17 @@ The indices-aliases boundary covers:
   array, optional filter, routing fields, optional write-index flag, optional
   hidden flag, original aliases array, and optional must-exist flag at the
   OpenSearch 3.x wire decode/build layer;
-- explicit fail-closed classification for `indices:admin/aliases` until alias
-  metadata mutation, remove-index sub-actions, and acknowledged response
-  rendering are implemented;
+- implemented classification for `indices:admin/aliases` when the request uses
+  default timeouts, no custom origin, manifest-backed concrete, `_all`, or
+  wildcard index targets, and add/remove alias actions without alias metadata
+  options;
+- manifest-backed alias metadata mutation for supported add/remove actions and
+  OpenSearch acknowledged-response wire rendering;
 - explicit rejection for custom cluster-manager timeouts, custom
   acknowledgement timeouts, empty action lists, custom origins, unknown alias
-  action ordinals, missing index targets, missing alias targets, remove-index
-  alias payloads, filtered aliases, alias routing, write-index updates, hidden
-  alias updates, must-exist removals, and indices-aliases execution.
+  action ordinals, missing or unresolved index targets, missing alias targets,
+  remove-index actions, filtered aliases, alias routing, write-index updates,
+  hidden alias updates, and must-exist removals.
 
 The index update-settings boundary covers:
 
@@ -3933,23 +3937,26 @@ transport shape validation; future performance-sensitive work is
 concrete-index mapping validation, metadata mutation, and acknowledged response
 rendering.
 
-Current indices-aliases reject wire microbenchmark:
+Current indices-aliases wire microbenchmark:
 
 ```text
-cargo run -p os-transport --release --bin indices-aliases-reject-wire-benchmark
-indices_aliases_reject_request_encode iterations=400000 elapsed_ms=380.930 ops_per_second=1050062.61 nanos_per_op=952.32
-indices_aliases_reject_request_decode iterations=400000 elapsed_ms=394.077 ops_per_second=1015029.67 nanos_per_op=985.19
-indices_aliases_reject_validation iterations=400000 elapsed_ms=405.229 ops_per_second=987095.27 nanos_per_op=1013.07
-indices_aliases_reject_wire_bottleneck_ops_per_second=987095.27
+cargo run -q -p os-transport --release --bin indices-aliases-wire-benchmark
+indices_aliases_request_encode iterations=400000 elapsed_ms=379.336 ops_per_second=1054474.63 nanos_per_op=948.34
+indices_aliases_request_decode iterations=400000 elapsed_ms=404.375 ops_per_second=989180.10 nanos_per_op=1010.94
+indices_aliases_request_validate iterations=400000 elapsed_ms=429.183 ops_per_second=932003.16 nanos_per_op=1072.96
+indices_aliases_response_encode iterations=400000 elapsed_ms=87.276 ops_per_second=4583141.30 nanos_per_op=218.19
+indices_aliases_response_decode iterations=400000 elapsed_ms=87.990 ops_per_second=4545967.46 nanos_per_op=219.98
+indices_aliases_wire_bottleneck_ops_per_second=932003.16
 ```
 
-The current indices-aliases fail-closed boundary bottleneck is validation. The
-path decodes one alias add action, checks default timeouts, origin, action
+The current indices-aliases transport path bottleneck is request validation.
+The path decodes one alias add action, checks default timeouts, origin, action
 presence, required index and alias fields, and unsupported alias options before
-rejecting execution. At roughly 0.99M ops/s in the latest local release run,
-the current overhead remains lightweight transport shape validation; future
-performance-sensitive work is alias metadata mutation, remove-index sub-action
-handling, and acknowledged response rendering.
+the node applies manifest-backed add/remove mutations and renders an
+acknowledged response. At roughly 0.93M ops/s in the latest local release run,
+the wire overhead remains lightweight shape validation; future
+performance-sensitive work is the manifest index resolution and metadata
+mutation path for larger alias action batches.
 
 Current index update-settings wire microbenchmark:
 

@@ -1,7 +1,10 @@
 use os_core::OPENSEARCH_3_7_0_TRANSPORT;
 use os_transport::action::{
     build_opensearch_indices_aliases_request_message,
-    read_opensearch_indices_aliases_request_message, OpenSearchIndicesAliasesRequestWire,
+    build_opensearch_indices_aliases_response_message,
+    read_opensearch_indices_aliases_request_message,
+    read_opensearch_indices_aliases_response_message, AcknowledgedResponseWire,
+    OpenSearchIndicesAliasesRequestWire,
 };
 use os_transport::frame::{decode_frame, DecodedFrame};
 use std::hint::black_box;
@@ -12,7 +15,7 @@ const ITERATIONS: usize = 400_000;
 fn main() {
     let request = OpenSearchIndicesAliasesRequestWire::default();
 
-    let request_encode = measure("indices_aliases_reject_request_encode", ITERATIONS, || {
+    let request_encode = measure("indices_aliases_request_encode", ITERATIONS, || {
         let frame = build_opensearch_indices_aliases_request_message(
             39,
             OPENSEARCH_3_7_0_TRANSPORT,
@@ -26,7 +29,7 @@ fn main() {
         build_opensearch_indices_aliases_request_message(39, OPENSEARCH_3_7_0_TRANSPORT, &request)
             .expect("indices-aliases request encode should succeed");
 
-    let request_decode = measure("indices_aliases_reject_request_decode", ITERATIONS, || {
+    let request_decode = measure("indices_aliases_request_decode", ITERATIONS, || {
         let mut frame = black_box(request_frame.clone());
         let message = decode_message(&mut frame);
         let decoded = read_opensearch_indices_aliases_request_message(black_box(&message))
@@ -34,22 +37,48 @@ fn main() {
         black_box(decoded);
     });
 
-    let reject_validate = measure("indices_aliases_reject_validation", ITERATIONS, || {
+    let request_validate = measure("indices_aliases_request_validate", ITERATIONS, || {
         let mut frame = black_box(request_frame.clone());
         let message = decode_message(&mut frame);
         let decoded = read_opensearch_indices_aliases_request_message(black_box(&message))
             .expect("indices-aliases request decode");
-        let err = decoded
-            .reject_unsupported_execution()
-            .expect_err("indices-aliases execution should reject");
-        black_box(err);
+        let validation = decoded.validate_supported_subset();
+        let _ = black_box(validation);
+    });
+
+    let response = AcknowledgedResponseWire { acknowledged: true };
+    let response_encode = measure("indices_aliases_response_encode", ITERATIONS, || {
+        let frame = build_opensearch_indices_aliases_response_message(
+            39,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            black_box(&response),
+        )
+        .expect("indices-aliases response encode should succeed");
+        black_box(frame);
+    });
+
+    let response_frame = build_opensearch_indices_aliases_response_message(
+        39,
+        OPENSEARCH_3_7_0_TRANSPORT,
+        &response,
+    )
+    .expect("indices-aliases response encode should succeed");
+
+    let response_decode = measure("indices_aliases_response_decode", ITERATIONS, || {
+        let mut frame = black_box(response_frame.clone());
+        let message = decode_message(&mut frame);
+        let decoded = read_opensearch_indices_aliases_response_message(black_box(&message))
+            .expect("indices-aliases response decode");
+        black_box(decoded);
     });
 
     let combined_ops_per_second = request_encode
         .ops_per_second
         .min(request_decode.ops_per_second)
-        .min(reject_validate.ops_per_second);
-    println!("indices_aliases_reject_wire_bottleneck_ops_per_second={combined_ops_per_second:.2}");
+        .min(request_validate.ops_per_second)
+        .min(response_encode.ops_per_second)
+        .min(response_decode.ops_per_second);
+    println!("indices_aliases_wire_bottleneck_ops_per_second={combined_ops_per_second:.2}");
 }
 
 #[derive(Clone, Copy)]

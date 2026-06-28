@@ -2028,8 +2028,8 @@ pub fn classify_opensearch_transport_action(
         },
         OPENSEARCH_INDICES_ALIASES_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
-            disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "indices-aliases transport execution requires alias metadata mutation, index deletion sub-actions, and ack rendering",
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "indices-aliases transport adapter resolves manifest indices, mutates supported alias add/remove metadata, and renders acknowledged responses",
         },
         OPENSEARCH_UPDATE_SETTINGS_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -9135,6 +9135,36 @@ pub fn read_opensearch_indices_aliases_request_message(
         });
     }
     OpenSearchIndicesAliasesRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_opensearch_indices_aliases_response_message(
+    request_id: i64,
+    version: Version,
+    response: &AcknowledgedResponseWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    response.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::response(),
+        version,
+        variable_header: BytesMut::from(&ResponseVariableHeader::default().to_bytes()[..]),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_indices_aliases_response_message(
+    message: &TransportMessage,
+) -> Result<AcknowledgedResponseWire, TransportActionWireError> {
+    if !message.status.is_response() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "response",
+            actual: message.status.bits(),
+        });
+    }
+    let _header = ResponseVariableHeader::read(message.variable_header.clone().freeze())?;
+    AcknowledgedResponseWire::read(message.body.clone().freeze())
 }
 
 pub fn build_opensearch_update_settings_request_message(
@@ -19823,11 +19853,17 @@ impl OpenSearchAliasActionWire {
         })
     }
 
-    fn reject_unsupported_shape(&self) -> Result<(), TransportActionWireError> {
+    fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
         if self.indices.is_empty() || self.indices.iter().any(|index| index.trim().is_empty()) {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "indices aliases missing index",
                 reason: "OpenSearch alias actions require at least one target index",
+            });
+        }
+        if self.action_type == OpenSearchAliasActionTypeWire::RemoveIndex {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "indices aliases remove-index",
+                reason: "remove-index alias actions require index deletion metadata semantics",
             });
         }
         if self.action_type != OpenSearchAliasActionTypeWire::RemoveIndex
@@ -19937,7 +19973,7 @@ impl OpenSearchIndicesAliasesRequestWire {
         Ok(request)
     }
 
-    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+    pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
         if self.cluster_manager_timeout != TimeValueWire::seconds(30) {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "indices aliases cluster-manager timeout",
@@ -19965,11 +20001,17 @@ impl OpenSearchIndicesAliasesRequestWire {
             });
         }
         for action in &self.actions {
-            action.reject_unsupported_shape()?;
+            action.validate_supported_subset()?;
         }
+        Ok(())
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        self.validate_supported_subset()?;
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "indices aliases execution",
-            reason: "indices-aliases transport execution requires alias metadata mutation, index deletion sub-actions, and ack rendering",
+            reason:
+                "use validate_supported_subset for the implemented local indices-aliases adapter",
         })
     }
 }
@@ -59044,7 +59086,7 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_indices_aliases_request_wire_round_trips_and_rejects_execution_boundary() {
+    fn opensearch_indices_aliases_request_wire_round_trips_and_validates_subset() {
         let request = OpenSearchIndicesAliasesRequestWire::default();
         let mut output = StreamOutput::new();
         request.write(&mut output);
@@ -59058,13 +59100,7 @@ mod tests {
         );
         assert_eq!(decoded.actions[0].indices, vec!["logs-000001"]);
         assert_eq!(decoded.actions[0].aliases, vec!["logs-current"]);
-        assert!(matches!(
-            decoded.reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "indices aliases execution",
-                ..
-            })
-        ));
+        assert!(decoded.validate_supported_subset().is_ok());
     }
 
     #[test]
@@ -59158,7 +59194,7 @@ mod tests {
         assert!(matches!(
             remove_index_aliases.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "indices aliases remove-index aliases",
+                shape: "indices aliases remove-index",
                 ..
             })
         ));
@@ -59259,7 +59295,7 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_indices_aliases_transport_messages_bind_rejected_action_frame() {
+    fn opensearch_indices_aliases_transport_messages_bind_action_and_ack_response_frames() {
         let request = OpenSearchIndicesAliasesRequestWire::default();
         let mut frame = build_opensearch_indices_aliases_request_message(
             39,
@@ -59274,15 +59310,27 @@ mod tests {
             read_opensearch_indices_aliases_request_message(&message).unwrap(),
             request
         );
-        assert!(matches!(
-            read_opensearch_indices_aliases_request_message(&message)
-                .unwrap()
-                .reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "indices aliases execution",
-                ..
-            })
-        ));
+        assert!(read_opensearch_indices_aliases_request_message(&message)
+            .unwrap()
+            .validate_supported_subset()
+            .is_ok());
+
+        let response = AcknowledgedResponseWire { acknowledged: true };
+        let mut response_frame = build_opensearch_indices_aliases_response_message(
+            39,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &response,
+        )
+        .unwrap();
+        let DecodedFrame::Message(response_message) =
+            decode_frame(&mut response_frame).unwrap().unwrap()
+        else {
+            panic!("expected indices aliases response message");
+        };
+        assert_eq!(
+            read_opensearch_indices_aliases_response_message(&response_message).unwrap(),
+            response
+        );
     }
 
     #[test]

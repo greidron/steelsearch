@@ -288,8 +288,8 @@ name = "auto-put-mapping-reject-wire-benchmark"
 path = "benchmarks/auto_put_mapping_reject_wire.rs"
 
 [[bin]]
-name = "indices-aliases-reject-wire-benchmark"
-path = "benchmarks/indices_aliases_reject_wire.rs"
+name = "indices-aliases-wire-benchmark"
+path = "benchmarks/indices_aliases_wire.rs"
 
 [[bin]]
 name = "update-settings-wire-benchmark"

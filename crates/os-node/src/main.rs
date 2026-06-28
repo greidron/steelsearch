@@ -1669,6 +1669,30 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end_at_ms,
         )?;
     } else if is_request
+        && normalized_action_hint == Some("indices:admin/aliases")
+        && indices_aliases_request_supports_manifest_subset(&body)
+    {
+        let response = build_indices_aliases_response(request_id, header_version_id, &body);
+        response_frame =
+            summarize_transport_response_frame_for_action(&response, Some("indices:admin/aliases"));
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request
         && normalized_action_hint == Some("indices:admin/resolve/index")
         && resolve_index_request_supports_manifest_subset(&body)
     {
@@ -6353,6 +6377,132 @@ fn decode_get_aliases_request_from_transport_body(
 ) -> Option<os_transport::action::OpenSearchGetAliasesRequestWire> {
     let message = decode_transport_message_from_body(body)?;
     os_transport::action::read_opensearch_get_aliases_request_message(&message).ok()
+}
+
+fn build_indices_aliases_response(request_id: i64, header_version_id: u32, body: &[u8]) -> Vec<u8> {
+    let Some(request) = decode_indices_aliases_request_from_transport_body(body) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    if request.validate_supported_subset().is_err() {
+        return build_empty_transport_response(request_id, header_version_id);
+    }
+    let mut manifest = dev_transport_pit_bindings()
+        .metadata_manifest
+        .lock()
+        .expect("dev transport metadata manifest lock poisoned");
+    if !apply_transport_indices_aliases_to_manifest(&mut manifest, &request) {
+        return build_empty_transport_response(request_id, header_version_id);
+    }
+    drop(manifest);
+    os_transport::action::build_opensearch_indices_aliases_response_message(
+        request_id,
+        Version::from_id(header_version_id as i32),
+        &os_transport::action::AcknowledgedResponseWire { acknowledged: true },
+    )
+    .map(|frame| frame.to_vec())
+    .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
+}
+
+fn indices_aliases_request_supports_manifest_subset(body: &[u8]) -> bool {
+    decode_indices_aliases_request_from_transport_body(body)
+        .filter(|request| request.validate_supported_subset().is_ok())
+        .is_some_and(|request| {
+            let manifest = dev_transport_pit_bindings()
+                .metadata_manifest
+                .lock()
+                .expect("dev transport metadata manifest lock poisoned");
+            transport_indices_aliases_actions_have_targets(&manifest, &request)
+        })
+}
+
+fn decode_indices_aliases_request_from_transport_body(
+    body: &[u8],
+) -> Option<os_transport::action::OpenSearchIndicesAliasesRequestWire> {
+    let message = decode_transport_message_from_body(body)?;
+    os_transport::action::read_opensearch_indices_aliases_request_message(&message).ok()
+}
+
+fn transport_indices_aliases_actions_have_targets(
+    metadata_manifest: &Value,
+    request: &os_transport::action::OpenSearchIndicesAliasesRequestWire,
+) -> bool {
+    request.actions.iter().all(|action| {
+        transport_alias_action_indices(metadata_manifest, action)
+            .is_some_and(|targets| !targets.is_empty())
+    })
+}
+
+fn transport_alias_action_indices(
+    metadata_manifest: &Value,
+    action: &os_transport::action::OpenSearchAliasActionWire,
+) -> Option<Vec<String>> {
+    let indices = metadata_manifest["indices"].as_object()?;
+    let mut targets = Vec::new();
+    for selector in action
+        .indices
+        .iter()
+        .filter(|selector| !selector.is_empty())
+    {
+        let selector_targets = if selector == "_all" {
+            indices.keys().cloned().collect::<Vec<_>>()
+        } else if selector.contains('*') || selector.contains('?') {
+            indices
+                .keys()
+                .filter(|index| wildcard_match(selector, index))
+                .cloned()
+                .collect::<Vec<_>>()
+        } else if indices.contains_key(selector) {
+            vec![selector.clone()]
+        } else {
+            return None;
+        };
+        if selector_targets.is_empty() {
+            return None;
+        }
+        targets.extend(selector_targets);
+    }
+    targets.sort();
+    targets.dedup();
+    Some(targets)
+}
+
+fn apply_transport_indices_aliases_to_manifest(
+    metadata_manifest: &mut Value,
+    request: &os_transport::action::OpenSearchIndicesAliasesRequestWire,
+) -> bool {
+    if !transport_indices_aliases_actions_have_targets(metadata_manifest, request) {
+        return false;
+    }
+    for action in &request.actions {
+        let Some(targets) = transport_alias_action_indices(metadata_manifest, action) else {
+            return false;
+        };
+        for index in targets {
+            let aliases_root = &mut metadata_manifest["indices"][&index]["aliases"];
+            if !aliases_root.is_object() {
+                *aliases_root = serde_json::json!({});
+            }
+            let Some(alias_map) = aliases_root.as_object_mut() else {
+                return false;
+            };
+            for alias in action.aliases.iter().filter(|alias| !alias.is_empty()) {
+                match action.action_type {
+                    os_transport::action::OpenSearchAliasActionTypeWire::Add => {
+                        alias_map
+                            .entry(alias.clone())
+                            .or_insert_with(|| serde_json::json!({}));
+                    }
+                    os_transport::action::OpenSearchAliasActionTypeWire::Remove => {
+                        alias_map.remove(alias);
+                    }
+                    os_transport::action::OpenSearchAliasActionTypeWire::RemoveIndex => {
+                        return false;
+                    }
+                }
+            }
+        }
+    }
+    true
 }
 
 fn get_aliases_response_from_metadata_manifest(
@@ -16903,6 +17053,13 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
             header_version_id,
             body,
         )),
+        Some("indices:admin/aliases") if indices_aliases_request_supports_manifest_subset(body) => {
+            Some(build_indices_aliases_response(
+                request_id,
+                header_version_id,
+                body,
+            ))
+        }
         Some("indices:admin/resolve/index")
             if resolve_index_request_supports_manifest_subset(body) =>
         {
@@ -22065,6 +22222,87 @@ mod tests {
             response.empty_alias_indices,
             vec!["logs-no-alias-000001", "metrics-no-alias-000001"]
         );
+    }
+
+    #[test]
+    fn indices_aliases_transport_route_updates_manifest_aliases() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        *dev_transport_pit_bindings()
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned") = serde_json::json!({
+            "indices": {
+                "logs-alias-000001": {
+                    "settings": {},
+                    "mappings": {},
+                    "aliases": {
+                        "logs-old": {}
+                    }
+                }
+            }
+        });
+
+        let request = os_transport::action::OpenSearchIndicesAliasesRequestWire {
+            actions: vec![
+                os_transport::action::OpenSearchAliasActionWire {
+                    indices: vec!["logs-alias-000001".to_string()],
+                    aliases: vec!["logs-current".to_string()],
+                    original_aliases: vec!["logs-current".to_string()],
+                    ..os_transport::action::OpenSearchAliasActionWire::add_default()
+                },
+                os_transport::action::OpenSearchAliasActionWire {
+                    action_type: os_transport::action::OpenSearchAliasActionTypeWire::Remove,
+                    indices: vec!["logs-alias-000001".to_string()],
+                    aliases: vec!["logs-old".to_string()],
+                    original_aliases: vec!["logs-old".to_string()],
+                    filter: None,
+                    routing: None,
+                    search_routing: None,
+                    index_routing: None,
+                    write_index: None,
+                    is_hidden: None,
+                    must_exist: None,
+                },
+            ],
+            ..os_transport::action::OpenSearchIndicesAliasesRequestWire::default()
+        };
+        let frame = os_transport::action::build_opensearch_indices_aliases_request_message(
+            83,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(indices_aliases_request_supports_manifest_subset(
+            &frame[6..]
+        ));
+
+        let response =
+            build_indices_aliases_response(83, OPENSEARCH_3_7_0_TRANSPORT.id() as u32, &frame[6..]);
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected indices aliases response message");
+        };
+        let response =
+            os_transport::action::read_opensearch_indices_aliases_response_message(&message)
+                .unwrap();
+        assert!(response.acknowledged);
+
+        let manifest = dev_transport_pit_bindings()
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned");
+        assert!(manifest["indices"]["logs-alias-000001"]["aliases"]
+            .get("logs-current")
+            .is_some());
+        assert!(manifest["indices"]["logs-alias-000001"]["aliases"]
+            .get("logs-old")
+            .is_none());
     }
 
     #[test]
