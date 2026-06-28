@@ -2131,6 +2131,36 @@ fn handle_transport_seed_connection<S: TransportConnection>(
         )?;
     } else if is_request
         && normalized_action_hint == Some("indices:data/read/search[create_context]")
+        && create_reader_context_request_exceeds_local_keep_alive_limit(&body)
+    {
+        let response = build_create_reader_context_keep_alive_too_large_error_response(
+            request_id,
+            header_version_id,
+            &body,
+        );
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("indices:data/read/search[create_context]"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request
+        && normalized_action_hint == Some("indices:data/read/search[create_context]")
         && create_reader_context_request_supports_local_subset(&body)
     {
         let response =
@@ -2138,6 +2168,36 @@ fn handle_transport_seed_connection<S: TransportConnection>(
         response_frame = summarize_transport_response_frame_for_action(
             &response,
             Some("indices:data/read/search[create_context]"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request
+        && normalized_action_hint == Some("indices:data/read/search[update_context]")
+        && update_reader_context_request_exceeds_local_keep_alive_limit(&body)
+    {
+        let response = build_update_reader_context_keep_alive_too_large_error_response(
+            request_id,
+            header_version_id,
+            &body,
+        );
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("indices:data/read/search[update_context]"),
         );
         stream.write_all(&response)?;
         stream.flush()?;
@@ -8620,7 +8680,18 @@ fn build_create_pit_keep_alive_too_large_error_response(
     let Some(request) = decode_create_pit_request_from_transport_body(body) else {
         return build_empty_transport_response(request_id, header_version_id);
     };
-    let keep_alive_millis = time_value_wire_to_millis(&request.keep_alive);
+    build_pit_keep_alive_too_large_error_response(
+        request_id,
+        header_version_id,
+        time_value_wire_to_millis(&request.keep_alive),
+    )
+}
+
+fn build_pit_keep_alive_too_large_error_response(
+    request_id: i64,
+    header_version_id: u32,
+    keep_alive_millis: i64,
+) -> Vec<u8> {
     let reason = format!(
         "Keep alive for request ({}) is too large. It must be less than ({}). This limit can be set by changing the [point_in_time.max_keep_alive] cluster level setting.",
         transport_time_value_millis_display(keep_alive_millis),
@@ -8724,6 +8795,29 @@ fn create_reader_context_request_supports_local_subset(body: &[u8]) -> bool {
         .is_some()
 }
 
+fn create_reader_context_request_exceeds_local_keep_alive_limit(body: &[u8]) -> bool {
+    decode_create_reader_context_request_from_transport_body(body)
+        .filter(|request| request.validate_supported_subset().is_ok())
+        .is_some_and(|request| {
+            time_value_wire_to_millis(&request.keep_alive) > DEV_TRANSPORT_MAX_PIT_KEEP_ALIVE_MILLIS
+        })
+}
+
+fn build_create_reader_context_keep_alive_too_large_error_response(
+    request_id: i64,
+    header_version_id: u32,
+    body: &[u8],
+) -> Vec<u8> {
+    let Some(request) = decode_create_reader_context_request_from_transport_body(body) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    build_pit_keep_alive_too_large_error_response(
+        request_id,
+        header_version_id,
+        time_value_wire_to_millis(&request.keep_alive),
+    )
+}
+
 fn decode_create_reader_context_request_from_transport_body(
     body: &[u8],
 ) -> Option<os_transport::action::OpenSearchCreateReaderContextRequestWire> {
@@ -8807,6 +8901,27 @@ fn update_reader_context_request_supports_local_subset(body: &[u8]) -> bool {
         .filter(|request| reader_context_available_for_update(&request.search_context_id))
         .and_then(|request| request.validate_supported_subset().ok())
         .is_some()
+}
+
+fn update_reader_context_request_exceeds_local_keep_alive_limit(body: &[u8]) -> bool {
+    decode_update_reader_context_request_from_transport_body(body)
+        .filter(|request| request.validate_supported_subset().is_ok())
+        .is_some_and(|request| request.keep_alive_millis > DEV_TRANSPORT_MAX_PIT_KEEP_ALIVE_MILLIS)
+}
+
+fn build_update_reader_context_keep_alive_too_large_error_response(
+    request_id: i64,
+    header_version_id: u32,
+    body: &[u8],
+) -> Vec<u8> {
+    let Some(request) = decode_update_reader_context_request_from_transport_body(body) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    build_pit_keep_alive_too_large_error_response(
+        request_id,
+        header_version_id,
+        request.keep_alive_millis,
+    )
 }
 
 fn decode_update_reader_context_request_from_transport_body(
@@ -11445,6 +11560,17 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
             ))
         }
         Some("indices:data/read/search[create_context]")
+            if create_reader_context_request_exceeds_local_keep_alive_limit(body) =>
+        {
+            Some(
+                build_create_reader_context_keep_alive_too_large_error_response(
+                    request_id,
+                    header_version_id,
+                    body,
+                ),
+            )
+        }
+        Some("indices:data/read/search[create_context]")
             if create_reader_context_request_supports_local_subset(body) =>
         {
             Some(build_local_create_reader_context_response(
@@ -11452,6 +11578,17 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
                 header_version_id,
                 body,
             ))
+        }
+        Some("indices:data/read/search[update_context]")
+            if update_reader_context_request_exceeds_local_keep_alive_limit(body) =>
+        {
+            Some(
+                build_update_reader_context_keep_alive_too_large_error_response(
+                    request_id,
+                    header_version_id,
+                    body,
+                ),
+            )
         }
         Some("indices:data/read/search[update_context]")
             if update_reader_context_request_supports_local_subset(body) =>
@@ -22455,8 +22592,9 @@ mod tests {
         assert!(!create_reader_context_request_supports_local_subset(
             &frame[6..]
         ));
+        assert!(create_reader_context_request_exceeds_local_keep_alive_limit(&frame[6..]));
 
-        let response = build_local_create_reader_context_response(
+        let response = build_create_reader_context_keep_alive_too_large_error_response(
             298,
             OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
             &frame[6..],
@@ -22467,10 +22605,17 @@ mod tests {
                 .unwrap()
                 .unwrap()
         else {
-            panic!("expected create-reader-context fallback response frame");
+            panic!("expected create-reader-context error response frame");
         };
         assert_eq!(message.request_id, 298);
-        assert!(message.body.is_empty());
+        assert!(message.status.is_error());
+        let error = os_transport::error::TransportError::read(message.body.freeze())
+            .unwrap()
+            .unwrap();
+        assert_eq!(error.class_name, "java.lang.IllegalArgumentException");
+        let reason = error.message.as_deref().unwrap();
+        assert!(reason.contains("Keep alive for request (25h) is too large"));
+        assert!(reason.contains("point_in_time.max_keep_alive"));
         assert_eq!(
             *bindings
                 .next_id
@@ -22512,8 +22657,9 @@ mod tests {
         assert!(!update_reader_context_request_supports_local_subset(
             &frame[6..]
         ));
+        assert!(update_reader_context_request_exceeds_local_keep_alive_limit(&frame[6..]));
 
-        let response = build_local_update_reader_context_response(
+        let response = build_update_reader_context_keep_alive_too_large_error_response(
             297,
             OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
             &frame[6..],
@@ -22524,10 +22670,17 @@ mod tests {
                 .unwrap()
                 .unwrap()
         else {
-            panic!("expected update-reader-context fallback response frame");
+            panic!("expected update-reader-context error response frame");
         };
         assert_eq!(message.request_id, 297);
-        assert!(message.body.is_empty());
+        assert!(message.status.is_error());
+        let error = os_transport::error::TransportError::read(message.body.freeze())
+            .unwrap()
+            .unwrap();
+        assert_eq!(error.class_name, "java.lang.IllegalArgumentException");
+        let reason = error.message.as_deref().unwrap();
+        assert!(reason.contains("Keep alive for request (86400001ms) is too large"));
+        assert!(reason.contains("point_in_time.max_keep_alive"));
         assert!(bindings
             .contexts
             .lock()
