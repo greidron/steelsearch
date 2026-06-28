@@ -2406,6 +2406,10 @@ The create-PIT boundary covers:
   allocating a reader context, matching the OpenSearch
   `indicesService.indexServiceSafe(...).getShard(...)` admission boundary for
   the local-node subset.
+- local transport create-reader-context now also rejects manifest-backed
+  closed indices. OpenSearch creates PIT reader contexts only for shard targets
+  selected by the create-PIT search phase, so the local adapter keeps direct
+  reader-context execution bounded to open/searchable shard targets.
 - local transport create-reader-context now applies the OpenSearch default
   `search.max_open_pit_context` limit of `300` before allocating a reader
   context, matching the `SearchService.createPitReaderContext` open-context

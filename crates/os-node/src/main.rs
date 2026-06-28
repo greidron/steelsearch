@@ -8548,6 +8548,12 @@ fn create_reader_context_shard_exists(
         .lock()
         .expect("dev transport metadata manifest lock poisoned");
     if let Some(index_body) = manifest["indices"].get(&shard_id.index_name) {
+        if index_body["state"]
+            .as_str()
+            .is_some_and(|state| state == "close")
+        {
+            return false;
+        }
         let settings = &index_body["settings"];
         let shard_count = settings["index"]["number_of_shards"]
             .as_str()
@@ -21150,6 +21156,14 @@ mod tests {
                             "number_of_shards": "2"
                         }
                     }
+                },
+                "logs-reader-closed": {
+                    "state": "close",
+                    "settings": {
+                        "index": {
+                            "number_of_shards": "1"
+                        }
+                    }
                 }
             }
         });
@@ -21173,6 +21187,14 @@ mod tests {
                     index_name: "logs-reader-manifest".to_string(),
                     index_uuid: "uuid-reader-manifest".to_string(),
                     shard_id: 2,
+                },
+            ),
+            (
+                301,
+                os_transport::action::OpenSearchShardIdWire {
+                    index_name: "logs-reader-closed".to_string(),
+                    index_uuid: "uuid-reader-closed".to_string(),
+                    shard_id: 0,
                 },
             ),
         ] {
