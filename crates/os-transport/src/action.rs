@@ -25609,6 +25609,12 @@ impl OpenSearchSearchRequestWire {
                         reason: "OpenSearch point-in-time is not allowed in a scroll context",
                     });
                 }
+                if source.collapse.is_some() {
+                    return Err(TransportActionWireError::UnsupportedWireShape {
+                        shape: "search request scroll collapse",
+                        reason: "OpenSearch collapse cannot be used in a scroll context",
+                    });
+                }
                 if shard_doc_sort_count(source.sorts.as_deref()) > 0 {
                     return Err(TransportActionWireError::UnsupportedWireShape {
                         shape: "search request scroll shard doc sort",
@@ -25667,6 +25673,21 @@ impl OpenSearchSearchRequestWire {
                         reason:
                             "OpenSearch search_after value count must match the sort field count",
                     });
+                }
+                if let Some(collapse) = &source.collapse {
+                    if sort_count != 1
+                        || source
+                            .sorts
+                            .as_deref()
+                            .and_then(|sorts| sorts.first())
+                            .map(search_sort_field_name)
+                            != Some(collapse.field.as_str())
+                    {
+                        return Err(TransportActionWireError::UnsupportedWireShape {
+                            shape: "search request source collapse search after",
+                            reason: "OpenSearch collapse with search_after requires a single sort on the collapse field",
+                        });
+                    }
                 }
             }
         }
@@ -29688,6 +29709,14 @@ fn shard_doc_sort_count(values: Option<&[OpenSearchSortBuilderWire]>) -> usize {
             OpenSearchSortBuilderWire::Score(_) => false,
         })
         .count()
+}
+
+fn search_sort_field_name(sort: &OpenSearchSortBuilderWire) -> &str {
+    match sort {
+        OpenSearchSortBuilderWire::ShardDoc(_) => "_shard_doc",
+        OpenSearchSortBuilderWire::Field(value) => value.field_name.as_str(),
+        OpenSearchSortBuilderWire::Score(_) => "_score",
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -67269,10 +67298,7 @@ mod tests {
                     id: 1,
                     max: 4,
                 }),
-                collapse: Some(OpenSearchCollapseBuilderWire {
-                    field: "tenant".to_string(),
-                    max_concurrent_group_requests: 2,
-                }),
+                collapse: None,
                 stats: Some(vec!["tenant-stats".to_string(), "latency".to_string()]),
                 script_fields: Some(vec![OpenSearchScriptFieldWire {
                     field_name: "tenant_copy".to_string(),
@@ -70400,6 +70426,105 @@ mod tests {
             })
         ));
 
+        let collapse_with_matching_search_after_sort = OpenSearchSearchRequestWire {
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                search_after: Some(vec![json!("tenant-a")]),
+                sorts: Some(vec![OpenSearchSortBuilderWire::Field(
+                    OpenSearchFieldSortBuilderWire {
+                        field_name: "tenant".to_string(),
+                        nested_path: None,
+                        missing: Value::Null,
+                        order: Some(OpenSearchSortOrderWire::Asc),
+                        sort_mode: None,
+                        unmapped_type: None,
+                        numeric_type: None,
+                    },
+                )]),
+                collapse: Some(OpenSearchCollapseBuilderWire {
+                    field: "tenant".to_string(),
+                    max_concurrent_group_requests: 0,
+                }),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        assert!(matches!(
+            collapse_with_matching_search_after_sort.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request execution",
+                ..
+            })
+        ));
+
+        let collapse_with_mismatched_search_after_sort = OpenSearchSearchRequestWire {
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                search_after: Some(vec![json!("tenant-a")]),
+                sorts: Some(vec![OpenSearchSortBuilderWire::Field(
+                    OpenSearchFieldSortBuilderWire {
+                        field_name: "ordinal".to_string(),
+                        nested_path: None,
+                        missing: Value::Null,
+                        order: Some(OpenSearchSortOrderWire::Asc),
+                        sort_mode: None,
+                        unmapped_type: None,
+                        numeric_type: None,
+                    },
+                )]),
+                collapse: Some(OpenSearchCollapseBuilderWire {
+                    field: "tenant".to_string(),
+                    max_concurrent_group_requests: 0,
+                }),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        assert!(matches!(
+            collapse_with_mismatched_search_after_sort.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source collapse search after",
+                ..
+            })
+        ));
+
+        let collapse_with_multiple_search_after_sorts = OpenSearchSearchRequestWire {
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                search_after: Some(vec![json!("tenant-a"), json!(1)]),
+                sorts: Some(vec![
+                    OpenSearchSortBuilderWire::Field(OpenSearchFieldSortBuilderWire {
+                        field_name: "tenant".to_string(),
+                        nested_path: None,
+                        missing: Value::Null,
+                        order: Some(OpenSearchSortOrderWire::Asc),
+                        sort_mode: None,
+                        unmapped_type: None,
+                        numeric_type: None,
+                    }),
+                    OpenSearchSortBuilderWire::Field(OpenSearchFieldSortBuilderWire {
+                        field_name: "ordinal".to_string(),
+                        nested_path: None,
+                        missing: Value::Null,
+                        order: Some(OpenSearchSortOrderWire::Asc),
+                        sort_mode: None,
+                        unmapped_type: None,
+                        numeric_type: None,
+                    }),
+                ]),
+                collapse: Some(OpenSearchCollapseBuilderWire {
+                    field: "tenant".to_string(),
+                    max_concurrent_group_requests: 0,
+                }),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        assert!(matches!(
+            collapse_with_multiple_search_after_sorts.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source collapse search after",
+                ..
+            })
+        ));
+
         let empty_sort_field = OpenSearchSearchRequestWire {
             source: Some(OpenSearchSearchSourceBuilderWire {
                 sorts: Some(vec![OpenSearchSortBuilderWire::Field(
@@ -70680,6 +70805,27 @@ mod tests {
             scroll_with_search_after.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "search request scroll search after",
+                ..
+            })
+        ));
+
+        let scroll_with_collapse = OpenSearchSearchRequestWire {
+            scroll: Some(OpenSearchScrollWire {
+                keep_alive: TimeValueWire::minutes(1),
+            }),
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                collapse: Some(OpenSearchCollapseBuilderWire {
+                    field: "tenant".to_string(),
+                    max_concurrent_group_requests: 0,
+                }),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        assert!(matches!(
+            scroll_with_collapse.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request scroll collapse",
                 ..
             })
         ));

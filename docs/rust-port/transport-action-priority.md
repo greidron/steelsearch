@@ -2412,6 +2412,9 @@ The create-PIT boundary covers:
   failure boundaries for scroll requests, non-zero `from`, missing sort fields,
   and mismatched `search_after`/sort value counts before executing the local
   search subset.
+- local transport search admission now also preserves OpenSearch collapse
+  failure boundaries for scroll requests and for `collapse` with
+  `search_after`, where the single sort field must match the collapse field.
 - local transport create-reader-context and update-reader-context reject
   keep-alive values above the OpenSearch default
   `point_in_time.max_keep_alive` of `24h`, matching the runtime
