@@ -2403,6 +2403,11 @@ The create-PIT boundary covers:
   nanosecond and microsecond values before create-PIT normalization, so
   sub-millisecond REST keep-alive values follow the same non-positive local PIT
   lifecycle boundary as OpenSearch `TimeValue.millis()`.
+- local transport PIT searches now render `_shard_doc` sort values from the
+  OpenSearch-style routing shard slot plus sequence number instead of falling
+  back to sequence number alone, so `search_after` remains stable when a PIT
+  snapshot contains multiple shard/routing partitions with the same sequence
+  number.
 - local transport create-reader-context and update-reader-context reject
   keep-alive values above the OpenSearch default
   `point_in_time.max_keep_alive` of `24h`, matching the runtime
