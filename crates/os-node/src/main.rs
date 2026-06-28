@@ -6835,12 +6835,16 @@ fn transport_pit_indices(
     } else {
         request.indices.clone()
     };
-    let manifest = bindings
-        .metadata_manifest
-        .lock()
-        .expect("dev transport metadata manifest lock poisoned");
-    let manifest_indices = manifest["indices"].as_object().cloned();
-    drop(manifest);
+    let (manifest_indices, data_streams) = {
+        let manifest = bindings
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned");
+        (
+            manifest["indices"].as_object().cloned(),
+            transport_pit_data_stream_catalog(&manifest),
+        )
+    };
     let indices = transport_pit_index_catalog(bindings, manifest_indices);
     let mut resolved = Vec::new();
     if !indices.is_empty() {
@@ -6884,6 +6888,26 @@ fn transport_pit_indices(
                     }
                 }
             }
+            for (data_stream_name, backing_indices) in data_streams.iter() {
+                if effective_selector == data_stream_name
+                    || wildcard_match(effective_selector, data_stream_name)
+                {
+                    selector_matched = true;
+                    for backing_index in backing_indices {
+                        let Some(index_body) = indices.get(backing_index) else {
+                            resolved.push(backing_index.clone());
+                            continue;
+                        };
+                        if transport_pit_index_matches_options(
+                            index_body,
+                            wildcard_selector,
+                            &request.indices_options,
+                        )? {
+                            resolved.push(backing_index.clone());
+                        }
+                    }
+                }
+            }
             if selector_alias_matches > 1
                 && request.indices_options.forbid_aliases_to_multiple_indices
             {
@@ -6919,6 +6943,30 @@ fn transport_pit_indices(
     resolved.sort();
     resolved.dedup();
     Some(resolved)
+}
+
+fn transport_pit_data_stream_catalog(metadata_manifest: &Value) -> BTreeMap<String, Vec<String>> {
+    resolve_index_data_stream_entries(metadata_manifest)
+        .into_iter()
+        .map(|(data_stream_name, data_stream_metadata)| {
+            let mut backing_indices = data_stream_metadata
+                .get("backing_indices")
+                .or_else(|| data_stream_metadata.get("backingIndices"))
+                .or_else(|| data_stream_metadata.get("indices"))
+                .and_then(Value::as_array)
+                .map(|indices| {
+                    indices
+                        .iter()
+                        .filter_map(Value::as_str)
+                        .map(ToOwned::to_owned)
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default();
+            backing_indices.sort();
+            backing_indices.dedup();
+            (data_stream_name, backing_indices)
+        })
+        .collect()
 }
 
 fn build_transport_search_context_pit_id(
@@ -23966,6 +24014,178 @@ mod tests {
         assert!(wildcard_context
             .documents
             .contains_key("logs-created-pit-000001:doc-1:"));
+    }
+
+    #[test]
+    fn create_pit_transport_route_resolves_data_streams_to_backing_indices() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        let bindings = dev_transport_pit_bindings();
+        bindings
+            .contexts
+            .lock()
+            .expect("dev transport PIT contexts lock poisoned")
+            .clear();
+        bindings
+            .reader_contexts
+            .lock()
+            .expect("dev transport reader contexts lock poisoned")
+            .clear();
+        bindings
+            .created_indices
+            .lock()
+            .expect("dev transport created indices lock poisoned")
+            .clear();
+        bindings
+            .documents
+            .lock()
+            .expect("dev transport documents lock poisoned")
+            .clear();
+        *bindings
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned") = serde_json::json!({
+            "indices": {
+                ".ds-logs-ds-000001": {
+                    "settings": {
+                        "index": {
+                            "number_of_shards": "2",
+                            "uuid": "logs-ds-uuid-1"
+                        }
+                    },
+                    "data_stream": "logs-ds"
+                },
+                ".ds-logs-ds-000002": {
+                    "settings": {
+                        "index": {
+                            "number_of_shards": "1",
+                            "uuid": "logs-ds-uuid-2"
+                        }
+                    },
+                    "data_stream": "logs-ds"
+                },
+                "logs-plain-000001": {
+                    "settings": {
+                        "index": {
+                            "number_of_shards": "1"
+                        }
+                    }
+                }
+            },
+            "data_streams": {
+                "logs-ds": {
+                    "backing_indices": [".ds-logs-ds-000001", ".ds-logs-ds-000002"],
+                    "timestamp_field": "@timestamp"
+                }
+            }
+        });
+        {
+            let mut documents = bindings
+                .documents
+                .lock()
+                .expect("dev transport documents lock poisoned");
+            documents.insert(
+                ".ds-logs-ds-000001:doc-1:".to_string(),
+                StoredDocument {
+                    source: serde_json::json!({ "@timestamp": "2026-06-28T00:00:00Z" }),
+                    version: 1,
+                    seq_no: 1,
+                    primary_term: 1,
+                    routing: None,
+                    refreshed: true,
+                }
+                .into(),
+            );
+            documents.insert(
+                ".ds-logs-ds-000002:doc-2:".to_string(),
+                StoredDocument {
+                    source: serde_json::json!({ "@timestamp": "2026-06-28T00:01:00Z" }),
+                    version: 1,
+                    seq_no: 2,
+                    primary_term: 1,
+                    routing: None,
+                    refreshed: true,
+                }
+                .into(),
+            );
+            documents.insert(
+                "logs-plain-000001:doc-plain:".to_string(),
+                StoredDocument {
+                    source: serde_json::json!({ "kind": "plain" }),
+                    version: 1,
+                    seq_no: 3,
+                    primary_term: 1,
+                    routing: None,
+                    refreshed: true,
+                }
+                .into(),
+            );
+        }
+        *bindings
+            .next_id
+            .lock()
+            .expect("dev transport next PIT id lock poisoned") = 0;
+
+        let request = os_transport::action::OpenSearchCreatePitRequestWire {
+            indices: vec!["logs-ds".to_string()],
+            ..os_transport::action::OpenSearchCreatePitRequestWire::default()
+        };
+        let frame = os_transport::action::build_opensearch_create_pit_request_message(
+            329,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(create_pit_request_supports_local_lifecycle_subset(
+            &frame[6..]
+        ));
+        let response = build_local_create_pit_response(
+            329,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &frame[6..],
+        );
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected data-stream create-PIT response");
+        };
+        let response =
+            os_transport::action::read_opensearch_create_pit_response_message(&message).unwrap();
+        assert_eq!(response.total_shards, 3);
+        let decoded_pit_id =
+            os_transport::action::OpenSearchSearchContextIdWire::decode(response.pit_id.as_str())
+                .expect("data-stream PIT id should decode as SearchContextId");
+        assert_eq!(
+            decoded_pit_id.actual_indices(),
+            vec![
+                ".ds-logs-ds-000001".to_string(),
+                ".ds-logs-ds-000002".to_string()
+            ]
+        );
+        let context = bindings
+            .contexts
+            .lock()
+            .expect("dev transport PIT contexts lock poisoned")
+            .get(&response.pit_id)
+            .cloned()
+            .expect("data-stream PIT context should be allocated");
+        assert_eq!(
+            context.indices,
+            vec![
+                ".ds-logs-ds-000001".to_string(),
+                ".ds-logs-ds-000002".to_string()
+            ]
+        );
+        assert_eq!(context.documents.len(), 2);
+        assert!(context.documents.contains_key(".ds-logs-ds-000001:doc-1:"));
+        assert!(context.documents.contains_key(".ds-logs-ds-000002:doc-2:"));
+        assert!(!context
+            .documents
+            .contains_key("logs-plain-000001:doc-plain:"));
     }
 
     #[test]
