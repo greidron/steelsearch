@@ -38,7 +38,7 @@ partial	ClusterAddWeightedRoutingAction.INSTANCE	TransportAddWeightedRoutingActi
 partial	ClusterGetWeightedRoutingAction.INSTANCE	TransportGetWeightedRoutingAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	694
 partial	ClusterDeleteWeightedRoutingAction.INSTANCE	TransportDeleteWeightedRoutingAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	695
 implemented	IndicesStatsAction.INSTANCE	TransportIndicesStatsAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	696
-partial	CatShardsAction.INSTANCE	TransportCatShardsAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	697
+implemented	CatShardsAction.INSTANCE	TransportCatShardsAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	697
 implemented	IndicesSegmentsAction.INSTANCE	TransportIndicesSegmentsAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	698
 implemented	IndicesShardStoresAction.INSTANCE	TransportIndicesShardStoresAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	699
 partial	CreateIndexAction.INSTANCE	TransportCreateIndexAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	700

@@ -177,8 +177,8 @@ The source-derived transport inventory currently has 160 rows:
 
 | Status | Count | Meaning |
 | --- | ---: | --- |
-| `implemented` | 59 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
-| `partial` | 101 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
+| `implemented` | 60 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
+| `partial` | 100 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
 | `planned` | 0 | No source-derived transport action remains unclassified. |
 
 The k-NN plugin action sweep is complete at the boundary layer. All 12
@@ -2791,11 +2791,11 @@ Current cat-shards implemented-path wire microbenchmark:
 
 ```text
 cargo run -p os-transport --release --bin cat-shards-wire-benchmark
-cat_shards_request_encode ops_per_second=2186441.66 nanos_per_op=457.36
-cat_shards_request_decode ops_per_second=2074382.08 nanos_per_op=482.07
-cat_shards_request_validate ops_per_second=2033848.29 nanos_per_op=491.68
-cat_shards_response_decode ops_per_second=3956924.99 nanos_per_op=252.72
-cat_shards_wire_bottleneck_ops_per_second=2033848.29
+cat_shards_request_encode iterations=400000 elapsed_ms=181.089 ops_per_second=2208861.93 nanos_per_op=452.72
+cat_shards_request_decode iterations=400000 elapsed_ms=193.691 ops_per_second=2065147.04 nanos_per_op=484.23
+cat_shards_request_validate iterations=400000 elapsed_ms=197.504 ops_per_second=2025270.46 nanos_per_op=493.76
+cat_shards_response_decode iterations=400000 elapsed_ms=101.817 ops_per_second=3928599.59 nanos_per_op=254.54
+cat_shards_wire_bottleneck_ops_per_second=2025270.46
 ```
 
 The current cat-shards implemented-path wire bottleneck is request validation.
