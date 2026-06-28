@@ -360,8 +360,8 @@ name = "rollover-reject-wire-benchmark"
 path = "benchmarks/rollover_reject_wire.rs"
 
 [[bin]]
-name = "delete-index-reject-wire-benchmark"
-path = "benchmarks/delete_index_reject_wire.rs"
+name = "delete-index-wire-benchmark"
+path = "benchmarks/delete_index_wire.rs"
 
 [[bin]]
 name = "open-index-reject-wire-benchmark"

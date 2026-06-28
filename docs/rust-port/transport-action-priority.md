@@ -177,8 +177,8 @@ The source-derived transport inventory currently has 160 rows:
 
 | Status | Count | Meaning |
 | --- | ---: | --- |
-| `implemented` | 96 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
-| `partial` | 64 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
+| `implemented` | 97 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
+| `partial` | 63 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
 | `planned` | 0 | No source-derived transport action remains unclassified. |
 
 The k-NN plugin action sweep is complete at the boundary layer. All 12
@@ -1490,12 +1490,14 @@ The delete-index boundary covers:
   acknowledgement timeout, indices array, and delete-index default
   `IndicesOptions.fromOptions(false, true, true, true, false, false, true,
   false)` at the wire decode/build layer;
-- explicit fail-closed classification for `indices:admin/delete` until index
-  metadata mutation, shard cleanup, and acknowledged response rendering are
-  implemented;
+- implemented classification for default-option requests with one or more
+  concrete index names and standard timeouts;
+- manifest-backed index metadata removal plus local development document cleanup
+  and OpenSearch-shaped `AcknowledgedResponse` rendering;
 - explicit rejection for custom cluster-manager timeouts, custom
   acknowledgement timeouts, empty or blank index targets, custom indices
-  options, and delete-index execution.
+  options, wildcard/date-math/comma/remote-style targets, and non-concrete
+  target names.
 
 The open-index boundary covers:
 
@@ -4295,22 +4297,25 @@ work; future performance-sensitive work is alias or data-stream metadata
 validation, condition evaluation, index creation, and rollover response
 rendering.
 
-Current delete-index reject wire microbenchmark:
+Current delete-index wire microbenchmark:
 
 ```text
-cargo run -p os-transport --release --bin delete-index-reject-wire-benchmark
-delete_index_reject_request_encode iterations=400000 elapsed_ms=287.248 ops_per_second=1392526.50 nanos_per_op=718.12
-delete_index_reject_request_decode iterations=400000 elapsed_ms=275.243 ops_per_second=1453261.93 nanos_per_op=688.11
-delete_index_reject_validation iterations=400000 elapsed_ms=283.962 ops_per_second=1408637.38 nanos_per_op=709.91
-delete_index_reject_wire_bottleneck_ops_per_second=1392526.50
+cargo run -q -p os-transport --release --bin delete-index-wire-benchmark
+delete_index_request_encode iterations=400000 elapsed_ms=284.113 ops_per_second=1407888.70 nanos_per_op=710.28
+delete_index_request_decode iterations=400000 elapsed_ms=274.231 ops_per_second=1458623.47 nanos_per_op=685.58
+delete_index_request_validate iterations=400000 elapsed_ms=280.096 ops_per_second=1428080.12 nanos_per_op=700.24
+delete_index_response_encode iterations=400000 elapsed_ms=48.552 ops_per_second=8238504.88 nanos_per_op=121.38
+delete_index_response_decode iterations=400000 elapsed_ms=54.713 ops_per_second=7310812.89 nanos_per_op=136.78
+delete_index_wire_bottleneck_ops_per_second=1407888.70
 ```
 
-The current delete-index fail-closed boundary bottleneck is request encode. The
-request carries an acknowledged-request envelope, non-empty index target, and
-delete-index default indices options before the execution boundary rejects. At
-roughly 1.39M ops/s in the latest local release run, the future
-performance-sensitive work is index metadata mutation, shard cleanup, and
-acknowledged response rendering rather than the fail-closed wire boundary.
+The current delete-index transport bottleneck is request encode. The request
+carries an acknowledged-request envelope, non-empty concrete index targets, and
+delete-index default indices options before the node adapter removes
+manifest-backed metadata and local development documents. At roughly 1.41M
+request ops/s and 7M+ response ops/s in the latest local release run, the next
+performance-sensitive work is broader index resolution and deletion planning,
+not ack response rendering.
 
 Current open-index reject wire microbenchmark:
 

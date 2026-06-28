@@ -1986,6 +1986,30 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end_at_ms,
         )?;
     } else if is_request
+        && normalized_action_hint == Some("indices:admin/delete")
+        && delete_index_request_supports_manifest_subset(&body)
+    {
+        let response = build_delete_index_response(request_id, header_version_id, &body);
+        response_frame =
+            summarize_transport_response_frame_for_action(&response, Some("indices:admin/delete"));
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request
         && normalized_action_hint == Some("indices:admin/mapping/put")
         && put_mapping_request_supports_manifest_subset(&body)
     {
@@ -8041,9 +8065,29 @@ fn build_auto_create_response(request_id: i64, header_version_id: u32, body: &[u
     .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
 }
 
+fn build_delete_index_response(request_id: i64, header_version_id: u32, body: &[u8]) -> Vec<u8> {
+    let Some(request) = decode_delete_index_request_from_transport_body(body) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    if !delete_index_request_matches_manifest_subset(&request) {
+        return build_empty_transport_response(request_id, header_version_id);
+    }
+    apply_transport_delete_index(&request.indices);
+    build_acknowledged_template_response(
+        request_id,
+        header_version_id,
+        os_transport::action::build_opensearch_delete_index_response_message,
+    )
+}
+
 fn create_index_request_supports_manifest_subset(body: &[u8]) -> bool {
     decode_create_index_request_from_transport_body(body)
         .is_some_and(|request| create_index_request_matches_manifest_subset(&request))
+}
+
+fn delete_index_request_supports_manifest_subset(body: &[u8]) -> bool {
+    decode_delete_index_request_from_transport_body(body)
+        .is_some_and(|request| delete_index_request_matches_manifest_subset(&request))
 }
 
 fn auto_create_request_supports_manifest_subset(body: &[u8]) -> bool {
@@ -8069,6 +8113,16 @@ fn auto_create_request_matches_manifest_subset(
         && !transport_index_exists(&request.index)
 }
 
+fn delete_index_request_matches_manifest_subset(
+    request: &os_transport::action::OpenSearchDeleteIndexRequestWire,
+) -> bool {
+    request.validate_supported_execution_subset().is_ok()
+        && request
+            .indices
+            .iter()
+            .all(|index| transport_delete_index_name_is_concrete(index))
+}
+
 fn decode_create_index_request_from_transport_body(
     body: &[u8],
 ) -> Option<os_transport::action::OpenSearchCreateIndexRequestWire> {
@@ -8083,6 +8137,13 @@ fn decode_auto_create_request_from_transport_body(
     os_transport::action::read_opensearch_auto_create_request_message(&message).ok()
 }
 
+fn decode_delete_index_request_from_transport_body(
+    body: &[u8],
+) -> Option<os_transport::action::OpenSearchDeleteIndexRequestWire> {
+    let message = decode_transport_message_from_body(body)?;
+    os_transport::action::read_opensearch_delete_index_request_message(&message).ok()
+}
+
 fn transport_create_index_name_is_valid(index: &str) -> bool {
     let trimmed = index.trim();
     !trimmed.is_empty()
@@ -8092,6 +8153,17 @@ fn transport_create_index_name_is_valid(index: &str) -> bool {
         && !trimmed.starts_with('+')
         && !trimmed.contains(',')
         && !trimmed.chars().any(|ch| ch.is_ascii_uppercase())
+}
+
+fn transport_delete_index_name_is_concrete(index: &str) -> bool {
+    let trimmed = index.trim();
+    !trimmed.is_empty()
+        && trimmed == index
+        && !trimmed.contains('*')
+        && !trimmed.contains('?')
+        && !trimmed.contains(',')
+        && !trimmed.starts_with('<')
+        && !trimmed.contains(':')
 }
 
 fn transport_index_exists(index: &str) -> bool {
@@ -8155,6 +8227,39 @@ fn insert_transport_created_index(
         .expect("dev transport documents lock poisoned")
         .retain(|key, _| !key.starts_with(&format!("{}:", request.index)));
     true
+}
+
+fn apply_transport_delete_index(indices: &[String]) {
+    let bindings = dev_transport_pit_bindings();
+    {
+        let mut manifest = bindings
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned");
+        if let Some(indices_object) = manifest["indices"].as_object_mut() {
+            for index in indices {
+                indices_object.remove(index);
+            }
+        }
+    }
+    {
+        let mut created_indices = bindings
+            .created_indices
+            .lock()
+            .expect("dev transport created indices lock poisoned");
+        for index in indices {
+            created_indices.remove(index);
+        }
+    }
+    bindings
+        .documents
+        .lock()
+        .expect("dev transport documents lock poisoned")
+        .retain(|key, _| {
+            !indices
+                .iter()
+                .any(|index| key.starts_with(&format!("{index}:")))
+        });
 }
 
 fn transport_analyze_tokens(
@@ -17552,6 +17657,13 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
                 body,
             ))
         }
+        Some("indices:admin/delete") if delete_index_request_supports_manifest_subset(body) => {
+            Some(build_delete_index_response(
+                request_id,
+                header_version_id,
+                body,
+            ))
+        }
         Some("indices:admin/mapping/put") if put_mapping_request_supports_manifest_subset(body) => {
             Some(build_put_mapping_response(
                 request_id,
@@ -23180,6 +23292,114 @@ mod tests {
         .unwrap();
         assert!(!auto_create_request_supports_manifest_subset(
             &duplicate_frame[6..]
+        ));
+    }
+
+    #[test]
+    fn delete_index_transport_route_removes_manifest_and_documents() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        let bindings = dev_transport_pit_bindings();
+        bindings
+            .created_indices
+            .lock()
+            .expect("dev transport created indices lock poisoned")
+            .clear();
+        bindings
+            .documents
+            .lock()
+            .expect("dev transport documents lock poisoned")
+            .clear();
+        *bindings
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned") = serde_json::json!({
+            "indices": {
+                "logs-delete-transport-000001": {
+                    "settings": {},
+                    "mappings": {},
+                    "aliases": {},
+                    "state": "open"
+                }
+            }
+        });
+        bindings
+            .created_indices
+            .lock()
+            .expect("dev transport created indices lock poisoned")
+            .insert("logs-delete-transport-000001".to_string());
+        bindings
+            .documents
+            .lock()
+            .expect("dev transport documents lock poisoned")
+            .insert(
+                "logs-delete-transport-000001:doc-1".to_string(),
+                StoredDocument {
+                    source: serde_json::json!({"message": "delete me"}),
+                    version: 1,
+                    seq_no: 0,
+                    primary_term: 1,
+                    routing: None,
+                    refreshed: true,
+                }
+                .into(),
+            );
+
+        let request = os_transport::action::OpenSearchDeleteIndexRequestWire {
+            indices: vec!["logs-delete-transport-000001".to_string()],
+            ..os_transport::action::OpenSearchDeleteIndexRequestWire::default()
+        };
+        let frame = os_transport::action::build_opensearch_delete_index_request_message(
+            93,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(delete_index_request_supports_manifest_subset(&frame[6..]));
+
+        let response =
+            build_delete_index_response(93, OPENSEARCH_3_7_0_TRANSPORT.id() as u32, &frame[6..]);
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected delete-index response message");
+        };
+        let response =
+            os_transport::action::read_opensearch_delete_index_response_message(&message).unwrap();
+        assert!(response.acknowledged);
+        assert!(!bindings
+            .created_indices
+            .lock()
+            .expect("dev transport created indices lock poisoned")
+            .contains("logs-delete-transport-000001"));
+        assert!(!bindings
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned")["indices"]
+            .as_object()
+            .is_some_and(|indices| indices.contains_key("logs-delete-transport-000001")));
+        assert!(bindings
+            .documents
+            .lock()
+            .expect("dev transport documents lock poisoned")
+            .is_empty());
+
+        let wildcard_request = os_transport::action::OpenSearchDeleteIndexRequestWire {
+            indices: vec!["logs-*".to_string()],
+            ..os_transport::action::OpenSearchDeleteIndexRequestWire::default()
+        };
+        let wildcard_frame = os_transport::action::build_opensearch_delete_index_request_message(
+            94,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &wildcard_request,
+        )
+        .unwrap();
+        assert!(!delete_index_request_supports_manifest_subset(
+            &wildcard_frame[6..]
         ));
     }
 
