@@ -2424,6 +2424,10 @@ The create-PIT boundary covers:
   timeout values for the single-node subset, matching OpenSearch
   `TransportGetAllPitsAction` request shape while still restricting execution
   to local node selectors or the local concrete node.
+- local transport free-PIT-context admission now accepts only context ids that
+  target the current Steelsearch node id/name, `_local`, or OpenSearch's empty
+  raw-string wire shape, and rejects remote cluster aliases or nonlocal node
+  ids before mutating local PIT state.
 
 The indices-stats boundary covers:
 

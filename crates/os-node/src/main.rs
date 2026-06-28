@@ -2153,9 +2153,14 @@ fn handle_transport_seed_connection<S: TransportConnection>(
         )?;
     } else if is_request
         && normalized_action_hint == Some("indices:data/read/search[free_context/pit]")
-        && free_pit_context_request_supports_local_subset(&body)
+        && free_pit_context_request_supports_local_subset(&body, transport_identity)
     {
-        let response = build_local_free_pit_context_response(request_id, header_version_id, &body);
+        let response = build_local_free_pit_context_response(
+            request_id,
+            header_version_id,
+            &body,
+            transport_identity,
+        );
         response_frame = summarize_transport_response_frame_for_action(
             &response,
             Some("indices:data/read/search[free_context/pit]"),
@@ -8668,11 +8673,12 @@ fn build_local_free_pit_context_response(
     request_id: i64,
     header_version_id: u32,
     body: &[u8],
+    transport_identity: &DevTransportIdentity,
 ) -> Vec<u8> {
     let Some(request) = decode_free_pit_context_request_from_transport_body(body) else {
         return build_empty_transport_response(request_id, header_version_id);
     };
-    if request.validate_supported_subset().is_err() {
+    if !free_pit_context_request_matches_local_subset(&request, transport_identity) {
         return build_empty_transport_response(request_id, header_version_id);
     }
     let pit_ids = request
@@ -8691,10 +8697,34 @@ fn build_local_free_pit_context_response(
     .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
 }
 
-fn free_pit_context_request_supports_local_subset(body: &[u8]) -> bool {
+fn free_pit_context_request_supports_local_subset(
+    body: &[u8],
+    transport_identity: &DevTransportIdentity,
+) -> bool {
     decode_free_pit_context_request_from_transport_body(body)
-        .and_then(|request| request.validate_supported_subset().ok())
-        .is_some()
+        .as_ref()
+        .is_some_and(|request| {
+            free_pit_context_request_matches_local_subset(request, transport_identity)
+        })
+}
+
+fn free_pit_context_request_matches_local_subset(
+    request: &os_transport::action::OpenSearchFreePitContextRequestWire,
+    transport_identity: &DevTransportIdentity,
+) -> bool {
+    request.validate_supported_subset().is_ok()
+        && request.context_ids.iter().all(|context| {
+            let search_context = &context.search_context;
+            let cluster_alias_is_local = search_context
+                .cluster_alias
+                .as_deref()
+                .map_or(true, str::is_empty);
+            let node_is_local = search_context.node.is_empty()
+                || search_context.node == "_local"
+                || search_context.node == transport_identity.node_id
+                || search_context.node == transport_identity.node_name;
+            cluster_alias_is_local && node_is_local
+        })
 }
 
 fn decode_free_pit_context_request_from_transport_body(
@@ -11221,12 +11251,13 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
             ))
         }
         Some("indices:data/read/search[free_context/pit]")
-            if free_pit_context_request_supports_local_subset(body) =>
+            if free_pit_context_request_supports_local_subset(body, transport_identity) =>
         {
             Some(build_local_free_pit_context_response(
                 request_id,
                 header_version_id,
                 body,
+                transport_identity,
             ))
         }
         Some("indices:data/read/point_in_time/delete")
@@ -20459,12 +20490,14 @@ mod tests {
         )
         .unwrap();
         assert!(free_pit_context_request_supports_local_subset(
-            &free_frame[6..]
+            &free_frame[6..],
+            &transport_identity
         ));
         let free_response = build_local_free_pit_context_response(
             296,
             OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
             &free_frame[6..],
+            &transport_identity,
         );
         let mut frame = BytesMut::from(&free_response[..]);
         let os_transport::frame::DecodedFrame::Message(message) =
@@ -20915,6 +20948,20 @@ mod tests {
                     creation_time_millis: now_epoch_ms(),
                 },
             );
+        let transport_identity = DevTransportIdentity {
+            cluster_name: "steelsearch-dev".to_string(),
+            node_name: "steel-node".to_string(),
+            node_id: "steel-node-id".to_string(),
+            ephemeral_id: "steel-node-ephemeral".to_string(),
+            transport_address: "127.0.0.1:9300".parse().unwrap(),
+            attributes: Vec::new(),
+            roles: vec!["cluster_manager".to_string(), "data".to_string()],
+            seed_peer_identity: None,
+            seed_peer_identities: Vec::new(),
+            coordination_state: Arc::new(Mutex::new(DevTransportCoordinationState::default())),
+            remote_transport_queue_gate: Arc::new(RemoteTransportQueueGate::new(1, 1000)),
+            task_queue_state: None,
+        };
 
         let request = os_transport::action::OpenSearchFreePitContextRequestWire {
             parent_task_node: String::new(),
@@ -20937,12 +20984,16 @@ mod tests {
             &request,
         )
         .unwrap();
-        assert!(free_pit_context_request_supports_local_subset(&frame[6..]));
+        assert!(free_pit_context_request_supports_local_subset(
+            &frame[6..],
+            &transport_identity
+        ));
 
         let response = build_local_free_pit_context_response(
             308,
             OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
             &frame[6..],
+            &transport_identity,
         );
         let mut frame = BytesMut::from(&response[..]);
         let os_transport::frame::DecodedFrame::Message(message) =
@@ -20962,6 +21013,85 @@ mod tests {
             .lock()
             .expect("dev transport PIT contexts lock poisoned")
             .contains_key("transport-pit-stays"));
+    }
+
+    #[test]
+    fn free_pit_context_transport_route_rejects_nonlocal_contexts() {
+        let transport_identity = DevTransportIdentity {
+            cluster_name: "steelsearch-dev".to_string(),
+            node_name: "steel-node".to_string(),
+            node_id: "steel-node-id".to_string(),
+            ephemeral_id: "steel-node-ephemeral".to_string(),
+            transport_address: "127.0.0.1:9300".parse().unwrap(),
+            attributes: Vec::new(),
+            roles: vec!["cluster_manager".to_string(), "data".to_string()],
+            seed_peer_identity: None,
+            seed_peer_identities: Vec::new(),
+            coordination_state: Arc::new(Mutex::new(DevTransportCoordinationState::default())),
+            remote_transport_queue_gate: Arc::new(RemoteTransportQueueGate::new(1, 1000)),
+            task_queue_state: None,
+        };
+        let local_context =
+            os_transport::action::OpenSearchShardSearchContextIdWire::new("steelsearch-reader", 7);
+        for node in ["steel-node-id", "steel-node", "_local", ""] {
+            let request = os_transport::action::OpenSearchFreePitContextRequestWire {
+                parent_task_node: String::new(),
+                parent_task_id: None,
+                context_ids: vec![
+                    os_transport::action::OpenSearchPitSearchContextIdForNodeWire {
+                        pit_id: "pit-local".to_string(),
+                        search_context:
+                            os_transport::action::OpenSearchSearchContextIdForNodeWire {
+                                node: node.to_string(),
+                                cluster_alias: None,
+                                search_context_id: local_context.clone(),
+                            },
+                    },
+                ],
+            };
+            let frame = os_transport::action::build_opensearch_free_pit_context_request_message(
+                309,
+                OPENSEARCH_3_7_0_TRANSPORT,
+                &request,
+            )
+            .unwrap();
+            assert!(
+                free_pit_context_request_supports_local_subset(&frame[6..], &transport_identity),
+                "expected local node marker {node:?} to be admitted"
+            );
+        }
+
+        for (node, cluster_alias) in [
+            ("remote-node-id", None),
+            ("steel-node-id", Some("remote-cluster")),
+            ("remote-node-id", Some("remote-cluster")),
+        ] {
+            let request = os_transport::action::OpenSearchFreePitContextRequestWire {
+                parent_task_node: String::new(),
+                parent_task_id: None,
+                context_ids: vec![
+                    os_transport::action::OpenSearchPitSearchContextIdForNodeWire {
+                        pit_id: "pit-remote".to_string(),
+                        search_context:
+                            os_transport::action::OpenSearchSearchContextIdForNodeWire {
+                                node: node.to_string(),
+                                cluster_alias: cluster_alias.map(str::to_string),
+                                search_context_id: local_context.clone(),
+                            },
+                    },
+                ],
+            };
+            let frame = os_transport::action::build_opensearch_free_pit_context_request_message(
+                310,
+                OPENSEARCH_3_7_0_TRANSPORT,
+                &request,
+            )
+            .unwrap();
+            assert!(
+                !free_pit_context_request_supports_local_subset(&frame[6..], &transport_identity),
+                "expected node {node:?} with cluster alias {cluster_alias:?} to be rejected"
+            );
+        }
     }
 
     #[test]
