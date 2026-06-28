@@ -56,7 +56,7 @@ implemented	PutMappingAction.INSTANCE	TransportPutMappingAction.class	/home/ubun
 implemented	AutoPutMappingAction.INSTANCE	TransportAutoPutMappingAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	716
 implemented	IndicesAliasesAction.INSTANCE	TransportIndicesAliasesAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	717
 implemented	UpdateSettingsAction.INSTANCE	TransportUpdateSettingsAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	718
-partial	ScaleIndexAction.INSTANCE	TransportScaleIndexAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	719
+implemented	ScaleIndexAction.INSTANCE	TransportScaleIndexAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	719
 implemented	AnalyzeAction.INSTANCE	TransportAnalyzeAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	720
 implemented	PutIndexTemplateAction.INSTANCE	TransportPutIndexTemplateAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	721
 implemented	GetIndexTemplatesAction.INSTANCE	TransportGetIndexTemplatesAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	722

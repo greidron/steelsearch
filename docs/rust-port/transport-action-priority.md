@@ -177,8 +177,8 @@ The source-derived transport inventory currently has 160 rows:
 
 | Status | Count | Meaning |
 | --- | ---: | --- |
-| `implemented` | 100 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
-| `partial` | 60 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
+| `implemented` | 101 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
+| `partial` | 59 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
 | `planned` | 0 | No source-derived transport action remains unclassified. |
 
 The k-NN plugin action sweep is complete at the boundary layer. All 12
@@ -1271,12 +1271,15 @@ The scale-index boundary covers:
   acknowledgement timeout, target index, `scaleDown`, and
   `IndicesOptions.strictExpandOpen()` at the OpenSearch 3.x wire decode/build
   layer;
-- explicit fail-closed classification for `indices:admin/scale/search_only`
-  until search-only state validation, shard sync coordination, metadata
-  mutation, and acknowledged response rendering are implemented;
+- implemented classification for `indices:admin/scale/search_only` when the
+  request uses default timeouts/options, a concrete existing manifest index,
+  and `scaleDown=true`;
+- manifest-backed `index.blocks.search_only=true` mutation and OpenSearch
+  acknowledged response rendering for the supported scale-down subset;
 - explicit rejection for custom cluster-manager timeouts, custom
   acknowledgement timeouts, missing index targets, custom indices options,
-  scale-up transitions, and scale-index execution.
+  wildcard/date-math/comma/remote-style targets, missing manifest indices, and
+  scale-up transitions.
 
 The analyze boundary covers:
 
@@ -4019,23 +4022,26 @@ the latest local release run, so the first runtime performance point to inspect
 while expanding the path is repeated manifest target resolution and
 dotted-setting merge cost for larger index sets.
 
-Current scale-index reject wire microbenchmark:
+Current scale-index wire microbenchmark:
 
 ```text
-cargo run -p os-transport --release --bin scale-index-reject-wire-benchmark
-scale_index_reject_request_encode iterations=400000 elapsed_ms=309.055 ops_per_second=1294268.61 nanos_per_op=772.64
-scale_index_reject_request_decode iterations=400000 elapsed_ms=278.302 ops_per_second=1437285.67 nanos_per_op=695.76
-scale_index_reject_validation iterations=400000 elapsed_ms=282.344 ops_per_second=1416711.11 nanos_per_op=705.86
-scale_index_reject_wire_bottleneck_ops_per_second=1294268.61
+cargo run -q -p os-transport --release --bin scale-index-wire-benchmark
+scale_index_request_encode iterations=400000 elapsed_ms=306.990 ops_per_second=1302973.97 nanos_per_op=767.48
+scale_index_request_decode iterations=400000 elapsed_ms=279.000 ops_per_second=1433693.23 nanos_per_op=697.50
+scale_index_request_validate iterations=400000 elapsed_ms=283.658 ops_per_second=1410149.85 nanos_per_op=709.14
+scale_index_response_encode iterations=400000 elapsed_ms=48.591 ops_per_second=8232035.05 nanos_per_op=121.48
+scale_index_response_decode iterations=400000 elapsed_ms=54.154 ops_per_second=7386278.41 nanos_per_op=135.39
+scale_index_wire_bottleneck_ops_per_second=1302973.97
 ```
 
-The current scale-index fail-closed boundary bottleneck is request encode. The
+The current scale-index transport boundary bottleneck is request encode. The
 path writes the acknowledged-request envelope, target index, scale direction,
-and indices options before rejecting execution. At roughly 1.29M ops/s in the
-latest local release run, the current overhead remains lightweight transport
-wire work; future performance-sensitive work is search-only state validation,
-shard sync coordination, metadata mutation, and acknowledged response
-rendering.
+and indices options, then validates the default scale-down subset before the
+node adapter mutates manifest settings and renders an acknowledged response. At
+roughly 1.30M ops/s in the latest local release run, wire overhead remains
+lightweight; future performance-sensitive work is broader index resolution,
+search-only prerequisite validation, shard sync/flush coordination, and
+scale-up state transitions.
 
 Current analyze wire microbenchmark:
 

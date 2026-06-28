@@ -2038,8 +2038,8 @@ pub fn classify_opensearch_transport_action(
         },
         OPENSEARCH_SCALE_INDEX_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
-            disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "scale-index transport execution requires search-only state validation, shard sync coordination, metadata mutation, and ack rendering",
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "scale-index transport adapter accepts default-option scale-down requests, marks manifest-backed indices search-only, and renders acknowledged responses",
         },
         OPENSEARCH_ANALYZE_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -9270,6 +9270,35 @@ pub fn read_opensearch_scale_index_request_message(
         });
     }
     OpenSearchScaleIndexRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_opensearch_scale_index_response_message(
+    request_id: i64,
+    version: Version,
+    response: &AcknowledgedResponseWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    response.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::response(),
+        version,
+        variable_header: BytesMut::new(),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_scale_index_response_message(
+    message: &TransportMessage,
+) -> Result<AcknowledgedResponseWire, TransportActionWireError> {
+    if message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "response",
+            actual: message.status.bits(),
+        });
+    }
+    AcknowledgedResponseWire::read(message.body.clone().freeze())
 }
 
 pub fn build_opensearch_analyze_request_message(
@@ -20365,7 +20394,7 @@ impl OpenSearchScaleIndexRequestWire {
         Ok(request)
     }
 
-    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+    pub fn validate_supported_execution_subset(&self) -> Result<(), TransportActionWireError> {
         if self.cluster_manager_timeout != TimeValueWire::seconds(30) {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "scale index cluster-manager timeout",
@@ -20397,9 +20426,14 @@ impl OpenSearchScaleIndexRequestWire {
                 reason: "scale-up transitions require search-only state validation and metadata mutation semantics",
             });
         }
+        Ok(())
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        self.validate_supported_execution_subset()?;
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "scale index execution",
-            reason: "scale-index transport execution requires search-only state validation, shard sync coordination, metadata mutation, and ack rendering",
+            reason: "scale-index execution is handled by the manifest-backed scale-down transport adapter",
         })
     }
 }
@@ -60202,6 +60236,7 @@ mod tests {
         assert_eq!(decoded, request);
         assert_eq!(decoded.index, "logs-000001");
         assert!(decoded.scale_down);
+        decoded.validate_supported_execution_subset().unwrap();
         assert!(matches!(
             decoded.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
@@ -60278,7 +60313,7 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_scale_index_transport_messages_bind_rejected_action_frame() {
+    fn opensearch_scale_index_transport_messages_bind_action_frame_and_response() {
         let request = OpenSearchScaleIndexRequestWire::default();
         let mut frame =
             build_opensearch_scale_index_request_message(41, OPENSEARCH_3_7_0_TRANSPORT, &request)
@@ -60290,6 +60325,10 @@ mod tests {
             read_opensearch_scale_index_request_message(&message).unwrap(),
             request
         );
+        read_opensearch_scale_index_request_message(&message)
+            .unwrap()
+            .validate_supported_execution_subset()
+            .unwrap();
         assert!(matches!(
             read_opensearch_scale_index_request_message(&message)
                 .unwrap()
@@ -60299,6 +60338,21 @@ mod tests {
                 ..
             })
         ));
+
+        let response = AcknowledgedResponseWire { acknowledged: true };
+        let mut frame = build_opensearch_scale_index_response_message(
+            41,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &response,
+        )
+        .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected scale index response message");
+        };
+        assert_eq!(
+            read_opensearch_scale_index_response_message(&message).unwrap(),
+            response
+        );
     }
 
     #[test]

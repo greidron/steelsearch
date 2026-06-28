@@ -1936,6 +1936,32 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end_at_ms,
         )?;
     } else if is_request
+        && normalized_action_hint == Some("indices:admin/scale/search_only")
+        && scale_index_request_supports_manifest_subset(&body)
+    {
+        let response = build_scale_index_response(request_id, header_version_id, &body);
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("indices:admin/scale/search_only"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request
         && normalized_action_hint == Some("indices:admin/create")
         && create_index_request_supports_manifest_subset(&body)
     {
@@ -6777,6 +6803,23 @@ fn build_update_settings_response(request_id: i64, header_version_id: u32, body:
     .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
 }
 
+fn build_scale_index_response(request_id: i64, header_version_id: u32, body: &[u8]) -> Vec<u8> {
+    let Some(request) = decode_scale_index_request_from_transport_body(body) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    if !scale_index_request_matches_manifest_subset(&request) {
+        return build_empty_transport_response(request_id, header_version_id);
+    }
+    if !apply_transport_scale_index(&request.index) {
+        return build_empty_transport_response(request_id, header_version_id);
+    }
+    build_acknowledged_template_response(
+        request_id,
+        header_version_id,
+        os_transport::action::build_opensearch_scale_index_response_message,
+    )
+}
+
 fn update_settings_request_supports_manifest_subset(body: &[u8]) -> bool {
     decode_update_settings_request_from_transport_body(body)
         .filter(|request| request.validate_supported_subset().is_ok())
@@ -6790,11 +6833,31 @@ fn update_settings_request_supports_manifest_subset(body: &[u8]) -> bool {
         })
 }
 
+fn scale_index_request_supports_manifest_subset(body: &[u8]) -> bool {
+    decode_scale_index_request_from_transport_body(body)
+        .is_some_and(|request| scale_index_request_matches_manifest_subset(&request))
+}
+
 fn decode_update_settings_request_from_transport_body(
     body: &[u8],
 ) -> Option<os_transport::action::OpenSearchUpdateSettingsRequestWire> {
     let message = decode_transport_message_from_body(body)?;
     os_transport::action::read_opensearch_update_settings_request_message(&message).ok()
+}
+
+fn decode_scale_index_request_from_transport_body(
+    body: &[u8],
+) -> Option<os_transport::action::OpenSearchScaleIndexRequestWire> {
+    let message = decode_transport_message_from_body(body)?;
+    os_transport::action::read_opensearch_scale_index_request_message(&message).ok()
+}
+
+fn scale_index_request_matches_manifest_subset(
+    request: &os_transport::action::OpenSearchScaleIndexRequestWire,
+) -> bool {
+    request.validate_supported_execution_subset().is_ok()
+        && transport_delete_index_name_is_concrete(&request.index)
+        && transport_index_exists(&request.index)
 }
 
 fn transport_update_settings_targets(
@@ -8553,6 +8616,25 @@ fn apply_transport_add_index_block(indices: &[String], block: i32) -> bool {
         }
         set_manifest_index_setting_bool(&mut entry["settings"], setting_key, true);
     }
+    true
+}
+
+fn apply_transport_scale_index(index: &str) -> bool {
+    let bindings = dev_transport_pit_bindings();
+    let mut manifest = bindings
+        .metadata_manifest
+        .lock()
+        .expect("dev transport metadata manifest lock poisoned");
+    let Some(entry) = manifest["indices"].get_mut(index) else {
+        return false;
+    };
+    if !entry.is_object() {
+        return false;
+    }
+    if entry.get("settings").and_then(Value::as_object).is_none() {
+        entry["settings"] = serde_json::json!({});
+    }
+    set_manifest_index_setting_bool(&mut entry["settings"], "index.blocks.search_only", true);
     true
 }
 
@@ -17936,6 +18018,15 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
                 body,
             ))
         }
+        Some("indices:admin/scale/search_only")
+            if scale_index_request_supports_manifest_subset(body) =>
+        {
+            Some(build_scale_index_response(
+                request_id,
+                header_version_id,
+                body,
+            ))
+        }
         Some("cluster:admin/script/get") => Some(build_get_stored_script_response(
             request_id,
             header_version_id,
@@ -24286,6 +24377,91 @@ mod tests {
         assert!(manifest["indices"]["logs-settings-000001"]["settings"]
             .get("index.number_of_replicas")
             .is_none());
+    }
+
+    #[test]
+    fn scale_index_transport_route_marks_manifest_index_search_only() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        *dev_transport_pit_bindings()
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned") = serde_json::json!({
+            "indices": {
+                "logs-scale-transport-000001": {
+                    "settings": {},
+                    "mappings": {},
+                    "aliases": {},
+                    "state": "open"
+                }
+            }
+        });
+
+        let request = os_transport::action::OpenSearchScaleIndexRequestWire {
+            index: "logs-scale-transport-000001".to_string(),
+            scale_down: true,
+            ..os_transport::action::OpenSearchScaleIndexRequestWire::default()
+        };
+        let frame = os_transport::action::build_opensearch_scale_index_request_message(
+            86,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(scale_index_request_supports_manifest_subset(&frame[6..]));
+
+        let response =
+            build_scale_index_response(86, OPENSEARCH_3_7_0_TRANSPORT.id() as u32, &frame[6..]);
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected scale index response message");
+        };
+        let response =
+            os_transport::action::read_opensearch_scale_index_response_message(&message).unwrap();
+        assert!(response.acknowledged);
+
+        let manifest = dev_transport_pit_bindings()
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned");
+        let settings = &manifest["indices"]["logs-scale-transport-000001"]["settings"];
+        assert_eq!(settings["index.blocks.search_only"], true);
+        assert_eq!(settings["index"]["blocks"]["search_only"], true);
+        drop(manifest);
+
+        let scale_up = os_transport::action::OpenSearchScaleIndexRequestWire {
+            index: "logs-scale-transport-000001".to_string(),
+            scale_down: false,
+            ..os_transport::action::OpenSearchScaleIndexRequestWire::default()
+        };
+        let scale_up_frame = os_transport::action::build_opensearch_scale_index_request_message(
+            87,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &scale_up,
+        )
+        .unwrap();
+        assert!(!scale_index_request_supports_manifest_subset(
+            &scale_up_frame[6..]
+        ));
+
+        let missing = os_transport::action::OpenSearchScaleIndexRequestWire {
+            index: "missing-scale-transport-000001".to_string(),
+            ..os_transport::action::OpenSearchScaleIndexRequestWire::default()
+        };
+        let missing_frame = os_transport::action::build_opensearch_scale_index_request_message(
+            88,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &missing,
+        )
+        .unwrap();
+        assert!(!scale_index_request_supports_manifest_subset(
+            &missing_frame[6..]
+        ));
     }
 
     #[test]

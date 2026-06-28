@@ -296,8 +296,8 @@ name = "update-settings-wire-benchmark"
 path = "benchmarks/update_settings_wire.rs"
 
 [[bin]]
-name = "scale-index-reject-wire-benchmark"
-path = "benchmarks/scale_index_reject_wire.rs"
+name = "scale-index-wire-benchmark"
+path = "benchmarks/scale_index_wire.rs"
 
 [[bin]]
 name = "analyze-wire-benchmark"
