@@ -1403,6 +1403,52 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end,
             &mut connection_end_at_ms,
         )?;
+    } else if is_request && normalized_action_hint == Some("cluster:admin/script_context/get") {
+        let response = build_get_script_context_response(request_id, header_version_id);
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("cluster:admin/script_context/get"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request && normalized_action_hint == Some("cluster:admin/script_language/get") {
+        let response = build_get_script_language_response(request_id, header_version_id);
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("cluster:admin/script_language/get"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
     } else if is_request && normalized_action_hint == Some("indices:admin/mappings/get") {
         let response = build_get_mappings_response(request_id, header_version_id, &body);
         response_frame = summarize_transport_response_frame_for_action(
@@ -5450,6 +5496,26 @@ fn build_empty_list_view_names_response(request_id: i64, header_version_id: u32)
         request_id,
         Version::from_id(header_version_id as i32),
         &os_transport::action::OpenSearchListViewNamesResponseWire::empty(),
+    )
+    .map(|frame| frame.to_vec())
+    .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
+}
+
+fn build_get_script_context_response(request_id: i64, header_version_id: u32) -> Vec<u8> {
+    os_transport::action::build_opensearch_get_script_context_response_message(
+        request_id,
+        Version::from_id(header_version_id as i32),
+        &os_transport::action::OpenSearchGetScriptContextResponseWire::default(),
+    )
+    .map(|frame| frame.to_vec())
+    .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
+}
+
+fn build_get_script_language_response(request_id: i64, header_version_id: u32) -> Vec<u8> {
+    os_transport::action::build_opensearch_get_script_language_response_message(
+        request_id,
+        Version::from_id(header_version_id as i32),
+        &os_transport::action::OpenSearchGetScriptLanguageResponseWire::default(),
     )
     .map(|frame| frame.to_vec())
     .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
@@ -12770,6 +12836,14 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
             header_version_id,
             body,
         )),
+        Some("cluster:admin/script_context/get") => Some(build_get_script_context_response(
+            request_id,
+            header_version_id,
+        )),
+        Some("cluster:admin/script_language/get") => Some(build_get_script_language_response(
+            request_id,
+            header_version_id,
+        )),
         Some("indices:admin/mappings/get") => Some(build_get_mappings_response(
             request_id,
             header_version_id,
@@ -17703,6 +17777,86 @@ mod tests {
         );
         assert!(!response.index_settings["logs-settings-000001"]
             .contains_key("index.number_of_replicas"));
+    }
+
+    #[test]
+    fn get_script_context_transport_route_builds_rust_catalog_response() {
+        let request = os_transport::action::OpenSearchGetScriptContextRequestWire::default();
+        let frame = os_transport::action::build_opensearch_get_script_context_request_message(
+            191,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        let message = decode_transport_message_from_body(&frame[6..]).unwrap();
+        os_transport::action::read_opensearch_get_script_context_request_message(&message)
+            .unwrap()
+            .validate_supported_subset()
+            .unwrap();
+
+        let response =
+            build_get_script_context_response(191, OPENSEARCH_3_7_0_TRANSPORT.id() as u32);
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected get script context response message");
+        };
+
+        assert_eq!(message.request_id, 191);
+        assert!(!message.status.is_request());
+        let response =
+            os_transport::action::read_opensearch_get_script_context_response_message(&message)
+                .unwrap();
+        assert!(response
+            .contexts
+            .iter()
+            .any(|context| context.name == "score"));
+        assert!(response
+            .contexts
+            .iter()
+            .any(|context| context.name == "template"));
+    }
+
+    #[test]
+    fn get_script_language_transport_route_builds_rust_catalog_response() {
+        let request = os_transport::action::OpenSearchGetScriptLanguageRequestWire::default();
+        let frame = os_transport::action::build_opensearch_get_script_language_request_message(
+            192,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        let message = decode_transport_message_from_body(&frame[6..]).unwrap();
+        os_transport::action::read_opensearch_get_script_language_request_message(&message)
+            .unwrap()
+            .validate_supported_subset()
+            .unwrap();
+
+        let response =
+            build_get_script_language_response(192, OPENSEARCH_3_7_0_TRANSPORT.id() as u32);
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected get script language response message");
+        };
+
+        assert_eq!(message.request_id, 192);
+        assert!(!message.status.is_request());
+        let response =
+            os_transport::action::read_opensearch_get_script_language_response_message(&message)
+                .unwrap();
+        assert_eq!(response.types_allowed, vec!["inline", "stored"]);
+        assert!(response.language_contexts.contains_key("painless"));
+        assert_eq!(
+            response.language_contexts.get("mustache").unwrap(),
+            &vec!["template".to_string()]
+        );
     }
 
     #[test]

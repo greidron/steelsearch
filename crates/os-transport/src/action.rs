@@ -2073,13 +2073,13 @@ pub fn classify_opensearch_transport_action(
         },
         OPENSEARCH_GET_SCRIPT_CONTEXT_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
-            disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "get-script-context transport execution requires Rust script context catalog mapping and response rendering",
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "get-script-context transport adapter renders the Rust-supported script context catalog",
         },
         OPENSEARCH_GET_SCRIPT_LANGUAGE_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
-            disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "get-script-language transport execution requires Rust script language/type/context catalog mapping and response rendering",
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "get-script-language transport adapter renders the Rust-supported script language/type/context catalog",
         },
         OPENSEARCH_PUT_PIPELINE_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -20979,10 +20979,15 @@ impl OpenSearchGetScriptContextRequestWire {
         })
     }
 
+    pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
+        Ok(())
+    }
+
     pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        self.validate_supported_subset()?;
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "get script context execution",
-            reason: "get-script-context transport execution requires Rust script context catalog mapping and response rendering",
+            reason: "use validate_supported_subset for the implemented get-script-context catalog adapter",
         })
     }
 }
@@ -21268,10 +21273,15 @@ impl OpenSearchGetScriptLanguageRequestWire {
         })
     }
 
+    pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
+        Ok(())
+    }
+
     pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        self.validate_supported_subset()?;
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "get script language execution",
-            reason: "get-script-language transport execution requires Rust script language/type/context catalog mapping and response rendering",
+            reason: "use validate_supported_subset for the implemented get-script-language catalog adapter",
         })
     }
 }
@@ -59688,13 +59698,14 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_get_script_context_request_wire_round_trips_and_rejects_execution_boundary() {
+    fn opensearch_get_script_context_request_wire_round_trips_and_validates_catalog_subset() {
         let request = OpenSearchGetScriptContextRequestWire::default();
         let mut output = StreamOutput::new();
         request.write(&mut output);
 
         let decoded = OpenSearchGetScriptContextRequestWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, request);
+        decoded.validate_supported_subset().unwrap();
         assert!(matches!(
             decoded.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
@@ -59807,7 +59818,7 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_get_script_context_transport_messages_bind_rejected_action_frame_and_response() {
+    fn opensearch_get_script_context_transport_messages_bind_supported_action_frame_and_response() {
         let request = OpenSearchGetScriptContextRequestWire::default();
         let mut frame = build_opensearch_get_script_context_request_message(
             72,
@@ -59822,21 +59833,16 @@ mod tests {
             classify_opensearch_transport_request_message(&message)
                 .unwrap()
                 .disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             read_opensearch_get_script_context_request_message(&message).unwrap(),
             request
         );
-        assert!(matches!(
-            read_opensearch_get_script_context_request_message(&message)
-                .unwrap()
-                .reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "get script context execution",
-                ..
-            })
-        ));
+        read_opensearch_get_script_context_request_message(&message)
+            .unwrap()
+            .validate_supported_subset()
+            .unwrap();
 
         let response = OpenSearchGetScriptContextResponseWire::default();
         let mut frame = build_opensearch_get_script_context_response_message(
@@ -59855,13 +59861,14 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_get_script_language_request_wire_round_trips_and_rejects_execution_boundary() {
+    fn opensearch_get_script_language_request_wire_round_trips_and_validates_catalog_subset() {
         let request = OpenSearchGetScriptLanguageRequestWire::default();
         let mut output = StreamOutput::new();
         request.write(&mut output);
 
         let decoded = OpenSearchGetScriptLanguageRequestWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, request);
+        decoded.validate_supported_subset().unwrap();
         assert!(matches!(
             decoded.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
@@ -59963,7 +59970,8 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_get_script_language_transport_messages_bind_rejected_action_frame_and_response() {
+    fn opensearch_get_script_language_transport_messages_bind_supported_action_frame_and_response()
+    {
         let request = OpenSearchGetScriptLanguageRequestWire::default();
         let mut frame = build_opensearch_get_script_language_request_message(
             73,
@@ -59978,21 +59986,16 @@ mod tests {
             classify_opensearch_transport_request_message(&message)
                 .unwrap()
                 .disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             read_opensearch_get_script_language_request_message(&message).unwrap(),
             request
         );
-        assert!(matches!(
-            read_opensearch_get_script_language_request_message(&message)
-                .unwrap()
-                .reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "get script language execution",
-                ..
-            })
-        ));
+        read_opensearch_get_script_language_request_message(&message)
+            .unwrap()
+            .validate_supported_subset()
+            .unwrap();
 
         let response = OpenSearchGetScriptLanguageResponseWire::default();
         let mut frame = build_opensearch_get_script_language_response_message(

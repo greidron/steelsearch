@@ -675,8 +675,8 @@
       "transport_action": "TransportGetScriptContextAction",
       "request_wire_type": "GetScriptContextRequest",
       "response_wire_type": "GetScriptContextResponse",
-      "disposition": "rejected",
-      "reason": "Get-script-context transport execution requires Rust script context catalog mapping and response rendering before Steelsearch can serve OpenSearch script context semantics."
+      "disposition": "implemented",
+      "reason": "Get-script-context transport adapter renders the Rust-supported script context catalog."
     },
     {
       "action_name": "cluster:admin/script_language/get",
@@ -684,8 +684,8 @@
       "transport_action": "TransportGetScriptLanguageAction",
       "request_wire_type": "GetScriptLanguageRequest",
       "response_wire_type": "GetScriptLanguageResponse",
-      "disposition": "rejected",
-      "reason": "Get-script-language transport execution requires Rust script language/type/context catalog mapping and response rendering before Steelsearch can serve OpenSearch script language semantics."
+      "disposition": "implemented",
+      "reason": "Get-script-language transport adapter renders the Rust-supported script language/type/context catalog."
     },
     {
       "action_name": "cluster:admin/ingest/pipeline/put",
