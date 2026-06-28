@@ -2418,6 +2418,9 @@ The create-PIT boundary covers:
 - local transport create-PIT now renders an OpenSearch `IndexNotFoundException`
   for single wildcard or `_all` requests that resolve to no concrete indices
   while `allow_no_indices=false`;
+- local transport create-PIT now applies the same `allow_no_indices=false`
+  no-match error boundary to wildcard selectors inside multi-expression and
+  negative-selector request lists;
 - local transport create-PIT resolves explicit `_all` and wildcard selectors
   against the union of manifest-backed indices and locally-created open
   indices, matching cluster-state-backed resolution for the standalone adapter
@@ -5362,12 +5365,12 @@ Current create-PIT wire microbenchmark:
 
 ```text
 cargo run -p os-transport --release --bin create-pit-wire-benchmark
-create_pit_request_encode iterations=400000 elapsed_ms=282.026 ops_per_second=1418311.24 nanos_per_op=705.06
-create_pit_request_decode iterations=400000 elapsed_ms=266.283 ops_per_second=1502162.84 nanos_per_op=665.71
-create_pit_request_validate iterations=400000 elapsed_ms=267.015 ops_per_second=1498045.41 nanos_per_op=667.54
-create_pit_response_encode iterations=400000 elapsed_ms=124.435 ops_per_second=3214521.02 nanos_per_op=311.09
-create_pit_response_decode iterations=400000 elapsed_ms=104.141 ops_per_second=3840930.77 nanos_per_op=260.35
-create_pit_wire_bottleneck_ops_per_second=1418311.24
+create_pit_request_encode iterations=400000 elapsed_ms=282.594 ops_per_second=1415456.66 nanos_per_op=706.49
+create_pit_request_decode iterations=400000 elapsed_ms=263.746 ops_per_second=1516611.99 nanos_per_op=659.36
+create_pit_request_validate iterations=400000 elapsed_ms=263.325 ops_per_second=1519033.52 nanos_per_op=658.31
+create_pit_response_encode iterations=400000 elapsed_ms=124.077 ops_per_second=3223798.00 nanos_per_op=310.19
+create_pit_response_decode iterations=400000 elapsed_ms=104.434 ops_per_second=3830160.46 nanos_per_op=261.09
+create_pit_wire_bottleneck_ops_per_second=1415456.66
 ```
 
 The current create-PIT wire subset bottleneck is request encode. This path

@@ -8333,18 +8333,21 @@ fn create_pit_wildcard_no_indices_error(
     } else {
         request.indices.clone()
     };
-    if selectors.len() != 1 {
-        return false;
-    }
-    let selector = selectors[0].as_str();
-    if selector != "_all" && !selector.contains('*') && !selector.contains('?') {
-        return false;
-    }
     let bindings = dev_transport_pit_bindings();
-    match transport_pit_indices(bindings, request) {
-        Some(indices) => indices.is_empty(),
-        None => true,
+    if selectors.len() == 1 && selectors[0] == "_all" {
+        return match transport_pit_indices(bindings, request) {
+            Some(indices) => indices.is_empty(),
+            None => true,
+        };
     }
+    selectors.iter().any(|selector| {
+        let selector_expression = selector
+            .strip_prefix('-')
+            .filter(|_| selector.contains('*') || selector.contains('?'))
+            .unwrap_or(selector.as_str());
+        (selector_expression.contains('*') || selector_expression.contains('?'))
+            && !transport_pit_selector_has_match(bindings, selector_expression, request)
+    })
 }
 
 fn transport_pit_selector_matches_target(
@@ -8361,6 +8364,56 @@ fn transport_pit_selector_matches_target(
                     .as_object()
                     .is_some_and(|aliases| aliases.contains_key(selector))
             }))
+}
+
+fn transport_pit_selector_has_match(
+    bindings: &DevTransportPitBindings,
+    selector: &str,
+    request: &os_transport::action::OpenSearchCreatePitRequestWire,
+) -> bool {
+    let (manifest_indices, data_streams) = {
+        let manifest = bindings
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned");
+        (
+            manifest["indices"].as_object().cloned(),
+            transport_pit_data_stream_catalog(&manifest),
+        )
+    };
+    let indices = transport_pit_index_catalog(bindings, manifest_indices);
+    let effective_selector = if selector == "_all" { "*" } else { selector };
+    let wildcard_selector = selector == "_all" || selector.contains('*') || selector.contains('?');
+    indices.iter().any(|(index_name, index_body)| {
+        let matches_index =
+            effective_selector == index_name || wildcard_match(effective_selector, index_name);
+        let matches_alias = !request.indices_options.ignore_aliases
+            && index_body["aliases"].as_object().is_some_and(|aliases| {
+                aliases.contains_key(selector)
+                    || aliases
+                        .keys()
+                        .any(|alias| wildcard_match(effective_selector, alias))
+            });
+        (matches_index || matches_alias)
+            && transport_pit_index_matches_options(
+                index_body,
+                wildcard_selector,
+                &request.indices_options,
+            )
+            .unwrap_or(false)
+    }) || data_streams.iter().any(|(data_stream, backing_indices)| {
+        (effective_selector == data_stream || wildcard_match(effective_selector, data_stream))
+            && backing_indices.iter().any(|backing_index| {
+                indices.get(backing_index).map_or(true, |index_body| {
+                    transport_pit_index_matches_options(
+                        index_body,
+                        wildcard_selector,
+                        &request.indices_options,
+                    )
+                    .unwrap_or(false)
+                })
+            })
+    })
 }
 
 fn transport_pit_data_stream_catalog(metadata_manifest: &Value) -> BTreeMap<String, Vec<String>> {
@@ -30552,6 +30605,43 @@ mod tests {
             &closed_skipped_frame[6..]
         ));
 
+        let mixed_request = os_transport::action::OpenSearchCreatePitRequestWire {
+            indices: vec!["logs-*".to_string(), "events-*".to_string()],
+            indices_options: os_transport::action::OpenSearchIndicesOptionsWire {
+                allow_no_indices: false,
+                ..os_transport::action::OpenSearchIndicesOptionsWire::strict_expand_open_forbid_closed()
+            },
+            ..os_transport::action::OpenSearchCreatePitRequestWire::default()
+        };
+        let mixed_frame = os_transport::action::build_opensearch_create_pit_request_message(
+            335,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &mixed_request,
+        )
+        .unwrap();
+        assert!(create_pit_request_wildcard_no_indices_error(
+            &mixed_frame[6..]
+        ));
+
+        let negative_missing_request = os_transport::action::OpenSearchCreatePitRequestWire {
+            indices: vec!["logs-*".to_string(), "-events-*".to_string()],
+            indices_options: os_transport::action::OpenSearchIndicesOptionsWire {
+                allow_no_indices: false,
+                ..os_transport::action::OpenSearchIndicesOptionsWire::strict_expand_open_forbid_closed()
+            },
+            ..os_transport::action::OpenSearchCreatePitRequestWire::default()
+        };
+        let negative_missing_frame =
+            os_transport::action::build_opensearch_create_pit_request_message(
+                336,
+                OPENSEARCH_3_7_0_TRANSPORT,
+                &negative_missing_request,
+            )
+            .unwrap();
+        assert!(create_pit_request_wildcard_no_indices_error(
+            &negative_missing_frame[6..]
+        ));
+
         let allow_empty_request = os_transport::action::OpenSearchCreatePitRequestWire {
             indices: vec!["events-*".to_string()],
             indices_options: os_transport::action::OpenSearchIndicesOptionsWire {
@@ -30561,7 +30651,7 @@ mod tests {
             ..os_transport::action::OpenSearchCreatePitRequestWire::default()
         };
         let allow_empty_frame = os_transport::action::build_opensearch_create_pit_request_message(
-            335,
+            337,
             OPENSEARCH_3_7_0_TRANSPORT,
             &allow_empty_request,
         )
