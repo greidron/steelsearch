@@ -995,7 +995,7 @@ pub const OPENSEARCH_PRIORITY_TRANSPORT_ACTIONS: &[OpenSearchPriorityTransportAc
         request_wire_type: "SimulatePipelineRequest",
         response_wire_type: "SimulatePipelineResponse",
         adapter_stage: "ingest-simulation",
-        next_step: "map ingest pipeline source parsing, processor execution, verbose result capture, and simulate response rendering",
+        next_step: "expand simulate-pipeline execution beyond empty-doc responses into document and verbose processor result payloads",
     },
     OpenSearchPriorityTransportActionSpec {
         action_name: OPENSEARCH_RESIZE_ACTION_NAME,
@@ -2098,8 +2098,8 @@ pub fn classify_opensearch_transport_action(
         },
         OPENSEARCH_SIMULATE_PIPELINE_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
-            disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "simulate-pipeline transport execution requires ingest pipeline source parsing, processor execution, verbose result capture, and response rendering",
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "simulate-pipeline transport adapter renders OpenSearch empty-result responses for the JSON empty-doc subset",
         },
         OPENSEARCH_RESIZE_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -22478,7 +22478,7 @@ impl OpenSearchSimulatePipelineRequestWire {
         })
     }
 
-    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+    pub fn validate_supported_execution_subset(&self) -> Result<(), TransportActionWireError> {
         if self.source.is_empty() {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "simulate pipeline source",
@@ -22493,9 +22493,14 @@ impl OpenSearchSimulatePipelineRequestWire {
                 reason: "only JSON simulate-pipeline source is decoded at the wire boundary",
             });
         }
+        Ok(())
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        self.validate_supported_execution_subset()?;
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "simulate pipeline execution",
-            reason: "simulate-pipeline transport execution requires ingest pipeline source parsing, processor execution, verbose result capture, and response rendering",
+            reason: "use validate_supported_execution_subset for the implemented empty-doc simulate-pipeline adapter",
         })
     }
 }
@@ -46312,7 +46317,7 @@ mod tests {
                     request_wire_type: "SimulatePipelineRequest",
                     response_wire_type: "SimulatePipelineResponse",
                     adapter_stage: "ingest-simulation",
-                    next_step: "map ingest pipeline source parsing, processor execution, verbose result capture, and simulate response rendering",
+                    next_step: "expand simulate-pipeline execution beyond empty-doc responses into document and verbose processor result payloads",
                 },
                 OpenSearchPriorityTransportActionSpec {
                     action_name: "indices:admin/resize",
@@ -47232,7 +47237,7 @@ mod tests {
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_SIMULATE_PIPELINE_ACTION_NAME)
                 .disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_RESIZE_ACTION_NAME).disposition,
@@ -61609,7 +61614,7 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_simulate_pipeline_request_wire_round_trips_and_rejects_execution_boundary() {
+    fn opensearch_simulate_pipeline_request_wire_round_trips_and_validates_empty_doc_subset() {
         let request = OpenSearchSimulatePipelineRequestWire::default();
         let mut output = StreamOutput::new();
         request.write(&mut output);
@@ -61618,13 +61623,7 @@ mod tests {
         assert_eq!(decoded, request);
         assert_eq!(decoded.id, Some("pipeline-1".to_string()));
         assert!(!decoded.verbose);
-        assert!(matches!(
-            decoded.reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "simulate pipeline execution",
-                ..
-            })
-        ));
+        decoded.validate_supported_execution_subset().unwrap();
 
         let inline_pipeline = OpenSearchSimulatePipelineRequestWire {
             id: None,
@@ -61649,7 +61648,7 @@ mod tests {
             ..OpenSearchSimulatePipelineRequestWire::default()
         };
         assert!(matches!(
-            missing_source.reject_unsupported_execution(),
+            missing_source.validate_supported_execution_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "simulate pipeline source",
                 ..
@@ -61661,7 +61660,7 @@ mod tests {
             ..OpenSearchSimulatePipelineRequestWire::default()
         };
         assert!(matches!(
-            media_type.reject_unsupported_execution(),
+            media_type.validate_supported_execution_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "simulate pipeline media type",
                 ..
@@ -61705,7 +61704,7 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_simulate_pipeline_transport_messages_bind_rejected_action_frame_and_response() {
+    fn opensearch_simulate_pipeline_transport_messages_bind_action_frames() {
         let request = OpenSearchSimulatePipelineRequestWire::default();
         let mut frame = build_opensearch_simulate_pipeline_request_message(
             77,
@@ -61720,21 +61719,16 @@ mod tests {
             classify_opensearch_transport_request_message(&message)
                 .unwrap()
                 .disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             read_opensearch_simulate_pipeline_request_message(&message).unwrap(),
             request
         );
-        assert!(matches!(
-            read_opensearch_simulate_pipeline_request_message(&message)
-                .unwrap()
-                .reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "simulate pipeline execution",
-                ..
-            })
-        ));
+        read_opensearch_simulate_pipeline_request_message(&message)
+            .unwrap()
+            .validate_supported_execution_subset()
+            .unwrap();
 
         let response = OpenSearchSimulatePipelineResponseWire::default();
         let mut frame = build_opensearch_simulate_pipeline_response_message(

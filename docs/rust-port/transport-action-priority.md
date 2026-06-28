@@ -177,8 +177,8 @@ The source-derived transport inventory currently has 160 rows:
 
 | Status | Count | Meaning |
 | --- | ---: | --- |
-| `implemented` | 85 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
-| `partial` | 75 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
+| `implemented` | 86 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
+| `partial` | 74 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
 | `planned` | 0 | No source-derived transport action remains unclassified. |
 
 The k-NN plugin action sweep is complete at the boundary layer. All 12
@@ -339,7 +339,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `cluster:admin/ingest/pipeline/put` (implemented manifest-backed metadata-write subset)
 - `cluster:admin/ingest/pipeline/get` (implemented empty pipeline metadata-read subset)
 - `cluster:admin/ingest/pipeline/delete` (implemented manifest-backed metadata-write subset)
-- `cluster:admin/ingest/pipeline/simulate` (rejected fail-closed)
+- `cluster:admin/ingest/pipeline/simulate` (implemented empty-doc simulation subset)
 - `indices:admin/refresh`
 - `indices:data/read/tv` (rejected fail-closed)
 - `indices:data/read/mtv` (rejected fail-closed)
@@ -1422,12 +1422,13 @@ The simulate-pipeline boundary covers:
 - OpenSearch `SimulatePipelineResponse` optional pipeline id, verbose flag,
   and empty result count decode/build, with explicit rejection for non-empty
   document/processor result payloads until those result shapes are modeled;
-- explicit fail-closed classification for
-  `cluster:admin/ingest/pipeline/simulate` until ingest pipeline source
-  parsing, processor execution, verbose result capture, and response rendering
-  are implemented;
-- explicit rejection for missing source bytes, non-JSON media types, and
-  simulate-pipeline execution, plus defensive decode rejection for negative
+- empty-doc transport execution for `cluster:admin/ingest/pipeline/simulate`,
+  returning an OpenSearch `SimulatePipelineResponse` with zero result entries
+  for named manifest pipelines or inline pipeline definitions whose `docs`
+  array is empty;
+- explicit rejection for missing source bytes, non-JSON media types, malformed
+  JSON source bytes, missing named pipelines, inline requests without a
+  pipeline object, non-empty docs, and defensive decode rejection for negative
   response result counts.
 
 The resize boundary covers:
@@ -4186,20 +4187,20 @@ performance-sensitive work is wildcard matching against the Rust ingest
 pipeline metadata catalog, missing-pipeline response handling, metadata
 mutation, throttling, and ack rendering.
 
-Current simulate-pipeline reject wire microbenchmark:
+Current simulate-pipeline wire microbenchmark:
 
 ```text
-cargo run -p os-transport --release --bin simulate-pipeline-reject-wire-benchmark
-simulate_pipeline_reject_request_encode iterations=400000 elapsed_ms=388.827 ops_per_second=1028733.92 nanos_per_op=972.07
-simulate_pipeline_reject_request_decode iterations=400000 elapsed_ms=368.415 ops_per_second=1085732.62 nanos_per_op=921.04
-simulate_pipeline_reject_validation iterations=400000 elapsed_ms=376.035 ops_per_second=1063729.46 nanos_per_op=940.09
-simulate_pipeline_empty_response_decode iterations=400000 elapsed_ms=95.969 ops_per_second=4168018.49 nanos_per_op=239.92
-simulate_pipeline_reject_wire_bottleneck_ops_per_second=1028733.92
+cargo run -q -p os-transport --release --bin simulate-pipeline-wire-benchmark
+simulate_pipeline_request_encode iterations=400000 elapsed_ms=385.281 ops_per_second=1038201.98 nanos_per_op=963.20
+simulate_pipeline_request_decode iterations=400000 elapsed_ms=373.024 ops_per_second=1072316.13 nanos_per_op=932.56
+simulate_pipeline_request_validate iterations=400000 elapsed_ms=373.554 ops_per_second=1070795.29 nanos_per_op=933.89
+simulate_pipeline_response_decode iterations=400000 elapsed_ms=95.006 ops_per_second=4210240.55 nanos_per_op=237.52
+simulate_pipeline_wire_bottleneck_ops_per_second=1038201.98
 ```
 
-The current simulate-pipeline fail-closed boundary bottleneck is request
+The current simulate-pipeline supported wire subset bottleneck is request
 encode. The request path carries optional pipeline id, verbose flag, source
-bytes, and media type before rejecting execution. At roughly 1.03M ops/s in the
+bytes, and media type before validating execution. At roughly 1.04M ops/s in the
 latest local release run, current overhead is transport serialization. Future
 performance-sensitive work is JSON source parsing, processor execution,
 verbose result capture, and non-empty simulate response rendering.

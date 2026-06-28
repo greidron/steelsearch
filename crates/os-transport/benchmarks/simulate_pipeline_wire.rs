@@ -13,21 +13,20 @@ use std::time::Instant;
 const ITERATIONS: usize = 400_000;
 
 fn main() {
-    let request = OpenSearchSimulatePipelineRequestWire::default();
+    let request = OpenSearchSimulatePipelineRequestWire {
+        source: bytes::Bytes::from_static(br#"{"docs":[]}"#),
+        ..OpenSearchSimulatePipelineRequestWire::default()
+    };
 
-    let request_encode = measure(
-        "simulate_pipeline_reject_request_encode",
-        ITERATIONS,
-        || {
-            let frame = build_opensearch_simulate_pipeline_request_message(
-                77,
-                OPENSEARCH_3_7_0_TRANSPORT,
-                black_box(&request),
-            )
-            .expect("simulate-pipeline request encode should succeed");
-            black_box(frame);
-        },
-    );
+    let request_encode = measure("simulate_pipeline_request_encode", ITERATIONS, || {
+        let frame = build_opensearch_simulate_pipeline_request_message(
+            77,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            black_box(&request),
+        )
+        .expect("simulate-pipeline request encode should succeed");
+        black_box(frame);
+    });
 
     let request_frame = build_opensearch_simulate_pipeline_request_message(
         77,
@@ -36,27 +35,22 @@ fn main() {
     )
     .expect("simulate-pipeline request encode should succeed");
 
-    let request_decode = measure(
-        "simulate_pipeline_reject_request_decode",
-        ITERATIONS,
-        || {
-            let mut frame = black_box(request_frame.clone());
-            let message = decode_message(&mut frame);
-            let decoded = read_opensearch_simulate_pipeline_request_message(black_box(&message))
-                .expect("simulate-pipeline request decode");
-            black_box(decoded);
-        },
-    );
-
-    let reject_validate = measure("simulate_pipeline_reject_validation", ITERATIONS, || {
+    let request_decode = measure("simulate_pipeline_request_decode", ITERATIONS, || {
         let mut frame = black_box(request_frame.clone());
         let message = decode_message(&mut frame);
         let decoded = read_opensearch_simulate_pipeline_request_message(black_box(&message))
             .expect("simulate-pipeline request decode");
-        let err = decoded
-            .reject_unsupported_execution()
-            .expect_err("simulate-pipeline execution should reject");
-        black_box(err);
+        black_box(decoded);
+    });
+
+    let request_validate = measure("simulate_pipeline_request_validate", ITERATIONS, || {
+        let mut frame = black_box(request_frame.clone());
+        let message = decode_message(&mut frame);
+        let decoded = read_opensearch_simulate_pipeline_request_message(black_box(&message))
+            .expect("simulate-pipeline request decode");
+        decoded
+            .validate_supported_execution_subset()
+            .expect("simulate-pipeline empty-doc subset should validate");
     });
 
     let response = OpenSearchSimulatePipelineResponseWire::default();
@@ -67,26 +61,20 @@ fn main() {
     )
     .expect("simulate-pipeline response encode should succeed");
 
-    let response_decode = measure(
-        "simulate_pipeline_empty_response_decode",
-        ITERATIONS,
-        || {
-            let mut frame = black_box(response_frame.clone());
-            let message = decode_message(&mut frame);
-            let decoded = read_opensearch_simulate_pipeline_response_message(black_box(&message))
-                .expect("simulate-pipeline response decode");
-            black_box(decoded);
-        },
-    );
+    let response_decode = measure("simulate_pipeline_response_decode", ITERATIONS, || {
+        let mut frame = black_box(response_frame.clone());
+        let message = decode_message(&mut frame);
+        let decoded = read_opensearch_simulate_pipeline_response_message(black_box(&message))
+            .expect("simulate-pipeline response decode");
+        black_box(decoded);
+    });
 
     let combined_ops_per_second = request_encode
         .ops_per_second
         .min(request_decode.ops_per_second)
-        .min(reject_validate.ops_per_second)
+        .min(request_validate.ops_per_second)
         .min(response_decode.ops_per_second);
-    println!(
-        "simulate_pipeline_reject_wire_bottleneck_ops_per_second={combined_ops_per_second:.2}"
-    );
+    println!("simulate_pipeline_wire_bottleneck_ops_per_second={combined_ops_per_second:.2}");
 }
 
 #[derive(Clone, Copy)]

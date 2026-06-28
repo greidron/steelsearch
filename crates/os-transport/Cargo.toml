@@ -348,8 +348,8 @@ name = "delete-pipeline-wire-benchmark"
 path = "benchmarks/delete_pipeline_wire.rs"
 
 [[bin]]
-name = "simulate-pipeline-reject-wire-benchmark"
-path = "benchmarks/simulate_pipeline_reject_wire.rs"
+name = "simulate-pipeline-wire-benchmark"
+path = "benchmarks/simulate_pipeline_wire.rs"
 
 [[bin]]
 name = "resize-reject-wire-benchmark"

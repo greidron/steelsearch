@@ -495,7 +495,7 @@ transport_action	implemented	action	FieldCapabilitiesAction.INSTANCE	TransportFi
 transport_action	implemented	action	PutPipelineAction.INSTANCE	PutPipelineTransportAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	781
 transport_action	implemented	action	GetPipelineAction.INSTANCE	GetPipelineTransportAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	782
 transport_action	implemented	action	DeletePipelineAction.INSTANCE	DeletePipelineTransportAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	783
-transport_action	partial	action	SimulatePipelineAction.INSTANCE	SimulatePipelineTransportAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	784
+transport_action	implemented	action	SimulatePipelineAction.INSTANCE	SimulatePipelineTransportAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	784
 transport_action	implemented	action	CreateDataStreamAction.INSTANCE	CreateDataStreamAction.TransportAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	789
 transport_action	implemented	action	DeleteDataStreamAction.INSTANCE	DeleteDataStreamAction.TransportAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	790
 transport_action	implemented	action	GetDataStreamAction.INSTANCE	GetDataStreamAction.TransportAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	791

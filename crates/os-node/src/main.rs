@@ -1440,6 +1440,32 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end_at_ms,
         )?;
     } else if is_request
+        && normalized_action_hint == Some("cluster:admin/ingest/pipeline/simulate")
+        && simulate_pipeline_request_supports_empty_doc_execution_subset(&body)
+    {
+        let response = build_simulate_pipeline_response(request_id, header_version_id, &body);
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("cluster:admin/ingest/pipeline/simulate"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request
         && normalized_action_hint == Some("cluster:admin/search/pipeline/get")
         && get_search_pipeline_request_supports_manifest_subset(&body)
     {
@@ -5445,6 +5471,56 @@ fn decode_delete_pipeline_request_from_transport_body(
     os_transport::action::read_opensearch_delete_pipeline_request_message(&message).ok()
 }
 
+fn build_simulate_pipeline_response(
+    request_id: i64,
+    header_version_id: u32,
+    body: &[u8],
+) -> Vec<u8> {
+    let Some(request) = decode_simulate_pipeline_request_from_transport_body(body) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    if !simulate_pipeline_request_supports_empty_doc_subset(
+        &dev_transport_pit_bindings()
+            .metadata_manifest
+            .lock()
+            .expect("metadata manifest lock poisoned"),
+        &request,
+    ) {
+        return build_empty_transport_response(request_id, header_version_id);
+    }
+    let response = os_transport::action::OpenSearchSimulatePipelineResponseWire {
+        pipeline_id: request.id,
+        verbose: request.verbose,
+    };
+    os_transport::action::build_opensearch_simulate_pipeline_response_message(
+        request_id,
+        Version::from_id(header_version_id as i32),
+        &response,
+    )
+    .map(|frame| frame.to_vec())
+    .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
+}
+
+fn simulate_pipeline_request_supports_empty_doc_execution_subset(body: &[u8]) -> bool {
+    let Some(request) = decode_simulate_pipeline_request_from_transport_body(body) else {
+        return false;
+    };
+    simulate_pipeline_request_supports_empty_doc_subset(
+        &dev_transport_pit_bindings()
+            .metadata_manifest
+            .lock()
+            .expect("metadata manifest lock poisoned"),
+        &request,
+    )
+}
+
+fn decode_simulate_pipeline_request_from_transport_body(
+    body: &[u8],
+) -> Option<os_transport::action::OpenSearchSimulatePipelineRequestWire> {
+    let message = decode_transport_message_from_body(body)?;
+    os_transport::action::read_opensearch_simulate_pipeline_request_message(&message).ok()
+}
+
 fn get_pipeline_response_from_metadata_manifest(
     metadata_manifest: &Value,
     request: &os_transport::action::OpenSearchGetPipelineRequestWire,
@@ -5517,6 +5593,31 @@ fn put_ingest_pipeline_into_metadata_manifest(
     };
     pipelines.insert(request.id.clone(), source);
     true
+}
+
+fn simulate_pipeline_request_supports_empty_doc_subset(
+    metadata_manifest: &Value,
+    request: &os_transport::action::OpenSearchSimulatePipelineRequestWire,
+) -> bool {
+    if request.validate_supported_execution_subset().is_err() {
+        return false;
+    }
+    let Ok(source) = serde_json::from_slice::<Value>(&request.source) else {
+        return false;
+    };
+    let Some(docs) = source.get("docs").and_then(Value::as_array) else {
+        return false;
+    };
+    if !docs.is_empty() {
+        return false;
+    }
+    match &request.id {
+        Some(id) => metadata_manifest
+            .get("ingest_pipelines")
+            .and_then(Value::as_object)
+            .is_some_and(|pipelines| pipelines.contains_key(id)),
+        None => source.get("pipeline").and_then(Value::as_object).is_some(),
+    }
 }
 
 fn delete_ingest_pipeline_request_matches_manifest_subset(
@@ -16082,6 +16183,15 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
             if delete_pipeline_request_supports_manifest_execution_subset(body) =>
         {
             Some(build_delete_pipeline_response(
+                request_id,
+                header_version_id,
+                body,
+            ))
+        }
+        Some("cluster:admin/ingest/pipeline/simulate")
+            if simulate_pipeline_request_supports_empty_doc_execution_subset(body) =>
+        {
+            Some(build_simulate_pipeline_response(
                 request_id,
                 header_version_id,
                 body,
@@ -33098,6 +33208,113 @@ mod tests {
         assert!(!delete_pipeline_request_supports_manifest_execution_subset(
             &missing_frame[6..]
         ));
+    }
+
+    #[test]
+    fn simulate_pipeline_transport_route_returns_empty_doc_response_for_supported_subset() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        *dev_transport_pit_bindings()
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned") = serde_json::json!({
+            "ingest_pipelines": {
+                "logs-pipeline": {
+                    "description": "logs ingest",
+                    "processors": []
+                }
+            }
+        });
+
+        let request = os_transport::action::OpenSearchSimulatePipelineRequestWire {
+            id: Some("logs-pipeline".to_string()),
+            source: Bytes::from_static(br#"{"docs":[]}"#),
+            ..os_transport::action::OpenSearchSimulatePipelineRequestWire::default()
+        };
+        let simulate_frame =
+            os_transport::action::build_opensearch_simulate_pipeline_request_message(
+                208,
+                OPENSEARCH_3_7_0_TRANSPORT,
+                &request,
+            )
+            .unwrap();
+        assert!(
+            simulate_pipeline_request_supports_empty_doc_execution_subset(&simulate_frame[6..])
+        );
+        let simulate_response = build_simulate_pipeline_response(
+            208,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &simulate_frame[6..],
+        );
+        let mut frame = BytesMut::from(&simulate_response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected simulate-pipeline response message");
+        };
+        assert_eq!(
+            os_transport::action::read_opensearch_simulate_pipeline_response_message(&message)
+                .unwrap(),
+            os_transport::action::OpenSearchSimulatePipelineResponseWire {
+                pipeline_id: Some("logs-pipeline".to_string()),
+                verbose: false
+            }
+        );
+
+        let inline = os_transport::action::OpenSearchSimulatePipelineRequestWire {
+            id: None,
+            verbose: true,
+            source: Bytes::from_static(br#"{"pipeline":{"processors":[]},"docs":[]}"#),
+            ..os_transport::action::OpenSearchSimulatePipelineRequestWire::default()
+        };
+        let inline_frame =
+            os_transport::action::build_opensearch_simulate_pipeline_request_message(
+                209,
+                OPENSEARCH_3_7_0_TRANSPORT,
+                &inline,
+            )
+            .unwrap();
+        assert!(simulate_pipeline_request_supports_empty_doc_execution_subset(&inline_frame[6..]));
+        let inline_response = build_simulate_pipeline_response(
+            209,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &inline_frame[6..],
+        );
+        let mut frame = BytesMut::from(&inline_response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected inline simulate-pipeline response message");
+        };
+        assert_eq!(
+            os_transport::action::read_opensearch_simulate_pipeline_response_message(&message)
+                .unwrap(),
+            os_transport::action::OpenSearchSimulatePipelineResponseWire {
+                pipeline_id: None,
+                verbose: true
+            }
+        );
+
+        let non_empty_docs = os_transport::action::OpenSearchSimulatePipelineRequestWire {
+            id: Some("logs-pipeline".to_string()),
+            source: Bytes::from_static(br#"{"docs":[{"_source":{"message":"hello"}}]}"#),
+            ..os_transport::action::OpenSearchSimulatePipelineRequestWire::default()
+        };
+        let non_empty_frame =
+            os_transport::action::build_opensearch_simulate_pipeline_request_message(
+                210,
+                OPENSEARCH_3_7_0_TRANSPORT,
+                &non_empty_docs,
+            )
+            .unwrap();
+        assert!(
+            !simulate_pipeline_request_supports_empty_doc_execution_subset(&non_empty_frame[6..])
+        );
     }
 
     #[test]
