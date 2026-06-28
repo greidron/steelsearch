@@ -2422,6 +2422,11 @@ The create-PIT boundary covers:
   execution boundary while still decoding them at the wire layer. OpenSearch's
   update phase receives the PIT id produced by create-PIT, so the local adapter
   only admits non-empty ids when mutating reader/PIT lifecycle state.
+- local transport update-reader-context now tracks per-reader PIT id and
+  creation-time assignment as one-shot state. OpenSearch stores both values in
+  `SetOnce` fields on `PitReaderContext`, so a second assignment for the same
+  reader context is rejected and the local reader context is released instead of
+  mutating PIT lifecycle state again.
 - PIT reader-context transport wire decoding now allows empty PIT id, node id,
   and shard search session strings where OpenSearch's internal
   `PitSearchContextIdForNode`, `SearchContextIdForNode`,
