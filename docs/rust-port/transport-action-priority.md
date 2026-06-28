@@ -2406,6 +2406,9 @@ The create-PIT boundary covers:
 - local transport create-PIT now renders the OpenSearch
   `IllegalArgumentException` boundary for explicit aliases that fan out to
   multiple indices when `forbid_aliases_to_multiple_indices=true`;
+- local transport create-PIT now renders the OpenSearch
+  `InvalidIndexNameException` boundary for explicit index expressions that
+  start with `_`;
 - local transport create-PIT now renders an OpenSearch `IndexClosedException`
   transport error for strict concrete-index requests whose target is closed,
   while lenient `ignore_unavailable` requests skip that closed target;
@@ -5355,12 +5358,12 @@ Current create-PIT wire microbenchmark:
 
 ```text
 cargo run -p os-transport --release --bin create-pit-wire-benchmark
-create_pit_request_encode iterations=400000 elapsed_ms=285.150 ops_per_second=1402768.05 nanos_per_op=712.88
-create_pit_request_decode iterations=400000 elapsed_ms=268.254 ops_per_second=1491121.79 nanos_per_op=670.64
-create_pit_request_validate iterations=400000 elapsed_ms=268.878 ops_per_second=1487663.23 nanos_per_op=672.20
-create_pit_response_encode iterations=400000 elapsed_ms=123.399 ops_per_second=3241520.38 nanos_per_op=308.50
-create_pit_response_decode iterations=400000 elapsed_ms=104.946 ops_per_second=3811466.93 nanos_per_op=262.37
-create_pit_wire_bottleneck_ops_per_second=1402768.05
+create_pit_request_encode iterations=400000 elapsed_ms=282.393 ops_per_second=1416464.37 nanos_per_op=705.98
+create_pit_request_decode iterations=400000 elapsed_ms=263.473 ops_per_second=1518184.16 nanos_per_op=658.68
+create_pit_request_validate iterations=400000 elapsed_ms=264.046 ops_per_second=1514888.40 nanos_per_op=660.11
+create_pit_response_encode iterations=400000 elapsed_ms=123.914 ops_per_second=3228049.16 nanos_per_op=309.78
+create_pit_response_decode iterations=400000 elapsed_ms=104.727 ops_per_second=3819469.38 nanos_per_op=261.82
+create_pit_wire_bottleneck_ops_per_second=1416464.37
 ```
 
 The current create-PIT wire subset bottleneck is request encode. This path
