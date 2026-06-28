@@ -11229,6 +11229,38 @@
       ],
       "family": "document-update",
       "description": "[document-update] update rejects stored_fields query parameter like OpenSearch"
+    },
+    {
+      "name": "update_source_false_omits_get_response_parity",
+      "area": "document",
+      "extract": "single_doc_write_result",
+      "compare_step": "update-source-false",
+      "steps": [
+        {
+          "name": "create-update-source-false-index",
+          "method": "PUT",
+          "path": "/logs-update-source-false-compat",
+          "expected_status": 200,
+          "body": {}
+        },
+        {
+          "name": "update-source-false",
+          "method": "POST",
+          "path": "/logs-update-source-false-compat/_update/1?_source=false",
+          "expected_status": 201,
+          "body": {
+            "doc": {
+              "foo": "baz"
+            },
+            "upsert": {
+              "foo": "bar"
+            }
+          },
+          "extract": "single_doc_write_result"
+        }
+      ],
+      "family": "document-update",
+      "description": "[document-update] update _source=false omits get response like OpenSearch"
     }
   ],
   "requests": [

@@ -1529,6 +1529,7 @@ def extract(kind: str, response: dict[str, Any]) -> Any:
             "result": body.get("result"),
             "_version": body.get("_version"),
             "forced_refresh": body.get("forced_refresh"),
+            "get_present": isinstance(body.get("get"), dict),
             "get_found": get.get("found"),
             "get_seq_no": get.get("_seq_no"),
             "get_primary_term": get.get("_primary_term"),
