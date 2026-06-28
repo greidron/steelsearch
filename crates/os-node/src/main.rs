@@ -8586,6 +8586,9 @@ fn build_local_update_reader_context_response(
     if request.keep_alive_millis > DEV_TRANSPORT_MAX_PIT_KEEP_ALIVE_MILLIS {
         return build_empty_transport_response(request_id, header_version_id);
     }
+    if request.pit_id.is_empty() {
+        return build_empty_transport_response(request_id, header_version_id);
+    }
     if !reader_context_exists(&request.search_context_id) {
         return build_empty_transport_response(request_id, header_version_id);
     }
@@ -8606,6 +8609,7 @@ fn build_local_update_reader_context_response(
 fn update_reader_context_request_supports_local_subset(body: &[u8]) -> bool {
     decode_update_reader_context_request_from_transport_body(body)
         .filter(|request| request.keep_alive_millis <= DEV_TRANSPORT_MAX_PIT_KEEP_ALIVE_MILLIS)
+        .filter(|request| !request.pit_id.is_empty())
         .filter(|request| reader_context_exists(&request.search_context_id))
         .and_then(|request| request.validate_supported_subset().ok())
         .is_some()
@@ -17794,6 +17798,11 @@ mod tests {
             .expect("dev transport PIT contexts lock poisoned")
             .clear();
         bindings
+            .reader_contexts
+            .lock()
+            .expect("dev transport reader contexts lock poisoned")
+            .clear();
+        bindings
             .created_indices
             .lock()
             .expect("dev transport created indices lock poisoned")
@@ -19274,6 +19283,11 @@ mod tests {
             remote_transport_queue_gate: Arc::new(RemoteTransportQueueGate::new(1, 1000)),
             task_queue_state: None,
         };
+        bindings
+            .documents
+            .lock()
+            .expect("dev transport documents lock poisoned")
+            .clear();
         bindings
             .documents
             .lock()
@@ -21782,6 +21796,89 @@ mod tests {
             .lock()
             .expect("dev transport PIT contexts lock poisoned")
             .is_empty());
+    }
+
+    #[test]
+    fn update_reader_context_transport_route_rejects_empty_pit_id_at_execution_boundary() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        let bindings = dev_transport_pit_bindings();
+        bindings
+            .contexts
+            .lock()
+            .expect("dev transport PIT contexts lock poisoned")
+            .clear();
+        bindings
+            .reader_contexts
+            .lock()
+            .expect("dev transport reader contexts lock poisoned")
+            .clear();
+
+        let reader_context_id = os_transport::action::OpenSearchShardSearchContextIdWire::new(
+            "empty-pit-id-reader-session",
+            12,
+        );
+        bindings
+            .reader_contexts
+            .lock()
+            .expect("dev transport reader contexts lock poisoned")
+            .insert(
+                reader_context_key(&reader_context_id),
+                DevTransportReaderContext {
+                    shard_id: os_transport::action::OpenSearchShardIdWire {
+                        index_name: "logs-reader-empty-pit-id".to_string(),
+                        index_uuid: "uuid-reader-empty-pit-id".to_string(),
+                        shard_id: 0,
+                    },
+                    documents: Arc::new(BTreeMap::new()),
+                    expires_at_millis: now_epoch_ms() + 60_000,
+                },
+            );
+
+        let request = os_transport::action::OpenSearchUpdateReaderContextRequestWire {
+            parent_task_node: String::new(),
+            parent_task_id: None,
+            pit_id: String::new(),
+            keep_alive_millis: 120_000,
+            creation_time_millis: 1_700_000_000_000,
+            search_context_id: reader_context_id,
+        };
+        let frame = os_transport::action::build_opensearch_update_reader_context_request_message(
+            324,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(!update_reader_context_request_supports_local_subset(
+            &frame[6..]
+        ));
+
+        let response = build_local_update_reader_context_response(
+            324,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &frame[6..],
+        );
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected empty-pit-id update-reader-context fallback response frame");
+        };
+        assert_eq!(message.request_id, 324);
+        assert!(message.body.is_empty());
+        assert!(bindings
+            .contexts
+            .lock()
+            .expect("dev transport PIT contexts lock poisoned")
+            .is_empty());
+        bindings
+            .reader_contexts
+            .lock()
+            .expect("dev transport reader contexts lock poisoned")
+            .clear();
     }
 
     #[test]
