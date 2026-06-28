@@ -66,7 +66,7 @@ implemented	GetComponentTemplateAction.INSTANCE	TransportGetComponentTemplateAct
 implemented	DeleteComponentTemplateAction.INSTANCE	TransportDeleteComponentTemplateAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	726
 partial	PutComposableIndexTemplateAction.INSTANCE	TransportPutComposableIndexTemplateAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	727
 implemented	GetComposableIndexTemplateAction.INSTANCE	TransportGetComposableIndexTemplateAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	728
-partial	DeleteComposableIndexTemplateAction.INSTANCE	TransportDeleteComposableIndexTemplateAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	729
+implemented	DeleteComposableIndexTemplateAction.INSTANCE	TransportDeleteComposableIndexTemplateAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	729
 partial	SimulateIndexTemplateAction.INSTANCE	TransportSimulateIndexTemplateAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	730
 partial	SimulateTemplateAction.INSTANCE	TransportSimulateTemplateAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	731
 implemented	ValidateQueryAction.INSTANCE	TransportValidateQueryAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	732

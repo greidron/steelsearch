@@ -247,6 +247,13 @@ action_status() {
   esac
 
   case "${action}" in
+    DeleteComposableIndexTemplateAction.INSTANCE)
+      echo "implemented"
+      return
+      ;;
+  esac
+
+  case "${action}" in
     GetStoredScriptAction.INSTANCE|GetScriptContextAction.INSTANCE|GetScriptLanguageAction.INSTANCE)
       echo "implemented"
       return

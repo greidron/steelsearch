@@ -177,8 +177,8 @@ The source-derived transport inventory currently has 160 rows:
 
 | Status | Count | Meaning |
 | --- | ---: | --- |
-| `implemented` | 81 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
-| `partial` | 79 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
+| `implemented` | 82 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
+| `partial` | 78 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
 | `planned` | 0 | No source-derived transport action remains unclassified. |
 
 The k-NN plugin action sweep is complete at the boundary layer. All 12
@@ -4506,11 +4506,11 @@ Current delete-composable-index-template wire microbenchmark:
 
 ```text
 cargo run -p os-transport --release --bin delete-composable-index-template-wire-benchmark
-delete_composable_index_template_request_encode iterations=400000 elapsed_ms=310.291 ops_per_second=1289114.00 nanos_per_op=775.73
-delete_composable_index_template_request_decode iterations=400000 elapsed_ms=276.029 ops_per_second=1449122.33 nanos_per_op=690.07
-delete_composable_index_template_request_validate iterations=400000 elapsed_ms=279.702 ops_per_second=1430091.09 nanos_per_op=699.26
-delete_composable_index_template_response_decode iterations=400000 elapsed_ms=54.239 ops_per_second=7374724.27 nanos_per_op=135.60
-delete_composable_index_template_wire_bottleneck_ops_per_second=1289114.00
+delete_composable_index_template_request_encode iterations=400000 elapsed_ms=311.989 ops_per_second=1282098.26 nanos_per_op=779.97
+delete_composable_index_template_request_decode iterations=400000 elapsed_ms=273.021 ops_per_second=1465091.25 nanos_per_op=682.55
+delete_composable_index_template_request_validate iterations=400000 elapsed_ms=290.334 ops_per_second=1377721.25 nanos_per_op=725.84
+delete_composable_index_template_response_decode iterations=400000 elapsed_ms=54.910 ops_per_second=7284693.51 nanos_per_op=137.27
+delete_composable_index_template_wire_bottleneck_ops_per_second=1282098.26
 ```
 
 The current delete-composable-index-template transport boundary bottleneck is
