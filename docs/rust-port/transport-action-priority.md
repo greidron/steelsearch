@@ -177,8 +177,8 @@ The source-derived transport inventory currently has 160 rows:
 
 | Status | Count | Meaning |
 | --- | ---: | --- |
-| `implemented` | 99 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
-| `partial` | 61 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
+| `implemented` | 100 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
+| `partial` | 60 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
 | `planned` | 0 | No source-derived transport action remains unclassified. |
 
 The k-NN plugin action sweep is complete at the boundary layer. All 12
@@ -1535,13 +1535,17 @@ The add-index-block boundary covers:
 - OpenSearch `AddIndexBlockRequest` parent task, cluster-manager timeout,
   acknowledgement timeout, indices array, `IndicesOptions.strictExpandOpen()`,
   and `IndexMetadata.APIBlock` ordinal at the wire decode/build layer;
-- explicit fail-closed classification for `indices:admin/block/add` until
-  index block metadata mutation and add-block response rendering are
-  implemented;
+- implemented classification for default-option requests with one or more
+  concrete existing index names and supported public `IndexMetadata.APIBlock`
+  ordinals;
+- manifest-backed `index.blocks.*` setting mutation plus OpenSearch-shaped
+  `AddIndexBlockResponse` rendering with `acknowledged`, `shards_acknowledged`,
+  and successful per-index results;
 - explicit rejection for custom cluster-manager timeouts, custom
   acknowledgement timeouts, empty or blank index targets, custom indices
-  options, unknown APIBlock ordinals, internal-only `read_only_allow_delete`,
-  and add-index-block execution.
+  options, wildcard/date-math/comma/remote-style targets, missing index names,
+  non-concrete target names, unknown APIBlock ordinals, and internal-only
+  `read_only_allow_delete`.
 
 The get-index boundary covers:
 
@@ -4364,23 +4368,25 @@ roughly 1.43M request ops/s and 2.1M+ response ops/s in the latest local
 release run, the next performance-sensitive work is broader index resolution,
 close-state planning, and allocation acknowledgement behavior.
 
-Current add-index-block reject wire microbenchmark:
+Current add-index-block wire microbenchmark:
 
 ```text
-cargo run -p os-transport --release --bin add-index-block-reject-wire-benchmark
-add_index_block_reject_request_encode iterations=400000 elapsed_ms=281.863 ops_per_second=1419127.12 nanos_per_op=704.66
-add_index_block_reject_request_decode iterations=400000 elapsed_ms=277.215 ops_per_second=1442924.82 nanos_per_op=693.04
-add_index_block_reject_validation iterations=400000 elapsed_ms=317.918 ops_per_second=1258185.20 nanos_per_op=794.80
-add_index_block_reject_wire_bottleneck_ops_per_second=1258185.20
+cargo run -q -p os-transport --release --bin add-index-block-wire-benchmark
+add_index_block_request_encode iterations=400000 elapsed_ms=287.864 ops_per_second=1389545.32 nanos_per_op=719.66
+add_index_block_request_decode iterations=400000 elapsed_ms=273.782 ops_per_second=1461015.30 nanos_per_op=684.46
+add_index_block_request_validate iterations=400000 elapsed_ms=278.670 ops_per_second=1435389.64 nanos_per_op=696.67
+add_index_block_response_encode iterations=400000 elapsed_ms=184.212 ops_per_second=2171409.82 nanos_per_op=460.53
+add_index_block_response_decode iterations=400000 elapsed_ms=175.042 ops_per_second=2285160.77 nanos_per_op=437.61
+add_index_block_wire_bottleneck_ops_per_second=1389545.32
 ```
 
-The current add-index-block fail-closed boundary bottleneck is validation over
-the decoded request. The request carries an acknowledged-request envelope,
-non-empty index target, strict-open indices options, and APIBlock ordinal before
-the execution boundary rejects. At roughly 1.26M ops/s in the latest local
-release run, the future performance-sensitive work is index block metadata
-mutation and add-block response rendering rather than the fail-closed wire
-boundary.
+The current add-index-block transport bottleneck is request encode. The request
+carries an acknowledged-request envelope, non-empty concrete index targets,
+strict-open indices options, and APIBlock ordinal before the node adapter marks
+manifest-backed block settings and renders the response. At roughly 1.39M
+request ops/s and 2.1M+ response ops/s in the latest local release run, the next
+performance-sensitive work is broader index resolution, block-check handling,
+and shard-level verification behavior.
 
 Current get-index wire microbenchmark:
 

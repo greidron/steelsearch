@@ -372,8 +372,8 @@ name = "close-index-wire-benchmark"
 path = "benchmarks/close_index_wire.rs"
 
 [[bin]]
-name = "add-index-block-reject-wire-benchmark"
-path = "benchmarks/add_index_block_reject_wire.rs"
+name = "add-index-block-wire-benchmark"
+path = "benchmarks/add_index_block_wire.rs"
 
 [[bin]]
 name = "indices-exists-wire-benchmark"

@@ -2058,6 +2058,32 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end_at_ms,
         )?;
     } else if is_request
+        && normalized_action_hint == Some("indices:admin/block/add")
+        && add_index_block_request_supports_manifest_subset(&body)
+    {
+        let response = build_add_index_block_response(request_id, header_version_id, &body);
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("indices:admin/block/add"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request
         && normalized_action_hint == Some("indices:admin/mapping/put")
         && put_mapping_request_supports_manifest_subset(&body)
     {
@@ -8169,6 +8195,27 @@ fn build_close_index_response(request_id: i64, header_version_id: u32, body: &[u
     .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
 }
 
+fn build_add_index_block_response(request_id: i64, header_version_id: u32, body: &[u8]) -> Vec<u8> {
+    let Some(request) = decode_add_index_block_request_from_transport_body(body) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    if !add_index_block_request_matches_manifest_subset(&request) {
+        return build_empty_transport_response(request_id, header_version_id);
+    }
+    if !apply_transport_add_index_block(&request.indices, request.block) {
+        return build_empty_transport_response(request_id, header_version_id);
+    }
+    let response =
+        os_transport::action::OpenSearchAddIndexBlockResponseWire::success(&request.indices);
+    os_transport::action::build_opensearch_add_index_block_response_message(
+        request_id,
+        Version::from_id(header_version_id as i32),
+        &response,
+    )
+    .map(|frame| frame.to_vec())
+    .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
+}
+
 fn create_index_request_supports_manifest_subset(body: &[u8]) -> bool {
     decode_create_index_request_from_transport_body(body)
         .is_some_and(|request| create_index_request_matches_manifest_subset(&request))
@@ -8187,6 +8234,11 @@ fn open_index_request_supports_manifest_subset(body: &[u8]) -> bool {
 fn close_index_request_supports_manifest_subset(body: &[u8]) -> bool {
     decode_close_index_request_from_transport_body(body)
         .is_some_and(|request| close_index_request_matches_manifest_subset(&request))
+}
+
+fn add_index_block_request_supports_manifest_subset(body: &[u8]) -> bool {
+    decode_add_index_block_request_from_transport_body(body)
+        .is_some_and(|request| add_index_block_request_matches_manifest_subset(&request))
 }
 
 fn auto_create_request_supports_manifest_subset(body: &[u8]) -> bool {
@@ -8250,6 +8302,21 @@ fn close_index_request_matches_manifest_subset(
             .all(|index| transport_index_exists(index))
 }
 
+fn add_index_block_request_matches_manifest_subset(
+    request: &os_transport::action::OpenSearchAddIndexBlockRequestWire,
+) -> bool {
+    request.validate_supported_execution_subset().is_ok()
+        && request
+            .indices
+            .iter()
+            .all(|index| transport_delete_index_name_is_concrete(index))
+        && request
+            .indices
+            .iter()
+            .all(|index| transport_index_exists(index))
+        && transport_add_index_block_setting_key(request.block).is_some()
+}
+
 fn decode_create_index_request_from_transport_body(
     body: &[u8],
 ) -> Option<os_transport::action::OpenSearchCreateIndexRequestWire> {
@@ -8283,6 +8350,13 @@ fn decode_close_index_request_from_transport_body(
 ) -> Option<os_transport::action::OpenSearchCloseIndexRequestWire> {
     let message = decode_transport_message_from_body(body)?;
     os_transport::action::read_opensearch_close_index_request_message(&message).ok()
+}
+
+fn decode_add_index_block_request_from_transport_body(
+    body: &[u8],
+) -> Option<os_transport::action::OpenSearchAddIndexBlockRequestWire> {
+    let message = decode_transport_message_from_body(body)?;
+    os_transport::action::read_opensearch_add_index_block_request_message(&message).ok()
 }
 
 fn transport_create_index_name_is_valid(index: &str) -> bool {
@@ -8447,6 +8521,77 @@ fn apply_transport_close_index(indices: &[String]) -> bool {
         }
     }
     true
+}
+
+fn apply_transport_add_index_block(indices: &[String], block: i32) -> bool {
+    let Some(setting_key) = transport_add_index_block_setting_key(block) else {
+        return false;
+    };
+    let bindings = dev_transport_pit_bindings();
+    let mut manifest = bindings
+        .metadata_manifest
+        .lock()
+        .expect("dev transport metadata manifest lock poisoned");
+    let Some(indices_object) = manifest["indices"].as_object_mut() else {
+        return false;
+    };
+    if !indices
+        .iter()
+        .all(|index| indices_object.contains_key(index))
+    {
+        return false;
+    }
+    for index in indices {
+        let Some(entry) = indices_object.get_mut(index) else {
+            return false;
+        };
+        if !entry.is_object() {
+            return false;
+        }
+        if entry.get("settings").and_then(Value::as_object).is_none() {
+            entry["settings"] = serde_json::json!({});
+        }
+        set_manifest_index_setting_bool(&mut entry["settings"], setting_key, true);
+    }
+    true
+}
+
+fn transport_add_index_block_setting_key(block: i32) -> Option<&'static str> {
+    match block {
+        0 => Some("index.blocks.read_only"),
+        1 => Some("index.blocks.read"),
+        2 => Some("index.blocks.write"),
+        3 => Some("index.blocks.metadata"),
+        5 => Some("index.blocks.search_only"),
+        _ => None,
+    }
+}
+
+fn set_manifest_index_setting_bool(settings: &mut Value, key: &str, value: bool) {
+    if !settings.is_object() {
+        *settings = serde_json::json!({});
+    }
+    settings[key] = Value::Bool(value);
+    let parts: Vec<&str> = key.split('.').collect();
+    set_nested_manifest_setting_bool(settings, &parts, value);
+}
+
+fn set_nested_manifest_setting_bool(settings: &mut Value, parts: &[&str], value: bool) {
+    if parts.is_empty() {
+        *settings = Value::Bool(value);
+        return;
+    }
+    if parts.len() == 1 {
+        settings[parts[0]] = Value::Bool(value);
+        return;
+    }
+    if !settings.is_object() {
+        *settings = serde_json::json!({});
+    }
+    if settings.get(parts[0]).and_then(Value::as_object).is_none() {
+        settings[parts[0]] = serde_json::json!({});
+    }
+    set_nested_manifest_setting_bool(&mut settings[parts[0]], &parts[1..], value);
 }
 
 fn transport_analyze_tokens(
@@ -17857,6 +18002,15 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
         Some("indices:admin/close") if close_index_request_supports_manifest_subset(body) => Some(
             build_close_index_response(request_id, header_version_id, body),
         ),
+        Some("indices:admin/block/add")
+            if add_index_block_request_supports_manifest_subset(body) =>
+        {
+            Some(build_add_index_block_response(
+                request_id,
+                header_version_id,
+                body,
+            ))
+        }
         Some("indices:admin/mapping/put") if put_mapping_request_supports_manifest_subset(body) => {
             Some(build_put_mapping_response(
                 request_id,
@@ -23757,6 +23911,101 @@ mod tests {
         )
         .unwrap();
         assert!(!close_index_request_supports_manifest_subset(
+            &missing_frame[6..]
+        ));
+    }
+
+    #[test]
+    fn add_index_block_transport_route_marks_manifest_index_blocked() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        let bindings = dev_transport_pit_bindings();
+        bindings
+            .created_indices
+            .lock()
+            .expect("dev transport created indices lock poisoned")
+            .clear();
+        bindings
+            .documents
+            .lock()
+            .expect("dev transport documents lock poisoned")
+            .clear();
+        *bindings
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned") = serde_json::json!({
+            "indices": {
+                "logs-block-transport-000001": {
+                    "settings": {},
+                    "mappings": {},
+                    "aliases": {},
+                    "state": "open"
+                }
+            }
+        });
+
+        let request = os_transport::action::OpenSearchAddIndexBlockRequestWire {
+            indices: vec!["logs-block-transport-000001".to_string()],
+            block: 2,
+            ..os_transport::action::OpenSearchAddIndexBlockRequestWire::default()
+        };
+        let frame = os_transport::action::build_opensearch_add_index_block_request_message(
+            99,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(add_index_block_request_supports_manifest_subset(
+            &frame[6..]
+        ));
+
+        let response =
+            build_add_index_block_response(99, OPENSEARCH_3_7_0_TRANSPORT.id() as u32, &frame[6..]);
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected add-index-block response message");
+        };
+        let response =
+            os_transport::action::read_opensearch_add_index_block_response_message(&message)
+                .unwrap();
+        assert!(response.acknowledged);
+        assert!(response.shards_acknowledged);
+        assert_eq!(response.indices.len(), 1);
+        assert_eq!(
+            response.indices[0].index.name,
+            "logs-block-transport-000001"
+        );
+        let manifest = bindings
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned");
+        assert_eq!(
+            manifest["indices"]["logs-block-transport-000001"]["settings"]["index.blocks.write"],
+            serde_json::json!(true)
+        );
+        assert_eq!(
+            manifest["indices"]["logs-block-transport-000001"]["settings"]["index"]["blocks"]
+                ["write"],
+            serde_json::json!(true)
+        );
+        drop(manifest);
+
+        let missing_request = os_transport::action::OpenSearchAddIndexBlockRequestWire {
+            indices: vec!["missing-block-transport-000001".to_string()],
+            ..os_transport::action::OpenSearchAddIndexBlockRequestWire::default()
+        };
+        let missing_frame = os_transport::action::build_opensearch_add_index_block_request_message(
+            100,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &missing_request,
+        )
+        .unwrap();
+        assert!(!add_index_block_request_supports_manifest_subset(
             &missing_frame[6..]
         ));
     }
