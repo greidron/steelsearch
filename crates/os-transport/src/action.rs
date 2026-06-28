@@ -1750,7 +1750,7 @@ pub fn classify_opensearch_transport_action(
         ADD_VOTING_CONFIG_EXCLUSIONS_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Implemented,
-            reason: "add-voting-config-exclusions transport adapter mutates local coordination exclusions for the node_names and node_ids subset",
+            reason: "add-voting-config-exclusions transport adapter mutates local coordination exclusions for the node_names, node_ids, and node_descriptions subset",
         },
         CLEAR_VOTING_CONFIG_EXCLUSIONS_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -35569,13 +35569,6 @@ impl AddVotingConfigExclusionsRequestWire {
                 reason: "OpenSearch requires exactly one voting-config exclusion selector family",
             });
         }
-        if !self.node_descriptions.is_empty() {
-            return Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "add voting config exclusions node descriptions",
-                reason:
-                    "deprecated node-description selectors require discovery-node resolution semantics",
-            });
-        }
         Ok(())
     }
 
@@ -49919,17 +49912,11 @@ mod tests {
         ));
 
         let node_descriptions = AddVotingConfigExclusionsRequestWire {
-            node_descriptions: vec!["cluster-manager-*".to_string()],
+            node_descriptions: vec!["_cluster_manager".to_string()],
             node_names: Vec::new(),
             ..AddVotingConfigExclusionsRequestWire::default()
         };
-        assert!(matches!(
-            node_descriptions.reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "add voting config exclusions node descriptions",
-                ..
-            })
-        ));
+        node_descriptions.validate_supported_subset().unwrap();
 
         let node_ids = AddVotingConfigExclusionsRequestWire {
             node_ids: vec!["node-id-a".to_string()],

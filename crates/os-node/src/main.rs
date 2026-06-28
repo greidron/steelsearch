@@ -10059,10 +10059,22 @@ fn remote_store_metadata_request_supports_empty_subset(body: &[u8]) -> bool {
 
 fn add_voting_config_exclusions_request_supports_local_execution_subset(
     body: &[u8],
-    _transport_identity: &DevTransportIdentity,
+    transport_identity: &DevTransportIdentity,
 ) -> bool {
     decode_add_voting_config_exclusions_request_from_transport_body(body)
-        .and_then(|request| request.validate_supported_subset().ok())
+        .and_then(|request| {
+            request.validate_supported_subset().ok()?;
+            if !request.node_descriptions.is_empty()
+                && resolve_transport_voting_config_exclusion_node_descriptions(
+                    &request.node_descriptions,
+                    transport_identity,
+                )
+                .is_empty()
+            {
+                return None;
+            }
+            Some(())
+        })
         .is_some()
 }
 
@@ -10122,6 +10134,10 @@ fn apply_local_add_voting_config_exclusions(
     .chain(resolve_transport_voting_config_exclusion_node_ids(
         &request.node_ids,
         transport_identity,
+    ))
+    .chain(resolve_transport_voting_config_exclusion_node_descriptions(
+        &request.node_descriptions,
+        transport_identity,
     ));
     if let Ok(mut state) = transport_identity.coordination_state.lock() {
         state.voting_config_exclusions.extend(resolved_exclusions);
@@ -10165,15 +10181,141 @@ fn resolve_transport_voting_config_exclusion_node_ids(
         .collect()
 }
 
+fn resolve_transport_voting_config_exclusion_node_descriptions(
+    node_descriptions: &[String],
+    transport_identity: &DevTransportIdentity,
+) -> BTreeSet<String> {
+    let cluster_manager_node_id = transport_identity
+        .coordination_state
+        .lock()
+        .ok()
+        .and_then(|state| state.cluster_manager_node_id.clone());
+    let local_host_address = transport_identity.transport_address.ip().to_string();
+    let local_transport_address = transport_identity.transport_address.to_string();
+    let local_matches = node_descriptions.iter().any(|description| {
+        transport_node_description_matches(
+            description,
+            &transport_identity.node_name,
+            &transport_identity.node_id,
+            &transport_identity.ephemeral_id,
+            &local_host_address,
+            &local_host_address,
+            &local_transport_address,
+            true,
+            cluster_manager_node_id.as_deref(),
+            &transport_identity.roles,
+        )
+    });
+    let mut exclusions = BTreeSet::new();
+    if local_matches && transport_roles_include_cluster_manager(&transport_identity.roles) {
+        exclusions.insert(transport_identity.node_id.clone());
+    }
+    for peer in &transport_identity.seed_peer_identities {
+        let node = &peer.discovery_node;
+        if node_descriptions.iter().any(|description| {
+            transport_node_description_matches(
+                description,
+                &node.name,
+                &node.id,
+                &node.ephemeral_id,
+                &node.host_name,
+                &node.host_address,
+                &node.transport_address,
+                false,
+                cluster_manager_node_id.as_deref(),
+                &node.roles,
+            )
+        }) && transport_roles_include_cluster_manager(&node.roles)
+        {
+            exclusions.insert(node.id.clone());
+        }
+    }
+    exclusions
+}
+
+fn transport_node_description_matches(
+    description: &str,
+    node_name: &str,
+    node_id: &str,
+    ephemeral_id: &str,
+    host_name: &str,
+    host_address: &str,
+    transport_address: &str,
+    local_node: bool,
+    cluster_manager_node_id: Option<&str>,
+    roles: &[String],
+) -> bool {
+    let description = description.trim();
+    if description.is_empty() {
+        return false;
+    }
+    match description {
+        "_all" => return true,
+        "_local" => return local_node,
+        "_master" | "_cluster_manager" => {
+            return cluster_manager_node_id
+                .map(|cluster_manager_node_id| cluster_manager_node_id == node_id)
+                .unwrap_or_else(|| transport_roles_include_cluster_manager(roles));
+        }
+        _ => {}
+    }
+
+    let field_match = |value: &str| description == value || wildcard_match(description, value);
+    if field_match(node_name)
+        || field_match(node_id)
+        || field_match(ephemeral_id)
+        || field_match(host_name)
+        || field_match(host_address)
+        || field_match(transport_address)
+    {
+        return true;
+    }
+
+    if let Some(pattern) = description
+        .strip_prefix("name:")
+        .or_else(|| description.strip_prefix("_name:"))
+    {
+        return wildcard_match(pattern, node_name);
+    }
+    if let Some(pattern) = description
+        .strip_prefix("id:")
+        .or_else(|| description.strip_prefix("_id:"))
+    {
+        return wildcard_match(pattern, node_id);
+    }
+    if let Some(pattern) = description
+        .strip_prefix("host:")
+        .or_else(|| description.strip_prefix("_host:"))
+    {
+        return wildcard_match(pattern, host_name) || wildcard_match(pattern, host_address);
+    }
+    if let Some(pattern) = description
+        .strip_prefix("ip:")
+        .or_else(|| description.strip_prefix("_ip:"))
+    {
+        return wildcard_match(pattern, host_address);
+    }
+    if let Some(pattern) = description
+        .strip_prefix("transport_address:")
+        .or_else(|| description.strip_prefix("_transport_address:"))
+    {
+        return wildcard_match(pattern, transport_address);
+    }
+    false
+}
+
+fn transport_roles_include_cluster_manager(roles: &[String]) -> bool {
+    roles
+        .iter()
+        .any(|role| role == "cluster_manager" || role == "master")
+}
+
 fn resolve_transport_cluster_manager_node_id_by_name(
     node_name: &str,
     transport_identity: &DevTransportIdentity,
 ) -> Option<String> {
     if transport_identity.node_name == node_name
-        && transport_identity
-            .roles
-            .iter()
-            .any(|role| role == "cluster_manager" || role == "master")
+        && transport_roles_include_cluster_manager(&transport_identity.roles)
     {
         return Some(transport_identity.node_id.clone());
     }
@@ -10182,11 +10324,7 @@ fn resolve_transport_cluster_manager_node_id_by_name(
         .iter()
         .find(|peer| {
             peer.discovery_node.name == node_name
-                && peer
-                    .discovery_node
-                    .roles
-                    .iter()
-                    .any(|role| role == "cluster_manager" || role == "master")
+                && transport_roles_include_cluster_manager(&peer.discovery_node.roles)
         })
         .map(|peer| peer.discovery_node.id.clone())
 }
@@ -17462,7 +17600,21 @@ mod tests {
             attributes: Vec::new(),
             roles: vec!["cluster_manager".to_string(), "data".to_string()],
             seed_peer_identity: None,
-            seed_peer_identities: Vec::new(),
+            seed_peer_identities: vec![InteropSeedPeerIdentityManifest {
+                peer_identity_present: true,
+                cluster_name: "steelsearch-dev".to_string(),
+                discovery_node: InteropSeedPeerIdentityNode {
+                    name: "peer-manager".to_string(),
+                    id: "peer-manager-id".to_string(),
+                    ephemeral_id: "peer-manager-ephemeral".to_string(),
+                    host_name: "peer-host".to_string(),
+                    host_address: "127.0.0.2".to_string(),
+                    http_address: None,
+                    transport_address: "127.0.0.2:9300".to_string(),
+                    version_id: OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+                    roles: vec!["cluster_manager".to_string(), "data".to_string()],
+                },
+            }],
             coordination_state: Arc::new(Mutex::new(DevTransportCoordinationState::default())),
             remote_transport_queue_gate: Arc::new(RemoteTransportQueueGate::new(1, 1000)),
             task_queue_state: None,
@@ -17548,6 +17700,42 @@ mod tests {
         assert!(coordination_state
             .voting_config_exclusions
             .contains("missing-node-id"));
+        drop(coordination_state);
+
+        let description_request = os_transport::action::AddVotingConfigExclusionsRequestWire {
+            node_names: Vec::new(),
+            node_descriptions: vec!["_cluster_manager".to_string()],
+            ..os_transport::action::AddVotingConfigExclusionsRequestWire::default()
+        };
+        let description_frame =
+            os_transport::action::build_add_voting_config_exclusions_request_message(
+                197,
+                OPENSEARCH_3_7_0_TRANSPORT,
+                &description_request,
+            )
+            .unwrap();
+        assert!(
+            add_voting_config_exclusions_request_supports_local_execution_subset(
+                &description_frame[6..],
+                &transport_identity
+            )
+        );
+        let _ = build_local_add_voting_config_exclusions_response(
+            197,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &description_frame[6..],
+            &transport_identity,
+        );
+        let coordination_state = transport_identity
+            .coordination_state
+            .lock()
+            .expect("coordination state lock poisoned");
+        assert!(coordination_state
+            .voting_config_exclusions
+            .contains("steel-node-id"));
+        assert!(coordination_state
+            .voting_config_exclusions
+            .contains("peer-manager-id"));
     }
 
     #[test]
@@ -17577,7 +17765,7 @@ mod tests {
             },
             os_transport::action::AddVotingConfigExclusionsRequestWire {
                 node_names: Vec::new(),
-                node_descriptions: vec!["steel-node".to_string()],
+                node_descriptions: vec!["missing-cluster-manager".to_string()],
                 ..os_transport::action::AddVotingConfigExclusionsRequestWire::default()
             },
             os_transport::action::AddVotingConfigExclusionsRequestWire {

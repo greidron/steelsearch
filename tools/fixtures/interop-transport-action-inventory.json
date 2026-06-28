@@ -505,7 +505,7 @@
       "request_wire_type": "AddVotingConfigExclusionsRequest",
       "response_wire_type": "AddVotingConfigExclusionsResponse",
       "disposition": "implemented",
-      "reason": "Add-voting-config-exclusions transport adapter mutates local coordination exclusions for the node_names and node_ids subset."
+      "reason": "Add-voting-config-exclusions transport adapter mutates local coordination exclusions for the node_names, node_ids, and node_descriptions subset."
     },
     {
       "action_name": "cluster:admin/voting_config/clear_exclusions",
