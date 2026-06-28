@@ -263,17 +263,20 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `cluster:admin/snapshot/restore` (rejected fail-closed)
 - `cluster:admin/snapshot/status` (rejected fail-closed)
 - `cluster:admin/routing/awareness/weights/put` (rejected fail-closed)
-- `cluster:admin/routing/awareness/weights/get` (rejected fail-closed)
+- `cluster:admin/routing/awareness/weights/get` (implemented manifest-backed
+  weighted-routing metadata subset)
 - `cluster:admin/routing/awareness/weights/delete` (rejected fail-closed)
 - `indices:admin/mappings/get` (implemented manifest-backed empty-mapping metadata subset)
 - `indices:admin/mappings/fields/get` (implemented manifest-backed empty field-mapping subset)
 - `indices:admin/get` (rejected fail-closed)
 - `indices:admin/exists` (rejected fail-closed)
-- `indices:admin/template/get` (rejected fail-closed)
+- `indices:admin/template/get` (implemented default all-template legacy metadata subset)
 - `indices:admin/template/delete` (rejected fail-closed)
-- `cluster:admin/component_template/get` (rejected fail-closed)
+- `cluster:admin/component_template/get` (implemented manifest-backed
+  settings-only component-template subset)
 - `cluster:admin/component_template/delete` (rejected fail-closed)
-- `indices:admin/index_template/get` (rejected fail-closed)
+- `indices:admin/index_template/get` (implemented manifest-backed
+  settings-only composable-template subset)
 - `indices:admin/index_template/delete` (rejected fail-closed)
 - `indices:admin/aliases/get` (implemented empty alias metadata subset)
 - `indices:monitor/settings/get` (implemented metadata-backed index-settings subset)
@@ -1136,13 +1139,12 @@ The get-weighted-routing boundary covers:
 - OpenSearch 3.7 `ClusterGetWeightedRoutingRequest` parent task,
   cluster-manager timeout, `local` read flag, and awareness attribute name at
   the wire decode/build layer;
-- explicit fail-closed classification for
-  `cluster:admin/routing/awareness/weights/get` until weighted routing
-  metadata lookup, awareness attribute verification, discovered
-  cluster-manager flag handling, version rendering, and response rendering are
-  implemented;
-- explicit rejection for custom cluster-manager timeout, local reads, missing
-  awareness attribute names, and get-weighted-routing execution.
+- manifest-backed transport execution for
+  `cluster:admin/routing/awareness/weights/get`, rendering the stored weighted
+  routing metadata, version, and discovered-cluster-manager flag in the
+  OpenSearch response shape;
+- explicit rejection for unsupported timeout/local-read shapes and missing
+  awareness attribute names.
 
 The delete-weighted-routing boundary covers:
 
@@ -1532,11 +1534,11 @@ The get-index-templates boundary covers:
 
 - OpenSearch `GetIndexTemplatesRequest` parent task, cluster-manager timeout,
   local flag, and names array at the wire decode/build layer;
-- explicit fail-closed classification for `indices:admin/template/get` until
-  legacy index-template metadata can be rendered from Rust cluster metadata with
-  OpenSearch-compatible name and wildcard matching semantics;
-- explicit rejection for custom cluster-manager timeouts, local reads, blank
-  template names, name filters, and get-index-templates execution.
+- implemented default all-template execution for `indices:admin/template/get`
+  against Rust legacy index-template metadata, rendering the OpenSearch
+  response shape for the supported metadata subset;
+- explicit rejection for unsupported timeout/local-read shapes, blank template
+  names, and unsupported name filters.
 
 The put-index-template boundary covers:
 
@@ -1583,12 +1585,12 @@ The get-component-template boundary covers:
 - OpenSearch `GetComponentTemplateAction.Request` parent task,
   cluster-manager timeout, local flag, and optional component-template name at
   the wire decode/build layer;
-- explicit fail-closed classification for
-  `cluster:admin/component_template/get` until component-template metadata can
-  be rendered from Rust cluster metadata with OpenSearch-compatible exact and
-  wildcard matching semantics;
-- explicit rejection for custom cluster-manager timeouts, local reads, name
-  filters, and get-component-template execution.
+- manifest-backed transport execution for
+  `cluster:admin/component_template/get`, rendering settings-only component
+  template metadata from Rust cluster metadata in the OpenSearch response
+  shape;
+- explicit rejection for unsupported timeout/local-read shapes and unsupported
+  name filters.
 
 The delete-component-template boundary covers:
 
@@ -1625,11 +1627,11 @@ The get-composable-index-template boundary covers:
 - OpenSearch `GetComposableIndexTemplateAction.Request` parent task,
   cluster-manager timeout, local flag, and optional composable index-template
   name at the wire decode/build layer;
-- explicit fail-closed classification for `indices:admin/index_template/get`
-  until composable index-template metadata can be rendered from Rust cluster
-  metadata with OpenSearch-compatible exact and wildcard matching semantics;
-- explicit rejection for custom cluster-manager timeouts, local reads, name
-  filters, and get-composable-index-template execution.
+- manifest-backed transport execution for `indices:admin/index_template/get`,
+  rendering settings-only composable index-template metadata from Rust cluster
+  metadata in the OpenSearch response shape;
+- explicit rejection for unsupported timeout/local-read shapes and unsupported
+  name filters.
 
 The delete-composable-index-template boundary covers:
 
