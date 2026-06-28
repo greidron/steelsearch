@@ -7407,7 +7407,7 @@ fn transport_search_pit_context_exists_for_request(
     else {
         return true;
     };
-    if !request.indices.is_empty() {
+    if !transport_search_pit_request_indices_match_actual(request, &pit.id) {
         return false;
     }
     let mut contexts = dev_transport_pit_bindings()
@@ -7416,6 +7416,24 @@ fn transport_search_pit_context_exists_for_request(
         .expect("dev transport PIT contexts lock poisoned");
     prune_expired_transport_pits(&mut contexts, now_epoch_ms());
     remove_transport_pit_if_indices_missing(&mut contexts, &pit.id).is_some()
+}
+
+fn transport_search_pit_request_indices_match_actual(
+    request: &os_transport::action::OpenSearchSearchRequestWire,
+    pit_id: &str,
+) -> bool {
+    if request.indices.is_empty() {
+        return true;
+    }
+    let Some(mut actual_indices) = transport_pit_indices_from_id(pit_id) else {
+        return false;
+    };
+    let mut request_indices = request.indices.clone();
+    actual_indices.sort();
+    actual_indices.dedup();
+    request_indices.sort();
+    request_indices.dedup();
+    request_indices == actual_indices
 }
 
 fn remove_transport_pit_if_indices_missing(
@@ -18658,7 +18676,23 @@ mod tests {
             .expect("dev transport created indices lock poisoned")
             .insert("logs-search-pit-transport".to_string());
 
-        let pit_id = build_local_pit_id(700);
+        let pit_id = os_transport::action::OpenSearchSearchContextIdWire::new(BTreeMap::from([(
+            os_transport::action::OpenSearchShardIdWire {
+                index_name: "logs-search-pit-transport".to_string(),
+                index_uuid: "uuid-search-pit-transport".to_string(),
+                shard_id: 0,
+            },
+            os_transport::action::OpenSearchSearchContextIdForNodeWire {
+                node: "steel-node-id".to_string(),
+                cluster_alias: None,
+                search_context_id: os_transport::action::OpenSearchShardSearchContextIdWire::new(
+                    "search-pit-session",
+                    700,
+                ),
+            },
+        )]))
+        .encode(OPENSEARCH_3_7_0_TRANSPORT)
+        .unwrap();
         let before_doc: Arc<StoredDocument> = StoredDocument {
             source: serde_json::json!({ "status": "before-pit" }),
             version: 1,
@@ -18728,7 +18762,7 @@ mod tests {
             &indexed_request,
         )
         .unwrap();
-        assert!(!search_request_supports_local_execution_subset(
+        assert!(search_request_supports_local_execution_subset(
             &indexed_frame[6..]
         ));
         let mismatched_indices_request = os_transport::action::OpenSearchSearchRequestWire {
@@ -22028,8 +22062,8 @@ mod tests {
         )
         .unwrap();
         assert!(
-            !search_request_supports_local_execution_subset(&indexed_search_frame[6..]),
-            "PIT transport searches must not accept explicit request indices"
+            search_request_supports_local_execution_subset(&indexed_search_frame[6..]),
+            "PIT transport searches should accept REST-prepared actual indices"
         );
         let search_frame = os_transport::action::build_opensearch_search_request_message(
             297,
@@ -22053,7 +22087,7 @@ mod tests {
             .unwrap();
         assert!(
             !search_request_supports_local_execution_subset(&indexed_pit_search_frame[6..]),
-            "PIT transport searches must not accept explicit request indices"
+            "PIT transport searches must reject indices outside the PIT context"
         );
         let search_response = build_local_search_response(
             297,

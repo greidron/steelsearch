@@ -25552,14 +25552,7 @@ impl OpenSearchSearchRequestWire {
                 reason: "dfs_query_then_fetch search requires distributed term-stat mapping",
             });
         }
-        if !self.indices.is_empty() && has_point_in_time {
-            return Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "search request point in time indices",
-                reason:
-                    "OpenSearch SearchRequest rejects explicit indices when point-in-time is used",
-            });
-        }
-        if !self.indices.is_empty() {
+        if !self.indices.is_empty() && !has_point_in_time {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "search request index filter",
                 reason: "index-scoped search requires OpenSearch index resolution semantics",
@@ -71493,13 +71486,9 @@ mod tests {
             ccs_minimize_roundtrips: false,
             ..OpenSearchSearchRequestWire::default()
         };
-        assert!(matches!(
-            indexed_pit_search.validate_supported_execution_subset(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "search request point in time indices",
-                ..
-            })
-        ));
+        indexed_pit_search
+            .validate_supported_execution_subset()
+            .unwrap();
 
         let routed_pit_search = OpenSearchSearchRequestWire {
             routing: Some("tenant-a".to_string()),
@@ -71863,13 +71852,9 @@ mod tests {
             }],
             ..OpenSearchMultiSearchRequestWire::default()
         };
-        assert!(matches!(
-            indexed_pit_request.validate_supported_execution_subset(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "search request point in time indices",
-                ..
-            })
-        ));
+        indexed_pit_request
+            .validate_supported_execution_subset()
+            .unwrap();
     }
 
     #[test]
