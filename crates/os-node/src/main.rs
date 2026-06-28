@@ -5143,6 +5143,15 @@ fn build_local_create_pit_response_for_node(
             Version::from_id(header_version_id as i32),
         )
         .unwrap_or_else(|| build_local_pit_id(*next_id));
+        let expires_at_millis = transport_pit_expires_at_millis(now_millis, keep_alive_millis_u64);
+        register_reader_contexts_for_created_transport_pit(
+            bindings,
+            &pit_id,
+            &documents,
+            expires_at_millis,
+            now_millis,
+            now_millis,
+        );
         bindings
             .contexts
             .lock()
@@ -5153,10 +5162,7 @@ fn build_local_create_pit_response_for_node(
                     indices: resolved_indices,
                     documents,
                     keep_alive_millis: keep_alive_millis_u64,
-                    expires_at_millis: transport_pit_expires_at_millis(
-                        now_millis,
-                        keep_alive_millis_u64,
-                    ),
+                    expires_at_millis,
                     creation_time_millis: now_millis,
                 },
             );
@@ -5305,6 +5311,37 @@ fn build_transport_search_context_pit_id(
     os_transport::action::OpenSearchSearchContextIdWire::new(shards)
         .encode(version)
         .ok()
+}
+
+fn register_reader_contexts_for_created_transport_pit(
+    bindings: &DevTransportPitBindings,
+    pit_id: &str,
+    documents: &Arc<DocumentMap>,
+    expires_at_millis: u128,
+    creation_time_millis: u128,
+    now_millis: u128,
+) {
+    let Ok(search_context_id) = os_transport::action::OpenSearchSearchContextIdWire::decode(pit_id)
+    else {
+        return;
+    };
+    let mut reader_contexts = bindings
+        .reader_contexts
+        .lock()
+        .expect("dev transport reader contexts lock poisoned");
+    prune_expired_transport_reader_contexts(&mut reader_contexts, now_millis);
+    for (shard_id, context) in search_context_id.shards {
+        reader_contexts.insert(
+            reader_context_key(&context.search_context_id),
+            DevTransportReaderContext {
+                shard_id,
+                documents: Arc::clone(documents),
+                expires_at_millis,
+                pit_id: Some(pit_id.to_string()),
+                creation_time_millis: Some(creation_time_millis),
+            },
+        );
+    }
 }
 
 fn transport_pit_index_catalog(
@@ -20410,6 +20447,27 @@ mod tests {
             .lock()
             .expect("dev transport PIT contexts lock poisoned")
             .contains_key(&pit_id));
+        let decoded_reader_context_keys = decoded_pit_id
+            .shards
+            .values()
+            .map(|context| reader_context_key(&context.search_context_id))
+            .collect::<BTreeSet<_>>();
+        {
+            let reader_contexts = dev_transport_pit_bindings()
+                .reader_contexts
+                .lock()
+                .expect("dev transport reader contexts lock poisoned");
+            assert_eq!(reader_contexts.len(), 2);
+            assert!(decoded_reader_context_keys
+                .iter()
+                .all(|key| reader_contexts.contains_key(key)));
+            assert!(reader_contexts
+                .values()
+                .all(|context| context.pit_id.as_deref() == Some(pit_id.as_str())));
+            assert!(reader_contexts.values().all(|context| {
+                context.creation_time_millis == Some(create_response.creation_time_millis as u128)
+            }));
+        }
         dev_transport_pit_bindings()
             .documents
             .lock()
@@ -20552,6 +20610,11 @@ mod tests {
             .lock()
             .expect("dev transport PIT contexts lock poisoned")
             .is_empty());
+        assert!(dev_transport_pit_bindings()
+            .reader_contexts
+            .lock()
+            .expect("dev transport reader contexts lock poisoned")
+            .is_empty());
 
         dev_transport_pit_bindings()
             .created_indices
@@ -20692,6 +20755,28 @@ mod tests {
         assert_eq!(decoded_routed_pit_id.shards.len(), 3);
         assert_ne!(routed_pit_id, pit_id);
         assert_eq!(routed_create_response.total_shards, 3);
+        let decoded_routed_reader_context_keys = decoded_routed_pit_id
+            .shards
+            .values()
+            .map(|context| reader_context_key(&context.search_context_id))
+            .collect::<BTreeSet<_>>();
+        {
+            let reader_contexts = dev_transport_pit_bindings()
+                .reader_contexts
+                .lock()
+                .expect("dev transport reader contexts lock poisoned");
+            assert_eq!(reader_contexts.len(), 3);
+            assert!(decoded_routed_reader_context_keys
+                .iter()
+                .all(|key| reader_contexts.contains_key(key)));
+            assert!(reader_contexts
+                .values()
+                .all(|context| context.pit_id.as_deref() == Some(routed_pit_id.as_str())));
+            assert!(reader_contexts.values().all(|context| {
+                context.creation_time_millis
+                    == Some(routed_create_response.creation_time_millis as u128)
+            }));
+        }
         let routed_pit_context = dev_transport_pit_bindings()
             .contexts
             .lock()
