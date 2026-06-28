@@ -235,7 +235,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `internal:monitor/term` (implemented current term/version subset)
 - `cluster:monitor/state`
 - `cluster:monitor/health`
-- `cluster:monitor/stats` (rejected fail-closed)
+- `cluster:monitor/stats` (implemented local empty-cluster-stats subset)
 - `cluster:monitor/shards` (rejected fail-closed)
 - `cluster:monitor/nodes/info` (implemented local node-info subset)
 - `cluster:monitor/nodes/stats` (implemented local empty-node-stats subset)
@@ -401,11 +401,12 @@ The cluster-stats boundary covers:
 - OpenSearch `ClusterStatsRequest` parent task, node ids, optional timeout,
   aggregated-node-level response flag, compute-all-metrics flag, metric bitset,
   and index metric bitset at the wire decode/build layer;
-- explicit fail-closed classification for `cluster:monitor/stats` until runtime
-  stats aggregation and field-level metric mapping are implemented;
+- implemented local empty `ClusterStatsResponse` rendering for the default
+  all-metrics request subset, including cluster name, timestamp, optional
+  health status, optional cluster UUID, and absent mapping/analysis stats;
 - explicit rejection for concrete node payloads, node filters, timeout,
-  aggregated-node response mode, partial metric selection, metric bitsets, and
-  cluster-stats execution.
+  aggregated-node response mode, partial metric selection, metric bitsets,
+  non-empty node responses, mapping stats, and analysis stats.
 
 The cat-shards boundary covers:
 
@@ -2767,18 +2768,18 @@ cluster term/version lookup and response rendering.
 Current cluster-stats reject wire microbenchmark:
 
 ```text
-cargo run -p os-transport --release --bin cluster-stats-reject-wire-benchmark
-cluster_stats_reject_request_encode ops_per_second=1758185.25 nanos_per_op=568.77
-cluster_stats_reject_request_decode ops_per_second=1903296.67 nanos_per_op=525.40
-cluster_stats_reject_validation ops_per_second=1843125.57 nanos_per_op=542.56
-cluster_stats_reject_wire_bottleneck_ops_per_second=1758185.25
+cargo run -p os-transport --release --bin cluster-stats-wire-benchmark
+cluster_stats_request_encode iterations=400000 elapsed_ms=211.804 ops_per_second=1888536.95 nanos_per_op=529.51
+cluster_stats_request_decode iterations=400000 elapsed_ms=189.648 ops_per_second=2109167.14 nanos_per_op=474.12
+cluster_stats_request_validate iterations=400000 elapsed_ms=190.353 ops_per_second=2101358.55 nanos_per_op=475.88
+cluster_stats_response_decode iterations=400000 elapsed_ms=222.091 ops_per_second=1801066.89 nanos_per_op=555.23
+cluster_stats_wire_bottleneck_ops_per_second=1801066.89
 ```
 
-The current cluster-stats fail-closed boundary bottleneck is request encode.
-The validation path adds only a small unsupported-shape check on top of decode,
-so the rejection boundary itself is not a new performance bottleneck. At roughly
-1.76M ops/s in the latest local release run, this path is in the same range as
-the lightweight admin transport adapters.
+The current cluster-stats implemented-path wire bottleneck is response decode.
+At roughly 1.80M ops/s in the latest local release run, the wire adapter is not
+the first expected bottleneck; full node stats aggregation remains a separate
+mapping and fanout task.
 
 Current cat-shards reject wire microbenchmark:
 

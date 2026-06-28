@@ -1708,8 +1708,8 @@ pub fn classify_opensearch_transport_action(
         },
         CLUSTER_STATS_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
-            disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "cluster-stats transport execution requires runtime stats aggregation mapping",
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "cluster-stats transport adapter renders local empty ClusterStatsResponse wire for the default all-metrics subset",
         },
         CAT_SHARDS_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -3118,7 +3118,7 @@ impl ClusterStatsRequestWire {
         Ok(request)
     }
 
-    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+    pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
         if !self.node_ids.is_empty() {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "cluster stats node filter",
@@ -3151,10 +3151,158 @@ impl ClusterStatsRequestWire {
                     "cluster-stats metric bitsets require field-level runtime aggregation mapping",
             });
         }
+        Ok(())
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        self.validate_supported_subset()?;
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "cluster stats execution",
-            reason: "cluster-stats transport execution requires runtime stats aggregation mapping",
+            reason: "use validate_supported_subset for the implemented local empty cluster-stats adapter",
         })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ClusterStatsResponseWire {
+    pub cluster_name: String,
+    pub nodes: Vec<ClusterStatsNodeWire>,
+    pub failures: Vec<FailedNodeExceptionWire>,
+    pub timestamp_millis: i64,
+    pub status: Option<u8>,
+    pub cluster_uuid: Option<String>,
+    pub mapping_stats_present: bool,
+    pub analysis_stats_present: bool,
+}
+
+impl ClusterStatsResponseWire {
+    pub fn empty_local(cluster_name: String, timestamp_millis: i64, cluster_uuid: String) -> Self {
+        Self {
+            cluster_name,
+            nodes: Vec::new(),
+            failures: Vec::new(),
+            timestamp_millis,
+            status: Some(OPENSEARCH_CLUSTER_HEALTH_STATUS_GREEN),
+            cluster_uuid: Some(cluster_uuid),
+            mapping_stats_present: false,
+            analysis_stats_present: false,
+        }
+    }
+
+    pub fn write(&self, output: &mut StreamOutput) -> Result<(), TransportActionWireError> {
+        self.validate_supported_subset()?;
+        output.write_string(&self.cluster_name);
+        output.write_vint(self.nodes.len() as i32);
+        for node in &self.nodes {
+            node.write(output)?;
+        }
+        output.write_vint(self.failures.len() as i32);
+        for failure in &self.failures {
+            failure.write(output)?;
+        }
+        output.write_vlong(self.timestamp_millis);
+        write_optional_cluster_health_status(output, self.status);
+        output.write_optional_string(self.cluster_uuid.as_deref());
+        write_optional_cluster_stats_mapping_stats(output, self.mapping_stats_present);
+        write_optional_cluster_stats_analysis_stats(output, self.analysis_stats_present);
+        Ok(())
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let cluster_name = input.read_string()?;
+        let node_count = read_len(&mut input)?;
+        let mut nodes = Vec::with_capacity(node_count);
+        for _ in 0..node_count {
+            nodes.push(ClusterStatsNodeWire::read(&mut input)?);
+        }
+        let failure_count = read_len(&mut input)?;
+        let mut failures = Vec::with_capacity(failure_count);
+        for _ in 0..failure_count {
+            failures.push(FailedNodeExceptionWire::read(&mut input)?);
+        }
+        let response = Self {
+            cluster_name,
+            nodes,
+            failures,
+            timestamp_millis: input.read_vlong()?,
+            status: read_optional_cluster_health_status(&mut input)?,
+            cluster_uuid: input.read_optional_string()?,
+            mapping_stats_present: read_optional_cluster_stats_mapping_stats(&mut input)?,
+            analysis_stats_present: read_optional_cluster_stats_analysis_stats(&mut input)?,
+        };
+        require_no_trailing_bytes(&input)?;
+        response.validate_supported_subset()?;
+        Ok(response)
+    }
+
+    pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
+        if self.cluster_name.is_empty() {
+            return Err(TransportActionWireError::MissingRequiredField {
+                field: "cluster stats response cluster name",
+            });
+        }
+        if self.timestamp_millis < 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cluster stats timestamp",
+                reason: "cluster-stats timestamp must be non-negative epoch millis",
+            });
+        }
+        if let Some(status) = self.status {
+            validate_cluster_health_status(status)?;
+        }
+        if self.mapping_stats_present {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cluster stats mapping stats",
+                reason: "cluster-stats mapping stats require cluster metadata aggregation mapping",
+            });
+        }
+        if self.analysis_stats_present {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cluster stats analysis stats",
+                reason: "cluster-stats analysis stats require cluster metadata aggregation mapping",
+            });
+        }
+        if !self.nodes.is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cluster stats node responses",
+                reason: "cluster-stats node responses require node info and node stats aggregation mapping",
+            });
+        }
+        for node in &self.nodes {
+            node.validate_supported_subset()?;
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ClusterStatsNodeWire {
+    pub node: OpenSearchDiscoveryNodeWire,
+}
+
+impl ClusterStatsNodeWire {
+    fn write(&self, output: &mut StreamOutput) -> Result<(), TransportActionWireError> {
+        self.validate_supported_subset()?;
+        self.node.write(output);
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "cluster stats node response",
+            reason: "cluster-stats node response payload requires node info and node stats aggregation mapping",
+        })
+    }
+
+    fn read(input: &mut StreamInput) -> Result<Self, TransportActionWireError> {
+        let node = OpenSearchDiscoveryNodeWire::read(input)?;
+        let response = Self { node };
+        response.validate_supported_subset()?;
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "cluster stats node response",
+            reason: "cluster-stats node response payload requires node info and node stats aggregation mapping",
+        })
+    }
+
+    fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
+        self.node.validate_supported_subset()
     }
 }
 
@@ -5064,6 +5212,36 @@ pub fn read_cluster_stats_request_message(
         });
     }
     ClusterStatsRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_cluster_stats_response_message(
+    request_id: i64,
+    version: Version,
+    response: &ClusterStatsResponseWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    response.write(&mut body)?;
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::response(),
+        version,
+        variable_header: BytesMut::from(&ResponseVariableHeader::default().to_bytes()[..]),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_cluster_stats_response_message(
+    message: &TransportMessage,
+) -> Result<ClusterStatsResponseWire, TransportActionWireError> {
+    if !message.status.is_response() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "response",
+            actual: message.status.bits(),
+        });
+    }
+    let _header = ResponseVariableHeader::read(message.variable_header.clone().freeze())?;
+    ClusterStatsResponseWire::read(message.body.clone().freeze())
 }
 
 pub fn build_main_request_message(
@@ -43095,6 +43273,72 @@ fn cluster_health_status_from_str(status: &str) -> Result<u8, TransportActionWir
     }
 }
 
+fn validate_cluster_health_status(status: u8) -> Result<(), TransportActionWireError> {
+    match status {
+        OPENSEARCH_CLUSTER_HEALTH_STATUS_GREEN
+        | OPENSEARCH_CLUSTER_HEALTH_STATUS_YELLOW
+        | OPENSEARCH_CLUSTER_HEALTH_STATUS_RED => Ok(()),
+        _ => Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "cluster health status",
+            reason: "cluster health status is outside the OpenSearch green/yellow/red set",
+        }),
+    }
+}
+
+fn write_optional_cluster_health_status(output: &mut StreamOutput, status: Option<u8>) {
+    if let Some(status) = status {
+        output.write_bool(true);
+        output.write_byte(status);
+    } else {
+        output.write_bool(false);
+    }
+}
+
+fn read_optional_cluster_health_status(
+    input: &mut StreamInput,
+) -> Result<Option<u8>, TransportActionWireError> {
+    if !input.read_bool()? {
+        return Ok(None);
+    }
+    let status = input.read_byte()?;
+    validate_cluster_health_status(status)?;
+    Ok(Some(status))
+}
+
+fn write_optional_cluster_stats_mapping_stats(output: &mut StreamOutput, present: bool) {
+    output.write_bool(present);
+}
+
+fn read_optional_cluster_stats_mapping_stats(
+    input: &mut StreamInput,
+) -> Result<bool, TransportActionWireError> {
+    let present = input.read_bool()?;
+    if present {
+        return Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "cluster stats mapping stats",
+            reason: "cluster-stats mapping stats require cluster metadata aggregation mapping",
+        });
+    }
+    Ok(false)
+}
+
+fn write_optional_cluster_stats_analysis_stats(output: &mut StreamOutput, present: bool) {
+    output.write_bool(present);
+}
+
+fn read_optional_cluster_stats_analysis_stats(
+    input: &mut StreamInput,
+) -> Result<bool, TransportActionWireError> {
+    let present = input.read_bool()?;
+    if present {
+        return Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "cluster stats analysis stats",
+            reason: "cluster-stats analysis stats require cluster metadata aggregation mapping",
+        });
+    }
+    Ok(false)
+}
+
 fn write_parent_task_id(output: &mut StreamOutput, node: &str, id: Option<i64>) {
     output.write_string(node);
     if !node.is_empty() {
@@ -46284,7 +46528,7 @@ mod tests {
         );
         assert_eq!(
             classify_opensearch_transport_action(CLUSTER_STATS_ACTION_NAME).disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             classify_opensearch_transport_action(CAT_SHARDS_ACTION_NAME).disposition,
@@ -49476,20 +49720,14 @@ mod tests {
     }
 
     #[test]
-    fn cluster_stats_request_wire_round_trips_and_rejects_execution_boundary() {
+    fn cluster_stats_request_wire_round_trips_and_validates_supported_subset() {
         let request = ClusterStatsRequestWire::default();
         let mut output = StreamOutput::new();
         request.write(&mut output);
 
         let decoded = ClusterStatsRequestWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, request);
-        assert!(matches!(
-            decoded.reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "cluster stats execution",
-                ..
-            })
-        ));
+        decoded.validate_supported_subset().unwrap();
     }
 
     #[test]
@@ -49573,7 +49811,7 @@ mod tests {
     }
 
     #[test]
-    fn cluster_stats_transport_messages_bind_rejected_action_frame() {
+    fn cluster_stats_transport_messages_bind_action_frame_and_empty_response() {
         let request = ClusterStatsRequestWire::default();
         let mut frame =
             build_cluster_stats_request_message(13, OPENSEARCH_3_7_0_TRANSPORT, &request).unwrap();
@@ -49584,15 +49822,26 @@ mod tests {
             read_cluster_stats_request_message(&message).unwrap(),
             request
         );
-        assert!(matches!(
-            read_cluster_stats_request_message(&message)
-                .unwrap()
-                .reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "cluster stats execution",
-                ..
-            })
-        ));
+        read_cluster_stats_request_message(&message)
+            .unwrap()
+            .validate_supported_subset()
+            .unwrap();
+
+        let response = ClusterStatsResponseWire::empty_local(
+            "steelsearch".to_string(),
+            1_700_000_000_000,
+            "steelsearch-cluster-uuid".to_string(),
+        );
+        let mut frame =
+            build_cluster_stats_response_message(13, OPENSEARCH_3_7_0_TRANSPORT, &response)
+                .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected cluster stats response message");
+        };
+        assert_eq!(
+            read_cluster_stats_response_message(&message).unwrap(),
+            response
+        );
     }
 
     #[test]

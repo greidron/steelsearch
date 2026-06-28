@@ -1,7 +1,8 @@
 use os_core::OPENSEARCH_3_7_0_TRANSPORT;
 use os_transport::action::{
-    build_cluster_stats_request_message, read_cluster_stats_request_message,
-    ClusterStatsRequestWire,
+    build_cluster_stats_request_message, build_cluster_stats_response_message,
+    read_cluster_stats_request_message, read_cluster_stats_response_message,
+    ClusterStatsRequestWire, ClusterStatsResponseWire,
 };
 use os_transport::frame::{decode_frame, DecodedFrame};
 use std::hint::black_box;
@@ -12,7 +13,7 @@ const ITERATIONS: usize = 400_000;
 fn main() {
     let request = ClusterStatsRequestWire::default();
 
-    let request_encode = measure("cluster_stats_reject_request_encode", ITERATIONS, || {
+    let request_encode = measure("cluster_stats_request_encode", ITERATIONS, || {
         let frame = build_cluster_stats_request_message(
             15,
             OPENSEARCH_3_7_0_TRANSPORT,
@@ -26,7 +27,7 @@ fn main() {
         build_cluster_stats_request_message(15, OPENSEARCH_3_7_0_TRANSPORT, &request)
             .expect("cluster stats request encode should succeed");
 
-    let request_decode = measure("cluster_stats_reject_request_decode", ITERATIONS, || {
+    let request_decode = measure("cluster_stats_request_decode", ITERATIONS, || {
         let mut frame = black_box(request_frame.clone());
         let message = decode_message(&mut frame);
         let decoded = read_cluster_stats_request_message(black_box(&message))
@@ -34,22 +35,39 @@ fn main() {
         black_box(decoded);
     });
 
-    let reject_validate = measure("cluster_stats_reject_validation", ITERATIONS, || {
+    let request_validate = measure("cluster_stats_request_validate", ITERATIONS, || {
         let mut frame = black_box(request_frame.clone());
         let message = decode_message(&mut frame);
         let decoded = read_cluster_stats_request_message(black_box(&message))
             .expect("cluster stats request decode");
-        let err = decoded
-            .reject_unsupported_execution()
-            .expect_err("cluster stats execution should reject");
-        black_box(err);
+        decoded
+            .validate_supported_subset()
+            .expect("cluster stats default subset should validate");
+        black_box(decoded);
+    });
+
+    let response = ClusterStatsResponseWire::empty_local(
+        "steelsearch".to_string(),
+        1_700_000_000_000,
+        "steelsearch-cluster-uuid".to_string(),
+    );
+    let response_frame =
+        build_cluster_stats_response_message(15, OPENSEARCH_3_7_0_TRANSPORT, &response)
+            .expect("cluster stats response encode should succeed");
+    let response_decode = measure("cluster_stats_response_decode", ITERATIONS, || {
+        let mut frame = black_box(response_frame.clone());
+        let message = decode_message(&mut frame);
+        let decoded = read_cluster_stats_response_message(black_box(&message))
+            .expect("cluster stats response decode");
+        black_box(decoded);
     });
 
     let combined_ops_per_second = request_encode
         .ops_per_second
         .min(request_decode.ops_per_second)
-        .min(reject_validate.ops_per_second);
-    println!("cluster_stats_reject_wire_bottleneck_ops_per_second={combined_ops_per_second:.2}");
+        .min(request_validate.ops_per_second)
+        .min(response_decode.ops_per_second);
+    println!("cluster_stats_wire_bottleneck_ops_per_second={combined_ops_per_second:.2}");
 }
 
 #[derive(Clone, Copy)]

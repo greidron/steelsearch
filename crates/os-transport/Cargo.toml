@@ -44,7 +44,7 @@ name = "get-term-version-reject-wire-benchmark"
 path = "benchmarks/get_term_version_reject_wire.rs"
 
 [[bin]]
-name = "cluster-stats-reject-wire-benchmark"
+name = "cluster-stats-wire-benchmark"
 path = "benchmarks/cluster_stats_reject_wire.rs"
 
 [[bin]]

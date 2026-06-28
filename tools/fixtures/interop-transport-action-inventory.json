@@ -54,8 +54,8 @@
       "transport_action": "TransportClusterStatsAction",
       "request_wire_type": "ClusterStatsRequest",
       "response_wire_type": "ClusterStatsResponse",
-      "disposition": "rejected",
-      "reason": "Cluster-stats transport execution requires runtime stats aggregation mapping before Steelsearch can serve OpenSearch cluster-stats semantics."
+      "disposition": "implemented",
+      "reason": "Cluster-stats transport adapter renders a local empty ClusterStatsResponse for the default all-metrics subset."
     },
     {
       "action_name": "cluster:monitor/shards",
