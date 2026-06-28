@@ -1938,6 +1938,32 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end_at_ms,
         )?;
     } else if is_request
+        && normalized_action_hint == Some("indices:admin/mapping/auto_put")
+        && auto_put_mapping_request_supports_manifest_subset(&body)
+    {
+        let response = build_auto_put_mapping_response(request_id, header_version_id, &body);
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("indices:admin/mapping/auto_put"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request
         && normalized_action_hint == Some("indices:admin/get")
         && get_index_request_supports_local_execution_subset(&body)
     {
@@ -7602,6 +7628,63 @@ fn put_mapping_request_supports_manifest_subset(body: &[u8]) -> bool {
         .unwrap_or(false)
 }
 
+fn build_auto_put_mapping_response(
+    request_id: i64,
+    header_version_id: u32,
+    body: &[u8],
+) -> Vec<u8> {
+    let Some(request) = decode_auto_put_mapping_request_from_transport_body(body) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    if request.validate_supported_auto_subset().is_err() {
+        return build_empty_transport_response(request_id, header_version_id);
+    }
+    let Some(mapping_update) = parse_transport_mapping_update_subset(&request.source) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    let mut manifest = dev_transport_pit_bindings()
+        .metadata_manifest
+        .lock()
+        .expect("dev transport metadata manifest lock poisoned");
+    let Some(targets) = transport_auto_put_mapping_targets(&manifest, &request) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    if !apply_transport_put_mapping_to_manifest(&mut manifest, &targets, &mapping_update) {
+        return build_empty_transport_response(request_id, header_version_id);
+    }
+    drop(manifest);
+    os_transport::action::build_opensearch_put_mapping_response_message(
+        request_id,
+        Version::from_id(header_version_id as i32),
+        &os_transport::action::AcknowledgedResponseWire { acknowledged: true },
+    )
+    .map(|frame| frame.to_vec())
+    .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
+}
+
+fn auto_put_mapping_request_supports_manifest_subset(body: &[u8]) -> bool {
+    decode_auto_put_mapping_request_from_transport_body(body)
+        .filter(|request| request.validate_supported_auto_subset().is_ok())
+        .and_then(|request| {
+            parse_transport_mapping_update_subset(&request.source).map(|mapping_update| {
+                let manifest = dev_transport_pit_bindings()
+                    .metadata_manifest
+                    .lock()
+                    .expect("dev transport metadata manifest lock poisoned");
+                transport_auto_put_mapping_targets(&manifest, &request)
+                    .filter(|targets| !targets.is_empty())
+                    .is_some_and(|targets| {
+                        transport_put_mapping_update_is_compatible(
+                            &manifest,
+                            &targets,
+                            &mapping_update,
+                        )
+                    })
+            })
+        })
+        .unwrap_or(false)
+}
+
 fn decode_put_mapping_request_from_transport_body(
     body: &[u8],
 ) -> Option<os_transport::action::OpenSearchPutMappingRequestWire> {
@@ -7609,11 +7692,29 @@ fn decode_put_mapping_request_from_transport_body(
     os_transport::action::read_opensearch_put_mapping_request_message(&message).ok()
 }
 
+fn decode_auto_put_mapping_request_from_transport_body(
+    body: &[u8],
+) -> Option<os_transport::action::OpenSearchPutMappingRequestWire> {
+    let message = decode_transport_message_from_body(body)?;
+    os_transport::action::read_opensearch_auto_put_mapping_request_message(&message).ok()
+}
+
 fn parse_transport_mapping_update_subset(source: &str) -> Option<Value> {
     let parsed = serde_json::from_str::<Value>(source).ok()?;
     let subset = os_node::mapping_route_registration::build_mapping_update_body_subset(&parsed);
     subset.as_object().filter(|object| !object.is_empty())?;
     Some(subset)
+}
+
+fn transport_auto_put_mapping_targets(
+    metadata_manifest: &Value,
+    request: &os_transport::action::OpenSearchPutMappingRequestWire,
+) -> Option<Vec<String>> {
+    let index = request.concrete_index.as_ref()?.name.as_str();
+    metadata_manifest["indices"]
+        .as_object()?
+        .contains_key(index)
+        .then(|| vec![index.to_string()])
 }
 
 fn transport_put_mapping_targets(
@@ -17126,6 +17227,15 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
                 body,
             ))
         }
+        Some("indices:admin/mapping/auto_put")
+            if auto_put_mapping_request_supports_manifest_subset(body) =>
+        {
+            Some(build_auto_put_mapping_response(
+                request_id,
+                header_version_id,
+                body,
+            ))
+        }
         Some("indices:admin/get") if get_index_request_supports_local_execution_subset(body) => {
             Some(build_get_index_response(
                 request_id,
@@ -22628,6 +22738,88 @@ mod tests {
             manifest["indices"]["logs-mapping-000001"]["mappings"]["_meta"]
                 .get("owner")
                 .is_none()
+        );
+    }
+
+    #[test]
+    fn auto_put_mapping_transport_route_updates_concrete_manifest_index_mappings() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        *dev_transport_pit_bindings()
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned") = serde_json::json!({
+            "indices": {
+                "logs-auto-mapping-000001": {
+                    "settings": {},
+                    "mappings": {
+                        "properties": {
+                            "message": {
+                                "type": "text"
+                            }
+                        }
+                    },
+                    "aliases": {}
+                }
+            }
+        });
+
+        let request = os_transport::action::OpenSearchPutMappingRequestWire {
+            source: serde_json::json!({
+                "properties": {
+                    "dynamic_level": {
+                        "type": "keyword"
+                    }
+                }
+            })
+            .to_string(),
+            concrete_index: Some(os_transport::action::OpenSearchIndexIdentityWire {
+                name: "logs-auto-mapping-000001".to_string(),
+                uuid: "auto-uuid-1".to_string(),
+            }),
+            ..os_transport::action::OpenSearchPutMappingRequestWire::auto_put_default()
+        };
+        let frame = os_transport::action::build_opensearch_auto_put_mapping_request_message(
+            87,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(auto_put_mapping_request_supports_manifest_subset(
+            &frame[6..]
+        ));
+
+        let response = build_auto_put_mapping_response(
+            87,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &frame[6..],
+        );
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected auto put mapping response message");
+        };
+        let response =
+            os_transport::action::read_opensearch_put_mapping_response_message(&message).unwrap();
+        assert!(response.acknowledged);
+
+        let manifest = dev_transport_pit_bindings()
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned");
+        assert_eq!(
+            manifest["indices"]["logs-auto-mapping-000001"]["mappings"]["properties"]["message"]
+                ["type"],
+            "text"
+        );
+        assert_eq!(
+            manifest["indices"]["logs-auto-mapping-000001"]["mappings"]["properties"]
+                ["dynamic_level"]["type"],
+            "keyword"
         );
     }
 

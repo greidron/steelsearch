@@ -177,8 +177,8 @@ The source-derived transport inventory currently has 160 rows:
 
 | Status | Count | Meaning |
 | --- | ---: | --- |
-| `implemented` | 92 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
-| `partial` | 68 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
+| `implemented` | 93 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
+| `partial` | 67 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
 | `planned` | 0 | No source-derived transport action remains unclassified. |
 
 The k-NN plugin action sweep is complete at the boundary layer. All 12
@@ -268,6 +268,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `cluster:admin/routing/awareness/weights/delete` (rejected fail-closed)
 - `indices:admin/mappings/get` (implemented manifest-backed empty-mapping metadata subset)
 - `indices:admin/mappings/fields/get` (implemented manifest-backed empty field-mapping subset)
+- `indices:admin/mapping/auto_put` (implemented concrete-index manifest-backed mapping mutation subset)
 - `indices:admin/get` (rejected fail-closed)
 - `indices:admin/exists` (rejected fail-closed)
 - `indices:admin/template/get` (implemented default all-template legacy metadata subset)
@@ -1214,13 +1215,19 @@ The auto-put-mapping boundary covers:
   acknowledgement timeout, absent unresolved indices, default put-mapping
   indices options, mapping source string, required concrete `Index`, optional
   origin, and `writeIndexOnly` at the OpenSearch 3.x wire decode/build layer;
-- explicit fail-closed classification for `indices:admin/mapping/auto_put`
-  until concrete-index mapping validation, metadata mutation, and acknowledged
-  response rendering are implemented;
-- explicit rejection for custom cluster-manager timeouts, custom
+- implemented classification for `indices:admin/mapping/auto_put` when the
+  request uses the default dynamic mapping update timeout, OpenSearch's zero
+  acknowledgement timeout, no unresolved indices, a concrete index that exists
+  in the local manifest, default put-mapping indices options, a supported
+  mapping source, empty origin, and `writeIndexOnly=false`;
+- manifest-backed concrete-index mapping validation and metadata mutation using
+  the same supported mapping merge path as put-mapping, plus OpenSearch
+  acknowledged-response wire rendering;
+- explicit rejection for custom cluster-manager timeouts, non-zero
   acknowledgement timeouts, missing concrete indices, unresolved indices,
-  custom indices options, empty mapping sources, custom origins,
-  write-index-only updates, and auto-put-mapping execution.
+  custom indices options, empty or unsupported mapping sources, custom origins,
+  write-index-only updates, unknown concrete indices, and incompatible field
+  type updates.
 
 The indices-aliases boundary covers:
 
@@ -3919,23 +3926,25 @@ latest local release run, the first runtime performance point to inspect while
 expanding the path is repeated manifest target resolution and mapping-source
 JSON subset extraction for larger multi-index updates.
 
-Current auto-put-mapping reject wire microbenchmark:
+Current auto-put-mapping wire microbenchmark:
 
 ```text
-cargo run -p os-transport --release --bin auto-put-mapping-reject-wire-benchmark
-auto_put_mapping_reject_request_encode iterations=400000 elapsed_ms=412.890 ops_per_second=968781.14 nanos_per_op=1032.22
-auto_put_mapping_reject_request_decode iterations=400000 elapsed_ms=413.480 ops_per_second=967399.79 nanos_per_op=1033.70
-auto_put_mapping_reject_validation iterations=400000 elapsed_ms=436.055 ops_per_second=917314.78 nanos_per_op=1090.14
-auto_put_mapping_reject_wire_bottleneck_ops_per_second=917314.78
+cargo run -q -p os-transport --release --bin auto-put-mapping-wire-benchmark
+auto_put_mapping_request_encode iterations=400000 elapsed_ms=398.314 ops_per_second=1004231.79 nanos_per_op=995.79
+auto_put_mapping_request_decode iterations=400000 elapsed_ms=392.870 ops_per_second=1018149.11 nanos_per_op=982.17
+auto_put_mapping_request_validate iterations=400000 elapsed_ms=401.949 ops_per_second=995151.00 nanos_per_op=1004.87
+auto_put_mapping_response_encode iterations=400000 elapsed_ms=86.630 ops_per_second=4617332.72 nanos_per_op=216.58
+auto_put_mapping_response_decode iterations=400000 elapsed_ms=89.145 ops_per_second=4487057.28 nanos_per_op=222.86
+auto_put_mapping_wire_bottleneck_ops_per_second=995151.00
 ```
 
-The current auto-put-mapping fail-closed boundary bottleneck is validation. The
-path reuses the put-mapping request body but requires a concrete index and
-rejects unresolved index targets before execution. At roughly 0.92M ops/s in
-the latest local release run, the current overhead is still lightweight
-transport shape validation; future performance-sensitive work is
-concrete-index mapping validation, metadata mutation, and acknowledged response
-rendering.
+The current auto-put-mapping transport path bottleneck is request validation.
+The path reuses the put-mapping request body, requires a concrete index,
+validates OpenSearch's zero acknowledgement timeout for automatic mapping
+updates, and then applies the same manifest-backed mapping merge as put-mapping
+before rendering an acknowledged response. At roughly 0.995M ops/s in the latest
+local release run, future performance-sensitive work is the manifest lookup and
+mapping compatibility path for larger dynamic mapping updates.
 
 Current indices-aliases wire microbenchmark:
 

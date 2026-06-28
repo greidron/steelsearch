@@ -2023,8 +2023,8 @@ pub fn classify_opensearch_transport_action(
         },
         OPENSEARCH_AUTO_PUT_MAPPING_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
-            disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "auto-put-mapping transport execution requires concrete-index mapping validation, metadata mutation, and ack rendering",
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "auto-put-mapping transport adapter routes concrete-index mapping updates through the manifest mapping merger and renders acknowledged responses",
         },
         OPENSEARCH_INDICES_ALIASES_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -19593,6 +19593,7 @@ impl Default for OpenSearchPutMappingRequestWire {
 impl OpenSearchPutMappingRequestWire {
     pub fn auto_put_default() -> Self {
         Self {
+            ack_timeout: TimeValueWire::millis(0),
             indices: Vec::new(),
             concrete_index: Some(OpenSearchIndexIdentityWire {
                 name: "logs-000001".to_string(),
@@ -19697,7 +19698,7 @@ impl OpenSearchPutMappingRequestWire {
         })
     }
 
-    pub fn reject_unsupported_auto_execution(&self) -> Result<(), TransportActionWireError> {
+    pub fn validate_supported_auto_subset(&self) -> Result<(), TransportActionWireError> {
         if self.cluster_manager_timeout != TimeValueWire::seconds(30) {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "auto put mapping cluster-manager timeout",
@@ -19705,10 +19706,10 @@ impl OpenSearchPutMappingRequestWire {
                     "custom cluster-manager timeout is not mapped by the auto-put-mapping adapter yet",
             });
         }
-        if self.ack_timeout != TimeValueWire::seconds(30) {
+        if self.ack_timeout != TimeValueWire::millis(0) {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "auto put mapping ack timeout",
-                reason: "custom ack timeout is not mapped by the auto-put-mapping adapter yet",
+                reason: "OpenSearch automatic mapping updates use a zero acknowledgement timeout",
             });
         }
         if self.concrete_index.is_none() {
@@ -19751,9 +19752,14 @@ impl OpenSearchPutMappingRequestWire {
                 reason: "write-index-only auto-put-mapping updates require alias and data-stream write-index resolution",
             });
         }
+        Ok(())
+    }
+
+    pub fn reject_unsupported_auto_execution(&self) -> Result<(), TransportActionWireError> {
+        self.validate_supported_auto_subset()?;
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "auto put mapping execution",
-            reason: "auto-put-mapping transport execution requires concrete-index mapping validation, metadata mutation, and ack rendering",
+            reason: "use validate_supported_auto_subset for the implemented local auto-put-mapping adapter",
         })
     }
 }
@@ -58957,7 +58963,7 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_auto_put_mapping_request_wire_round_trips_and_rejects_execution_boundary() {
+    fn opensearch_auto_put_mapping_request_wire_round_trips_and_validates_subset() {
         let request = OpenSearchPutMappingRequestWire::auto_put_default();
         let mut output = StreamOutput::new();
         request.write(&mut output);
@@ -58971,13 +58977,7 @@ mod tests {
                 .map(|index| index.name.as_str()),
             Some("logs-000001")
         );
-        assert!(matches!(
-            decoded.reject_unsupported_auto_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "auto put mapping execution",
-                ..
-            })
-        ));
+        assert!(decoded.validate_supported_auto_subset().is_ok());
     }
 
     #[test]
@@ -59059,7 +59059,7 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_auto_put_mapping_transport_messages_bind_rejected_action_frame() {
+    fn opensearch_auto_put_mapping_transport_messages_bind_action_and_ack_response_frames() {
         let request = OpenSearchPutMappingRequestWire::auto_put_default();
         let mut frame = build_opensearch_auto_put_mapping_request_message(
             38,
@@ -59074,15 +59074,27 @@ mod tests {
             read_opensearch_auto_put_mapping_request_message(&message).unwrap(),
             request
         );
-        assert!(matches!(
-            read_opensearch_auto_put_mapping_request_message(&message)
-                .unwrap()
-                .reject_unsupported_auto_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "auto put mapping execution",
-                ..
-            })
-        ));
+        assert!(read_opensearch_auto_put_mapping_request_message(&message)
+            .unwrap()
+            .validate_supported_auto_subset()
+            .is_ok());
+
+        let response = AcknowledgedResponseWire { acknowledged: true };
+        let mut response_frame = build_opensearch_put_mapping_response_message(
+            38,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &response,
+        )
+        .unwrap();
+        let DecodedFrame::Message(response_message) =
+            decode_frame(&mut response_frame).unwrap().unwrap()
+        else {
+            panic!("expected auto put mapping response message");
+        };
+        assert_eq!(
+            read_opensearch_put_mapping_response_message(&response_message).unwrap(),
+            response
+        );
     }
 
     #[test]
