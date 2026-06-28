@@ -17301,6 +17301,9 @@ impl SteelNode {
     }
 
     fn handle_knn_stats_route(&self, node_id: Option<&str>, stat: Option<&str>) -> RestResponse {
+        if let Some(response) = Self::validate_knn_stats_request(stat) {
+            return response;
+        }
         let state = self
             .knn_operational_state
             .lock()
@@ -17331,10 +17334,23 @@ impl SteelNode {
             "model_count": state.trained_models.len(),
             "operational_controls": {}
         });
-        let filtered_stats = match stat {
-            Some(stat) => {
-                let value = stats_body.get(stat).cloned().unwrap_or(Value::Null);
-                serde_json::json!({ stat: value })
+        let filtered_stats = match stat.and_then(parse_knn_stats_param) {
+            Some(stats)
+                if stats.len() == 1 && stats.first().is_some_and(|stat| *stat == "_all") =>
+            {
+                stats_body
+            }
+            Some(stats) => {
+                let values = stats
+                    .into_iter()
+                    .filter_map(|stat| {
+                        stats_body
+                            .get(stat)
+                            .cloned()
+                            .map(|value| (stat.to_string(), value))
+                    })
+                    .collect::<serde_json::Map<_, _>>();
+                Value::Object(values)
             }
             None => stats_body,
         };
@@ -17498,6 +17514,53 @@ impl SteelNode {
                     "type": "illegal_argument_exception",
                     "reason": reason,
                     "invalid_indices": invalid_indices
+                },
+                "status": 400
+            }),
+        ))
+    }
+
+    fn validate_knn_stats_request(stat: Option<&str>) -> Option<RestResponse> {
+        let Some(stats) = stat.and_then(parse_knn_stats_param) else {
+            return None;
+        };
+        if stats.len() == 1 && stats.first().is_some_and(|stat| *stat == "_all") {
+            return None;
+        }
+        if stats.iter().any(|stat| *stat == "_all") {
+            return Some(RestResponse::json(
+                400,
+                serde_json::json!({
+                    "error": {
+                        "type": "illegal_argument_exception",
+                        "reason": "Request contains _all and individual stats"
+                    },
+                    "status": 400
+                }),
+            ));
+        }
+        let invalid_stats = stats
+            .iter()
+            .filter(|stat| !KNN_BOUNDED_STATS.contains(stat))
+            .copied()
+            .collect::<Vec<_>>();
+        if invalid_stats.is_empty() {
+            return None;
+        }
+        Some(RestResponse::json(
+            400,
+            serde_json::json!({
+                "error": {
+                    "type": "illegal_argument_exception",
+                    "reason": format!(
+                        "request contains unrecognized stat{}: {}",
+                        if invalid_stats.len() > 1 { "s" } else { "" },
+                        invalid_stats
+                            .iter()
+                            .map(|stat| format!("[{stat}]"))
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    )
                 },
                 "status": 400
             }),
@@ -35211,6 +35274,31 @@ fn index_metadata_is_knn_enabled(index_body: &serde_json::Map<String, Value>) ->
         .unwrap_or(false)
 }
 
+const KNN_BOUNDED_STATS: &[&str] = &[
+    "graph_count",
+    "warmed_index_count",
+    "cache_entry_count",
+    "native_memory_used_bytes",
+    "model_cache_used_bytes",
+    "quantization_cache_used_bytes",
+    "clear_cache_requests",
+    "training_requests",
+    "model_count",
+    "operational_controls",
+];
+
+fn parse_knn_stats_param(stat: &str) -> Option<Vec<&str>> {
+    let stats = stat
+        .split(',')
+        .filter(|value| !value.is_empty())
+        .collect::<Vec<_>>();
+    if stats.is_empty() {
+        None
+    } else {
+        Some(stats)
+    }
+}
+
 fn nested_mapping_paths_for_index(index_body: &Value) -> Vec<String> {
     let mut paths = Vec::new();
     collect_nested_mapping_paths(
@@ -50061,6 +50149,46 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         ));
         assert_eq!(filtered_stats.status, 200);
         assert_eq!(filtered_stats.body["nodes"]["local"]["graph_count"], 3);
+
+        let all_stats = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_plugins/_knn/stats/_all",
+        ));
+        assert_eq!(all_stats.status, 200);
+        assert_eq!(all_stats.body["nodes"]["local"]["graph_count"], 3);
+
+        let multi_filtered_stats = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_plugins/_knn/stats/graph_count,model_count",
+        ));
+        assert_eq!(multi_filtered_stats.status, 200);
+        assert_eq!(
+            multi_filtered_stats.body["nodes"]["local"],
+            serde_json::json!({
+                "graph_count": 3,
+                "model_count": 0
+            })
+        );
+
+        let mixed_all_stats = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_plugins/_knn/stats/_all,graph_count",
+        ));
+        assert_eq!(mixed_all_stats.status, 400);
+        assert_eq!(
+            mixed_all_stats.body["error"]["reason"],
+            "Request contains _all and individual stats"
+        );
+
+        let unknown_stats = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_plugins/_knn/stats/not_a_stat",
+        ));
+        assert_eq!(unknown_stats.status, 400);
+        assert_eq!(
+            unknown_stats.body["error"]["reason"],
+            "request contains unrecognized stat: [not_a_stat]"
+        );
 
         let node_stats = node.handle_rest_request(RestRequest::new(
             RestMethod::Get,
