@@ -2063,8 +2063,8 @@ pub fn classify_opensearch_transport_action(
         },
         OPENSEARCH_GET_STORED_SCRIPT_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
-            disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "get-stored-script transport execution requires script metadata lookup and found/not-found response rendering",
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "get-stored-script transport adapter renders found/not-found responses from Rust stored-script metadata",
         },
         OPENSEARCH_DELETE_STORED_SCRIPT_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -20794,7 +20794,7 @@ impl OpenSearchGetStoredScriptRequestWire {
         })
     }
 
-    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+    pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
         if self.cluster_manager_timeout != TimeValueWire::seconds(30) {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "get stored script cluster-manager timeout",
@@ -20820,9 +20820,14 @@ impl OpenSearchGetStoredScriptRequestWire {
                 reason: "OpenSearch stored script ids cannot contain '#'",
             });
         }
+        Ok(())
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        self.validate_supported_subset()?;
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "get stored script execution",
-            reason: "get-stored-script transport execution requires script metadata lookup and found/not-found response rendering",
+            reason: "use validate_supported_subset for the implemented get-stored-script adapter",
         })
     }
 }
@@ -59453,7 +59458,7 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_get_stored_script_request_wire_round_trips_and_rejects_execution_boundary() {
+    fn opensearch_get_stored_script_request_wire_round_trips_and_validates_supported_subset() {
         let request = OpenSearchGetStoredScriptRequestWire::default();
         let mut output = StreamOutput::new();
         request.write(&mut output);
@@ -59462,13 +59467,7 @@ mod tests {
         assert_eq!(decoded, request);
         assert_eq!(decoded.id, "stored-script-1");
         assert!(!decoded.local);
-        assert!(matches!(
-            decoded.reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "get stored script execution",
-                ..
-            })
-        ));
+        decoded.validate_supported_subset().unwrap();
     }
 
     #[test]
@@ -59478,7 +59477,7 @@ mod tests {
             ..OpenSearchGetStoredScriptRequestWire::default()
         };
         assert!(matches!(
-            cluster_manager_timeout.reject_unsupported_execution(),
+            cluster_manager_timeout.validate_supported_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "get stored script cluster-manager timeout",
                 ..
@@ -59490,7 +59489,7 @@ mod tests {
             ..OpenSearchGetStoredScriptRequestWire::default()
         };
         assert!(matches!(
-            local.reject_unsupported_execution(),
+            local.validate_supported_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "get stored script local",
                 ..
@@ -59502,7 +59501,7 @@ mod tests {
             ..OpenSearchGetStoredScriptRequestWire::default()
         };
         assert!(matches!(
-            missing_id.reject_unsupported_execution(),
+            missing_id.validate_supported_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "get stored script missing id",
                 ..
@@ -59514,7 +59513,7 @@ mod tests {
             ..OpenSearchGetStoredScriptRequestWire::default()
         };
         assert!(matches!(
-            invalid_id.reject_unsupported_execution(),
+            invalid_id.validate_supported_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "get stored script id",
                 ..
@@ -59545,7 +59544,7 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_get_stored_script_transport_messages_bind_rejected_action_frame_and_response() {
+    fn opensearch_get_stored_script_transport_messages_bind_supported_action_frame_and_response() {
         let request = OpenSearchGetStoredScriptRequestWire::default();
         let mut frame = build_opensearch_get_stored_script_request_message(
             70,
@@ -59560,21 +59559,16 @@ mod tests {
             classify_opensearch_transport_request_message(&message)
                 .unwrap()
                 .disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             read_opensearch_get_stored_script_request_message(&message).unwrap(),
             request
         );
-        assert!(matches!(
-            read_opensearch_get_stored_script_request_message(&message)
-                .unwrap()
-                .reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "get stored script execution",
-                ..
-            })
-        ));
+        read_opensearch_get_stored_script_request_message(&message)
+            .unwrap()
+            .validate_supported_subset()
+            .unwrap();
 
         let response = OpenSearchGetStoredScriptResponseWire::found(
             "stored-script-1",

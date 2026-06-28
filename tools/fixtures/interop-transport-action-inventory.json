@@ -657,8 +657,8 @@
       "transport_action": "TransportGetStoredScriptAction",
       "request_wire_type": "GetStoredScriptRequest",
       "response_wire_type": "GetStoredScriptResponse",
-      "disposition": "rejected",
-      "reason": "Get-stored-script transport execution requires script metadata lookup and found/not-found response rendering before Steelsearch can serve OpenSearch stored script read semantics."
+      "disposition": "implemented",
+      "reason": "Get-stored-script transport adapter renders found/not-found responses from Rust stored-script metadata."
     },
     {
       "action_name": "cluster:admin/script/delete",
