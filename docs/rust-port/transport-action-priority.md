@@ -754,13 +754,13 @@ The get-decommission-state boundary covers:
 - OpenSearch `GetDecommissionStateResponse` presence flag plus optional
   awareness attribute value and decommission status string at the wire
   decode/build layer;
-- explicit fail-closed classification for
-  `cluster:admin/decommission/awareness/get` until decommission metadata
-  lookup, local read semantics, and decommission status response rendering are
-  implemented;
-- explicit rejection for custom cluster-manager timeout, local reads, missing
-  awareness attribute name, unknown decommission status strings, get-state
-  execution, and response rendering.
+- manifest-backed transport execution for OpenSearch
+  `decommissionedAttribute` metadata under `/metadata/customs` and the Rust
+  `/cluster_admin_state` metadata aliases, returning a present state only when
+  the request attribute name matches the stored decommission attribute;
+- supported local and cluster-manager reads for the manifest-backed subset;
+- explicit rejection for invalid cluster-manager timeout values, missing
+  awareness attribute name, and unknown decommission status strings.
 
 The delete-decommission-state boundary covers:
 
@@ -3280,24 +3280,23 @@ release run, this boundary is not a material transport bottleneck; the first
 performance-sensitive work is decommission metadata mutation, node draining
 coordination, cluster-state publication, and acknowledgement rendering.
 
-Current get-decommission-state reject wire microbenchmark:
+Current get-decommission-state wire microbenchmark:
 
 ```text
 cargo run -p os-transport --release --bin get-decommission-state-reject-wire-benchmark
-get_decommission_state_reject_request_encode iterations=400000 elapsed_ms=275.449 ops_per_second=1452171.82 nanos_per_op=688.62
-get_decommission_state_reject_request_decode iterations=400000 elapsed_ms=290.715 ops_per_second=1375919.69 nanos_per_op=726.79
-get_decommission_state_reject_validation iterations=400000 elapsed_ms=248.151 ops_per_second=1611920.97 nanos_per_op=620.38
-get_decommission_state_response_decode iterations=400000 elapsed_ms=126.773 ops_per_second=3155255.27 nanos_per_op=316.93
-get_decommission_state_reject_wire_bottleneck_ops_per_second=1375919.69
+get_decommission_state_request_encode iterations=400000 elapsed_ms=260.405 ops_per_second=1536069.53 nanos_per_op=651.01
+get_decommission_state_request_decode iterations=400000 elapsed_ms=244.304 ops_per_second=1637301.86 nanos_per_op=610.76
+get_decommission_state_request_validate iterations=400000 elapsed_ms=247.512 ops_per_second=1616086.39 nanos_per_op=618.78
+get_decommission_state_response_decode iterations=400000 elapsed_ms=127.027 ops_per_second=3148927.67 nanos_per_op=317.57
+get_decommission_state_wire_bottleneck_ops_per_second=1536069.53
 ```
 
-The current get-decommission-state fail-closed boundary bottleneck is request
-decode. The payload includes the cluster-manager read request envelope,
-read-local flag, and awareness attribute name before admission rejects
-execution. At roughly 1.38M ops/s in the latest local release run, this
-boundary is not a material transport bottleneck; the first
-performance-sensitive work is decommission metadata lookup, local read
-semantics, and decommission status response rendering.
+The current get-decommission-state boundary bottleneck is request encode. The
+payload includes the cluster-manager read request envelope, read-local flag,
+and awareness attribute name. At roughly 1.54M ops/s in the latest local
+release run, this boundary is not a material transport bottleneck; the next
+performance-sensitive work is keeping manifest/custom-metadata lookup cheap as
+the cluster metadata document grows.
 
 Current delete-decommission-state reject wire microbenchmark:
 

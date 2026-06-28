@@ -14,48 +14,40 @@ const ITERATIONS: usize = 400_000;
 fn main() {
     let request = GetDecommissionStateRequestWire::default();
 
-    let request_encode = measure(
-        "get_decommission_state_reject_request_encode",
-        ITERATIONS,
-        || {
-            let frame = build_get_decommission_state_request_message(
-                40,
-                OPENSEARCH_3_7_0_TRANSPORT,
-                black_box(&request),
-            )
-            .expect("get-decommission-state request encode should succeed");
-            black_box(frame);
-        },
-    );
+    let request_encode = measure("get_decommission_state_request_encode", ITERATIONS, || {
+        let frame = build_get_decommission_state_request_message(
+            40,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            black_box(&request),
+        )
+        .expect("get-decommission-state request encode should succeed");
+        black_box(frame);
+    });
 
     let request_frame =
         build_get_decommission_state_request_message(40, OPENSEARCH_3_7_0_TRANSPORT, &request)
             .expect("get-decommission-state request encode should succeed");
 
-    let request_decode = measure(
-        "get_decommission_state_reject_request_decode",
-        ITERATIONS,
-        || {
-            let mut frame = black_box(request_frame.clone());
-            let message = decode_message(&mut frame);
-            let decoded = read_get_decommission_state_request_message(black_box(&message))
-                .expect("get-decommission-state request decode");
-            black_box(decoded);
-        },
-    );
+    let request_decode = measure("get_decommission_state_request_decode", ITERATIONS, || {
+        let mut frame = black_box(request_frame.clone());
+        let message = decode_message(&mut frame);
+        let decoded = read_get_decommission_state_request_message(black_box(&message))
+            .expect("get-decommission-state request decode");
+        black_box(decoded);
+    });
 
-    let reject_validate = measure(
-        "get_decommission_state_reject_validation",
+    let request_validate = measure(
+        "get_decommission_state_request_validate",
         ITERATIONS,
         || {
             let mut frame = black_box(request_frame.clone());
             let message = decode_message(&mut frame);
             let decoded = read_get_decommission_state_request_message(black_box(&message))
                 .expect("get-decommission-state request decode");
-            let err = decoded
-                .reject_unsupported_execution()
-                .expect_err("get-decommission-state execution should reject");
-            black_box(err);
+            decoded
+                .validate_supported_execution_subset()
+                .expect("get-decommission-state request should validate");
+            black_box(decoded);
         },
     );
 
@@ -80,11 +72,9 @@ fn main() {
     let combined_ops_per_second = request_encode
         .ops_per_second
         .min(request_decode.ops_per_second)
-        .min(reject_validate.ops_per_second)
+        .min(request_validate.ops_per_second)
         .min(response_decode.ops_per_second);
-    println!(
-        "get_decommission_state_reject_wire_bottleneck_ops_per_second={combined_ops_per_second:.2}"
-    );
+    println!("get_decommission_state_wire_bottleneck_ops_per_second={combined_ops_per_second:.2}");
 }
 
 #[derive(Clone, Copy)]

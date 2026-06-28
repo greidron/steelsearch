@@ -1873,8 +1873,8 @@ pub fn classify_opensearch_transport_action(
         },
         GET_DECOMMISSION_STATE_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
-            disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "get-decommission-state transport execution requires decommission metadata lookup, local read semantics, and decommission status response rendering",
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "get-decommission-state transport adapter renders OpenSearch-shaped decommission metadata from the Rust manifest",
         },
         DELETE_DECOMMISSION_STATE_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -14798,18 +14798,17 @@ impl GetDecommissionStateRequestWire {
         Ok(request)
     }
 
-    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
-        if self.cluster_manager_timeout != TimeValueWire::seconds(30) {
+    pub fn validate_supported_execution_subset(&self) -> Result<(), TransportActionWireError> {
+        if self.cluster_manager_timeout.duration < -1 {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "get decommission state cluster-manager timeout",
-                reason: "custom cluster-manager timeout requires decommission metadata lookup coordination semantics",
+                reason: "OpenSearch TimeValue rejects durations below -1",
             });
         }
-        if self.local {
+        if self.cluster_manager_timeout.time_unit_ordinal > 6 {
             return Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "get decommission state local read",
-                reason:
-                    "local decommission-state reads require node-local cluster-state read semantics",
+                shape: "get decommission state cluster-manager timeout unit",
+                reason: "OpenSearch get-decommission-state timeout uses an unknown time unit",
             });
         }
         if self.attribute_name.trim().is_empty() {
@@ -14819,9 +14818,14 @@ impl GetDecommissionStateRequestWire {
                     "OpenSearch get-decommission-state requests require an awareness attribute name",
             });
         }
+        Ok(())
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        self.validate_supported_execution_subset()?;
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "get decommission state execution",
-            reason: "get-decommission-state transport execution requires decommission metadata lookup, local read semantics, and decommission status response rendering",
+            reason: "use validate_supported_execution_subset for the implemented manifest-backed get-decommission-state adapter",
         })
     }
 }
@@ -14881,7 +14885,7 @@ pub enum DecommissionStatusWire {
 }
 
 impl DecommissionStatusWire {
-    fn as_str(&self) -> &'static str {
+    pub fn as_str(&self) -> &'static str {
         match self {
             Self::Init => "init",
             Self::Draining => "draining",
@@ -14891,8 +14895,8 @@ impl DecommissionStatusWire {
         }
     }
 
-    fn read(input: &mut StreamInput) -> Result<Self, TransportActionWireError> {
-        match input.read_string()?.as_str() {
+    pub fn from_str(status: &str) -> Result<Self, TransportActionWireError> {
+        match status {
             "init" => Ok(Self::Init),
             "draining" => Ok(Self::Draining),
             "in_progress" => Ok(Self::InProgress),
@@ -14903,6 +14907,10 @@ impl DecommissionStatusWire {
                 reason: "unknown OpenSearch decommission status string",
             }),
         }
+    }
+
+    fn read(input: &mut StreamInput) -> Result<Self, TransportActionWireError> {
+        Self::from_str(&input.read_string()?)
     }
 }
 
@@ -46630,6 +46638,7 @@ mod tests {
                 || spec.action_name == OPENSEARCH_FORCE_MERGE_ACTION_NAME
                 || spec.action_name == OPENSEARCH_UPGRADE_ACTION_NAME
                 || spec.action_name == OPENSEARCH_UPGRADE_STATUS_ACTION_NAME
+                || spec.action_name == GET_DECOMMISSION_STATE_ACTION_NAME
             {
                 assert_eq!(
                     decision.disposition,
@@ -53208,7 +53217,7 @@ mod tests {
     }
 
     #[test]
-    fn get_decommission_state_request_wire_round_trips_and_rejects_execution_boundary() {
+    fn get_decommission_state_request_wire_round_trips_and_validates_execution_subset() {
         let request = GetDecommissionStateRequestWire {
             parent_task_node: "cluster-manager".to_string(),
             parent_task_id: Some(40),
@@ -53220,37 +53229,37 @@ mod tests {
 
         let decoded = GetDecommissionStateRequestWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, request);
-        assert!(matches!(
-            decoded.reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "get decommission state execution",
-                ..
-            })
-        ));
+        decoded.validate_supported_execution_subset().unwrap();
     }
 
     #[test]
     fn get_decommission_state_request_rejects_unsupported_shapes() {
         let cluster_manager_timeout = GetDecommissionStateRequestWire {
-            cluster_manager_timeout: TimeValueWire::seconds(10),
+            cluster_manager_timeout: TimeValueWire {
+                duration: -2,
+                time_unit_ordinal: 0,
+            },
             ..GetDecommissionStateRequestWire::default()
         };
         assert!(matches!(
-            cluster_manager_timeout.reject_unsupported_execution(),
+            cluster_manager_timeout.validate_supported_execution_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "get decommission state cluster-manager timeout",
                 ..
             })
         ));
 
-        let local_read = GetDecommissionStateRequestWire {
-            local: true,
+        let unknown_timeout_unit = GetDecommissionStateRequestWire {
+            cluster_manager_timeout: TimeValueWire {
+                duration: 1,
+                time_unit_ordinal: 7,
+            },
             ..GetDecommissionStateRequestWire::default()
         };
         assert!(matches!(
-            local_read.reject_unsupported_execution(),
+            unknown_timeout_unit.validate_supported_execution_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "get decommission state local read",
+                shape: "get decommission state cluster-manager timeout unit",
                 ..
             })
         ));
@@ -53260,7 +53269,7 @@ mod tests {
             ..GetDecommissionStateRequestWire::default()
         };
         assert!(matches!(
-            missing_attribute.reject_unsupported_execution(),
+            missing_attribute.validate_supported_execution_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "get decommission state missing attribute name",
                 ..
@@ -53296,13 +53305,6 @@ mod tests {
         present.write(&mut output);
         let decoded = GetDecommissionStateResponseWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, present);
-        assert!(matches!(
-            decoded.reject_unsupported_rendering(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "get decommission state response rendering",
-                ..
-            })
-        ));
 
         let mut output = StreamOutput::new();
         output.write_bool(true);
@@ -53318,7 +53320,7 @@ mod tests {
     }
 
     #[test]
-    fn get_decommission_state_transport_messages_bind_rejected_action_frame_and_response() {
+    fn get_decommission_state_transport_messages_bind_action_frame_and_response() {
         let request = GetDecommissionStateRequestWire::default();
         let mut frame =
             build_get_decommission_state_request_message(40, OPENSEARCH_3_7_0_TRANSPORT, &request)
@@ -53330,21 +53332,16 @@ mod tests {
             classify_opensearch_transport_request_message(&message)
                 .unwrap()
                 .disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             read_get_decommission_state_request_message(&message).unwrap(),
             request
         );
-        assert!(matches!(
-            read_get_decommission_state_request_message(&message)
-                .unwrap()
-                .reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "get decommission state execution",
-                ..
-            })
-        ));
+        read_get_decommission_state_request_message(&message)
+            .unwrap()
+            .validate_supported_execution_subset()
+            .unwrap();
 
         let response = GetDecommissionStateResponseWire {
             state: Some(GetDecommissionStateResponseEntryWire {
