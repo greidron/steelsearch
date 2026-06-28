@@ -392,7 +392,7 @@ name = "delete-index-template-wire-benchmark"
 path = "benchmarks/delete_index_template_reject_wire.rs"
 
 [[bin]]
-name = "put-component-template-reject-wire-benchmark"
+name = "put-component-template-wire-benchmark"
 path = "benchmarks/put_component_template_reject_wire.rs"
 
 [[bin]]

@@ -828,8 +828,8 @@
       "transport_action": "TransportPutComponentTemplateAction",
       "request_wire_type": "PutComponentTemplateAction.Request",
       "response_wire_type": "AcknowledgedResponse",
-      "disposition": "rejected",
-      "reason": "Put-component-template transport execution requires component template validation, metadata mutation, and ack rendering before Steelsearch can serve OpenSearch component-template writes."
+      "disposition": "implemented",
+      "reason": "Put-component-template transport adapter upserts the supported manifest-backed component template metadata subset and renders OpenSearch AcknowledgedResponse."
     },
     {
       "action_name": "cluster:admin/component_template/get",

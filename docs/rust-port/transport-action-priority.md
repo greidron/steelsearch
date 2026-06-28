@@ -177,8 +177,8 @@ The source-derived transport inventory currently has 160 rows:
 
 | Status | Count | Meaning |
 | --- | ---: | --- |
-| `implemented` | 55 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
-| `partial` | 105 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
+| `implemented` | 56 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
+| `partial` | 104 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
 | `planned` | 0 | No source-derived transport action remains unclassified. |
 
 The k-NN plugin action sweep is complete at the boundary layer. All 12
@@ -275,6 +275,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `indices:admin/template/delete` (implemented manifest-backed metadata mutation subset)
 - `cluster:admin/component_template/get` (implemented manifest-backed
   settings-only component-template subset)
+- `cluster:admin/component_template/put` (implemented manifest-backed metadata mutation subset)
 - `cluster:admin/component_template/delete` (implemented manifest-backed metadata mutation subset)
 - `indices:admin/index_template/get` (implemented manifest-backed
   settings-only composable-template subset)
@@ -1572,17 +1573,17 @@ The put-component-template boundary covers:
 
 - OpenSearch `PutComponentTemplateAction.Request` parent task, cluster-manager
   timeout, component-template name, optional cause, create flag, empty
-  `Template` settings/mappings/aliases markers, optional component-template
-  version, and absent metadata marker at the OpenSearch 3.x wire decode/build
+  `Template` mappings/aliases markers, string-valued template settings,
+  optional component-template version, and absent metadata marker at the
+  OpenSearch 3.x wire decode/build
   layer;
-- explicit fail-closed classification for
-  `cluster:admin/component_template/put` until component-template validation,
-  metadata mutation, and acknowledged response rendering are implemented
-  against Rust cluster metadata;
+- manifest-backed transport execution for
+  `cluster:admin/component_template/put`, upserting the supported
+  settings-only component-template metadata subset into Rust cluster metadata
+  and rendering OpenSearch `AcknowledgedResponse`;
 - explicit rejection for custom cluster-manager timeouts, missing template
-  names, custom causes, create-only writes, component-template settings,
-  mappings, aliases, versions, metadata payloads, and put-component-template
-  execution.
+  names, custom causes, create-only writes, mappings, aliases, and metadata
+  payloads.
 
 The get-component-template boundary covers:
 
@@ -4359,23 +4360,25 @@ manifest-backed metadata removal in the node adapter, and acknowledged response
 rendering; future performance-sensitive work is metadata publication across
 distributed cluster-state ownership.
 
-Current put-component-template reject wire microbenchmark:
+Current put-component-template wire microbenchmark:
 
 ```text
-cargo run -p os-transport --release --bin put-component-template-reject-wire-benchmark
-put_component_template_reject_request_encode iterations=400000 elapsed_ms=382.867 ops_per_second=1044748.52 nanos_per_op=957.17
-put_component_template_reject_request_decode iterations=400000 elapsed_ms=315.838 ops_per_second=1266471.64 nanos_per_op=789.60
-put_component_template_reject_validation iterations=400000 elapsed_ms=312.474 ops_per_second=1280105.88 nanos_per_op=781.19
-put_component_template_reject_wire_bottleneck_ops_per_second=1044748.52
+cargo run -p os-transport --release --bin put-component-template-wire-benchmark
+put_component_template_request_encode iterations=400000 elapsed_ms=382.762 ops_per_second=1045034.49 nanos_per_op=956.91
+put_component_template_request_decode iterations=400000 elapsed_ms=305.793 ops_per_second=1308076.54 nanos_per_op=764.48
+put_component_template_request_validate iterations=400000 elapsed_ms=307.900 ops_per_second=1299121.55 nanos_per_op=769.75
+put_component_template_response_decode iterations=400000 elapsed_ms=54.131 ops_per_second=7389470.02 nanos_per_op=135.33
+put_component_template_wire_bottleneck_ops_per_second=1045034.49
 ```
 
-The current put-component-template fail-closed boundary bottleneck is request
-encode. The default benchmark writes the cluster-manager request envelope,
-component-template name, absent cause, create flag, empty nested template
-markers, absent version, and absent metadata marker before rejecting execution.
-At roughly 1.04M ops/s in the latest local release run, the remaining
-performance-sensitive work is component-template validation, metadata
-publication, and acknowledged response rendering.
+The current put-component-template transport boundary bottleneck is request
+encode. The supported subset writes the cluster-manager request envelope,
+component-template name, absent cause, create flag, settings-capable nested
+template markers, optional version, and absent metadata marker. The node adapter
+then upserts manifest-backed metadata and renders an acknowledged response. At
+roughly 1.05M ops/s in the latest local release run, the remaining
+performance-sensitive work is richer validation and distributed metadata
+publication.
 
 Current get-component-template reject wire microbenchmark:
 

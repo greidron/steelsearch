@@ -1,7 +1,9 @@
 use os_core::OPENSEARCH_3_7_0_TRANSPORT;
 use os_transport::action::{
     build_opensearch_put_component_template_request_message,
+    build_opensearch_put_component_template_response_message,
     read_opensearch_put_component_template_request_message,
+    read_opensearch_put_component_template_response_message, AcknowledgedResponseWire,
     OpenSearchPutComponentTemplateRequestWire,
 };
 use os_transport::frame::{decode_frame, DecodedFrame};
@@ -12,20 +14,17 @@ const ITERATIONS: usize = 400_000;
 
 fn main() {
     let request = OpenSearchPutComponentTemplateRequestWire::default();
+    let response = AcknowledgedResponseWire { acknowledged: true };
 
-    let request_encode = measure(
-        "put_component_template_reject_request_encode",
-        ITERATIONS,
-        || {
-            let frame = build_opensearch_put_component_template_request_message(
-                64,
-                OPENSEARCH_3_7_0_TRANSPORT,
-                black_box(&request),
-            )
-            .expect("put-component-template request encode should succeed");
-            black_box(frame);
-        },
-    );
+    let request_encode = measure("put_component_template_request_encode", ITERATIONS, || {
+        let frame = build_opensearch_put_component_template_request_message(
+            64,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            black_box(&request),
+        )
+        .expect("put-component-template request encode should succeed");
+        black_box(frame);
+    });
 
     let request_frame = build_opensearch_put_component_template_request_message(
         64,
@@ -34,8 +33,16 @@ fn main() {
     )
     .expect("put-component-template request encode should succeed");
 
-    let request_decode = measure(
-        "put_component_template_reject_request_decode",
+    let request_decode = measure("put_component_template_request_decode", ITERATIONS, || {
+        let mut frame = black_box(request_frame.clone());
+        let message = decode_message(&mut frame);
+        let decoded = read_opensearch_put_component_template_request_message(black_box(&message))
+            .expect("put-component-template request decode");
+        black_box(decoded);
+    });
+
+    let request_validate = measure(
+        "put_component_template_request_validate",
         ITERATIONS,
         || {
             let mut frame = black_box(request_frame.clone());
@@ -43,33 +50,34 @@ fn main() {
             let decoded =
                 read_opensearch_put_component_template_request_message(black_box(&message))
                     .expect("put-component-template request decode");
+            decoded
+                .validate_supported_execution_subset()
+                .expect("put-component-template execution subset should validate");
             black_box(decoded);
         },
     );
 
-    let reject_validate = measure(
-        "put_component_template_reject_validation",
-        ITERATIONS,
-        || {
-            let mut frame = black_box(request_frame.clone());
-            let message = decode_message(&mut frame);
-            let decoded =
-                read_opensearch_put_component_template_request_message(black_box(&message))
-                    .expect("put-component-template request decode");
-            let err = decoded
-                .reject_unsupported_execution()
-                .expect_err("put-component-template execution should reject");
-            black_box(err);
-        },
-    );
+    let response_frame = build_opensearch_put_component_template_response_message(
+        64,
+        OPENSEARCH_3_7_0_TRANSPORT,
+        &response,
+    )
+    .expect("put-component-template response encode should succeed");
+
+    let response_decode = measure("put_component_template_response_decode", ITERATIONS, || {
+        let mut frame = black_box(response_frame.clone());
+        let message = decode_message(&mut frame);
+        let decoded = read_opensearch_put_component_template_response_message(black_box(&message))
+            .expect("put-component-template response decode");
+        black_box(decoded);
+    });
 
     let combined_ops_per_second = request_encode
         .ops_per_second
         .min(request_decode.ops_per_second)
-        .min(reject_validate.ops_per_second);
-    println!(
-        "put_component_template_reject_wire_bottleneck_ops_per_second={combined_ops_per_second:.2}"
-    );
+        .min(request_validate.ops_per_second)
+        .min(response_decode.ops_per_second);
+    println!("put_component_template_wire_bottleneck_ops_per_second={combined_ops_per_second:.2}");
 }
 
 #[derive(Clone, Copy)]
