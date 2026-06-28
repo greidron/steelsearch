@@ -2928,6 +2928,33 @@ fn handle_transport_seed_connection<S: TransportConnection>(
         )?;
     } else if is_request
         && normalized_action_hint == Some("indices:data/read/point_in_time/create")
+        && create_pit_request_closed_concrete_index(&body).is_some()
+    {
+        let response =
+            build_create_pit_index_closed_error_response(request_id, header_version_id, &body);
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("indices:data/read/point_in_time/create"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request
+        && normalized_action_hint == Some("indices:data/read/point_in_time/create")
         && create_pit_request_supports_local_lifecycle_subset(&body)
     {
         let response = build_local_create_pit_response_for_node(
@@ -7953,6 +7980,41 @@ fn create_pit_missing_concrete_index(
         .next()
 }
 
+fn create_pit_closed_concrete_index(
+    request: &os_transport::action::OpenSearchCreatePitRequestWire,
+) -> Option<String> {
+    if !request.indices_options.forbid_closed_indices || request.indices_options.ignore_unavailable
+    {
+        return None;
+    }
+    let bindings = dev_transport_pit_bindings();
+    let manifest_indices = {
+        let manifest = bindings
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned");
+        manifest["indices"].as_object().cloned()
+    };
+    let indices = transport_pit_index_catalog(bindings, manifest_indices);
+    request
+        .indices
+        .iter()
+        .filter(|selector| !selector.is_empty())
+        .filter(|selector| {
+            selector.as_str() != "_all" && !selector.contains('*') && !selector.contains('?')
+        })
+        .find_map(|selector| {
+            indices
+                .get(selector)
+                .filter(|index_body| {
+                    index_body["state"]
+                        .as_str()
+                        .is_some_and(|state| state == "close")
+                })
+                .map(|_| selector.clone())
+        })
+}
+
 fn transport_pit_selector_matches_target(
     selector: &str,
     indices: &BTreeMap<String, Value>,
@@ -12130,6 +12192,27 @@ fn build_create_pit_index_not_found_error_response(
     build_transport_error_response_frame(request_id, header_version_id, output.freeze().to_vec())
 }
 
+fn create_pit_request_closed_concrete_index(body: &[u8]) -> Option<String> {
+    let request = decode_create_pit_request_from_transport_body(body)?;
+    if request.validate_supported_subset().is_err() {
+        return None;
+    }
+    create_pit_closed_concrete_index(&request)
+}
+
+fn build_create_pit_index_closed_error_response(
+    request_id: i64,
+    header_version_id: u32,
+    body: &[u8],
+) -> Vec<u8> {
+    let Some(index) = create_pit_request_closed_concrete_index(body) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    let mut output = StreamOutput::new();
+    os_transport::error::write_index_closed_exception(&mut output, &index);
+    build_transport_error_response_frame(request_id, header_version_id, output.freeze().to_vec())
+}
+
 fn transport_time_value_millis_display(millis: i64) -> String {
     if millis % 3_600_000 == 0 {
         format!("{}h", millis / 3_600_000)
@@ -15635,6 +15718,15 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
             if create_pit_request_missing_concrete_index(body).is_some() =>
         {
             Some(build_create_pit_index_not_found_error_response(
+                request_id,
+                header_version_id,
+                body,
+            ))
+        }
+        Some("indices:data/read/point_in_time/create")
+            if create_pit_request_closed_concrete_index(body).is_some() =>
+        {
+            Some(build_create_pit_index_closed_error_response(
                 request_id,
                 header_version_id,
                 body,
@@ -29317,6 +29409,88 @@ mod tests {
         .unwrap();
         assert_eq!(
             create_pit_request_missing_concrete_index(&lenient_frame[6..]),
+            None
+        );
+    }
+
+    #[test]
+    fn create_pit_transport_route_reports_closed_concrete_index_like_opensearch() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        dev_transport_pit_bindings()
+            .created_indices
+            .lock()
+            .expect("dev transport created indices lock poisoned")
+            .clear();
+        *dev_transport_pit_bindings()
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned") = serde_json::json!({
+            "indices": {
+                "logs-closed-pit": {
+                    "state": "close",
+                    "settings": {
+                        "index": {
+                            "number_of_shards": "1"
+                        }
+                    }
+                }
+            }
+        });
+        let request = os_transport::action::OpenSearchCreatePitRequestWire {
+            indices: vec!["logs-closed-pit".to_string()],
+            ..os_transport::action::OpenSearchCreatePitRequestWire::default()
+        };
+        let frame = os_transport::action::build_opensearch_create_pit_request_message(
+            329,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert_eq!(
+            create_pit_request_closed_concrete_index(&frame[6..]).as_deref(),
+            Some("logs-closed-pit")
+        );
+
+        let response = build_create_pit_index_closed_error_response(
+            329,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &frame[6..],
+        );
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected closed-index create-PIT error response frame");
+        };
+        assert_eq!(message.request_id, 329);
+        assert!(message.status.is_error());
+        let error = os_transport::error::TransportError::read(message.body.freeze())
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            error.class_name,
+            "org.opensearch.indices.IndexClosedException"
+        );
+        assert_eq!(error.message.as_deref(), Some("closed"));
+
+        let lenient_request = os_transport::action::OpenSearchCreatePitRequestWire {
+            indices: vec!["logs-closed-pit".to_string()],
+            indices_options:
+                os_transport::action::OpenSearchIndicesOptionsWire::lenient_expand_open(),
+            ..os_transport::action::OpenSearchCreatePitRequestWire::default()
+        };
+        let lenient_frame = os_transport::action::build_opensearch_create_pit_request_message(
+            330,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &lenient_request,
+        )
+        .unwrap();
+        assert_eq!(
+            create_pit_request_closed_concrete_index(&lenient_frame[6..]),
             None
         );
     }
