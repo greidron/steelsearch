@@ -1597,6 +1597,32 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end,
             &mut connection_end_at_ms,
         )?;
+    } else if is_request
+        && normalized_action_hint == Some("cluster:admin/component_template/get")
+        && get_component_template_request_supports_manifest_subset(&body)
+    {
+        let response = build_get_component_template_response(request_id, header_version_id, &body);
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("cluster:admin/component_template/get"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
     } else if is_request && normalized_action_hint == Some("indices:admin/mappings/fields/get") {
         let response = build_get_field_mappings_response(request_id, header_version_id, &body);
         response_frame = summarize_transport_response_frame_for_action(
@@ -5268,6 +5294,110 @@ fn get_index_templates_response_from_metadata_manifest(
         .templates
         .sort_by(|left, right| left.name.cmp(&right.name));
     response
+}
+
+fn build_get_component_template_response(
+    request_id: i64,
+    header_version_id: u32,
+    body: &[u8],
+) -> Vec<u8> {
+    let Some(request) = decode_get_component_template_request_from_transport_body(body) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    if request.validate_supported_subset().is_err() {
+        return build_empty_transport_response(request_id, header_version_id);
+    }
+    let response = get_component_template_response_from_metadata_manifest(
+        &dev_transport_pit_bindings()
+            .metadata_manifest
+            .lock()
+            .expect("metadata manifest lock poisoned"),
+    );
+    os_transport::action::build_opensearch_get_component_template_response_message(
+        request_id,
+        Version::from_id(header_version_id as i32),
+        &response,
+    )
+    .map(|frame| frame.to_vec())
+    .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
+}
+
+fn get_component_template_request_supports_manifest_subset(body: &[u8]) -> bool {
+    decode_get_component_template_request_from_transport_body(body)
+        .as_ref()
+        .is_some_and(|request| request.validate_supported_subset().is_ok())
+}
+
+fn decode_get_component_template_request_from_transport_body(
+    body: &[u8],
+) -> Option<os_transport::action::OpenSearchGetComponentTemplateRequestWire> {
+    let message = decode_transport_message_from_body(body)?;
+    os_transport::action::read_opensearch_get_component_template_request_message(&message).ok()
+}
+
+fn get_component_template_response_from_metadata_manifest(
+    metadata_manifest: &Value,
+) -> os_transport::action::OpenSearchGetComponentTemplateResponseWire {
+    let mut response = os_transport::action::OpenSearchGetComponentTemplateResponseWire::empty();
+    let Some(templates) = metadata_manifest.pointer("/templates/component_templates") else {
+        return response;
+    };
+    let Some(object) = templates.as_object() else {
+        return response;
+    };
+    for (name, template_entry) in object {
+        if let Some(component_template) = component_template_wire_from_manifest(template_entry) {
+            response
+                .component_templates
+                .insert(name.clone(), component_template);
+        }
+    }
+    response
+}
+
+fn component_template_wire_from_manifest(
+    template_entry: &Value,
+) -> Option<os_transport::action::OpenSearchComponentTemplateWire> {
+    let component_template = template_entry
+        .get("component_template")
+        .unwrap_or(template_entry);
+    if component_template
+        .get("_meta")
+        .or_else(|| component_template.get("metadata"))
+        .filter(|value| !value.is_null())
+        .is_some()
+    {
+        return None;
+    }
+    let template = component_template
+        .get("template")
+        .unwrap_or(component_template);
+    if template
+        .get("mappings")
+        .filter(|value| !value.is_null())
+        .is_some()
+        || template
+            .get("aliases")
+            .filter(|value| !value.is_null())
+            .is_some()
+    {
+        return None;
+    }
+    let mut settings = BTreeMap::new();
+    flatten_string_settings(
+        None,
+        template.get("settings").unwrap_or(&Value::Null),
+        &mut settings,
+    );
+    Some(os_transport::action::OpenSearchComponentTemplateWire {
+        template: os_transport::action::OpenSearchTemplateWire {
+            settings,
+            mappings: None,
+            aliases_count: 0,
+        },
+        version: component_template.get("version").and_then(Value::as_i64),
+        metadata_count: 0,
+    })
 }
 
 fn legacy_template_entries(metadata_manifest: &Value) -> Vec<(String, &Value)> {
@@ -13297,6 +13427,15 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
                 body,
             ))
         }
+        Some("cluster:admin/component_template/get")
+            if get_component_template_request_supports_manifest_subset(body) =>
+        {
+            Some(build_get_component_template_response(
+                request_id,
+                header_version_id,
+                body,
+            ))
+        }
         Some("indices:admin/mappings/fields/get") => Some(build_get_field_mappings_response(
             request_id,
             header_version_id,
@@ -18601,6 +18740,72 @@ mod tests {
         assert_eq!(template.aliases[0].alias, "logs-template-read");
         assert_eq!(template.aliases[0].write_index, Some(false));
         assert_eq!(template.version, Some(3));
+    }
+
+    #[test]
+    fn get_component_template_transport_route_builds_manifest_backed_settings_response() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        *dev_transport_pit_bindings()
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned") = serde_json::json!({
+            "templates": {
+                "component_templates": {
+                    "logs-component": {
+                        "component_template": {
+                            "template": {
+                                "settings": {
+                                    "index": {
+                                        "number_of_shards": "1"
+                                    }
+                                }
+                            },
+                            "version": 7
+                        }
+                    }
+                }
+            }
+        });
+        let request = os_transport::action::OpenSearchGetComponentTemplateRequestWire::default();
+        let frame = os_transport::action::build_opensearch_get_component_template_request_message(
+            209,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(get_component_template_request_supports_manifest_subset(
+            &frame[6..]
+        ));
+        let response = build_get_component_template_response(
+            209,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &frame[6..],
+        );
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected get component template response message");
+        };
+
+        assert_eq!(message.request_id, 209);
+        assert!(!message.status.is_request());
+        let response =
+            os_transport::action::read_opensearch_get_component_template_response_message(&message)
+                .unwrap();
+        let component = response
+            .component_templates
+            .get("logs-component")
+            .expect("logs component template");
+        assert_eq!(component.version, Some(7));
+        assert_eq!(
+            component.template.settings["index.number_of_shards"],
+            "1".to_string()
+        );
     }
 
     #[test]
