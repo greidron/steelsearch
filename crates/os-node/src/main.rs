@@ -27,7 +27,7 @@ use os_node::{
 use os_node_rest_core::{
     parse_authentication_users_json, AuthenticationUsersFile, SecurityBoundaryState,
 };
-use os_stream::StreamInput;
+use os_stream::{StreamInput, StreamOutput};
 use os_transport::compression::decompress_deflate_body;
 use os_transport::handshake::{build_tcp_handshake_request, build_transport_handshake_request};
 use os_transport::internal_transport::{InternalTransportError, RemoteTransportQueueGate};
@@ -2075,6 +2075,36 @@ fn handle_transport_seed_connection<S: TransportConnection>(
         )?;
     } else if is_request
         && normalized_action_hint == Some("indices:data/read/point_in_time/create")
+        && create_pit_request_exceeds_local_keep_alive_limit(&body)
+    {
+        let response = build_create_pit_keep_alive_too_large_error_response(
+            request_id,
+            header_version_id,
+            &body,
+        );
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("indices:data/read/point_in_time/create"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request
+        && normalized_action_hint == Some("indices:data/read/point_in_time/create")
         && create_pit_request_supports_local_lifecycle_subset(&body)
     {
         let response = build_local_create_pit_response(request_id, header_version_id, &body);
@@ -3958,6 +3988,25 @@ fn maybe_build_query_phase_response_with_remote_transport_admission(
 
 fn build_empty_transport_response(request_id: i64, header_version_id: u32) -> Vec<u8> {
     build_transport_response_frame(request_id, header_version_id, Vec::new())
+}
+
+fn build_transport_error_response_frame(
+    request_id: i64,
+    header_version_id: u32,
+    payload: Vec<u8>,
+) -> Vec<u8> {
+    let variable_header = [0_u8, 0_u8];
+    let message_length = 8 + 1 + 4 + 4 + variable_header.len() + payload.len();
+    let mut frame = Vec::with_capacity(6 + message_length);
+    frame.extend_from_slice(b"ES");
+    frame.extend_from_slice(&(message_length as u32).to_be_bytes());
+    frame.extend_from_slice(&request_id.to_be_bytes());
+    frame.push(0x03);
+    frame.extend_from_slice(&header_version_id.to_be_bytes());
+    frame.extend_from_slice(&(variable_header.len() as u32).to_be_bytes());
+    frame.extend_from_slice(&variable_header);
+    frame.extend_from_slice(&payload);
+    frame
 }
 
 fn build_empty_remote_info_response(request_id: i64, header_version_id: u32) -> Vec<u8> {
@@ -8555,6 +8604,45 @@ fn create_pit_request_supports_local_lifecycle_subset(body: &[u8]) -> bool {
         .is_some()
 }
 
+fn create_pit_request_exceeds_local_keep_alive_limit(body: &[u8]) -> bool {
+    decode_create_pit_request_from_transport_body(body)
+        .filter(|request| request.validate_supported_subset().is_ok())
+        .is_some_and(|request| {
+            time_value_wire_to_millis(&request.keep_alive) > DEV_TRANSPORT_MAX_PIT_KEEP_ALIVE_MILLIS
+        })
+}
+
+fn build_create_pit_keep_alive_too_large_error_response(
+    request_id: i64,
+    header_version_id: u32,
+    body: &[u8],
+) -> Vec<u8> {
+    let Some(request) = decode_create_pit_request_from_transport_body(body) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    let keep_alive_millis = time_value_wire_to_millis(&request.keep_alive);
+    let reason = format!(
+        "Keep alive for request ({}) is too large. It must be less than ({}). This limit can be set by changing the [point_in_time.max_keep_alive] cluster level setting.",
+        transport_time_value_millis_display(keep_alive_millis),
+        transport_time_value_millis_display(DEV_TRANSPORT_MAX_PIT_KEEP_ALIVE_MILLIS)
+    );
+    let mut output = StreamOutput::new();
+    os_transport::error::write_illegal_argument_exception(&mut output, Some(&reason));
+    build_transport_error_response_frame(request_id, header_version_id, output.freeze().to_vec())
+}
+
+fn transport_time_value_millis_display(millis: i64) -> String {
+    if millis % 3_600_000 == 0 {
+        format!("{}h", millis / 3_600_000)
+    } else if millis % 60_000 == 0 {
+        format!("{}m", millis / 60_000)
+    } else if millis % 1_000 == 0 {
+        format!("{}s", millis / 1_000)
+    } else {
+        format!("{}ms", millis)
+    }
+}
+
 fn decode_create_pit_request_from_transport_body(
     body: &[u8],
 ) -> Option<os_transport::action::OpenSearchCreatePitRequestWire> {
@@ -11333,6 +11421,15 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
             if upgrade_status_request_supports_local_execution_subset(body) =>
         {
             Some(build_local_upgrade_status_response(
+                request_id,
+                header_version_id,
+                body,
+            ))
+        }
+        Some("indices:data/read/point_in_time/create")
+            if create_pit_request_exceeds_local_keep_alive_limit(body) =>
+        {
+            Some(build_create_pit_keep_alive_too_large_error_response(
                 request_id,
                 header_version_id,
                 body,
@@ -22761,8 +22858,11 @@ mod tests {
         assert!(!create_pit_request_supports_local_lifecycle_subset(
             &frame[6..]
         ));
+        assert!(create_pit_request_exceeds_local_keep_alive_limit(
+            &frame[6..]
+        ));
 
-        let response = build_local_create_pit_response(
+        let response = build_create_pit_keep_alive_too_large_error_response(
             195,
             OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
             &frame[6..],
@@ -22773,11 +22873,18 @@ mod tests {
                 .unwrap()
                 .unwrap()
         else {
-            panic!("expected create-PIT fallback response frame");
+            panic!("expected create-PIT error response frame");
         };
 
         assert_eq!(message.request_id, 195);
-        assert!(message.body.is_empty());
+        assert!(message.status.is_error());
+        let error = os_transport::error::TransportError::read(message.body.freeze())
+            .unwrap()
+            .unwrap();
+        assert_eq!(error.class_name, "java.lang.IllegalArgumentException");
+        let reason = error.message.as_deref().unwrap();
+        assert!(reason.contains("Keep alive for request (25h) is too large"));
+        assert!(reason.contains("point_in_time.max_keep_alive"));
         assert!(bindings
             .contexts
             .lock()

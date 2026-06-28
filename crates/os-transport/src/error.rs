@@ -1,5 +1,5 @@
 use bytes::Bytes;
-use os_stream::{StreamInput, StreamInputError};
+use os_stream::{StreamInput, StreamInputError, StreamOutput};
 use thiserror::Error;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -66,6 +66,14 @@ pub fn read_exception(
     };
 
     Ok(Some(error))
+}
+
+pub fn write_illegal_argument_exception(output: &mut StreamOutput, message: Option<&str>) {
+    output.write_bool(true);
+    output.write_vint(6);
+    output.write_optional_string(message);
+    output.write_bool(false);
+    write_empty_stack_trace(output);
 }
 
 fn read_jvm_exception(
@@ -145,6 +153,11 @@ fn skip_stack_trace(input: &mut StreamInput) -> Result<(), TransportErrorDecodeE
         let _suppressed = read_exception(input)?;
     }
     Ok(())
+}
+
+fn write_empty_stack_trace(output: &mut StreamOutput) {
+    output.write_vint(0);
+    output.write_vint(0);
 }
 
 fn skip_string_list_map(input: &mut StreamInput) -> Result<(), TransportErrorDecodeError> {
@@ -228,6 +241,18 @@ mod tests {
 
         assert_eq!(error.class_name, "java.lang.IllegalStateException");
         assert_eq!(error.message.as_deref(), Some("boom"));
+        assert!(error.cause.is_none());
+    }
+
+    #[test]
+    fn writes_jvm_illegal_argument_exception_message() {
+        let mut output = StreamOutput::new();
+        super::write_illegal_argument_exception(&mut output, Some("bad request"));
+
+        let error = TransportError::read(output.freeze()).unwrap().unwrap();
+
+        assert_eq!(error.class_name, "java.lang.IllegalArgumentException");
+        assert_eq!(error.message.as_deref(), Some("bad request"));
         assert!(error.cause.is_none());
     }
 
