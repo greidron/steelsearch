@@ -699,7 +699,7 @@ def case_step_created_indices(case: dict[str, Any]) -> list[str]:
     return sorted(set(indices))
 
 
-def cleanup_case_step_indices(
+def cleanup_case_runtime_state(
     base_url: str,
     fixture: dict[str, Any],
     case: dict[str, Any],
@@ -728,7 +728,50 @@ def cleanup_case_step_indices(
                 "extract": extract("status_only", delete_index),
             }
         )
+    if case_touches_point_in_time(case):
+        delete_pits = http_json(
+            base_url,
+            "DELETE",
+            "/_search/point_in_time/_all",
+            None,
+            timeout,
+            request_headers=setup_headers,
+        )
+        steps.append(
+            {
+                "name": "cleanup:point_in_time:_all",
+                "status": delete_pits["status"],
+                "expected_status": None,
+                "passed": delete_pits["status"] in (200, 202, 404),
+                "extract": extract("pit_clear", delete_pits),
+            }
+        )
     return steps
+
+
+def case_touches_point_in_time(case: dict[str, Any]) -> bool:
+    if str(case.get("extract") or "").startswith("pit_"):
+        return True
+    if request_touches_point_in_time(case):
+        return True
+    return any(request_touches_point_in_time(step) for step in case.get("steps") or [])
+
+
+def request_touches_point_in_time(request: dict[str, Any]) -> bool:
+    path = str(request.get("path") or "")
+    if "point_in_time" in path or "_cat/pit_segments" in path:
+        return True
+    return request_body_touches_point_in_time(request.get("body"))
+
+
+def request_body_touches_point_in_time(value: Any) -> bool:
+    if isinstance(value, dict):
+        if "pit" in value or "pit_id" in value:
+            return True
+        return any(request_body_touches_point_in_time(child) for child in value.values())
+    if isinstance(value, list):
+        return any(request_body_touches_point_in_time(child) for child in value)
+    return False
 
 
 def resolve_fixture_placeholders(value: Any) -> Any:
@@ -755,8 +798,7 @@ def run_case(
 
     for name, url in selected_targets.items():
         response, steps = run_case_request(url, fixture, case, timeout)
-        if case.get("steps"):
-            steps.extend(cleanup_case_step_indices(url, fixture, case, timeout))
+        steps.extend(cleanup_case_runtime_state(url, fixture, case, timeout))
         compare_step_name = case.get("compare_step")
         compare_step = None
         if isinstance(compare_step_name, str):
