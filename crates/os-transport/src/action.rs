@@ -35025,12 +35025,6 @@ impl OpenSearchGetAllPitsResponseWire {
     }
 
     pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
-        if self.cluster_name.trim().is_empty() {
-            return Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "get all pits response cluster name",
-                reason: "GetAllPitNodesResponse cluster name must be non-empty",
-            });
-        }
         for node in &self.nodes {
             node.validate_supported_subset()?;
         }
@@ -73739,13 +73733,19 @@ mod tests {
 
     #[test]
     fn opensearch_get_all_pits_response_allows_failures_and_raw_pit_info_values() {
-        assert!(matches!(
-            OpenSearchGetAllPitsResponseWire::empty(" ").validate_supported_subset(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "get all pits response cluster name",
-                ..
-            })
-        ));
+        let empty_cluster_name_response = OpenSearchGetAllPitsResponseWire::empty("");
+        let mut output = StreamOutput::new();
+        empty_cluster_name_response.write(&mut output).unwrap();
+        let decoded = OpenSearchGetAllPitsResponseWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded.cluster_name, "");
+        decoded.validate_supported_subset().unwrap();
+
+        let blank_cluster_name_response = OpenSearchGetAllPitsResponseWire::empty(" ");
+        let mut output = StreamOutput::new();
+        blank_cluster_name_response.write(&mut output).unwrap();
+        let decoded = OpenSearchGetAllPitsResponseWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded.cluster_name, " ");
+        decoded.validate_supported_subset().unwrap();
 
         let permissive_list_info_response = OpenSearchGetAllPitsResponseWire::with_nodes(
             "steelsearch-dev",
