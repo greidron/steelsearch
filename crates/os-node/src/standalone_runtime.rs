@@ -17349,6 +17349,12 @@ impl SteelNode {
     }
 
     fn handle_knn_warmup_route(&self, index: &str, request: &RestRequest) -> RestResponse {
+        if let Some(response) = self.validate_knn_operational_indices(
+            index,
+            "Warm up request rejected. One or more indices have 'index.knn' set to false.",
+        ) {
+            return response;
+        }
         let body = serde_json::from_slice::<Value>(&request.body).unwrap_or(Value::Null);
         let native_memory_bytes = body
             .get("native_memory_bytes")
@@ -17423,6 +17429,12 @@ impl SteelNode {
     }
 
     fn handle_knn_clear_cache_route(&self, index: &str) -> RestResponse {
+        if let Some(response) = self.validate_knn_operational_indices(
+            index,
+            "ClearCache request rejected. One or more indices have 'index.knn' set to false.",
+        ) {
+            return response;
+        }
         let mut state = self
             .knn_operational_state
             .lock()
@@ -17450,6 +17462,46 @@ impl SteelNode {
                 "released_quantization_cache_bytes": released_quantization
             }),
         )
+    }
+
+    fn validate_knn_operational_indices(&self, index: &str, reason: &str) -> Option<RestResponse> {
+        if index == "_all" {
+            return None;
+        }
+        let matched = match self.resolve_index_metadata_targets(index, false, false, "open") {
+            Ok(matched) => matched,
+            Err(response) => return Some(response),
+        };
+        if matched.is_empty() {
+            return None;
+        }
+        let manifest = self
+            .metadata_manifest_state
+            .lock()
+            .expect("metadata manifest state lock poisoned");
+        let invalid_indices = matched
+            .iter()
+            .filter(|index_name| {
+                !manifest["indices"][index_name]
+                    .as_object()
+                    .is_some_and(|index_body| index_metadata_is_knn_enabled(index_body))
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+        if invalid_indices.is_empty() {
+            return None;
+        }
+        Some(RestResponse::json(
+            400,
+            serde_json::json!({
+                "error": {
+                    "type": "illegal_argument_exception",
+                    "reason": reason,
+                    "invalid_indices": invalid_indices
+                },
+                "status": 400
+            }),
+        ))
     }
 
     fn handle_knn_model_train_route(&self, request: &RestRequest) -> RestResponse {
@@ -35144,6 +35196,21 @@ fn index_metadata_is_hidden(index_body: &Value) -> bool {
         .unwrap_or(false)
 }
 
+fn index_metadata_is_knn_enabled(index_body: &serde_json::Map<String, Value>) -> bool {
+    let settings = index_body.get("settings").unwrap_or(&Value::Null);
+    settings["index"]["knn"]
+        .as_str()
+        .map(|value| value == "true")
+        .or_else(|| settings["index"]["knn"].as_bool())
+        .or_else(|| {
+            settings["index.knn"]
+                .as_str()
+                .map(|value| value == "true")
+                .or_else(|| settings["index.knn"].as_bool())
+        })
+        .unwrap_or(false)
+}
+
 fn nested_mapping_paths_for_index(index_body: &Value) -> Vec<String> {
     let mut paths = Vec::new();
     collect_nested_mapping_paths(
@@ -42487,6 +42554,27 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             name: "steel-node".to_string(),
             version: OPENSEARCH_3_7_0_TRANSPORT,
         });
+
+        let create_knn_index = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/sec-knn-index")
+                .with_header("Authorization", "Basic YWRtaW46YWRtaW4=")
+                .with_json_body(serde_json::json!({
+                    "settings": {
+                        "index": {
+                            "knn": true
+                        }
+                    },
+                    "mappings": {
+                        "properties": {
+                            "vector": {
+                                "type": "knn_vector",
+                                "dimension": 3
+                            }
+                        }
+                    }
+                })),
+        );
+        assert_eq!(create_knn_index.status, 200);
 
         let cases = [
             (
@@ -49846,6 +49934,27 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             version: OPENSEARCH_3_7_0_TRANSPORT,
         });
 
+        let create_knn_index = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/logs-stateful-probe").with_json_body(
+                serde_json::json!({
+                    "settings": {
+                        "index": {
+                            "knn": true
+                        }
+                    },
+                    "mappings": {
+                        "properties": {
+                            "embedding": {
+                                "type": "knn_vector",
+                                "dimension": 3
+                            }
+                        }
+                    }
+                }),
+            ),
+        );
+        assert_eq!(create_knn_index.status, 200);
+
         let root_train = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/_plugins/_knn/models/_train").with_json_body(
                 serde_json::json!({
@@ -50046,6 +50155,81 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         );
         assert_eq!(breaker.status, 429);
         assert_eq!(breaker.body["error"]["type"], "circuit_breaking_exception");
+    }
+
+    #[test]
+    fn knn_warmup_and_clear_cache_reject_non_knn_indices_like_opensearch() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        let create_plain_index =
+            node.handle_rest_request(RestRequest::new(RestMethod::Put, "/plain-knn-reject"));
+        assert_eq!(create_plain_index.status, 200);
+
+        let warmup_plain = node.handle_rest_request(
+            RestRequest::new(RestMethod::Get, "/_plugins/_knn/warmup/plain-knn-reject")
+                .with_json_body(serde_json::json!({ "vector_segment_count": 1 })),
+        );
+        assert_eq!(warmup_plain.status, 400);
+        assert_eq!(
+            warmup_plain.body["error"]["reason"],
+            "Warm up request rejected. One or more indices have 'index.knn' set to false."
+        );
+        assert_eq!(
+            warmup_plain.body["error"]["invalid_indices"],
+            serde_json::json!(["plain-knn-reject"])
+        );
+
+        let clear_plain = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/_plugins/_knn/clear_cache/plain-knn-reject",
+        ));
+        assert_eq!(clear_plain.status, 400);
+        assert_eq!(
+            clear_plain.body["error"]["reason"],
+            "ClearCache request rejected. One or more indices have 'index.knn' set to false."
+        );
+        assert_eq!(
+            clear_plain.body["error"]["invalid_indices"],
+            serde_json::json!(["plain-knn-reject"])
+        );
+
+        let create_knn_index = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/enabled-knn-cache").with_json_body(
+                serde_json::json!({
+                    "settings": {
+                        "index": {
+                            "knn": true
+                        }
+                    },
+                    "mappings": {
+                        "properties": {
+                            "embedding": {
+                                "type": "knn_vector",
+                                "dimension": 3
+                            }
+                        }
+                    }
+                }),
+            ),
+        );
+        assert_eq!(create_knn_index.status, 200);
+
+        let warmup_knn = node.handle_rest_request(
+            RestRequest::new(RestMethod::Get, "/_plugins/_knn/warmup/enabled-knn-cache")
+                .with_json_body(serde_json::json!({ "vector_segment_count": 1 })),
+        );
+        assert_eq!(warmup_knn.status, 200);
+        assert_eq!(warmup_knn.body["index"], "enabled-knn-cache");
+
+        let clear_knn = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/_plugins/_knn/clear_cache/enabled-knn-cache",
+        ));
+        assert_eq!(clear_knn.status, 200);
+        assert_eq!(clear_knn.body["index"], "enabled-knn-cache");
     }
 
     #[test]

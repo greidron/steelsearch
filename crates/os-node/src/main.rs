@@ -31136,19 +31136,17 @@ mod vector_live_route_parity_tests {
                                 "compression_level": "1x",
                                 "doc_values": true,
                                 "store": false,
-                                "_meta": {
-                                    "owner": "vector-live-route"
-                                },
                                 "method": {
                                     "name": "hnsw",
-                                    "engine": "lucene"
+                                    "engine": "lucene",
+                                    "space_type": "l2"
                                 }
                             }
                         }
                     }
                 })),
         );
-        assert_eq!(create_index.status, 200);
+        assert_eq!(create_index.status, 200, "{:?}", create_index.body);
 
         for (doc_id, source) in [
             (

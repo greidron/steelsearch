@@ -166,6 +166,8 @@ Current runtime-connected evidence:
   - `GET /_plugins/_knn/stats`
   - `POST /_plugins/_knn/warmup/{index}`
   - `POST /_plugins/_knn/clear_cache/{index}`
+  - warmup / clear-cache reject concrete non-k-NN indices using the
+    OpenSearch k-NN plugin boundary where `index.knn` must be `true`
 - a workspace-visible main-side test now drives those routes through the actual
   runtime path and checks:
   - `knn` hit ordering
