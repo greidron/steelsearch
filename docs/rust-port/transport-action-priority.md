@@ -236,7 +236,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `cluster:monitor/state`
 - `cluster:monitor/health`
 - `cluster:monitor/stats` (implemented local empty-cluster-stats subset)
-- `cluster:monitor/shards` (rejected fail-closed)
+- `cluster:monitor/shards` (implemented empty cat-shards subset)
 - `cluster:monitor/nodes/info` (implemented local node-info subset)
 - `cluster:monitor/nodes/stats` (implemented local empty-node-stats subset)
 - `cluster:monitor/wlm/stats` (implemented local empty-workload-group subset)
@@ -413,11 +413,13 @@ The cat-shards boundary covers:
 - OpenSearch `CatShardsRequest` parent task, cluster-manager timeout, local
   flag, indices array, optional cancel-after timeout, optional `PageParams`,
   and request-limit support flag at the wire decode/build layer;
-- explicit fail-closed classification for `cluster:monitor/shards` until shard
-  routing plus index stats response rendering is implemented;
+- implemented empty `CatShardsResponse` rendering for the default request
+  subset, including empty `IndicesStatsResponse`, empty `DiscoveryNodes`, empty
+  shard routing list, and absent page token;
 - explicit rejection for custom cluster-manager timeout, local reads, index
-  filters, cancel-after timeout, pagination, request-limit checks, and
-  cat-shards execution.
+  filters, cancel-after timeout, pagination, request-limit checks, non-empty
+  shard stats, non-empty discovery nodes, non-empty shard routing, and page
+  tokens.
 
 The nodes-info boundary covers:
 
@@ -2781,23 +2783,22 @@ At roughly 1.80M ops/s in the latest local release run, the wire adapter is not
 the first expected bottleneck; full node stats aggregation remains a separate
 mapping and fanout task.
 
-Current cat-shards reject wire microbenchmark:
+Current cat-shards implemented-path wire microbenchmark:
 
 ```text
-cargo run -p os-transport --release --bin cat-shards-reject-wire-benchmark
-cat_shards_reject_request_encode iterations=400000 elapsed_ms=184.729 ops_per_second=2165329.22 nanos_per_op=461.82
-cat_shards_reject_request_decode iterations=400000 elapsed_ms=201.912 ops_per_second=1981056.97 nanos_per_op=504.78
-cat_shards_reject_validation iterations=400000 elapsed_ms=204.856 ops_per_second=1952587.62 nanos_per_op=512.14
-cat_shards_reject_wire_bottleneck_ops_per_second=1952587.62
+cargo run -p os-transport --release --bin cat-shards-wire-benchmark
+cat_shards_request_encode ops_per_second=2186441.66 nanos_per_op=457.36
+cat_shards_request_decode ops_per_second=2074382.08 nanos_per_op=482.07
+cat_shards_request_validate ops_per_second=2033848.29 nanos_per_op=491.68
+cat_shards_response_decode ops_per_second=3956924.99 nanos_per_op=252.72
+cat_shards_wire_bottleneck_ops_per_second=2033848.29
 ```
 
-The current cat-shards fail-closed boundary bottleneck is validation. This path
-carries the ActionRequest parent task, cluster-manager timeout, local flag,
-indices array, optional cancel-after timeout, optional pagination, and
-request-limit marker before rejecting execution. At roughly 1.95M ops/s in the
-latest local release run, the boundary itself is lightweight; the first
-performance point to inspect before accepting execution is shard routing plus
-indices stats response rendering.
+The current cat-shards implemented-path wire bottleneck is request validation.
+At roughly 2.03M ops/s in the latest local release run, the empty response wire
+adapter is not the first expected bottleneck. Runtime scope is intentionally
+limited to the empty response subset; populated shard routing plus index stats
+response rendering remains separate work.
 
 Current nodes-info supported-subset wire microbenchmark:
 

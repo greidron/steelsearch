@@ -48,7 +48,7 @@ name = "cluster-stats-wire-benchmark"
 path = "benchmarks/cluster_stats_reject_wire.rs"
 
 [[bin]]
-name = "cat-shards-reject-wire-benchmark"
+name = "cat-shards-wire-benchmark"
 path = "benchmarks/cat_shards_reject_wire.rs"
 
 [[bin]]

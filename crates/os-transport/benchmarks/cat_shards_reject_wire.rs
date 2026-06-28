@@ -1,6 +1,8 @@
 use os_core::OPENSEARCH_3_7_0_TRANSPORT;
 use os_transport::action::{
-    build_cat_shards_request_message, read_cat_shards_request_message, CatShardsRequestWire,
+    build_cat_shards_request_message, build_cat_shards_response_message,
+    read_cat_shards_request_message, read_cat_shards_response_message, CatShardsRequestWire,
+    CatShardsResponseWire,
 };
 use os_transport::frame::{decode_frame, DecodedFrame};
 use std::hint::black_box;
@@ -11,7 +13,7 @@ const ITERATIONS: usize = 400_000;
 fn main() {
     let request = CatShardsRequestWire::default();
 
-    let request_encode = measure("cat_shards_reject_request_encode", ITERATIONS, || {
+    let request_encode = measure("cat_shards_request_encode", ITERATIONS, || {
         let frame =
             build_cat_shards_request_message(56, OPENSEARCH_3_7_0_TRANSPORT, black_box(&request))
                 .expect("cat-shards request encode should succeed");
@@ -21,7 +23,7 @@ fn main() {
     let request_frame = build_cat_shards_request_message(56, OPENSEARCH_3_7_0_TRANSPORT, &request)
         .expect("cat-shards request encode should succeed");
 
-    let request_decode = measure("cat_shards_reject_request_decode", ITERATIONS, || {
+    let request_decode = measure("cat_shards_request_decode", ITERATIONS, || {
         let mut frame = black_box(request_frame.clone());
         let message = decode_message(&mut frame);
         let decoded = read_cat_shards_request_message(black_box(&message))
@@ -29,22 +31,35 @@ fn main() {
         black_box(decoded);
     });
 
-    let reject_validate = measure("cat_shards_reject_validation", ITERATIONS, || {
+    let request_validate = measure("cat_shards_request_validate", ITERATIONS, || {
         let mut frame = black_box(request_frame.clone());
         let message = decode_message(&mut frame);
         let decoded = read_cat_shards_request_message(black_box(&message))
             .expect("cat-shards request decode");
-        let err = decoded
-            .reject_unsupported_execution()
-            .expect_err("cat-shards execution should reject");
-        black_box(err);
+        decoded
+            .validate_supported_subset()
+            .expect("default cat-shards request should validate");
+        black_box(decoded);
+    });
+
+    let response = CatShardsResponseWire::empty();
+    let response_frame =
+        build_cat_shards_response_message(56, OPENSEARCH_3_7_0_TRANSPORT, &response)
+            .expect("cat-shards response encode should succeed");
+    let response_decode = measure("cat_shards_response_decode", ITERATIONS, || {
+        let mut frame = black_box(response_frame.clone());
+        let message = decode_message(&mut frame);
+        let decoded = read_cat_shards_response_message(black_box(&message))
+            .expect("cat-shards response decode");
+        black_box(decoded);
     });
 
     let combined_ops_per_second = request_encode
         .ops_per_second
         .min(request_decode.ops_per_second)
-        .min(reject_validate.ops_per_second);
-    println!("cat_shards_reject_wire_bottleneck_ops_per_second={combined_ops_per_second:.2}");
+        .min(request_validate.ops_per_second)
+        .min(response_decode.ops_per_second);
+    println!("cat_shards_wire_bottleneck_ops_per_second={combined_ops_per_second:.2}");
 }
 
 #[derive(Clone, Copy)]

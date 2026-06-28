@@ -63,8 +63,8 @@
       "transport_action": "TransportCatShardsAction",
       "request_wire_type": "CatShardsRequest",
       "response_wire_type": "CatShardsResponse",
-      "disposition": "rejected",
-      "reason": "Cat-shards transport execution requires shard routing and index stats response rendering before Steelsearch can serve OpenSearch cat shards semantics."
+      "disposition": "implemented",
+      "reason": "Cat-shards transport adapter renders empty IndicesStatsResponse, empty DiscoveryNodes, and empty shard routing list for the default subset."
     },
     {
       "action_name": "cluster:monitor/nodes/info",

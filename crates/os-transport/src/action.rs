@@ -1713,8 +1713,8 @@ pub fn classify_opensearch_transport_action(
         },
         CAT_SHARDS_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
-            disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "cat-shards transport execution requires shard routing and index stats response rendering",
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "cat-shards transport adapter renders empty IndicesStatsResponse, empty DiscoveryNodes, and empty shard routing list for the default subset",
         },
         NODES_INFO_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -3427,12 +3427,11 @@ impl CatShardsRequestWire {
         Ok(request)
     }
 
-    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+    pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
         if self.cluster_manager_timeout != TimeValueWire::seconds(30) {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "cat shards cluster-manager timeout",
-                reason:
-                    "custom cluster-manager timeout is not mapped by the cat-shards adapter yet",
+                reason: "custom cluster-manager timeout is not mapped by the cat-shards adapter",
             });
         }
         if self.local {
@@ -3465,11 +3464,154 @@ impl CatShardsRequestWire {
                 reason: "cat-shards response limit checks require shard response sizing semantics",
             });
         }
+        Ok(())
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        self.validate_supported_subset()?;
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "cat shards execution",
-            reason:
-                "cat-shards transport execution requires shard routing and index stats response rendering",
+            reason: "use validate_supported_subset for the implemented empty cat-shards adapter",
         })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Default)]
+pub struct CatShardsResponseWire {
+    pub total_shards: i32,
+    pub successful_shards: i32,
+    pub failed_shards: i32,
+    pub shard_failure_count: i32,
+    pub shard_stats_count: i32,
+    pub discovery_nodes_cluster_manager_node_id: Option<String>,
+    pub discovery_nodes_count: i32,
+    pub response_shards_count: i32,
+    pub page_token_present: bool,
+}
+
+impl CatShardsResponseWire {
+    pub fn empty() -> Self {
+        Self::default()
+    }
+
+    pub fn write_for_version(
+        &self,
+        output: &mut StreamOutput,
+        version: Version,
+    ) -> Result<(), TransportActionWireError> {
+        self.validate_supported_subset()?;
+        output.write_vint(self.total_shards);
+        output.write_vint(self.successful_shards);
+        output.write_vint(self.failed_shards);
+        output.write_vint(self.shard_failure_count);
+        output.write_vint(self.shard_stats_count);
+        if version.on_or_after(OPENSEARCH_2_18_0) {
+            write_optional_discovery_nodes_cluster_manager_node_id(
+                output,
+                self.discovery_nodes_cluster_manager_node_id.as_deref(),
+            );
+            output.write_vint(self.discovery_nodes_count);
+            output.write_vint(self.response_shards_count);
+            output.write_bool(self.page_token_present);
+        }
+        Ok(())
+    }
+
+    pub fn read_for_version(
+        bytes: Bytes,
+        version: Version,
+    ) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let total_shards = input.read_vint()?;
+        let successful_shards = input.read_vint()?;
+        let failed_shards = input.read_vint()?;
+        let shard_failure_count = input.read_vint()?;
+        let shard_stats_count = input.read_vint()?;
+        let (
+            discovery_nodes_cluster_manager_node_id,
+            discovery_nodes_count,
+            response_shards_count,
+            page_token_present,
+        ) = if version.on_or_after(OPENSEARCH_2_18_0) {
+            (
+                read_optional_discovery_nodes_cluster_manager_node_id(&mut input)?,
+                input.read_vint()?,
+                input.read_vint()?,
+                input.read_bool()?,
+            )
+        } else {
+            (None, 0, 0, false)
+        };
+        let response = Self {
+            total_shards,
+            successful_shards,
+            failed_shards,
+            shard_failure_count,
+            shard_stats_count,
+            discovery_nodes_cluster_manager_node_id,
+            discovery_nodes_count,
+            response_shards_count,
+            page_token_present,
+        };
+        require_no_trailing_bytes(&input)?;
+        response.validate_supported_subset()?;
+        Ok(response)
+    }
+
+    pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
+        if self.total_shards < 0 || self.successful_shards < 0 || self.failed_shards < 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cat shards response shard counters",
+                reason: "CatShardsResponse shard counters must be non-negative",
+            });
+        }
+        if self.shard_failure_count < 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cat shards response failure count",
+                reason: "CatShardsResponse shard failure count must be non-negative",
+            });
+        }
+        if self.shard_stats_count < 0
+            || self.discovery_nodes_count < 0
+            || self.response_shards_count < 0
+        {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cat shards response collection counts",
+                reason: "CatShardsResponse collection counts must be non-negative",
+            });
+        }
+        if self.failed_shards != 0 || self.shard_failure_count != 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cat shards response shard failures",
+                reason: "cat-shards shard failures require DefaultShardOperationFailedException decoding",
+            });
+        }
+        if self.shard_stats_count != 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cat shards response shard stats",
+                reason: "non-empty cat-shards IndicesStatsResponse requires ShardStats decoding",
+            });
+        }
+        if self.discovery_nodes_count != 0 || self.discovery_nodes_cluster_manager_node_id.is_some()
+        {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cat shards response discovery nodes",
+                reason: "non-empty cat-shards DiscoveryNodes requires node metadata decoding",
+            });
+        }
+        if self.response_shards_count != 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cat shards response shard routing",
+                reason: "non-empty cat-shards response shard list requires ShardRouting decoding",
+            });
+        }
+        if self.page_token_present {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cat shards response page token",
+                reason: "cat-shards page token requires PageToken decoding",
+            });
+        }
+        Ok(())
     }
 }
 
@@ -5481,6 +5623,36 @@ pub fn read_cat_shards_request_message(
         });
     }
     CatShardsRequestWire::read_for_version(message.body.clone().freeze(), message.version)
+}
+
+pub fn build_cat_shards_response_message(
+    request_id: i64,
+    version: Version,
+    response: &CatShardsResponseWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    response.write_for_version(&mut body, version)?;
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::response(),
+        version,
+        variable_header: BytesMut::from(&ResponseVariableHeader::default().to_bytes()[..]),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_cat_shards_response_message(
+    message: &TransportMessage,
+) -> Result<CatShardsResponseWire, TransportActionWireError> {
+    if !message.status.is_response() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "response",
+            actual: message.status.bits(),
+        });
+    }
+    let _header = ResponseVariableHeader::read(message.variable_header.clone().freeze())?;
+    CatShardsResponseWire::read_for_version(message.body.clone().freeze(), message.version)
 }
 
 pub fn build_nodes_info_request_message(
@@ -43339,6 +43511,28 @@ fn read_optional_cluster_stats_analysis_stats(
     Ok(false)
 }
 
+fn write_optional_discovery_nodes_cluster_manager_node_id(
+    output: &mut StreamOutput,
+    id: Option<&str>,
+) {
+    if let Some(id) = id {
+        output.write_bool(true);
+        output.write_string(id);
+    } else {
+        output.write_bool(false);
+    }
+}
+
+fn read_optional_discovery_nodes_cluster_manager_node_id(
+    input: &mut StreamInput,
+) -> Result<Option<String>, TransportActionWireError> {
+    if input.read_bool()? {
+        Ok(Some(input.read_string()?))
+    } else {
+        Ok(None)
+    }
+}
+
 fn write_parent_task_id(output: &mut StreamOutput, node: &str, id: Option<i64>) {
     output.write_string(node);
     if !node.is_empty() {
@@ -46532,7 +46726,7 @@ mod tests {
         );
         assert_eq!(
             classify_opensearch_transport_action(CAT_SHARDS_ACTION_NAME).disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             classify_opensearch_transport_action(NODES_INFO_ACTION_NAME).disposition,
@@ -49845,20 +50039,14 @@ mod tests {
     }
 
     #[test]
-    fn cat_shards_request_wire_round_trips_and_rejects_execution_boundary() {
+    fn cat_shards_request_wire_round_trips_and_validates_supported_subset() {
         let request = CatShardsRequestWire::default();
         let mut output = StreamOutput::new();
         request.write(&mut output);
 
         let decoded = CatShardsRequestWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, request);
-        assert!(matches!(
-            decoded.reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "cat shards execution",
-                ..
-            })
-        ));
+        decoded.validate_supported_subset().unwrap();
     }
 
     #[test]
@@ -50005,7 +50193,7 @@ mod tests {
     }
 
     #[test]
-    fn cat_shards_transport_messages_bind_rejected_action_frame() {
+    fn cat_shards_transport_messages_bind_action_frame_and_empty_response() {
         let request = CatShardsRequestWire::default();
         let mut frame =
             build_cat_shards_request_message(56, OPENSEARCH_3_7_0_TRANSPORT, &request).unwrap();
@@ -50013,15 +50201,21 @@ mod tests {
             panic!("expected cat-shards request message");
         };
         assert_eq!(read_cat_shards_request_message(&message).unwrap(), request);
-        assert!(matches!(
-            read_cat_shards_request_message(&message)
-                .unwrap()
-                .reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "cat shards execution",
-                ..
-            })
-        ));
+        read_cat_shards_request_message(&message)
+            .unwrap()
+            .validate_supported_subset()
+            .unwrap();
+
+        let response = CatShardsResponseWire::empty();
+        let mut frame =
+            build_cat_shards_response_message(56, OPENSEARCH_3_7_0_TRANSPORT, &response).unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected cat-shards response message");
+        };
+        assert_eq!(
+            read_cat_shards_response_message(&message).unwrap(),
+            response
+        );
     }
 
     #[test]
