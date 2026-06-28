@@ -32,8 +32,8 @@ name = "cluster-health-wire-benchmark"
 path = "benchmarks/cluster_health_wire.rs"
 
 [[bin]]
-name = "main-reject-wire-benchmark"
-path = "benchmarks/main_reject_wire.rs"
+name = "main-wire-benchmark"
+path = "benchmarks/main_wire.rs"
 
 [[bin]]
 name = "remote-info-wire-benchmark"

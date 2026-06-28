@@ -373,11 +373,10 @@ The health adapter covers:
 The main boundary covers:
 
 - OpenSearch `MainRequest` parent task at the wire decode/build layer;
-- explicit fail-closed classification for `cluster:monitor/main` until node
-  name, cluster name, cluster UUID, version, and build metadata response
-  rendering are implemented;
-- explicit rejection at execution so Steelsearch does not emit incomplete root
-  info semantics through transport.
+- OpenSearch `MainResponse` node name, cluster name, cluster UUID, version, and
+  build metadata wire rendering;
+- implemented `cluster:monitor/main` request admission and local root-info
+  response rendering from the current transport identity.
 
 The remote-info boundary covers:
 
@@ -2758,21 +2757,22 @@ request shape, so it is materially lighter than index/update/bulk request
 decode. At roughly 1.64M ops/s in the latest local release run, this adapter
 does not introduce a transport-wire bottleneck.
 
-Current main reject wire microbenchmark:
+Current main wire microbenchmark:
 
 ```text
-cargo run -p os-transport --release --bin main-reject-wire-benchmark
-main_reject_request_encode iterations=400000 elapsed_ms=180.233 ops_per_second=2219352.17 nanos_per_op=450.58
-main_reject_request_decode iterations=400000 elapsed_ms=174.344 ops_per_second=2294317.85 nanos_per_op=435.86
-main_reject_validation iterations=400000 elapsed_ms=177.000 ops_per_second=2259888.73 nanos_per_op=442.50
-main_reject_wire_bottleneck_ops_per_second=2219352.17
+cargo run -p os-transport --release --bin main-wire-benchmark
+main_request_encode iterations=400000 elapsed_ms=180.945 ops_per_second=2210613.19 nanos_per_op=452.36
+main_request_decode iterations=400000 elapsed_ms=176.158 ops_per_second=2270687.98 nanos_per_op=440.40
+main_request_validate iterations=400000 elapsed_ms=176.028 ops_per_second=2272361.84 nanos_per_op=440.07
+main_response_encode iterations=400000 elapsed_ms=369.083 ops_per_second=1083766.57 nanos_per_op=922.71
+main_response_decode iterations=400000 elapsed_ms=365.487 ops_per_second=1094431.57 nanos_per_op=913.72
+main_wire_bottleneck_ops_per_second=1083766.57
 ```
 
-The current main fail-closed boundary bottleneck is request encode over the
-parent-task-only request frame. At roughly 2.22M ops/s in the latest local
-release run, this boundary is not a material performance bottleneck; the first
-performance-sensitive work is main response rendering from node, cluster,
-version, and build metadata.
+The current main boundary bottleneck is response encode over node, cluster,
+version, and build metadata. At roughly 1.08M ops/s in the latest local release
+run, this adapter is still not a material transport-wire bottleneck for root
+info probes.
 
 Current remote-info supported-subset wire microbenchmark:
 
