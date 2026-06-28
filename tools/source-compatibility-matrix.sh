@@ -240,6 +240,13 @@ action_status() {
   esac
 
   case "${action}" in
+    PutIndexTemplateAction.INSTANCE|DeleteIndexTemplateAction.INSTANCE|PutComponentTemplateAction.INSTANCE|DeleteComponentTemplateAction.INSTANCE|CreateDataStreamAction.INSTANCE|DeleteDataStreamAction.INSTANCE|ResolveIndexAction.INSTANCE)
+      echo "implemented"
+      return
+      ;;
+  esac
+
+  case "${action}" in
     GetStoredScriptAction.INSTANCE|GetScriptContextAction.INSTANCE|GetScriptLanguageAction.INSTANCE)
       echo "implemented"
       return

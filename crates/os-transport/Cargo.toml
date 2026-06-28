@@ -385,15 +385,15 @@ path = "benchmarks/get_index_templates_wire.rs"
 
 [[bin]]
 name = "put-index-template-wire-benchmark"
-path = "benchmarks/put_index_template_reject_wire.rs"
+path = "benchmarks/put_index_template_wire.rs"
 
 [[bin]]
 name = "delete-index-template-wire-benchmark"
-path = "benchmarks/delete_index_template_reject_wire.rs"
+path = "benchmarks/delete_index_template_wire.rs"
 
 [[bin]]
 name = "put-component-template-wire-benchmark"
-path = "benchmarks/put_component_template_reject_wire.rs"
+path = "benchmarks/put_component_template_wire.rs"
 
 [[bin]]
 name = "get-component-template-wire-benchmark"
@@ -401,7 +401,7 @@ path = "benchmarks/get_component_template_wire.rs"
 
 [[bin]]
 name = "delete-component-template-wire-benchmark"
-path = "benchmarks/delete_component_template_reject_wire.rs"
+path = "benchmarks/delete_component_template_wire.rs"
 
 [[bin]]
 name = "put-composable-index-template-reject-wire-benchmark"
@@ -489,11 +489,11 @@ path = "benchmarks/indices_shard_stores_wire.rs"
 
 [[bin]]
 name = "create-data-stream-wire-benchmark"
-path = "benchmarks/create_data_stream_reject_wire.rs"
+path = "benchmarks/create_data_stream_wire.rs"
 
 [[bin]]
 name = "delete-data-stream-wire-benchmark"
-path = "benchmarks/delete_data_stream_reject_wire.rs"
+path = "benchmarks/delete_data_stream_wire.rs"
 
 [[bin]]
 name = "get-data-stream-wire-benchmark"
@@ -504,8 +504,8 @@ name = "data-streams-stats-wire-benchmark"
 path = "benchmarks/data_streams_stats_wire.rs"
 
 [[bin]]
-name = "resolve-index-reject-wire-benchmark"
-path = "benchmarks/resolve_index_reject_wire.rs"
+name = "resolve-index-wire-benchmark"
+path = "benchmarks/resolve_index_wire.rs"
 
 [[bin]]
 name = "create-view-reject-wire-benchmark"

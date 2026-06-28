@@ -177,8 +177,8 @@ The source-derived transport inventory currently has 160 rows:
 
 | Status | Count | Meaning |
 | --- | ---: | --- |
-| `implemented` | 74 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
-| `partial` | 86 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
+| `implemented` | 81 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
+| `partial` | 79 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
 | `planned` | 0 | No source-derived transport action remains unclassified. |
 
 The k-NN plugin action sweep is complete at the boundary layer. All 12
@@ -4376,18 +4376,18 @@ Current put-index-template wire microbenchmark:
 
 ```text
 cargo run -p os-transport --release --bin put-index-template-wire-benchmark
-put_index_template_request_encode iterations=400000 elapsed_ms=313.575 ops_per_second=1275613.61 nanos_per_op=783.94
-put_index_template_request_decode iterations=400000 elapsed_ms=309.299 ops_per_second=1293244.91 nanos_per_op=773.25
-put_index_template_request_validate iterations=400000 elapsed_ms=318.188 ops_per_second=1257116.60 nanos_per_op=795.47
-put_index_template_response_decode iterations=400000 elapsed_ms=54.422 ops_per_second=7349942.16 nanos_per_op=136.06
-put_index_template_wire_bottleneck_ops_per_second=1257116.60
+put_index_template_request_encode iterations=400000 elapsed_ms=314.955 ops_per_second=1270022.14 nanos_per_op=787.39
+put_index_template_request_decode iterations=400000 elapsed_ms=310.649 ops_per_second=1287625.30 nanos_per_op=776.62
+put_index_template_request_validate iterations=400000 elapsed_ms=338.156 ops_per_second=1182884.60 nanos_per_op=845.39
+put_index_template_response_decode iterations=400000 elapsed_ms=54.834 ops_per_second=7294753.98 nanos_per_op=137.08
+put_index_template_wire_bottleneck_ops_per_second=1182884.60
 ```
 
 The current put-index-template transport boundary bottleneck is request
 validation. The supported execution subset writes a valid empty legacy template
 shape with a template name, one index pattern, and optional version, then the
 node adapter upserts manifest-backed metadata and renders an acknowledged
-response. At roughly 1.26M ops/s in the latest local release run, the remaining
+response. At roughly 1.18M ops/s in the latest local release run, the remaining
 performance-sensitive work is richer template validation and metadata
 publication across distributed cluster-state ownership.
 
@@ -4395,11 +4395,11 @@ Current delete-index-template wire microbenchmark:
 
 ```text
 cargo run -p os-transport --release --bin delete-index-template-wire-benchmark
-delete_index_template_request_encode iterations=400000 elapsed_ms=288.491 ops_per_second=1386525.89 nanos_per_op=721.23
-delete_index_template_request_decode iterations=400000 elapsed_ms=243.822 ops_per_second=1640541.58 nanos_per_op=609.55
-delete_index_template_request_validate iterations=400000 elapsed_ms=247.952 ops_per_second=1613212.34 nanos_per_op=619.88
-delete_index_template_response_decode iterations=400000 elapsed_ms=54.738 ops_per_second=7307580.31 nanos_per_op=136.84
-delete_index_template_wire_bottleneck_ops_per_second=1386525.89
+delete_index_template_request_encode iterations=400000 elapsed_ms=285.669 ops_per_second=1400223.02 nanos_per_op=714.17
+delete_index_template_request_decode iterations=400000 elapsed_ms=243.845 ops_per_second=1640382.96 nanos_per_op=609.61
+delete_index_template_request_validate iterations=400000 elapsed_ms=248.350 ops_per_second=1610631.06 nanos_per_op=620.87
+delete_index_template_response_decode iterations=400000 elapsed_ms=54.591 ops_per_second=7327262.89 nanos_per_op=136.48
+delete_index_template_wire_bottleneck_ops_per_second=1400223.02
 ```
 
 The current delete-index-template transport boundary bottleneck is request
@@ -4412,11 +4412,11 @@ Current put-component-template wire microbenchmark:
 
 ```text
 cargo run -p os-transport --release --bin put-component-template-wire-benchmark
-put_component_template_request_encode iterations=400000 elapsed_ms=382.762 ops_per_second=1045034.49 nanos_per_op=956.91
-put_component_template_request_decode iterations=400000 elapsed_ms=305.793 ops_per_second=1308076.54 nanos_per_op=764.48
-put_component_template_request_validate iterations=400000 elapsed_ms=307.900 ops_per_second=1299121.55 nanos_per_op=769.75
-put_component_template_response_decode iterations=400000 elapsed_ms=54.131 ops_per_second=7389470.02 nanos_per_op=135.33
-put_component_template_wire_bottleneck_ops_per_second=1045034.49
+put_component_template_request_encode iterations=400000 elapsed_ms=350.187 ops_per_second=1142245.69 nanos_per_op=875.47
+put_component_template_request_decode iterations=400000 elapsed_ms=302.675 ops_per_second=1321549.60 nanos_per_op=756.69
+put_component_template_request_validate iterations=400000 elapsed_ms=309.496 ops_per_second=1292421.94 nanos_per_op=773.74
+put_component_template_response_decode iterations=400000 elapsed_ms=54.907 ops_per_second=7285007.68 nanos_per_op=137.27
+put_component_template_wire_bottleneck_ops_per_second=1142245.69
 ```
 
 The current put-component-template transport boundary bottleneck is request
@@ -4451,11 +4451,11 @@ Current delete-component-template wire microbenchmark:
 
 ```text
 cargo run -p os-transport --release --bin delete-component-template-wire-benchmark
-delete_component_template_request_encode iterations=400000 elapsed_ms=333.624 ops_per_second=1198955.90 nanos_per_op=834.06
-delete_component_template_request_decode iterations=400000 elapsed_ms=290.446 ops_per_second=1377191.16 nanos_per_op=726.12
-delete_component_template_request_validate iterations=400000 elapsed_ms=296.870 ops_per_second=1347391.00 nanos_per_op=742.18
-delete_component_template_response_decode iterations=400000 elapsed_ms=54.559 ops_per_second=7331458.92 nanos_per_op=136.40
-delete_component_template_wire_bottleneck_ops_per_second=1198955.90
+delete_component_template_request_encode iterations=400000 elapsed_ms=333.706 ops_per_second=1198658.90 nanos_per_op=834.27
+delete_component_template_request_decode iterations=400000 elapsed_ms=290.645 ops_per_second=1376248.30 nanos_per_op=726.61
+delete_component_template_request_validate iterations=400000 elapsed_ms=295.744 ops_per_second=1352519.29 nanos_per_op=739.36
+delete_component_template_response_decode iterations=400000 elapsed_ms=53.994 ops_per_second=7408225.33 nanos_per_op=134.99
+delete_component_template_wire_bottleneck_ops_per_second=1198658.90
 ```
 
 The current delete-component-template transport boundary bottleneck is request
@@ -4830,11 +4830,11 @@ Current create-data-stream implemented-path wire microbenchmark:
 
 ```text
 cargo run -p os-transport --release --bin create-data-stream-wire-benchmark
-create_data_stream_request_encode iterations=400000 elapsed_ms=248.504 ops_per_second=1609631.49 nanos_per_op=621.26
-create_data_stream_request_decode iterations=400000 elapsed_ms=240.746 ops_per_second=1661500.72 nanos_per_op=601.87
-create_data_stream_request_validate iterations=400000 elapsed_ms=243.969 ops_per_second=1639553.90 nanos_per_op=609.92
-create_data_stream_ack_response_decode iterations=400000 elapsed_ms=54.157 ops_per_second=7385966.90 nanos_per_op=135.39
-create_data_stream_wire_bottleneck_ops_per_second=1609631.49
+create_data_stream_request_encode iterations=400000 elapsed_ms=249.822 ops_per_second=1601141.58 nanos_per_op=624.55
+create_data_stream_request_decode iterations=400000 elapsed_ms=245.248 ops_per_second=1631003.48 nanos_per_op=613.12
+create_data_stream_request_validate iterations=400000 elapsed_ms=248.494 ops_per_second=1609697.45 nanos_per_op=621.23
+create_data_stream_ack_response_decode iterations=400000 elapsed_ms=54.714 ops_per_second=7310742.60 nanos_per_op=136.79
+create_data_stream_wire_bottleneck_ops_per_second=1601141.58
 ```
 
 The current create-data-stream implemented-path wire bottleneck is request
@@ -4849,11 +4849,11 @@ Current delete-data-stream implemented-path wire microbenchmark:
 
 ```text
 cargo run -p os-transport --release --bin delete-data-stream-wire-benchmark
-delete_data_stream_request_encode iterations=400000 elapsed_ms=247.767 ops_per_second=1614420.81 nanos_per_op=619.42
-delete_data_stream_request_decode iterations=400000 elapsed_ms=249.995 ops_per_second=1600029.33 nanos_per_op=624.99
-delete_data_stream_request_validate iterations=400000 elapsed_ms=455.338 ops_per_second=878467.90 nanos_per_op=1138.35
-delete_data_stream_ack_response_decode iterations=400000 elapsed_ms=80.237 ops_per_second=4985248.46 nanos_per_op=200.59
-delete_data_stream_wire_bottleneck_ops_per_second=878467.90
+delete_data_stream_request_encode iterations=400000 elapsed_ms=245.521 ops_per_second=1629188.85 nanos_per_op=613.80
+delete_data_stream_request_decode iterations=400000 elapsed_ms=248.391 ops_per_second=1610364.68 nanos_per_op=620.98
+delete_data_stream_request_validate iterations=400000 elapsed_ms=253.165 ops_per_second=1579997.57 nanos_per_op=632.91
+delete_data_stream_ack_response_decode iterations=400000 elapsed_ms=54.170 ops_per_second=7384128.40 nanos_per_op=135.43
+delete_data_stream_wire_bottleneck_ops_per_second=1579997.57
 ```
 
 The current delete-data-stream implemented-path wire bottleneck is validation.
@@ -4904,12 +4904,12 @@ expose a material response-codec bottleneck.
 Current resolve-index wire microbenchmark:
 
 ```text
-cargo run -p os-transport --release --bin resolve-index-reject-wire-benchmark
-resolve_index_request_encode iterations=400000 elapsed_ms=221.648 ops_per_second=1804659.62 nanos_per_op=554.12
-resolve_index_request_decode iterations=400000 elapsed_ms=248.776 ops_per_second=1607873.81 nanos_per_op=621.94
-resolve_index_request_validate iterations=400000 elapsed_ms=254.580 ops_per_second=1571217.33 nanos_per_op=636.45
-resolve_index_response_decode iterations=400000 elapsed_ms=66.074 ops_per_second=6053853.08 nanos_per_op=165.18
-resolve_index_wire_bottleneck_ops_per_second=1571217.33
+cargo run -p os-transport --release --bin resolve-index-wire-benchmark
+resolve_index_request_encode iterations=400000 elapsed_ms=221.486 ops_per_second=1805983.85 nanos_per_op=553.71
+resolve_index_request_decode iterations=400000 elapsed_ms=246.844 ops_per_second=1620456.34 nanos_per_op=617.11
+resolve_index_request_validate iterations=400000 elapsed_ms=252.841 ops_per_second=1582019.25 nanos_per_op=632.10
+resolve_index_response_decode iterations=400000 elapsed_ms=66.352 ops_per_second=6028461.94 nanos_per_op=165.88
+resolve_index_wire_bottleneck_ops_per_second=1582019.25
 ```
 
 The current resolve-index wire boundary bottleneck is request validation. This
