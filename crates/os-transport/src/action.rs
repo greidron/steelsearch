@@ -1750,7 +1750,7 @@ pub fn classify_opensearch_transport_action(
         ADD_VOTING_CONFIG_EXCLUSIONS_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Implemented,
-            reason: "add-voting-config-exclusions transport adapter mutates local coordination exclusions for the node_names subset",
+            reason: "add-voting-config-exclusions transport adapter mutates local coordination exclusions for the node_names and node_ids subset",
         },
         CLEAR_VOTING_CONFIG_EXCLUSIONS_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -35576,12 +35576,6 @@ impl AddVotingConfigExclusionsRequestWire {
                     "deprecated node-description selectors require discovery-node resolution semantics",
             });
         }
-        if !self.node_ids.is_empty() {
-            return Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "add voting config exclusions node ids",
-                reason: "node-id selectors require voting-config exclusion resolution semantics",
-            });
-        }
         Ok(())
     }
 
@@ -49942,13 +49936,7 @@ mod tests {
             node_names: Vec::new(),
             ..AddVotingConfigExclusionsRequestWire::default()
         };
-        assert!(matches!(
-            node_ids.reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "add voting config exclusions node ids",
-                ..
-            })
-        ));
+        node_ids.validate_supported_subset().unwrap();
     }
 
     #[test]

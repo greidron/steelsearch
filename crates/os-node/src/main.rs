@@ -10117,7 +10117,12 @@ fn apply_local_add_voting_config_exclusions(
     let resolved_exclusions = resolve_transport_voting_config_exclusion_node_names(
         &request.node_names,
         transport_identity,
-    );
+    )
+    .into_iter()
+    .chain(resolve_transport_voting_config_exclusion_node_ids(
+        &request.node_ids,
+        transport_identity,
+    ));
     if let Ok(mut state) = transport_identity.coordination_state.lock() {
         state.voting_config_exclusions.extend(resolved_exclusions);
     }
@@ -10139,6 +10144,23 @@ fn resolve_transport_voting_config_exclusion_node_names(
         .map(|name| {
             resolve_transport_cluster_manager_node_id_by_name(name, transport_identity)
                 .unwrap_or_else(|| format!("_missing_:{name}"))
+        })
+        .collect()
+}
+
+fn resolve_transport_voting_config_exclusion_node_ids(
+    node_ids: &[String],
+    transport_identity: &DevTransportIdentity,
+) -> BTreeSet<String> {
+    node_ids
+        .iter()
+        .filter(|node_id| !node_id.is_empty())
+        .map(|node_id| {
+            if node_id == &transport_identity.node_id {
+                transport_identity.node_id.clone()
+            } else {
+                node_id.clone()
+            }
         })
         .collect()
 }
@@ -17494,6 +17516,38 @@ mod tests {
         assert!(coordination_state
             .voting_config_exclusions
             .contains("_missing_:missing-node"));
+        drop(coordination_state);
+
+        let id_request = os_transport::action::AddVotingConfigExclusionsRequestWire {
+            node_names: Vec::new(),
+            node_ids: vec!["steel-node-id".to_string(), "missing-node-id".to_string()],
+            ..os_transport::action::AddVotingConfigExclusionsRequestWire::default()
+        };
+        let id_frame = os_transport::action::build_add_voting_config_exclusions_request_message(
+            196,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &id_request,
+        )
+        .unwrap();
+        assert!(
+            add_voting_config_exclusions_request_supports_local_execution_subset(
+                &id_frame[6..],
+                &transport_identity
+            )
+        );
+        let _ = build_local_add_voting_config_exclusions_response(
+            196,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &id_frame[6..],
+            &transport_identity,
+        );
+        let coordination_state = transport_identity
+            .coordination_state
+            .lock()
+            .expect("coordination state lock poisoned");
+        assert!(coordination_state
+            .voting_config_exclusions
+            .contains("missing-node-id"));
     }
 
     #[test]
@@ -17519,6 +17573,11 @@ mod tests {
             },
             os_transport::action::AddVotingConfigExclusionsRequestWire {
                 node_ids: vec!["steel-node-id".to_string()],
+                ..os_transport::action::AddVotingConfigExclusionsRequestWire::default()
+            },
+            os_transport::action::AddVotingConfigExclusionsRequestWire {
+                node_names: Vec::new(),
+                node_descriptions: vec!["steel-node".to_string()],
                 ..os_transport::action::AddVotingConfigExclusionsRequestWire::default()
             },
             os_transport::action::AddVotingConfigExclusionsRequestWire {

@@ -178,6 +178,20 @@
       "response_evidence": "crates/os-transport/src/action.rs::wlm_stats_transport_messages_bind_supported_action_frame_and_response"
     },
     {
+      "action_name": "cluster:monitor/_remotestore/stats",
+      "disposition": "implemented",
+      "evidence_kind": "wire_round_trip",
+      "request_evidence": "crates/os-transport/src/action.rs::remote_store_stats_transport_messages_bind_supported_action_frame_and_response",
+      "response_evidence": "crates/os-transport/src/action.rs::remote_store_stats_transport_messages_bind_supported_action_frame_and_response"
+    },
+    {
+      "action_name": "cluster:admin/remote_store/metadata",
+      "disposition": "implemented",
+      "evidence_kind": "wire_round_trip",
+      "request_evidence": "crates/os-transport/src/action.rs::remote_store_metadata_transport_messages_bind_supported_action_frame_and_response",
+      "response_evidence": "crates/os-transport/src/action.rs::remote_store_metadata_transport_messages_bind_supported_action_frame_and_response"
+    },
+    {
       "action_name": "cluster:monitor/nodes/usage",
       "disposition": "implemented",
       "evidence_kind": "wire_round_trip",
@@ -190,6 +204,20 @@
       "evidence_kind": "wire_round_trip",
       "request_evidence": "crates/os-transport/src/action.rs::nodes_hot_threads_transport_messages_bind_supported_action_frame_and_response",
       "response_evidence": "crates/os-transport/src/action.rs::nodes_hot_threads_transport_messages_bind_supported_action_frame_and_response"
+    },
+    {
+      "action_name": "cluster:admin/voting_config/add_exclusions",
+      "disposition": "implemented",
+      "evidence_kind": "wire_round_trip",
+      "request_evidence": "crates/os-transport/src/action.rs::add_voting_config_exclusions_transport_messages_bind_supported_action_frame_and_response",
+      "response_evidence": "crates/os-transport/src/action.rs::add_voting_config_exclusions_transport_messages_bind_supported_action_frame_and_response"
+    },
+    {
+      "action_name": "cluster:admin/voting_config/clear_exclusions",
+      "disposition": "implemented",
+      "evidence_kind": "wire_round_trip",
+      "request_evidence": "crates/os-transport/src/action.rs::clear_voting_config_exclusions_transport_messages_bind_supported_action_frame_and_response",
+      "response_evidence": "crates/os-transport/src/action.rs::clear_voting_config_exclusions_transport_messages_bind_supported_action_frame_and_response"
     },
     {
       "action_name": "cluster:admin/repository/get",
