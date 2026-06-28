@@ -177,8 +177,8 @@ The source-derived transport inventory currently has 160 rows:
 
 | Status | Count | Meaning |
 | --- | ---: | --- |
-| `implemented` | 63 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
-| `partial` | 97 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
+| `implemented` | 64 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
+| `partial` | 96 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
 | `planned` | 0 | No source-derived transport action remains unclassified. |
 
 The k-NN plugin action sweep is complete at the boundary layer. All 12
@@ -3294,16 +3294,16 @@ Current get-decommission-state wire microbenchmark:
 
 ```text
 cargo run -p os-transport --release --bin get-decommission-state-reject-wire-benchmark
-get_decommission_state_request_encode iterations=400000 elapsed_ms=260.405 ops_per_second=1536069.53 nanos_per_op=651.01
-get_decommission_state_request_decode iterations=400000 elapsed_ms=244.304 ops_per_second=1637301.86 nanos_per_op=610.76
-get_decommission_state_request_validate iterations=400000 elapsed_ms=247.512 ops_per_second=1616086.39 nanos_per_op=618.78
-get_decommission_state_response_decode iterations=400000 elapsed_ms=127.027 ops_per_second=3148927.67 nanos_per_op=317.57
-get_decommission_state_wire_bottleneck_ops_per_second=1536069.53
+get_decommission_state_request_encode iterations=400000 elapsed_ms=263.703 ops_per_second=1516858.37 nanos_per_op=659.26
+get_decommission_state_request_decode iterations=400000 elapsed_ms=243.585 ops_per_second=1642140.32 nanos_per_op=608.96
+get_decommission_state_request_validate iterations=400000 elapsed_ms=246.744 ops_per_second=1621111.72 nanos_per_op=616.86
+get_decommission_state_response_decode iterations=400000 elapsed_ms=124.701 ops_per_second=3207659.92 nanos_per_op=311.75
+get_decommission_state_wire_bottleneck_ops_per_second=1516858.37
 ```
 
 The current get-decommission-state boundary bottleneck is request encode. The
 payload includes the cluster-manager read request envelope, read-local flag,
-and awareness attribute name. At roughly 1.54M ops/s in the latest local
+and awareness attribute name. At roughly 1.52M ops/s in the latest local
 release run, this boundary is not a material transport bottleneck; the next
 performance-sensitive work is keeping manifest/custom-metadata lookup cheap as
 the cluster metadata document grows.

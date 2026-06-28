@@ -147,7 +147,7 @@ Interpretation note for the table above:
 | Transport error response decode | Partial | Partial | Known remote errors convert to OpenSearch-shaped errors; complete exception registry is missing. |
 | Cluster-state request/response read path | Partial | Partial | Decode-first scaffold and version-gated custom payload coverage exist; full diff apply and named writeable coverage are incomplete. |
 | Steelsearch-native shard search and development cluster transport | Implemented | N/A | Used for Steelsearch daemon-to-daemon development clusters, not Java node compatibility. |
-| Core `ActionModule` transport actions | Partial | Partial | 63 core action rows are implemented and the remaining 85 core rows have explicit fail-closed transport boundaries; most server-side execution semantics remain partial. |
+| Core `ActionModule` transport actions | Partial | Partial | 64 core action rows are implemented and the remaining 84 core rows have explicit fail-closed transport boundaries; most server-side execution semantics remain partial. |
 | k-NN transport actions | Partial | Partial | All 12 k-NN transport action rows have source-derived fail-closed request/response boundaries; model, cache, warmup, stats, and training execution semantics remain partial. |
 | Java mixed data-node transport behavior | Out of scope | Out of scope | Discovery, recovery, shard store, Lucene/JVM internals, and Java plugin hot paths are excluded from the current milestone. |
 
@@ -215,7 +215,7 @@ Current 0.2.4 mixed-cluster coverage evidence:
 - Current source-derived inventory is not an exhaustive OpenSearch API
   compatibility closure claim. The generated matrix currently has 754 rows:
   389 REST routes, 160 transport actions, 127 search registrations, and 78 node
-  runtime entries. Of the transport source rows, 63 are `implemented`, 97 are
+  runtime entries. Of the transport source rows, 64 are `implemented`, 96 are
   `partial`, and none remain `planned`; the partial rows still require
   owner-level server-side execution work before they can be promoted. Of the
   REST source rows, 371 are in scope and all are now classified as

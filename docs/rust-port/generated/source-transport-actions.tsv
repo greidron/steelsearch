@@ -136,7 +136,7 @@ implemented	GetAllPitsAction.INSTANCE	TransportGetAllPitsAction.class	/home/ubun
 partial	RestoreRemoteStoreAction.INSTANCE	TransportRestoreRemoteStoreAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	827
 partial	ExtensionProxyAction.INSTANCE	ExtensionProxyTransportAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	831
 partial	DecommissionAction.INSTANCE	TransportDecommissionAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	835
-partial	GetDecommissionStateAction.INSTANCE	TransportGetDecommissionStateAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	836
+implemented	GetDecommissionStateAction.INSTANCE	TransportGetDecommissionStateAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	836
 partial	DeleteDecommissionStateAction.INSTANCE	TransportDeleteDecommissionStateAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	837
 partial	PutSearchPipelineAction.INSTANCE	PutSearchPipelineTransportAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	840
 implemented	GetSearchPipelineAction.INSTANCE	GetSearchPipelineTransportAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	841
