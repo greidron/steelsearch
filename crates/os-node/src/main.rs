@@ -1414,6 +1414,32 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end_at_ms,
         )?;
     } else if is_request
+        && normalized_action_hint == Some("cluster:admin/search/pipeline/delete")
+        && delete_search_pipeline_request_supports_manifest_execution_subset(&body)
+    {
+        let response = build_delete_search_pipeline_response(request_id, header_version_id, &body);
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("cluster:admin/search/pipeline/delete"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request
         && normalized_action_hint == Some("cluster:admin/routing/awareness/weights/get")
         && get_weighted_routing_request_supports_manifest_subset(&body)
     {
@@ -5203,6 +5229,98 @@ fn get_search_pipeline_response_from_metadata_manifest(
     os_transport::action::GetSearchPipelineResponseWire {
         pipelines: response_pipelines,
     }
+}
+
+fn build_delete_search_pipeline_response(
+    request_id: i64,
+    header_version_id: u32,
+    body: &[u8],
+) -> Vec<u8> {
+    let Some(request) = decode_delete_search_pipeline_request_from_transport_body(body) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    if request.validate_supported_execution_subset().is_err() {
+        return build_empty_transport_response(request_id, header_version_id);
+    }
+    if !delete_search_pipeline_from_metadata_manifest(
+        &mut dev_transport_pit_bindings()
+            .metadata_manifest
+            .lock()
+            .expect("metadata manifest lock poisoned"),
+        &request.id,
+    ) {
+        return build_empty_transport_response(request_id, header_version_id);
+    }
+    os_transport::action::build_delete_search_pipeline_response_message(
+        request_id,
+        Version::from_id(header_version_id as i32),
+        &os_transport::action::AcknowledgedResponseWire { acknowledged: true },
+    )
+    .map(|frame| frame.to_vec())
+    .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
+}
+
+fn delete_search_pipeline_request_supports_manifest_execution_subset(body: &[u8]) -> bool {
+    let Some(request) = decode_delete_search_pipeline_request_from_transport_body(body) else {
+        return false;
+    };
+    if request.validate_supported_execution_subset().is_err() {
+        return false;
+    }
+    delete_search_pipeline_request_matches_manifest_subset(
+        &dev_transport_pit_bindings()
+            .metadata_manifest
+            .lock()
+            .expect("metadata manifest lock poisoned"),
+        &request.id,
+    )
+}
+
+fn decode_delete_search_pipeline_request_from_transport_body(
+    body: &[u8],
+) -> Option<os_transport::action::DeleteSearchPipelineRequestWire> {
+    let message = decode_transport_message_from_body(body)?;
+    os_transport::action::read_delete_search_pipeline_request_message(&message).ok()
+}
+
+fn delete_search_pipeline_request_matches_manifest_subset(
+    metadata_manifest: &Value,
+    pipeline_id: &str,
+) -> bool {
+    let Some(pipelines) = metadata_manifest
+        .get("search_pipelines")
+        .and_then(Value::as_object)
+    else {
+        return true;
+    };
+    if pipelines.keys().any(|id| wildcard_match(pipeline_id, id)) {
+        return true;
+    }
+    pipeline_id == "*" || pipeline_id == "_all"
+}
+
+fn delete_search_pipeline_from_metadata_manifest(
+    metadata_manifest: &mut Value,
+    pipeline_id: &str,
+) -> bool {
+    let Some(pipelines) = metadata_manifest
+        .get_mut("search_pipelines")
+        .and_then(Value::as_object_mut)
+    else {
+        return true;
+    };
+    let to_remove = pipelines
+        .keys()
+        .filter(|id| wildcard_match(pipeline_id, id))
+        .cloned()
+        .collect::<Vec<_>>();
+    if to_remove.is_empty() {
+        return pipeline_id == "*" || pipeline_id == "_all";
+    }
+    for id in to_remove {
+        pipelines.remove(&id);
+    }
+    true
 }
 
 fn search_pipeline_configuration_from_json(
@@ -14933,6 +15051,15 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
             if get_search_pipeline_request_supports_manifest_subset(body) =>
         {
             Some(build_get_search_pipeline_response(
+                request_id,
+                header_version_id,
+                body,
+            ))
+        }
+        Some("cluster:admin/search/pipeline/delete")
+            if delete_search_pipeline_request_supports_manifest_execution_subset(body) =>
+        {
+            Some(build_delete_search_pipeline_response(
                 request_id,
                 header_version_id,
                 body,
@@ -30849,6 +30976,109 @@ mod tests {
         let response =
             os_transport::action::read_get_search_pipeline_response_message(&message).unwrap();
         assert_eq!(response.pipelines.len(), 2);
+    }
+
+    #[test]
+    fn delete_search_pipeline_transport_route_removes_matching_manifest_entries() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        *dev_transport_pit_bindings()
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned") = serde_json::json!({
+            "search_pipelines": {
+                "logs-defaults": {
+                    "request_processors": [],
+                    "response_processors": []
+                },
+                "logs-rerank": {
+                    "request_processors": [],
+                    "response_processors": [
+                        { "rerank": { "ml_opensearch": { "model_id": "model-b" } } }
+                    ]
+                },
+                "metrics-defaults": {
+                    "request_processors": [],
+                    "response_processors": []
+                }
+            }
+        });
+
+        let delete_request = os_transport::action::DeleteSearchPipelineRequestWire {
+            id: "logs-*".to_string(),
+            ..os_transport::action::DeleteSearchPipelineRequestWire::default()
+        };
+        let delete_frame = os_transport::action::build_delete_search_pipeline_request_message(
+            213,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &delete_request,
+        )
+        .unwrap();
+        assert!(
+            delete_search_pipeline_request_supports_manifest_execution_subset(&delete_frame[6..])
+        );
+
+        let delete_response = build_delete_search_pipeline_response(
+            213,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &delete_frame[6..],
+        );
+        let mut frame = BytesMut::from(&delete_response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected delete-search-pipeline response message");
+        };
+        assert_eq!(message.request_id, 213);
+        assert_eq!(
+            os_transport::action::read_delete_search_pipeline_response_message(&message).unwrap(),
+            os_transport::action::AcknowledgedResponseWire { acknowledged: true }
+        );
+
+        let get_request = os_transport::action::GetSearchPipelineRequestWire {
+            ids: Vec::new(),
+            ..os_transport::action::GetSearchPipelineRequestWire::default()
+        };
+        let get_frame = os_transport::action::build_get_search_pipeline_request_message(
+            214,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &get_request,
+        )
+        .unwrap();
+        let get_response = build_get_search_pipeline_response(
+            214,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &get_frame[6..],
+        );
+        let mut frame = BytesMut::from(&get_response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected get-search-pipeline response message after delete");
+        };
+        let response =
+            os_transport::action::read_get_search_pipeline_response_message(&message).unwrap();
+        assert_eq!(response.pipelines.len(), 1);
+        assert_eq!(response.pipelines[0].id, "metrics-defaults");
+
+        let missing_request = os_transport::action::DeleteSearchPipelineRequestWire {
+            id: "missing".to_string(),
+            ..os_transport::action::DeleteSearchPipelineRequestWire::default()
+        };
+        let missing_frame = os_transport::action::build_delete_search_pipeline_request_message(
+            215,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &missing_request,
+        )
+        .unwrap();
+        assert!(
+            !delete_search_pipeline_request_supports_manifest_execution_subset(&missing_frame[6..])
+        );
     }
 
     #[test]

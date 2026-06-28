@@ -1893,8 +1893,8 @@ pub fn classify_opensearch_transport_action(
         },
         DELETE_SEARCH_PIPELINE_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
-            disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "delete-search-pipeline transport execution requires search pipeline wildcard deletion, missing-pipeline handling, metadata mutation, cluster-state publication, and acknowledgement rendering",
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "delete-search-pipeline transport adapter removes matching Rust manifest search pipeline metadata and renders OpenSearch-shaped acknowledgement",
         },
         PAUSE_INGESTION_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -15825,18 +15825,18 @@ impl DeleteSearchPipelineRequestWire {
         Ok(request)
     }
 
-    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+    pub fn validate_supported_execution_subset(&self) -> Result<(), TransportActionWireError> {
         if self.cluster_manager_timeout != TimeValueWire::seconds(30) {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "delete search pipeline cluster-manager timeout",
                 reason:
-                    "custom cluster-manager timeout requires search pipeline metadata mutation semantics",
+                    "custom cluster-manager timeout is outside the supported local manifest execution subset",
             });
         }
         if self.ack_timeout != TimeValueWire::seconds(30) {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "delete search pipeline ack timeout",
-                reason: "custom acknowledgement timeout requires search pipeline cluster-state publication semantics",
+                reason: "custom acknowledgement timeout is outside the supported local manifest execution subset",
             });
         }
         if self.id.trim().is_empty() {
@@ -15845,10 +15845,7 @@ impl DeleteSearchPipelineRequestWire {
                 reason: "pipeline id validation belongs to search pipeline deletion semantics",
             });
         }
-        Err(TransportActionWireError::UnsupportedWireShape {
-            shape: "delete search pipeline execution",
-            reason: "delete-search-pipeline transport execution requires search pipeline wildcard deletion, missing-pipeline handling, metadata mutation, cluster-state publication, and acknowledgement rendering",
-        })
+        Ok(())
     }
 }
 
@@ -54641,7 +54638,7 @@ mod tests {
     }
 
     #[test]
-    fn delete_search_pipeline_request_wire_round_trips_and_rejects_execution_boundary() {
+    fn delete_search_pipeline_request_wire_round_trips_and_validates_execution_subset() {
         let request = DeleteSearchPipelineRequestWire {
             parent_task_node: "cluster-manager".to_string(),
             parent_task_id: Some(44),
@@ -54653,25 +54650,13 @@ mod tests {
 
         let decoded = DeleteSearchPipelineRequestWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, request);
-        assert!(matches!(
-            decoded.reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "delete search pipeline execution",
-                ..
-            })
-        ));
+        decoded.validate_supported_execution_subset().unwrap();
 
         let wildcard = DeleteSearchPipelineRequestWire {
             id: "logs-*".to_string(),
             ..DeleteSearchPipelineRequestWire::default()
         };
-        assert!(matches!(
-            wildcard.reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "delete search pipeline execution",
-                ..
-            })
-        ));
+        wildcard.validate_supported_execution_subset().unwrap();
     }
 
     #[test]
@@ -54681,7 +54666,7 @@ mod tests {
             ..DeleteSearchPipelineRequestWire::default()
         };
         assert!(matches!(
-            cluster_manager_timeout.reject_unsupported_execution(),
+            cluster_manager_timeout.validate_supported_execution_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "delete search pipeline cluster-manager timeout",
                 ..
@@ -54693,7 +54678,7 @@ mod tests {
             ..DeleteSearchPipelineRequestWire::default()
         };
         assert!(matches!(
-            ack_timeout.reject_unsupported_execution(),
+            ack_timeout.validate_supported_execution_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "delete search pipeline ack timeout",
                 ..
@@ -54705,7 +54690,7 @@ mod tests {
             ..DeleteSearchPipelineRequestWire::default()
         };
         assert!(matches!(
-            missing_id.reject_unsupported_execution(),
+            missing_id.validate_supported_execution_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "delete search pipeline missing id",
                 ..
@@ -54722,7 +54707,7 @@ mod tests {
     }
 
     #[test]
-    fn delete_search_pipeline_transport_messages_bind_rejected_action_frame_and_ack_response() {
+    fn delete_search_pipeline_transport_messages_bind_action_frame_and_ack_response() {
         let request = DeleteSearchPipelineRequestWire::default();
         let mut frame =
             build_delete_search_pipeline_request_message(44, OPENSEARCH_3_7_0_TRANSPORT, &request)
@@ -54734,21 +54719,16 @@ mod tests {
             classify_opensearch_transport_request_message(&message)
                 .unwrap()
                 .disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             read_delete_search_pipeline_request_message(&message).unwrap(),
             request
         );
-        assert!(matches!(
-            read_delete_search_pipeline_request_message(&message)
-                .unwrap()
-                .reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "delete search pipeline execution",
-                ..
-            })
-        ));
+        read_delete_search_pipeline_request_message(&message)
+            .unwrap()
+            .validate_supported_execution_subset()
+            .unwrap();
 
         let response = AcknowledgedResponseWire { acknowledged: true };
         let mut frame = build_delete_search_pipeline_response_message(

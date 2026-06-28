@@ -177,8 +177,8 @@ The source-derived transport inventory currently has 160 rows:
 
 | Status | Count | Meaning |
 | --- | ---: | --- |
-| `implemented` | 65 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
-| `partial` | 95 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
+| `implemented` | 66 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
+| `partial` | 94 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
 | `planned` | 0 | No source-derived transport action remains unclassified. |
 
 The k-NN plugin action sweep is complete at the boundary layer. All 12
@@ -819,13 +819,13 @@ The delete-search-pipeline boundary covers:
   timeout, acknowledgement timeout, and pipeline id at the wire decode/build
   layer;
 - OpenSearch `AcknowledgedResponse` payload at the wire decode/build layer;
-- explicit fail-closed classification for
-  `cluster:admin/search/pipeline/delete` until search pipeline wildcard
-  deletion, missing-pipeline handling, metadata mutation, cluster-state
-  publication, and acknowledgement rendering are implemented;
+- manifest-backed transport execution for
+  `cluster:admin/search/pipeline/delete`, deleting exact or wildcard-matched
+  Rust manifest `search_pipelines` entries and returning an acknowledged
+  response;
 - explicit rejection for custom cluster-manager timeout, custom
-  acknowledgement timeout, missing pipeline id, delete-search-pipeline
-  execution, and acknowledgement response rendering.
+  acknowledgement timeout, missing pipeline id, and explicit missing-pipeline
+  requests that require OpenSearch `ResourceNotFoundException` rendering.
 
 The pause-ingestion boundary covers:
 
@@ -3365,24 +3365,24 @@ roughly 1.43M ops/s in the latest local release run, this boundary is not a
 material transport bottleneck; the remaining production-sensitive work is
 authoritative cluster-state search pipeline lookup and local read semantics.
 
-Current delete-search-pipeline reject wire microbenchmark:
+Current delete-search-pipeline wire microbenchmark:
 
 ```text
 cargo run -p os-transport --release --bin delete-search-pipeline-reject-wire-benchmark
-delete_search_pipeline_reject_request_encode iterations=400000 elapsed_ms=276.359 ops_per_second=1447394.26 nanos_per_op=690.90
-delete_search_pipeline_reject_request_decode iterations=400000 elapsed_ms=255.554 ops_per_second=1565228.47 nanos_per_op=638.88
-delete_search_pipeline_reject_validation iterations=400000 elapsed_ms=261.307 ops_per_second=1530763.68 nanos_per_op=653.27
-delete_search_pipeline_ack_response_decode iterations=400000 elapsed_ms=55.455 ops_per_second=7213034.04 nanos_per_op=138.64
-delete_search_pipeline_reject_wire_bottleneck_ops_per_second=1447394.26
+delete_search_pipeline_request_encode iterations=400000 elapsed_ms=276.082 ops_per_second=1448847.09 nanos_per_op=690.20
+delete_search_pipeline_request_decode iterations=400000 elapsed_ms=260.658 ops_per_second=1534576.95 nanos_per_op=651.65
+delete_search_pipeline_request_validate iterations=400000 elapsed_ms=263.984 ops_per_second=1515245.25 nanos_per_op=659.96
+delete_search_pipeline_ack_response_decode iterations=400000 elapsed_ms=53.844 ops_per_second=7428864.17 nanos_per_op=134.61
+delete_search_pipeline_wire_bottleneck_ops_per_second=1448847.09
 ```
 
-The current delete-search-pipeline fail-closed boundary bottleneck is request
-encode. The payload includes the acknowledged cluster-manager request envelope
-and pipeline id before admission rejects execution. At roughly 1.45M ops/s in
-the latest local release run, this boundary is not a material transport
-bottleneck; the first performance-sensitive work is search pipeline wildcard
-matching, missing-pipeline handling, metadata mutation, cluster-state
-publication, and acknowledgement rendering.
+The current delete-search-pipeline boundary bottleneck is request encode. The
+payload includes the acknowledged cluster-manager request envelope and pipeline
+id before the local manifest mutation removes exact or wildcard-matched
+pipelines and renders an acknowledgement. At roughly 1.45M ops/s in the latest
+local release run, this boundary is not a material transport bottleneck; the
+next performance-sensitive work is keeping wildcard matching and manifest
+mutation cheap as search pipeline metadata grows.
 
 Current pause-ingestion reject wire microbenchmark:
 

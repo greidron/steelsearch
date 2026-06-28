@@ -13,48 +13,39 @@ const ITERATIONS: usize = 400_000;
 fn main() {
     let request = DeleteSearchPipelineRequestWire::default();
 
-    let request_encode = measure(
-        "delete_search_pipeline_reject_request_encode",
-        ITERATIONS,
-        || {
-            let frame = build_delete_search_pipeline_request_message(
-                44,
-                OPENSEARCH_3_7_0_TRANSPORT,
-                black_box(&request),
-            )
-            .expect("delete-search-pipeline request encode should succeed");
-            black_box(frame);
-        },
-    );
+    let request_encode = measure("delete_search_pipeline_request_encode", ITERATIONS, || {
+        let frame = build_delete_search_pipeline_request_message(
+            44,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            black_box(&request),
+        )
+        .expect("delete-search-pipeline request encode should succeed");
+        black_box(frame);
+    });
 
     let request_frame =
         build_delete_search_pipeline_request_message(44, OPENSEARCH_3_7_0_TRANSPORT, &request)
             .expect("delete-search-pipeline request encode should succeed");
 
-    let request_decode = measure(
-        "delete_search_pipeline_reject_request_decode",
-        ITERATIONS,
-        || {
-            let mut frame = black_box(request_frame.clone());
-            let message = decode_message(&mut frame);
-            let decoded = read_delete_search_pipeline_request_message(black_box(&message))
-                .expect("delete-search-pipeline request decode");
-            black_box(decoded);
-        },
-    );
+    let request_decode = measure("delete_search_pipeline_request_decode", ITERATIONS, || {
+        let mut frame = black_box(request_frame.clone());
+        let message = decode_message(&mut frame);
+        let decoded = read_delete_search_pipeline_request_message(black_box(&message))
+            .expect("delete-search-pipeline request decode");
+        black_box(decoded);
+    });
 
     let reject_validate = measure(
-        "delete_search_pipeline_reject_validation",
+        "delete_search_pipeline_request_validate",
         ITERATIONS,
         || {
             let mut frame = black_box(request_frame.clone());
             let message = decode_message(&mut frame);
             let decoded = read_delete_search_pipeline_request_message(black_box(&message))
                 .expect("delete-search-pipeline request decode");
-            let err = decoded
-                .reject_unsupported_execution()
-                .expect_err("delete-search-pipeline execution should reject");
-            black_box(err);
+            decoded
+                .validate_supported_execution_subset()
+                .expect("delete-search-pipeline execution subset should validate");
         },
     );
 
@@ -80,9 +71,7 @@ fn main() {
         .min(request_decode.ops_per_second)
         .min(reject_validate.ops_per_second)
         .min(response_decode.ops_per_second);
-    println!(
-        "delete_search_pipeline_reject_wire_bottleneck_ops_per_second={combined_ops_per_second:.2}"
-    );
+    println!("delete_search_pipeline_wire_bottleneck_ops_per_second={combined_ops_per_second:.2}");
 }
 
 #[derive(Clone, Copy)]

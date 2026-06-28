@@ -288,8 +288,8 @@
       "transport_action": "DeleteSearchPipelineTransportAction",
       "request_wire_type": "DeleteSearchPipelineRequest",
       "response_wire_type": "AcknowledgedResponse",
-      "disposition": "rejected",
-      "reason": "Delete-search-pipeline transport execution requires search pipeline wildcard deletion, missing-pipeline handling, metadata mutation, cluster-state publication, and acknowledgement rendering before Steelsearch can serve OpenSearch search pipeline delete semantics."
+      "disposition": "implemented",
+      "reason": "Delete-search-pipeline transport adapter removes matching Rust manifest search pipeline metadata and renders OpenSearch-shaped acknowledgement."
     },
     {
       "action_name": "indices:admin/ingestion/pause",
