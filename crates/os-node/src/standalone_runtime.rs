@@ -11419,6 +11419,9 @@ impl SteelNode {
         if ids.iter().any(|id| id == "_all") {
             return unsupported_pit_id_version_response();
         }
+        if let Some(invalid_id) = ids.iter().find(|id| !pit_search_id_has_local_shape(id)) {
+            return delete_pit_invalid_id_response(invalid_id);
+        }
         let mut contexts = self
             .pit_contexts
             .lock()
@@ -53955,9 +53958,24 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             "Incorrect HTTP method for uri [/_search/scroll/missing-scroll-id] and method [PUT], allowed: [POST, DELETE, GET]"
         );
 
-        let duplicate_missing_close_pit = node.handle_rest_request(
+        let invalid_close_pit_id = node.handle_rest_request(
             RestRequest::new(RestMethod::Delete, "/_search/point_in_time")
-                .with_json_body(serde_json::json!({ "pit_id": ["pit-missing", "pit-missing"] })),
+                .with_json_body(serde_json::json!({ "pit_id": "pit-missing" })),
+        );
+        assert_eq!(invalid_close_pit_id.status, 400);
+        assert_eq!(
+            invalid_close_pit_id.body["error"]["root_cause"][0]["reason"],
+            "invalid id: [pit-missing]"
+        );
+
+        let missing_local_pit_id = build_local_pit_id(99_999);
+        let duplicate_missing_close_pit = node.handle_rest_request(
+            RestRequest::new(RestMethod::Delete, "/_search/point_in_time").with_json_body(
+                serde_json::json!({ "pit_id": [
+                    missing_local_pit_id.clone(),
+                    missing_local_pit_id.clone()
+                ] }),
+            ),
         );
         assert_eq!(duplicate_missing_close_pit.status, 200);
         assert_eq!(
@@ -53968,7 +53986,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         );
         assert_eq!(
             duplicate_missing_close_pit.body["pits"][0]["pit_id"],
-            "pit-missing"
+            missing_local_pit_id
         );
 
         let duplicate_existing_open_pit = node.handle_rest_request(RestRequest::new(
@@ -54054,7 +54072,10 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
 
         let close_array_pit = node.handle_rest_request(
             RestRequest::new(RestMethod::Delete, "/_search/point_in_time").with_json_body(
-                serde_json::json!({ "pit_id": [second_open_pit_id.clone(), "pit-missing"] }),
+                serde_json::json!({ "pit_id": [
+                    second_open_pit_id.clone(),
+                    missing_local_pit_id.clone()
+                ] }),
             ),
         );
         assert_eq!(close_array_pit.status, 200);
@@ -54070,7 +54091,10 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             second_open_pit_id
         );
         assert_eq!(close_array_pit.body["pits"][1]["successful"], true);
-        assert_eq!(close_array_pit.body["pits"][1]["pit_id"], "pit-missing");
+        assert_eq!(
+            close_array_pit.body["pits"][1]["pit_id"],
+            missing_local_pit_id
+        );
 
         let list_after_array_close = node.handle_rest_request(RestRequest::new(
             RestMethod::Get,
