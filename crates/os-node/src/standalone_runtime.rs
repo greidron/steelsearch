@@ -8184,6 +8184,9 @@ impl SteelNode {
     }
 
     fn handle_mget_route(&self, target: Option<&str>, request: &RestRequest) -> RestResponse {
+        if let Some(response) = validate_fetch_source_query_filter_overlap(request) {
+            return response;
+        }
         let payload = if request.body.is_empty() {
             Value::Object(serde_json::Map::new())
         } else {
@@ -48905,6 +48908,23 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert!(docs[1].get("_source").is_none());
         assert_eq!(docs[2]["fields"]["foo"], serde_json::json!(["bar"]));
         assert_eq!(docs[2]["_source"]["foo"], "bar");
+
+        let overlap = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/logs-stored-fields/_mget?_source_includes=foo,tenant&_source_excludes=tenant",
+            )
+            .with_json_body(serde_json::json!({
+                "docs": [
+                    { "_id": "1" }
+                ]
+            })),
+        );
+        assert_eq!(overlap.status, 400);
+        assert_eq!(
+            overlap.body["error"]["reason"],
+            "The same entry [tenant] cannot be both included and excluded in _source."
+        );
     }
 
     #[test]

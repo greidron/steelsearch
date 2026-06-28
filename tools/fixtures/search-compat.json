@@ -11191,6 +11191,48 @@
       "description": "[document-stored-fields] mget stored_fields returns fields and suppresses source unless requested"
     },
     {
+      "name": "mget_source_filter_overlap_rejected_parity",
+      "area": "document",
+      "extract": "status_only",
+      "compare_step": "mget-source-overlap",
+      "steps": [
+        {
+          "name": "create-mget-source-overlap-index",
+          "method": "PUT",
+          "path": "/logs-mget-source-overlap-compat",
+          "expected_status": 200,
+          "body": {}
+        },
+        {
+          "name": "index-mget-source-overlap-doc",
+          "method": "PUT",
+          "path": "/logs-mget-source-overlap-compat/_doc/1",
+          "expected_status": 201,
+          "body": {
+            "foo": "bar",
+            "bar": "hidden",
+            "baz": "visible"
+          }
+        },
+        {
+          "name": "mget-source-overlap",
+          "method": "POST",
+          "path": "/logs-mget-source-overlap-compat/_mget?_source_includes=foo,bar&_source_excludes=bar",
+          "expected_status": 400,
+          "body": {
+            "docs": [
+              {
+                "_id": "1"
+              }
+            ]
+          },
+          "extract": "status_only"
+        }
+      ],
+      "family": "document-get",
+      "description": "[document-get] mget rejects overlapping top-level source include/exclude filters like OpenSearch"
+    },
+    {
       "name": "get_source_filter_overlap_rejected_parity",
       "area": "document",
       "extract": "status_only",
