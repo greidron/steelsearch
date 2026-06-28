@@ -28007,6 +28007,57 @@ mod tests {
         assert!(!input.read_bool().unwrap());
         assert_eq!(input.remaining(), 0);
 
+        let verbose_request = os_transport::action::OpenSearchPitSegmentsRequestWire {
+            pit_ids: vec![pit_id.to_string()],
+            verbose: true,
+            ..os_transport::action::OpenSearchPitSegmentsRequestWire::default()
+        };
+        let verbose_frame = os_transport::action::build_opensearch_pit_segments_request_message(
+            101,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &verbose_request,
+        )
+        .unwrap();
+        assert!(pit_segments_request_supports_local_subset(
+            &verbose_frame[6..]
+        ));
+        let verbose_response = build_local_pit_segments_node_response(
+            101,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &transport_identity,
+            &verbose_frame[6..],
+        );
+        let mut frame = BytesMut::from(&verbose_response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected verbose PIT segments node response message");
+        };
+        assert_eq!(message.request_id, 101);
+        let mut input = StreamInput::new(message.body.freeze());
+        assert_eq!(input.read_string().unwrap(), "steel-node-id");
+        assert_eq!(input.read_vint().unwrap(), 1);
+        assert_eq!(input.read_vint().unwrap(), 1);
+        assert!(input.read_bool().unwrap());
+        assert_eq!(input.read_string().unwrap(), "logs-pit-segments-000001");
+        assert_eq!(input.read_string().unwrap(), "_na_");
+        assert_eq!(input.read_vint().unwrap(), 0);
+        assert_eq!(
+            input.read_optional_string().unwrap().as_deref(),
+            Some("steel-node-id")
+        );
+        assert_eq!(input.read_optional_string().unwrap(), None);
+        assert!(input.read_bool().unwrap());
+        assert!(!input.read_bool().unwrap());
+        assert_eq!(input.read_byte().unwrap(), 3);
+        assert!(!input.read_bool().unwrap());
+        assert!(!input.read_bool().unwrap());
+        assert_eq!(input.read_vint().unwrap(), 0);
+        assert!(!input.read_bool().unwrap());
+        assert_eq!(input.remaining(), 0);
+
         let duplicate_request = os_transport::action::OpenSearchPitSegmentsRequestWire {
             pit_ids: vec![pit_id.to_string(), pit_id.to_string()],
             ..os_transport::action::OpenSearchPitSegmentsRequestWire::default()

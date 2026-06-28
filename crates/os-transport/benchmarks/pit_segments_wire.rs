@@ -11,7 +11,10 @@ use std::time::Instant;
 const ITERATIONS: usize = 400_000;
 
 fn main() {
-    let request = OpenSearchPitSegmentsRequestWire::default();
+    let request = OpenSearchPitSegmentsRequestWire {
+        pit_ids: vec!["_all".to_string()],
+        ..OpenSearchPitSegmentsRequestWire::default()
+    };
     let response = OpenSearchIndicesSegmentsResponseWire::empty();
 
     let request_encode = measure("pit_segments_request_encode", ITERATIONS, || {

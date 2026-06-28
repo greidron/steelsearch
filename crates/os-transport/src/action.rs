@@ -25006,12 +25006,6 @@ impl OpenSearchPitSegmentsRequestWire {
                 reason: "OpenSearch PIT segments requests require at least one PIT id",
             });
         }
-        if self.verbose {
-            return Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "pit segments verbose",
-                reason: "verbose PIT segment output requires extended segment metadata rendering",
-            });
-        }
         Ok(())
     }
 
@@ -65156,13 +65150,7 @@ mod tests {
             verbose: true,
             ..OpenSearchPitSegmentsRequestWire::default()
         };
-        assert!(matches!(
-            verbose.reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "pit segments verbose",
-                ..
-            })
-        ));
+        verbose.validate_supported_subset().unwrap();
 
         let explicit_id = OpenSearchPitSegmentsRequestWire {
             pit_ids: vec!["pit-context".to_string()],
