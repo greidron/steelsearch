@@ -177,8 +177,8 @@ The source-derived transport inventory currently has 160 rows:
 
 | Status | Count | Meaning |
 | --- | ---: | --- |
-| `implemented` | 87 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
-| `partial` | 73 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
+| `implemented` | 88 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
+| `partial` | 72 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
 | `planned` | 0 | No source-derived transport action remains unclassified. |
 
 The k-NN plugin action sweep is complete at the boundary layer. All 12
@@ -333,7 +333,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `indices:admin/auto_create` (rejected fail-closed)
 - `cluster:admin/script/put` (rejected fail-closed)
 - `cluster:admin/script/get` (implemented manifest-backed stored-script metadata read subset)
-- `cluster:admin/script/delete` (rejected fail-closed)
+- `cluster:admin/script/delete` (manifest-backed stored-script deletion)
 - `cluster:admin/script_context/get` (implemented Rust-supported script context catalog subset)
 - `cluster:admin/script_language/get` (implemented Rust-supported script language catalog subset)
 - `cluster:admin/ingest/pipeline/put` (implemented manifest-backed metadata-write subset)
@@ -1337,12 +1337,11 @@ The delete-stored-script boundary covers:
 - OpenSearch `DeleteStoredScriptRequest` parent task, cluster-manager timeout,
   acknowledgement timeout, and stored script id at the OpenSearch 3.x wire
   decode/build layer;
-- explicit fail-closed classification for `cluster:admin/script/delete` until
-  stored script metadata mutation, delete-task throttling, and acknowledgement
-  response rendering are implemented;
+- implemented `cluster:admin/script/delete` request admission for the supported
+  metadata subset, manifest-backed stored script removal, and acknowledgement
+  response rendering;
 - explicit rejection for custom cluster-manager timeouts, custom
-  acknowledgement timeouts, missing ids, invalid ids, and
-  delete-stored-script execution.
+  acknowledgement timeouts, missing ids, and invalid ids.
 
 The get-script-context boundary covers:
 
@@ -4071,22 +4070,23 @@ response encoding/decoding for `StoredScriptSource` language/source/options. At
 roughly 1.47M ops/s in the latest local release run, this adapter is not a
 material transport-wire bottleneck for stored-script metadata reads.
 
-Current delete-stored-script reject wire microbenchmark:
+Current delete-stored-script wire microbenchmark:
 
 ```text
-cargo run -p os-transport --release --bin delete-stored-script-reject-wire-benchmark
-delete_stored_script_reject_request_encode iterations=400000 elapsed_ms=279.007 ops_per_second=1433656.03 nanos_per_op=697.52
-delete_stored_script_reject_request_decode iterations=400000 elapsed_ms=251.419 ops_per_second=1590968.57 nanos_per_op=628.55
-delete_stored_script_reject_validation iterations=400000 elapsed_ms=261.307 ops_per_second=1530768.46 nanos_per_op=653.27
-delete_stored_script_reject_wire_bottleneck_ops_per_second=1433656.03
+cargo run -p os-transport --release --bin delete-stored-script-wire-benchmark
+delete_stored_script_request_encode iterations=400000 elapsed_ms=279.401 ops_per_second=1431632.72 nanos_per_op=698.50
+delete_stored_script_request_decode iterations=400000 elapsed_ms=256.783 ops_per_second=1557737.86 nanos_per_op=641.96
+delete_stored_script_request_validate iterations=400000 elapsed_ms=257.382 ops_per_second=1554110.84 nanos_per_op=643.45
+delete_stored_script_response_decode iterations=400000 elapsed_ms=54.548 ops_per_second=7332974.86 nanos_per_op=136.37
+delete_stored_script_wire_bottleneck_ops_per_second=1431632.72
 ```
 
-The current delete-stored-script fail-closed boundary bottleneck is request
-encode. The request path carries the acknowledged cluster-manager envelope and
-stored script id before rejecting execution. At roughly 1.43M ops/s in the
+The current delete-stored-script wire bottleneck is request encode. The request
+path carries the acknowledged cluster-manager envelope and
+stored script id before the manifest-backed metadata mutation. At roughly 1.43M ops/s in the
 latest local release run, current overhead is transport serialization; future
-performance-sensitive work is script metadata mutation, delete-task throttling,
-and ack rendering.
+performance-sensitive work is broader not-found/error parity and delete-task
+throttling.
 
 Current get-script-context wire microbenchmark:
 

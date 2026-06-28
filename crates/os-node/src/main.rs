@@ -1717,6 +1717,32 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end,
             &mut connection_end_at_ms,
         )?;
+    } else if is_request
+        && normalized_action_hint == Some("cluster:admin/script/delete")
+        && delete_stored_script_request_supports_manifest_subset(&body)
+    {
+        let response = build_delete_stored_script_response(request_id, header_version_id, &body);
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("cluster:admin/script/delete"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
     } else if is_request && normalized_action_hint == Some("cluster:admin/script/get") {
         let response = build_get_stored_script_response(request_id, header_version_id, &body);
         response_frame = summarize_transport_response_frame_for_action(
@@ -8268,6 +8294,58 @@ fn decode_get_stored_script_request_from_transport_body(
 ) -> Option<os_transport::action::OpenSearchGetStoredScriptRequestWire> {
     let message = decode_transport_message_from_body(body)?;
     os_transport::action::read_opensearch_get_stored_script_request_message(&message).ok()
+}
+
+fn build_delete_stored_script_response(
+    request_id: i64,
+    header_version_id: u32,
+    body: &[u8],
+) -> Vec<u8> {
+    let Some(request) = decode_delete_stored_script_request_from_transport_body(body) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    if request.validate_supported_subset().is_err() {
+        return build_empty_transport_response(request_id, header_version_id);
+    }
+    if !delete_stored_script_from_metadata_manifest(
+        &mut dev_transport_pit_bindings()
+            .metadata_manifest
+            .lock()
+            .expect("metadata manifest lock poisoned"),
+        &request.id,
+    ) {
+        return build_empty_transport_response(request_id, header_version_id);
+    }
+    os_transport::action::build_opensearch_delete_stored_script_response_message(
+        request_id,
+        Version::from_id(header_version_id as i32),
+        &os_transport::action::AcknowledgedResponseWire { acknowledged: true },
+    )
+    .map(|frame| frame.to_vec())
+    .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
+}
+
+fn delete_stored_script_request_supports_manifest_subset(body: &[u8]) -> bool {
+    decode_delete_stored_script_request_from_transport_body(body)
+        .is_some_and(|request| request.validate_supported_subset().is_ok())
+}
+
+fn decode_delete_stored_script_request_from_transport_body(
+    body: &[u8],
+) -> Option<os_transport::action::OpenSearchDeleteStoredScriptRequestWire> {
+    let message = decode_transport_message_from_body(body)?;
+    os_transport::action::read_opensearch_delete_stored_script_request_message(&message).ok()
+}
+
+fn delete_stored_script_from_metadata_manifest(
+    metadata_manifest: &mut Value,
+    script_id: &str,
+) -> bool {
+    metadata_manifest
+        .get_mut("stored_scripts")
+        .and_then(Value::as_object_mut)
+        .and_then(|scripts| scripts.remove(script_id))
+        .is_some()
 }
 
 fn get_stored_script_response_from_metadata_manifest(
@@ -16375,6 +16453,15 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
             header_version_id,
             body,
         )),
+        Some("cluster:admin/script/delete")
+            if delete_stored_script_request_supports_manifest_subset(body) =>
+        {
+            Some(build_delete_stored_script_response(
+                request_id,
+                header_version_id,
+                body,
+            ))
+        }
         Some("cluster:admin/script_context/get") => Some(build_get_script_context_response(
             request_id,
             header_version_id,
@@ -21809,6 +21896,101 @@ mod tests {
                 .unwrap();
         assert_eq!(response.id, "missing-template");
         assert!(response.source.is_none());
+    }
+
+    #[test]
+    fn delete_stored_script_transport_route_removes_manifest_entry() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        *dev_transport_pit_bindings()
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned") = serde_json::json!({
+            "stored_scripts": {
+                "transport-delete-template": {
+                    "lang": "painless",
+                    "source": "return true;"
+                }
+            }
+        });
+
+        let request = os_transport::action::OpenSearchDeleteStoredScriptRequestWire {
+            id: "transport-delete-template".to_string(),
+            ..os_transport::action::OpenSearchDeleteStoredScriptRequestWire::default()
+        };
+        let frame = os_transport::action::build_opensearch_delete_stored_script_request_message(
+            194,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(delete_stored_script_request_supports_manifest_subset(
+            &frame[6..]
+        ));
+
+        let response = build_delete_stored_script_response(
+            194,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &frame[6..],
+        );
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected delete stored script response message");
+        };
+        assert_eq!(message.request_id, 194);
+        assert!(!message.status.is_request());
+        let response =
+            os_transport::action::read_opensearch_delete_stored_script_response_message(&message)
+                .unwrap();
+        assert!(response.acknowledged);
+
+        let get_request = os_transport::action::OpenSearchGetStoredScriptRequestWire {
+            id: "transport-delete-template".to_string(),
+            ..os_transport::action::OpenSearchGetStoredScriptRequestWire::default()
+        };
+        let frame = os_transport::action::build_opensearch_get_stored_script_request_message(
+            195,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &get_request,
+        )
+        .unwrap();
+        let response = build_get_stored_script_response(
+            195,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &frame[6..],
+        );
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected get stored script response message");
+        };
+        let response =
+            os_transport::action::read_opensearch_get_stored_script_response_message(&message)
+                .unwrap();
+        assert_eq!(response.id, "transport-delete-template");
+        assert!(response.source.is_none());
+
+        let unsupported = os_transport::action::OpenSearchDeleteStoredScriptRequestWire {
+            id: String::new(),
+            ..os_transport::action::OpenSearchDeleteStoredScriptRequestWire::default()
+        };
+        let frame = os_transport::action::build_opensearch_delete_stored_script_request_message(
+            196,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &unsupported,
+        )
+        .unwrap();
+        assert!(!delete_stored_script_request_supports_manifest_subset(
+            &frame[6..]
+        ));
     }
 
     #[test]

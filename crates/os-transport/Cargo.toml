@@ -324,8 +324,8 @@ name = "get-stored-script-wire-benchmark"
 path = "benchmarks/get_stored_script_wire.rs"
 
 [[bin]]
-name = "delete-stored-script-reject-wire-benchmark"
-path = "benchmarks/delete_stored_script_reject_wire.rs"
+name = "delete-stored-script-wire-benchmark"
+path = "benchmarks/delete_stored_script_wire.rs"
 
 [[bin]]
 name = "get-script-context-wire-benchmark"

@@ -2068,8 +2068,8 @@ pub fn classify_opensearch_transport_action(
         },
         OPENSEARCH_DELETE_STORED_SCRIPT_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
-            disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "delete-stored-script transport execution requires script metadata mutation, delete throttling, and ack rendering",
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "delete-stored-script transport adapter removes Rust stored-script metadata and renders OpenSearch AcknowledgedResponse",
         },
         OPENSEARCH_GET_SCRIPT_CONTEXT_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -9709,6 +9709,35 @@ pub fn read_opensearch_delete_stored_script_request_message(
         });
     }
     OpenSearchDeleteStoredScriptRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_opensearch_delete_stored_script_response_message(
+    request_id: i64,
+    version: Version,
+    response: &AcknowledgedResponseWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    response.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::response(),
+        version,
+        variable_header: BytesMut::new(),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_delete_stored_script_response_message(
+    message: &TransportMessage,
+) -> Result<AcknowledgedResponseWire, TransportActionWireError> {
+    if message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "response",
+            actual: message.status.bits(),
+        });
+    }
+    AcknowledgedResponseWire::read(message.body.clone().freeze())
 }
 
 pub fn build_opensearch_get_script_context_request_message(
@@ -21667,7 +21696,7 @@ impl OpenSearchDeleteStoredScriptRequestWire {
         })
     }
 
-    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+    pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
         if self.cluster_manager_timeout != TimeValueWire::seconds(30) {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "delete stored script cluster-manager timeout",
@@ -21693,9 +21722,14 @@ impl OpenSearchDeleteStoredScriptRequestWire {
                 reason: "OpenSearch stored script ids cannot contain '#'",
             });
         }
+        Ok(())
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        self.validate_supported_subset()?;
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "delete stored script execution",
-            reason: "delete-stored-script transport execution requires script metadata mutation, delete throttling, and ack rendering",
+            reason: "use validate_supported_subset for the implemented manifest-backed delete-stored-script adapter",
         })
     }
 }
@@ -47209,22 +47243,22 @@ mod tests {
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_GET_STORED_SCRIPT_ACTION_NAME)
                 .disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_DELETE_STORED_SCRIPT_ACTION_NAME)
                 .disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_GET_SCRIPT_CONTEXT_ACTION_NAME)
                 .disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_GET_SCRIPT_LANGUAGE_ACTION_NAME)
                 .disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_PUT_PIPELINE_ACTION_NAME).disposition,
@@ -47271,21 +47305,21 @@ mod tests {
         );
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_GET_INDEX_ACTION_NAME).disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_INDICES_EXISTS_ACTION_NAME).disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_GET_INDEX_TEMPLATES_ACTION_NAME)
                 .disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_PUT_INDEX_TEMPLATE_ACTION_NAME)
                 .disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_DELETE_INDEX_TEMPLATE_ACTION_NAME)
@@ -47295,12 +47329,12 @@ mod tests {
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_PUT_COMPONENT_TEMPLATE_ACTION_NAME)
                 .disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_GET_COMPONENT_TEMPLATE_ACTION_NAME)
                 .disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_DELETE_COMPONENT_TEMPLATE_ACTION_NAME)
@@ -47319,7 +47353,7 @@ mod tests {
                 OPENSEARCH_GET_COMPOSABLE_INDEX_TEMPLATE_ACTION_NAME
             )
             .disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             classify_opensearch_transport_action(
@@ -47549,10 +47583,32 @@ mod tests {
                 || spec.action_name == OPENSEARCH_GET_ALL_PITS_ACTION_NAME
                 || spec.action_name == OPENSEARCH_DELETE_PIT_ACTION_NAME
                 || spec.action_name == OPENSEARCH_CREATE_PIT_ACTION_NAME
+                || spec.action_name == OPENSEARCH_CREATE_READER_CONTEXT_ACTION_NAME
+                || spec.action_name == OPENSEARCH_UPDATE_READER_CONTEXT_ACTION_NAME
+                || spec.action_name == OPENSEARCH_FREE_PIT_CONTEXT_ACTION_NAME
                 || spec.action_name == OPENSEARCH_CLEAR_SCROLL_ACTION_NAME
                 || spec.action_name == OPENSEARCH_GET_ALIASES_ACTION_NAME
                 || spec.action_name == OPENSEARCH_GET_SETTINGS_ACTION_NAME
                 || spec.action_name == OPENSEARCH_FIELD_CAPABILITIES_ACTION_NAME
+                || spec.action_name == OPENSEARCH_GET_INDEX_ACTION_NAME
+                || spec.action_name == OPENSEARCH_INDICES_EXISTS_ACTION_NAME
+                || spec.action_name == OPENSEARCH_GET_INDEX_TEMPLATES_ACTION_NAME
+                || spec.action_name == OPENSEARCH_PUT_INDEX_TEMPLATE_ACTION_NAME
+                || spec.action_name == OPENSEARCH_DELETE_INDEX_TEMPLATE_ACTION_NAME
+                || spec.action_name == OPENSEARCH_PUT_COMPONENT_TEMPLATE_ACTION_NAME
+                || spec.action_name == OPENSEARCH_GET_COMPONENT_TEMPLATE_ACTION_NAME
+                || spec.action_name == OPENSEARCH_DELETE_COMPONENT_TEMPLATE_ACTION_NAME
+                || spec.action_name == OPENSEARCH_PUT_COMPOSABLE_INDEX_TEMPLATE_ACTION_NAME
+                || spec.action_name == OPENSEARCH_GET_COMPOSABLE_INDEX_TEMPLATE_ACTION_NAME
+                || spec.action_name == OPENSEARCH_DELETE_COMPOSABLE_INDEX_TEMPLATE_ACTION_NAME
+                || spec.action_name == OPENSEARCH_GET_STORED_SCRIPT_ACTION_NAME
+                || spec.action_name == OPENSEARCH_DELETE_STORED_SCRIPT_ACTION_NAME
+                || spec.action_name == OPENSEARCH_GET_SCRIPT_CONTEXT_ACTION_NAME
+                || spec.action_name == OPENSEARCH_GET_SCRIPT_LANGUAGE_ACTION_NAME
+                || spec.action_name == OPENSEARCH_PUT_PIPELINE_ACTION_NAME
+                || spec.action_name == OPENSEARCH_GET_PIPELINE_ACTION_NAME
+                || spec.action_name == OPENSEARCH_DELETE_PIPELINE_ACTION_NAME
+                || spec.action_name == OPENSEARCH_SIMULATE_PIPELINE_ACTION_NAME
                 || spec.action_name == OPENSEARCH_SEARCH_ACTION_NAME
                 || spec.action_name == OPENSEARCH_STREAM_SEARCH_ACTION_NAME
                 || spec.action_name == OPENSEARCH_MULTI_SEARCH_ACTION_NAME
@@ -47564,6 +47620,9 @@ mod tests {
                 || spec.action_name == OPENSEARCH_FORCE_MERGE_ACTION_NAME
                 || spec.action_name == OPENSEARCH_UPGRADE_ACTION_NAME
                 || spec.action_name == OPENSEARCH_UPGRADE_STATUS_ACTION_NAME
+                || spec.action_name == OPENSEARCH_CREATE_DATA_STREAM_ACTION_NAME
+                || spec.action_name == OPENSEARCH_DELETE_DATA_STREAM_ACTION_NAME
+                || spec.action_name == OPENSEARCH_RESOLVE_INDEX_ACTION_NAME
                 || spec.action_name == GET_DECOMMISSION_STATE_ACTION_NAME
             {
                 assert_eq!(
@@ -47585,37 +47644,15 @@ mod tests {
                 || spec.action_name == OPENSEARCH_CREATE_INDEX_ACTION_NAME
                 || spec.action_name == OPENSEARCH_AUTO_CREATE_ACTION_NAME
                 || spec.action_name == OPENSEARCH_PUT_STORED_SCRIPT_ACTION_NAME
-                || spec.action_name == OPENSEARCH_GET_STORED_SCRIPT_ACTION_NAME
-                || spec.action_name == OPENSEARCH_DELETE_STORED_SCRIPT_ACTION_NAME
-                || spec.action_name == OPENSEARCH_GET_SCRIPT_CONTEXT_ACTION_NAME
-                || spec.action_name == OPENSEARCH_GET_SCRIPT_LANGUAGE_ACTION_NAME
-                || spec.action_name == OPENSEARCH_PUT_PIPELINE_ACTION_NAME
-                || spec.action_name == OPENSEARCH_GET_PIPELINE_ACTION_NAME
-                || spec.action_name == OPENSEARCH_DELETE_PIPELINE_ACTION_NAME
-                || spec.action_name == OPENSEARCH_SIMULATE_PIPELINE_ACTION_NAME
                 || spec.action_name == OPENSEARCH_RESIZE_ACTION_NAME
                 || spec.action_name == OPENSEARCH_ROLLOVER_ACTION_NAME
                 || spec.action_name == OPENSEARCH_DELETE_INDEX_ACTION_NAME
                 || spec.action_name == OPENSEARCH_OPEN_INDEX_ACTION_NAME
                 || spec.action_name == OPENSEARCH_CLOSE_INDEX_ACTION_NAME
                 || spec.action_name == OPENSEARCH_ADD_INDEX_BLOCK_ACTION_NAME
-                || spec.action_name == OPENSEARCH_GET_INDEX_ACTION_NAME
-                || spec.action_name == OPENSEARCH_INDICES_EXISTS_ACTION_NAME
-                || spec.action_name == OPENSEARCH_GET_INDEX_TEMPLATES_ACTION_NAME
-                || spec.action_name == OPENSEARCH_PUT_INDEX_TEMPLATE_ACTION_NAME
-                || spec.action_name == OPENSEARCH_DELETE_INDEX_TEMPLATE_ACTION_NAME
-                || spec.action_name == OPENSEARCH_PUT_COMPONENT_TEMPLATE_ACTION_NAME
-                || spec.action_name == OPENSEARCH_GET_COMPONENT_TEMPLATE_ACTION_NAME
-                || spec.action_name == OPENSEARCH_DELETE_COMPONENT_TEMPLATE_ACTION_NAME
-                || spec.action_name == OPENSEARCH_PUT_COMPOSABLE_INDEX_TEMPLATE_ACTION_NAME
-                || spec.action_name == OPENSEARCH_GET_COMPOSABLE_INDEX_TEMPLATE_ACTION_NAME
-                || spec.action_name == OPENSEARCH_DELETE_COMPOSABLE_INDEX_TEMPLATE_ACTION_NAME
                 || spec.action_name == OPENSEARCH_SIMULATE_INDEX_TEMPLATE_ACTION_NAME
                 || spec.action_name == OPENSEARCH_SIMULATE_TEMPLATE_ACTION_NAME
                 || spec.action_name == OPENSEARCH_UPGRADE_SETTINGS_ACTION_NAME
-                || spec.action_name == OPENSEARCH_CREATE_DATA_STREAM_ACTION_NAME
-                || spec.action_name == OPENSEARCH_DELETE_DATA_STREAM_ACTION_NAME
-                || spec.action_name == OPENSEARCH_RESOLVE_INDEX_ACTION_NAME
                 || spec.action_name == OPENSEARCH_CREATE_VIEW_ACTION_NAME
                 || spec.action_name == OPENSEARCH_DELETE_VIEW_ACTION_NAME
                 || spec.action_name == OPENSEARCH_GET_VIEW_ACTION_NAME
@@ -60859,7 +60896,7 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_delete_stored_script_request_wire_round_trips_and_rejects_execution_boundary() {
+    fn opensearch_delete_stored_script_request_wire_round_trips_and_validates_manifest_subset() {
         let request = OpenSearchDeleteStoredScriptRequestWire::default();
         let mut output = StreamOutput::new();
         request.write(&mut output);
@@ -60867,13 +60904,7 @@ mod tests {
         let decoded = OpenSearchDeleteStoredScriptRequestWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, request);
         assert_eq!(decoded.id, "stored-script-1");
-        assert!(matches!(
-            decoded.reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "delete stored script execution",
-                ..
-            })
-        ));
+        decoded.validate_supported_subset().unwrap();
     }
 
     #[test]
@@ -60883,7 +60914,7 @@ mod tests {
             ..OpenSearchDeleteStoredScriptRequestWire::default()
         };
         assert!(matches!(
-            cluster_manager_timeout.reject_unsupported_execution(),
+            cluster_manager_timeout.validate_supported_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "delete stored script cluster-manager timeout",
                 ..
@@ -60895,7 +60926,7 @@ mod tests {
             ..OpenSearchDeleteStoredScriptRequestWire::default()
         };
         assert!(matches!(
-            ack_timeout.reject_unsupported_execution(),
+            ack_timeout.validate_supported_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "delete stored script ack timeout",
                 ..
@@ -60907,7 +60938,7 @@ mod tests {
             ..OpenSearchDeleteStoredScriptRequestWire::default()
         };
         assert!(matches!(
-            missing_id.reject_unsupported_execution(),
+            missing_id.validate_supported_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "delete stored script missing id",
                 ..
@@ -60919,7 +60950,7 @@ mod tests {
             ..OpenSearchDeleteStoredScriptRequestWire::default()
         };
         assert!(matches!(
-            invalid_id.reject_unsupported_execution(),
+            invalid_id.validate_supported_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "delete stored script id",
                 ..
@@ -60928,7 +60959,7 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_delete_stored_script_transport_messages_bind_rejected_action_frame() {
+    fn opensearch_delete_stored_script_transport_messages_bind_action_frame_and_ack_response() {
         let request = OpenSearchDeleteStoredScriptRequestWire::default();
         let mut frame = build_opensearch_delete_stored_script_request_message(
             71,
@@ -60943,21 +60974,31 @@ mod tests {
             classify_opensearch_transport_request_message(&message)
                 .unwrap()
                 .disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             read_opensearch_delete_stored_script_request_message(&message).unwrap(),
             request
         );
-        assert!(matches!(
-            read_opensearch_delete_stored_script_request_message(&message)
-                .unwrap()
-                .reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "delete stored script execution",
-                ..
-            })
-        ));
+        read_opensearch_delete_stored_script_request_message(&message)
+            .unwrap()
+            .validate_supported_subset()
+            .unwrap();
+
+        let response = AcknowledgedResponseWire { acknowledged: true };
+        let mut frame = build_opensearch_delete_stored_script_response_message(
+            71,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &response,
+        )
+        .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected delete stored script response message");
+        };
+        assert_eq!(
+            read_opensearch_delete_stored_script_response_message(&message).unwrap(),
+            response
+        );
     }
 
     #[test]
