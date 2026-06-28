@@ -9990,6 +9990,78 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "get_source_filter_overlap_rejected_parity",
+      "area": "document",
+      "extract": "status_only",
+      "compare_step": "get-source-overlap",
+      "steps": [
+        {
+          "name": "create-get-source-overlap-index",
+          "method": "PUT",
+          "path": "/logs-get-source-overlap-compat",
+          "expected_status": 200,
+          "body": {}
+        },
+        {
+          "name": "index-get-source-overlap-doc",
+          "method": "PUT",
+          "path": "/logs-get-source-overlap-compat/_doc/1",
+          "expected_status": 201,
+          "body": {
+            "foo": "bar",
+            "bar": "hidden",
+            "baz": "visible"
+          }
+        },
+        {
+          "name": "get-source-overlap",
+          "method": "GET",
+          "path": "/logs-get-source-overlap-compat/_source/1?_source_includes=foo,bar&_source_excludes=bar",
+          "expected_status": 400,
+          "extract": "status_only"
+        }
+      ],
+      "family": "document-get",
+      "description": "[document-get] _source route rejects overlapping source include/exclude filters like OpenSearch",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "get_doc_source_filter_overlap_rejected_parity",
+      "area": "document",
+      "extract": "status_only",
+      "compare_step": "get-doc-source-overlap",
+      "steps": [
+        {
+          "name": "create-get-doc-source-overlap-index",
+          "method": "PUT",
+          "path": "/logs-get-doc-source-overlap-compat",
+          "expected_status": 200,
+          "body": {}
+        },
+        {
+          "name": "index-get-doc-source-overlap-doc",
+          "method": "PUT",
+          "path": "/logs-get-doc-source-overlap-compat/_doc/1",
+          "expected_status": 201,
+          "body": {
+            "foo": "bar",
+            "bar": "hidden",
+            "baz": "visible"
+          }
+        },
+        {
+          "name": "get-doc-source-overlap",
+          "method": "GET",
+          "path": "/logs-get-doc-source-overlap-compat/_doc/1?_source_includes=foo,bar&_source_excludes=bar",
+          "expected_status": 400,
+          "extract": "status_only"
+        }
+      ],
+      "family": "document-get",
+      "description": "[document-get] get document rejects overlapping source include/exclude filters like OpenSearch",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "update_source_filtering_get_response_parity",
       "area": "document",
       "extract": "single_doc_write_result",

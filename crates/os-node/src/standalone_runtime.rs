@@ -16659,6 +16659,9 @@ impl SteelNode {
                 }),
             );
         }
+        if let Some(response) = validate_fetch_source_query_filter_overlap(request) {
+            return response;
+        }
         let requested_stored_fields = request
             .query_params
             .get("stored_fields")
@@ -16882,6 +16885,9 @@ impl SteelNode {
         id: &str,
         request: &RestRequest,
     ) -> RestResponse {
+        if let Some(response) = validate_fetch_source_query_filter_overlap(request) {
+            return response;
+        }
         if request
             .query_params
             .get("_source")
@@ -65673,20 +65679,40 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             RestMethod::Get,
             "/logs-source-000001/_source/doc-1?_source_includes=message,tenant&_source_excludes=tenant",
         ));
-        assert_eq!(filtered_response.status, 200);
+        assert_eq!(filtered_response.status, 400);
         assert_eq!(
-            filtered_response.body,
-            serde_json::json!({"message":"source-doc"})
+            filtered_response.body["error"]["reason"],
+            "The same entry [tenant] cannot be both included and excluded in _source."
         );
 
         let singular_filtered_response = node.handle_rest_request(RestRequest::new(
             RestMethod::Get,
             "/logs-source-000001/_source/doc-1?_source_include=message,tenant&_source_exclude=tenant",
         ));
-        assert_eq!(singular_filtered_response.status, 200);
+        assert_eq!(singular_filtered_response.status, 400);
         assert_eq!(
-            singular_filtered_response.body,
-            serde_json::json!({"message":"source-doc"})
+            singular_filtered_response.body["error"]["reason"],
+            "The same entry [tenant] cannot be both included and excluded in _source."
+        );
+
+        let get_doc_overlap = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/logs-source-000001/_doc/doc-1?_source_includes=message,tenant&_source_excludes=tenant",
+        ));
+        assert_eq!(get_doc_overlap.status, 400);
+        assert_eq!(
+            get_doc_overlap.body["error"]["reason"],
+            "The same entry [tenant] cannot be both included and excluded in _source."
+        );
+
+        let filtered_response = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/logs-source-000001/_source/doc-1?_source_includes=message,tenant&_source_excludes=secret",
+        ));
+        assert_eq!(filtered_response.status, 200);
+        assert_eq!(
+            filtered_response.body,
+            serde_json::json!({"message":"source-doc","tenant":"tenant-a"})
         );
 
         let disabled_response = node.handle_rest_request(RestRequest::new(
