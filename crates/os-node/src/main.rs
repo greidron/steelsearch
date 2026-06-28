@@ -8422,6 +8422,14 @@ fn build_search_request_missing_pit_context_error_response(
     let context_id = first_search_context_id_from_pit_id(pit_id).unwrap_or_else(|| {
         os_transport::action::OpenSearchShardSearchContextIdWire::new(String::new(), -1)
     });
+    build_missing_search_context_error_response(request_id, header_version_id, &context_id)
+}
+
+fn build_missing_search_context_error_response(
+    request_id: i64,
+    header_version_id: u32,
+    context_id: &os_transport::action::OpenSearchShardSearchContextIdWire,
+) -> Vec<u8> {
     let reason = format!("No search context found for id [{}]", context_id.id);
     let mut output = StreamOutput::new();
     os_transport::error::write_search_context_missing_exception(
@@ -12652,7 +12660,17 @@ fn build_local_pit_segments_node_response(
     let Some(request) = decode_pit_segments_request_from_transport_body(body) else {
         return build_empty_transport_response(request_id, header_version_id);
     };
-    if request.validate_supported_subset().is_err() || !transport_pit_segment_ids_exist(&request) {
+    if request.validate_supported_subset().is_err() {
+        return build_empty_transport_response(request_id, header_version_id);
+    }
+    if let Some(context_id) = missing_decodable_pit_segment_context_id(&request) {
+        return build_missing_search_context_error_response(
+            request_id,
+            header_version_id,
+            &context_id,
+        );
+    }
+    if !transport_pit_segment_ids_exist(&request) {
         return build_empty_transport_response(request_id, header_version_id);
     }
     let shard_segments = local_pit_segment_shards_for_request(&request, transport_identity);
@@ -12684,6 +12702,35 @@ fn transport_pit_segment_ids_exist(
         .iter()
         .filter(|pit_id| seen_ids.insert((*pit_id).clone()))
         .all(|pit_id| pit_id == "_all" || contexts.contains_key(pit_id))
+}
+
+fn missing_decodable_pit_segment_context_id(
+    request: &os_transport::action::OpenSearchPitSegmentsRequestWire,
+) -> Option<os_transport::action::OpenSearchShardSearchContextIdWire> {
+    if request.pit_ids.iter().any(|pit_id| pit_id.is_empty())
+        || !ids_use_all_only_as_standalone(&request.pit_ids)
+    {
+        return None;
+    }
+    let mut contexts = dev_transport_pit_bindings()
+        .contexts
+        .lock()
+        .expect("dev transport PIT contexts lock poisoned");
+    prune_expired_transport_pits(&mut contexts, now_epoch_ms());
+    prune_unavailable_transport_pits(&mut contexts);
+    let mut seen_ids = BTreeSet::new();
+    request
+        .pit_ids
+        .iter()
+        .filter(|pit_id| *pit_id != "_all")
+        .filter(|pit_id| seen_ids.insert((*pit_id).clone()))
+        .find_map(|pit_id| {
+            if contexts.contains_key(pit_id) {
+                None
+            } else {
+                first_search_context_id_from_pit_id(pit_id)
+            }
+        })
 }
 
 fn local_pit_segment_shards_for_request(
@@ -30603,6 +30650,61 @@ mod tests {
         assert_eq!(input.read_vint().unwrap(), 0);
         assert!(!input.read_bool().unwrap());
         assert_eq!(input.remaining(), 0);
+
+        let missing_context_id =
+            os_transport::action::OpenSearchShardSearchContextIdWire::new("segments-missing", 99);
+        let missing_pit_id =
+            os_transport::action::OpenSearchSearchContextIdWire::new(BTreeMap::from([(
+                os_transport::action::OpenSearchShardIdWire {
+                    index_name: "logs-pit-segments-000001".to_string(),
+                    index_uuid: "uuid-logs-pit-segments-000001".to_string(),
+                    shard_id: 0,
+                },
+                os_transport::action::OpenSearchSearchContextIdForNodeWire {
+                    cluster_alias: None,
+                    node: "steel-node-id".to_string(),
+                    search_context_id: missing_context_id.clone(),
+                },
+            )]))
+            .encode(OPENSEARCH_3_7_0_TRANSPORT)
+            .unwrap();
+        let missing_request = os_transport::action::OpenSearchPitSegmentsRequestWire {
+            pit_ids: vec![missing_pit_id],
+            ..os_transport::action::OpenSearchPitSegmentsRequestWire::default()
+        };
+        let missing_frame = os_transport::action::build_opensearch_pit_segments_request_message(
+            98,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &missing_request,
+        )
+        .unwrap();
+        let missing_response = build_local_pit_segments_node_response(
+            98,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &transport_identity,
+            &missing_frame[6..],
+        );
+        let mut frame = BytesMut::from(&missing_response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected missing PIT segments error response message");
+        };
+        assert_eq!(message.request_id, 98);
+        assert!(message.status.is_error());
+        let error = os_transport::error::TransportError::read(message.body.freeze())
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            error.class_name,
+            "org.opensearch.search.SearchContextMissingException"
+        );
+        assert_eq!(
+            error.message.as_deref(),
+            Some("No search context found for id [99]")
+        );
 
         let unknown_request = os_transport::action::OpenSearchPitSegmentsRequestWire {
             pit_ids: vec!["missing-pit-context".to_string()],
