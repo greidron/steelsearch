@@ -40,7 +40,7 @@ use std::io::{BufReader, Read, Write};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpStream};
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -2305,7 +2305,12 @@ fn handle_transport_seed_connection<S: TransportConnection>(
         && normalized_action_hint == Some("indices:data/read/point_in_time/create")
         && create_pit_request_supports_local_lifecycle_subset(&body)
     {
-        let response = build_local_create_pit_response(request_id, header_version_id, &body);
+        let response = build_local_create_pit_response_for_node(
+            request_id,
+            header_version_id,
+            &body,
+            &transport_identity.node_id,
+        );
         response_frame = summarize_transport_response_frame_for_action(
             &response,
             Some("indices:data/read/point_in_time/create"),
@@ -5072,10 +5077,20 @@ fn build_empty_find_dangling_index_response(
     .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
 }
 
+#[cfg(test)]
 fn build_local_create_pit_response(
     request_id: i64,
     header_version_id: u32,
     body: &[u8],
+) -> Vec<u8> {
+    build_local_create_pit_response_for_node(request_id, header_version_id, body, "steel-node-id")
+}
+
+fn build_local_create_pit_response_for_node(
+    request_id: i64,
+    header_version_id: u32,
+    body: &[u8],
+    local_node_id: &str,
 ) -> Vec<u8> {
     let Some(request) = decode_create_pit_request_from_transport_body(body) else {
         return build_empty_transport_response(request_id, header_version_id);
@@ -5120,7 +5135,14 @@ fn build_local_create_pit_response(
             .lock()
             .expect("dev transport next PIT id lock poisoned");
         *next_id += 1;
-        let pit_id = build_local_pit_id(*next_id);
+        let pit_id = build_transport_search_context_pit_id(
+            bindings,
+            &resolved_indices,
+            *next_id,
+            local_node_id,
+            Version::from_id(header_version_id as i32),
+        )
+        .unwrap_or_else(|| build_local_pit_id(*next_id));
         bindings
             .contexts
             .lock()
@@ -5248,6 +5270,43 @@ fn transport_pit_indices(
     Some(resolved)
 }
 
+fn build_transport_search_context_pit_id(
+    bindings: &DevTransportPitBindings,
+    resolved_indices: &[String],
+    sequence: u64,
+    local_node_id: &str,
+    version: Version,
+) -> Option<String> {
+    let mut shards = BTreeMap::new();
+    let mut ordinal = 0_i64;
+    for index in resolved_indices {
+        for shard_id in 0..transport_pit_primary_shard_count(bindings, index) {
+            ordinal += 1;
+            shards.insert(
+                os_transport::action::OpenSearchShardIdWire {
+                    index_name: index.clone(),
+                    index_uuid: transport_pit_index_uuid(bindings, index),
+                    shard_id: shard_id as i32,
+                },
+                os_transport::action::OpenSearchSearchContextIdForNodeWire {
+                    node: local_node_id.to_string(),
+                    cluster_alias: None,
+                    search_context_id:
+                        os_transport::action::OpenSearchShardSearchContextIdWire::new(
+                            format!("steelsearch-pit-session-{sequence}"),
+                            (sequence as i64)
+                                .saturating_mul(1_000_000)
+                                .saturating_add(ordinal),
+                        ),
+                },
+            );
+        }
+    }
+    os_transport::action::OpenSearchSearchContextIdWire::new(shards)
+        .encode(version)
+        .ok()
+}
+
 fn transport_pit_index_catalog(
     bindings: &DevTransportPitBindings,
     manifest_indices: Option<serde_json::Map<String, Value>>,
@@ -5273,6 +5332,31 @@ fn transport_pit_index_catalog(
         });
     }
     catalog
+}
+
+fn transport_pit_index_uuid(bindings: &DevTransportPitBindings, index: &str) -> String {
+    let manifest = bindings
+        .metadata_manifest
+        .lock()
+        .expect("dev transport metadata manifest lock poisoned");
+    manifest["indices"][index]["settings"]["index"]["uuid"]
+        .as_str()
+        .or_else(|| manifest["indices"][index]["settings"]["uuid"].as_str())
+        .unwrap_or("_na_")
+        .to_string()
+}
+
+fn transport_pit_primary_shard_count(bindings: &DevTransportPitBindings, index: &str) -> usize {
+    let manifest = bindings
+        .metadata_manifest
+        .lock()
+        .expect("dev transport metadata manifest lock poisoned");
+    manifest["indices"][index]["settings"]["index"]["number_of_shards"]
+        .as_str()
+        .or_else(|| manifest["indices"][index]["settings"]["number_of_shards"].as_str())
+        .and_then(|value| value.parse::<usize>().ok())
+        .filter(|value| *value > 0)
+        .unwrap_or(1)
 }
 
 fn transport_pit_index_matches_options(
@@ -12110,10 +12194,11 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
         Some("indices:data/read/point_in_time/create")
             if create_pit_request_supports_local_lifecycle_subset(body) =>
         {
-            Some(build_local_create_pit_response(
+            Some(build_local_create_pit_response_for_node(
                 request_id,
                 header_version_id,
                 body,
+                &transport_identity.node_id,
             ))
         }
         Some("indices:data/read/search[create_context]")
@@ -14396,7 +14481,7 @@ fn committed_gateway_metadata_commit_state(
 
 #[cfg(test)]
 fn unique_test_path(prefix: &str) -> PathBuf {
-    static TEST_PATH_SEQUENCE: AtomicU64 = AtomicU64::new(0);
+    static TEST_PATH_SEQUENCE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     let nanos = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
@@ -20308,6 +20393,17 @@ mod tests {
             os_transport::action::read_opensearch_create_pit_response_message(&message).unwrap();
         let pit_id = create_response.pit_id.clone();
         assert!(!pit_id.starts_with("pit-"));
+        let decoded_pit_id = os_transport::action::OpenSearchSearchContextIdWire::decode(&pit_id)
+            .expect("create PIT should return an OpenSearch SearchContextId");
+        assert_eq!(
+            decoded_pit_id.actual_indices(),
+            vec!["logs-pit-000001".to_string()]
+        );
+        assert_eq!(decoded_pit_id.shards.len(), 2);
+        assert!(decoded_pit_id
+            .shards
+            .values()
+            .all(|context| context.node == "steel-node-id"));
         assert_eq!(create_response.total_shards, 2);
         assert!(dev_transport_pit_bindings()
             .contexts
@@ -20341,8 +20437,51 @@ mod tests {
         assert!(pit_context.documents.contains_key("logs-pit-000001:doc-1:"));
         assert!(!pit_context.documents.contains_key("logs-pit-000001:doc-2:"));
 
-        let list_response = build_local_get_all_pits_response(
+        let search_request = os_transport::action::OpenSearchSearchRequestWire {
+            source: Some(os_transport::action::OpenSearchSearchSourceBuilderWire {
+                point_in_time: Some(os_transport::action::OpenSearchPointInTimeBuilderWire {
+                    id: pit_id.clone(),
+                    keep_alive: Some(os_transport::action::TimeValueWire::minutes(1)),
+                }),
+                ..os_transport::action::OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..os_transport::action::OpenSearchSearchRequestWire::default()
+        };
+        let search_frame = os_transport::action::build_opensearch_search_request_message(
             94,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &search_request,
+        )
+        .unwrap();
+        assert!(!search_request_has_invalid_pit_id(&search_frame[6..]));
+        assert!(search_request_supports_local_execution_subset(
+            &search_frame[6..]
+        ));
+        let search_response = build_local_search_response(
+            94,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &search_frame[6..],
+        );
+        let mut frame = BytesMut::from(&search_response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected PIT search response message");
+        };
+        let search_response =
+            os_transport::action::read_opensearch_search_response_message(&message).unwrap();
+        assert_eq!(
+            search_response.point_in_time_id.as_deref(),
+            Some(pit_id.as_str())
+        );
+        assert_eq!(search_response.total_hits, Some(1));
+        assert_eq!(search_response.hits.len(), 1);
+        assert_eq!(search_response.hits[0].id.as_deref(), Some("doc-1"));
+
+        let list_response = build_local_get_all_pits_response(
+            95,
             OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
             &transport_identity,
         );
@@ -20362,7 +20501,7 @@ mod tests {
 
         let request = os_transport::action::OpenSearchDeletePitRequestWire::default();
         let frame = os_transport::action::build_opensearch_delete_pit_request_message(
-            95,
+            96,
             OPENSEARCH_3_7_0_TRANSPORT,
             &request,
         )
@@ -20371,7 +20510,7 @@ mod tests {
         assert!(delete_pit_request_supports_local_lifecycle_subset(body));
 
         let response =
-            build_local_delete_pit_response(95, OPENSEARCH_3_7_0_TRANSPORT.id() as u32, body);
+            build_local_delete_pit_response(96, OPENSEARCH_3_7_0_TRANSPORT.id() as u32, body);
         let mut frame = BytesMut::from(&response[..]);
         let os_transport::frame::DecodedFrame::Message(message) =
             os_transport::frame::decode_frame(&mut frame)
@@ -20381,7 +20520,7 @@ mod tests {
             panic!("expected delete-PIT response message");
         };
 
-        assert_eq!(message.request_id, 95);
+        assert_eq!(message.request_id, 96);
         assert!(!message.status.is_request());
         let response =
             os_transport::action::read_opensearch_delete_pit_response_message(&message).unwrap();
@@ -20390,7 +20529,7 @@ mod tests {
         assert!(response.results[0].successful);
 
         let list_response = build_local_get_all_pits_response(
-            96,
+            97,
             OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
             &transport_identity,
         );
@@ -20517,7 +20656,7 @@ mod tests {
         };
         let routed_create_frame =
             os_transport::action::build_opensearch_create_pit_request_message(
-                97,
+                98,
                 OPENSEARCH_3_7_0_TRANSPORT,
                 &routed_create_request,
             )
@@ -20527,7 +20666,7 @@ mod tests {
             routed_create_body
         ));
         let routed_create_response = build_local_create_pit_response(
-            97,
+            98,
             OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
             routed_create_body,
         );
@@ -20543,6 +20682,14 @@ mod tests {
             os_transport::action::read_opensearch_create_pit_response_message(&message).unwrap();
         let routed_pit_id = routed_create_response.pit_id.clone();
         assert!(!routed_pit_id.starts_with("pit-"));
+        let decoded_routed_pit_id =
+            os_transport::action::OpenSearchSearchContextIdWire::decode(&routed_pit_id)
+                .expect("routed create PIT should return an OpenSearch SearchContextId");
+        assert_eq!(
+            decoded_routed_pit_id.actual_indices(),
+            vec!["logs-routed-pit-000001".to_string()]
+        );
+        assert_eq!(decoded_routed_pit_id.shards.len(), 3);
         assert_ne!(routed_pit_id, pit_id);
         assert_eq!(routed_create_response.total_shards, 3);
         let routed_pit_context = dev_transport_pit_bindings()
