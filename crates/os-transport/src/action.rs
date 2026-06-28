@@ -33698,12 +33698,6 @@ impl OpenSearchSearchHitWire {
                 reason: "OpenSearch inner hits depth exceeds the supported recursion limit",
             });
         }
-        if self.id.as_ref().is_some_and(|id| id.is_empty()) {
-            return Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "search hit id",
-                reason: "OpenSearch search hit ids must be non-empty when present",
-            });
-        }
         if self.version < -1 {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "search hit version",
@@ -72671,7 +72665,7 @@ mod tests {
             })
         ));
 
-        let invalid_hit = OpenSearchSearchHitWire {
+        let empty_id_hit = OpenSearchSearchHitWire {
             id: Some(String::new()),
             score: 1.0,
             nested_identity: None,
@@ -72688,13 +72682,17 @@ mod tests {
             shard_target: None,
             inner_hits: BTreeMap::new(),
         };
-        assert!(matches!(
-            invalid_hit.validate_supported_subset(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "search hit id",
-                ..
-            })
-        ));
+        empty_id_hit.validate_supported_subset().unwrap();
+        let mut output = StreamOutput::new();
+        empty_id_hit
+            .write(&mut output, OPENSEARCH_3_7_0_TRANSPORT)
+            .unwrap();
+        let decoded = OpenSearchSearchHitWire::read(
+            &mut StreamInput::new(output.freeze()),
+            OPENSEARCH_3_7_0_TRANSPORT,
+        )
+        .unwrap();
+        assert_eq!(decoded.id.as_deref(), Some(""));
 
         let unsupported_sort = OpenSearchSearchHitWire {
             id: Some("doc-1".to_string()),
