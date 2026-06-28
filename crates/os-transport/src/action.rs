@@ -35814,7 +35814,7 @@ impl Default for OpenSearchCreatePitRequestWire {
             routing: None,
             preference: None,
             keep_alive: TimeValueWire::minutes(1),
-            allow_partial_pit_creation: None,
+            allow_partial_pit_creation: Some(true),
         }
     }
 }
@@ -35858,6 +35858,12 @@ impl OpenSearchCreatePitRequestWire {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "create pit keep alive unit",
                 reason: "OpenSearch create-PIT keep-alive uses an unknown time unit",
+            });
+        }
+        if self.allow_partial_pit_creation.is_none() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "create pit allow partial",
+                reason: "OpenSearch REST and client create-PIT requests set allowPartialPitCreation explicitly before execution",
             });
         }
         Ok(())
@@ -75071,6 +75077,18 @@ mod tests {
         partial_creation_disabled
             .validate_supported_subset()
             .unwrap();
+
+        let partial_creation_missing = OpenSearchCreatePitRequestWire {
+            allow_partial_pit_creation: None,
+            ..OpenSearchCreatePitRequestWire::default()
+        };
+        assert!(matches!(
+            partial_creation_missing.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "create pit allow partial",
+                ..
+            })
+        ));
     }
 
     #[test]

@@ -28836,6 +28836,39 @@ mod tests {
     }
 
     #[test]
+    fn create_pit_transport_route_rejects_missing_allow_partial_flag() {
+        let request = os_transport::action::OpenSearchCreatePitRequestWire {
+            allow_partial_pit_creation: None,
+            ..os_transport::action::OpenSearchCreatePitRequestWire::default()
+        };
+        let frame = os_transport::action::build_opensearch_create_pit_request_message(
+            326,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(!create_pit_request_supports_local_lifecycle_subset(
+            &frame[6..]
+        ));
+
+        let response = build_local_create_pit_response(
+            326,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &frame[6..],
+        );
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected fallback create-PIT response frame");
+        };
+        assert_eq!(message.request_id, 326);
+        assert!(message.body.is_empty());
+    }
+
+    #[test]
     fn create_pit_transport_route_rejects_keep_alive_above_default_max() {
         let _lock = dev_transport_pit_test_lock()
             .lock()
