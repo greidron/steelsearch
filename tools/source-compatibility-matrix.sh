@@ -233,6 +233,20 @@ action_status() {
   esac
 
   case "${action}" in
+    GetIndexAction.INSTANCE|IndicesExistsAction.INSTANCE|GetIndexTemplatesAction.INSTANCE|GetComponentTemplateAction.INSTANCE|GetComposableIndexTemplateAction.INSTANCE)
+      echo "implemented"
+      return
+      ;;
+  esac
+
+  case "${action}" in
+    GetStoredScriptAction.INSTANCE|GetScriptContextAction.INSTANCE|GetScriptLanguageAction.INSTANCE)
+      echo "implemented"
+      return
+      ;;
+  esac
+
+  case "${action}" in
     MainAction.INSTANCE|NodesInfoAction.INSTANCE|RemoteInfoAction.INSTANCE|NodesStatsAction.INSTANCE|WlmStatsAction.INSTANCE|NodesUsageAction.INSTANCE|NodesHotThreadsAction.INSTANCE|ListTasksAction.INSTANCE|GetTaskAction.INSTANCE|CancelTasksAction.INSTANCE|ClusterStateAction.INSTANCE|GetTermVersionAction.INSTANCE|ClusterHealthAction.INSTANCE|ClusterSearchShardsAction.INSTANCE|PendingClusterTasksAction.INSTANCE|RemoteStoreStatsAction.INSTANCE|GetRepositoriesAction.INSTANCE|IndicesStatsAction.INSTANCE|ClusterStatsAction.INSTANCE|CatShardsAction.INSTANCE|IndicesSegmentsAction.INSTANCE|IndicesShardStoresAction.INSTANCE|GetMappingsAction.INSTANCE|GetFieldMappingsAction.INSTANCE|RefreshAction.INSTANCE|GetAliasesAction.INSTANCE|GetSettingsAction.INSTANCE|IndexAction.INSTANCE|GetAction.INSTANCE|DeleteAction.INSTANCE|UpdateAction.INSTANCE|MultiGetAction.INSTANCE|BulkAction.INSTANCE|ClearScrollAction.INSTANCE|RecoveryAction.INSTANCE|SegmentReplicationStatsAction.INSTANCE|GetDataStreamAction.INSTANCE|DataStreamsStatsAction.INSTANCE|ListViewNamesAction.INSTANCE|ListDanglingIndicesAction.INSTANCE|FindDanglingIndexAction.INSTANCE|CreatePitAction.INSTANCE|DeletePitAction.INSTANCE|PitSegmentsAction.INSTANCE|GetAllPitsAction.INSTANCE|FieldCapabilitiesAction.INSTANCE|GetPipelineAction.INSTANCE|GetSearchPipelineAction.INSTANCE|DeleteSearchPipelineAction.INSTANCE|RemoteStoreMetadataAction.INSTANCE|AddVotingConfigExclusionsAction.INSTANCE|ClearVotingConfigExclusionsAction.INSTANCE|ClusterGetWeightedRoutingAction.INSTANCE|GetDecommissionStateAction.INSTANCE|DeleteDecommissionStateAction.INSTANCE)
       echo "implemented"
       ;;

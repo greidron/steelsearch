@@ -177,8 +177,8 @@ The source-derived transport inventory currently has 160 rows:
 
 | Status | Count | Meaning |
 | --- | ---: | --- |
-| `implemented` | 69 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
-| `partial` | 91 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
+| `implemented` | 74 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
+| `partial` | 86 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
 | `planned` | 0 | No source-derived transport action remains unclassified. |
 
 The k-NN plugin action sweep is complete at the boundary layer. All 12
@@ -4316,56 +4316,61 @@ release run, the future performance-sensitive work is index block metadata
 mutation and add-block response rendering rather than the fail-closed wire
 boundary.
 
-Current get-index reject wire microbenchmark:
+Current get-index wire microbenchmark:
 
 ```text
-cargo run -p os-transport --release --bin get-index-reject-wire-benchmark
-get_index_reject_request_encode iterations=400000 elapsed_ms=214.228 ops_per_second=1867165.60 nanos_per_op=535.57
-get_index_reject_request_decode iterations=400000 elapsed_ms=221.578 ops_per_second=1805236.92 nanos_per_op=553.94
-get_index_reject_validation iterations=400000 elapsed_ms=225.751 ops_per_second=1771860.54 nanos_per_op=564.38
-get_index_reject_wire_bottleneck_ops_per_second=1771860.54
+cargo run -p os-transport --release --bin get-index-wire-benchmark
+get_index_request_encode iterations=400000 elapsed_ms=215.682 ops_per_second=1854579.88 nanos_per_op=539.21
+get_index_request_decode iterations=400000 elapsed_ms=218.560 ops_per_second=1830159.90 nanos_per_op=546.40
+get_index_request_validate iterations=400000 elapsed_ms=221.842 ops_per_second=1803083.04 nanos_per_op=554.61
+get_index_response_encode iterations=400000 elapsed_ms=183.705 ops_per_second=2177401.10 nanos_per_op=459.26
+get_index_response_decode iterations=400000 elapsed_ms=193.239 ops_per_second=2069974.08 nanos_per_op=483.10
+get_index_wire_bottleneck_ops_per_second=1803083.04
 ```
 
-The current get-index fail-closed boundary bottleneck is validation over the
-decoded request. The request carries the ClusterManagerNodeRead envelope, empty
-index array, `IndicesOptions.strictExpandOpen()`, default feature byte array,
-and two boolean rendering flags. At roughly 1.77M ops/s in the latest local
-release run, the remaining performance risk is not the wire boundary; it is the
-future aliases/mappings/settings/context metadata response rendering path.
+The current get-index transport boundary bottleneck is validation over the
+decoded request. The implemented subset carries the ClusterManagerNodeRead
+envelope, empty index array, `IndicesOptions.strictExpandOpen()`, default
+feature byte array, two boolean rendering flags, and an OpenSearch-shaped
+metadata response. At roughly 1.80M ops/s in the latest local release run, the
+remaining performance-sensitive work is richer aliases/mappings/settings/context
+metadata rendering.
 
-Current indices-exists reject wire microbenchmark:
+Current indices-exists wire microbenchmark:
 
 ```text
-cargo run -p os-transport --release --bin indices-exists-reject-wire-benchmark
-indices_exists_reject_request_encode iterations=400000 elapsed_ms=270.143 ops_per_second=1480697.75 nanos_per_op=675.36
-indices_exists_reject_request_decode iterations=400000 elapsed_ms=246.835 ops_per_second=1620517.52 nanos_per_op=617.09
-indices_exists_reject_validation iterations=400000 elapsed_ms=245.820 ops_per_second=1627205.86 nanos_per_op=614.55
-indices_exists_reject_wire_bottleneck_ops_per_second=1480697.75
+cargo run -p os-transport --release --bin indices-exists-wire-benchmark
+indices_exists_request_encode iterations=400000 elapsed_ms=230.130 ops_per_second=1738146.12 nanos_per_op=575.33
+indices_exists_request_decode iterations=400000 elapsed_ms=242.731 ops_per_second=1647915.78 nanos_per_op=606.83
+indices_exists_request_validate iterations=400000 elapsed_ms=244.948 ops_per_second=1632998.91 nanos_per_op=612.37
+indices_exists_response_encode iterations=400000 elapsed_ms=86.259 ops_per_second=4637208.67 nanos_per_op=215.65
+indices_exists_response_decode iterations=400000 elapsed_ms=88.555 ops_per_second=4516941.86 nanos_per_op=221.39
+indices_exists_wire_bottleneck_ops_per_second=1632998.91
 ```
 
-The current indices-exists fail-closed boundary bottleneck is request encode.
-Unlike get-index, the default benchmark request carries a non-empty `logs-*`
-target so it exercises the valid OpenSearch request shape before the execution
-boundary rejects. At roughly 1.48M ops/s in the latest local release run, the
-remaining performance risk is the future index-resolution and boolean response
-rendering path, not the fail-closed wire boundary.
+The current indices-exists transport boundary bottleneck is request validation.
+The benchmark request carries a non-empty `logs-*` target and an OpenSearch
+boolean response. At roughly 1.63M ops/s in the latest local release run, the
+remaining performance-sensitive work is index-resolution breadth under richer
+metadata state.
 
-Current get-index-templates reject wire microbenchmark:
+Current get-index-templates wire microbenchmark:
 
 ```text
-cargo run -p os-transport --release --bin get-index-templates-reject-wire-benchmark
-get_index_templates_reject_request_encode iterations=400000 elapsed_ms=201.579 ops_per_second=1984333.35 nanos_per_op=503.95
-get_index_templates_reject_request_decode iterations=400000 elapsed_ms=191.163 ops_per_second=2092452.77 nanos_per_op=477.91
-get_index_templates_reject_validation iterations=400000 elapsed_ms=196.820 ops_per_second=2032310.60 nanos_per_op=492.05
-get_index_templates_reject_wire_bottleneck_ops_per_second=1984333.35
+cargo run -p os-transport --release --bin get-index-templates-wire-benchmark
+get_index_templates_request_encode iterations=400000 elapsed_ms=194.744 ops_per_second=2053974.44 nanos_per_op=486.86
+get_index_templates_request_decode iterations=400000 elapsed_ms=193.126 ops_per_second=2071182.25 nanos_per_op=482.82
+get_index_templates_request_validate iterations=400000 elapsed_ms=192.655 ops_per_second=2076246.30 nanos_per_op=481.64
+get_index_templates_response_encode iterations=400000 elapsed_ms=87.125 ops_per_second=4591104.89 nanos_per_op=217.81
+get_index_templates_response_decode iterations=400000 elapsed_ms=94.229 ops_per_second=4244991.00 nanos_per_op=235.57
+get_index_templates_wire_bottleneck_ops_per_second=2053974.44
 ```
 
-The current get-index-templates fail-closed boundary bottleneck is request
-encode. The default benchmark uses an empty names array, matching the OpenSearch
-all-templates request shape, so validation is light and the remaining
-performance risk is future template metadata matching and response rendering.
-At roughly 1.98M ops/s in the latest local release run, the fail-closed wire
-boundary is not a material bottleneck.
+The current get-index-templates transport boundary bottleneck is request encode.
+The benchmark uses an empty names array, matching the OpenSearch all-templates
+request shape, plus an empty OpenSearch-shaped response. At roughly 2.05M ops/s
+in the latest local release run, the remaining performance-sensitive work is
+template metadata matching under larger manifests.
 
 Current put-index-template wire microbenchmark:
 
@@ -4423,21 +4428,24 @@ roughly 1.05M ops/s in the latest local release run, the remaining
 performance-sensitive work is richer validation and distributed metadata
 publication.
 
-Current get-component-template reject wire microbenchmark:
+Current get-component-template wire microbenchmark:
 
 ```text
-cargo run -p os-transport --release --bin get-component-template-reject-wire-benchmark
-get_component_template_reject_request_encode iterations=400000 elapsed_ms=223.699 ops_per_second=1788117.75 nanos_per_op=559.25
-get_component_template_reject_request_decode iterations=400000 elapsed_ms=211.078 ops_per_second=1895035.18 nanos_per_op=527.69
-get_component_template_reject_validation iterations=400000 elapsed_ms=212.785 ops_per_second=1879829.53 nanos_per_op=531.96
-get_component_template_reject_wire_bottleneck_ops_per_second=1788117.75
+cargo run -p os-transport --release --bin get-component-template-wire-benchmark
+get_component_template_request_encode iterations=400000 elapsed_ms=222.139 ops_per_second=1800676.85 nanos_per_op=555.35
+get_component_template_request_decode iterations=400000 elapsed_ms=211.932 ops_per_second=1887396.82 nanos_per_op=529.83
+get_component_template_request_validate iterations=400000 elapsed_ms=212.898 ops_per_second=1878837.14 nanos_per_op=532.24
+get_component_template_response_encode iterations=400000 elapsed_ms=89.609 ops_per_second=4463846.25 nanos_per_op=224.02
+get_component_template_response_decode iterations=400000 elapsed_ms=71.283 ops_per_second=5611429.49 nanos_per_op=178.21
+get_component_template_wire_bottleneck_ops_per_second=1800676.85
 ```
 
-The current get-component-template fail-closed boundary bottleneck is request
-encode. The default benchmark uses an absent optional name, matching the
-OpenSearch all-component-templates request shape; the future
-performance-sensitive work is component-template metadata matching and response
-rendering.
+The current get-component-template transport boundary bottleneck is request
+encode. The benchmark uses an absent optional name, matching the OpenSearch
+all-component-templates request shape, plus an empty OpenSearch-shaped response.
+At roughly 1.80M ops/s in the latest local release run, the remaining
+performance-sensitive work is component-template metadata matching under larger
+manifests.
 
 Current delete-component-template wire microbenchmark:
 
@@ -4475,21 +4483,24 @@ rejecting execution. At roughly 1.12M ops/s in the latest local release run,
 the remaining performance-sensitive work is composable index-template
 validation, metadata publication, and acknowledged response rendering.
 
-Current get-composable-index-template reject wire microbenchmark:
+Current get-composable-index-template wire microbenchmark:
 
 ```text
-cargo run -p os-transport --release --bin get-composable-index-template-reject-wire-benchmark
-get_composable_index_template_reject_request_encode iterations=400000 elapsed_ms=219.349 ops_per_second=1823579.62 nanos_per_op=548.37
-get_composable_index_template_reject_request_decode iterations=400000 elapsed_ms=199.533 ops_per_second=2004682.03 nanos_per_op=498.83
-get_composable_index_template_reject_validation iterations=400000 elapsed_ms=200.343 ops_per_second=1996570.90 nanos_per_op=500.86
-get_composable_index_template_reject_wire_bottleneck_ops_per_second=1823579.62
+cargo run -p os-transport --release --bin get-composable-index-template-wire-benchmark
+get_composable_index_template_request_encode iterations=400000 elapsed_ms=214.975 ops_per_second=1860677.46 nanos_per_op=537.44
+get_composable_index_template_request_decode iterations=400000 elapsed_ms=203.600 ops_per_second=1964633.13 nanos_per_op=509.00
+get_composable_index_template_request_validate iterations=400000 elapsed_ms=205.176 ops_per_second=1949547.94 nanos_per_op=512.94
+get_composable_index_template_response_encode iterations=400000 elapsed_ms=95.516 ops_per_second=4187785.45 nanos_per_op=238.79
+get_composable_index_template_response_decode iterations=400000 elapsed_ms=73.893 ops_per_second=5413256.82 nanos_per_op=184.73
+get_composable_index_template_wire_bottleneck_ops_per_second=1860677.46
 ```
 
-The current get-composable-index-template fail-closed boundary bottleneck is
-request encode. The default benchmark uses an absent optional name, matching
-the OpenSearch all-composable-index-templates request shape; the future
-performance-sensitive work is composable index-template metadata matching and
-response rendering.
+The current get-composable-index-template transport boundary bottleneck is
+request encode. The benchmark uses an absent optional name, matching the
+OpenSearch all-composable-index-templates request shape, plus an empty
+OpenSearch-shaped response. At roughly 1.86M ops/s in the latest local release
+run, the remaining performance-sensitive work is composable index-template
+metadata matching under larger manifests.
 
 Current delete-composable-index-template wire microbenchmark:
 

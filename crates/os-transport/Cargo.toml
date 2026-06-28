@@ -304,8 +304,8 @@ name = "analyze-reject-wire-benchmark"
 path = "benchmarks/analyze_reject_wire.rs"
 
 [[bin]]
-name = "get-index-reject-wire-benchmark"
-path = "benchmarks/get_index_reject_wire.rs"
+name = "get-index-wire-benchmark"
+path = "benchmarks/get_index_wire.rs"
 
 [[bin]]
 name = "create-index-reject-wire-benchmark"
@@ -376,12 +376,12 @@ name = "add-index-block-reject-wire-benchmark"
 path = "benchmarks/add_index_block_reject_wire.rs"
 
 [[bin]]
-name = "indices-exists-reject-wire-benchmark"
-path = "benchmarks/indices_exists_reject_wire.rs"
+name = "indices-exists-wire-benchmark"
+path = "benchmarks/indices_exists_wire.rs"
 
 [[bin]]
-name = "get-index-templates-reject-wire-benchmark"
-path = "benchmarks/get_index_templates_reject_wire.rs"
+name = "get-index-templates-wire-benchmark"
+path = "benchmarks/get_index_templates_wire.rs"
 
 [[bin]]
 name = "put-index-template-wire-benchmark"
@@ -396,8 +396,8 @@ name = "put-component-template-wire-benchmark"
 path = "benchmarks/put_component_template_reject_wire.rs"
 
 [[bin]]
-name = "get-component-template-reject-wire-benchmark"
-path = "benchmarks/get_component_template_reject_wire.rs"
+name = "get-component-template-wire-benchmark"
+path = "benchmarks/get_component_template_wire.rs"
 
 [[bin]]
 name = "delete-component-template-wire-benchmark"
@@ -408,8 +408,8 @@ name = "put-composable-index-template-reject-wire-benchmark"
 path = "benchmarks/put_composable_index_template_reject_wire.rs"
 
 [[bin]]
-name = "get-composable-index-template-reject-wire-benchmark"
-path = "benchmarks/get_composable_index_template_reject_wire.rs"
+name = "get-composable-index-template-wire-benchmark"
+path = "benchmarks/get_composable_index_template_wire.rs"
 
 [[bin]]
 name = "delete-composable-index-template-wire-benchmark"
