@@ -3155,7 +3155,7 @@ fn daemon_point_in_time_search_preserves_snapshot_over_real_socket() {
         "PUT",
         "/pit-it",
         Some(
-            br#"{"mappings":{"properties":{"status":{"type":"keyword"},"ordinal":{"type":"long"},"message":{"type":"text"}}}}"#,
+            br#"{"settings":{"number_of_shards":1,"number_of_replicas":0},"mappings":{"properties":{"status":{"type":"keyword"},"ordinal":{"type":"long"},"message":{"type":"text"}}}}"#,
         ),
     );
     assert_eq!(create["status"], 200);
@@ -3173,12 +3173,9 @@ fn daemon_point_in_time_search_preserves_snapshot_over_real_socket() {
         let response = http_response(port, "PUT", &format!("/pit-it/_doc/{id}"), Some(source));
         assert_eq!(response["status"], 201);
     }
-    assert_refresh_success(&http_response(
-        port,
-        "POST",
-        "/pit-it/_refresh",
-        Some(b"{}"),
-    ));
+    let refresh_before_pit = http_response(port, "POST", "/pit-it/_refresh", Some(b"{}"));
+    assert_eq!(refresh_before_pit["status"], 200, "{refresh_before_pit}");
+    assert_eq!(refresh_before_pit["body"]["_shards"]["failed"], 0);
 
     let open_pit = http_response(
         port,
@@ -3209,12 +3206,12 @@ fn daemon_point_in_time_search_preserves_snapshot_over_real_socket() {
         Some(br#"{"status":"active","ordinal":3,"message":"inserted after pit"}"#),
     );
     assert_eq!(insert["status"], 201);
-    assert_refresh_success(&http_response(
-        port,
-        "POST",
-        "/pit-it/_refresh",
-        Some(b"{}"),
-    ));
+    let refresh_after_mutation = http_response(port, "POST", "/pit-it/_refresh", Some(b"{}"));
+    assert_eq!(
+        refresh_after_mutation["status"], 200,
+        "{refresh_after_mutation}"
+    );
+    assert_eq!(refresh_after_mutation["body"]["_shards"]["failed"], 0);
 
     assert_eq!(
         search_ids(
