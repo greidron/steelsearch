@@ -6725,22 +6725,15 @@ fn transport_search_pit_context_exists_for_request(
     else {
         return true;
     };
+    if !request.indices.is_empty() {
+        return false;
+    }
     let mut contexts = dev_transport_pit_bindings()
         .contexts
         .lock()
         .expect("dev transport PIT contexts lock poisoned");
     prune_expired_transport_pits(&mut contexts, now_epoch_ms());
-    remove_transport_pit_if_indices_missing(&mut contexts, &pit.id).is_some_and(|_| {
-        if request.indices.is_empty() {
-            return true;
-        }
-        let Some(context) = contexts.get(&pit.id) else {
-            return false;
-        };
-        let requested_indices = request.indices.iter().collect::<BTreeSet<_>>();
-        let context_indices = context.indices.iter().collect::<BTreeSet<_>>();
-        requested_indices == context_indices
-    })
+    remove_transport_pit_if_indices_missing(&mut contexts, &pit.id).is_some()
 }
 
 fn remove_transport_pit_if_indices_missing(
@@ -17657,7 +17650,6 @@ mod tests {
         }
 
         let request = os_transport::action::OpenSearchSearchRequestWire {
-            indices: vec!["logs-search-pit-transport".to_string()],
             source: Some(os_transport::action::OpenSearchSearchSourceBuilderWire {
                 point_in_time: Some(os_transport::action::OpenSearchPointInTimeBuilderWire {
                     id: pit_id.clone(),
@@ -17670,6 +17662,19 @@ mod tests {
             ccs_minimize_roundtrips: false,
             ..os_transport::action::OpenSearchSearchRequestWire::default()
         };
+        let indexed_request = os_transport::action::OpenSearchSearchRequestWire {
+            indices: vec!["logs-search-pit-transport".to_string()],
+            ..request.clone()
+        };
+        let indexed_frame = os_transport::action::build_opensearch_search_request_message(
+            304,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &indexed_request,
+        )
+        .unwrap();
+        assert!(!search_request_supports_local_execution_subset(
+            &indexed_frame[6..]
+        ));
         let mismatched_indices_request = os_transport::action::OpenSearchSearchRequestWire {
             indices: vec!["logs-search-pit-other".to_string()],
             ..request.clone()
@@ -20126,7 +20131,6 @@ mod tests {
         }
 
         let search_request = os_transport::action::OpenSearchSearchRequestWire {
-            indices: vec!["logs-reader-pit".to_string()],
             source: Some(os_transport::action::OpenSearchSearchSourceBuilderWire {
                 point_in_time: Some(os_transport::action::OpenSearchPointInTimeBuilderWire {
                     id: encoded_pit_id.clone(),
@@ -20625,6 +20629,20 @@ mod tests {
             ccs_minimize_roundtrips: false,
             ..os_transport::action::OpenSearchSearchRequestWire::default()
         };
+        let indexed_search_request = os_transport::action::OpenSearchSearchRequestWire {
+            indices: vec!["logs-reader-pit".to_string()],
+            ..search_request.clone()
+        };
+        let indexed_search_frame = os_transport::action::build_opensearch_search_request_message(
+            296,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &indexed_search_request,
+        )
+        .unwrap();
+        assert!(
+            !search_request_supports_local_execution_subset(&indexed_search_frame[6..]),
+            "PIT transport searches must not accept explicit request indices"
+        );
         let search_frame = os_transport::action::build_opensearch_search_request_message(
             297,
             OPENSEARCH_3_7_0_TRANSPORT,
@@ -20634,6 +20652,21 @@ mod tests {
         assert!(search_request_supports_local_execution_subset(
             &search_frame[6..]
         ));
+        let indexed_pit_search_request = os_transport::action::OpenSearchSearchRequestWire {
+            indices: vec!["logs-reader-pit-000001".to_string()],
+            ..search_request.clone()
+        };
+        let indexed_pit_search_frame =
+            os_transport::action::build_opensearch_search_request_message(
+                298,
+                OPENSEARCH_3_7_0_TRANSPORT,
+                &indexed_pit_search_request,
+            )
+            .unwrap();
+        assert!(
+            !search_request_supports_local_execution_subset(&indexed_pit_search_frame[6..]),
+            "PIT transport searches must not accept explicit request indices"
+        );
         let search_response = build_local_search_response(
             297,
             OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
