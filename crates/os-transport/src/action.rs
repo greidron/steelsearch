@@ -2118,8 +2118,8 @@ pub fn classify_opensearch_transport_action(
         },
         OPENSEARCH_OPEN_INDEX_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
-            disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "open-index transport execution requires index metadata mutation, shard allocation, and shards-ack rendering",
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "open-index transport adapter mutates manifest-backed concrete index state for default-option requests and renders OpenIndexResponse",
         },
         OPENSEARCH_CLOSE_INDEX_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -10498,6 +10498,35 @@ pub fn read_opensearch_open_index_request_message(
         });
     }
     OpenSearchOpenIndexRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_opensearch_open_index_response_message(
+    request_id: i64,
+    version: Version,
+    response: &OpenSearchOpenIndexResponseWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    response.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::response(),
+        version,
+        variable_header: BytesMut::new(),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_open_index_response_message(
+    message: &TransportMessage,
+) -> Result<OpenSearchOpenIndexResponseWire, TransportActionWireError> {
+    if message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "response",
+            actual: message.status.bits(),
+        });
+    }
+    OpenSearchOpenIndexResponseWire::read(message.body.clone().freeze())
 }
 
 pub fn build_opensearch_close_index_request_message(
@@ -23392,7 +23421,7 @@ impl OpenSearchOpenIndexRequestWire {
         Ok(request)
     }
 
-    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+    pub fn validate_supported_execution_subset(&self) -> Result<(), TransportActionWireError> {
         if self.cluster_manager_timeout != TimeValueWire::seconds(30) {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "open index cluster-manager timeout",
@@ -23431,11 +23460,46 @@ impl OpenSearchOpenIndexRequestWire {
                     "custom wait-for-active-shards requires shard allocation acknowledgement semantics",
             });
         }
+        Ok(())
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        self.validate_supported_execution_subset()?;
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "open index execution",
             reason:
-                "open-index transport execution requires index metadata mutation, shard allocation, and shards-ack rendering",
+                "use validate_supported_execution_subset for the implemented manifest-backed open-index adapter",
         })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchOpenIndexResponseWire {
+    pub acknowledged: bool,
+    pub shards_acknowledged: bool,
+}
+
+impl OpenSearchOpenIndexResponseWire {
+    pub fn success() -> Self {
+        Self {
+            acknowledged: true,
+            shards_acknowledged: true,
+        }
+    }
+
+    pub fn write(&self, output: &mut StreamOutput) {
+        output.write_bool(self.acknowledged);
+        output.write_bool(self.shards_acknowledged);
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let response = Self {
+            acknowledged: input.read_bool()?,
+            shards_acknowledged: input.read_bool()?,
+        };
+        require_no_trailing_bytes(&input)?;
+        Ok(response)
     }
 }
 
@@ -62818,6 +62882,7 @@ mod tests {
         assert_eq!(decoded, request);
         assert_eq!(decoded.indices, vec!["logs-000001"]);
         assert_eq!(decoded.wait_for_active_shards, -2);
+        decoded.validate_supported_execution_subset().unwrap();
         assert!(matches!(
             decoded.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
@@ -62903,7 +62968,7 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_open_index_transport_messages_bind_rejected_action_frame() {
+    fn opensearch_open_index_transport_messages_bind_action_frame_and_response() {
         let request = OpenSearchOpenIndexRequestWire::default();
         let mut frame =
             build_opensearch_open_index_request_message(68, OPENSEARCH_3_7_0_TRANSPORT, &request)
@@ -62911,6 +62976,12 @@ mod tests {
         let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
             panic!("expected open index request message");
         };
+        assert_eq!(
+            classify_opensearch_transport_request_message(&message)
+                .unwrap()
+                .disposition,
+            OpenSearchTransportActionDisposition::Implemented
+        );
         assert_eq!(
             read_opensearch_open_index_request_message(&message).unwrap(),
             request
@@ -62923,6 +62994,25 @@ mod tests {
                 shape: "open index execution",
                 ..
             })
+        ));
+
+        let response = OpenSearchOpenIndexResponseWire::success();
+        let mut frame =
+            build_opensearch_open_index_response_message(68, OPENSEARCH_3_7_0_TRANSPORT, &response)
+                .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected open index response message");
+        };
+        assert_eq!(
+            read_opensearch_open_index_response_message(&message).unwrap(),
+            response
+        );
+        assert!(matches!(
+            read_opensearch_open_index_request_message(&message).unwrap_err(),
+            TransportActionWireError::UnexpectedMessageStatus {
+                expected: "request",
+                ..
+            }
         ));
     }
 

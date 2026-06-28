@@ -177,8 +177,8 @@ The source-derived transport inventory currently has 160 rows:
 
 | Status | Count | Meaning |
 | --- | ---: | --- |
-| `implemented` | 97 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
-| `partial` | 63 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
+| `implemented` | 98 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
+| `partial` | 62 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
 | `planned` | 0 | No source-derived transport action remains unclassified. |
 
 The k-NN plugin action sweep is complete at the boundary layer. All 12
@@ -1505,12 +1505,15 @@ The open-index boundary covers:
   acknowledgement timeout, indices array, `IndicesOptions.fromOptions(false,
   true, false, true)`, and default `ActiveShardCount` at the wire decode/build
   layer;
-- explicit fail-closed classification for `indices:admin/open` until index
-  metadata mutation, shard allocation, and shards-ack response rendering are
-  implemented;
+- implemented classification for default-option requests with one or more
+  concrete existing index names and standard timeouts;
+- manifest-backed index metadata state transition to `open` plus
+  OpenSearch-shaped `OpenIndexResponse` rendering with `acknowledged` and
+  `shards_acknowledged`;
 - explicit rejection for custom cluster-manager timeouts, custom
   acknowledgement timeouts, empty or blank index targets, custom indices
-  options, custom wait-for-active-shards, and open-index execution.
+  options, custom wait-for-active-shards, wildcard/date-math/comma/remote-style
+  targets, missing index names, and non-concrete target names.
 
 The close-index boundary covers:
 
@@ -4317,24 +4320,26 @@ request ops/s and 7M+ response ops/s in the latest local release run, the next
 performance-sensitive work is broader index resolution and deletion planning,
 not ack response rendering.
 
-Current open-index reject wire microbenchmark:
+Current open-index wire microbenchmark:
 
 ```text
-cargo run -p os-transport --release --bin open-index-reject-wire-benchmark
-open_index_reject_request_encode iterations=400000 elapsed_ms=276.449 ops_per_second=1446921.63 nanos_per_op=691.12
-open_index_reject_request_decode iterations=400000 elapsed_ms=292.761 ops_per_second=1366300.88 nanos_per_op=731.90
-open_index_reject_validation iterations=400000 elapsed_ms=425.628 ops_per_second=939787.79 nanos_per_op=1064.07
-open_index_reject_wire_bottleneck_ops_per_second=939787.79
+cargo run -q -p os-transport --release --bin open-index-wire-benchmark
+open_index_request_encode iterations=400000 elapsed_ms=284.851 ops_per_second=1404243.91 nanos_per_op=712.13
+open_index_request_decode iterations=400000 elapsed_ms=258.704 ops_per_second=1546170.11 nanos_per_op=646.76
+open_index_request_validate iterations=400000 elapsed_ms=263.831 ops_per_second=1516120.94 nanos_per_op=659.58
+open_index_response_encode iterations=400000 elapsed_ms=49.380 ops_per_second=8100413.04 nanos_per_op=123.45
+open_index_response_decode iterations=400000 elapsed_ms=54.870 ops_per_second=7289961.80 nanos_per_op=137.17
+open_index_wire_bottleneck_ops_per_second=1404243.91
 ```
 
-The current open-index fail-closed boundary bottleneck is validation over the
-decoded request. The request carries an acknowledged-request envelope,
-non-empty index target, open-index default indices options, and default
-wait-for-active-shards before the execution boundary rejects. At roughly 0.94M
-ops/s in the latest local release run, the fail-closed boundary remains cheap,
-but the validation branch is the local bottleneck to revisit if this path becomes
-hot before the real index metadata mutation, shard allocation, and shards-ack
-response rendering work lands.
+The current open-index transport bottleneck is request encode. The request
+carries an acknowledged-request envelope, non-empty concrete index targets,
+open-index default indices options, and default wait-for-active-shards before
+the node adapter marks manifest-backed metadata open and renders the response.
+At roughly 1.42M request ops/s and 7M+ response ops/s in the latest local
+release run, the next performance-sensitive work is broader index resolution,
+state-transition planning, and allocation acknowledgement behavior, not response
+wire rendering.
 
 Current close-index reject wire microbenchmark:
 

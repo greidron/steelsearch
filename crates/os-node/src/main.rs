@@ -2010,6 +2010,30 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end_at_ms,
         )?;
     } else if is_request
+        && normalized_action_hint == Some("indices:admin/open")
+        && open_index_request_supports_manifest_subset(&body)
+    {
+        let response = build_open_index_response(request_id, header_version_id, &body);
+        response_frame =
+            summarize_transport_response_frame_for_action(&response, Some("indices:admin/open"));
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request
         && normalized_action_hint == Some("indices:admin/mapping/put")
         && put_mapping_request_supports_manifest_subset(&body)
     {
@@ -8080,6 +8104,26 @@ fn build_delete_index_response(request_id: i64, header_version_id: u32, body: &[
     )
 }
 
+fn build_open_index_response(request_id: i64, header_version_id: u32, body: &[u8]) -> Vec<u8> {
+    let Some(request) = decode_open_index_request_from_transport_body(body) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    if !open_index_request_matches_manifest_subset(&request) {
+        return build_empty_transport_response(request_id, header_version_id);
+    }
+    if !apply_transport_open_index(&request.indices) {
+        return build_empty_transport_response(request_id, header_version_id);
+    }
+    let response = os_transport::action::OpenSearchOpenIndexResponseWire::success();
+    os_transport::action::build_opensearch_open_index_response_message(
+        request_id,
+        Version::from_id(header_version_id as i32),
+        &response,
+    )
+    .map(|frame| frame.to_vec())
+    .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
+}
+
 fn create_index_request_supports_manifest_subset(body: &[u8]) -> bool {
     decode_create_index_request_from_transport_body(body)
         .is_some_and(|request| create_index_request_matches_manifest_subset(&request))
@@ -8088,6 +8132,11 @@ fn create_index_request_supports_manifest_subset(body: &[u8]) -> bool {
 fn delete_index_request_supports_manifest_subset(body: &[u8]) -> bool {
     decode_delete_index_request_from_transport_body(body)
         .is_some_and(|request| delete_index_request_matches_manifest_subset(&request))
+}
+
+fn open_index_request_supports_manifest_subset(body: &[u8]) -> bool {
+    decode_open_index_request_from_transport_body(body)
+        .is_some_and(|request| open_index_request_matches_manifest_subset(&request))
 }
 
 fn auto_create_request_supports_manifest_subset(body: &[u8]) -> bool {
@@ -8123,6 +8172,20 @@ fn delete_index_request_matches_manifest_subset(
             .all(|index| transport_delete_index_name_is_concrete(index))
 }
 
+fn open_index_request_matches_manifest_subset(
+    request: &os_transport::action::OpenSearchOpenIndexRequestWire,
+) -> bool {
+    request.validate_supported_execution_subset().is_ok()
+        && request
+            .indices
+            .iter()
+            .all(|index| transport_delete_index_name_is_concrete(index))
+        && request
+            .indices
+            .iter()
+            .all(|index| transport_index_exists(index))
+}
+
 fn decode_create_index_request_from_transport_body(
     body: &[u8],
 ) -> Option<os_transport::action::OpenSearchCreateIndexRequestWire> {
@@ -8142,6 +8205,13 @@ fn decode_delete_index_request_from_transport_body(
 ) -> Option<os_transport::action::OpenSearchDeleteIndexRequestWire> {
     let message = decode_transport_message_from_body(body)?;
     os_transport::action::read_opensearch_delete_index_request_message(&message).ok()
+}
+
+fn decode_open_index_request_from_transport_body(
+    body: &[u8],
+) -> Option<os_transport::action::OpenSearchOpenIndexRequestWire> {
+    let message = decode_transport_message_from_body(body)?;
+    os_transport::action::read_opensearch_open_index_request_message(&message).ok()
 }
 
 fn transport_create_index_name_is_valid(index: &str) -> bool {
@@ -8260,6 +8330,29 @@ fn apply_transport_delete_index(indices: &[String]) {
                 .iter()
                 .any(|index| key.starts_with(&format!("{index}:")))
         });
+}
+
+fn apply_transport_open_index(indices: &[String]) -> bool {
+    let bindings = dev_transport_pit_bindings();
+    let mut manifest = bindings
+        .metadata_manifest
+        .lock()
+        .expect("dev transport metadata manifest lock poisoned");
+    let Some(indices_object) = manifest["indices"].as_object_mut() else {
+        return false;
+    };
+    if !indices
+        .iter()
+        .all(|index| indices_object.contains_key(index))
+    {
+        return false;
+    }
+    for index in indices {
+        if let Some(entry) = indices_object.get_mut(index) {
+            entry["state"] = serde_json::json!("open");
+        }
+    }
+    true
 }
 
 fn transport_analyze_tokens(
@@ -17664,6 +17757,9 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
                 body,
             ))
         }
+        Some("indices:admin/open") if open_index_request_supports_manifest_subset(body) => Some(
+            build_open_index_response(request_id, header_version_id, body),
+        ),
         Some("indices:admin/mapping/put") if put_mapping_request_supports_manifest_subset(body) => {
             Some(build_put_mapping_response(
                 request_id,
@@ -23400,6 +23496,86 @@ mod tests {
         .unwrap();
         assert!(!delete_index_request_supports_manifest_subset(
             &wildcard_frame[6..]
+        ));
+    }
+
+    #[test]
+    fn open_index_transport_route_marks_manifest_index_open() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        let bindings = dev_transport_pit_bindings();
+        bindings
+            .created_indices
+            .lock()
+            .expect("dev transport created indices lock poisoned")
+            .clear();
+        bindings
+            .documents
+            .lock()
+            .expect("dev transport documents lock poisoned")
+            .clear();
+        *bindings
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned") = serde_json::json!({
+            "indices": {
+                "logs-open-transport-000001": {
+                    "settings": {},
+                    "mappings": {},
+                    "aliases": {},
+                    "state": "close"
+                }
+            }
+        });
+
+        let request = os_transport::action::OpenSearchOpenIndexRequestWire {
+            indices: vec!["logs-open-transport-000001".to_string()],
+            ..os_transport::action::OpenSearchOpenIndexRequestWire::default()
+        };
+        let frame = os_transport::action::build_opensearch_open_index_request_message(
+            95,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(open_index_request_supports_manifest_subset(&frame[6..]));
+
+        let response =
+            build_open_index_response(95, OPENSEARCH_3_7_0_TRANSPORT.id() as u32, &frame[6..]);
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected open-index response message");
+        };
+        let response =
+            os_transport::action::read_opensearch_open_index_response_message(&message).unwrap();
+        assert!(response.acknowledged);
+        assert!(response.shards_acknowledged);
+        assert_eq!(
+            bindings
+                .metadata_manifest
+                .lock()
+                .expect("dev transport metadata manifest lock poisoned")["indices"]
+                ["logs-open-transport-000001"]["state"],
+            serde_json::json!("open")
+        );
+
+        let missing_request = os_transport::action::OpenSearchOpenIndexRequestWire {
+            indices: vec!["missing-open-transport-000001".to_string()],
+            ..os_transport::action::OpenSearchOpenIndexRequestWire::default()
+        };
+        let missing_frame = os_transport::action::build_opensearch_open_index_request_message(
+            96,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &missing_request,
+        )
+        .unwrap();
+        assert!(!open_index_request_supports_manifest_subset(
+            &missing_frame[6..]
         ));
     }
 

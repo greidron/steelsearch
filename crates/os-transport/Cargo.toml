@@ -364,8 +364,8 @@ name = "delete-index-wire-benchmark"
 path = "benchmarks/delete_index_wire.rs"
 
 [[bin]]
-name = "open-index-reject-wire-benchmark"
-path = "benchmarks/open_index_reject_wire.rs"
+name = "open-index-wire-benchmark"
+path = "benchmarks/open_index_wire.rs"
 
 [[bin]]
 name = "close-index-reject-wire-benchmark"

@@ -435,7 +435,7 @@ transport_action	partial	action	ResizeAction.INSTANCE	TransportResizeAction.clas
 transport_action	partial	action	RolloverAction.INSTANCE	TransportRolloverAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	702
 transport_action	implemented	action	DeleteIndexAction.INSTANCE	TransportDeleteIndexAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	703
 transport_action	implemented	action	GetIndexAction.INSTANCE	TransportGetIndexAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	704
-transport_action	partial	action	OpenIndexAction.INSTANCE	TransportOpenIndexAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	705
+transport_action	implemented	action	OpenIndexAction.INSTANCE	TransportOpenIndexAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	705
 transport_action	partial	action	CloseIndexAction.INSTANCE	TransportCloseIndexAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	706
 transport_action	implemented	action	IndicesExistsAction.INSTANCE	TransportIndicesExistsAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	707
 transport_action	partial	action	AddIndexBlockAction.INSTANCE	TransportAddIndexBlockAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	708
