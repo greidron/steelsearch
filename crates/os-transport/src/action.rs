@@ -2089,7 +2089,7 @@ pub fn classify_opensearch_transport_action(
         OPENSEARCH_GET_PIPELINE_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Implemented,
-            reason: "get-pipeline transport adapter returns an OpenSearch-shaped empty pipeline list for the default non-local metadata read request",
+            reason: "get-pipeline transport adapter renders OpenSearch-shaped ingest pipeline metadata from the Rust manifest",
         },
         OPENSEARCH_DELETE_PIPELINE_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -21528,7 +21528,7 @@ impl OpenSearchGetPipelineRequestWire {
         self.validate_supported_execution_subset()?;
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "get pipeline execution",
-            reason: "use validate_supported_execution_subset for the implemented empty get-pipeline adapter",
+            reason: "use validate_supported_execution_subset for the implemented manifest-backed get-pipeline adapter",
         })
     }
 }

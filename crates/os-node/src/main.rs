@@ -4598,12 +4598,17 @@ fn build_empty_get_pipeline_response(
     if request.validate_supported_execution_subset().is_err() {
         return build_empty_transport_response(request_id, header_version_id);
     }
+    let response = get_pipeline_response_from_metadata_manifest(
+        &dev_transport_pit_bindings()
+            .metadata_manifest
+            .lock()
+            .expect("metadata manifest lock poisoned"),
+        &request,
+    );
     os_transport::action::build_opensearch_get_pipeline_response_message(
         request_id,
         Version::from_id(header_version_id as i32),
-        &os_transport::action::OpenSearchGetPipelineResponseWire {
-            pipelines: Vec::new(),
-        },
+        &response,
     )
     .map(|frame| frame.to_vec())
     .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
@@ -4620,6 +4625,70 @@ fn decode_get_pipeline_request_from_transport_body(
 ) -> Option<os_transport::action::OpenSearchGetPipelineRequestWire> {
     let message = decode_transport_message_from_body(body)?;
     os_transport::action::read_opensearch_get_pipeline_request_message(&message).ok()
+}
+
+fn get_pipeline_response_from_metadata_manifest(
+    metadata_manifest: &Value,
+    request: &os_transport::action::OpenSearchGetPipelineRequestWire,
+) -> os_transport::action::OpenSearchGetPipelineResponseWire {
+    let Some(pipelines) = metadata_manifest
+        .get("ingest_pipelines")
+        .and_then(Value::as_object)
+    else {
+        return os_transport::action::OpenSearchGetPipelineResponseWire {
+            pipelines: Vec::new(),
+        };
+    };
+    let mut response_pipelines = Vec::new();
+    if request.ids.is_empty() {
+        for (id, pipeline) in pipelines {
+            if let Some(configuration) = ingest_pipeline_configuration_from_json(id, pipeline) {
+                response_pipelines.push(configuration);
+            }
+        }
+    } else {
+        let mut seen = BTreeSet::new();
+        for pattern in &request.ids {
+            if is_simple_wildcard_pattern(pattern) {
+                for (id, pipeline) in pipelines {
+                    if wildcard_match(pattern, id) && seen.insert(id.clone()) {
+                        if let Some(configuration) =
+                            ingest_pipeline_configuration_from_json(id, pipeline)
+                        {
+                            response_pipelines.push(configuration);
+                        }
+                    }
+                }
+            } else if let Some(pipeline) = pipelines.get(pattern) {
+                if seen.insert(pattern.clone()) {
+                    if let Some(configuration) =
+                        ingest_pipeline_configuration_from_json(pattern, pipeline)
+                    {
+                        response_pipelines.push(configuration);
+                    }
+                }
+            }
+        }
+    }
+    os_transport::action::OpenSearchGetPipelineResponseWire {
+        pipelines: response_pipelines,
+    }
+}
+
+fn ingest_pipeline_configuration_from_json(
+    id: &str,
+    pipeline: &Value,
+) -> Option<os_transport::action::OpenSearchPipelineConfigurationWire> {
+    let config = serde_json::to_vec(pipeline).ok()?;
+    Some(os_transport::action::OpenSearchPipelineConfigurationWire {
+        id: id.to_string(),
+        config: Bytes::from(config),
+        media_type: "application/json; charset=UTF-8".to_string(),
+    })
+}
+
+fn is_simple_wildcard_pattern(pattern: &str) -> bool {
+    pattern.contains('*') || pattern.contains('?')
 }
 
 fn build_get_aliases_response(request_id: i64, header_version_id: u32, body: &[u8]) -> Vec<u8> {
@@ -27421,9 +27490,28 @@ mod tests {
     }
 
     #[test]
-    fn get_pipeline_transport_route_builds_opensearch_shaped_empty_response() {
+    fn get_pipeline_transport_route_builds_manifest_backed_filtered_response() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        *dev_transport_pit_bindings()
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned") = serde_json::json!({
+            "ingest_pipelines": {
+                "logs-pipeline": {
+                    "description": "logs ingest",
+                    "processors": [
+                        { "set": { "field": "kind", "value": "logs" } }
+                    ]
+                },
+                "metrics-pipeline": {
+                    "processors": []
+                }
+            }
+        });
         let request = os_transport::action::OpenSearchGetPipelineRequestWire {
-            ids: Vec::new(),
+            ids: vec!["logs-*".to_string()],
             ..os_transport::action::OpenSearchGetPipelineRequestWire::default()
         };
         let frame = os_transport::action::build_opensearch_get_pipeline_request_message(
@@ -27451,7 +27539,42 @@ mod tests {
         assert!(!message.status.is_request());
         let response =
             os_transport::action::read_opensearch_get_pipeline_response_message(&message).unwrap();
-        assert!(response.pipelines.is_empty());
+        assert_eq!(response.pipelines.len(), 1);
+        assert_eq!(response.pipelines[0].id, "logs-pipeline");
+        assert_eq!(
+            response.pipelines[0].media_type,
+            "application/json; charset=UTF-8"
+        );
+        let config: Value = serde_json::from_slice(&response.pipelines[0].config).unwrap();
+        assert_eq!(config["description"], "logs ingest");
+        assert_eq!(config["processors"][0]["set"]["field"], "kind");
+
+        let request = os_transport::action::OpenSearchGetPipelineRequestWire {
+            ids: Vec::new(),
+            ..os_transport::action::OpenSearchGetPipelineRequestWire::default()
+        };
+        let frame = os_transport::action::build_opensearch_get_pipeline_request_message(
+            204,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        let response = build_empty_get_pipeline_response(
+            204,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &frame[6..],
+        );
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected all get-pipeline response message");
+        };
+        let response =
+            os_transport::action::read_opensearch_get_pipeline_response_message(&message).unwrap();
+        assert_eq!(response.pipelines.len(), 2);
     }
 
     #[test]

@@ -703,7 +703,7 @@
       "request_wire_type": "GetPipelineRequest",
       "response_wire_type": "GetPipelineResponse",
       "disposition": "implemented",
-      "reason": "Get-pipeline transport adapter returns an OpenSearch-shaped empty pipeline list for the default non-local metadata read request."
+      "reason": "Get-pipeline transport adapter renders OpenSearch-shaped ingest pipeline metadata from the Rust manifest."
     },
     {
       "action_name": "cluster:admin/ingest/pipeline/delete",
