@@ -25944,6 +25944,27 @@ impl OpenSearchSearchSourceBuilderWire {
         )?;
         if let Some(stored_fields) = &self.stored_fields {
             stored_fields.validate_supported_subset()?;
+            if !stored_fields.fetch_fields {
+                let source_requested = self
+                    .fetch_source
+                    .as_ref()
+                    .map(|fetch_source| fetch_source.fetch_source)
+                    .unwrap_or(true);
+                if source_requested {
+                    return Err(TransportActionWireError::UnsupportedWireShape {
+                        shape: "search request source stored fields",
+                        reason:
+                            "OpenSearch stored_fields cannot be disabled when _source is requested",
+                    });
+                }
+                if self.fetch_fields.is_some() {
+                    return Err(TransportActionWireError::UnsupportedWireShape {
+                        shape: "search request source stored fields",
+                        reason:
+                            "OpenSearch stored_fields cannot be disabled when fields are requested",
+                    });
+                }
+            }
         }
         validate_optional_generic_map(
             self.search_pipeline_source.as_ref(),
@@ -71185,6 +71206,97 @@ mod tests {
             invalid_stored_fields.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "search request source stored fields",
+                ..
+            })
+        ));
+
+        let stored_fields_disabled_with_default_source = OpenSearchSearchRequestWire {
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                stored_fields: Some(OpenSearchStoredFieldsContextWire {
+                    fetch_fields: false,
+                    field_names: None,
+                }),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        assert!(matches!(
+            stored_fields_disabled_with_default_source.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source stored fields",
+                ..
+            })
+        ));
+
+        let stored_fields_disabled_with_explicit_source = OpenSearchSearchRequestWire {
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                fetch_source: Some(OpenSearchFetchSourceContextWire {
+                    fetch_source: true,
+                    includes: Vec::new(),
+                    excludes: Vec::new(),
+                }),
+                stored_fields: Some(OpenSearchStoredFieldsContextWire {
+                    fetch_fields: false,
+                    field_names: None,
+                }),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        assert!(matches!(
+            stored_fields_disabled_with_explicit_source.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source stored fields",
+                ..
+            })
+        ));
+
+        let stored_fields_disabled_with_fetch_fields = OpenSearchSearchRequestWire {
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                fetch_source: Some(OpenSearchFetchSourceContextWire {
+                    fetch_source: false,
+                    includes: Vec::new(),
+                    excludes: Vec::new(),
+                }),
+                fetch_fields: Some(vec![OpenSearchFieldAndFormatWire {
+                    field: "status".to_string(),
+                    format: None,
+                }]),
+                stored_fields: Some(OpenSearchStoredFieldsContextWire {
+                    fetch_fields: false,
+                    field_names: None,
+                }),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        assert!(matches!(
+            stored_fields_disabled_with_fetch_fields.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source stored fields",
+                ..
+            })
+        ));
+
+        let stored_fields_disabled_without_source_or_fields = OpenSearchSearchRequestWire {
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                fetch_source: Some(OpenSearchFetchSourceContextWire {
+                    fetch_source: false,
+                    includes: Vec::new(),
+                    excludes: Vec::new(),
+                }),
+                stored_fields: Some(OpenSearchStoredFieldsContextWire {
+                    fetch_fields: false,
+                    field_names: None,
+                }),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        assert!(matches!(
+            stored_fields_disabled_without_source_or_fields.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request execution",
                 ..
             })
         ));
