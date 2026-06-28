@@ -1473,6 +1473,30 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end_at_ms,
         )?;
     } else if is_request
+        && normalized_action_hint == Some("indices:admin/exists")
+        && indices_exists_request_supports_local_execution_subset(&body)
+    {
+        let response = build_local_indices_exists_response(request_id, header_version_id, &body);
+        response_frame =
+            summarize_transport_response_frame_for_action(&response, Some("indices:admin/exists"));
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request
         && normalized_action_hint == Some("indices:data/read/field_caps")
         && field_capabilities_request_supports_local_execution_subset(&body)
     {
@@ -4802,6 +4826,91 @@ fn field_capabilities_request_supports_local_execution_subset(body: &[u8]) -> bo
     decode_field_capabilities_request_from_transport_body(body)
         .as_ref()
         .is_some_and(|request| request.validate_supported_execution_subset().is_ok())
+}
+
+fn build_local_indices_exists_response(
+    request_id: i64,
+    header_version_id: u32,
+    body: &[u8],
+) -> Vec<u8> {
+    let Some(request) = decode_indices_exists_request_from_transport_body(body) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    if request.validate_supported_subset().is_err() {
+        return build_empty_transport_response(request_id, header_version_id);
+    }
+    let response = local_indices_exists_response_from_request(&request);
+    os_transport::action::build_opensearch_indices_exists_response_message(
+        request_id,
+        Version::from_id(header_version_id as i32),
+        &response,
+    )
+    .map(|frame| frame.to_vec())
+    .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
+}
+
+fn indices_exists_request_supports_local_execution_subset(body: &[u8]) -> bool {
+    decode_indices_exists_request_from_transport_body(body)
+        .as_ref()
+        .is_some_and(|request| request.validate_supported_subset().is_ok())
+}
+
+fn decode_indices_exists_request_from_transport_body(
+    body: &[u8],
+) -> Option<os_transport::action::OpenSearchIndicesExistsRequestWire> {
+    let message = decode_transport_message_from_body(body)?;
+    os_transport::action::read_opensearch_indices_exists_request_message(&message).ok()
+}
+
+fn local_indices_exists_response_from_request(
+    request: &os_transport::action::OpenSearchIndicesExistsRequestWire,
+) -> os_transport::action::OpenSearchIndicesExistsResponseWire {
+    let bindings = dev_transport_pit_bindings();
+    let metadata_manifest = bindings
+        .metadata_manifest
+        .lock()
+        .expect("dev transport metadata manifest lock poisoned");
+    os_transport::action::OpenSearchIndicesExistsResponseWire::new(
+        indices_exist_in_metadata_manifest(&metadata_manifest, request),
+    )
+}
+
+fn indices_exist_in_metadata_manifest(
+    metadata_manifest: &Value,
+    request: &os_transport::action::OpenSearchIndicesExistsRequestWire,
+) -> bool {
+    let Some(indices) = metadata_manifest["indices"].as_object() else {
+        return false;
+    };
+    request.indices.iter().all(|target| {
+        let target = target.trim();
+        if target.is_empty() {
+            return false;
+        }
+        if target == "_all" {
+            return !indices.is_empty();
+        }
+        let wildcard_target = target.contains('*') || target.contains('?');
+        if wildcard_target {
+            indices.iter().any(|(index, metadata)| {
+                wildcard_match(target, index)
+                    || metadata
+                        .get("aliases")
+                        .and_then(Value::as_object)
+                        .is_some_and(|aliases| {
+                            aliases.keys().any(|alias| wildcard_match(target, alias))
+                        })
+            })
+        } else {
+            indices.contains_key(target)
+                || indices.values().any(|metadata| {
+                    metadata
+                        .get("aliases")
+                        .and_then(Value::as_object)
+                        .is_some_and(|aliases| aliases.contains_key(target))
+                })
+        }
+    })
 }
 
 fn decode_field_capabilities_request_from_transport_body(
@@ -12276,6 +12385,15 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
         Some("indices:admin/shards/search_shards") => Some(
             build_empty_cluster_search_shards_response(request_id, header_version_id),
         ),
+        Some("indices:admin/exists")
+            if indices_exists_request_supports_local_execution_subset(body) =>
+        {
+            Some(build_local_indices_exists_response(
+                request_id,
+                header_version_id,
+                body,
+            ))
+        }
         Some("indices:data/read/field_caps")
             if field_capabilities_request_supports_local_execution_subset(body) =>
         {
@@ -17305,6 +17423,78 @@ mod tests {
             response,
             os_transport::action::OpenSearchClusterSearchShardsResponseWire::empty()
         );
+    }
+
+    #[test]
+    fn indices_exists_transport_route_resolves_index_alias_and_wildcard_targets() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        *dev_transport_pit_bindings()
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned") = serde_json::json!({
+            "indices": {
+                "logs-exists-000001": {
+                    "settings": {},
+                    "mappings": {},
+                    "aliases": {
+                        "logs-exists-read": {}
+                    }
+                },
+                "metrics-exists-000001": {
+                    "settings": {},
+                    "mappings": {},
+                    "aliases": {}
+                }
+            }
+        });
+
+        let alias_request = os_transport::action::OpenSearchIndicesExistsRequestWire {
+            indices: vec!["logs-exists-read".to_string()],
+            ..os_transport::action::OpenSearchIndicesExistsRequestWire::default()
+        };
+        let frame = os_transport::action::build_opensearch_indices_exists_request_message(
+            187,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &alias_request,
+        )
+        .unwrap();
+        assert!(indices_exists_request_supports_local_execution_subset(
+            &frame[6..]
+        ));
+        let response = build_local_indices_exists_response(
+            187,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &frame[6..],
+        );
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected indices exists response message");
+        };
+        let response =
+            os_transport::action::read_opensearch_indices_exists_response_message(&message)
+                .unwrap();
+        assert!(response.exists);
+
+        let wildcard_request = os_transport::action::OpenSearchIndicesExistsRequestWire {
+            indices: vec!["logs-exists-*".to_string()],
+            ..os_transport::action::OpenSearchIndicesExistsRequestWire::default()
+        };
+        assert!(local_indices_exists_response_from_request(&wildcard_request).exists);
+
+        let missing_request = os_transport::action::OpenSearchIndicesExistsRequestWire {
+            indices: vec![
+                "logs-exists-*".to_string(),
+                "missing-exists-index".to_string(),
+            ],
+            ..os_transport::action::OpenSearchIndicesExistsRequestWire::default()
+        };
+        assert!(!local_indices_exists_response_from_request(&missing_request).exists);
     }
 
     #[test]

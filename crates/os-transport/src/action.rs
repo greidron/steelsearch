@@ -2134,8 +2134,9 @@ pub fn classify_opensearch_transport_action(
         },
         OPENSEARCH_INDICES_EXISTS_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
-            disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "indices-exists transport execution requires index resolution semantics",
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason:
+                "metadata-backed indices-exists transport adapter supports default index, alias, and wildcard existence checks",
         },
         OPENSEARCH_GET_INDEX_TEMPLATES_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -8910,6 +8911,36 @@ pub fn read_opensearch_indices_exists_request_message(
         });
     }
     OpenSearchIndicesExistsRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_opensearch_indices_exists_response_message(
+    request_id: i64,
+    version: Version,
+    response: &OpenSearchIndicesExistsResponseWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    response.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::response(),
+        version,
+        variable_header: BytesMut::from(&ResponseVariableHeader::default().to_bytes()[..]),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_indices_exists_response_message(
+    message: &TransportMessage,
+) -> Result<OpenSearchIndicesExistsResponseWire, TransportActionWireError> {
+    if !message.status.is_response() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "response",
+            actual: message.status.bits(),
+        });
+    }
+    let _header = ResponseVariableHeader::read(message.variable_header.clone().freeze())?;
+    OpenSearchIndicesExistsResponseWire::read(message.body.clone().freeze())
 }
 
 pub fn build_opensearch_get_index_templates_request_message(
@@ -19570,7 +19601,7 @@ impl OpenSearchIndicesExistsRequestWire {
         Ok(request)
     }
 
-    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+    pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
         if self.cluster_manager_timeout != TimeValueWire::seconds(30) {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "indices exists cluster-manager timeout",
@@ -19599,10 +19630,39 @@ impl OpenSearchIndicesExistsRequestWire {
                 reason: "custom indices-exists options require index resolution semantics",
             });
         }
+        Ok(())
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        self.validate_supported_subset()?;
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "indices exists execution",
-            reason: "indices-exists transport execution requires index resolution semantics",
+            reason: "use validate_supported_subset for the implemented indices-exists adapter",
         })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchIndicesExistsResponseWire {
+    pub exists: bool,
+}
+
+impl OpenSearchIndicesExistsResponseWire {
+    pub fn new(exists: bool) -> Self {
+        Self { exists }
+    }
+
+    pub fn write(&self, output: &mut StreamOutput) {
+        output.write_bool(self.exists);
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let response = Self {
+            exists: input.read_bool()?,
+        };
+        require_no_trailing_bytes(&input)?;
+        Ok(response)
     }
 }
 
@@ -57867,7 +57927,7 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_indices_exists_request_wire_round_trips_and_rejects_execution_boundary() {
+    fn opensearch_indices_exists_request_and_response_wire_round_trip() {
         let request = OpenSearchIndicesExistsRequestWire::default();
         let mut output = StreamOutput::new();
         request.write(&mut output);
@@ -57875,13 +57935,13 @@ mod tests {
         let decoded = OpenSearchIndicesExistsRequestWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, request);
         assert_eq!(decoded.indices, vec!["logs-*".to_string()]);
-        assert!(matches!(
-            decoded.reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "indices exists execution",
-                ..
-            })
-        ));
+        decoded.validate_supported_subset().unwrap();
+
+        let response = OpenSearchIndicesExistsResponseWire::new(true);
+        let mut output = StreamOutput::new();
+        response.write(&mut output);
+        let decoded = OpenSearchIndicesExistsResponseWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, response);
     }
 
     #[test]
@@ -57939,7 +57999,7 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_indices_exists_transport_messages_bind_rejected_action_frame() {
+    fn opensearch_indices_exists_transport_messages_bind_supported_action_frame_and_response() {
         let request = OpenSearchIndicesExistsRequestWire::default();
         let mut frame = build_opensearch_indices_exists_request_message(
             59,
@@ -57954,15 +58014,25 @@ mod tests {
             read_opensearch_indices_exists_request_message(&message).unwrap(),
             request
         );
-        assert!(matches!(
-            read_opensearch_indices_exists_request_message(&message)
-                .unwrap()
-                .reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "indices exists execution",
-                ..
-            })
-        ));
+        read_opensearch_indices_exists_request_message(&message)
+            .unwrap()
+            .validate_supported_subset()
+            .unwrap();
+
+        let response = OpenSearchIndicesExistsResponseWire::new(false);
+        let mut frame = build_opensearch_indices_exists_response_message(
+            59,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &response,
+        )
+        .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected indices exists response message");
+        };
+        assert_eq!(
+            read_opensearch_indices_exists_response_message(&message).unwrap(),
+            response
+        );
     }
 
     #[test]

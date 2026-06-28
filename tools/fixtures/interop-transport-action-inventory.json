@@ -792,8 +792,8 @@
       "transport_action": "TransportIndicesExistsAction",
       "request_wire_type": "IndicesExistsRequest",
       "response_wire_type": "IndicesExistsResponse",
-      "disposition": "rejected",
-      "reason": "Indices-exists transport execution requires index resolution semantics before Steelsearch can serve OpenSearch index existence checks."
+      "disposition": "implemented",
+      "reason": "Indices-exists transport execution is served for default index, alias, and wildcard existence checks from Steelsearch metadata."
     },
     {
       "action_name": "indices:admin/template/get",
