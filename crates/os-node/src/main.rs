@@ -4827,17 +4827,20 @@ fn transport_pit_indices(
         .metadata_manifest
         .lock()
         .expect("dev transport metadata manifest lock poisoned");
+    let manifest_indices = manifest["indices"].as_object().cloned();
+    drop(manifest);
+    let indices = transport_pit_index_catalog(bindings, manifest_indices);
     let mut resolved = Vec::new();
-    if let Some(indices) = manifest["indices"].as_object() {
+    if !indices.is_empty() {
         for selector in selectors.iter().filter(|selector| !selector.is_empty()) {
             let wildcard_selector =
                 selector == "_all" || selector.contains('*') || selector.contains('?');
             let effective_selector = if selector == "_all" { "*" } else { selector };
             let mut selector_matched = false;
             let mut selector_alias_matches = 0_usize;
-            for (index_name, index_body) in indices {
+            for (index_name, index_body) in indices.iter() {
                 if effective_selector == index_name
-                    || wildcard_match(effective_selector, index_name)
+                    || wildcard_match(effective_selector, index_name.as_str())
                 {
                     selector_matched = true;
                     if transport_pit_index_matches_options(
@@ -4904,6 +4907,33 @@ fn transport_pit_indices(
     resolved.sort();
     resolved.dedup();
     Some(resolved)
+}
+
+fn transport_pit_index_catalog(
+    bindings: &DevTransportPitBindings,
+    manifest_indices: Option<serde_json::Map<String, Value>>,
+) -> BTreeMap<String, Value> {
+    let mut catalog = manifest_indices
+        .unwrap_or_default()
+        .into_iter()
+        .collect::<BTreeMap<_, _>>();
+    for index in bindings
+        .created_indices
+        .lock()
+        .expect("dev transport created indices lock poisoned")
+        .iter()
+    {
+        catalog.entry(index.clone()).or_insert_with(|| {
+            serde_json::json!({
+                "settings": {
+                    "index": {
+                        "number_of_shards": "1"
+                    }
+                }
+            })
+        });
+    }
+    catalog
 }
 
 fn transport_pit_index_matches_options(
@@ -9176,28 +9206,26 @@ fn prune_expired_transport_pits(contexts: &mut BTreeMap<String, PitContext>, now
 
 fn prune_unavailable_transport_pits(contexts: &mut BTreeMap<String, PitContext>) {
     let bindings = dev_transport_pit_bindings();
-    let created_indices = bindings
-        .created_indices
-        .lock()
-        .expect("dev transport created indices lock poisoned");
     let metadata_manifest = bindings
         .metadata_manifest
         .lock()
         .expect("dev transport metadata manifest lock poisoned");
+    let manifest_indices = metadata_manifest["indices"].as_object().cloned();
+    drop(metadata_manifest);
+    let indices = transport_pit_index_catalog(bindings, manifest_indices);
     let removed_ids = contexts
         .iter()
         .filter_map(|(pit_id, context)| {
             let available = context.indices.iter().all(|index| {
-                created_indices.contains(index)
-                    && metadata_manifest["indices"][index]["state"]
+                indices.get(index).is_some_and(|index_body| {
+                    index_body["state"]
                         .as_str()
                         .map_or(true, |state| state != "close")
+                })
             });
             (!available).then_some(pit_id.clone())
         })
         .collect::<Vec<_>>();
-    drop(metadata_manifest);
-    drop(created_indices);
     for pit_id in removed_ids {
         contexts.remove(&pit_id);
         remove_transport_reader_contexts_for_pit_id(&pit_id);
@@ -19249,6 +19277,166 @@ mod tests {
             },
         )
         .is_none());
+    }
+
+    #[test]
+    fn create_pit_transport_route_resolves_created_indices_for_explicit_all_and_wildcards() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        let bindings = dev_transport_pit_bindings();
+        bindings
+            .contexts
+            .lock()
+            .expect("dev transport PIT contexts lock poisoned")
+            .clear();
+        bindings
+            .reader_contexts
+            .lock()
+            .expect("dev transport reader contexts lock poisoned")
+            .clear();
+        bindings
+            .created_indices
+            .lock()
+            .expect("dev transport created indices lock poisoned")
+            .clear();
+        {
+            let mut created_indices = bindings
+                .created_indices
+                .lock()
+                .expect("dev transport created indices lock poisoned");
+            created_indices.insert("logs-created-pit-000001".to_string());
+            created_indices.insert("metrics-created-pit-000001".to_string());
+        }
+        bindings
+            .documents
+            .lock()
+            .expect("dev transport documents lock poisoned")
+            .clear();
+        {
+            let mut documents = bindings
+                .documents
+                .lock()
+                .expect("dev transport documents lock poisoned");
+            documents.insert(
+                "logs-created-pit-000001:doc-1:".to_string(),
+                StoredDocument {
+                    source: serde_json::json!({ "kind": "log" }),
+                    version: 1,
+                    seq_no: 1,
+                    primary_term: 1,
+                    routing: None,
+                    refreshed: true,
+                }
+                .into(),
+            );
+            documents.insert(
+                "metrics-created-pit-000001:doc-1:".to_string(),
+                StoredDocument {
+                    source: serde_json::json!({ "kind": "metric" }),
+                    version: 1,
+                    seq_no: 2,
+                    primary_term: 1,
+                    routing: None,
+                    refreshed: true,
+                }
+                .into(),
+            );
+        }
+        *bindings
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned") = serde_json::json!({
+            "indices": {}
+        });
+        *bindings
+            .next_id
+            .lock()
+            .expect("dev transport next PIT id lock poisoned") = 0;
+
+        let explicit_all_request = os_transport::action::OpenSearchCreatePitRequestWire {
+            indices: vec!["_all".to_string()],
+            ..os_transport::action::OpenSearchCreatePitRequestWire::default()
+        };
+        let explicit_all_frame = os_transport::action::build_opensearch_create_pit_request_message(
+            327,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &explicit_all_request,
+        )
+        .unwrap();
+        let explicit_all_response = build_local_create_pit_response(
+            327,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &explicit_all_frame[6..],
+        );
+        let mut frame = BytesMut::from(&explicit_all_response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected explicit _all create-PIT response");
+        };
+        let explicit_all_response =
+            os_transport::action::read_opensearch_create_pit_response_message(&message).unwrap();
+        assert_eq!(explicit_all_response.total_shards, 2);
+        let explicit_all_context = bindings
+            .contexts
+            .lock()
+            .expect("dev transport PIT contexts lock poisoned")
+            .get(&explicit_all_response.pit_id)
+            .cloned()
+            .expect("explicit _all PIT context should be allocated");
+        assert_eq!(
+            explicit_all_context.indices,
+            vec![
+                "logs-created-pit-000001".to_string(),
+                "metrics-created-pit-000001".to_string()
+            ]
+        );
+        assert_eq!(explicit_all_context.documents.len(), 2);
+
+        let wildcard_request = os_transport::action::OpenSearchCreatePitRequestWire {
+            indices: vec!["logs-created-*".to_string()],
+            ..os_transport::action::OpenSearchCreatePitRequestWire::default()
+        };
+        let wildcard_frame = os_transport::action::build_opensearch_create_pit_request_message(
+            328,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &wildcard_request,
+        )
+        .unwrap();
+        let wildcard_response = build_local_create_pit_response(
+            328,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &wildcard_frame[6..],
+        );
+        let mut frame = BytesMut::from(&wildcard_response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected wildcard create-PIT response");
+        };
+        let wildcard_response =
+            os_transport::action::read_opensearch_create_pit_response_message(&message).unwrap();
+        assert_eq!(wildcard_response.total_shards, 1);
+        let wildcard_context = bindings
+            .contexts
+            .lock()
+            .expect("dev transport PIT contexts lock poisoned")
+            .get(&wildcard_response.pit_id)
+            .cloned()
+            .expect("wildcard PIT context should be allocated");
+        assert_eq!(
+            wildcard_context.indices,
+            vec!["logs-created-pit-000001".to_string()]
+        );
+        assert_eq!(wildcard_context.documents.len(), 1);
+        assert!(wildcard_context
+            .documents
+            .contains_key("logs-created-pit-000001:doc-1:"));
     }
 
     #[test]

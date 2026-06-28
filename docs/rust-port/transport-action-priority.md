@@ -2386,6 +2386,10 @@ The create-PIT boundary covers:
 - manifest-backed create-PIT index option handling for unavailable targets,
   `allow_no_indices`, ignored aliases, alias fanout guards, open/closed
   wildcard expansion, and hidden wildcard expansion;
+- local transport create-PIT resolves explicit `_all` and wildcard selectors
+  against the union of manifest-backed indices and locally-created open
+  indices, matching cluster-state-backed resolution for the standalone adapter
+  when no manifest entry exists;
 - create-PIT `preference` and `allow_partial_pit_creation` wire/runtime
   admission for the local all-success shard subset;
 - REST and local transport create-PIT normalize non-positive keep-alive values
