@@ -2406,6 +2406,9 @@ The create-PIT boundary covers:
 - local transport create-PIT now renders the OpenSearch
   `IllegalArgumentException` boundary for closed-only wildcard expansion when
   `forbid_closed_indices` remains true;
+- local transport create-PIT now renders an OpenSearch `IndexNotFoundException`
+  for single wildcard or `_all` requests that resolve to no concrete indices
+  while `allow_no_indices=false`;
 - local transport create-PIT resolves explicit `_all` and wildcard selectors
   against the union of manifest-backed indices and locally-created open
   indices, matching cluster-state-backed resolution for the standalone adapter
@@ -5346,12 +5349,12 @@ Current create-PIT wire microbenchmark:
 
 ```text
 cargo run -p os-transport --release --bin create-pit-wire-benchmark
-create_pit_request_encode iterations=400000 elapsed_ms=282.956 ops_per_second=1413645.44 nanos_per_op=707.39
-create_pit_request_decode iterations=400000 elapsed_ms=267.021 ops_per_second=1498010.01 nanos_per_op=667.55
-create_pit_request_validate iterations=400000 elapsed_ms=268.209 ops_per_second=1491374.91 nanos_per_op=670.52
-create_pit_response_encode iterations=400000 elapsed_ms=123.052 ops_per_second=3250645.66 nanos_per_op=307.63
-create_pit_response_decode iterations=400000 elapsed_ms=105.090 ops_per_second=3806253.04 nanos_per_op=262.73
-create_pit_wire_bottleneck_ops_per_second=1413645.44
+create_pit_request_encode iterations=400000 elapsed_ms=281.484 ops_per_second=1421040.86 nanos_per_op=703.71
+create_pit_request_decode iterations=400000 elapsed_ms=263.582 ops_per_second=1517557.05 nanos_per_op=658.95
+create_pit_request_validate iterations=400000 elapsed_ms=263.869 ops_per_second=1515904.83 nanos_per_op=659.67
+create_pit_response_encode iterations=400000 elapsed_ms=122.730 ops_per_second=3259176.29 nanos_per_op=306.83
+create_pit_response_decode iterations=400000 elapsed_ms=104.322 ops_per_second=3834277.06 nanos_per_op=260.81
+create_pit_wire_bottleneck_ops_per_second=1421040.86
 ```
 
 The current create-PIT wire subset bottleneck is request encode. This path

@@ -2984,6 +2984,33 @@ fn handle_transport_seed_connection<S: TransportConnection>(
         )?;
     } else if is_request
         && normalized_action_hint == Some("indices:data/read/point_in_time/create")
+        && create_pit_request_wildcard_no_indices_error(&body)
+    {
+        let response =
+            build_create_pit_wildcard_no_indices_error_response(request_id, header_version_id);
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("indices:data/read/point_in_time/create"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request
+        && normalized_action_hint == Some("indices:data/read/point_in_time/create")
         && create_pit_request_supports_local_lifecycle_subset(&body)
     {
         let response = build_local_create_pit_response_for_node(
@@ -8094,6 +8121,31 @@ fn create_pit_closed_only_wildcard_forbid_error(
         })
 }
 
+fn create_pit_wildcard_no_indices_error(
+    request: &os_transport::action::OpenSearchCreatePitRequestWire,
+) -> bool {
+    if request.indices_options.allow_no_indices {
+        return false;
+    }
+    let selectors = if request.indices.is_empty() {
+        vec!["_all".to_string()]
+    } else {
+        request.indices.clone()
+    };
+    if selectors.len() != 1 {
+        return false;
+    }
+    let selector = selectors[0].as_str();
+    if selector != "_all" && !selector.contains('*') && !selector.contains('?') {
+        return false;
+    }
+    let bindings = dev_transport_pit_bindings();
+    match transport_pit_indices(bindings, request) {
+        Some(indices) => indices.is_empty(),
+        None => true,
+    }
+}
+
 fn transport_pit_selector_matches_target(
     selector: &str,
     indices: &BTreeMap<String, Value>,
@@ -12314,6 +12366,25 @@ fn build_create_pit_closed_only_wildcard_forbid_error_response(
     build_transport_error_response_frame(request_id, header_version_id, output.freeze().to_vec())
 }
 
+fn create_pit_request_wildcard_no_indices_error(body: &[u8]) -> bool {
+    let Some(request) = decode_create_pit_request_from_transport_body(body) else {
+        return false;
+    };
+    if request.validate_supported_subset().is_err() {
+        return false;
+    }
+    create_pit_wildcard_no_indices_error(&request)
+}
+
+fn build_create_pit_wildcard_no_indices_error_response(
+    request_id: i64,
+    header_version_id: u32,
+) -> Vec<u8> {
+    let mut output = StreamOutput::new();
+    os_transport::error::write_index_not_found_exception(&mut output, "null");
+    build_transport_error_response_frame(request_id, header_version_id, output.freeze().to_vec())
+}
+
 fn transport_time_value_millis_display(millis: i64) -> String {
     if millis % 3_600_000 == 0 {
         format!("{}h", millis / 3_600_000)
@@ -15837,6 +15908,14 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
             if create_pit_request_closed_only_wildcard_forbid_error(body) =>
         {
             Some(build_create_pit_closed_only_wildcard_forbid_error_response(
+                request_id,
+                header_version_id,
+            ))
+        }
+        Some("indices:data/read/point_in_time/create")
+            if create_pit_request_wildcard_no_indices_error(body) =>
+        {
+            Some(build_create_pit_wildcard_no_indices_error_response(
                 request_id,
                 header_version_id,
             ))
@@ -29692,6 +29771,115 @@ mod tests {
         .unwrap();
         assert!(!create_pit_request_closed_only_wildcard_forbid_error(
             &open_closed_frame[6..]
+        ));
+    }
+
+    #[test]
+    fn create_pit_transport_route_reports_wildcard_no_indices_like_opensearch() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        dev_transport_pit_bindings()
+            .created_indices
+            .lock()
+            .expect("dev transport created indices lock poisoned")
+            .clear();
+        *dev_transport_pit_bindings()
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned") = serde_json::json!({
+            "indices": {
+                "logs-existing-pit": {
+                    "settings": {
+                        "index": {
+                            "number_of_shards": "1"
+                        }
+                    }
+                },
+                "metrics-closed-pit": {
+                    "state": "close",
+                    "settings": {
+                        "index": {
+                            "number_of_shards": "1"
+                        }
+                    }
+                }
+            }
+        });
+        let request = os_transport::action::OpenSearchCreatePitRequestWire {
+            indices: vec!["events-*".to_string()],
+            indices_options: os_transport::action::OpenSearchIndicesOptionsWire {
+                allow_no_indices: false,
+                ..os_transport::action::OpenSearchIndicesOptionsWire::strict_expand_open_forbid_closed()
+            },
+            ..os_transport::action::OpenSearchCreatePitRequestWire::default()
+        };
+        let frame = os_transport::action::build_opensearch_create_pit_request_message(
+            333,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(create_pit_request_wildcard_no_indices_error(&frame[6..]));
+
+        let response = build_create_pit_wildcard_no_indices_error_response(
+            333,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+        );
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected wildcard no-indices create-PIT error response frame");
+        };
+        assert_eq!(message.request_id, 333);
+        assert!(message.status.is_error());
+        let error = os_transport::error::TransportError::read(message.body.freeze())
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            error.class_name,
+            "org.opensearch.index.IndexNotFoundException"
+        );
+        assert_eq!(error.message.as_deref(), Some("no such index [null]"));
+
+        let closed_skipped_request = os_transport::action::OpenSearchCreatePitRequestWire {
+            indices: vec!["metrics-*".to_string()],
+            indices_options: os_transport::action::OpenSearchIndicesOptionsWire {
+                allow_no_indices: false,
+                ..os_transport::action::OpenSearchIndicesOptionsWire::strict_expand_open_forbid_closed()
+            },
+            ..os_transport::action::OpenSearchCreatePitRequestWire::default()
+        };
+        let closed_skipped_frame =
+            os_transport::action::build_opensearch_create_pit_request_message(
+                334,
+                OPENSEARCH_3_7_0_TRANSPORT,
+                &closed_skipped_request,
+            )
+            .unwrap();
+        assert!(create_pit_request_wildcard_no_indices_error(
+            &closed_skipped_frame[6..]
+        ));
+
+        let allow_empty_request = os_transport::action::OpenSearchCreatePitRequestWire {
+            indices: vec!["events-*".to_string()],
+            indices_options: os_transport::action::OpenSearchIndicesOptionsWire {
+                allow_no_indices: true,
+                ..os_transport::action::OpenSearchIndicesOptionsWire::strict_expand_open_forbid_closed()
+            },
+            ..os_transport::action::OpenSearchCreatePitRequestWire::default()
+        };
+        let allow_empty_frame = os_transport::action::build_opensearch_create_pit_request_message(
+            335,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &allow_empty_request,
+        )
+        .unwrap();
+        assert!(!create_pit_request_wildcard_no_indices_error(
+            &allow_empty_frame[6..]
         ));
     }
 
