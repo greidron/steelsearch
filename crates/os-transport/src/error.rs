@@ -76,6 +76,14 @@ pub fn write_illegal_argument_exception(output: &mut StreamOutput, message: Opti
     write_empty_stack_trace(output);
 }
 
+pub fn write_rejected_execution_exception(output: &mut StreamOutput, message: Option<&str>) {
+    output.write_bool(true);
+    output.write_vint(18);
+    output.write_bool(false);
+    output.write_optional_string(message);
+    write_empty_stack_trace(output);
+}
+
 fn read_jvm_exception(
     input: &mut StreamInput,
     class_name: &str,
@@ -253,6 +261,21 @@ mod tests {
 
         assert_eq!(error.class_name, "java.lang.IllegalArgumentException");
         assert_eq!(error.message.as_deref(), Some("bad request"));
+        assert!(error.cause.is_none());
+    }
+
+    #[test]
+    fn writes_opensearch_rejected_execution_exception_message() {
+        let mut output = StreamOutput::new();
+        super::write_rejected_execution_exception(&mut output, Some("too many contexts"));
+
+        let error = TransportError::read(output.freeze()).unwrap().unwrap();
+
+        assert_eq!(
+            error.class_name,
+            "org.opensearch.common.util.concurrent.OpenSearchRejectedExecutionException"
+        );
+        assert_eq!(error.message.as_deref(), Some("too many contexts"));
         assert!(error.cause.is_none());
     }
 

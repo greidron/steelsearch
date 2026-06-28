@@ -2131,6 +2131,35 @@ fn handle_transport_seed_connection<S: TransportConnection>(
         )?;
     } else if is_request
         && normalized_action_hint == Some("indices:data/read/search[create_context]")
+        && create_reader_context_request_exceeds_local_open_context_limit(&body)
+    {
+        let response = build_create_reader_context_too_many_open_contexts_error_response(
+            request_id,
+            header_version_id,
+        );
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("indices:data/read/search[create_context]"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request
+        && normalized_action_hint == Some("indices:data/read/search[create_context]")
         && create_reader_context_request_exceeds_local_keep_alive_limit(&body)
     {
         let response = build_create_reader_context_keep_alive_too_large_error_response(
@@ -8803,6 +8832,19 @@ fn create_reader_context_request_exceeds_local_keep_alive_limit(body: &[u8]) -> 
         })
 }
 
+fn create_reader_context_request_exceeds_local_open_context_limit(body: &[u8]) -> bool {
+    decode_create_reader_context_request_from_transport_body(body)
+        .filter(|request| request.validate_supported_subset().is_ok())
+        .filter(|request| {
+            time_value_wire_to_millis(&request.keep_alive)
+                <= DEV_TRANSPORT_MAX_PIT_KEEP_ALIVE_MILLIS
+        })
+        .filter(|request| {
+            create_reader_context_shard_exists(dev_transport_pit_bindings(), &request.shard_id)
+        })
+        .is_some_and(|_| !can_allocate_reader_context(dev_transport_pit_bindings()))
+}
+
 fn build_create_reader_context_keep_alive_too_large_error_response(
     request_id: i64,
     header_version_id: u32,
@@ -8816,6 +8858,19 @@ fn build_create_reader_context_keep_alive_too_large_error_response(
         header_version_id,
         time_value_wire_to_millis(&request.keep_alive),
     )
+}
+
+fn build_create_reader_context_too_many_open_contexts_error_response(
+    request_id: i64,
+    header_version_id: u32,
+) -> Vec<u8> {
+    let reason = format!(
+        "Trying to create too many Point In Time contexts. Must be less than or equal to: [{}]. This limit can be set by changing the [search.max_open_pit_context] setting.",
+        DEV_TRANSPORT_MAX_OPEN_PIT_CONTEXTS
+    );
+    let mut output = StreamOutput::new();
+    os_transport::error::write_rejected_execution_exception(&mut output, Some(&reason));
+    build_transport_error_response_frame(request_id, header_version_id, output.freeze().to_vec())
 }
 
 fn decode_create_reader_context_request_from_transport_body(
@@ -11558,6 +11613,16 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
                 header_version_id,
                 body,
             ))
+        }
+        Some("indices:data/read/search[create_context]")
+            if create_reader_context_request_exceeds_local_open_context_limit(body) =>
+        {
+            Some(
+                build_create_reader_context_too_many_open_contexts_error_response(
+                    request_id,
+                    header_version_id,
+                ),
+            )
         }
         Some("indices:data/read/search[create_context]")
             if create_reader_context_request_exceeds_local_keep_alive_limit(body) =>
@@ -22067,11 +22132,11 @@ mod tests {
         assert!(!create_reader_context_request_supports_local_subset(
             &frame[6..]
         ));
+        assert!(create_reader_context_request_exceeds_local_open_context_limit(&frame[6..]));
 
-        let response = build_local_create_reader_context_response(
+        let response = build_create_reader_context_too_many_open_contexts_error_response(
             302,
             OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
-            &frame[6..],
         );
         let mut frame = BytesMut::from(&response[..]);
         let os_transport::frame::DecodedFrame::Message(message) =
@@ -22079,10 +22144,20 @@ mod tests {
                 .unwrap()
                 .unwrap()
         else {
-            panic!("expected create-reader-context fallback response frame");
+            panic!("expected create-reader-context rejected response frame");
         };
         assert_eq!(message.request_id, 302);
-        assert!(message.body.is_empty());
+        assert!(message.status.is_error());
+        let error = os_transport::error::TransportError::read(message.body.freeze())
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            error.class_name,
+            "org.opensearch.common.util.concurrent.OpenSearchRejectedExecutionException"
+        );
+        let reason = error.message.as_deref().unwrap();
+        assert!(reason.contains("Trying to create too many Point In Time contexts"));
+        assert!(reason.contains("search.max_open_pit_context"));
         assert_eq!(
             bindings
                 .reader_contexts
