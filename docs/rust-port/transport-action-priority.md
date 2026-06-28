@@ -177,8 +177,8 @@ The source-derived transport inventory currently has 160 rows:
 
 | Status | Count | Meaning |
 | --- | ---: | --- |
-| `implemented` | 62 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
-| `partial` | 98 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
+| `implemented` | 63 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
+| `partial` | 97 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
 | `planned` | 0 | No source-derived transport action remains unclassified. |
 
 The k-NN plugin action sweep is complete at the boundary layer. All 12
@@ -3781,23 +3781,23 @@ primary expected performance risk; the first performance-sensitive work is
 awareness attribute verification, version-conflict checks, weighted routing
 metadata mutation, cluster-state publication, and acknowledgement rendering.
 
-Current get-weighted-routing reject wire microbenchmark:
+Current get-weighted-routing wire microbenchmark:
 
 ```text
 cargo run -p os-transport --release --bin get-weighted-routing-reject-wire-benchmark
-get_weighted_routing_reject_request_encode iterations=400000 elapsed_ms=307.201 ops_per_second=1302080.10 nanos_per_op=768.00
-get_weighted_routing_reject_request_decode iterations=400000 elapsed_ms=305.909 ops_per_second=1307577.24 nanos_per_op=764.77
-get_weighted_routing_reject_validation iterations=400000 elapsed_ms=328.614 ops_per_second=1217232.82 nanos_per_op=821.54
-get_weighted_routing_reject_wire_bottleneck_ops_per_second=1217232.82
+get_weighted_routing_reject_request_encode iterations=400000 elapsed_ms=299.943 ops_per_second=1333584.66 nanos_per_op=749.86
+get_weighted_routing_reject_request_decode iterations=400000 elapsed_ms=300.937 ops_per_second=1329182.06 nanos_per_op=752.34
+get_weighted_routing_reject_validation iterations=400000 elapsed_ms=305.960 ops_per_second=1307359.58 nanos_per_op=764.90
+get_weighted_routing_reject_wire_bottleneck_ops_per_second=1307359.58
 ```
 
-The current get-weighted-routing fail-closed boundary bottleneck is request
+The current get-weighted-routing implemented read-path bottleneck is request
 validation. The payload includes the cluster-manager read request envelope,
-local flag, and awareness attribute name before admission rejects execution. At
-roughly 1.22M ops/s in the latest local release run, this boundary is not the
-primary expected performance risk; the first performance-sensitive work is
-awareness attribute verification, weighted routing metadata lookup, version
-rendering, discovered cluster-manager flag handling, and response rendering.
+local flag, and awareness attribute name before manifest-backed response
+rendering. At roughly 1.31M ops/s in the latest local release run, this
+boundary is not the primary expected performance risk; the remaining
+production-sensitive work is authoritative cluster-state weighted-routing
+lookup and local read semantics.
 
 Current delete-weighted-routing reject wire microbenchmark:
 
