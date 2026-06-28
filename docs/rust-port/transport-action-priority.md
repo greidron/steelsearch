@@ -177,8 +177,8 @@ The source-derived transport inventory currently has 160 rows:
 
 | Status | Count | Meaning |
 | --- | ---: | --- |
-| `implemented` | 83 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
-| `partial` | 77 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
+| `implemented` | 84 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
+| `partial` | 76 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
 | `planned` | 0 | No source-derived transport action remains unclassified. |
 
 The k-NN plugin action sweep is complete at the boundary layer. All 12
@@ -338,7 +338,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `cluster:admin/script_language/get` (implemented Rust-supported script language catalog subset)
 - `cluster:admin/ingest/pipeline/put` (rejected fail-closed)
 - `cluster:admin/ingest/pipeline/get` (implemented empty pipeline metadata-read subset)
-- `cluster:admin/ingest/pipeline/delete` (rejected fail-closed)
+- `cluster:admin/ingest/pipeline/delete` (implemented manifest-backed metadata-write subset)
 - `cluster:admin/ingest/pipeline/simulate` (rejected fail-closed)
 - `indices:admin/refresh`
 - `indices:data/read/tv` (rejected fail-closed)
@@ -1407,12 +1407,13 @@ The delete-pipeline boundary covers:
   decode/build layer;
 - OpenSearch `AcknowledgedResponse` decode/build for the delete-pipeline
   response acknowledgement bit;
-- explicit fail-closed classification for
-  `cluster:admin/ingest/pipeline/delete` until ingest pipeline wildcard
-  deletion, missing-pipeline handling, cluster metadata mutation, throttling,
-  and ack rendering are implemented;
+- manifest-backed transport execution for
+  `cluster:admin/ingest/pipeline/delete`, deleting exact or wildcard-matched
+  Rust manifest `ingest_pipelines` entries and returning an acknowledged
+  response;
 - explicit rejection for custom cluster-manager timeouts, custom
-  acknowledgement timeouts, missing ids, and delete-pipeline execution.
+  acknowledgement timeouts, missing ids, and explicit missing-pipeline
+  deletes.
 
 The simulate-pipeline boundary covers:
 
@@ -4167,20 +4168,20 @@ release run, current overhead is transport serialization rather than response
 decode. Future performance-sensitive work is serving the Rust ingest pipeline
 metadata catalog without allocation-heavy id/wildcard expansion.
 
-Current delete-pipeline reject wire microbenchmark:
+Current delete-pipeline wire microbenchmark:
 
 ```text
-cargo run -p os-transport --release --bin delete-pipeline-reject-wire-benchmark
-delete_pipeline_reject_request_encode iterations=400000 elapsed_ms=310.542 ops_per_second=1288070.68 nanos_per_op=776.35
-delete_pipeline_reject_request_decode iterations=400000 elapsed_ms=256.572 ops_per_second=1559014.29 nanos_per_op=641.43
-delete_pipeline_reject_validation iterations=400000 elapsed_ms=276.245 ops_per_second=1447989.37 nanos_per_op=690.61
-delete_pipeline_ack_response_decode iterations=400000 elapsed_ms=54.984 ops_per_second=7274875.61 nanos_per_op=137.46
-delete_pipeline_reject_wire_bottleneck_ops_per_second=1288070.68
+cargo run -q -p os-transport --release --bin delete-pipeline-wire-benchmark
+delete_pipeline_request_encode iterations=400000 elapsed_ms=281.755 ops_per_second=1419672.20 nanos_per_op=704.39
+delete_pipeline_request_decode iterations=400000 elapsed_ms=256.657 ops_per_second=1558500.34 nanos_per_op=641.64
+delete_pipeline_request_validate iterations=400000 elapsed_ms=260.270 ops_per_second=1536868.27 nanos_per_op=650.67
+delete_pipeline_response_decode iterations=400000 elapsed_ms=54.656 ops_per_second=7318480.28 nanos_per_op=136.64
+delete_pipeline_wire_bottleneck_ops_per_second=1419672.20
 ```
 
-The current delete-pipeline fail-closed boundary bottleneck is request encode.
+The current delete-pipeline supported wire subset bottleneck is request encode.
 The request path carries the acknowledged cluster-manager envelope and pipeline
-id before rejecting execution. At roughly 1.29M ops/s in the latest local
+id before validating execution. At roughly 1.42M ops/s in the latest local
 release run, current overhead is transport serialization. Future
 performance-sensitive work is wildcard matching against the Rust ingest
 pipeline metadata catalog, missing-pipeline response handling, metadata
