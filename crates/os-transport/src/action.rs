@@ -2145,8 +2145,8 @@ pub fn classify_opensearch_transport_action(
         },
         OPENSEARCH_GET_INDEX_TEMPLATES_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
-            disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "get-index-templates transport execution requires template metadata response rendering",
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "metadata-backed get-index-templates transport adapter supports default all-template legacy metadata response rendering",
         },
         OPENSEARCH_PUT_INDEX_TEMPLATE_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -9014,6 +9014,36 @@ pub fn read_opensearch_get_index_templates_request_message(
         });
     }
     OpenSearchGetIndexTemplatesRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_opensearch_get_index_templates_response_message(
+    request_id: i64,
+    version: Version,
+    response: &OpenSearchGetIndexTemplatesResponseWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    response.write(&mut body)?;
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::response(),
+        version,
+        variable_header: BytesMut::from(&ResponseVariableHeader::default().to_bytes()[..]),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_get_index_templates_response_message(
+    message: &TransportMessage,
+) -> Result<OpenSearchGetIndexTemplatesResponseWire, TransportActionWireError> {
+    if !message.status.is_response() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "response",
+            actual: message.status.bits(),
+        });
+    }
+    let _header = ResponseVariableHeader::read(message.variable_header.clone().freeze())?;
+    OpenSearchGetIndexTemplatesResponseWire::read(message.body.clone().freeze())
 }
 
 pub fn build_opensearch_put_index_template_request_message(
@@ -19977,7 +20007,7 @@ impl OpenSearchGetIndexTemplatesRequestWire {
         Ok(request)
     }
 
-    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+    pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
         if self.cluster_manager_timeout != TimeValueWire::seconds(30) {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "get index templates cluster-manager timeout",
@@ -20004,10 +20034,116 @@ impl OpenSearchGetIndexTemplatesRequestWire {
                     "template name and wildcard selection requires template metadata lookup semantics",
             });
         }
+        Ok(())
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        self.validate_supported_subset()?;
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "get index templates execution",
-            reason:
-                "get-index-templates transport execution requires template metadata response rendering",
+            reason: "use validate_supported_subset for the implemented get-index-templates adapter",
+        })
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct OpenSearchGetIndexTemplatesResponseWire {
+    pub templates: Vec<OpenSearchIndexTemplateMetadataWire>,
+}
+
+impl OpenSearchGetIndexTemplatesResponseWire {
+    pub fn empty() -> Self {
+        Self {
+            templates: Vec::new(),
+        }
+    }
+
+    pub fn write(&self, output: &mut StreamOutput) -> Result<(), TransportActionWireError> {
+        output.write_vint(self.templates.len() as i32);
+        for template in &self.templates {
+            template.write(output)?;
+        }
+        Ok(())
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let template_count = read_len(&mut input)?;
+        let mut templates = Vec::with_capacity(template_count);
+        for _ in 0..template_count {
+            templates.push(OpenSearchIndexTemplateMetadataWire::read(&mut input)?);
+        }
+        require_no_trailing_bytes(&input)?;
+        Ok(Self { templates })
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct OpenSearchIndexTemplateMetadataWire {
+    pub name: String,
+    pub order: i32,
+    pub index_patterns: Vec<String>,
+    pub settings: BTreeMap<String, Value>,
+    pub mappings: BTreeMap<String, Value>,
+    pub aliases: Vec<OpenSearchAliasMetadataWire>,
+    pub version: Option<i32>,
+}
+
+impl OpenSearchIndexTemplateMetadataWire {
+    pub fn new(name: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            order: 0,
+            index_patterns: Vec::new(),
+            settings: BTreeMap::new(),
+            mappings: BTreeMap::new(),
+            aliases: Vec::new(),
+            version: None,
+        }
+    }
+
+    fn write(&self, output: &mut StreamOutput) -> Result<(), TransportActionWireError> {
+        output.write_string(&self.name);
+        output.write_i32(self.order);
+        output.write_string_array(&self.index_patterns);
+        write_settings_values(output, &self.settings)?;
+        output.write_vint(self.mappings.len() as i32);
+        for (mapping_type, source) in &self.mappings {
+            output.write_string(mapping_type);
+            write_compressed_xcontent(output, source)?;
+        }
+        output.write_vint(self.aliases.len() as i32);
+        for alias in &self.aliases {
+            alias.write(output)?;
+        }
+        write_optional_vint(output, self.version);
+        Ok(())
+    }
+
+    fn read(input: &mut StreamInput) -> Result<Self, TransportActionWireError> {
+        let name = input.read_string()?;
+        let order = input.read_i32()?;
+        let index_patterns = input.read_string_array()?;
+        let settings = read_settings_values(input)?;
+        let mapping_count = read_len(input)?;
+        let mut mappings = BTreeMap::new();
+        for _ in 0..mapping_count {
+            mappings.insert(input.read_string()?, read_compressed_xcontent(input)?);
+        }
+        let alias_count = read_len(input)?;
+        let mut aliases = Vec::with_capacity(alias_count);
+        for _ in 0..alias_count {
+            aliases.push(OpenSearchAliasMetadataWire::read(input)?);
+        }
+        let version = read_optional_vint(input)?;
+        Ok(Self {
+            name,
+            order,
+            index_patterns,
+            settings,
+            mappings,
+            aliases,
+            version,
         })
     }
 }
@@ -43947,6 +44083,31 @@ fn read_get_index_settings_map(
     Ok(settings)
 }
 
+fn write_settings_values(
+    output: &mut StreamOutput,
+    settings: &BTreeMap<String, Value>,
+) -> Result<(), TransportActionWireError> {
+    output.write_vint(settings.len() as i32);
+    for (key, value) in settings {
+        output.write_string(key);
+        write_generic_json_value(output, value)?;
+    }
+    Ok(())
+}
+
+fn read_settings_values(
+    input: &mut StreamInput,
+) -> Result<BTreeMap<String, Value>, TransportActionWireError> {
+    let setting_count = read_len(input)?;
+    let mut settings = BTreeMap::new();
+    for _ in 0..setting_count {
+        let key = input.read_string()?;
+        let value = read_generic_json_value(input, "settings value")?;
+        settings.insert(key, value);
+    }
+    Ok(settings)
+}
+
 fn write_json_section_map(
     output: &mut StreamOutput,
     sections: &BTreeMap<String, Value>,
@@ -58428,7 +58589,7 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_get_index_templates_request_wire_round_trips_and_rejects_execution_boundary() {
+    fn opensearch_get_index_templates_request_and_response_wire_round_trip() {
         let request = OpenSearchGetIndexTemplatesRequestWire::default();
         let mut output = StreamOutput::new();
         request.write(&mut output);
@@ -58436,13 +58597,30 @@ mod tests {
         let decoded = OpenSearchGetIndexTemplatesRequestWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, request);
         assert!(decoded.names.is_empty());
-        assert!(matches!(
-            decoded.reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "get index templates execution",
-                ..
-            })
-        ));
+        decoded.validate_supported_subset().unwrap();
+
+        let mut template = OpenSearchIndexTemplateMetadataWire::new("logs-template");
+        template.order = 7;
+        template.index_patterns = vec!["logs-*".to_string()];
+        template.settings.insert(
+            "index.number_of_shards".to_string(),
+            Value::String("1".to_string()),
+        );
+        template.mappings.insert(
+            "_doc".to_string(),
+            serde_json::json!({ "properties": { "message": { "type": "text" } } }),
+        );
+        template
+            .aliases
+            .push(OpenSearchAliasMetadataWire::new("logs-read"));
+        template.version = Some(3);
+        let response = OpenSearchGetIndexTemplatesResponseWire {
+            templates: vec![template],
+        };
+        let mut output = StreamOutput::new();
+        response.write(&mut output).unwrap();
+        let decoded = OpenSearchGetIndexTemplatesResponseWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, response);
     }
 
     #[test]
@@ -58497,7 +58675,8 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_get_index_templates_transport_messages_bind_rejected_action_frame() {
+    fn opensearch_get_index_templates_transport_messages_bind_supported_action_frame_and_response()
+    {
         let request = OpenSearchGetIndexTemplatesRequestWire::default();
         let mut frame = build_opensearch_get_index_templates_request_message(
             60,
@@ -58512,15 +58691,25 @@ mod tests {
             read_opensearch_get_index_templates_request_message(&message).unwrap(),
             request
         );
-        assert!(matches!(
-            read_opensearch_get_index_templates_request_message(&message)
-                .unwrap()
-                .reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "get index templates execution",
-                ..
-            })
-        ));
+        read_opensearch_get_index_templates_request_message(&message)
+            .unwrap()
+            .validate_supported_subset()
+            .unwrap();
+
+        let response = OpenSearchGetIndexTemplatesResponseWire::empty();
+        let mut frame = build_opensearch_get_index_templates_response_message(
+            60,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &response,
+        )
+        .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected get index templates response message");
+        };
+        assert_eq!(
+            read_opensearch_get_index_templates_response_message(&message).unwrap(),
+            response
+        );
     }
 
     #[test]

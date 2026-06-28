@@ -801,8 +801,8 @@
       "transport_action": "TransportGetIndexTemplatesAction",
       "request_wire_type": "GetIndexTemplatesRequest",
       "response_wire_type": "GetIndexTemplatesResponse",
-      "disposition": "rejected",
-      "reason": "Get-index-templates transport execution requires template metadata response rendering before Steelsearch can serve OpenSearch legacy index-template reads."
+      "disposition": "implemented",
+      "reason": "Get-index-templates transport execution is served for default all-template legacy metadata reads from Steelsearch metadata."
     },
     {
       "action_name": "indices:admin/template/put",

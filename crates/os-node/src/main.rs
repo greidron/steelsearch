@@ -1450,6 +1450,32 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end,
             &mut connection_end_at_ms,
         )?;
+    } else if is_request
+        && normalized_action_hint == Some("indices:admin/template/get")
+        && get_index_templates_request_supports_local_execution_subset(&body)
+    {
+        let response = build_get_index_templates_response(request_id, header_version_id, &body);
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("indices:admin/template/get"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
     } else if is_request && normalized_action_hint == Some("indices:admin/mappings/fields/get") {
         let response = build_get_field_mappings_response(request_id, header_version_id, &body);
         response_frame = summarize_transport_response_frame_for_action(
@@ -4815,6 +4841,138 @@ fn alias_metadata_wire_from_manifest(
         .or_else(|| metadata.get("isHidden"))
         .and_then(Value::as_bool);
     wire
+}
+
+fn build_get_index_templates_response(
+    request_id: i64,
+    header_version_id: u32,
+    body: &[u8],
+) -> Vec<u8> {
+    let Some(request) = decode_get_index_templates_request_from_transport_body(body) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    if request.validate_supported_subset().is_err() {
+        return build_empty_transport_response(request_id, header_version_id);
+    }
+    let response = get_index_templates_response_from_metadata_manifest(
+        &dev_transport_pit_bindings()
+            .metadata_manifest
+            .lock()
+            .expect("metadata manifest lock poisoned"),
+    );
+    os_transport::action::build_opensearch_get_index_templates_response_message(
+        request_id,
+        Version::from_id(header_version_id as i32),
+        &response,
+    )
+    .map(|frame| frame.to_vec())
+    .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
+}
+
+fn get_index_templates_request_supports_local_execution_subset(body: &[u8]) -> bool {
+    decode_get_index_templates_request_from_transport_body(body)
+        .as_ref()
+        .is_some_and(|request| request.validate_supported_subset().is_ok())
+}
+
+fn decode_get_index_templates_request_from_transport_body(
+    body: &[u8],
+) -> Option<os_transport::action::OpenSearchGetIndexTemplatesRequestWire> {
+    let message = decode_transport_message_from_body(body)?;
+    os_transport::action::read_opensearch_get_index_templates_request_message(&message).ok()
+}
+
+fn get_index_templates_response_from_metadata_manifest(
+    metadata_manifest: &Value,
+) -> os_transport::action::OpenSearchGetIndexTemplatesResponseWire {
+    let mut response = os_transport::action::OpenSearchGetIndexTemplatesResponseWire::empty();
+    for (name, template) in legacy_template_entries(metadata_manifest) {
+        response
+            .templates
+            .push(index_template_metadata_wire_from_manifest(&name, template));
+    }
+    response
+        .templates
+        .sort_by(|left, right| left.name.cmp(&right.name));
+    response
+}
+
+fn legacy_template_entries(metadata_manifest: &Value) -> Vec<(String, &Value)> {
+    let mut entries = Vec::new();
+    let candidate_maps = [
+        metadata_manifest.pointer("/metadata/templates"),
+        metadata_manifest.get("templates"),
+        metadata_manifest.get("index_templates"),
+        metadata_manifest.get("legacy_templates"),
+    ];
+    for candidate in candidate_maps.into_iter().flatten() {
+        if let Some(object) = candidate.as_object() {
+            for (name, template) in object {
+                entries.push((name.clone(), template));
+            }
+        } else if let Some(array) = candidate.as_array() {
+            for template in array {
+                if let Some(name) = template.get("name").and_then(Value::as_str) {
+                    entries.push((name.to_string(), template));
+                }
+            }
+        }
+    }
+    entries
+}
+
+fn index_template_metadata_wire_from_manifest(
+    name: &str,
+    template: &Value,
+) -> os_transport::action::OpenSearchIndexTemplateMetadataWire {
+    let mut wire = os_transport::action::OpenSearchIndexTemplateMetadataWire::new(name);
+    wire.order = template
+        .get("order")
+        .and_then(Value::as_i64)
+        .and_then(|order| i32::try_from(order).ok())
+        .unwrap_or(0);
+    wire.index_patterns = template_string_array(template, "index_patterns")
+        .or_else(|| template_string_array(template, "patterns"))
+        .unwrap_or_default();
+    flatten_json_settings_value(
+        template.get("settings").unwrap_or(&Value::Null),
+        &mut wire.settings,
+    );
+    if let Some(mappings) = template.get("mappings").filter(|value| !value.is_null()) {
+        if let Some(object) = mappings.as_object() {
+            if object.contains_key("_doc") {
+                if let Some(mapping) = object.get("_doc") {
+                    wire.mappings.insert("_doc".to_string(), mapping.clone());
+                }
+            } else {
+                wire.mappings.insert("_doc".to_string(), mappings.clone());
+            }
+        } else {
+            wire.mappings.insert("_doc".to_string(), mappings.clone());
+        }
+    }
+    if let Some(aliases) = template.get("aliases").and_then(Value::as_object) {
+        wire.aliases = aliases
+            .iter()
+            .map(|(alias, metadata)| alias_metadata_wire_from_manifest(alias, metadata))
+            .collect();
+    }
+    wire.version = template
+        .get("version")
+        .and_then(Value::as_i64)
+        .and_then(|version| i32::try_from(version).ok());
+    wire
+}
+
+fn template_string_array(template: &Value, field: &str) -> Option<Vec<String>> {
+    let values = template.get(field)?.as_array()?;
+    Some(
+        values
+            .iter()
+            .filter_map(Value::as_str)
+            .map(str::to_string)
+            .collect(),
+    )
 }
 
 fn build_get_mappings_response(request_id: i64, header_version_id: u32, body: &[u8]) -> Vec<u8> {
@@ -12527,6 +12685,15 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
                 body,
             ))
         }
+        Some("indices:admin/template/get")
+            if get_index_templates_request_supports_local_execution_subset(body) =>
+        {
+            Some(build_get_index_templates_response(
+                request_id,
+                header_version_id,
+                body,
+            ))
+        }
         Some("indices:admin/mappings/fields/get") => Some(build_get_field_mappings_response(
             request_id,
             header_version_id,
@@ -17566,6 +17733,91 @@ mod tests {
             response.contexts["logs-get-index-000001"],
             Some(serde_json::json!({ "name": "logs-context" }))
         );
+    }
+
+    #[test]
+    fn get_index_templates_transport_route_builds_legacy_template_response() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        *dev_transport_pit_bindings()
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned") = serde_json::json!({
+            "metadata": {
+                "templates": {
+                    "logs-template": {
+                        "order": 7,
+                        "index_patterns": ["logs-*"],
+                        "settings": {
+                            "index": {
+                                "number_of_shards": "1"
+                            }
+                        },
+                        "mappings": {
+                            "properties": {
+                                "message": { "type": "text" }
+                            }
+                        },
+                        "aliases": {
+                            "logs-template-read": {
+                                "is_write_index": false
+                            }
+                        },
+                        "version": 3
+                    }
+                }
+            }
+        });
+        let request = os_transport::action::OpenSearchGetIndexTemplatesRequestWire::default();
+        let frame = os_transport::action::build_opensearch_get_index_templates_request_message(
+            185,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(get_index_templates_request_supports_local_execution_subset(
+            &frame[6..]
+        ));
+        let response = build_get_index_templates_response(
+            185,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &frame[6..],
+        );
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected get index templates response message");
+        };
+
+        assert_eq!(message.request_id, 185);
+        assert!(!message.status.is_request());
+        let response =
+            os_transport::action::read_opensearch_get_index_templates_response_message(&message)
+                .unwrap();
+        assert_eq!(response.templates.len(), 1);
+        let template = &response.templates[0];
+        assert_eq!(template.name, "logs-template");
+        assert_eq!(template.order, 7);
+        assert_eq!(template.index_patterns, vec!["logs-*"]);
+        assert_eq!(
+            template.settings["index.number_of_shards"],
+            Value::String("1".to_string())
+        );
+        assert_eq!(
+            template.mappings["_doc"],
+            serde_json::json!({
+                "properties": {
+                    "message": { "type": "text" }
+                }
+            })
+        );
+        assert_eq!(template.aliases[0].alias, "logs-template-read");
+        assert_eq!(template.aliases[0].write_index, Some(false));
+        assert_eq!(template.version, Some(3));
     }
 
     #[test]
