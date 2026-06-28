@@ -98,7 +98,7 @@ implemented	SegmentReplicationStatsAction.INSTANCE	TransportSegmentReplicationSt
 partial	NodesReloadSecureSettingsAction.INSTANCE	TransportNodesReloadSecureSettingsAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	765
 partial	AutoCreateAction.INSTANCE	AutoCreateAction.TransportAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	766
 partial	PutStoredScriptAction.INSTANCE	TransportPutStoredScriptAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	769
-partial	GetStoredScriptAction.INSTANCE	TransportGetStoredScriptAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	770
+implemented	GetStoredScriptAction.INSTANCE	TransportGetStoredScriptAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	770
 partial	DeleteStoredScriptAction.INSTANCE	TransportDeleteStoredScriptAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	771
 partial	GetScriptContextAction.INSTANCE	TransportGetScriptContextAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	772
 partial	GetScriptLanguageAction.INSTANCE	TransportGetScriptLanguageAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	773

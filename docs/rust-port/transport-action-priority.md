@@ -177,8 +177,8 @@ The source-derived transport inventory currently has 160 rows:
 
 | Status | Count | Meaning |
 | --- | ---: | --- |
-| `implemented` | 66 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
-| `partial` | 94 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
+| `implemented` | 67 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
+| `partial` | 93 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
 | `planned` | 0 | No source-derived transport action remains unclassified. |
 
 The k-NN plugin action sweep is complete at the boundary layer. All 12
@@ -332,7 +332,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `indices:admin/create` (rejected fail-closed)
 - `indices:admin/auto_create` (rejected fail-closed)
 - `cluster:admin/script/put` (rejected fail-closed)
-- `cluster:admin/script/get` (rejected fail-closed)
+- `cluster:admin/script/get` (implemented manifest-backed stored-script metadata read subset)
 - `cluster:admin/script/delete` (rejected fail-closed)
 - `cluster:admin/script_context/get` (rejected fail-closed)
 - `cluster:admin/script_language/get` (rejected fail-closed)
@@ -1329,11 +1329,11 @@ The get-stored-script boundary covers:
 - OpenSearch `GetStoredScriptResponse` found marker, optional
   `StoredScriptSource` language/source/options, and id at the OpenSearch 3.x
   response wire decode/build layer;
-- explicit fail-closed classification for `cluster:admin/script/get` until
-  stored script metadata lookup and found/not-found response rendering are
-  implemented;
+- implemented `cluster:admin/script/get` request admission and manifest-backed
+  found/not-found response rendering for the supported stored-script metadata
+  shape;
 - explicit rejection for custom cluster-manager timeouts, local reads, missing
-  ids, invalid ids, and get-stored-script execution.
+  ids, and invalid ids.
 
 The delete-stored-script boundary covers:
 
@@ -4062,24 +4062,23 @@ bounded wire validation; future performance-sensitive work is script source
 parsing, script context validation, cluster metadata mutation, and ack
 rendering.
 
-Current get-stored-script reject wire microbenchmark:
+Current get-stored-script wire microbenchmark:
 
 ```text
-cargo run -p os-transport --release --bin get-stored-script-reject-wire-benchmark
-get_stored_script_reject_request_encode iterations=400000 elapsed_ms=302.906 ops_per_second=1320541.97 nanos_per_op=757.26
-get_stored_script_reject_request_decode iterations=400000 elapsed_ms=247.197 ops_per_second=1618141.50 nanos_per_op=617.99
-get_stored_script_reject_validation iterations=400000 elapsed_ms=282.449 ops_per_second=1416184.55 nanos_per_op=706.12
-get_stored_script_response_decode iterations=400000 elapsed_ms=228.782 ops_per_second=1748392.68 nanos_per_op=571.95
-get_stored_script_reject_wire_bottleneck_ops_per_second=1320541.97
+cargo run -p os-transport --release --bin get-stored-script-wire-benchmark
+get_stored_script_request_encode iterations=400000 elapsed_ms=271.428 ops_per_second=1473688.30 nanos_per_op=678.57
+get_stored_script_request_decode iterations=400000 elapsed_ms=238.846 ops_per_second=1674721.76 nanos_per_op=597.11
+get_stored_script_request_validate iterations=400000 elapsed_ms=249.909 ops_per_second=1600581.08 nanos_per_op=624.77
+get_stored_script_response_encode iterations=400000 elapsed_ms=266.608 ops_per_second=1500331.59 nanos_per_op=666.52
+get_stored_script_response_decode iterations=400000 elapsed_ms=234.746 ops_per_second=1703972.27 nanos_per_op=586.86
+get_stored_script_wire_bottleneck_ops_per_second=1473688.30
 ```
 
-The current get-stored-script fail-closed boundary bottleneck is request
-encode. The request path carries the cluster-manager read envelope, local-read
-flag, and script id before rejecting execution; the found response decode path
-also covers `StoredScriptSource` language/source/options. At roughly 1.32M
-ops/s in the latest local release run, current overhead is transport
-serialization, not response decode. Future performance-sensitive work is script
-metadata lookup and found/not-found response rendering.
+The current get-stored-script boundary measures the request path carrying the
+cluster-manager read envelope, local-read flag, and script id plus found
+response encoding/decoding for `StoredScriptSource` language/source/options. At
+roughly 1.47M ops/s in the latest local release run, this adapter is not a
+material transport-wire bottleneck for stored-script metadata reads.
 
 Current delete-stored-script reject wire microbenchmark:
 

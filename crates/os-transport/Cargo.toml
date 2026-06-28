@@ -320,8 +320,8 @@ name = "put-stored-script-reject-wire-benchmark"
 path = "benchmarks/put_stored_script_reject_wire.rs"
 
 [[bin]]
-name = "get-stored-script-reject-wire-benchmark"
-path = "benchmarks/get_stored_script_reject_wire.rs"
+name = "get-stored-script-wire-benchmark"
+path = "benchmarks/get_stored_script_wire.rs"
 
 [[bin]]
 name = "delete-stored-script-reject-wire-benchmark"

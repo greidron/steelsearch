@@ -487,7 +487,7 @@ transport_action	implemented	action	SegmentReplicationStatsAction.INSTANCE	Trans
 transport_action	partial	action	NodesReloadSecureSettingsAction.INSTANCE	TransportNodesReloadSecureSettingsAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	765
 transport_action	partial	action	AutoCreateAction.INSTANCE	AutoCreateAction.TransportAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	766
 transport_action	partial	action	PutStoredScriptAction.INSTANCE	TransportPutStoredScriptAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	769
-transport_action	partial	action	GetStoredScriptAction.INSTANCE	TransportGetStoredScriptAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	770
+transport_action	implemented	action	GetStoredScriptAction.INSTANCE	TransportGetStoredScriptAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	770
 transport_action	partial	action	DeleteStoredScriptAction.INSTANCE	TransportDeleteStoredScriptAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	771
 transport_action	partial	action	GetScriptContextAction.INSTANCE	TransportGetScriptContextAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	772
 transport_action	partial	action	GetScriptLanguageAction.INSTANCE	TransportGetScriptLanguageAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	773

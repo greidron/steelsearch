@@ -15,19 +15,15 @@ const ITERATIONS: usize = 400_000;
 fn main() {
     let request = OpenSearchGetStoredScriptRequestWire::default();
 
-    let request_encode = measure(
-        "get_stored_script_reject_request_encode",
-        ITERATIONS,
-        || {
-            let frame = build_opensearch_get_stored_script_request_message(
-                70,
-                OPENSEARCH_3_7_0_TRANSPORT,
-                black_box(&request),
-            )
-            .expect("get-stored-script request encode should succeed");
-            black_box(frame);
-        },
-    );
+    let request_encode = measure("get_stored_script_request_encode", ITERATIONS, || {
+        let frame = build_opensearch_get_stored_script_request_message(
+            70,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            black_box(&request),
+        )
+        .expect("get-stored-script request encode should succeed");
+        black_box(frame);
+    });
 
     let request_frame = build_opensearch_get_stored_script_request_message(
         70,
@@ -36,33 +32,40 @@ fn main() {
     )
     .expect("get-stored-script request encode should succeed");
 
-    let request_decode = measure(
-        "get_stored_script_reject_request_decode",
-        ITERATIONS,
-        || {
-            let mut frame = black_box(request_frame.clone());
-            let message = decode_message(&mut frame);
-            let decoded = read_opensearch_get_stored_script_request_message(black_box(&message))
-                .expect("get-stored-script request decode");
-            black_box(decoded);
-        },
-    );
-
-    let reject_validate = measure("get_stored_script_reject_validation", ITERATIONS, || {
+    let request_decode = measure("get_stored_script_request_decode", ITERATIONS, || {
         let mut frame = black_box(request_frame.clone());
         let message = decode_message(&mut frame);
         let decoded = read_opensearch_get_stored_script_request_message(black_box(&message))
             .expect("get-stored-script request decode");
-        let err = decoded
-            .reject_unsupported_execution()
-            .expect_err("get-stored-script execution should reject");
-        black_box(err);
+        black_box(decoded);
+    });
+
+    let request_validate = measure("get_stored_script_request_validate", ITERATIONS, || {
+        let mut frame = black_box(request_frame.clone());
+        let message = decode_message(&mut frame);
+        let decoded = read_opensearch_get_stored_script_request_message(black_box(&message))
+            .expect("get-stored-script request decode");
+        decoded
+            .validate_supported_subset()
+            .expect("get-stored-script request should validate");
+        black_box(decoded);
     });
 
     let response = OpenSearchGetStoredScriptResponseWire::found(
         "stored-script-1",
         OpenSearchStoredScriptSourceWire::default(),
     );
+
+    let response_encode = measure("get_stored_script_response_encode", ITERATIONS, || {
+        let frame = build_opensearch_get_stored_script_response_message(
+            70,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            black_box(&response),
+        )
+        .expect("get-stored-script response encode should succeed");
+        black_box(frame);
+    });
+
     let response_frame = build_opensearch_get_stored_script_response_message(
         70,
         OPENSEARCH_3_7_0_TRANSPORT,
@@ -80,11 +83,10 @@ fn main() {
     let combined_ops_per_second = request_encode
         .ops_per_second
         .min(request_decode.ops_per_second)
-        .min(reject_validate.ops_per_second)
+        .min(request_validate.ops_per_second)
+        .min(response_encode.ops_per_second)
         .min(response_decode.ops_per_second);
-    println!(
-        "get_stored_script_reject_wire_bottleneck_ops_per_second={combined_ops_per_second:.2}"
-    );
+    println!("get_stored_script_wire_bottleneck_ops_per_second={combined_ops_per_second:.2}");
 }
 
 #[derive(Clone, Copy)]
