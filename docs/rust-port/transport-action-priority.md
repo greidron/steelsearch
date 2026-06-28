@@ -177,8 +177,8 @@ The source-derived transport inventory currently has 160 rows:
 
 | Status | Count | Meaning |
 | --- | ---: | --- |
-| `implemented` | 60 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
-| `partial` | 100 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
+| `implemented` | 61 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
+| `partial` | 99 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
 | `planned` | 0 | No source-derived transport action remains unclassified. |
 
 The k-NN plugin action sweep is complete at the boundary layer. All 12
@@ -2775,11 +2775,11 @@ Current cluster-stats reject wire microbenchmark:
 
 ```text
 cargo run -p os-transport --release --bin cluster-stats-wire-benchmark
-cluster_stats_request_encode iterations=400000 elapsed_ms=211.804 ops_per_second=1888536.95 nanos_per_op=529.51
-cluster_stats_request_decode iterations=400000 elapsed_ms=189.648 ops_per_second=2109167.14 nanos_per_op=474.12
-cluster_stats_request_validate iterations=400000 elapsed_ms=190.353 ops_per_second=2101358.55 nanos_per_op=475.88
-cluster_stats_response_decode iterations=400000 elapsed_ms=222.091 ops_per_second=1801066.89 nanos_per_op=555.23
-cluster_stats_wire_bottleneck_ops_per_second=1801066.89
+cluster_stats_request_encode iterations=400000 elapsed_ms=212.099 ops_per_second=1885908.72 nanos_per_op=530.25
+cluster_stats_request_decode iterations=400000 elapsed_ms=189.918 ops_per_second=2106171.13 nanos_per_op=474.80
+cluster_stats_request_validate iterations=400000 elapsed_ms=191.100 ops_per_second=2093147.33 nanos_per_op=477.75
+cluster_stats_response_decode iterations=400000 elapsed_ms=223.199 ops_per_second=1792124.90 nanos_per_op=558.00
+cluster_stats_wire_bottleneck_ops_per_second=1792124.90
 ```
 
 The current cluster-stats implemented-path wire bottleneck is response decode.
