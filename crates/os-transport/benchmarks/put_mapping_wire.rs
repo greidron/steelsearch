@@ -1,7 +1,8 @@
 use os_core::OPENSEARCH_3_7_0_TRANSPORT;
 use os_transport::action::{
-    build_opensearch_put_mapping_request_message, read_opensearch_put_mapping_request_message,
-    OpenSearchPutMappingRequestWire,
+    build_opensearch_put_mapping_request_message, build_opensearch_put_mapping_response_message,
+    read_opensearch_put_mapping_request_message, read_opensearch_put_mapping_response_message,
+    AcknowledgedResponseWire, OpenSearchPutMappingRequestWire,
 };
 use os_transport::frame::{decode_frame, DecodedFrame};
 use std::hint::black_box;
@@ -12,7 +13,7 @@ const ITERATIONS: usize = 400_000;
 fn main() {
     let request = OpenSearchPutMappingRequestWire::default();
 
-    let request_encode = measure("put_mapping_reject_request_encode", ITERATIONS, || {
+    let request_encode = measure("put_mapping_request_encode", ITERATIONS, || {
         let frame = build_opensearch_put_mapping_request_message(
             37,
             OPENSEARCH_3_7_0_TRANSPORT,
@@ -26,7 +27,7 @@ fn main() {
         build_opensearch_put_mapping_request_message(37, OPENSEARCH_3_7_0_TRANSPORT, &request)
             .expect("put-mapping request encode should succeed");
 
-    let request_decode = measure("put_mapping_reject_request_decode", ITERATIONS, || {
+    let request_decode = measure("put_mapping_request_decode", ITERATIONS, || {
         let mut frame = black_box(request_frame.clone());
         let message = decode_message(&mut frame);
         let decoded = read_opensearch_put_mapping_request_message(black_box(&message))
@@ -34,22 +35,45 @@ fn main() {
         black_box(decoded);
     });
 
-    let reject_validate = measure("put_mapping_reject_validation", ITERATIONS, || {
+    let request_validate = measure("put_mapping_request_validate", ITERATIONS, || {
         let mut frame = black_box(request_frame.clone());
         let message = decode_message(&mut frame);
         let decoded = read_opensearch_put_mapping_request_message(black_box(&message))
             .expect("put-mapping request decode");
-        let err = decoded
-            .reject_unsupported_execution()
-            .expect_err("put-mapping execution should reject");
-        black_box(err);
+        let validation = decoded.validate_supported_subset();
+        let _ = black_box(validation);
+    });
+
+    let response = AcknowledgedResponseWire { acknowledged: true };
+    let response_encode = measure("put_mapping_response_encode", ITERATIONS, || {
+        let frame = build_opensearch_put_mapping_response_message(
+            37,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            black_box(&response),
+        )
+        .expect("put-mapping response encode should succeed");
+        black_box(frame);
+    });
+
+    let response_frame =
+        build_opensearch_put_mapping_response_message(37, OPENSEARCH_3_7_0_TRANSPORT, &response)
+            .expect("put-mapping response encode should succeed");
+
+    let response_decode = measure("put_mapping_response_decode", ITERATIONS, || {
+        let mut frame = black_box(response_frame.clone());
+        let message = decode_message(&mut frame);
+        let decoded = read_opensearch_put_mapping_response_message(black_box(&message))
+            .expect("put-mapping response decode");
+        black_box(decoded);
     });
 
     let combined_ops_per_second = request_encode
         .ops_per_second
         .min(request_decode.ops_per_second)
-        .min(reject_validate.ops_per_second);
-    println!("put_mapping_reject_wire_bottleneck_ops_per_second={combined_ops_per_second:.2}");
+        .min(request_validate.ops_per_second)
+        .min(response_encode.ops_per_second)
+        .min(response_decode.ops_per_second);
+    println!("put_mapping_wire_bottleneck_ops_per_second={combined_ops_per_second:.2}");
 }
 
 #[derive(Clone, Copy)]

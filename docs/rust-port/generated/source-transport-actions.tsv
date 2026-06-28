@@ -52,7 +52,7 @@ implemented	IndicesExistsAction.INSTANCE	TransportIndicesExistsAction.class	/hom
 partial	AddIndexBlockAction.INSTANCE	TransportAddIndexBlockAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	708
 implemented	GetMappingsAction.INSTANCE	TransportGetMappingsAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	709
 implemented	GetFieldMappingsAction.INSTANCE	TransportGetFieldMappingsAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	710
-partial	PutMappingAction.INSTANCE	TransportPutMappingAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	715
+implemented	PutMappingAction.INSTANCE	TransportPutMappingAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	715
 partial	AutoPutMappingAction.INSTANCE	TransportAutoPutMappingAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	716
 partial	IndicesAliasesAction.INSTANCE	TransportIndicesAliasesAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	717
 implemented	UpdateSettingsAction.INSTANCE	TransportUpdateSettingsAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	718

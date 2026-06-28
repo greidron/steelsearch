@@ -177,8 +177,8 @@ The source-derived transport inventory currently has 160 rows:
 
 | Status | Count | Meaning |
 | --- | ---: | --- |
-| `implemented` | 90 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
-| `partial` | 70 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
+| `implemented` | 91 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
+| `partial` | 69 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
 | `planned` | 0 | No source-derived transport action remains unclassified. |
 
 The k-NN plugin action sweep is complete at the boundary layer. All 12
@@ -1194,13 +1194,18 @@ The put-mapping boundary covers:
   false, true, true)`, mapping source string, optional concrete `Index`,
   optional origin, and `writeIndexOnly` at the OpenSearch 3.x wire decode/build
   layer;
-- explicit fail-closed classification for `indices:admin/mapping/put` until
-  mapping validation, metadata mutation, and acknowledged response rendering
-  are implemented;
+- implemented classification for `indices:admin/mapping/put` when the request
+  uses default timeouts/options, unresolved manifest-backed index targets,
+  non-empty JSON mapping source, empty origin, no concrete-index override, and
+  `writeIndexOnly=false`;
+- metadata mutation for the supported `dynamic`, `_meta`, and `properties`
+  subset, including `_meta` null removal and field type-conflict admission
+  checks before acknowledged response rendering;
 - explicit rejection for custom cluster-manager timeouts, custom
   acknowledgement timeouts, missing index targets, custom indices options,
   empty mapping sources, concrete-index routing, custom origins,
-  write-index-only updates, and put-mapping execution.
+  write-index-only updates, missing index matches, invalid JSON mapping
+  sources, empty mapping subset, and field type changes.
 
 The auto-put-mapping boundary covers:
 
@@ -3889,23 +3894,26 @@ and include-default expansion after reading the OpenSearch 3.x request body, so
 it is slightly heavier than get-mappings. At roughly 1.55M ops/s in the latest
 local release run, it remains in the lightweight admin transport range.
 
-Current put-mapping reject wire microbenchmark:
+Current put-mapping wire microbenchmark:
 
 ```text
-cargo run -p os-transport --release --bin put-mapping-reject-wire-benchmark
-put_mapping_reject_request_encode iterations=400000 elapsed_ms=449.071 ops_per_second=890727.50 nanos_per_op=1122.68
-put_mapping_reject_request_decode iterations=400000 elapsed_ms=369.100 ops_per_second=1083715.91 nanos_per_op=922.75
-put_mapping_reject_validation iterations=400000 elapsed_ms=360.289 ops_per_second=1110219.42 nanos_per_op=900.72
-put_mapping_reject_wire_bottleneck_ops_per_second=890727.50
+cargo run -p os-transport --release --bin put-mapping-wire-benchmark
+put_mapping_request_encode iterations=400000 elapsed_ms=368.880 ops_per_second=1084363.85 nanos_per_op=922.20
+put_mapping_request_decode iterations=400000 elapsed_ms=347.404 ops_per_second=1151397.66 nanos_per_op=868.51
+put_mapping_request_validate iterations=400000 elapsed_ms=357.068 ops_per_second=1120234.17 nanos_per_op=892.67
+put_mapping_response_encode iterations=400000 elapsed_ms=90.144 ops_per_second=4437345.73 nanos_per_op=225.36
+put_mapping_response_decode iterations=400000 elapsed_ms=92.161 ops_per_second=4340251.55 nanos_per_op=230.40
+put_mapping_wire_bottleneck_ops_per_second=1084363.85
 ```
 
-The current put-mapping fail-closed boundary bottleneck is request encode. The
-path writes the acknowledged-request envelope, index target array, indices
-options, mapping source string, absent concrete-index marker, origin marker,
-and `writeIndexOnly` flag before rejecting execution. At roughly 0.89M ops/s in
-the latest local release run, the current overhead is still request wire
-boundary work; future performance-sensitive work is mapping validation,
-metadata mutation, and acknowledged response rendering.
+The current put-mapping transport path bottleneck is request encode. The path
+writes the acknowledged-request envelope, index target array, indices options,
+mapping source string, absent concrete-index marker, origin marker, and
+`writeIndexOnly` flag, then validates the supported local metadata mutation
+subset and renders an acknowledged response. At roughly 1.08M ops/s in the
+latest local release run, the first runtime performance point to inspect while
+expanding the path is repeated manifest target resolution and mapping-source
+JSON subset extraction for larger multi-index updates.
 
 Current auto-put-mapping reject wire microbenchmark:
 

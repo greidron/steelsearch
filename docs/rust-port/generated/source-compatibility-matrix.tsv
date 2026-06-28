@@ -441,7 +441,7 @@ transport_action	implemented	action	IndicesExistsAction.INSTANCE	TransportIndice
 transport_action	partial	action	AddIndexBlockAction.INSTANCE	TransportAddIndexBlockAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	708
 transport_action	implemented	action	GetMappingsAction.INSTANCE	TransportGetMappingsAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	709
 transport_action	implemented	action	GetFieldMappingsAction.INSTANCE	TransportGetFieldMappingsAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	710
-transport_action	partial	action	PutMappingAction.INSTANCE	TransportPutMappingAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	715
+transport_action	implemented	action	PutMappingAction.INSTANCE	TransportPutMappingAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	715
 transport_action	partial	action	AutoPutMappingAction.INSTANCE	TransportAutoPutMappingAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	716
 transport_action	partial	action	IndicesAliasesAction.INSTANCE	TransportIndicesAliasesAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	717
 transport_action	implemented	action	UpdateSettingsAction.INSTANCE	TransportUpdateSettingsAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	718

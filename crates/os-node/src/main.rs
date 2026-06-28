@@ -1888,6 +1888,32 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end_at_ms,
         )?;
     } else if is_request
+        && normalized_action_hint == Some("indices:admin/mapping/put")
+        && put_mapping_request_supports_manifest_subset(&body)
+    {
+        let response = build_put_mapping_response(request_id, header_version_id, &body);
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("indices:admin/mapping/put"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request
         && normalized_action_hint == Some("indices:admin/get")
         && get_index_request_supports_local_execution_subset(&body)
     {
@@ -7370,6 +7396,204 @@ fn get_mappings_response_from_metadata_manifest(
         .collect();
     os_transport::action::OpenSearchGetMappingsResponseWire {
         empty_mapping_indices,
+    }
+}
+
+fn build_put_mapping_response(request_id: i64, header_version_id: u32, body: &[u8]) -> Vec<u8> {
+    let Some(request) = decode_put_mapping_request_from_transport_body(body) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    if request.validate_supported_subset().is_err() {
+        return build_empty_transport_response(request_id, header_version_id);
+    }
+    let Some(mapping_update) = parse_transport_mapping_update_subset(&request.source) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    let mut manifest = dev_transport_pit_bindings()
+        .metadata_manifest
+        .lock()
+        .expect("dev transport metadata manifest lock poisoned");
+    let Some(targets) = transport_put_mapping_targets(&manifest, &request) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    if !apply_transport_put_mapping_to_manifest(&mut manifest, &targets, &mapping_update) {
+        return build_empty_transport_response(request_id, header_version_id);
+    }
+    drop(manifest);
+    os_transport::action::build_opensearch_put_mapping_response_message(
+        request_id,
+        Version::from_id(header_version_id as i32),
+        &os_transport::action::AcknowledgedResponseWire { acknowledged: true },
+    )
+    .map(|frame| frame.to_vec())
+    .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
+}
+
+fn put_mapping_request_supports_manifest_subset(body: &[u8]) -> bool {
+    decode_put_mapping_request_from_transport_body(body)
+        .filter(|request| request.validate_supported_subset().is_ok())
+        .and_then(|request| {
+            parse_transport_mapping_update_subset(&request.source).map(|mapping_update| {
+                let manifest = dev_transport_pit_bindings()
+                    .metadata_manifest
+                    .lock()
+                    .expect("dev transport metadata manifest lock poisoned");
+                transport_put_mapping_targets(&manifest, &request)
+                    .filter(|targets| !targets.is_empty())
+                    .is_some_and(|targets| {
+                        transport_put_mapping_update_is_compatible(
+                            &manifest,
+                            &targets,
+                            &mapping_update,
+                        )
+                    })
+            })
+        })
+        .unwrap_or(false)
+}
+
+fn decode_put_mapping_request_from_transport_body(
+    body: &[u8],
+) -> Option<os_transport::action::OpenSearchPutMappingRequestWire> {
+    let message = decode_transport_message_from_body(body)?;
+    os_transport::action::read_opensearch_put_mapping_request_message(&message).ok()
+}
+
+fn parse_transport_mapping_update_subset(source: &str) -> Option<Value> {
+    let parsed = serde_json::from_str::<Value>(source).ok()?;
+    let subset = os_node::mapping_route_registration::build_mapping_update_body_subset(&parsed);
+    subset.as_object().filter(|object| !object.is_empty())?;
+    Some(subset)
+}
+
+fn transport_put_mapping_targets(
+    metadata_manifest: &Value,
+    request: &os_transport::action::OpenSearchPutMappingRequestWire,
+) -> Option<Vec<String>> {
+    let indices = metadata_manifest["indices"].as_object()?;
+    let mut targets = Vec::new();
+    for selector in request
+        .indices
+        .iter()
+        .filter(|selector| !selector.is_empty())
+    {
+        let selector_targets = if selector == "_all" {
+            indices.keys().cloned().collect::<Vec<_>>()
+        } else if selector.contains('*') || selector.contains('?') {
+            indices
+                .keys()
+                .filter(|index| wildcard_match(selector, index))
+                .cloned()
+                .collect::<Vec<_>>()
+        } else if indices.contains_key(selector) {
+            vec![selector.clone()]
+        } else {
+            return None;
+        };
+        if selector_targets.is_empty() {
+            return None;
+        }
+        targets.extend(selector_targets);
+    }
+    targets.sort();
+    targets.dedup();
+    Some(targets)
+}
+
+fn transport_put_mapping_update_is_compatible(
+    metadata_manifest: &Value,
+    targets: &[String],
+    mapping_update: &Value,
+) -> bool {
+    let update_properties = mapping_update
+        .get("properties")
+        .and_then(Value::as_object)
+        .cloned()
+        .unwrap_or_default();
+    for index in targets {
+        let existing_properties = metadata_manifest["indices"][index]["mappings"]["properties"]
+            .as_object()
+            .cloned()
+            .unwrap_or_default();
+        for (field, update_definition) in &update_properties {
+            let Some(existing_definition) = existing_properties.get(field) else {
+                continue;
+            };
+            let existing_type = existing_definition.get("type").and_then(Value::as_str);
+            let update_type = update_definition.get("type").and_then(Value::as_str);
+            if existing_type.is_some() && update_type.is_some() && existing_type != update_type {
+                return false;
+            }
+        }
+    }
+    true
+}
+
+fn apply_transport_put_mapping_to_manifest(
+    metadata_manifest: &mut Value,
+    targets: &[String],
+    mapping_update: &Value,
+) -> bool {
+    if !transport_put_mapping_update_is_compatible(metadata_manifest, targets, mapping_update) {
+        return false;
+    }
+    let update_properties = mapping_update
+        .get("properties")
+        .and_then(Value::as_object)
+        .cloned()
+        .unwrap_or_default();
+    for index in targets {
+        let mappings = &mut metadata_manifest["indices"][index]["mappings"];
+        if !mappings.is_object() {
+            *mappings = serde_json::json!({});
+        }
+        if let Some(dynamic) = mapping_update.get("dynamic") {
+            mappings["dynamic"] = dynamic.clone();
+        }
+        if let Some(meta) = mapping_update.get("_meta") {
+            let existing_meta = mappings
+                .get("_meta")
+                .cloned()
+                .unwrap_or_else(|| serde_json::json!({}));
+            let mut merged_meta = existing_meta;
+            merge_transport_object_with_null_reset(&mut merged_meta, meta);
+            mappings["_meta"] = merged_meta;
+        }
+        if !mappings["properties"].is_object() {
+            mappings["properties"] = serde_json::json!({});
+        }
+        let merged_properties = mappings["properties"]
+            .as_object_mut()
+            .expect("index mappings properties must be an object");
+        for (field, update_definition) in &update_properties {
+            merged_properties.insert(field.clone(), update_definition.clone());
+        }
+    }
+    true
+}
+
+fn merge_transport_object_with_null_reset(base: &mut Value, update: &Value) {
+    let Some(base_object) = base.as_object_mut() else {
+        *base = update.clone();
+        return;
+    };
+    let Some(update_object) = update.as_object() else {
+        *base = update.clone();
+        return;
+    };
+    for (key, value) in update_object {
+        if value.is_null() {
+            base_object.remove(key);
+            continue;
+        }
+        match base_object.get_mut(key) {
+            Some(existing) if existing.is_object() && value.is_object() => {
+                merge_transport_object_with_null_reset(existing, value);
+            }
+            _ => {
+                base_object.insert(key.clone(), value.clone());
+            }
+        }
     }
 }
 
@@ -16738,6 +16962,13 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
             header_version_id,
             body,
         )),
+        Some("indices:admin/mapping/put") if put_mapping_request_supports_manifest_subset(body) => {
+            Some(build_put_mapping_response(
+                request_id,
+                header_version_id,
+                body,
+            ))
+        }
         Some("indices:admin/get") if get_index_request_supports_local_execution_subset(body) => {
             Some(build_get_index_response(
                 request_id,
@@ -22072,6 +22303,94 @@ mod tests {
         );
         assert!(!response.index_settings["logs-settings-000001"]
             .contains_key("index.number_of_replicas"));
+    }
+
+    #[test]
+    fn put_mapping_transport_route_updates_manifest_index_mappings() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        *dev_transport_pit_bindings()
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned") = serde_json::json!({
+            "indices": {
+                "logs-mapping-000001": {
+                    "settings": {},
+                    "mappings": {
+                        "_meta": {
+                            "owner": "search"
+                        },
+                        "properties": {
+                            "message": {
+                                "type": "text"
+                            }
+                        }
+                    },
+                    "aliases": {}
+                }
+            }
+        });
+
+        let request = os_transport::action::OpenSearchPutMappingRequestWire {
+            indices: vec!["logs-mapping-000001".to_string()],
+            source: serde_json::json!({
+                "_meta": {
+                    "owner": null,
+                    "schema": "v2"
+                },
+                "properties": {
+                    "level": {
+                        "type": "keyword"
+                    }
+                }
+            })
+            .to_string(),
+            ..os_transport::action::OpenSearchPutMappingRequestWire::default()
+        };
+        let frame = os_transport::action::build_opensearch_put_mapping_request_message(
+            86,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(put_mapping_request_supports_manifest_subset(&frame[6..]));
+
+        let response =
+            build_put_mapping_response(86, OPENSEARCH_3_7_0_TRANSPORT.id() as u32, &frame[6..]);
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected put mapping response message");
+        };
+        let response =
+            os_transport::action::read_opensearch_put_mapping_response_message(&message).unwrap();
+        assert!(response.acknowledged);
+
+        let manifest = dev_transport_pit_bindings()
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned");
+        assert_eq!(
+            manifest["indices"]["logs-mapping-000001"]["mappings"]["properties"]["message"]["type"],
+            "text"
+        );
+        assert_eq!(
+            manifest["indices"]["logs-mapping-000001"]["mappings"]["properties"]["level"]["type"],
+            "keyword"
+        );
+        assert_eq!(
+            manifest["indices"]["logs-mapping-000001"]["mappings"]["_meta"]["schema"],
+            "v2"
+        );
+        assert!(
+            manifest["indices"]["logs-mapping-000001"]["mappings"]["_meta"]
+                .get("owner")
+                .is_none()
+        );
     }
 
     #[test]
