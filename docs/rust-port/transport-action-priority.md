@@ -271,6 +271,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `indices:admin/get` (rejected fail-closed)
 - `indices:admin/exists` (rejected fail-closed)
 - `indices:admin/template/get` (implemented default all-template legacy metadata subset)
+- `indices:admin/template/put` (implemented manifest-backed metadata mutation subset)
 - `indices:admin/template/delete` (implemented manifest-backed metadata mutation subset)
 - `cluster:admin/component_template/get` (implemented manifest-backed
   settings-only component-template subset)
@@ -1550,13 +1551,12 @@ The put-index-template boundary covers:
   cause, template name, index pattern list, order, create flag, string-valued
   settings map, optional mappings string, zero-alias marker, and optional
   version at the OpenSearch 3.x wire decode/build layer;
-- explicit fail-closed classification for `indices:admin/template/put` until
-  legacy index-template validation, metadata mutation, and acknowledged
-  response rendering are implemented against Rust cluster metadata;
+- manifest-backed transport execution for `indices:admin/template/put`,
+  upserting the supported legacy index-template metadata subset into Rust
+  cluster metadata and rendering OpenSearch `AcknowledgedResponse`;
 - explicit rejection for custom cluster-manager timeouts, missing template
   names, missing index patterns, custom causes, non-zero order, create-only
-  writes, settings, mappings, alias payloads, versions, and put-index-template
-  execution.
+  writes, settings, mappings, and alias payloads.
 
 The delete-index-template boundary covers:
 
@@ -4323,22 +4323,24 @@ performance risk is future template metadata matching and response rendering.
 At roughly 1.98M ops/s in the latest local release run, the fail-closed wire
 boundary is not a material bottleneck.
 
-Current put-index-template reject wire microbenchmark:
+Current put-index-template wire microbenchmark:
 
 ```text
-cargo run -p os-transport --release --bin put-index-template-reject-wire-benchmark
-put_index_template_reject_request_encode iterations=400000 elapsed_ms=318.333 ops_per_second=1256545.15 nanos_per_op=795.83
-put_index_template_reject_request_decode iterations=400000 elapsed_ms=308.411 ops_per_second=1296970.95 nanos_per_op=771.03
-put_index_template_reject_validation iterations=400000 elapsed_ms=317.081 ops_per_second=1261506.37 nanos_per_op=792.70
-put_index_template_reject_wire_bottleneck_ops_per_second=1256545.15
+cargo run -p os-transport --release --bin put-index-template-wire-benchmark
+put_index_template_request_encode iterations=400000 elapsed_ms=313.575 ops_per_second=1275613.61 nanos_per_op=783.94
+put_index_template_request_decode iterations=400000 elapsed_ms=309.299 ops_per_second=1293244.91 nanos_per_op=773.25
+put_index_template_request_validate iterations=400000 elapsed_ms=318.188 ops_per_second=1257116.60 nanos_per_op=795.47
+put_index_template_response_decode iterations=400000 elapsed_ms=54.422 ops_per_second=7349942.16 nanos_per_op=136.06
+put_index_template_wire_bottleneck_ops_per_second=1257116.60
 ```
 
-The current put-index-template fail-closed boundary bottleneck is request
-encode. The default benchmark writes a valid empty legacy template shape with a
-template name and one index pattern, then rejects before template metadata
-mutation. At roughly 1.26M ops/s in the latest local release run, the remaining
-performance-sensitive work is template validation, metadata publication, and
-acknowledged response rendering.
+The current put-index-template transport boundary bottleneck is request
+validation. The supported execution subset writes a valid empty legacy template
+shape with a template name, one index pattern, and optional version, then the
+node adapter upserts manifest-backed metadata and renders an acknowledged
+response. At roughly 1.26M ops/s in the latest local release run, the remaining
+performance-sensitive work is richer template validation and metadata
+publication across distributed cluster-state ownership.
 
 Current delete-index-template wire microbenchmark:
 

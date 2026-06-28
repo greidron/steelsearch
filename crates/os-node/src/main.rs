@@ -1703,6 +1703,33 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end_at_ms,
         )?;
     } else if is_request
+        && normalized_action_hint == Some("indices:admin/template/put")
+        && put_index_template_request_supports_manifest_execution_subset(&body)
+    {
+        let response =
+            build_local_put_index_template_response(request_id, header_version_id, &body);
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("indices:admin/template/put"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request
         && normalized_action_hint == Some("indices:admin/template/delete")
         && delete_index_template_request_supports_manifest_execution_subset(&body)
     {
@@ -5674,6 +5701,38 @@ fn decode_get_index_templates_request_from_transport_body(
     os_transport::action::read_opensearch_get_index_templates_request_message(&message).ok()
 }
 
+fn build_local_put_index_template_response(
+    request_id: i64,
+    header_version_id: u32,
+    body: &[u8],
+) -> Vec<u8> {
+    let Some(request) = decode_put_index_template_request_from_transport_body(body) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    if request.validate_supported_execution_subset().is_err() {
+        return build_empty_transport_response(request_id, header_version_id);
+    }
+    apply_manifest_put_legacy_index_template(&request);
+    build_acknowledged_template_response(
+        request_id,
+        header_version_id,
+        os_transport::action::build_opensearch_put_index_template_response_message,
+    )
+}
+
+fn put_index_template_request_supports_manifest_execution_subset(body: &[u8]) -> bool {
+    decode_put_index_template_request_from_transport_body(body)
+        .as_ref()
+        .is_some_and(|request| request.validate_supported_execution_subset().is_ok())
+}
+
+fn decode_put_index_template_request_from_transport_body(
+    body: &[u8],
+) -> Option<os_transport::action::OpenSearchPutIndexTemplateRequestWire> {
+    let message = decode_transport_message_from_body(body)?;
+    os_transport::action::read_opensearch_put_index_template_request_message(&message).ok()
+}
+
 fn build_local_delete_index_template_response(
     request_id: i64,
     header_version_id: u32,
@@ -6053,6 +6112,7 @@ fn template_wire_from_manifest(
 fn legacy_template_entries(metadata_manifest: &Value) -> Vec<(String, &Value)> {
     let mut entries = Vec::new();
     let candidate_maps = [
+        metadata_manifest.pointer("/templates/legacy_index_templates"),
         metadata_manifest.pointer("/metadata/templates"),
         metadata_manifest.get("templates"),
         metadata_manifest.get("index_templates"),
@@ -6061,6 +6121,12 @@ fn legacy_template_entries(metadata_manifest: &Value) -> Vec<(String, &Value)> {
     for candidate in candidate_maps.into_iter().flatten() {
         if let Some(object) = candidate.as_object() {
             for (name, template) in object {
+                if matches!(
+                    name.as_str(),
+                    "legacy_index_templates" | "component_templates" | "index_templates"
+                ) {
+                    continue;
+                }
                 entries.push((name.clone(), template));
             }
         } else if let Some(array) = candidate.as_array() {
@@ -6947,6 +7013,35 @@ fn build_acknowledged_template_response(
     )
     .map(|frame| frame.to_vec())
     .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
+}
+
+fn apply_manifest_put_legacy_index_template(
+    request: &os_transport::action::OpenSearchPutIndexTemplateRequestWire,
+) {
+    let bindings = dev_transport_pit_bindings();
+    let mut manifest = bindings
+        .metadata_manifest
+        .lock()
+        .expect("dev transport metadata manifest lock poisoned");
+    let templates = ensure_manifest_object(&mut manifest, "templates");
+    let legacy_templates = templates
+        .entry("legacy_index_templates".to_string())
+        .or_insert_with(|| Value::Object(serde_json::Map::new()));
+    if !legacy_templates.is_object() {
+        *legacy_templates = Value::Object(serde_json::Map::new());
+    }
+    let Some(legacy_templates) = legacy_templates.as_object_mut() else {
+        return;
+    };
+    let mut template = serde_json::json!({
+        "index_patterns": request.index_patterns.clone(),
+        "order": request.order,
+        "settings": {}
+    });
+    if let Some(version) = request.version {
+        template["version"] = Value::from(version);
+    }
+    legacy_templates.insert(request.name.clone(), template);
 }
 
 fn apply_manifest_create_data_stream(name: &str) {
@@ -14743,6 +14838,15 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
                 body,
             ))
         }
+        Some("indices:admin/template/put")
+            if put_index_template_request_supports_manifest_execution_subset(body) =>
+        {
+            Some(build_local_put_index_template_response(
+                request_id,
+                header_version_id,
+                body,
+            ))
+        }
         Some("indices:admin/template/delete")
             if delete_index_template_request_supports_manifest_execution_subset(body) =>
         {
@@ -21393,6 +21497,75 @@ mod tests {
             .lock()
             .expect("dev transport documents lock poisoned")
             .is_empty());
+    }
+
+    #[test]
+    fn template_put_transport_route_mutates_manifest_backed_metadata() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        let bindings = dev_transport_pit_bindings();
+        *bindings
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned") = serde_json::json!({
+            "templates": {
+                "legacy_index_templates": {}
+            }
+        });
+
+        let put_request = os_transport::action::OpenSearchPutIndexTemplateRequestWire {
+            name: "legacy-put-transport-template".to_string(),
+            index_patterns: vec!["legacy-put-*".to_string()],
+            version: Some(7),
+            ..os_transport::action::OpenSearchPutIndexTemplateRequestWire::default()
+        };
+        let frame = os_transport::action::build_opensearch_put_index_template_request_message(
+            200,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &put_request,
+        )
+        .unwrap();
+        assert!(put_index_template_request_supports_manifest_execution_subset(&frame[6..]));
+        let response = build_local_put_index_template_response(
+            200,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &frame[6..],
+        );
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected put-index-template response message");
+        };
+        assert_eq!(
+            os_transport::action::read_opensearch_put_index_template_response_message(&message)
+                .unwrap(),
+            os_transport::action::AcknowledgedResponseWire { acknowledged: true }
+        );
+
+        let manifest = bindings
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned");
+        let template =
+            &manifest["templates"]["legacy_index_templates"]["legacy-put-transport-template"];
+        assert_eq!(
+            template["index_patterns"],
+            serde_json::json!(["legacy-put-*"])
+        );
+        assert_eq!(template["order"], 0);
+        assert_eq!(template["version"], 7);
+        let response = get_index_templates_response_from_metadata_manifest(&manifest);
+        let template = response
+            .templates
+            .iter()
+            .find(|template| template.name == "legacy-put-transport-template")
+            .expect("put legacy index template should be readable");
+        assert_eq!(template.index_patterns, ["legacy-put-*"]);
+        assert_eq!(template.version, Some(7));
     }
 
     #[test]

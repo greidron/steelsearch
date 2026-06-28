@@ -2150,8 +2150,8 @@ pub fn classify_opensearch_transport_action(
         },
         OPENSEARCH_PUT_INDEX_TEMPLATE_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
-            disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "put-index-template transport execution requires template metadata validation, mutation, and ack rendering",
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "put-index-template transport adapter upserts the supported manifest-backed legacy template metadata subset and renders OpenSearch AcknowledgedResponse",
         },
         OPENSEARCH_DELETE_INDEX_TEMPLATE_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -9461,6 +9461,35 @@ pub fn read_opensearch_put_index_template_request_message(
         });
     }
     OpenSearchPutIndexTemplateRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_opensearch_put_index_template_response_message(
+    request_id: i64,
+    version: Version,
+    response: &AcknowledgedResponseWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    response.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::response(),
+        version,
+        variable_header: BytesMut::new(),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_put_index_template_response_message(
+    message: &TransportMessage,
+) -> Result<AcknowledgedResponseWire, TransportActionWireError> {
+    if message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "response",
+            actual: message.status.bits(),
+        });
+    }
+    AcknowledgedResponseWire::read(message.body.clone().freeze())
 }
 
 pub fn build_opensearch_create_index_request_message(
@@ -20902,7 +20931,7 @@ impl OpenSearchPutIndexTemplateRequestWire {
         Ok(request)
     }
 
-    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+    pub fn validate_supported_execution_subset(&self) -> Result<(), TransportActionWireError> {
         if self.cluster_manager_timeout != TimeValueWire::seconds(30) {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "put index template cluster-manager timeout",
@@ -20964,16 +20993,15 @@ impl OpenSearchPutIndexTemplateRequestWire {
                 reason: "template aliases require alias validation and metadata rendering",
             });
         }
-        if self.version.is_some() {
-            return Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "put index template version",
-                reason: "template versions require template metadata rendering",
-            });
-        }
+        Ok(())
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        self.validate_supported_execution_subset()?;
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "put index template execution",
             reason:
-                "put-index-template transport execution requires template metadata mutation and ack rendering",
+                "use validate_supported_execution_subset for the implemented manifest-backed put-index-template adapter",
         })
     }
 }
@@ -59934,7 +59962,7 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_put_index_template_request_wire_round_trips_and_rejects_execution_boundary() {
+    fn opensearch_put_index_template_request_wire_round_trips_and_validates_execution_subset() {
         let request = OpenSearchPutIndexTemplateRequestWire::default();
         let mut output = StreamOutput::new();
         request.write(&mut output);
@@ -59943,13 +59971,7 @@ mod tests {
         assert_eq!(decoded, request);
         assert_eq!(decoded.name, "logs-template");
         assert_eq!(decoded.index_patterns, ["logs-*"]);
-        assert!(matches!(
-            decoded.reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "put index template execution",
-                ..
-            })
-        ));
+        decoded.validate_supported_execution_subset().unwrap();
     }
 
     #[test]
@@ -60068,13 +60090,7 @@ mod tests {
             version: Some(7),
             ..OpenSearchPutIndexTemplateRequestWire::default()
         };
-        assert!(matches!(
-            version.reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "put index template version",
-                ..
-            })
-        ));
+        version.validate_supported_execution_subset().unwrap();
     }
 
     #[test]
@@ -60096,7 +60112,7 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_put_index_template_transport_messages_bind_rejected_action_frame() {
+    fn opensearch_put_index_template_transport_messages_bind_action_frame_and_ack_response() {
         let request = OpenSearchPutIndexTemplateRequestWire::default();
         let mut frame = build_opensearch_put_index_template_request_message(
             62,
@@ -60111,15 +60127,25 @@ mod tests {
             read_opensearch_put_index_template_request_message(&message).unwrap(),
             request
         );
-        assert!(matches!(
-            read_opensearch_put_index_template_request_message(&message)
-                .unwrap()
-                .reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "put index template execution",
-                ..
-            })
-        ));
+        read_opensearch_put_index_template_request_message(&message)
+            .unwrap()
+            .validate_supported_execution_subset()
+            .unwrap();
+
+        let response = AcknowledgedResponseWire { acknowledged: true };
+        let mut frame = build_opensearch_put_index_template_response_message(
+            62,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &response,
+        )
+        .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected put index template response message");
+        };
+        assert_eq!(
+            read_opensearch_put_index_template_response_message(&message).unwrap(),
+            response
+        );
     }
 
     #[test]

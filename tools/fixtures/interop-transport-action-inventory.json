@@ -810,8 +810,8 @@
       "transport_action": "TransportPutIndexTemplateAction",
       "request_wire_type": "PutIndexTemplateRequest",
       "response_wire_type": "AcknowledgedResponse",
-      "disposition": "rejected",
-      "reason": "Put-index-template transport execution requires template metadata validation, mutation, and ack rendering before Steelsearch can serve OpenSearch legacy index-template writes."
+      "disposition": "implemented",
+      "reason": "Put-index-template transport adapter upserts the supported manifest-backed legacy template metadata subset and renders OpenSearch AcknowledgedResponse."
     },
     {
       "action_name": "indices:admin/template/delete",
