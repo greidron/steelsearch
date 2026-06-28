@@ -8209,6 +8209,16 @@ impl SteelNode {
             .lock()
             .expect("documents state lock poisoned");
         let mut response_docs = Vec::new();
+        let request_stored_fields = request
+            .query_params
+            .get("stored_fields")
+            .map(|fields| {
+                split_rest_csv_values(fields)
+                    .into_iter()
+                    .filter(|field| field != "_none_")
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
 
         if let Some(items) = payload.get("docs").and_then(Value::as_array) {
             for item in items {
@@ -8230,13 +8240,29 @@ impl SteelNode {
                     .map(ToOwned::to_owned)
                     .or_else(|| self.resolve_alias_read_routing(requested_index))
                     .unwrap_or_default();
-                response_docs.push(self.mget_doc_response(&docs, requested_index, id, &routing));
+                let stored_fields = item_obj
+                    .get("stored_fields")
+                    .map(stored_field_names_owned)
+                    .unwrap_or_else(|| request_stored_fields.clone());
+                response_docs.push(self.mget_doc_response(
+                    &docs,
+                    requested_index,
+                    id,
+                    &routing,
+                    &stored_fields,
+                ));
             }
         } else if let Some(ids) = payload.get("ids").and_then(Value::as_array) {
             let requested_index = target.unwrap_or("_all");
             for id_value in ids {
                 let id = id_value.as_str().unwrap_or_default();
-                response_docs.push(self.mget_doc_response(&docs, requested_index, id, ""));
+                response_docs.push(self.mget_doc_response(
+                    &docs,
+                    requested_index,
+                    id,
+                    "",
+                    &request_stored_fields,
+                ));
             }
         }
 
@@ -8249,22 +8275,13 @@ impl SteelNode {
         requested_index: &str,
         id: &str,
         routing: &str,
+        stored_fields: &[String],
     ) -> Value {
         let resolved_index = self.resolve_index_or_alias(requested_index);
         let key = format!("{resolved_index}:{id}:{routing}");
-        let record = docs.get(&key).or_else(|| {
-            if routing.is_empty() {
-                docs.iter()
-                    .find(|(candidate, _)| {
-                        candidate.starts_with(&format!("{resolved_index}:{id}:"))
-                    })
-                    .map(|(_, record)| record)
-            } else {
-                None
-            }
-        });
+        let record = docs.get(&key);
         if let Some(record) = record {
-            serde_json::json!({
+            let mut response = serde_json::json!({
                 "_index": self.write_response_index(requested_index, &resolved_index),
                 "_id": id,
                 "_version": record.version,
@@ -8272,7 +8289,13 @@ impl SteelNode {
                 "_primary_term": record.primary_term,
                 "found": true,
                 "_source": record.source
-            })
+            });
+            if stored_fields.iter().any(|field| field == "_routing") {
+                if let Some(routing) = record.routing.as_deref() {
+                    response["_routing"] = Value::String(routing.to_string());
+                }
+            }
+            response
         } else {
             serde_json::json!({
                 "_index": self.write_response_index(requested_index, &resolved_index),
@@ -16628,7 +16651,16 @@ impl SteelNode {
                 }),
             );
         }
-        if request.query_params.contains_key("stored_fields") {
+        let requested_stored_fields = request
+            .query_params
+            .get("stored_fields")
+            .map(|fields| split_rest_csv_values(fields))
+            .unwrap_or_default();
+        if !requested_stored_fields.is_empty()
+            && !requested_stored_fields
+                .iter()
+                .all(|field| field == "_routing")
+        {
             return RestResponse::json(
                 400,
                 serde_json::json!({
@@ -16656,26 +16688,25 @@ impl SteelNode {
             .query_params
             .get("realtime")
             .map_or(true, |value| value != "false");
-        let record = docs
-            .get(&key)
-            .or_else(|| {
-                if routing.is_empty() {
-                    docs.iter()
-                        .find(|(candidate, _)| {
-                            candidate.starts_with(&format!("{resolved_index}:{id}:"))
-                        })
-                        .map(|(_, record)| record)
-                } else {
-                    None
-                }
-            })
-            .filter(|record| realtime || record.refreshed);
+        let record = docs.get(&key).filter(|record| realtime || record.refreshed);
         if let Some(record) = record {
             let mut source = record.source.clone();
-            let include_source = request
+            let source_requested = request
                 .query_params
                 .get("_source")
-                .map_or(true, |value| value != "false");
+                .map_or(false, |value| value != "false")
+                || request.query_params.contains_key("_source_includes")
+                || request.query_params.contains_key("_source_include")
+                || request.query_params.contains_key("_source_excludes")
+                || request.query_params.contains_key("_source_exclude");
+            let include_source = if requested_stored_fields.is_empty() {
+                request
+                    .query_params
+                    .get("_source")
+                    .map_or(true, |value| value != "false")
+            } else {
+                source_requested
+            };
             if include_source {
                 if let Some(includes) = request
                     .query_params
@@ -16710,6 +16741,14 @@ impl SteelNode {
             });
             if include_source {
                 response["_source"] = source;
+            }
+            if requested_stored_fields
+                .iter()
+                .any(|field| field == "_routing")
+            {
+                if let Some(routing) = record.routing.as_deref() {
+                    response["_routing"] = Value::String(routing.to_string());
+                }
             }
             return RestResponse::json(200, response);
         }
@@ -24823,6 +24862,13 @@ fn stored_field_names(stored_fields: &Value) -> Vec<&str> {
     }
 }
 
+fn stored_field_names_owned(stored_fields: &Value) -> Vec<String> {
+    stored_field_names(stored_fields)
+        .into_iter()
+        .map(ToOwned::to_owned)
+        .collect()
+}
+
 fn validate_docvalue_fields_request_body(docvalue_fields: &Value) -> Option<RestResponse> {
     let Some(fields) = docvalue_fields.as_array() else {
         return Some(build_unsupported_search_response(
@@ -28020,7 +28066,8 @@ fn extract_sort_value(hit: &Value, field_name: &str) -> Value {
         return hit.get("_score").cloned().unwrap_or(Value::Null);
     }
     if field_name == "_shard_doc" {
-        return hit.get("_shard_doc")
+        return hit
+            .get("_shard_doc")
             .or_else(|| hit.get("_seq_no"))
             .cloned()
             .unwrap_or(Value::Null);
@@ -48427,6 +48474,77 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             wrong_routing.body["error"]["type"],
             "document_missing_exception"
         );
+    }
+
+    #[test]
+    fn routed_get_and_mget_stored_fields_surface_routing_meta_field() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, "/logs-routing-meta").with_json_body(
+                    serde_json::json!({
+                        "settings": {
+                            "index": {
+                                "number_of_shards": 5,
+                                "number_of_replicas": 0
+                            }
+                        }
+                    }),
+                ),
+            )
+            .status,
+            200
+        );
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, "/logs-routing-meta/_doc/1?routing=5")
+                    .with_json_body(serde_json::json!({
+                        "foo": "bar"
+                    })),
+            )
+            .status,
+            201
+        );
+
+        let routed_get = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/logs-routing-meta/_doc/1?routing=5&stored_fields=_routing",
+        ));
+        assert_eq!(routed_get.status, 200);
+        assert_eq!(routed_get.body["found"], Value::Bool(true));
+        assert_eq!(routed_get.body["_routing"], Value::String("5".to_string()));
+        assert!(routed_get.body.get("_source").is_none());
+
+        let missing_without_routing = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/logs-routing-meta/_doc/1",
+        ));
+        assert_eq!(missing_without_routing.status, 404);
+        assert_eq!(missing_without_routing.body["found"], Value::Bool(false));
+
+        let routed_mget = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/logs-routing-meta/_mget?stored_fields=_routing",
+            )
+            .with_json_body(serde_json::json!({
+                "docs": [
+                    { "_id": "1" },
+                    { "_id": "1", "routing": "4" },
+                    { "_id": "1", "routing": "5" }
+                ]
+            })),
+        );
+        assert_eq!(routed_mget.status, 200);
+        let docs = routed_mget.body["docs"].as_array().unwrap();
+        assert_eq!(docs[0]["found"], Value::Bool(false));
+        assert_eq!(docs[1]["found"], Value::Bool(false));
+        assert_eq!(docs[2]["found"], Value::Bool(true));
+        assert_eq!(docs[2]["_routing"], Value::String("5".to_string()));
     }
 
     #[test]

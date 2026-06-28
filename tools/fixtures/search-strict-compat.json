@@ -9675,6 +9675,162 @@
       "family": "misc",
       "description": "[misc] wildcard index read expansion",
       "strict_source_parity_required": true
+    },
+    {
+      "name": "get_routed_document_stored_fields_routing_meta",
+      "area": "document",
+      "extract": "get_document",
+      "compare_step": "get-routing-meta",
+      "steps": [
+        {
+          "name": "create-routing-meta-index",
+          "method": "PUT",
+          "path": "/logs-routing-meta-compat",
+          "expected_status": 200,
+          "body": {
+            "settings": {
+              "index": {
+                "number_of_shards": 5,
+                "number_of_replicas": 0
+              }
+            }
+          }
+        },
+        {
+          "name": "index-routed-doc",
+          "method": "PUT",
+          "path": "/logs-routing-meta-compat/_doc/1?routing=5",
+          "expected_status": 201,
+          "body": {
+            "foo": "bar"
+          }
+        },
+        {
+          "name": "refresh-routing-meta-index",
+          "method": "POST",
+          "path": "/logs-routing-meta-compat/_refresh",
+          "expected_status": 200
+        },
+        {
+          "name": "get-routing-meta",
+          "method": "GET",
+          "path": "/logs-routing-meta-compat/_doc/1?routing=5&stored_fields=_routing",
+          "expected_status": 200,
+          "extract": "get_document"
+        }
+      ],
+      "family": "document-routing",
+      "description": "[document-routing] get stored_fields _routing returns routing meta field",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "get_routed_document_without_routing_misses",
+      "area": "document",
+      "extract": "get_document",
+      "compare_step": "get-without-routing",
+      "steps": [
+        {
+          "name": "create-routing-miss-index",
+          "method": "PUT",
+          "path": "/logs-routing-miss-compat",
+          "expected_status": 200,
+          "body": {
+            "settings": {
+              "index": {
+                "number_of_shards": 5,
+                "number_of_replicas": 0
+              }
+            }
+          }
+        },
+        {
+          "name": "index-routed-doc",
+          "method": "PUT",
+          "path": "/logs-routing-miss-compat/_doc/1?routing=5",
+          "expected_status": 201,
+          "body": {
+            "foo": "bar"
+          }
+        },
+        {
+          "name": "refresh-routing-miss-index",
+          "method": "POST",
+          "path": "/logs-routing-miss-compat/_refresh",
+          "expected_status": 200
+        },
+        {
+          "name": "get-without-routing",
+          "method": "GET",
+          "path": "/logs-routing-miss-compat/_doc/1",
+          "expected_status": 404,
+          "extract": "get_document"
+        }
+      ],
+      "family": "document-routing",
+      "description": "[document-routing] get routed document without routing misses like OpenSearch",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "mget_routed_document_stored_fields_routing_meta",
+      "area": "document",
+      "extract": "mget_summary",
+      "compare_step": "mget-routing-meta",
+      "steps": [
+        {
+          "name": "create-mget-routing-meta-index",
+          "method": "PUT",
+          "path": "/logs-mget-routing-meta-compat",
+          "expected_status": 200,
+          "body": {
+            "settings": {
+              "index": {
+                "number_of_shards": 5,
+                "number_of_replicas": 0
+              }
+            }
+          }
+        },
+        {
+          "name": "index-routed-doc",
+          "method": "PUT",
+          "path": "/logs-mget-routing-meta-compat/_doc/1?routing=5",
+          "expected_status": 201,
+          "body": {
+            "foo": "bar"
+          }
+        },
+        {
+          "name": "refresh-mget-routing-meta-index",
+          "method": "POST",
+          "path": "/logs-mget-routing-meta-compat/_refresh",
+          "expected_status": 200
+        },
+        {
+          "name": "mget-routing-meta",
+          "method": "POST",
+          "path": "/logs-mget-routing-meta-compat/_mget?stored_fields=_routing",
+          "expected_status": 200,
+          "body": {
+            "docs": [
+              {
+                "_id": "1"
+              },
+              {
+                "_id": "1",
+                "routing": "4"
+              },
+              {
+                "_id": "1",
+                "routing": "5"
+              }
+            ]
+          },
+          "extract": "mget_summary"
+        }
+      ],
+      "family": "document-routing",
+      "description": "[document-routing] mget stored_fields _routing follows routed document lookup semantics",
+      "strict_source_parity_required": true
     }
   ],
   "requests": [
