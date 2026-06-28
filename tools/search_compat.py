@@ -1522,12 +1522,19 @@ def extract(kind: str, response: dict[str, Any]) -> Any:
             "bytes": body.get("bytes") if isinstance(body, dict) else None,
         }
     if kind == "single_doc_write_result":
+        get = body.get("get") if isinstance(body.get("get"), dict) else {}
         return {
             "status": response["status"],
             "_id": body.get("_id"),
             "result": body.get("result"),
             "_version": body.get("_version"),
             "forced_refresh": body.get("forced_refresh"),
+            "get_found": get.get("found"),
+            "get_seq_no": get.get("_seq_no"),
+            "get_primary_term": get.get("_primary_term"),
+            "get_source": get.get("_source"),
+            "get_fields": get.get("fields"),
+            "get_routing": get.get("_routing"),
         }
     if kind == "bulk_items":
         items = body.get("items") if isinstance(body, dict) else None
@@ -2253,11 +2260,30 @@ def extract(kind: str, response: dict[str, Any]) -> Any:
             lines = [line.strip() for line in (raw or "").splitlines() if line.strip()]
             fields = lines[0].split() if lines else []
             rows = [line.split() for line in lines[1:]]
-        return {
+        selected = {
             "status": response["status"],
             "fields": fields,
             "rows": rows,
         }
+        normalize_selected_column_values(
+            selected,
+            {
+                "ss",
+                "store.size",
+                "pri.ss",
+                "pri.store.size",
+                "cs",
+                "completion.size",
+                "pri.cs",
+                "pri.completion.size",
+                "sc",
+                "segments.count",
+                "pri.sc",
+                "pri.segments.count",
+            },
+            "<volatile>",
+        )
+        return selected
     if kind == "cat_pit_segments_selected_columns":
         selected = extract("cat_indices_selected_columns", response)
         normalize_selected_column_values(selected, {"id", "node_id", "nodeId"}, "<node-id>")

@@ -9952,6 +9952,82 @@
       "family": "document-stored-fields",
       "description": "[document-stored-fields] mget stored_fields returns fields and suppresses source unless requested",
       "strict_source_parity_required": true
+    },
+    {
+      "name": "update_source_filtering_get_response_parity",
+      "area": "document",
+      "extract": "single_doc_write_result",
+      "compare_step": "update-source-filter",
+      "steps": [
+        {
+          "name": "create-update-source-index",
+          "method": "PUT",
+          "path": "/logs-update-source-compat",
+          "expected_status": 200,
+          "body": {}
+        },
+        {
+          "name": "update-source-filter",
+          "method": "POST",
+          "path": "/logs-update-source-compat/_update/1?_source=foo",
+          "expected_status": 201,
+          "body": {
+            "doc": {
+              "foo": "baz"
+            },
+            "upsert": {
+              "foo": "bar",
+              "hidden": true
+            }
+          },
+          "extract": "single_doc_write_result"
+        }
+      ],
+      "family": "document-update",
+      "description": "[document-update] update _source selector returns filtered get source",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "update_stored_fields_rejected_parity",
+      "area": "document",
+      "extract": "status_only",
+      "compare_step": "update-stored-fields",
+      "steps": [
+        {
+          "name": "create-update-stored-fields-index",
+          "method": "PUT",
+          "path": "/logs-update-stored-fields-compat",
+          "expected_status": 200,
+          "body": {
+            "mappings": {
+              "properties": {
+                "foo": {
+                  "type": "keyword",
+                  "store": true
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "update-stored-fields",
+          "method": "POST",
+          "path": "/logs-update-stored-fields-compat/_update/1?stored_fields=foo",
+          "expected_status": 400,
+          "body": {
+            "doc": {
+              "foo": "baz"
+            },
+            "upsert": {
+              "foo": "bar"
+            }
+          },
+          "extract": "status_only"
+        }
+      ],
+      "family": "document-update",
+      "description": "[document-update] update rejects stored_fields query parameter like OpenSearch",
+      "strict_source_parity_required": true
     }
   ],
   "requests": [

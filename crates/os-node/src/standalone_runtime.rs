@@ -16821,6 +16821,56 @@ impl SteelNode {
             .map(|(_, record)| record)
     }
 
+    fn build_update_get_response(record: &StoredDocument, request: &RestRequest) -> Option<Value> {
+        if !request.query_params.contains_key("_source")
+            && !request.query_params.contains_key("_source_includes")
+            && !request.query_params.contains_key("_source_include")
+            && !request.query_params.contains_key("_source_excludes")
+            && !request.query_params.contains_key("_source_exclude")
+        {
+            return None;
+        }
+        if request
+            .query_params
+            .get("_source")
+            .is_some_and(|value| value == "false")
+        {
+            return None;
+        }
+
+        let mut body = serde_json::json!({});
+        if let Some(raw_source) = request.query_params.get("_source") {
+            let source_filter = match raw_source.as_str() {
+                "true" => Value::Bool(true),
+                "false" => Value::Bool(false),
+                _ => Value::String(raw_source.clone()),
+            };
+            body["_source"] = source_filter;
+        }
+        for (query_key, body_key) in [
+            ("_source_includes", "_source_includes"),
+            ("_source_include", "_source_includes"),
+            ("_source_excludes", "_source_excludes"),
+            ("_source_exclude", "_source_excludes"),
+        ] {
+            if let Some(raw) = request.query_params.get(query_key) {
+                body[body_key] = Value::String(raw.clone());
+            }
+        }
+
+        let mut get = serde_json::Map::new();
+        get.insert("found".to_string(), Value::Bool(true));
+        get.insert("_seq_no".to_string(), Value::from(record.seq_no));
+        get.insert(
+            "_primary_term".to_string(),
+            Value::from(record.primary_term),
+        );
+        if let Some(source) = search_source_projection(&record.source, &body) {
+            get.insert("_source".to_string(), source);
+        }
+        Some(Value::Object(get))
+    }
+
     fn handle_head_doc_route(&self, index: &str, id: &str, request: &RestRequest) -> RestResponse {
         let get_response = self.handle_get_doc_route(index, id, request);
         RestResponse::empty(get_response.status)
@@ -16994,6 +17044,16 @@ impl SteelNode {
         if let Some(response) = self.validate_single_doc_require_alias(index, request) {
             return response;
         }
+        let unsupported_fetch_params = request
+            .query_params
+            .keys()
+            .filter(|key| key.as_str() == "stored_fields" || key.as_str() == "fields")
+            .collect::<Vec<_>>();
+        if let Some(response) =
+            unrecognized_query_param_response_for_keys(request, &unsupported_fetch_params)
+        {
+            return response;
+        }
         let resolved_index = match self.resolve_write_target(index, false) {
             Ok(resolved_index) => resolved_index,
             Err(reason) => {
@@ -17110,39 +17170,44 @@ impl SteelNode {
                 merge_json_object(&mut updated_record.source, &doc_patch);
             }
             if detect_noop && updated_record.source == original_source {
-                return RestResponse::json(
-                    200,
-                    serde_json::json!({
-                        "_index": self.write_response_index(index, &resolved_index),
-                        "_id": id,
-                        "_version": updated_record.version,
-                        "result": "noop",
-                        "_seq_no": updated_record.seq_no,
-                        "_primary_term": updated_record.primary_term,
-                        "forced_refresh": forced_refresh,
-                    }),
-                );
+                let mut response = serde_json::json!({
+                    "_index": self.write_response_index(index, &resolved_index),
+                    "_id": id,
+                    "_version": updated_record.version,
+                    "result": "noop",
+                    "_seq_no": updated_record.seq_no,
+                    "_primary_term": updated_record.primary_term,
+                });
+                if forced_refresh {
+                    response["forced_refresh"] = Value::Bool(true);
+                }
+                if let Some(get) = SteelNode::build_update_get_response(&updated_record, request) {
+                    response["get"] = get;
+                }
+                return RestResponse::json(200, response);
             }
             let assigned_seq_no = self.allocate_seq_no(&resolved_index);
             updated_record.version += 1;
             updated_record.seq_no = assigned_seq_no as i64;
             updated_record.refreshed = forced_refresh;
             *record = Arc::new(updated_record.clone());
-            let response = RestResponse::json(
-                200,
-                serde_json::json!({
-                    "_index": self.write_response_index(index, &resolved_index),
-                    "_id": id,
-                    "_version": updated_record.version,
-                    "result": "updated",
-                    "_seq_no": updated_record.seq_no,
-                    "_primary_term": updated_record.primary_term,
-                    "forced_refresh": forced_refresh,
-                }),
-            );
+            let mut response = serde_json::json!({
+                "_index": self.write_response_index(index, &resolved_index),
+                "_id": id,
+                "_version": updated_record.version,
+                "result": "updated",
+                "_seq_no": updated_record.seq_no,
+                "_primary_term": updated_record.primary_term,
+            });
+            if forced_refresh {
+                response["forced_refresh"] = Value::Bool(true);
+            }
+            if let Some(get) = SteelNode::build_update_get_response(&updated_record, request) {
+                response["get"] = get;
+            }
             drop(docs);
             self.persist_shared_runtime_state_to_disk();
-            return response;
+            return RestResponse::json(200, response);
         }
         if scripted_upsert && script.is_some() {
             let assigned_seq_no = self.allocate_seq_no(&resolved_index);
@@ -17165,15 +17230,20 @@ impl SteelNode {
                 routing,
                 refreshed: forced_refresh,
             };
-            let response = serde_json::json!({
+            let mut response = serde_json::json!({
                 "_index": self.write_response_index(index, &resolved_index),
                 "_id": id,
                 "_version": 1,
                 "result": "created",
                 "_seq_no": record.seq_no,
                 "_primary_term": 1,
-                "forced_refresh": forced_refresh,
             });
+            if forced_refresh {
+                response["forced_refresh"] = Value::Bool(true);
+            }
+            if let Some(get) = SteelNode::build_update_get_response(&record, request) {
+                response["get"] = get;
+            }
             docs.insert(key, Arc::new(record));
             drop(docs);
             self.persist_shared_runtime_state_to_disk();
@@ -17190,15 +17260,20 @@ impl SteelNode {
                 routing,
                 refreshed: forced_refresh,
             };
-            let response = serde_json::json!({
+            let mut response = serde_json::json!({
                 "_index": self.write_response_index(index, &resolved_index),
                 "_id": id,
                 "_version": 1,
                 "result": "created",
                 "_seq_no": record.seq_no,
                 "_primary_term": 1,
-                "forced_refresh": forced_refresh,
             });
+            if forced_refresh {
+                response["forced_refresh"] = Value::Bool(true);
+            }
+            if let Some(get) = SteelNode::build_update_get_response(&record, request) {
+                response["get"] = get;
+            }
             docs.insert(key, Arc::new(record));
             drop(docs);
             self.persist_shared_runtime_state_to_disk();
@@ -48218,12 +48293,33 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(scripted.body["_version"], 2);
         assert_eq!(scripted.body["forced_refresh"], Value::Bool(true));
 
+        let update_with_source = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/logs-update-probe/_update/doc-1?_source=processed&refresh=true",
+            )
+            .with_json_body(serde_json::json!({
+                "doc": {
+                    "processed": false,
+                    "visible": true
+                }
+            })),
+        );
+        assert_eq!(update_with_source.status, 200);
+        assert_eq!(update_with_source.body["result"], "updated");
+        assert_eq!(
+            update_with_source.body["get"]["_source"],
+            serde_json::json!({
+                "processed": false
+            })
+        );
+
         let updated = node.handle_rest_request(RestRequest::new(
             RestMethod::Get,
             "/logs-update-probe/_doc/doc-1?realtime=false",
         ));
         assert_eq!(updated.status, 200);
-        assert_eq!(updated.body["_source"]["processed"], Value::Bool(true));
+        assert_eq!(updated.body["_source"]["processed"], Value::Bool(false));
 
         let plain_upsert = node.handle_rest_request(
             RestRequest::new(
@@ -48254,6 +48350,45 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 "message": "plain-upsert",
                 "level": "notice"
             })
+        );
+
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, "/logs-update-stored-fields").with_json_body(
+                    serde_json::json!({
+                        "mappings": {
+                            "properties": {
+                                "foo": { "type": "keyword", "store": true }
+                            }
+                        }
+                    }),
+                ),
+            )
+            .status,
+            200
+        );
+        let update_with_stored_fields = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/logs-update-stored-fields/_update/doc-1?stored_fields=foo",
+            )
+            .with_json_body(serde_json::json!({
+                "doc": {
+                    "foo": "baz"
+                },
+                "upsert": {
+                    "foo": "bar"
+                }
+            })),
+        );
+        assert_eq!(update_with_stored_fields.status, 400);
+        assert_eq!(
+            update_with_stored_fields.body["error"]["type"],
+            "illegal_argument_exception"
+        );
+        assert_eq!(
+            update_with_stored_fields.body["error"]["reason"],
+            "request [/logs-update-stored-fields/_update/doc-1] contains unrecognized parameter: [stored_fields]"
         );
     }
 
