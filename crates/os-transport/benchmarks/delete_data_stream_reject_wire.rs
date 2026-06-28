@@ -15,19 +15,15 @@ const ITERATIONS: usize = 400_000;
 fn main() {
     let request = OpenSearchDeleteDataStreamRequestWire::default();
 
-    let request_encode = measure(
-        "delete_data_stream_reject_request_encode",
-        ITERATIONS,
-        || {
-            let frame = build_opensearch_delete_data_stream_request_message(
-                79,
-                OPENSEARCH_3_7_0_TRANSPORT,
-                black_box(&request),
-            )
-            .expect("delete-data-stream request encode should succeed");
-            black_box(frame);
-        },
-    );
+    let request_encode = measure("delete_data_stream_request_encode", ITERATIONS, || {
+        let frame = build_opensearch_delete_data_stream_request_message(
+            79,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            black_box(&request),
+        )
+        .expect("delete-data-stream request encode should succeed");
+        black_box(frame);
+    });
 
     let request_frame = build_opensearch_delete_data_stream_request_message(
         79,
@@ -36,27 +32,23 @@ fn main() {
     )
     .expect("delete-data-stream request encode should succeed");
 
-    let request_decode = measure(
-        "delete_data_stream_reject_request_decode",
-        ITERATIONS,
-        || {
-            let mut frame = black_box(request_frame.clone());
-            let message = decode_message(&mut frame);
-            let decoded = read_opensearch_delete_data_stream_request_message(black_box(&message))
-                .expect("delete-data-stream request decode");
-            black_box(decoded);
-        },
-    );
-
-    let reject_validate = measure("delete_data_stream_reject_validation", ITERATIONS, || {
+    let request_decode = measure("delete_data_stream_request_decode", ITERATIONS, || {
         let mut frame = black_box(request_frame.clone());
         let message = decode_message(&mut frame);
         let decoded = read_opensearch_delete_data_stream_request_message(black_box(&message))
             .expect("delete-data-stream request decode");
-        let err = decoded
-            .reject_unsupported_execution()
-            .expect_err("delete-data-stream execution should reject");
-        black_box(err);
+        black_box(decoded);
+    });
+
+    let request_validate = measure("delete_data_stream_request_validate", ITERATIONS, || {
+        let mut frame = black_box(request_frame.clone());
+        let message = decode_message(&mut frame);
+        let decoded = read_opensearch_delete_data_stream_request_message(black_box(&message))
+            .expect("delete-data-stream request decode");
+        decoded
+            .validate_supported_execution_subset()
+            .expect("delete-data-stream request subset should validate");
+        black_box(decoded);
     });
 
     let response = AcknowledgedResponseWire { acknowledged: true };
@@ -78,11 +70,9 @@ fn main() {
     let combined_ops_per_second = request_encode
         .ops_per_second
         .min(request_decode.ops_per_second)
-        .min(reject_validate.ops_per_second)
+        .min(request_validate.ops_per_second)
         .min(response_decode.ops_per_second);
-    println!(
-        "delete_data_stream_reject_wire_bottleneck_ops_per_second={combined_ops_per_second:.2}"
-    );
+    println!("delete_data_stream_wire_bottleneck_ops_per_second={combined_ops_per_second:.2}");
 }
 
 #[derive(Clone, Copy)]

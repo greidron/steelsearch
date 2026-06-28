@@ -287,8 +287,8 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `indices:monitor/segments` (implemented local empty-segments subset)
 - `indices:monitor/point_in_time/segments` (implemented `_all` and explicit-id empty PIT-segments subset)
 - `indices:monitor/shard_stores` (implemented local empty-shard-stores subset)
-- `indices:admin/data_stream/create` (rejected fail-closed)
-- `indices:admin/data_stream/delete` (rejected fail-closed)
+- `indices:admin/data_stream/create` (implemented manifest-backed metadata mutation subset)
+- `indices:admin/data_stream/delete` (implemented manifest-backed metadata mutation subset)
 - `indices:admin/data_stream/get` (implemented empty data-stream list subset)
 - `indices:monitor/data_stream/stats` (implemented empty data-stream-stats subset)
 - `indices:admin/resolve/index` (implemented manifest-backed index abstraction
@@ -1891,12 +1891,12 @@ The create-data-stream boundary covers:
   decode/build layer;
 - OpenSearch `AcknowledgedResponse` decode/build for the create-data-stream
   response acknowledgement bit;
-- explicit fail-closed classification for
-  `indices:admin/data_stream/create` until data-stream template resolution,
-  backing index creation, timestamp mapping validation, cluster metadata
-  mutation, and ack rendering are implemented;
+- implemented manifest-backed metadata mutation for default-timeout create
+  requests, creating the data-stream entry plus the first `.ds-...-000001`
+  backing index with an `@timestamp` mapping and rendering an acknowledged
+  response;
 - explicit rejection for custom cluster-manager timeouts, custom
-  acknowledgement timeouts, missing names, and create-data-stream execution.
+  acknowledgement timeouts, and missing names.
 
 The delete-data-stream boundary covers:
 
@@ -1904,12 +1904,12 @@ The delete-data-stream boundary covers:
   timeout, and data-stream names array at the wire decode/build layer;
 - OpenSearch `AcknowledgedResponse` decode/build for the delete-data-stream
   response acknowledgement bit;
-- explicit fail-closed classification for `indices:admin/data_stream/delete`
-  until data-stream name/wildcard resolution, snapshot-in-progress protection,
-  backing index deletion, cluster metadata mutation, and ack rendering are
-  implemented;
+- implemented manifest-backed exact and wildcard data-stream deletion,
+  removing data-stream metadata, backing index metadata, matching transport
+  documents, and stale local PIT contexts before rendering an acknowledged
+  response;
 - explicit rejection for custom cluster-manager timeouts, missing name arrays,
-  blank names, and delete-data-stream execution.
+  and blank names.
 
 The get-data-stream boundary covers:
 
@@ -4762,41 +4762,43 @@ open/closed index options, and an empty `IndicesShardStoresResponse`. At roughly
 1.57M ops/s in the latest local release run, it does not expose a material
 response-codec bottleneck.
 
-Current create-data-stream reject wire microbenchmark:
+Current create-data-stream implemented-path wire microbenchmark:
 
 ```text
-cargo run -p os-transport --release --bin create-data-stream-reject-wire-benchmark
-create_data_stream_reject_request_encode iterations=400000 elapsed_ms=245.702 ops_per_second=1627991.54 nanos_per_op=614.25
-create_data_stream_reject_request_decode iterations=400000 elapsed_ms=241.485 ops_per_second=1656419.48 nanos_per_op=603.71
-create_data_stream_reject_validation iterations=400000 elapsed_ms=246.132 ops_per_second=1625143.93 nanos_per_op=615.33
-create_data_stream_ack_response_decode iterations=400000 elapsed_ms=53.899 ops_per_second=7421349.92 nanos_per_op=134.75
-create_data_stream_reject_wire_bottleneck_ops_per_second=1625143.93
+cargo run -p os-transport --release --bin create-data-stream-wire-benchmark
+create_data_stream_request_encode iterations=400000 elapsed_ms=248.504 ops_per_second=1609631.49 nanos_per_op=621.26
+create_data_stream_request_decode iterations=400000 elapsed_ms=240.746 ops_per_second=1661500.72 nanos_per_op=601.87
+create_data_stream_request_validate iterations=400000 elapsed_ms=243.969 ops_per_second=1639553.90 nanos_per_op=609.92
+create_data_stream_ack_response_decode iterations=400000 elapsed_ms=54.157 ops_per_second=7385966.90 nanos_per_op=135.39
+create_data_stream_wire_bottleneck_ops_per_second=1609631.49
 ```
 
-The current create-data-stream fail-closed boundary bottleneck is validation.
+The current create-data-stream implemented-path wire bottleneck is request
+encode.
 The request path carries the acknowledged cluster-manager envelope and
-data-stream name before rejecting execution. At roughly 1.63M ops/s in the
-latest local release run, current overhead is transport decode plus validation.
-Future performance-sensitive work is template resolution, backing index
-creation, timestamp mapping validation, metadata mutation, and ack rendering.
+data-stream name before admitting the manifest-backed metadata mutation subset.
+At roughly 1.61M ops/s in the latest local release run, current wire overhead
+is lower than the runtime work expected from metadata locking, backing-index
+allocation, and manifest mutation.
 
-Current delete-data-stream reject wire microbenchmark:
+Current delete-data-stream implemented-path wire microbenchmark:
 
 ```text
-cargo run -p os-transport --release --bin delete-data-stream-reject-wire-benchmark
-delete_data_stream_reject_request_encode iterations=400000 elapsed_ms=281.252 ops_per_second=1422212.44 nanos_per_op=703.13
-delete_data_stream_reject_request_decode iterations=400000 elapsed_ms=245.206 ops_per_second=1631280.42 nanos_per_op=613.02
-delete_data_stream_reject_validation iterations=400000 elapsed_ms=251.714 ops_per_second=1589108.03 nanos_per_op=629.28
-delete_data_stream_ack_response_decode iterations=400000 elapsed_ms=54.800 ops_per_second=7299318.29 nanos_per_op=137.00
-delete_data_stream_reject_wire_bottleneck_ops_per_second=1422212.44
+cargo run -p os-transport --release --bin delete-data-stream-wire-benchmark
+delete_data_stream_request_encode iterations=400000 elapsed_ms=247.767 ops_per_second=1614420.81 nanos_per_op=619.42
+delete_data_stream_request_decode iterations=400000 elapsed_ms=249.995 ops_per_second=1600029.33 nanos_per_op=624.99
+delete_data_stream_request_validate iterations=400000 elapsed_ms=455.338 ops_per_second=878467.90 nanos_per_op=1138.35
+delete_data_stream_ack_response_decode iterations=400000 elapsed_ms=80.237 ops_per_second=4985248.46 nanos_per_op=200.59
+delete_data_stream_wire_bottleneck_ops_per_second=878467.90
 ```
 
-The current delete-data-stream fail-closed boundary bottleneck is request
-encode. The request path carries the cluster-manager envelope and data-stream
-name array before rejecting execution. At roughly 1.42M ops/s in the latest
-local release run, current overhead is still wire-codec dominated. Future
-performance-sensitive work is name/wildcard resolution, snapshot-in-progress
-protection, backing index deletion, metadata mutation, and ack rendering.
+The current delete-data-stream implemented-path wire bottleneck is validation.
+The request path carries the cluster-manager envelope and data-stream name
+array before admitting exact/wildcard manifest-backed deletion. At roughly
+0.88M ops/s in the latest local release run, the first performance point to
+inspect is repeated timeout and names-array validation before the runtime path
+reaches wildcard metadata scans, backing-index document removal, and stale
+PIT-context pruning.
 
 Current get-data-stream implemented-path wire microbenchmark:
 

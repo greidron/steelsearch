@@ -1849,6 +1849,60 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end,
             &mut connection_end_at_ms,
         )?;
+    } else if is_request
+        && normalized_action_hint == Some("indices:admin/data_stream/create")
+        && create_data_stream_request_supports_manifest_execution_subset(&body)
+    {
+        let response =
+            build_local_create_data_stream_response(request_id, header_version_id, &body);
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("indices:admin/data_stream/create"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request
+        && normalized_action_hint == Some("indices:admin/data_stream/delete")
+        && delete_data_stream_request_supports_manifest_execution_subset(&body)
+    {
+        let response =
+            build_local_delete_data_stream_response(request_id, header_version_id, &body);
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("indices:admin/data_stream/delete"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
     } else if is_request && normalized_action_hint == Some("indices:admin/data_stream/get") {
         let response = build_empty_get_data_stream_response(request_id, header_version_id);
         response_frame = summarize_transport_response_frame_for_action(
@@ -6555,6 +6609,231 @@ fn build_empty_indices_shard_stores_response(request_id: i64, header_version_id:
     )
     .map(|frame| frame.to_vec())
     .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
+}
+
+fn build_local_create_data_stream_response(
+    request_id: i64,
+    header_version_id: u32,
+    body: &[u8],
+) -> Vec<u8> {
+    let Some(request) = decode_create_data_stream_request_from_transport_body(body) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    if request.validate_supported_execution_subset().is_err() {
+        return build_empty_transport_response(request_id, header_version_id);
+    }
+    apply_manifest_create_data_stream(request.name.as_str());
+    build_acknowledged_data_stream_response(
+        request_id,
+        header_version_id,
+        true,
+        os_transport::action::build_opensearch_create_data_stream_response_message,
+    )
+}
+
+fn create_data_stream_request_supports_manifest_execution_subset(body: &[u8]) -> bool {
+    decode_create_data_stream_request_from_transport_body(body)
+        .is_some_and(|request| request.validate_supported_execution_subset().is_ok())
+}
+
+fn decode_create_data_stream_request_from_transport_body(
+    body: &[u8],
+) -> Option<os_transport::action::OpenSearchCreateDataStreamRequestWire> {
+    let message = decode_transport_message_from_body(body)?;
+    os_transport::action::read_opensearch_create_data_stream_request_message(&message).ok()
+}
+
+fn build_local_delete_data_stream_response(
+    request_id: i64,
+    header_version_id: u32,
+    body: &[u8],
+) -> Vec<u8> {
+    let Some(request) = decode_delete_data_stream_request_from_transport_body(body) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    if request.validate_supported_execution_subset().is_err() {
+        return build_empty_transport_response(request_id, header_version_id);
+    }
+    apply_manifest_delete_data_streams(&request.names);
+    build_acknowledged_data_stream_response(
+        request_id,
+        header_version_id,
+        true,
+        os_transport::action::build_opensearch_delete_data_stream_response_message,
+    )
+}
+
+fn delete_data_stream_request_supports_manifest_execution_subset(body: &[u8]) -> bool {
+    decode_delete_data_stream_request_from_transport_body(body)
+        .is_some_and(|request| request.validate_supported_execution_subset().is_ok())
+}
+
+fn decode_delete_data_stream_request_from_transport_body(
+    body: &[u8],
+) -> Option<os_transport::action::OpenSearchDeleteDataStreamRequestWire> {
+    let message = decode_transport_message_from_body(body)?;
+    os_transport::action::read_opensearch_delete_data_stream_request_message(&message).ok()
+}
+
+fn build_acknowledged_data_stream_response(
+    request_id: i64,
+    header_version_id: u32,
+    acknowledged: bool,
+    builder: fn(
+        i64,
+        Version,
+        &os_transport::action::AcknowledgedResponseWire,
+    ) -> Result<BytesMut, os_transport::action::TransportActionWireError>,
+) -> Vec<u8> {
+    builder(
+        request_id,
+        Version::from_id(header_version_id as i32),
+        &os_transport::action::AcknowledgedResponseWire { acknowledged },
+    )
+    .map(|frame| frame.to_vec())
+    .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
+}
+
+fn apply_manifest_create_data_stream(name: &str) {
+    let backing_index = format!(".ds-{name}-000001");
+    let bindings = dev_transport_pit_bindings();
+    {
+        let mut manifest = bindings
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned");
+        ensure_manifest_object(&mut manifest, "indices")
+            .entry(backing_index.clone())
+            .or_insert_with(|| {
+                serde_json::json!({
+                    "settings": {
+                        "index": {
+                            "number_of_shards": "1",
+                            "uuid": format!("{backing_index}-uuid")
+                        }
+                    },
+                    "mappings": {
+                        "properties": {
+                            "@timestamp": { "type": "date" }
+                        }
+                    },
+                    "data_stream": name
+                })
+            });
+        ensure_manifest_object(&mut manifest, "data_streams")
+            .entry(name.to_string())
+            .or_insert_with(|| {
+                serde_json::json!({
+                    "backing_indices": [backing_index],
+                    "timestamp_field": "@timestamp"
+                })
+            });
+    }
+    bindings
+        .created_indices
+        .lock()
+        .expect("dev transport created indices lock poisoned")
+        .insert(backing_index);
+}
+
+fn apply_manifest_delete_data_streams(names: &[String]) {
+    let bindings = dev_transport_pit_bindings();
+    let removed_backing_indices = {
+        let mut manifest = bindings
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned");
+        let data_stream_names = manifest
+            .get("data_streams")
+            .and_then(Value::as_object)
+            .map(|data_streams| {
+                data_streams
+                    .keys()
+                    .filter(|data_stream| {
+                        names.iter().any(|selector| {
+                            selector == *data_stream || wildcard_match(selector, data_stream)
+                        })
+                    })
+                    .cloned()
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        let mut backing_indices = Vec::new();
+        if let Some(data_streams) = manifest
+            .get_mut("data_streams")
+            .and_then(Value::as_object_mut)
+        {
+            for data_stream_name in data_stream_names {
+                if let Some(data_stream) = data_streams.remove(&data_stream_name) {
+                    backing_indices.extend(data_stream_backing_indices(&data_stream));
+                }
+            }
+        }
+        if let Some(indices) = manifest.get_mut("indices").and_then(Value::as_object_mut) {
+            for backing_index in &backing_indices {
+                indices.remove(backing_index);
+            }
+        }
+        backing_indices
+    };
+    if removed_backing_indices.is_empty() {
+        return;
+    }
+    let removed = removed_backing_indices
+        .iter()
+        .cloned()
+        .collect::<BTreeSet<_>>();
+    bindings
+        .created_indices
+        .lock()
+        .expect("dev transport created indices lock poisoned")
+        .retain(|index| !removed.contains(index));
+    bindings
+        .documents
+        .lock()
+        .expect("dev transport documents lock poisoned")
+        .retain(|key, _| {
+            key.split_once(':')
+                .map_or(true, |(index, _)| !removed.contains(index))
+        });
+    bindings
+        .contexts
+        .lock()
+        .expect("dev transport PIT contexts lock poisoned")
+        .retain(|_, context| !context.indices.iter().any(|index| removed.contains(index)));
+}
+
+fn ensure_manifest_object<'a>(
+    manifest: &'a mut Value,
+    key: &str,
+) -> &'a mut serde_json::Map<String, Value> {
+    if !manifest.is_object() {
+        *manifest = serde_json::json!({});
+    }
+    let object = manifest.as_object_mut().expect("manifest object");
+    object
+        .entry(key.to_string())
+        .or_insert_with(|| serde_json::json!({}));
+    object
+        .get_mut(key)
+        .and_then(Value::as_object_mut)
+        .expect("manifest section object")
+}
+
+fn data_stream_backing_indices(data_stream: &Value) -> Vec<String> {
+    data_stream
+        .get("backing_indices")
+        .or_else(|| data_stream.get("backingIndices"))
+        .or_else(|| data_stream.get("indices"))
+        .and_then(Value::as_array)
+        .map(|indices| {
+            indices
+                .iter()
+                .filter_map(Value::as_str)
+                .map(ToOwned::to_owned)
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 fn build_empty_get_data_stream_response(request_id: i64, header_version_id: u32) -> Vec<u8> {
@@ -14220,6 +14499,24 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
             request_id,
             header_version_id,
         )),
+        Some("indices:admin/data_stream/create")
+            if create_data_stream_request_supports_manifest_execution_subset(body) =>
+        {
+            Some(build_local_create_data_stream_response(
+                request_id,
+                header_version_id,
+                body,
+            ))
+        }
+        Some("indices:admin/data_stream/delete")
+            if delete_data_stream_request_supports_manifest_execution_subset(body) =>
+        {
+            Some(build_local_delete_data_stream_response(
+                request_id,
+                header_version_id,
+                body,
+            ))
+        }
         Some("indices:admin/data_stream/get") => Some(build_empty_get_data_stream_response(
             request_id,
             header_version_id,
@@ -20413,6 +20710,145 @@ mod tests {
                 &transport_identity
             )
         );
+    }
+
+    #[test]
+    fn data_stream_create_and_delete_transport_routes_mutate_manifest_backed_metadata() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        let bindings = dev_transport_pit_bindings();
+        bindings
+            .created_indices
+            .lock()
+            .expect("dev transport created indices lock poisoned")
+            .clear();
+        bindings
+            .documents
+            .lock()
+            .expect("dev transport documents lock poisoned")
+            .clear();
+        bindings
+            .contexts
+            .lock()
+            .expect("dev transport PIT contexts lock poisoned")
+            .clear();
+        *bindings
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned") = serde_json::json!({
+            "indices": {},
+            "data_streams": {}
+        });
+
+        let create_request = os_transport::action::OpenSearchCreateDataStreamRequestWire {
+            name: "logs-transport-ds".to_string(),
+            ..os_transport::action::OpenSearchCreateDataStreamRequestWire::default()
+        };
+        let frame = os_transport::action::build_opensearch_create_data_stream_request_message(
+            198,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &create_request,
+        )
+        .unwrap();
+        assert!(create_data_stream_request_supports_manifest_execution_subset(&frame[6..]));
+        let response = build_local_create_data_stream_response(
+            198,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &frame[6..],
+        );
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected create-data-stream response message");
+        };
+        assert_eq!(message.request_id, 198);
+        assert_eq!(
+            os_transport::action::read_opensearch_create_data_stream_response_message(&message)
+                .unwrap(),
+            os_transport::action::AcknowledgedResponseWire { acknowledged: true }
+        );
+        {
+            let manifest = bindings
+                .metadata_manifest
+                .lock()
+                .expect("dev transport metadata manifest lock poisoned");
+            assert!(manifest["data_streams"]["logs-transport-ds"].is_object());
+            assert!(manifest["indices"][".ds-logs-transport-ds-000001"].is_object());
+            assert_eq!(
+                resolve_index_response_from_metadata_manifest(
+                    &manifest,
+                    &os_transport::action::OpenSearchResolveIndexRequestWire {
+                        names: vec!["logs-transport-ds".to_string()],
+                        ..os_transport::action::OpenSearchResolveIndexRequestWire::default()
+                    },
+                )
+                .data_streams
+                .len(),
+                1
+            );
+        }
+
+        bindings
+            .documents
+            .lock()
+            .expect("dev transport documents lock poisoned")
+            .insert(
+                ".ds-logs-transport-ds-000001:doc-1:".to_string(),
+                StoredDocument {
+                    source: serde_json::json!({ "@timestamp": "2026-06-28T00:00:00Z" }),
+                    version: 1,
+                    seq_no: 1,
+                    primary_term: 1,
+                    routing: None,
+                    refreshed: true,
+                }
+                .into(),
+            );
+
+        let delete_request = os_transport::action::OpenSearchDeleteDataStreamRequestWire {
+            names: vec!["logs-transport-*".to_string()],
+            ..os_transport::action::OpenSearchDeleteDataStreamRequestWire::default()
+        };
+        let frame = os_transport::action::build_opensearch_delete_data_stream_request_message(
+            199,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &delete_request,
+        )
+        .unwrap();
+        assert!(delete_data_stream_request_supports_manifest_execution_subset(&frame[6..]));
+        let response = build_local_delete_data_stream_response(
+            199,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &frame[6..],
+        );
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected delete-data-stream response message");
+        };
+        assert_eq!(
+            os_transport::action::read_opensearch_delete_data_stream_response_message(&message)
+                .unwrap(),
+            os_transport::action::AcknowledgedResponseWire { acknowledged: true }
+        );
+        let manifest = bindings
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned");
+        assert!(manifest["data_streams"]["logs-transport-ds"].is_null());
+        assert!(manifest["indices"][".ds-logs-transport-ds-000001"].is_null());
+        assert!(bindings
+            .documents
+            .lock()
+            .expect("dev transport documents lock poisoned")
+            .is_empty());
     }
 
     #[test]

@@ -488,11 +488,11 @@ name = "indices-shard-stores-wire-benchmark"
 path = "benchmarks/indices_shard_stores_wire.rs"
 
 [[bin]]
-name = "create-data-stream-reject-wire-benchmark"
+name = "create-data-stream-wire-benchmark"
 path = "benchmarks/create_data_stream_reject_wire.rs"
 
 [[bin]]
-name = "delete-data-stream-reject-wire-benchmark"
+name = "delete-data-stream-wire-benchmark"
 path = "benchmarks/delete_data_stream_reject_wire.rs"
 
 [[bin]]

@@ -2286,13 +2286,13 @@ pub fn classify_opensearch_transport_action(
         },
         OPENSEARCH_CREATE_DATA_STREAM_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
-            disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "create-data-stream transport execution requires template resolution, backing index creation, timestamp mapping validation, metadata mutation, and ack rendering",
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "create-data-stream transport adapter mutates manifest-backed data-stream metadata and renders OpenSearch AcknowledgedResponse",
         },
         OPENSEARCH_DELETE_DATA_STREAM_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
-            disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "delete-data-stream transport execution requires data-stream name/wildcard resolution, snapshot-in-progress protection, backing index deletion, metadata mutation, and ack rendering",
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "delete-data-stream transport adapter removes manifest-backed data-stream metadata and backing indices and renders OpenSearch AcknowledgedResponse",
         },
         OPENSEARCH_GET_DATA_STREAM_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -25286,7 +25286,7 @@ impl OpenSearchCreateDataStreamRequestWire {
         })
     }
 
-    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+    pub fn validate_supported_execution_subset(&self) -> Result<(), TransportActionWireError> {
         if self.cluster_manager_timeout != TimeValueWire::seconds(30) {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "create data stream cluster-manager timeout",
@@ -25305,9 +25305,14 @@ impl OpenSearchCreateDataStreamRequestWire {
                 reason: "OpenSearch create-data-stream requests require a data-stream name",
             });
         }
+        Ok(())
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        self.validate_supported_execution_subset()?;
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "create data stream execution",
-            reason: "create-data-stream transport execution requires template resolution, backing index creation, timestamp mapping validation, metadata mutation, and ack rendering",
+            reason: "use validate_supported_execution_subset for the implemented manifest-backed create-data-stream adapter",
         })
     }
 }
@@ -25352,7 +25357,7 @@ impl OpenSearchDeleteDataStreamRequestWire {
         })
     }
 
-    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+    pub fn validate_supported_execution_subset(&self) -> Result<(), TransportActionWireError> {
         if self.cluster_manager_timeout != TimeValueWire::seconds(30) {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "delete data stream cluster-manager timeout",
@@ -25372,9 +25377,14 @@ impl OpenSearchDeleteDataStreamRequestWire {
                 reason: "blank data-stream names are not valid delete-data-stream request targets",
             });
         }
+        Ok(())
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        self.validate_supported_execution_subset()?;
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "delete data stream execution",
-            reason: "delete-data-stream transport execution requires data-stream name/wildcard resolution, snapshot-in-progress protection, backing index deletion, metadata mutation, and ack rendering",
+            reason: "use validate_supported_execution_subset for the implemented manifest-backed delete-data-stream adapter",
         })
     }
 }
@@ -46743,12 +46753,12 @@ mod tests {
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_CREATE_DATA_STREAM_ACTION_NAME)
                 .disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_DELETE_DATA_STREAM_ACTION_NAME)
                 .disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_GET_DATA_STREAM_ACTION_NAME)
@@ -65663,7 +65673,7 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_create_data_stream_request_wire_round_trips_and_rejects_execution_boundary() {
+    fn opensearch_create_data_stream_request_wire_round_trips_and_validates_execution_subset() {
         let request = OpenSearchCreateDataStreamRequestWire::default();
         let mut output = StreamOutput::new();
         request.write(&mut output);
@@ -65671,13 +65681,7 @@ mod tests {
         let decoded = OpenSearchCreateDataStreamRequestWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, request);
         assert_eq!(decoded.name, "logs-app");
-        assert!(matches!(
-            decoded.reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "create data stream execution",
-                ..
-            })
-        ));
+        decoded.validate_supported_execution_subset().unwrap();
     }
 
     #[test]
@@ -65720,8 +65724,7 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_create_data_stream_transport_messages_bind_rejected_action_frame_and_ack_response(
-    ) {
+    fn opensearch_create_data_stream_transport_messages_bind_action_frame_and_ack_response() {
         let request = OpenSearchCreateDataStreamRequestWire::default();
         let mut frame = build_opensearch_create_data_stream_request_message(
             78,
@@ -65736,21 +65739,16 @@ mod tests {
             classify_opensearch_transport_request_message(&message)
                 .unwrap()
                 .disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             read_opensearch_create_data_stream_request_message(&message).unwrap(),
             request
         );
-        assert!(matches!(
-            read_opensearch_create_data_stream_request_message(&message)
-                .unwrap()
-                .reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "create data stream execution",
-                ..
-            })
-        ));
+        read_opensearch_create_data_stream_request_message(&message)
+            .unwrap()
+            .validate_supported_execution_subset()
+            .unwrap();
 
         let response = AcknowledgedResponseWire { acknowledged: true };
         let mut frame = build_opensearch_create_data_stream_response_message(
@@ -65769,7 +65767,7 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_delete_data_stream_request_wire_round_trips_and_rejects_execution_boundary() {
+    fn opensearch_delete_data_stream_request_wire_round_trips_and_validates_execution_subset() {
         let request = OpenSearchDeleteDataStreamRequestWire::default();
         let mut output = StreamOutput::new();
         request.write(&mut output);
@@ -65777,25 +65775,13 @@ mod tests {
         let decoded = OpenSearchDeleteDataStreamRequestWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, request);
         assert_eq!(decoded.names, vec!["logs-app".to_string()]);
-        assert!(matches!(
-            decoded.reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "delete data stream execution",
-                ..
-            })
-        ));
+        decoded.validate_supported_execution_subset().unwrap();
 
         let wildcard = OpenSearchDeleteDataStreamRequestWire {
             names: vec!["logs-*".to_string()],
             ..OpenSearchDeleteDataStreamRequestWire::default()
         };
-        assert!(matches!(
-            wildcard.reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "delete data stream execution",
-                ..
-            })
-        ));
+        wildcard.validate_supported_execution_subset().unwrap();
     }
 
     #[test]
@@ -65838,8 +65824,7 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_delete_data_stream_transport_messages_bind_rejected_action_frame_and_ack_response(
-    ) {
+    fn opensearch_delete_data_stream_transport_messages_bind_action_frame_and_ack_response() {
         let request = OpenSearchDeleteDataStreamRequestWire::default();
         let mut frame = build_opensearch_delete_data_stream_request_message(
             79,
@@ -65854,21 +65839,16 @@ mod tests {
             classify_opensearch_transport_request_message(&message)
                 .unwrap()
                 .disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             read_opensearch_delete_data_stream_request_message(&message).unwrap(),
             request
         );
-        assert!(matches!(
-            read_opensearch_delete_data_stream_request_message(&message)
-                .unwrap()
-                .reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "delete data stream execution",
-                ..
-            })
-        ));
+        read_opensearch_delete_data_stream_request_message(&message)
+            .unwrap()
+            .validate_supported_execution_subset()
+            .unwrap();
 
         let response = AcknowledgedResponseWire { acknowledged: true };
         let mut frame = build_opensearch_delete_data_stream_response_message(
