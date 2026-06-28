@@ -308,8 +308,8 @@ name = "get-index-wire-benchmark"
 path = "benchmarks/get_index_wire.rs"
 
 [[bin]]
-name = "create-index-reject-wire-benchmark"
-path = "benchmarks/create_index_reject_wire.rs"
+name = "create-index-wire-benchmark"
+path = "benchmarks/create_index_wire.rs"
 
 [[bin]]
 name = "auto-create-reject-wire-benchmark"

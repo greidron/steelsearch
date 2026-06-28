@@ -177,8 +177,8 @@ The source-derived transport inventory currently has 160 rows:
 
 | Status | Count | Meaning |
 | --- | ---: | --- |
-| `implemented` | 94 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
-| `partial` | 66 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
+| `implemented` | 95 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
+| `partial` | 65 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
 | `planned` | 0 | No source-derived transport action remains unclassified. |
 
 The k-NN plugin action sweep is complete at the boundary layer. All 12
@@ -332,7 +332,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `indices:data/write/index`
 - `indices:data/write/update`
 - `indices:data/write/delete`
-- `indices:admin/create` (rejected fail-closed)
+- `indices:admin/create` (implemented default manifest-backed index metadata mutation subset)
 - `indices:admin/auto_create` (rejected fail-closed)
 - `cluster:admin/script/put` (implemented manifest-backed stored-script metadata write subset)
 - `cluster:admin/script/get` (implemented manifest-backed stored-script metadata read subset)
@@ -1304,13 +1304,16 @@ The create-index boundary covers:
   acknowledgement timeout, cause, index, string-valued settings map, mappings
   string, alias count, `ActiveShardCount`, and absent context marker at the
   OpenSearch 3.x wire decode/build layer;
-- explicit fail-closed classification for `indices:admin/create` until index
-  metadata mutation, shard allocation, and create-index response rendering are
-  implemented;
+- implemented classification for the default request subset with standard
+  timeouts, empty cause, a valid concrete index name, empty settings, empty
+  mappings, no aliases, default wait-for-active-shards, and no context;
+- manifest-backed index metadata mutation plus OpenSearch-shaped
+  `CreateIndexResponse` rendering with acknowledgement, shard acknowledgement,
+  and index name fields;
 - explicit rejection for custom cluster-manager timeouts, custom
   acknowledgement timeouts, missing index names, custom cause strings,
   settings, mappings, aliases, custom wait-for-active-shards, context payloads,
-  and create-index execution.
+  duplicate index names, and invalid index names.
 
 The auto-create boundary covers:
 
@@ -4040,23 +4043,26 @@ remains lightweight transport validation and wire work; future
 performance-sensitive work is broader analyzer resolution, field-backed
 analyzer lookup, detail responses, and richer token attributes.
 
-Current create-index reject wire microbenchmark:
+Current create-index wire microbenchmark:
 
 ```text
-cargo run -p os-transport --release --bin create-index-reject-wire-benchmark
-create_index_reject_request_encode iterations=400000 elapsed_ms=274.096 ops_per_second=1459343.83 nanos_per_op=685.24
-create_index_reject_request_decode iterations=400000 elapsed_ms=256.711 ops_per_second=1558169.59 nanos_per_op=641.78
-create_index_reject_validation iterations=400000 elapsed_ms=264.949 ops_per_second=1509721.87 nanos_per_op=662.37
-create_index_reject_wire_bottleneck_ops_per_second=1459343.83
+cargo run -q -p os-transport --release --bin create-index-wire-benchmark
+create_index_request_encode iterations=400000 elapsed_ms=274.498 ops_per_second=1457205.36 nanos_per_op=686.25
+create_index_request_decode iterations=400000 elapsed_ms=253.356 ops_per_second=1578804.92 nanos_per_op=633.39
+create_index_request_validate iterations=400000 elapsed_ms=257.624 ops_per_second=1552648.50 nanos_per_op=644.06
+create_index_response_encode iterations=400000 elapsed_ms=100.727 ops_per_second=3971133.39 nanos_per_op=251.82
+create_index_response_decode iterations=400000 elapsed_ms=97.078 ops_per_second=4120377.83 nanos_per_op=242.70
+create_index_wire_bottleneck_ops_per_second=1457205.36
 ```
 
-The current create-index fail-closed boundary bottleneck is request encode. The
-request carries an acknowledged-request envelope, index name, empty settings,
-default mappings, empty alias count, default wait-for-active-shards, and absent
-context before the execution boundary rejects. At roughly 1.46M ops/s in the
-latest local release run, the future performance-sensitive work is index
-metadata mutation, shard allocation, and create-index response rendering rather
-than the fail-closed wire boundary.
+The current create-index transport bottleneck is request encode. The request
+carries an acknowledged-request envelope, index name, empty settings, default
+mappings, empty alias count, default wait-for-active-shards, and absent context
+before the node adapter mutates manifest-backed metadata and renders
+`CreateIndexResponse`. At roughly 1.46M request ops/s and roughly 4.0M response
+ops/s in the latest local release run, the next performance-sensitive work is
+broader metadata validation and publication behavior, not response wire
+rendering.
 
 Current auto-create reject wire microbenchmark:
 
