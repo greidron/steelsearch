@@ -14481,6 +14481,7 @@ fn free_pit_context_request_matches_local_subset(
     transport_identity: &DevTransportIdentity,
 ) -> bool {
     request.validate_supported_subset().is_ok()
+        && !request.context_ids.is_empty()
         && request.context_ids.iter().all(|context| {
             let search_context = &context.search_context;
             let cluster_alias_is_local = search_context
@@ -30929,6 +30930,22 @@ mod tests {
         };
         let local_context =
             os_transport::action::OpenSearchShardSearchContextIdWire::new("steelsearch-reader", 7);
+        let empty_request = os_transport::action::OpenSearchFreePitContextRequestWire {
+            parent_task_node: String::new(),
+            parent_task_id: None,
+            context_ids: Vec::new(),
+        };
+        let empty_frame = os_transport::action::build_opensearch_free_pit_context_request_message(
+            311,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &empty_request,
+        )
+        .unwrap();
+        assert!(
+            !free_pit_context_request_supports_local_subset(&empty_frame[6..], &transport_identity),
+            "empty free-PIT-context requests are not produced by OpenSearch PitService fanout"
+        );
+
         for node in ["steel-node-id", "steel-node", "_local", ""] {
             let request = os_transport::action::OpenSearchFreePitContextRequestWire {
                 parent_task_node: String::new(),

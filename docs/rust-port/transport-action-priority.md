@@ -2535,6 +2535,11 @@ The create-PIT boundary covers:
   target the current Steelsearch node id/name, `_local`, or OpenSearch's empty
   raw-string wire shape, and rejects remote cluster aliases or nonlocal node
   ids before mutating local PIT state.
+- local transport free-PIT-context now rejects empty context-id lists at the
+  execution boundary while still decoding the raw wire shape. OpenSearch
+  `PitService` returns an empty `DeletePitResponse` before transport fanout
+  when there are no node contexts, so node-level free-PIT-context requests carry
+  at least one context id.
 
 The indices-stats boundary covers:
 
@@ -5384,20 +5389,20 @@ Current delete-PIT wire microbenchmark:
 
 ```text
 cargo run -p os-transport --release --bin delete-pit-wire-benchmark
-delete_pit_request_encode iterations=400000 elapsed_ms=343.441 ops_per_second=1164683.69 nanos_per_op=858.60
-delete_pit_request_decode iterations=400000 elapsed_ms=315.183 ops_per_second=1269105.51 nanos_per_op=787.96
-delete_pit_request_validate iterations=400000 elapsed_ms=312.105 ops_per_second=1281619.68 nanos_per_op=780.26
-delete_pit_response_encode iterations=400000 elapsed_ms=191.387 ops_per_second=2090001.21 nanos_per_op=478.47
-delete_pit_response_decode iterations=400000 elapsed_ms=242.434 ops_per_second=1649933.79 nanos_per_op=606.08
-delete_pit_wire_bottleneck_ops_per_second=1164683.69
+delete_pit_request_encode iterations=400000 elapsed_ms=334.055 ops_per_second=1197406.62 nanos_per_op=835.14
+delete_pit_request_decode iterations=400000 elapsed_ms=387.371 ops_per_second=1032601.14 nanos_per_op=968.43
+delete_pit_request_validate iterations=400000 elapsed_ms=521.794 ops_per_second=766586.12 nanos_per_op=1304.48
+delete_pit_response_encode iterations=400000 elapsed_ms=163.406 ops_per_second=2447887.46 nanos_per_op=408.52
+delete_pit_response_decode iterations=400000 elapsed_ms=306.315 ops_per_second=1305844.02 nanos_per_op=765.79
+delete_pit_wire_bottleneck_ops_per_second=766586.12
 ```
 
-The current delete-PIT wire subset bottleneck is request encode with explicit
-PIT ids. The non-empty response encode/decode path for two `DeletePitInfo`
-entries remains above 1.29M ops/s in the latest local release run, so response
-rendering is not the first bottleneck. The first performance point to inspect
-while expanding execution is lock hold time and allocation in shared PIT context
-invalidation.
+The current delete-PIT wire subset bottleneck is request validation with
+explicit PIT ids. The non-empty response encode/decode path for two
+`DeletePitInfo` entries remains above 1.30M ops/s in the latest local release
+run, so response rendering is not the first bottleneck. The first performance
+point to inspect while expanding execution is lock hold time and allocation in
+shared PIT context invalidation.
 
 Current get-all-PITs wire microbenchmark:
 
@@ -5420,12 +5425,12 @@ Current create-PIT wire microbenchmark:
 
 ```text
 cargo run -p os-transport --release --bin create-pit-wire-benchmark
-create_pit_request_encode iterations=400000 elapsed_ms=283.153 ops_per_second=1412666.18 nanos_per_op=707.88
-create_pit_request_decode iterations=400000 elapsed_ms=276.198 ops_per_second=1448236.09 nanos_per_op=690.50
-create_pit_request_validate iterations=400000 elapsed_ms=276.533 ops_per_second=1446482.48 nanos_per_op=691.33
-create_pit_response_encode iterations=400000 elapsed_ms=124.701 ops_per_second=3207683.45 nanos_per_op=311.75
-create_pit_response_decode iterations=400000 elapsed_ms=104.212 ops_per_second=3838316.70 nanos_per_op=260.53
-create_pit_wire_bottleneck_ops_per_second=1412666.18
+create_pit_request_encode iterations=400000 elapsed_ms=282.549 ops_per_second=1415681.86 nanos_per_op=706.37
+create_pit_request_decode iterations=400000 elapsed_ms=264.046 ops_per_second=1514885.58 nanos_per_op=660.12
+create_pit_request_validate iterations=400000 elapsed_ms=264.766 ops_per_second=1510768.96 nanos_per_op=661.91
+create_pit_response_encode iterations=400000 elapsed_ms=124.121 ops_per_second=3222667.00 nanos_per_op=310.30
+create_pit_response_decode iterations=400000 elapsed_ms=104.947 ops_per_second=3811462.94 nanos_per_op=262.37
+create_pit_wire_bottleneck_ops_per_second=1415681.86
 ```
 
 The current create-PIT wire subset bottleneck is request encode. This path
