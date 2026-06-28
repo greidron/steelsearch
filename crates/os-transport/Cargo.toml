@@ -136,8 +136,8 @@ name = "delete-decommission-state-reject-wire-benchmark"
 path = "benchmarks/delete_decommission_state_reject_wire.rs"
 
 [[bin]]
-name = "put-search-pipeline-reject-wire-benchmark"
-path = "benchmarks/put_search_pipeline_reject_wire.rs"
+name = "put-search-pipeline-wire-benchmark"
+path = "benchmarks/put_search_pipeline_wire.rs"
 
 [[bin]]
 name = "get-search-pipeline-reject-wire-benchmark"

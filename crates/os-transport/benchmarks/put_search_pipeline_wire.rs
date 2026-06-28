@@ -13,45 +13,36 @@ const ITERATIONS: usize = 400_000;
 fn main() {
     let request = PutSearchPipelineRequestWire::default();
 
-    let request_encode = measure(
-        "put_search_pipeline_reject_request_encode",
-        ITERATIONS,
-        || {
-            let frame = build_put_search_pipeline_request_message(
-                42,
-                OPENSEARCH_3_7_0_TRANSPORT,
-                black_box(&request),
-            )
-            .expect("put-search-pipeline request encode should succeed");
-            black_box(frame);
-        },
-    );
+    let request_encode = measure("put_search_pipeline_request_encode", ITERATIONS, || {
+        let frame = build_put_search_pipeline_request_message(
+            42,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            black_box(&request),
+        )
+        .expect("put-search-pipeline request encode should succeed");
+        black_box(frame);
+    });
 
     let request_frame =
         build_put_search_pipeline_request_message(42, OPENSEARCH_3_7_0_TRANSPORT, &request)
             .expect("put-search-pipeline request encode should succeed");
 
-    let request_decode = measure(
-        "put_search_pipeline_reject_request_decode",
-        ITERATIONS,
-        || {
-            let mut frame = black_box(request_frame.clone());
-            let message = decode_message(&mut frame);
-            let decoded = read_put_search_pipeline_request_message(black_box(&message))
-                .expect("put-search-pipeline request decode");
-            black_box(decoded);
-        },
-    );
-
-    let reject_validate = measure("put_search_pipeline_reject_validation", ITERATIONS, || {
+    let request_decode = measure("put_search_pipeline_request_decode", ITERATIONS, || {
         let mut frame = black_box(request_frame.clone());
         let message = decode_message(&mut frame);
         let decoded = read_put_search_pipeline_request_message(black_box(&message))
             .expect("put-search-pipeline request decode");
-        let err = decoded
-            .reject_unsupported_execution()
-            .expect_err("put-search-pipeline execution should reject");
-        black_box(err);
+        black_box(decoded);
+    });
+
+    let request_validate = measure("put_search_pipeline_request_validate", ITERATIONS, || {
+        let mut frame = black_box(request_frame.clone());
+        let message = decode_message(&mut frame);
+        let decoded = read_put_search_pipeline_request_message(black_box(&message))
+            .expect("put-search-pipeline request decode");
+        decoded
+            .validate_supported_execution_subset()
+            .expect("put-search-pipeline manifest-backed subset should validate");
     });
 
     let response = AcknowledgedResponseWire { acknowledged: true };
@@ -59,26 +50,20 @@ fn main() {
         build_put_search_pipeline_response_message(42, OPENSEARCH_3_7_0_TRANSPORT, &response)
             .expect("put-search-pipeline response encode should succeed");
 
-    let response_decode = measure(
-        "put_search_pipeline_ack_response_decode",
-        ITERATIONS,
-        || {
-            let mut frame = black_box(response_frame.clone());
-            let message = decode_message(&mut frame);
-            let decoded = read_put_search_pipeline_response_message(black_box(&message))
-                .expect("put-search-pipeline response decode");
-            black_box(decoded);
-        },
-    );
+    let response_decode = measure("put_search_pipeline_response_decode", ITERATIONS, || {
+        let mut frame = black_box(response_frame.clone());
+        let message = decode_message(&mut frame);
+        let decoded = read_put_search_pipeline_response_message(black_box(&message))
+            .expect("put-search-pipeline response decode");
+        black_box(decoded);
+    });
 
     let combined_ops_per_second = request_encode
         .ops_per_second
         .min(request_decode.ops_per_second)
-        .min(reject_validate.ops_per_second)
+        .min(request_validate.ops_per_second)
         .min(response_decode.ops_per_second);
-    println!(
-        "put_search_pipeline_reject_wire_bottleneck_ops_per_second={combined_ops_per_second:.2}"
-    );
+    println!("put_search_pipeline_wire_bottleneck_ops_per_second={combined_ops_per_second:.2}");
 }
 
 #[derive(Clone, Copy)]

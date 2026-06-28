@@ -177,8 +177,8 @@ The source-derived transport inventory currently has 160 rows:
 
 | Status | Count | Meaning |
 | --- | ---: | --- |
-| `implemented` | 86 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
-| `partial` | 74 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
+| `implemented` | 87 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
+| `partial` | 73 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
 | `planned` | 0 | No source-derived transport action remains unclassified. |
 
 The k-NN plugin action sweep is complete at the boundary layer. All 12
@@ -794,15 +794,12 @@ The put-search-pipeline boundary covers:
   acknowledgement timeout, pipeline id, length-prefixed source bytes, and
   media type at the wire decode/build layer;
 - OpenSearch `AcknowledgedResponse` payload at the wire decode/build layer;
-- explicit fail-closed classification for
-  `cluster:admin/search/pipeline/put` until search pipeline metadata mutation,
-  pipeline source parsing and validation, node search pipeline capability
-  lookup, cluster-state publication, and acknowledgement rendering are
-  implemented;
+- manifest-backed transport execution for
+  `cluster:admin/search/pipeline/put`, storing JSON search pipeline metadata in
+  the Rust metadata manifest before returning an acknowledged response;
 - explicit rejection for custom cluster-manager timeout, custom
   acknowledgement timeout, missing pipeline id, empty or oversized pipeline
-  source, unsupported media types, put-search-pipeline execution, and
-  acknowledgement response rendering.
+  source, and unsupported media types.
 
 The get-search-pipeline boundary covers:
 
@@ -3367,25 +3364,24 @@ material transport bottleneck; the next performance-sensitive work is keeping
 manifest mutation and follow-up decommission-state reads cheap as cluster
 metadata grows.
 
-Current put-search-pipeline reject wire microbenchmark:
+Current put-search-pipeline wire microbenchmark:
 
 ```text
-cargo run -p os-transport --release --bin put-search-pipeline-reject-wire-benchmark
-put_search_pipeline_reject_request_encode iterations=400000 elapsed_ms=421.978 ops_per_second=947915.71 nanos_per_op=1054.95
-put_search_pipeline_reject_request_decode iterations=400000 elapsed_ms=377.641 ops_per_second=1059208.39 nanos_per_op=944.10
-put_search_pipeline_reject_validation iterations=400000 elapsed_ms=377.630 ops_per_second=1059237.23 nanos_per_op=944.08
-put_search_pipeline_ack_response_decode iterations=400000 elapsed_ms=55.001 ops_per_second=7272553.13 nanos_per_op=137.50
-put_search_pipeline_reject_wire_bottleneck_ops_per_second=947915.71
+cargo run -p os-transport --release --bin put-search-pipeline-wire-benchmark
+put_search_pipeline_request_encode iterations=400000 elapsed_ms=417.205 ops_per_second=958760.51 nanos_per_op=1043.01
+put_search_pipeline_request_decode iterations=400000 elapsed_ms=369.173 ops_per_second=1083503.23 nanos_per_op=922.93
+put_search_pipeline_request_validate iterations=400000 elapsed_ms=370.433 ops_per_second=1079817.27 nanos_per_op=926.08
+put_search_pipeline_response_decode iterations=400000 elapsed_ms=55.314 ops_per_second=7231393.55 nanos_per_op=138.29
+put_search_pipeline_wire_bottleneck_ops_per_second=958760.51
 ```
 
-The current put-search-pipeline fail-closed boundary bottleneck is request
-encode. The payload includes the cluster-manager request envelope,
-acknowledgement timeout, pipeline id, source bytes, and media type string
-before admission rejects execution. At roughly 0.95M ops/s in the latest local
-release run, this boundary is not a material transport bottleneck; the first
-performance-sensitive work is search pipeline source parsing and validation,
-node search pipeline capability lookup, cluster-state publication, and
-acknowledgement rendering.
+The current put-search-pipeline wire bottleneck is request encode. The payload
+includes the cluster-manager request envelope, acknowledgement timeout,
+pipeline id, source bytes, and media type string before the node route parses
+and stores the JSON source in the metadata manifest. At roughly 0.96M ops/s in
+the latest local release run, this boundary is not a material transport
+bottleneck; the first performance-sensitive work is keeping manifest mutation
+and follow-up search-pipeline reads cheap as metadata grows.
 
 Current get-search-pipeline wire microbenchmark:
 

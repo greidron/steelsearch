@@ -1883,8 +1883,8 @@ pub fn classify_opensearch_transport_action(
         },
         PUT_SEARCH_PIPELINE_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
-            disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "put-search-pipeline transport execution requires search pipeline metadata mutation, pipeline source parsing and validation, node search pipeline capability lookup, cluster-state publication, and acknowledgement rendering",
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "put-search-pipeline transport adapter stores JSON search pipeline metadata in the Rust manifest and renders OpenSearch AcknowledgedResponse",
         },
         GET_SEARCH_PIPELINE_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -15605,7 +15605,7 @@ impl PutSearchPipelineRequestWire {
         Ok(request)
     }
 
-    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+    pub fn validate_supported_execution_subset(&self) -> Result<(), TransportActionWireError> {
         if self.cluster_manager_timeout != TimeValueWire::seconds(30) {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "put search pipeline cluster-manager timeout",
@@ -15643,9 +15643,14 @@ impl PutSearchPipelineRequestWire {
                 reason: "non-JSON search pipeline source parsing is not implemented",
             });
         }
+        Ok(())
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        self.validate_supported_execution_subset()?;
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "put search pipeline execution",
-            reason: "put-search-pipeline transport execution requires search pipeline metadata mutation, pipeline source parsing and validation, node search pipeline capability lookup, cluster-state publication, and acknowledgement rendering",
+            reason: "use validate_supported_execution_subset for the implemented manifest-backed put-search-pipeline adapter",
         })
     }
 }
@@ -54372,7 +54377,7 @@ mod tests {
     }
 
     #[test]
-    fn put_search_pipeline_request_wire_round_trips_and_rejects_execution_boundary() {
+    fn put_search_pipeline_request_wire_round_trips_and_validates_manifest_subset() {
         let request = PutSearchPipelineRequestWire {
             parent_task_node: "cluster-manager".to_string(),
             parent_task_id: Some(42),
@@ -54385,13 +54390,7 @@ mod tests {
 
         let decoded = PutSearchPipelineRequestWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, request);
-        assert!(matches!(
-            decoded.reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "put search pipeline execution",
-                ..
-            })
-        ));
+        decoded.validate_supported_execution_subset().unwrap();
     }
 
     #[test]
@@ -54401,7 +54400,7 @@ mod tests {
             ..PutSearchPipelineRequestWire::default()
         };
         assert!(matches!(
-            cluster_manager_timeout.reject_unsupported_execution(),
+            cluster_manager_timeout.validate_supported_execution_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "put search pipeline cluster-manager timeout",
                 ..
@@ -54413,7 +54412,7 @@ mod tests {
             ..PutSearchPipelineRequestWire::default()
         };
         assert!(matches!(
-            ack_timeout.reject_unsupported_execution(),
+            ack_timeout.validate_supported_execution_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "put search pipeline ack timeout",
                 ..
@@ -54425,7 +54424,7 @@ mod tests {
             ..PutSearchPipelineRequestWire::default()
         };
         assert!(matches!(
-            missing_id.reject_unsupported_execution(),
+            missing_id.validate_supported_execution_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "put search pipeline missing id",
                 ..
@@ -54437,7 +54436,7 @@ mod tests {
             ..PutSearchPipelineRequestWire::default()
         };
         assert!(matches!(
-            empty_source.reject_unsupported_execution(),
+            empty_source.validate_supported_execution_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "put search pipeline empty source",
                 ..
@@ -54453,7 +54452,7 @@ mod tests {
             ..PutSearchPipelineRequestWire::default()
         };
         assert!(matches!(
-            oversized_source.reject_unsupported_execution(),
+            oversized_source.validate_supported_execution_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "put search pipeline source length",
                 ..
@@ -54465,7 +54464,7 @@ mod tests {
             ..PutSearchPipelineRequestWire::default()
         };
         assert!(matches!(
-            unsupported_media_type.reject_unsupported_execution(),
+            unsupported_media_type.validate_supported_execution_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "put search pipeline media type",
                 ..
@@ -54497,7 +54496,7 @@ mod tests {
     }
 
     #[test]
-    fn put_search_pipeline_transport_messages_bind_rejected_action_frame_and_ack_response() {
+    fn put_search_pipeline_transport_messages_bind_action_frame_and_ack_response() {
         let request = PutSearchPipelineRequestWire::default();
         let mut frame =
             build_put_search_pipeline_request_message(42, OPENSEARCH_3_7_0_TRANSPORT, &request)
@@ -54509,21 +54508,16 @@ mod tests {
             classify_opensearch_transport_request_message(&message)
                 .unwrap()
                 .disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             read_put_search_pipeline_request_message(&message).unwrap(),
             request
         );
-        assert!(matches!(
-            read_put_search_pipeline_request_message(&message)
-                .unwrap()
-                .reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "put search pipeline execution",
-                ..
-            })
-        ));
+        read_put_search_pipeline_request_message(&message)
+            .unwrap()
+            .validate_supported_execution_subset()
+            .unwrap();
 
         let response = AcknowledgedResponseWire { acknowledged: true };
         let mut frame =
