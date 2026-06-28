@@ -2955,6 +2955,35 @@ fn handle_transport_seed_connection<S: TransportConnection>(
         )?;
     } else if is_request
         && normalized_action_hint == Some("indices:data/read/point_in_time/create")
+        && create_pit_request_closed_only_wildcard_forbid_error(&body)
+    {
+        let response = build_create_pit_closed_only_wildcard_forbid_error_response(
+            request_id,
+            header_version_id,
+        );
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("indices:data/read/point_in_time/create"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request
+        && normalized_action_hint == Some("indices:data/read/point_in_time/create")
         && create_pit_request_supports_local_lifecycle_subset(&body)
     {
         let response = build_local_create_pit_response_for_node(
@@ -8015,6 +8044,56 @@ fn create_pit_closed_concrete_index(
         })
 }
 
+fn create_pit_closed_only_wildcard_forbid_error(
+    request: &os_transport::action::OpenSearchCreatePitRequestWire,
+) -> bool {
+    let options = &request.indices_options;
+    if !options.forbid_closed_indices
+        || options.ignore_unavailable
+        || !options.expand_closed
+        || options.expand_open
+        || options.expand_hidden
+    {
+        return false;
+    }
+    let bindings = dev_transport_pit_bindings();
+    let manifest_indices = {
+        let manifest = bindings
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned");
+        manifest["indices"].as_object().cloned()
+    };
+    let indices = transport_pit_index_catalog(bindings, manifest_indices);
+    request
+        .indices
+        .iter()
+        .filter(|selector| !selector.is_empty())
+        .filter(|selector| {
+            selector.as_str() == "_all" || selector.contains('*') || selector.contains('?')
+        })
+        .any(|selector| {
+            let effective_selector = if selector == "_all" { "*" } else { selector };
+            indices.iter().any(|(index_name, index_body)| {
+                let closed = index_body["state"]
+                    .as_str()
+                    .is_some_and(|state| state == "close");
+                if !closed {
+                    return false;
+                }
+                effective_selector == index_name
+                    || wildcard_match(effective_selector, index_name.as_str())
+                    || (!options.ignore_aliases
+                        && index_body["aliases"].as_object().is_some_and(|aliases| {
+                            aliases.contains_key(selector.as_str())
+                                || aliases
+                                    .keys()
+                                    .any(|alias| wildcard_match(effective_selector, alias))
+                        }))
+            })
+        })
+}
+
 fn transport_pit_selector_matches_target(
     selector: &str,
     indices: &BTreeMap<String, Value>,
@@ -12213,6 +12292,28 @@ fn build_create_pit_index_closed_error_response(
     build_transport_error_response_frame(request_id, header_version_id, output.freeze().to_vec())
 }
 
+fn create_pit_request_closed_only_wildcard_forbid_error(body: &[u8]) -> bool {
+    let Some(request) = decode_create_pit_request_from_transport_body(body) else {
+        return false;
+    };
+    if request.validate_supported_subset().is_err() {
+        return false;
+    }
+    create_pit_closed_only_wildcard_forbid_error(&request)
+}
+
+fn build_create_pit_closed_only_wildcard_forbid_error_response(
+    request_id: i64,
+    header_version_id: u32,
+) -> Vec<u8> {
+    let mut output = StreamOutput::new();
+    os_transport::error::write_illegal_argument_exception(
+        &mut output,
+        Some("To expand [CLOSE] wildcard, please set forbid_closed_indices to `false`"),
+    );
+    build_transport_error_response_frame(request_id, header_version_id, output.freeze().to_vec())
+}
+
 fn transport_time_value_millis_display(millis: i64) -> String {
     if millis % 3_600_000 == 0 {
         format!("{}h", millis / 3_600_000)
@@ -15730,6 +15831,14 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
                 request_id,
                 header_version_id,
                 body,
+            ))
+        }
+        Some("indices:data/read/point_in_time/create")
+            if create_pit_request_closed_only_wildcard_forbid_error(body) =>
+        {
+            Some(build_create_pit_closed_only_wildcard_forbid_error_response(
+                request_id,
+                header_version_id,
             ))
         }
         Some("indices:data/read/point_in_time/create")
@@ -29493,6 +29602,97 @@ mod tests {
             create_pit_request_closed_concrete_index(&lenient_frame[6..]),
             None
         );
+    }
+
+    #[test]
+    fn create_pit_transport_route_reports_closed_only_wildcard_forbid_like_opensearch() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        dev_transport_pit_bindings()
+            .created_indices
+            .lock()
+            .expect("dev transport created indices lock poisoned")
+            .clear();
+        *dev_transport_pit_bindings()
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned") = serde_json::json!({
+            "indices": {
+                "logs-closed-wildcard-pit": {
+                    "state": "close",
+                    "aliases": {
+                        "logs-closed-alias-pit": {}
+                    },
+                    "settings": {
+                        "index": {
+                            "number_of_shards": "1"
+                        }
+                    }
+                }
+            }
+        });
+        let request = os_transport::action::OpenSearchCreatePitRequestWire {
+            indices: vec!["logs-closed-*".to_string()],
+            indices_options: os_transport::action::OpenSearchIndicesOptionsWire {
+                expand_open: false,
+                expand_closed: true,
+                forbid_closed_indices: true,
+                ..os_transport::action::OpenSearchIndicesOptionsWire::strict_expand_open_forbid_closed()
+            },
+            ..os_transport::action::OpenSearchCreatePitRequestWire::default()
+        };
+        let frame = os_transport::action::build_opensearch_create_pit_request_message(
+            331,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(create_pit_request_closed_only_wildcard_forbid_error(
+            &frame[6..]
+        ));
+
+        let response = build_create_pit_closed_only_wildcard_forbid_error_response(
+            331,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+        );
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected closed-only wildcard create-PIT error response frame");
+        };
+        assert_eq!(message.request_id, 331);
+        assert!(message.status.is_error());
+        let error = os_transport::error::TransportError::read(message.body.freeze())
+            .unwrap()
+            .unwrap();
+        assert_eq!(error.class_name, "java.lang.IllegalArgumentException");
+        assert_eq!(
+            error.message.as_deref(),
+            Some("To expand [CLOSE] wildcard, please set forbid_closed_indices to `false`")
+        );
+
+        let open_closed_request = os_transport::action::OpenSearchCreatePitRequestWire {
+            indices: vec!["logs-closed-*".to_string()],
+            indices_options: os_transport::action::OpenSearchIndicesOptionsWire {
+                expand_closed: true,
+                forbid_closed_indices: true,
+                ..os_transport::action::OpenSearchIndicesOptionsWire::strict_expand_open_forbid_closed()
+            },
+            ..os_transport::action::OpenSearchCreatePitRequestWire::default()
+        };
+        let open_closed_frame = os_transport::action::build_opensearch_create_pit_request_message(
+            332,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &open_closed_request,
+        )
+        .unwrap();
+        assert!(!create_pit_request_closed_only_wildcard_forbid_error(
+            &open_closed_frame[6..]
+        ));
     }
 
     #[test]
