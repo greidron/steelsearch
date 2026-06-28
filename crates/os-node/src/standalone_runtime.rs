@@ -10263,6 +10263,7 @@ impl SteelNode {
                         record.version,
                         record.seq_no,
                         record.primary_term,
+                        record.routing.clone(),
                     ))
                 })
                 .collect::<Vec<_>>();
@@ -10272,7 +10273,9 @@ impl SteelNode {
         let mut hits = Vec::new();
         let mut aggregation_context_hits = Vec::new();
         let parsed_slice = parse_search_slice(body.get("slice"));
-        for (doc_index, doc_id, source, version, seq_no, primary_term) in candidate_documents {
+        for (doc_index, doc_id, source, version, seq_no, primary_term, routing) in
+            candidate_documents
+        {
             if let Some(slice) = parsed_slice.as_ref() {
                 if !document_matches_search_slice(&doc_id, &source, slice) {
                     continue;
@@ -10301,12 +10304,18 @@ impl SteelNode {
                     {
                         continue;
                     }
+                    let shard_doc = opensearch_shard_doc_sort_key(
+                        self.index_primary_shard_count(&doc_index),
+                        routing.as_deref().unwrap_or(&doc_id),
+                        seq_no,
+                    );
                     let mut hit = serde_json::json!({
                         "_index": doc_index,
                         "_id": doc_id,
                         "_source": source,
                         "_score": score,
-                        "_seq_no": seq_no
+                        "_seq_no": seq_no,
+                        "_shard_doc": shard_doc
                     });
                     if body.get("version") == Some(&Value::Bool(true)) {
                         hit["_version"] = Value::from(version);
@@ -10493,6 +10502,11 @@ impl SteelNode {
                 if let Some(hit_object) = hit.as_object_mut() {
                     hit_object.remove("_seq_no");
                 }
+            }
+        }
+        for hit in &mut paged_hits {
+            if let Some(hit_object) = hit.as_object_mut() {
+                hit_object.remove("_shard_doc");
             }
         }
         let mut response = serde_json::Map::new();
@@ -21149,6 +21163,12 @@ impl SteelNode {
             .as_str()
             .or_else(|| settings["number_of_shards"].as_str())
             .and_then(|value| value.parse::<usize>().ok())
+            .or_else(|| {
+                settings["index"]["number_of_shards"]
+                    .as_u64()
+                    .or_else(|| settings["number_of_shards"].as_u64())
+                    .map(|value| value as usize)
+            })
             .unwrap_or(1)
     }
 
@@ -25286,7 +25306,21 @@ fn opensearch_routing_shard(routing: &str, shard_count: usize) -> usize {
     if shard_count <= 1 {
         return 0;
     }
-    opensearch_murmur3_x86_32(routing.as_bytes(), 0).rem_euclid(shard_count as i64) as usize
+    opensearch_routing_hash(routing).rem_euclid(shard_count as i64) as usize
+}
+
+fn opensearch_shard_doc_sort_key(shard_count: usize, routing: &str, seq_no: i64) -> i64 {
+    let shard_id = opensearch_routing_shard(routing, shard_count) as i64;
+    (shard_id << 32) | (seq_no & 0xffff_ffff)
+}
+
+fn opensearch_routing_hash(routing: &str) -> i64 {
+    let mut bytes = Vec::with_capacity(routing.len() * 2);
+    for code_unit in routing.encode_utf16() {
+        bytes.push((code_unit & 0xff) as u8);
+        bytes.push((code_unit >> 8) as u8);
+    }
+    opensearch_murmur3_x86_32(&bytes, 0)
 }
 
 fn search_slice_value_key(value: &Value) -> String {
@@ -27986,7 +28020,10 @@ fn extract_sort_value(hit: &Value, field_name: &str) -> Value {
         return hit.get("_score").cloned().unwrap_or(Value::Null);
     }
     if field_name == "_shard_doc" {
-        return hit.get("_seq_no").cloned().unwrap_or(Value::Null);
+        return hit.get("_shard_doc")
+            .or_else(|| hit.get("_seq_no"))
+            .cloned()
+            .unwrap_or(Value::Null);
     }
     hit.get("_source")
         .and_then(|source| source.get(field_name))

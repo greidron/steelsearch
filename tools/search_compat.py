@@ -774,13 +774,17 @@ def run_case(
                         "extract": {"missing_compare_step": compare_step_name},
                     }
                 )
-        target_results[name] = {
-            "status": compare_step.get("status") if compare_step else response["status"],
-            "extract": (
+        if case["extract"] == "pit_pagination_drain":
+            extracted = extract_pit_pagination_drain(steps)
+        else:
+            extracted = (
                 compare_step.get("extract")
                 if compare_step
                 else extract(case["extract"], response)
-            ),
+            )
+        target_results[name] = {
+            "status": compare_step.get("status") if compare_step else response["status"],
+            "extract": extracted,
             "raw_error": response.get("error"),
             "raw_response": raw_response(response),
             "normalized_response": normalized_response(response),
@@ -3246,6 +3250,35 @@ def extract(kind: str, response: dict[str, Any]) -> Any:
             "root_cause_type": first_root_cause.get("type"),
         }
     return {"status": response["status"], "body": body}
+
+
+def extract_pit_pagination_drain(steps: list[dict[str, Any]]) -> dict[str, Any]:
+    page_steps = [
+        step
+        for step in steps
+        if isinstance(step.get("name"), str)
+        and step["name"].startswith("pit-shard-doc-page-")
+    ]
+    all_ids: list[str] = []
+    page_sizes: list[int] = []
+    totals: list[Any] = []
+    statuses: list[Any] = []
+    for step in page_steps:
+        extracted = step.get("extract") or {}
+        ids = extracted.get("ids") if isinstance(extracted, dict) else None
+        ids = ids if isinstance(ids, list) else []
+        all_ids.extend(str(doc_id) for doc_id in ids)
+        page_sizes.append(len(ids))
+        if isinstance(extracted, dict):
+            totals.append(extracted.get("total"))
+            statuses.append(extracted.get("status"))
+    return {
+        "statuses": statuses,
+        "totals": totals,
+        "page_sizes": page_sizes,
+        "ids_sorted": sorted(all_ids),
+        "unique_id_count": len(set(all_ids)),
+    }
 
 
 def first_node(body: dict[str, Any]) -> dict[str, Any]:

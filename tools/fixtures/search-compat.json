@@ -5504,6 +5504,140 @@
       "description": "[lexical] pit _shard_doc object-form search_after pagination matches OpenSearch"
     },
     {
+      "name": "pit_shard_doc_multishard_three_page_search",
+      "area": "search",
+      "extract": "pit_pagination_drain",
+      "compare_step": "pit-shard-doc-page-3",
+      "steps": [
+        {
+          "name": "create-sharddoc-paging-index",
+          "method": "PUT",
+          "path": "/sharddoc-paging-compat",
+          "body": {
+            "settings": {
+              "number_of_shards": 4,
+              "number_of_replicas": 0
+            },
+            "mappings": {
+              "properties": {
+                "id": {
+                  "type": "integer"
+                },
+                "txt": {
+                  "type": "keyword"
+                }
+              }
+            }
+          },
+          "expected_status": 200
+        },
+        {
+          "name": "bulk-sharddoc-paging-docs",
+          "method": "POST",
+          "path": "/_bulk",
+          "raw": true,
+          "body": "{\"index\":{\"_index\":\"sharddoc-paging-compat\",\"_id\":\"1\"}}\n{\"id\":1,\"txt\":\"a\"}\n{\"index\":{\"_index\":\"sharddoc-paging-compat\",\"_id\":\"2\"}}\n{\"id\":2,\"txt\":\"b\"}\n{\"index\":{\"_index\":\"sharddoc-paging-compat\",\"_id\":\"3\"}}\n{\"id\":3,\"txt\":\"c\"}\n{\"index\":{\"_index\":\"sharddoc-paging-compat\",\"_id\":\"4\"}}\n{\"id\":4,\"txt\":\"d\"}\n{\"index\":{\"_index\":\"sharddoc-paging-compat\",\"_id\":\"5\"}}\n{\"id\":5,\"txt\":\"e\"}\n{\"index\":{\"_index\":\"sharddoc-paging-compat\",\"_id\":\"6\"}}\n{\"id\":6,\"txt\":\"f\"}\n{\"index\":{\"_index\":\"sharddoc-paging-compat\",\"_id\":\"7\"}}\n{\"id\":7,\"txt\":\"g\"}\n{\"index\":{\"_index\":\"sharddoc-paging-compat\",\"_id\":\"8\"}}\n{\"id\":8,\"txt\":\"h\"}\n{\"index\":{\"_index\":\"sharddoc-paging-compat\",\"_id\":\"9\"}}\n{\"id\":9,\"txt\":\"i\"}\n{\"index\":{\"_index\":\"sharddoc-paging-compat\",\"_id\":\"10\"}}\n{\"id\":10,\"txt\":\"j\"}\n{\"index\":{\"_index\":\"sharddoc-paging-compat\",\"_id\":\"11\"}}\n{\"id\":11,\"txt\":\"k\"}\n{\"index\":{\"_index\":\"sharddoc-paging-compat\",\"_id\":\"12\"}}\n{\"id\":12,\"txt\":\"l\"}\n{\"index\":{\"_index\":\"sharddoc-paging-compat\",\"_id\":\"13\"}}\n{\"id\":13,\"txt\":\"m\"}\n{\"index\":{\"_index\":\"sharddoc-paging-compat\",\"_id\":\"14\"}}\n{\"id\":14,\"txt\":\"n\"}\n{\"index\":{\"_index\":\"sharddoc-paging-compat\",\"_id\":\"15\"}}\n{\"id\":15,\"txt\":\"o\"}\n{\"index\":{\"_index\":\"sharddoc-paging-compat\",\"_id\":\"16\"}}\n{\"id\":16,\"txt\":\"p\"}\n{\"index\":{\"_index\":\"sharddoc-paging-compat\",\"_id\":\"17\"}}\n{\"id\":17,\"txt\":\"q\"}\n{\"index\":{\"_index\":\"sharddoc-paging-compat\",\"_id\":\"18\"}}\n{\"id\":18,\"txt\":\"r\"}\n{\"index\":{\"_index\":\"sharddoc-paging-compat\",\"_id\":\"19\"}}\n{\"id\":19,\"txt\":\"s\"}\n{\"index\":{\"_index\":\"sharddoc-paging-compat\",\"_id\":\"20\"}}\n{\"id\":20,\"txt\":\"t\"}\n{\"index\":{\"_index\":\"sharddoc-paging-compat\",\"_id\":\"21\"}}\n{\"id\":21,\"txt\":\"u\"}\n{\"index\":{\"_index\":\"sharddoc-paging-compat\",\"_id\":\"22\"}}\n{\"id\":22,\"txt\":\"v\"}\n",
+          "expected_status": 200
+        },
+        {
+          "name": "refresh-sharddoc-paging",
+          "method": "POST",
+          "path": "/sharddoc-paging-compat/_refresh",
+          "body": {},
+          "expected_status": 200
+        },
+        {
+          "name": "pit-open",
+          "method": "POST",
+          "path": "/sharddoc-paging-compat/_search/point_in_time?keep_alive=1m",
+          "body": null,
+          "expected_status": 200,
+          "extract": "pit_open",
+          "save": {
+            "pit_id": "body.pit_id"
+          }
+        },
+        {
+          "name": "pit-shard-doc-page-1",
+          "method": "POST",
+          "path": "/_search",
+          "body": {
+            "size": 10,
+            "pit": {
+              "id": "${saved.pit_id}",
+              "keep_alive": "1m"
+            },
+            "sort": [
+              {
+                "_shard_doc": {}
+              }
+            ]
+          },
+          "expected_status": 200,
+          "extract": "search_hits",
+          "save": {
+            "after_1": "body.hits.hits.9.sort"
+          }
+        },
+        {
+          "name": "pit-shard-doc-page-2",
+          "method": "POST",
+          "path": "/_search",
+          "body": {
+            "size": 10,
+            "pit": {
+              "id": "${saved.pit_id}",
+              "keep_alive": "1m"
+            },
+            "sort": [
+              {
+                "_shard_doc": {}
+              }
+            ],
+            "search_after": "${saved.after_1}"
+          },
+          "expected_status": 200,
+          "extract": "search_hits",
+          "save": {
+            "after_2": "body.hits.hits.9.sort"
+          }
+        },
+        {
+          "name": "pit-shard-doc-page-3",
+          "method": "POST",
+          "path": "/_search",
+          "body": {
+            "size": 10,
+            "pit": {
+              "id": "${saved.pit_id}",
+              "keep_alive": "1m"
+            },
+            "sort": [
+              {
+                "_shard_doc": {}
+              }
+            ],
+            "search_after": "${saved.after_2}"
+          },
+          "expected_status": 200,
+          "extract": "search_hits"
+        },
+        {
+          "name": "close-pit",
+          "method": "DELETE",
+          "path": "/_search/point_in_time",
+          "body": {
+            "pit_id": [
+              "${saved.pit_id}"
+            ]
+          },
+          "expected_status": 200
+        }
+      ],
+      "family": "lexical",
+      "description": "[lexical] PIT _shard_doc multi-shard pagination drains 10+10+2 pages like OpenSearch REST spec"
+    },
+    {
       "name": "pit_duplicate_shard_doc_sort_error_search",
       "area": "search",
       "extract": "search_error_root_cause",
