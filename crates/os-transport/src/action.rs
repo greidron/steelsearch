@@ -1925,8 +1925,8 @@ pub fn classify_opensearch_transport_action(
         },
         CLUSTER_REROUTE_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
-            disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "cluster reroute transport execution requires allocation command and publication semantics",
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "cluster-reroute transport adapter executes the empty-command local reroute subset and renders OpenSearch ClusterRerouteResponse with empty RoutingExplanations",
         },
         GET_REPOSITORIES_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -6828,6 +6828,36 @@ pub fn read_cluster_reroute_request_message(
         });
     }
     ClusterRerouteRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_cluster_reroute_response_message(
+    request_id: i64,
+    version: Version,
+    response: &ClusterRerouteResponseWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    response.write(&mut body)?;
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::response(),
+        version,
+        variable_header: BytesMut::from(&ResponseVariableHeader::default().to_bytes()[..]),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_cluster_reroute_response_message(
+    message: &TransportMessage,
+) -> Result<ClusterRerouteResponseWire, TransportActionWireError> {
+    if !message.status.is_response() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "response",
+            actual: message.status.bits(),
+        });
+    }
+    let _header = ResponseVariableHeader::read(message.variable_header.clone().freeze())?;
+    ClusterRerouteResponseWire::read(message.body.clone().freeze())
 }
 
 pub fn build_add_voting_config_exclusions_request_message(
@@ -41790,6 +41820,14 @@ impl ClusterRerouteRequestWire {
     }
 
     pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        self.validate_supported_execution_subset()?;
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "cluster reroute execution",
+            reason: "use validate_supported_execution_subset for the implemented empty-command cluster-reroute adapter",
+        })
+    }
+
+    pub fn validate_supported_execution_subset(&self) -> Result<(), TransportActionWireError> {
         if self.cluster_manager_timeout != TimeValueWire::seconds(30) {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "cluster reroute cluster-manager timeout",
@@ -41828,10 +41866,63 @@ impl ClusterRerouteRequestWire {
                 reason: "retry-failed reroute requires failed-allocation accounting semantics",
             });
         }
-        Err(TransportActionWireError::UnsupportedWireShape {
-            shape: "cluster reroute execution",
-            reason: "cluster reroute transport execution requires routing mutation and response rendering",
-        })
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct ClusterRerouteResponseWire {
+    pub acknowledged: bool,
+    pub state: ClusterStateResponseWire,
+    pub explanations_count: i32,
+}
+
+impl ClusterRerouteResponseWire {
+    pub fn empty_explanations(acknowledged: bool, state: ClusterStateResponseWire) -> Self {
+        Self {
+            acknowledged,
+            state,
+            explanations_count: 0,
+        }
+    }
+
+    pub fn write(&self, output: &mut StreamOutput) -> Result<(), TransportActionWireError> {
+        self.validate_supported_subset()?;
+        output.write_bool(self.acknowledged);
+        self.state.write(output)?;
+        output.write_vint(self.explanations_count);
+        Ok(())
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let acknowledged = input.read_bool()?;
+        let state = ClusterStateResponseWire {
+            cluster_name: input.read_string()?,
+            cluster_uuid: input.read_string()?,
+            state_uuid: input.read_string()?,
+            version: input.read_i64()?,
+            sections: read_json_section_map(&mut input)?,
+        };
+        let explanations_count = input.read_vint()?;
+        let response = Self {
+            acknowledged,
+            state,
+            explanations_count,
+        };
+        response.validate_supported_subset()?;
+        require_no_trailing_bytes(&input)?;
+        Ok(response)
+    }
+
+    pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
+        if self.explanations_count != 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cluster reroute explanations",
+                reason: "non-empty RoutingExplanations require reroute explanation named-writeable decoding",
+            });
+        }
+        Ok(())
     }
 }
 
@@ -57377,7 +57468,7 @@ mod tests {
     }
 
     #[test]
-    fn cluster_reroute_request_wire_round_trips_and_rejects_execution_boundary() {
+    fn cluster_reroute_request_wire_round_trips_and_validates_supported_subset() {
         let request = ClusterRerouteRequestWire {
             parent_task_node: "reroute-node".to_string(),
             parent_task_id: Some(91),
@@ -57388,6 +57479,7 @@ mod tests {
 
         let decoded = ClusterRerouteRequestWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, request);
+        decoded.validate_supported_execution_subset().unwrap();
         assert!(matches!(
             decoded.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
@@ -57491,7 +57583,7 @@ mod tests {
     }
 
     #[test]
-    fn cluster_reroute_transport_messages_bind_rejected_action_frame() {
+    fn cluster_reroute_transport_messages_bind_implemented_action_frame_and_response() {
         let request = ClusterRerouteRequestWire::default();
         let mut frame =
             build_cluster_reroute_request_message(41, OPENSEARCH_3_7_0_TRANSPORT, &request)
@@ -57503,12 +57595,58 @@ mod tests {
             read_cluster_reroute_request_message(&message).unwrap(),
             request
         );
+        assert_eq!(
+            classify_opensearch_transport_request_message(&message)
+                .unwrap()
+                .disposition,
+            OpenSearchTransportActionDisposition::Implemented
+        );
+        read_cluster_reroute_request_message(&message)
+            .unwrap()
+            .validate_supported_execution_subset()
+            .unwrap();
         assert!(matches!(
             read_cluster_reroute_request_message(&message)
                 .unwrap()
                 .reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "cluster reroute execution",
+                ..
+            })
+        ));
+
+        let response = ClusterRerouteResponseWire::empty_explanations(
+            true,
+            ClusterStateResponseWire {
+                cluster_name: "steelsearch".to_string(),
+                cluster_uuid: "cluster-uuid".to_string(),
+                state_uuid: "state-uuid".to_string(),
+                version: 1,
+                sections: BTreeMap::from([(
+                    "routing_table".to_string(),
+                    serde_json::json!({ "indices": {} }),
+                )]),
+            },
+        );
+        let mut frame =
+            build_cluster_reroute_response_message(41, OPENSEARCH_3_7_0_TRANSPORT, &response)
+                .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected cluster reroute response message");
+        };
+        let decoded = read_cluster_reroute_response_message(&message).unwrap();
+        assert_eq!(decoded, response);
+        assert!(decoded.acknowledged);
+        assert_eq!(decoded.explanations_count, 0);
+
+        let unsupported = ClusterRerouteResponseWire {
+            explanations_count: 1,
+            ..response
+        };
+        assert!(matches!(
+            unsupported.validate_supported_subset(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cluster reroute explanations",
                 ..
             })
         ));

@@ -1146,6 +1146,35 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end_at_ms,
         )?;
     } else if is_request
+        && normalized_action_hint == Some("cluster:admin/reroute")
+        && cluster_reroute_request_supports_empty_command_subset(&body)
+    {
+        let response = build_cluster_reroute_response(
+            request_id,
+            header_version_id,
+            transport_identity,
+            &body,
+        );
+        response_frame =
+            summarize_transport_response_frame_for_action(&response, Some("cluster:admin/reroute"));
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request
         && normalized_action_hint == Some("cluster:monitor/allocation/explain")
         && cluster_allocation_explain_request_supports_no_unassigned_error_subset(&body)
         && dev_transport_created_indices_empty()
@@ -26397,6 +26426,37 @@ fn cluster_state_request_supports_local_subset(body: &[u8]) -> bool {
     decode_cluster_state_request_from_transport_body(body).is_some()
 }
 
+fn build_cluster_reroute_response(
+    request_id: i64,
+    header_version_id: u32,
+    transport_identity: &DevTransportIdentity,
+    body: &[u8],
+) -> Vec<u8> {
+    let Some(request) = decode_cluster_reroute_request_from_transport_body(body) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    if request.validate_supported_execution_subset().is_err() {
+        return build_empty_transport_response(request_id, header_version_id);
+    }
+    let state_request = os_transport::action::ClusterStateRequestWire::default();
+    let state = local_cluster_state_response_from_request(transport_identity, &state_request);
+    let response =
+        os_transport::action::ClusterRerouteResponseWire::empty_explanations(true, state);
+    os_transport::action::build_cluster_reroute_response_message(
+        request_id,
+        Version::from_id(header_version_id as i32),
+        &response,
+    )
+    .map(|frame| frame.to_vec())
+    .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
+}
+
+fn cluster_reroute_request_supports_empty_command_subset(body: &[u8]) -> bool {
+    decode_cluster_reroute_request_from_transport_body(body)
+        .as_ref()
+        .is_some_and(|request| request.validate_supported_execution_subset().is_ok())
+}
+
 fn cluster_allocation_explain_request_supports_no_unassigned_error_subset(body: &[u8]) -> bool {
     let Some(request) = decode_cluster_allocation_explain_request_from_transport_body(body) else {
         return false;
@@ -26421,6 +26481,13 @@ fn decode_cluster_state_request_from_transport_body(
 ) -> Option<os_transport::action::ClusterStateRequestWire> {
     let message = decode_transport_message_from_body(body)?;
     os_transport::action::read_cluster_state_request_message(&message).ok()
+}
+
+fn decode_cluster_reroute_request_from_transport_body(
+    body: &[u8],
+) -> Option<os_transport::action::ClusterRerouteRequestWire> {
+    let message = decode_transport_message_from_body(body)?;
+    os_transport::action::read_cluster_reroute_request_message(&message).ok()
 }
 
 fn decode_cluster_allocation_explain_request_from_transport_body(
@@ -27509,6 +27576,16 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
         Some("cluster:monitor/state") if cluster_state_request_supports_local_subset(body) => Some(
             build_cluster_state_response(request_id, header_version_id, transport_identity, body),
         ),
+        Some("cluster:admin/reroute")
+            if cluster_reroute_request_supports_empty_command_subset(body) =>
+        {
+            Some(build_cluster_reroute_response(
+                request_id,
+                header_version_id,
+                transport_identity,
+                body,
+            ))
+        }
         Some("cluster:monitor/allocation/explain")
             if cluster_allocation_explain_request_supports_no_unassigned_error_subset(body)
                 && dev_transport_created_indices_empty() =>
@@ -34653,6 +34730,138 @@ mod tests {
         assert!(response.sections["routing_table"]["indices"]
             .get("logs-state")
             .is_some());
+    }
+
+    #[test]
+    fn cluster_reroute_transport_route_returns_acknowledged_state_with_empty_explanations() {
+        struct RecordingTransportConnection {
+            writes: Vec<u8>,
+        }
+
+        impl std::io::Read for RecordingTransportConnection {
+            fn read(&mut self, _buf: &mut [u8]) -> std::io::Result<usize> {
+                Ok(0)
+            }
+        }
+
+        impl std::io::Write for RecordingTransportConnection {
+            fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+                self.writes.extend_from_slice(buf);
+                Ok(buf.len())
+            }
+
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+
+        impl TransportConnection for RecordingTransportConnection {
+            fn set_read_timeout(&self, _duration: Option<Duration>) -> std::io::Result<()> {
+                Ok(())
+            }
+
+            fn peer_addr(&self) -> std::io::Result<SocketAddr> {
+                "127.0.0.1:9300"
+                    .parse()
+                    .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidInput, error))
+            }
+        }
+
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        let bindings = dev_transport_pit_bindings();
+        bindings
+            .created_indices
+            .lock()
+            .expect("dev transport created indices lock poisoned")
+            .clear();
+        *bindings
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned") = serde_json::json!({
+            "indices": {
+                "logs-reroute": {
+                    "state": "open",
+                    "settings": {},
+                    "mappings": {},
+                    "aliases": {}
+                }
+            }
+        });
+
+        let request = os_transport::action::ClusterRerouteRequestWire::default();
+        let frame = os_transport::action::build_cluster_reroute_request_message(
+            82,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(cluster_reroute_request_supports_empty_command_subset(
+            &frame[6..]
+        ));
+        let unsupported = os_transport::action::ClusterRerouteRequestWire {
+            dry_run: true,
+            ..request
+        };
+        let unsupported_frame = os_transport::action::build_cluster_reroute_request_message(
+            83,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &unsupported,
+        )
+        .unwrap();
+        assert!(!cluster_reroute_request_supports_empty_command_subset(
+            &unsupported_frame[6..]
+        ));
+
+        let transport_identity = DevTransportIdentity {
+            cluster_name: "steelsearch-dev".to_string(),
+            node_name: "steel-node".to_string(),
+            node_id: "steel-node-id".to_string(),
+            ephemeral_id: "steel-node-ephemeral".to_string(),
+            transport_address: "127.0.0.1:9300".parse().unwrap(),
+            attributes: Vec::new(),
+            roles: vec!["cluster_manager".to_string(), "data".to_string()],
+            seed_peer_identity: None,
+            seed_peer_identities: Vec::new(),
+            coordination_state: Arc::new(Mutex::new(DevTransportCoordinationState {
+                last_accepted_version: 12,
+                ..DevTransportCoordinationState::default()
+            })),
+            remote_transport_queue_gate: Arc::new(RemoteTransportQueueGate::new(1, 1000)),
+            task_queue_state: None,
+        };
+        let mut stream = RecordingTransportConnection { writes: Vec::new() };
+
+        let handled = handle_subsequent_transport_request(
+            &mut stream,
+            &frame[6..],
+            &transport_identity,
+            None,
+        )
+        .unwrap();
+
+        assert!(handled);
+        let mut frame = BytesMut::from(&stream.writes[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected cluster reroute response message");
+        };
+        assert_eq!(message.request_id, 82);
+        assert!(!message.status.is_request());
+        let response =
+            os_transport::action::read_cluster_reroute_response_message(&message).unwrap();
+        assert!(response.acknowledged);
+        assert_eq!(response.explanations_count, 0);
+        assert_eq!(response.state.cluster_name, "steelsearch-dev");
+        assert_eq!(response.state.version, 12);
+        assert!(response.state.sections["metadata"]["indices"]
+            .get("logs-reroute")
+            .is_some());
+        assert!(response.state.sections.contains_key("routing_table"));
     }
 
     #[test]

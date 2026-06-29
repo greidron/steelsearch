@@ -408,7 +408,7 @@ transport_action	implemented	action	ClusterStateAction.INSTANCE	TransportCluster
 transport_action	implemented	action	GetTermVersionAction.INSTANCE	TransportGetTermVersionAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	674
 transport_action	implemented	action	ClusterHealthAction.INSTANCE	TransportClusterHealthAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	675
 transport_action	implemented	action	ClusterUpdateSettingsAction.INSTANCE	TransportClusterUpdateSettingsAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	676
-transport_action	partial	action	ClusterRerouteAction.INSTANCE	TransportClusterRerouteAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	677
+transport_action	implemented	action	ClusterRerouteAction.INSTANCE	TransportClusterRerouteAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	677
 transport_action	implemented	action	ClusterSearchShardsAction.INSTANCE	TransportClusterSearchShardsAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	678
 transport_action	implemented	action	PendingClusterTasksAction.INSTANCE	TransportPendingClusterTasksAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	679
 transport_action	implemented	action	PruneFileCacheAction.INSTANCE	TransportPruneFileCacheAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	680

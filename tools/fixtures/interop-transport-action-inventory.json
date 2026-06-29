@@ -540,8 +540,8 @@
       "transport_action": "TransportClusterRerouteAction",
       "request_wire_type": "ClusterRerouteRequest",
       "response_wire_type": "ClusterRerouteResponse",
-      "disposition": "rejected",
-      "reason": "Cluster reroute transport execution requires allocation command and publication semantics"
+      "disposition": "implemented",
+      "reason": "Cluster-reroute transport adapter executes the empty-command local reroute subset and renders OpenSearch ClusterRerouteResponse with empty RoutingExplanations"
     },
     {
       "action_name": "cluster:admin/repository/get",

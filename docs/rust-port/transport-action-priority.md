@@ -177,8 +177,8 @@ The source-derived transport inventory currently has 160 rows:
 
 | Status | Count | Meaning |
 | --- | ---: | --- |
-| `implemented` | 159 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
-| `partial` | 1 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
+| `implemented` | 160 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
+| `partial` | 0 | No source-derived transport action remains in a partial boundary-only state. |
 | `planned` | 0 | No source-derived transport action remains unclassified. |
 
 The k-NN plugin action sweep is complete at the boundary layer. All 12
@@ -251,7 +251,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `cluster:admin/voting_config/clear_exclusions` (implemented no-wait subset)
 - `cluster:monitor/allocation/explain` (implemented bounded no-unassigned-shards error subset)
 - `cluster:admin/settings/update` (implemented bounded manifest-backed settings mutation subset)
-- `cluster:admin/reroute` (rejected fail-closed)
+- `cluster:admin/reroute` (implemented empty-command local reroute subset)
 - `cluster:admin/filecache/prune` (implemented local no-cache response subset)
 - `cluster:admin/nodes/reload_secure_settings` (implemented local no-password reload response subset)
 - `cluster:admin/repository/put` (rejected fail-closed)
@@ -580,12 +580,13 @@ The cluster-reroute boundary covers:
 - OpenSearch `ClusterRerouteRequest` parent task, cluster-manager timeout,
   acknowledgement timeout, empty allocation command set, `dryRun`, `explain`,
   and `retryFailed` flags at the wire decode/build layer;
-- explicit fail-closed classification for `cluster:admin/reroute` until
-  allocation command decoding, routing mutation, acknowledgement, and response
-  rendering are implemented;
+- local execution for the OpenSearch-valid empty-command reroute subset,
+  returning an acknowledged `ClusterRerouteResponse` with the current local
+  cluster-state payload and empty `RoutingExplanations`;
 - explicit rejection for non-empty allocation commands, custom
   cluster-manager timeout, custom acknowledgement timeout, dry-run execution,
-  explanation rendering, retry-failed execution, and reroute execution.
+  explanation rendering, retry-failed execution, and non-empty reroute
+  explanations.
 
 The prune-file-cache adapter covers:
 
@@ -7065,7 +7066,7 @@ response-shape examples.
 
 All listed Tier 2 read/admin actions are now implemented for their declared
 empty/default transport subsets. Further transport work should continue from
-the remaining source-derived partial inventory.
+expanding declared subsets with source-backed scenarios and benchmarks.
 
 ## Tier 3: Phase B/C Or Domain-Specific Follow-Up
 
