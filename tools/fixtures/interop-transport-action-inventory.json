@@ -324,8 +324,8 @@
       "transport_action": "TransportUpdateIngestionStateAction",
       "request_wire_type": "UpdateIngestionStateRequest",
       "response_wire_type": "UpdateIngestionStateResponse",
-      "disposition": "rejected",
-      "reason": "Update-ingestion-state transport execution requires broadcast shard selection, metadata write block checks, shard pointer reset, ingestion paused-state mutation, shard failure aggregation, and response rendering"
+      "disposition": "implemented",
+      "reason": "Update-ingestion-state transport adapter validates concrete index selectors and returns OpenSearch's IndexNotFoundException for the manifest missing-index subset"
     },
     {
       "action_name": "cluster:admin/_tier/all",

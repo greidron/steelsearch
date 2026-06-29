@@ -2032,8 +2032,8 @@ pub fn classify_opensearch_transport_action(
         },
         UPDATE_INGESTION_STATE_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
-            disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "update-ingestion-state transport execution requires broadcast shard selection, metadata write block checks, shard pointer reset, ingestion paused-state mutation, shard failure aggregation, and response rendering",
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "update-ingestion-state transport adapter validates concrete index selectors and returns OpenSearch's IndexNotFoundException for the manifest missing-index subset",
         },
         LIST_TIERING_STATUS_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -18694,7 +18694,7 @@ impl UpdateIngestionStateRequestWire {
         Ok(request)
     }
 
-    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+    pub fn validate_missing_index_resolution_subset(&self) -> Result<(), TransportActionWireError> {
         if self.broadcast_indices.is_empty() {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "update ingestion state missing broadcast indices",
@@ -18762,6 +18762,17 @@ impl UpdateIngestionStateRequestWire {
                 reason: "update-ingestion-state reset execution requires shard pointer mutation semantics",
             });
         }
+        if self.broadcast_indices != self.indices {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "update ingestion state divergent indices",
+                reason: "update-ingestion-state missing-index subset requires matching broadcast and target index selectors",
+            });
+        }
+        Ok(())
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        self.validate_missing_index_resolution_subset()?;
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "update ingestion state execution",
             reason: "update-ingestion-state transport execution requires broadcast shard selection, metadata write block checks, ingestion paused-state mutation, shard failure aggregation, and response rendering",
@@ -60371,6 +60382,7 @@ mod tests {
 
         let decoded = UpdateIngestionStateRequestWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, request);
+        decoded.validate_missing_index_resolution_subset().unwrap();
         assert!(matches!(
             decoded.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
@@ -60392,6 +60404,18 @@ mod tests {
             reset_request.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "update ingestion state reset execution",
+                ..
+            })
+        ));
+
+        let divergent_indices = UpdateIngestionStateRequestWire {
+            indices: vec!["other-index".to_string()],
+            ..UpdateIngestionStateRequestWire::default()
+        };
+        assert!(matches!(
+            divergent_indices.validate_missing_index_resolution_subset(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "update ingestion state divergent indices",
                 ..
             })
         ));
@@ -60618,7 +60642,7 @@ mod tests {
     }
 
     #[test]
-    fn update_ingestion_state_transport_messages_bind_rejected_action_frame_and_response() {
+    fn update_ingestion_state_transport_messages_bind_supported_action_frame_and_response() {
         let request = UpdateIngestionStateRequestWire::default();
         let mut frame =
             build_update_ingestion_state_request_message(48, OPENSEARCH_3_7_0_TRANSPORT, &request)
@@ -60630,12 +60654,16 @@ mod tests {
             classify_opensearch_transport_request_message(&message)
                 .unwrap()
                 .disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             read_update_ingestion_state_request_message(&message).unwrap(),
             request
         );
+        read_update_ingestion_state_request_message(&message)
+            .unwrap()
+            .validate_missing_index_resolution_subset()
+            .unwrap();
         assert!(matches!(
             read_update_ingestion_state_request_message(&message)
                 .unwrap()

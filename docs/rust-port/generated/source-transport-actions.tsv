@@ -144,7 +144,7 @@ implemented	DeleteSearchPipelineAction.INSTANCE	DeleteSearchPipelineTransportAct
 implemented	PauseIngestionAction.INSTANCE	TransportPauseIngestionAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	845
 implemented	ResumeIngestionAction.INSTANCE	TransportResumeIngestionAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	846
 implemented	GetIngestionStateAction.INSTANCE	TransportGetIngestionStateAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	847
-partial	UpdateIngestionStateAction.INSTANCE	TransportUpdateIngestionStateAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	848
+implemented	UpdateIngestionStateAction.INSTANCE	TransportUpdateIngestionStateAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	848
 implemented	ListTieringStatusAction.INSTANCE	TransportListTieringStatusAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	852
 implemented	GetTieringStatusAction.INSTANCE	TransportGetTieringStatusAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	853
 partial	KNNStatsAction.INSTANCE	KNNStatsTransportAction.class	/home/ubuntu/k-NN/src/main/java/org/opensearch/knn/plugin/KNNPlugin.java	348

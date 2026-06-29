@@ -931,7 +931,7 @@ The get-ingestion-state adapter covers:
   pair filters, non-empty shard states, next-page token rendering, shard failure
   rendering, negative failure counts, and negative state counts.
 
-The update-ingestion-state boundary covers:
+The update-ingestion-state adapter covers:
 
 - OpenSearch `UpdateIngestionStateRequest` broadcast parent task, broadcast
   index selector array encoded as a string-array count, strict-expand-open-and
@@ -944,10 +944,10 @@ The update-ingestion-state boundary covers:
 - OpenSearch `UpdateIngestionStateResponse` broadcast shard counters, zero
   broadcast shard failure count, acknowledgement bit, error string, and
   ingestion shard failure array at the wire decode/build layer;
-- explicit fail-closed classification for
-  `indices:admin/ingestion/updateState` until broadcast shard selection,
-  metadata write block checks, shard pointer reset, ingestion paused-state
-  mutation, shard failure aggregation, and response rendering are implemented;
+- implemented classification for `indices:admin/ingestion/updateState` in the
+  manifest missing-index subset, returning OpenSearch's
+  `IndexNotFoundException` for missing concrete index selectors before
+  broadcast shard selection, reset, or paused-state mutation;
 - explicit rejection for missing broadcast indices, missing target indices,
   blank index selectors, custom index resolution options, invalid shard ids,
   missing mutation targets, invalid reset settings, reset execution, update
@@ -3816,7 +3816,7 @@ performance-sensitive work is successful broadcast shard selection, optional
 cluster-state pagination, shard ingestion-state collection, shard failure
 aggregation, and response rendering.
 
-Current update-ingestion-state reject wire microbenchmark:
+Previous update-ingestion-state reject wire microbenchmark:
 
 ```text
 cargo run -p os-transport --release --bin update-ingestion-state-reject-wire-benchmark
@@ -3827,14 +3827,15 @@ update_ingestion_state_response_decode iterations=400000 elapsed_ms=70.777 ops_p
 update_ingestion_state_reject_wire_bottleneck_ops_per_second=1070989.09
 ```
 
-The current update-ingestion-state fail-closed boundary bottleneck is request
-encode. The payload includes the broadcast request envelope, broadcast index
-selectors, target index selectors, shard selector array, optional paused-state
-byte, and optional reset-settings marker before admission rejects execution. At
-roughly 1.07M ops/s in the latest local release run, this boundary is not a
-material transport bottleneck; the first performance-sensitive work is broadcast
-shard selection, metadata write block checks, shard pointer reset, ingestion
-paused-state mutation, shard failure aggregation, and response rendering.
+The previous update-ingestion-state fail-closed boundary bottleneck was request
+encode. The implemented missing-index subset validates the broadcast request
+envelope, matching broadcast/target concrete selectors, shard selector array,
+optional paused-state byte, and reset-free shape, then resolves concrete
+selectors against the Rust manifest before rendering the OpenSearch-shaped
+`IndexNotFoundException`. The remaining performance-sensitive work is
+successful broadcast shard selection, metadata write block checks, shard pointer
+reset, ingestion paused-state mutation, shard failure aggregation, and response
+rendering.
 
 Current list-tiering-status reject wire microbenchmark:
 
