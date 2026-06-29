@@ -3554,6 +3554,69 @@ fn multi_daemon_transport_create_pit_binds_reader_contexts_to_target_node() {
             .map(|context| context.node.clone())
             .collect::<BTreeSet<_>>();
         assert_eq!(node_ids, BTreeSet::from([expected_node.clone()]));
+
+        let list_request = os_transport::action::OpenSearchGetAllPitsRequestWire::default();
+        let list_frame = os_transport::action::build_opensearch_get_all_pits_request_message(
+            300 + index as i64,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &list_request,
+        )
+        .unwrap();
+        let list_response = send_transport_request_and_decode_response(transport_port, &list_frame);
+        let listed_pits =
+            os_transport::action::read_opensearch_get_all_pits_response_message(&list_response)
+                .unwrap();
+        assert_eq!(listed_pits.cluster_name, "steel-dev-pit-transport-multi");
+        assert_eq!(listed_pits.failures.len(), 0);
+        assert_eq!(listed_pits.nodes.len(), 1);
+        assert_eq!(listed_pits.nodes[0].node.id, expected_node);
+        assert!(listed_pits.nodes[0]
+            .pit_infos
+            .iter()
+            .any(|pit_info| pit_info.pit_id == pit_response.pit_id));
+
+        let delete_request = os_transport::action::OpenSearchDeletePitRequestWire {
+            pit_ids: vec![pit_response.pit_id.clone()],
+            ..os_transport::action::OpenSearchDeletePitRequestWire::default()
+        };
+        let delete_frame = os_transport::action::build_opensearch_delete_pit_request_message(
+            400 + index as i64,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &delete_request,
+        )
+        .unwrap();
+        let delete_response =
+            send_transport_request_and_decode_response(transport_port, &delete_frame);
+        let deleted_pits =
+            os_transport::action::read_opensearch_delete_pit_response_message(&delete_response)
+                .unwrap();
+        assert_eq!(deleted_pits.results.len(), 1);
+        assert_eq!(deleted_pits.results[0].pit_id, pit_response.pit_id);
+        assert!(deleted_pits.results[0].successful);
+
+        let post_delete_list_frame =
+            os_transport::action::build_opensearch_get_all_pits_request_message(
+                500 + index as i64,
+                OPENSEARCH_3_7_0_TRANSPORT,
+                &list_request,
+            )
+            .unwrap();
+        let post_delete_list_response =
+            send_transport_request_and_decode_response(transport_port, &post_delete_list_frame);
+        let post_delete_listed_pits =
+            os_transport::action::read_opensearch_get_all_pits_response_message(
+                &post_delete_list_response,
+            )
+            .unwrap();
+        assert_eq!(
+            post_delete_listed_pits
+                .nodes
+                .iter()
+                .flat_map(|node| node.pit_infos.iter())
+                .filter(|pit_info| pit_info.pit_id == pit_response.pit_id)
+                .count(),
+            0
+        );
         observed_nodes.insert(expected_node);
     }
 
