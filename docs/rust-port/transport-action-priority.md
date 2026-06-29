@@ -177,8 +177,8 @@ The source-derived transport inventory currently has 160 rows:
 
 | Status | Count | Meaning |
 | --- | ---: | --- |
-| `implemented` | 155 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
-| `partial` | 5 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
+| `implemented` | 156 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
+| `partial` | 4 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
 | `planned` | 0 | No source-derived transport action remains unclassified. |
 
 The k-NN plugin action sweep is complete at the boundary layer. Ten of 12
@@ -776,14 +776,16 @@ The restore-remote-store boundary covers:
   `restoreAllShards` flags at the wire decode/build layer;
 - OpenSearch `RestoreRemoteStoreResponse` accepted-only response subset where
   `RestoreInfo` is absent;
-- explicit fail-closed classification for
-  `cluster:admin/remotestore/restore` until remote-store restore service
-  coordination, shard restore planning, completion listener, `RestoreInfo`
-  decoding, and response rendering are implemented;
+- implemented local accepted subset for the default cluster-manager timeout,
+  non-empty non-blank selectors that resolve to at least one local manifest
+  index, `waitForCompletion=false`, and `restoreAllShards=false`;
+- manifest-backed acceptance recording under `remote_store_restores.accepted`
+  with requested selectors and resolved local indices, followed by an
+  OpenSearch-shaped no-`RestoreInfo` accepted response;
 - explicit rejection for custom cluster-manager timeout, missing or blank
-  index selectors, `waitForCompletion`, `restoreAllShards`, completed
-  `RestoreInfo` payloads, restore-remote-store execution, and response
-  rendering.
+  index selectors, selectors that do not resolve against the local manifest,
+  `waitForCompletion`, `restoreAllShards`, and completed `RestoreInfo`
+  payloads.
 
 The extension-proxy boundary covers:
 

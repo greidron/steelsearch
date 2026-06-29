@@ -4259,6 +4259,33 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end_at_ms,
         )?;
     } else if is_request
+        && normalized_action_hint == Some("cluster:admin/remotestore/restore")
+        && restore_remote_store_request_supports_local_accepted_subset(&body)
+    {
+        let response =
+            build_restore_remote_store_accepted_response(request_id, header_version_id, &body);
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("cluster:admin/remotestore/restore"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request
         && normalized_action_hint == Some("cluster:admin/voting_config/add_exclusions")
         && add_voting_config_exclusions_request_supports_local_execution_subset(
             &body,
@@ -13917,6 +13944,26 @@ fn build_empty_remote_store_metadata_response(request_id: i64, header_version_id
         request_id,
         Version::from_id(header_version_id as i32),
         &os_transport::action::RemoteStoreMetadataResponseWire::empty(),
+    )
+    .map(|frame| frame.to_vec())
+    .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
+}
+
+fn build_restore_remote_store_accepted_response(
+    request_id: i64,
+    header_version_id: u32,
+    body: &[u8],
+) -> Vec<u8> {
+    let Some(request) = decode_restore_remote_store_request_from_transport_body(body) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    if !record_local_restore_remote_store_acceptance(&request) {
+        return build_empty_transport_response(request_id, header_version_id);
+    }
+    os_transport::action::build_restore_remote_store_response_message(
+        request_id,
+        Version::from_id(header_version_id as i32),
+        &os_transport::action::RestoreRemoteStoreResponseWire::default(),
     )
     .map(|frame| frame.to_vec())
     .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
@@ -24227,6 +24274,13 @@ fn remote_store_metadata_request_supports_empty_subset(body: &[u8]) -> bool {
         .is_some()
 }
 
+fn restore_remote_store_request_supports_local_accepted_subset(body: &[u8]) -> bool {
+    decode_restore_remote_store_request_from_transport_body(body).is_some_and(|request| {
+        request.validate_supported_execution_subset().is_ok()
+            && !resolve_restore_remote_store_manifest_indices(&request.indices).is_empty()
+    })
+}
+
 fn add_voting_config_exclusions_request_supports_local_execution_subset(
     body: &[u8],
     transport_identity: &DevTransportIdentity,
@@ -24278,6 +24332,13 @@ fn decode_remote_store_metadata_request_from_transport_body(
     os_transport::action::read_remote_store_metadata_request_message(&message).ok()
 }
 
+fn decode_restore_remote_store_request_from_transport_body(
+    body: &[u8],
+) -> Option<os_transport::action::RestoreRemoteStoreRequestWire> {
+    let message = decode_transport_message_from_body(body)?;
+    os_transport::action::read_restore_remote_store_request_message(&message).ok()
+}
+
 fn decode_add_voting_config_exclusions_request_from_transport_body(
     body: &[u8],
 ) -> Option<os_transport::action::AddVotingConfigExclusionsRequestWire> {
@@ -24290,6 +24351,77 @@ fn decode_clear_voting_config_exclusions_request_from_transport_body(
 ) -> Option<os_transport::action::ClearVotingConfigExclusionsRequestWire> {
     let message = decode_transport_message_from_body(body)?;
     os_transport::action::read_clear_voting_config_exclusions_request_message(&message).ok()
+}
+
+fn record_local_restore_remote_store_acceptance(
+    request: &os_transport::action::RestoreRemoteStoreRequestWire,
+) -> bool {
+    if request.validate_supported_execution_subset().is_err() {
+        return false;
+    }
+    let restored_indices = resolve_restore_remote_store_manifest_indices(&request.indices);
+    if restored_indices.is_empty() {
+        return false;
+    }
+    let bindings = dev_transport_pit_bindings();
+    let mut manifest = bindings
+        .metadata_manifest
+        .lock()
+        .expect("dev transport metadata manifest lock poisoned");
+    if !manifest.is_object() {
+        *manifest = serde_json::json!({});
+    }
+    let Some(object) = manifest.as_object_mut() else {
+        return false;
+    };
+    let restore_root = object
+        .entry("remote_store_restores".to_string())
+        .or_insert_with(|| serde_json::json!({ "accepted": [] }));
+    if !restore_root.is_object() {
+        *restore_root = serde_json::json!({ "accepted": [] });
+    }
+    let Some(restore_object) = restore_root.as_object_mut() else {
+        return false;
+    };
+    let accepted = restore_object
+        .entry("accepted".to_string())
+        .or_insert_with(|| serde_json::json!([]));
+    if !accepted.is_array() {
+        *accepted = serde_json::json!([]);
+    }
+    let Some(accepted_array) = accepted.as_array_mut() else {
+        return false;
+    };
+    accepted_array.push(serde_json::json!({
+        "indices": request.indices,
+        "resolved_indices": restored_indices,
+        "wait_for_completion": request.wait_for_completion.unwrap_or(false),
+        "restore_all_shards": request.restore_all_shards.unwrap_or(false)
+    }));
+    true
+}
+
+fn resolve_restore_remote_store_manifest_indices(selectors: &[String]) -> Vec<String> {
+    let bindings = dev_transport_pit_bindings();
+    let manifest = bindings
+        .metadata_manifest
+        .lock()
+        .expect("dev transport metadata manifest lock poisoned");
+    let Some(indices) = manifest.get("indices").and_then(Value::as_object) else {
+        return Vec::new();
+    };
+    let mut resolved = Vec::new();
+    let mut seen = BTreeSet::new();
+    for selector in selectors {
+        for index_name in indices.keys() {
+            if (selector == index_name || wildcard_match(selector, index_name))
+                && seen.insert(index_name.clone())
+            {
+                resolved.push(index_name.clone());
+            }
+        }
+    }
+    resolved
 }
 
 fn apply_local_add_voting_config_exclusions(
@@ -27837,6 +27969,15 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
             Some(build_empty_remote_store_metadata_response(
                 request_id,
                 header_version_id,
+            ))
+        }
+        Some("cluster:admin/remotestore/restore")
+            if restore_remote_store_request_supports_local_accepted_subset(body) =>
+        {
+            Some(build_restore_remote_store_accepted_response(
+                request_id,
+                header_version_id,
+                body,
             ))
         }
         Some("cluster:admin/voting_config/add_exclusions")
@@ -39071,6 +39212,90 @@ mod tests {
                 &frame[6..]
             ));
         }
+    }
+
+    #[test]
+    fn restore_remote_store_transport_route_records_manifest_acceptance() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        *dev_transport_pit_bindings()
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned") = serde_json::json!({
+            "indices": {
+                "logs-restore-a": {},
+                "logs-restore-b": {},
+                "metrics-restore": {}
+            }
+        });
+        let request = os_transport::action::RestoreRemoteStoreRequestWire {
+            indices: vec!["logs-restore-*".to_string()],
+            wait_for_completion: Some(false),
+            restore_all_shards: Some(false),
+            ..os_transport::action::RestoreRemoteStoreRequestWire::default()
+        };
+        let frame = os_transport::action::build_restore_remote_store_request_message(
+            193,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(restore_remote_store_request_supports_local_accepted_subset(
+            &frame[6..]
+        ));
+
+        let response = build_restore_remote_store_accepted_response(
+            193,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &frame[6..],
+        );
+        let mut response_frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut response_frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected restore remote store response message");
+        };
+        assert_eq!(message.request_id, 193);
+        assert!(!message.status.is_request());
+        assert!(
+            os_transport::action::read_restore_remote_store_response_message(&message)
+                .unwrap()
+                .accepted
+        );
+
+        let manifest = dev_transport_pit_bindings()
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned");
+        let resolved = manifest
+            .pointer("/remote_store_restores/accepted/0/resolved_indices")
+            .and_then(Value::as_array)
+            .expect("accepted restore resolved indices");
+        assert_eq!(
+            resolved
+                .iter()
+                .filter_map(Value::as_str)
+                .collect::<Vec<_>>(),
+            vec!["logs-restore-a", "logs-restore-b"]
+        );
+        drop(manifest);
+
+        let missing_request = os_transport::action::RestoreRemoteStoreRequestWire {
+            indices: vec!["missing-restore-*".to_string()],
+            wait_for_completion: Some(false),
+            restore_all_shards: Some(false),
+            ..os_transport::action::RestoreRemoteStoreRequestWire::default()
+        };
+        let missing_frame = os_transport::action::build_restore_remote_store_request_message(
+            194,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &missing_request,
+        )
+        .unwrap();
+        assert!(!restore_remote_store_request_supports_local_accepted_subset(&missing_frame[6..]));
     }
 
     #[test]

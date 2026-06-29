@@ -1975,8 +1975,8 @@ pub fn classify_opensearch_transport_action(
         },
         RESTORE_REMOTE_STORE_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
-            disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "restore-remote-store transport execution requires remote-store restore service coordination, shard restore planning, completion listener, RestoreInfo decoding, and response rendering",
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "restore-remote-store transport adapter validates the local accepted subset, records accepted restore selectors in the local manifest, and renders OpenSearch's no-RestoreInfo accepted response",
         },
         EXTENSION_PROXY_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -17129,7 +17129,7 @@ impl RestoreRemoteStoreRequestWire {
         Ok(request)
     }
 
-    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+    pub fn validate_supported_execution_subset(&self) -> Result<(), TransportActionWireError> {
         if self.cluster_manager_timeout != TimeValueWire::seconds(30) {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "restore remote store cluster-manager timeout",
@@ -17161,9 +17161,14 @@ impl RestoreRemoteStoreRequestWire {
                 reason: "restore-all-shards requires remote-store shard restore planning semantics",
             });
         }
+        Ok(())
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        self.validate_supported_execution_subset()?;
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "restore remote store execution",
-            reason: "restore-remote-store transport execution requires remote-store restore service coordination, shard restore planning, completion listener, RestoreInfo decoding, and response rendering",
+            reason: "use validate_supported_execution_subset for the implemented local accepted restore-remote-store adapter",
         })
     }
 }
@@ -17198,6 +17203,12 @@ impl RestoreRemoteStoreResponseWire {
     }
 
     pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        if self.accepted {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "restore remote store response rendering",
+                reason: "use the implemented restore-remote-store response message builder for accepted responses without RestoreInfo",
+            });
+        }
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "restore remote store response rendering",
             reason: "RestoreRemoteStoreResponse rendering requires remote-store restore completion and RestoreInfo mapping",
@@ -59069,7 +59080,7 @@ mod tests {
     }
 
     #[test]
-    fn restore_remote_store_request_wire_round_trips_and_rejects_execution_boundary() {
+    fn restore_remote_store_request_wire_round_trips_and_validates_local_accepted_subset() {
         let request = RestoreRemoteStoreRequestWire {
             parent_task_node: "cluster-manager".to_string(),
             parent_task_id: Some(37),
@@ -59081,6 +59092,7 @@ mod tests {
 
         let decoded = RestoreRemoteStoreRequestWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, request);
+        decoded.validate_supported_execution_subset().unwrap();
         assert!(matches!(
             decoded.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
@@ -59097,7 +59109,7 @@ mod tests {
             ..RestoreRemoteStoreRequestWire::default()
         };
         assert!(matches!(
-            cluster_manager_timeout.reject_unsupported_execution(),
+            cluster_manager_timeout.validate_supported_execution_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "restore remote store cluster-manager timeout",
                 ..
@@ -59109,7 +59121,7 @@ mod tests {
             ..RestoreRemoteStoreRequestWire::default()
         };
         assert!(matches!(
-            missing_indices.reject_unsupported_execution(),
+            missing_indices.validate_supported_execution_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "restore remote store missing indices",
                 ..
@@ -59121,7 +59133,7 @@ mod tests {
             ..RestoreRemoteStoreRequestWire::default()
         };
         assert!(matches!(
-            blank_index.reject_unsupported_execution(),
+            blank_index.validate_supported_execution_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "restore remote store blank index selector",
                 ..
@@ -59133,7 +59145,7 @@ mod tests {
             ..RestoreRemoteStoreRequestWire::default()
         };
         assert!(matches!(
-            wait_for_completion.reject_unsupported_execution(),
+            wait_for_completion.validate_supported_execution_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "restore remote store wait for completion",
                 ..
@@ -59145,7 +59157,7 @@ mod tests {
             ..RestoreRemoteStoreRequestWire::default()
         };
         assert!(matches!(
-            restore_all_shards.reject_unsupported_execution(),
+            restore_all_shards.validate_supported_execution_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "restore remote store all shards",
                 ..
@@ -59189,7 +59201,8 @@ mod tests {
     }
 
     #[test]
-    fn restore_remote_store_transport_messages_bind_rejected_action_frame_and_accepted_response() {
+    fn restore_remote_store_transport_messages_bind_implemented_action_frame_and_accepted_response()
+    {
         let request = RestoreRemoteStoreRequestWire::default();
         let mut frame =
             build_restore_remote_store_request_message(37, OPENSEARCH_3_7_0_TRANSPORT, &request)
@@ -59201,12 +59214,16 @@ mod tests {
             classify_opensearch_transport_request_message(&message)
                 .unwrap()
                 .disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             read_restore_remote_store_request_message(&message).unwrap(),
             request
         );
+        read_restore_remote_store_request_message(&message)
+            .unwrap()
+            .validate_supported_execution_subset()
+            .unwrap();
         assert!(matches!(
             read_restore_remote_store_request_message(&message)
                 .unwrap()

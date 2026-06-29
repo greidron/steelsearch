@@ -133,7 +133,7 @@ implemented	CreatePitAction.INSTANCE	TransportCreatePitAction.class	/home/ubuntu
 implemented	DeletePitAction.INSTANCE	TransportDeletePitAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	822
 implemented	PitSegmentsAction.INSTANCE	TransportPitSegmentsAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	823
 implemented	GetAllPitsAction.INSTANCE	TransportGetAllPitsAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	824
-partial	RestoreRemoteStoreAction.INSTANCE	TransportRestoreRemoteStoreAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	827
+implemented	RestoreRemoteStoreAction.INSTANCE	TransportRestoreRemoteStoreAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	827
 implemented	ExtensionProxyAction.INSTANCE	ExtensionProxyTransportAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	831
 implemented	DecommissionAction.INSTANCE	TransportDecommissionAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	835
 implemented	GetDecommissionStateAction.INSTANCE	TransportGetDecommissionStateAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	836

@@ -116,12 +116,12 @@ class TransportActionCoverageTests(unittest.TestCase):
             payload = json.loads(output.read_text(encoding="utf-8"))
             self.assertEqual(result, 0)
             self.assertEqual(payload["summary"]["transport_action_count"], 160)
-            self.assertEqual(payload["summary"]["implemented_action_count"], 155)
-            self.assertEqual(payload["summary"]["partial_action_count"], 5)
+            self.assertEqual(payload["summary"]["implemented_action_count"], 156)
+            self.assertEqual(payload["summary"]["partial_action_count"], 4)
             self.assertEqual(payload["summary"]["planned_action_count"], 0)
             self.assertEqual(len(payload["actions"]), 160)
-            self.assertEqual(len(payload["implemented_actions"]), 155)
-            self.assertEqual(len(payload["partial_actions"]), 5)
+            self.assertEqual(len(payload["implemented_actions"]), 156)
+            self.assertEqual(len(payload["partial_actions"]), 4)
             self.assertEqual(payload["planned_actions"], [])
 
     def test_locally_handled_transport_actions_are_implemented_in_source_tsv(self):
@@ -148,6 +148,7 @@ class TransportActionCoverageTests(unittest.TestCase):
             "CreateSnapshotAction.INSTANCE",
             "CloneSnapshotAction.INSTANCE",
             "SnapshotsStatusAction.INSTANCE",
+            "RestoreRemoteStoreAction.INSTANCE",
             "GetIndexAction.INSTANCE",
             "IndicesExistsAction.INSTANCE",
             "ScaleIndexAction.INSTANCE",
