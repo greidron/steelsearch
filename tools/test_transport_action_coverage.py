@@ -116,12 +116,12 @@ class TransportActionCoverageTests(unittest.TestCase):
             payload = json.loads(output.read_text(encoding="utf-8"))
             self.assertEqual(result, 0)
             self.assertEqual(payload["summary"]["transport_action_count"], 160)
-            self.assertEqual(payload["summary"]["implemented_action_count"], 142)
-            self.assertEqual(payload["summary"]["partial_action_count"], 18)
+            self.assertEqual(payload["summary"]["implemented_action_count"], 143)
+            self.assertEqual(payload["summary"]["partial_action_count"], 17)
             self.assertEqual(payload["summary"]["planned_action_count"], 0)
             self.assertEqual(len(payload["actions"]), 160)
-            self.assertEqual(len(payload["implemented_actions"]), 142)
-            self.assertEqual(len(payload["partial_actions"]), 18)
+            self.assertEqual(len(payload["implemented_actions"]), 143)
+            self.assertEqual(len(payload["partial_actions"]), 17)
             self.assertEqual(payload["planned_actions"], [])
 
     def test_locally_handled_transport_actions_are_implemented_in_source_tsv(self):

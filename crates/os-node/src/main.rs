@@ -2433,6 +2433,32 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end_at_ms,
         )?;
     } else if is_request
+        && normalized_action_hint == Some("cluster:admin/snapshot/restore")
+        && restore_snapshot_request_supports_manifest_execution_subset(&body)
+    {
+        let response = build_restore_snapshot_response(request_id, header_version_id, &body);
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("cluster:admin/snapshot/restore"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request
         && normalized_action_hint == Some("cluster:admin/snapshot/delete")
         && delete_snapshot_request_supports_manifest_execution_subset(&body)
     {
@@ -8400,6 +8426,215 @@ fn apply_transport_clone_snapshot_to_manifest(
             true
         }
         _ => false,
+    }
+}
+
+fn build_restore_snapshot_response(
+    request_id: i64,
+    header_version_id: u32,
+    body: &[u8],
+) -> Vec<u8> {
+    let Some(request) = decode_restore_snapshot_request_from_transport_body(body) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    if !restore_snapshot_request_matches_manifest_subset(&request) {
+        return build_empty_transport_response(request_id, header_version_id);
+    }
+    if !apply_transport_restore_snapshot_to_manifest(&request) {
+        return build_empty_transport_response(request_id, header_version_id);
+    }
+    let response = os_transport::action::RestoreSnapshotResponseWire::accepted();
+    os_transport::action::build_restore_snapshot_response_message(
+        request_id,
+        Version::from_id(header_version_id as i32),
+        &response,
+    )
+    .map(|frame| frame.to_vec())
+    .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
+}
+
+fn restore_snapshot_request_supports_manifest_execution_subset(body: &[u8]) -> bool {
+    decode_restore_snapshot_request_from_transport_body(body)
+        .is_some_and(|request| restore_snapshot_request_matches_manifest_subset(&request))
+}
+
+fn decode_restore_snapshot_request_from_transport_body(
+    body: &[u8],
+) -> Option<os_transport::action::RestoreSnapshotRequestWire> {
+    let message = decode_transport_message_from_body(body)?;
+    os_transport::action::read_restore_snapshot_request_message(&message).ok()
+}
+
+fn restore_snapshot_request_matches_manifest_subset(
+    request: &os_transport::action::RestoreSnapshotRequestWire,
+) -> bool {
+    request.validate_supported_execution_subset().is_ok()
+        && snapshot_repository_exists_in_manifest(&request.repository)
+        && manifest_snapshot_restore_indices(
+            &request.repository,
+            &request.snapshot,
+            &request.indices,
+        )
+        .is_some_and(|indices| indices.iter().all(|index| !transport_index_exists(index)))
+}
+
+fn manifest_snapshot_restore_indices(
+    repository: &str,
+    snapshot: &str,
+    requested_indices: &[String],
+) -> Option<Vec<String>> {
+    let bindings = dev_transport_pit_bindings();
+    let manifest = bindings
+        .metadata_manifest
+        .lock()
+        .expect("dev transport metadata manifest lock poisoned");
+    let record = manifest_snapshot_record(&manifest, repository, snapshot)?;
+    if !snapshot_record_state_is_success(record) {
+        return None;
+    }
+    let metadata = snapshot_record_index_metadata(record)?;
+    let mut indices = if requested_indices.is_empty() {
+        metadata.keys().cloned().collect::<Vec<_>>()
+    } else {
+        requested_indices.to_vec()
+    };
+    if indices.is_empty() || indices.iter().any(|index| !metadata.contains_key(index)) {
+        return None;
+    }
+    indices.sort();
+    indices.dedup();
+    Some(indices)
+}
+
+fn apply_transport_restore_snapshot_to_manifest(
+    request: &os_transport::action::RestoreSnapshotRequestWire,
+) -> bool {
+    let bindings = dev_transport_pit_bindings();
+    let existing_created_indices = bindings
+        .created_indices
+        .lock()
+        .expect("dev transport created indices lock poisoned")
+        .clone();
+    let mut restored_indices = Vec::new();
+    {
+        let mut manifest = bindings
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned");
+        let Some(record) =
+            manifest_snapshot_record(&manifest, &request.repository, &request.snapshot)
+        else {
+            return false;
+        };
+        if !snapshot_record_state_is_success(record) {
+            return false;
+        }
+        let Some(metadata) = snapshot_record_index_metadata(record) else {
+            return false;
+        };
+        let mut selected = if request.indices.is_empty() {
+            metadata.keys().cloned().collect::<Vec<_>>()
+        } else {
+            request.indices.clone()
+        };
+        selected.sort();
+        selected.dedup();
+        if selected.is_empty()
+            || selected.iter().any(|index| {
+                !metadata.contains_key(index) || existing_created_indices.contains(index)
+            })
+        {
+            return false;
+        }
+        let restore_entries = selected
+            .iter()
+            .map(|index| {
+                let mut entry = metadata
+                    .get(index)
+                    .cloned()
+                    .unwrap_or_else(|| serde_json::json!({}));
+                normalize_restored_index_manifest_entry(&mut entry);
+                (index.clone(), entry)
+            })
+            .collect::<Vec<_>>();
+        if !manifest.is_object() {
+            *manifest = serde_json::json!({});
+        }
+        if manifest.get("indices").and_then(Value::as_object).is_none() {
+            manifest["indices"] = serde_json::json!({});
+        }
+        let Some(indices) = manifest["indices"].as_object_mut() else {
+            return false;
+        };
+        if restore_entries
+            .iter()
+            .any(|(index, _)| indices.contains_key(index))
+        {
+            return false;
+        }
+        for (index, entry) in restore_entries {
+            indices.insert(index.clone(), entry);
+            restored_indices.push(index);
+        }
+    }
+    let mut created_indices = bindings
+        .created_indices
+        .lock()
+        .expect("dev transport created indices lock poisoned");
+    for index in restored_indices {
+        created_indices.insert(index);
+    }
+    true
+}
+
+fn manifest_snapshot_record<'a>(
+    manifest: &'a Value,
+    repository: &str,
+    snapshot: &str,
+) -> Option<&'a Value> {
+    match manifest.get("snapshots")?.get(repository)? {
+        Value::Object(items) => items.get(snapshot),
+        Value::Array(items) => items.iter().find(|item| {
+            item.get("snapshot")
+                .or_else(|| item.get("name"))
+                .and_then(Value::as_str)
+                == Some(snapshot)
+        }),
+        _ => None,
+    }
+}
+
+fn snapshot_record_state_is_success(record: &Value) -> bool {
+    record
+        .get("state")
+        .or_else(|| record.get("snapshot_state"))
+        .and_then(Value::as_str)
+        .map_or(true, |state| state == "SUCCESS")
+}
+
+fn snapshot_record_index_metadata(record: &Value) -> Option<&serde_json::Map<String, Value>> {
+    record
+        .get("index_metadata")
+        .or_else(|| record.get("indices_metadata"))
+        .or_else(|| record.get("indexMetadata"))
+        .and_then(Value::as_object)
+}
+
+fn normalize_restored_index_manifest_entry(entry: &mut Value) {
+    if !entry.is_object() {
+        *entry = serde_json::json!({});
+    }
+    if entry.get("settings").is_none() || entry["settings"].is_null() {
+        entry["settings"] = serde_json::json!({});
+    }
+    if entry.get("mappings").is_none() || entry["mappings"].is_null() {
+        entry["mappings"] = serde_json::json!({});
+    }
+    if entry.get("aliases").is_none() || entry["aliases"].is_null() {
+        entry["aliases"] = serde_json::json!({});
+    }
+    if entry.get("state").is_none() || entry["state"].is_null() {
+        entry["state"] = serde_json::json!("open");
     }
 }
 
@@ -25625,6 +25860,15 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
                 body,
             ))
         }
+        Some("cluster:admin/snapshot/restore")
+            if restore_snapshot_request_supports_manifest_execution_subset(body) =>
+        {
+            Some(build_restore_snapshot_response(
+                request_id,
+                header_version_id,
+                body,
+            ))
+        }
         Some("cluster:admin/snapshot/delete")
             if delete_snapshot_request_supports_manifest_execution_subset(body) =>
         {
@@ -32576,6 +32820,181 @@ mod tests {
         assert!(!clone_snapshot_request_supports_manifest_execution_subset(
             &frame[6..]
         ));
+    }
+
+    #[test]
+    fn restore_snapshot_transport_route_restores_object_manifest_index_metadata() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        let bindings = dev_transport_pit_bindings();
+        {
+            let mut manifest = bindings
+                .metadata_manifest
+                .lock()
+                .expect("dev transport metadata manifest lock poisoned");
+            *manifest = serde_json::json!({
+                "snapshot_repositories": {
+                    "repo-snapshots": {
+                        "type": "fs",
+                        "settings": {
+                            "location": "/tmp/repo-snapshots"
+                        }
+                    }
+                },
+                "indices": {},
+                "snapshots": {
+                    "repo-snapshots": {
+                        "snapshot-a": {
+                            "snapshot": "snapshot-a",
+                            "state": "SUCCESS",
+                            "index_metadata": {
+                                "logs-000001": {
+                                    "settings": {
+                                        "index": {
+                                            "number_of_shards": "1"
+                                        }
+                                    },
+                                    "mappings": {
+                                        "properties": {
+                                            "message": {
+                                                "type": "text"
+                                            }
+                                        }
+                                    },
+                                    "aliases": {
+                                        "logs": {}
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        let request = os_transport::action::RestoreSnapshotRequestWire {
+            repository: "repo-snapshots".to_string(),
+            snapshot: "snapshot-a".to_string(),
+            indices: vec!["logs-000001".to_string()],
+            ..os_transport::action::RestoreSnapshotRequestWire::default()
+        };
+        let frame = os_transport::action::build_restore_snapshot_request_message(
+            94,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(restore_snapshot_request_supports_manifest_execution_subset(
+            &frame[6..]
+        ));
+
+        let response = build_restore_snapshot_response(
+            94,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &frame[6..],
+        );
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected restore snapshot response message");
+        };
+        assert_eq!(message.request_id, 94);
+        let response =
+            os_transport::action::read_restore_snapshot_response_message(&message).unwrap();
+        assert!(!response.restore_info_present);
+
+        let manifest = bindings
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned");
+        assert_eq!(
+            manifest["indices"]["logs-000001"]["mappings"]["properties"]["message"]["type"],
+            "text"
+        );
+        assert_eq!(
+            manifest["indices"]["logs-000001"]["aliases"]
+                .as_object()
+                .unwrap()
+                .contains_key("logs"),
+            true
+        );
+    }
+
+    #[test]
+    fn restore_snapshot_transport_route_excludes_missing_metadata_or_existing_index() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        let bindings = dev_transport_pit_bindings();
+        {
+            let mut manifest = bindings
+                .metadata_manifest
+                .lock()
+                .expect("dev transport metadata manifest lock poisoned");
+            *manifest = serde_json::json!({
+                "snapshot_repositories": {
+                    "repo-snapshots": {
+                        "type": "fs",
+                        "settings": {}
+                    }
+                },
+                "indices": {
+                    "logs-existing": {
+                        "settings": {},
+                        "mappings": {},
+                        "aliases": {}
+                    }
+                },
+                "snapshots": {
+                    "repo-snapshots": [
+                        {
+                            "snapshot": "snapshot-a",
+                            "state": "SUCCESS",
+                            "indices": ["logs-missing-metadata"],
+                            "index_metadata": {
+                                "logs-existing": {
+                                    "settings": {},
+                                    "mappings": {},
+                                    "aliases": {}
+                                }
+                            }
+                        }
+                    ]
+                }
+            });
+        }
+
+        let missing_metadata = os_transport::action::RestoreSnapshotRequestWire {
+            repository: "repo-snapshots".to_string(),
+            snapshot: "snapshot-a".to_string(),
+            indices: vec!["logs-missing-metadata".to_string()],
+            ..os_transport::action::RestoreSnapshotRequestWire::default()
+        };
+        let frame = os_transport::action::build_restore_snapshot_request_message(
+            95,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &missing_metadata,
+        )
+        .unwrap();
+        assert!(!restore_snapshot_request_supports_manifest_execution_subset(&frame[6..]));
+
+        let existing_index = os_transport::action::RestoreSnapshotRequestWire {
+            repository: "repo-snapshots".to_string(),
+            snapshot: "snapshot-a".to_string(),
+            indices: vec!["logs-existing".to_string()],
+            ..os_transport::action::RestoreSnapshotRequestWire::default()
+        };
+        let frame = os_transport::action::build_restore_snapshot_request_message(
+            96,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &existing_index,
+        )
+        .unwrap();
+        assert!(!restore_snapshot_request_supports_manifest_execution_subset(&frame[6..]));
     }
 
     #[test]

@@ -177,8 +177,8 @@ The source-derived transport inventory currently has 160 rows:
 
 | Status | Count | Meaning |
 | --- | ---: | --- |
-| `implemented` | 112 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
-| `partial` | 48 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
+| `implemented` | 143 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
+| `partial` | 17 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
 | `planned` | 0 | No source-derived transport action remains unclassified. |
 
 The k-NN plugin action sweep is complete at the boundary layer. All 12
@@ -260,8 +260,8 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `cluster:admin/snapshot/delete` (implemented manifest-backed snapshot deletion subset)
 - `cluster:admin/snapshot/create` (implemented manifest-backed accepted snapshot subset)
 - `cluster:admin/snapshot/clone` (implemented manifest-backed snapshot clone subset)
-- `cluster:admin/snapshot/restore` (rejected fail-closed)
-- `cluster:admin/snapshot/status` (rejected fail-closed)
+- `cluster:admin/snapshot/restore` (implemented manifest-backed snapshot restore subset)
+- `cluster:admin/snapshot/status` (implemented empty snapshot-status subset)
 - `cluster:internal/extensions` (implemented no-op extension manager subset)
 - `cluster:admin/routing/awareness/weights/put` (rejected fail-closed)
 - `cluster:admin/routing/awareness/weights/get` (implemented manifest-backed
@@ -750,15 +750,21 @@ The restore-snapshot boundary covers:
   options, wait/global-state/partial/alias flags, index settings,
   ignored-index-settings, snapshot UUID, storage type, source remote
   repositories, and alias write-index policy at the wire decode/build layer;
-- explicit fail-closed classification for `cluster:admin/snapshot/restore`
-  until snapshot restore coordination and restore response rendering are
-  implemented;
+- implemented accepted-only `RestoreSnapshotResponse` rendering for the
+  `wait_for_completion=false` path where OpenSearch writes a null
+  `RestoreInfo`;
+- implemented manifest-backed restore for exact local snapshot records that
+  carry per-index metadata under `index_metadata`, `indices_metadata`, or
+  `indexMetadata`; selected indices are copied into the Rust metadata
+  manifest and rejected if already present locally;
 - explicit rejection for custom cluster-manager timeout, blank snapshot or
-  repository names, blank index selectors, custom indices options, index or
-  alias rename rules, wait-for-completion, global-state restore, partial
-  restore, alias exclusion, index setting overrides, ignored index settings,
-  snapshot UUID pinning, remote snapshot storage, source remote repositories,
-  alias write-index policy changes, and restore-snapshot execution.
+  repository names, blank or pattern index selectors, custom indices options,
+  index or alias rename rules, wait-for-completion, global-state restore,
+  partial restore, alias exclusion, index setting overrides, ignored index
+  settings, snapshot UUID pinning, remote snapshot storage, source remote
+  repositories, alias write-index policy changes, missing local repositories,
+  missing snapshot records, non-success snapshot records, snapshot records
+  without per-index metadata, and local target index conflicts.
 
 The restore-remote-store boundary covers:
 

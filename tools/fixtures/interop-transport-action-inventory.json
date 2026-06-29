@@ -207,8 +207,8 @@
       "transport_action": "TransportRestoreSnapshotAction",
       "request_wire_type": "RestoreSnapshotRequest",
       "response_wire_type": "RestoreSnapshotResponse",
-      "disposition": "rejected",
-      "reason": "Restore-snapshot transport execution requires snapshot restore coordination and restore response rendering"
+      "disposition": "implemented",
+      "reason": "Restore-snapshot transport adapter validates the bounded local manifest subset, restores per-index snapshot metadata into the local manifest, and renders an OpenSearch-shaped accepted response"
     },
     {
       "action_name": "cluster:admin/snapshot/status",

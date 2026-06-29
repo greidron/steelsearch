@@ -1972,8 +1972,8 @@ pub fn classify_opensearch_transport_action(
         },
         RESTORE_SNAPSHOT_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
-            disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "restore-snapshot transport execution requires snapshot restore coordination and restore response rendering",
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "restore-snapshot transport adapter validates the bounded local manifest subset, restores per-index snapshot metadata into the local manifest, and renders an OpenSearch-shaped accepted response",
         },
         RESTORE_REMOTE_STORE_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -7649,6 +7649,35 @@ pub fn read_restore_snapshot_request_message(
         });
     }
     RestoreSnapshotRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_restore_snapshot_response_message(
+    request_id: i64,
+    version: Version,
+    response: &RestoreSnapshotResponseWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    response.write(&mut body)?;
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::response(),
+        version,
+        variable_header: BytesMut::new(),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_restore_snapshot_response_message(
+    message: &TransportMessage,
+) -> Result<RestoreSnapshotResponseWire, TransportActionWireError> {
+    if message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "response",
+            actual: message.status.bits(),
+        });
+    }
+    RestoreSnapshotResponseWire::read(message.body.clone().freeze())
 }
 
 pub fn build_restore_remote_store_request_message(
@@ -16821,7 +16850,7 @@ impl RestoreSnapshotRequestWire {
         Ok(request)
     }
 
-    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+    pub fn validate_supported_execution_subset(&self) -> Result<(), TransportActionWireError> {
         if self.cluster_manager_timeout != TimeValueWire::seconds(30) {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "restore snapshot cluster-manager timeout",
@@ -16844,6 +16873,19 @@ impl RestoreSnapshotRequestWire {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "restore snapshot blank index selector",
                 reason: "OpenSearch restore-snapshot index selectors must not be blank",
+            });
+        }
+        if self.indices.iter().any(|index| {
+            index.contains('*')
+                || index.contains('?')
+                || index.contains(',')
+                || index.starts_with('<')
+                || index.contains(':')
+        }) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "restore snapshot index pattern",
+                reason:
+                    "restore-snapshot index patterns require OpenSearch index selection semantics",
             });
         }
         if self.indices_options != OpenSearchIndicesOptionsWire::strict_expand_open() {
@@ -16926,10 +16968,61 @@ impl RestoreSnapshotRequestWire {
                 reason: "alias write-index policy changes require restore alias metadata rewrite semantics",
             });
         }
+        Ok(())
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        self.validate_supported_execution_subset()?;
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "restore snapshot execution",
-            reason: "restore-snapshot transport execution requires snapshot restore coordination and restore response rendering",
+            reason: "restore-snapshot transport execution is handled by the manifest-backed local adapter",
         })
+    }
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct RestoreSnapshotResponseWire {
+    pub restore_info_present: bool,
+}
+
+impl RestoreSnapshotResponseWire {
+    pub fn accepted() -> Self {
+        Self {
+            restore_info_present: false,
+        }
+    }
+
+    pub fn write(&self, output: &mut StreamOutput) -> Result<(), TransportActionWireError> {
+        self.validate_supported_subset()?;
+        output.write_bool(false);
+        Ok(())
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let restore_info_present = input.read_bool()?;
+        if restore_info_present {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "restore snapshot response restore info",
+                reason:
+                    "RestoreInfo response decoding requires full restore metadata stream support",
+            });
+        }
+        require_no_trailing_bytes(&input)?;
+        Ok(Self {
+            restore_info_present,
+        })
+    }
+
+    pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
+        if self.restore_info_present {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "restore snapshot response restore info",
+                reason:
+                    "RestoreInfo response encoding requires full restore metadata stream support",
+            });
+        }
+        Ok(())
     }
 }
 
@@ -58347,7 +58440,7 @@ mod tests {
             parent_task_id: Some(36),
             snapshot: "snap-a".to_string(),
             repository: "repo-a".to_string(),
-            indices: vec!["logs-*".to_string()],
+            indices: vec!["logs-000001".to_string()],
             ..RestoreSnapshotRequestWire::default()
         };
         let mut output = StreamOutput::new();
@@ -58355,6 +58448,7 @@ mod tests {
 
         let decoded = RestoreSnapshotRequestWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, request);
+        assert!(decoded.validate_supported_execution_subset().is_ok());
         assert!(matches!(
             decoded.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
@@ -58362,6 +58456,14 @@ mod tests {
                 ..
             })
         ));
+
+        let response = RestoreSnapshotResponseWire::accepted();
+        let mut output = StreamOutput::new();
+        response.write(&mut output).unwrap();
+        assert_eq!(
+            RestoreSnapshotResponseWire::read(output.freeze()).unwrap(),
+            response
+        );
     }
 
     #[test]
@@ -58410,6 +58512,18 @@ mod tests {
             blank_index.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "restore snapshot blank index selector",
+                ..
+            })
+        ));
+
+        let index_pattern = RestoreSnapshotRequestWire {
+            indices: vec!["logs-*".to_string()],
+            ..RestoreSnapshotRequestWire::default()
+        };
+        assert!(matches!(
+            index_pattern.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "restore snapshot index pattern",
                 ..
             })
         ));
@@ -58576,7 +58690,7 @@ mod tests {
     }
 
     #[test]
-    fn restore_snapshot_transport_messages_bind_rejected_action_frame() {
+    fn restore_snapshot_transport_messages_bind_supported_action_frame() {
         let request = RestoreSnapshotRequestWire::default();
         let mut frame =
             build_restore_snapshot_request_message(36, OPENSEARCH_3_7_0_TRANSPORT, &request)
@@ -58597,6 +58711,17 @@ mod tests {
                 ..
             })
         ));
+        let response = RestoreSnapshotResponseWire::accepted();
+        let mut frame =
+            build_restore_snapshot_response_message(36, OPENSEARCH_3_7_0_TRANSPORT, &response)
+                .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected restore snapshot response message");
+        };
+        assert_eq!(
+            read_restore_snapshot_response_message(&message).unwrap(),
+            response
+        );
     }
 
     #[test]
