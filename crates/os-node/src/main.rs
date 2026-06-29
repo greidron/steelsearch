@@ -3984,6 +3984,38 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end_at_ms,
         )?;
     } else if is_request
+        && normalized_action_hint
+            == Some("cluster:admin/knn_training_job_route_decision_info_action")
+        && training_job_route_decision_info_request_supports_local_subset(&body)
+    {
+        let response = build_training_job_route_decision_info_response(
+            request_id,
+            header_version_id,
+            &body,
+            transport_identity,
+        );
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("cluster:admin/knn_training_job_route_decision_info_action"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request
         && normalized_action_hint == Some("cluster:admin/knn_remove_model_from_cache_action")
         && remove_model_from_cache_request_supports_local_subset(&body)
     {
@@ -15067,6 +15099,38 @@ fn build_remove_model_from_cache_response(
     .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
 }
 
+fn build_training_job_route_decision_info_response(
+    request_id: i64,
+    header_version_id: u32,
+    body: &[u8],
+    transport_identity: &DevTransportIdentity,
+) -> Vec<u8> {
+    let Some(request) = decode_training_job_route_decision_info_request_from_transport_body(body)
+    else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    if !training_job_route_decision_info_request_matches_local_subset(&request) {
+        return build_empty_transport_response(request_id, header_version_id);
+    }
+    let training_job_count = local_transport_active_knn_training_job_count();
+    let response = os_transport::action::TrainingJobRouteDecisionInfoResponseWire {
+        cluster_name: transport_identity.cluster_name.clone(),
+        nodes: vec![
+            os_transport::action::TrainingJobRouteDecisionInfoNodeResponseWire::new(
+                discovery_node_wire_from_identity(transport_identity),
+                training_job_count,
+            ),
+        ],
+    };
+    os_transport::action::build_training_job_route_decision_info_response_message(
+        request_id,
+        Version::from_id(header_version_id as i32),
+        &response,
+    )
+    .map(|frame| frame.to_vec())
+    .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
+}
+
 fn knn_stats_request_supports_local_subset(body: &[u8]) -> bool {
     decode_knn_stats_request_from_transport_body(body)
         .is_some_and(|request| knn_stats_request_matches_local_subset(&request))
@@ -15085,6 +15149,12 @@ fn clear_cache_request_supports_local_subset(body: &[u8]) -> bool {
 fn remove_model_from_cache_request_supports_local_subset(body: &[u8]) -> bool {
     decode_remove_model_from_cache_request_from_transport_body(body)
         .is_some_and(|request| remove_model_from_cache_request_matches_local_subset(&request))
+}
+
+fn training_job_route_decision_info_request_supports_local_subset(body: &[u8]) -> bool {
+    decode_training_job_route_decision_info_request_from_transport_body(body).is_some_and(
+        |request| training_job_route_decision_info_request_matches_local_subset(&request),
+    )
 }
 
 fn decode_knn_stats_request_from_transport_body(
@@ -15115,6 +15185,13 @@ fn decode_remove_model_from_cache_request_from_transport_body(
     os_transport::action::read_remove_model_from_cache_request_message(&message).ok()
 }
 
+fn decode_training_job_route_decision_info_request_from_transport_body(
+    body: &[u8],
+) -> Option<os_transport::action::TrainingJobRouteDecisionInfoRequestWire> {
+    let message = decode_transport_message_from_body(body)?;
+    os_transport::action::read_training_job_route_decision_info_request_message(&message).ok()
+}
+
 fn knn_stats_request_matches_local_subset(
     request: &os_transport::action::KnnStatsRequestWire,
 ) -> bool {
@@ -15139,6 +15216,12 @@ fn clear_cache_request_matches_local_subset(
 
 fn remove_model_from_cache_request_matches_local_subset(
     request: &os_transport::action::RemoveModelFromCacheRequestWire,
+) -> bool {
+    request.validate_supported_execution_subset().is_ok()
+}
+
+fn training_job_route_decision_info_request_matches_local_subset(
+    request: &os_transport::action::TrainingJobRouteDecisionInfoRequestWire,
 ) -> bool {
     request.validate_supported_execution_subset().is_ok()
 }
@@ -15238,6 +15321,20 @@ fn remove_model_from_transport_knn_cache_state(model_id: &str) -> bool {
         current.model_cache_used_bytes = 0;
     }
     persist_transport_shared_runtime_state(&state)
+}
+
+fn local_transport_active_knn_training_job_count() -> i32 {
+    let Some(state) = load_transport_knn_operational_state() else {
+        return 0;
+    };
+    i32::try_from(
+        state
+            .trained_models
+            .values()
+            .filter(|model| model.state == "training")
+            .count(),
+    )
+    .unwrap_or(i32::MAX)
 }
 
 fn transport_manifest_index_is_knn_enabled(index_body: &Value) -> bool {
@@ -27453,6 +27550,16 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
                 body,
             ))
         }
+        Some("cluster:admin/knn_training_job_route_decision_info_action")
+            if training_job_route_decision_info_request_supports_local_subset(body) =>
+        {
+            Some(build_training_job_route_decision_info_response(
+                request_id,
+                header_version_id,
+                body,
+                transport_identity,
+            ))
+        }
         Some("cluster:admin/knn_remove_model_from_cache_action")
             if remove_model_from_cache_request_supports_local_subset(body) =>
         {
@@ -32295,6 +32402,121 @@ mod tests {
             response.cluster_stats["circuit_breaker_triggered"],
             serde_json::json!(false)
         );
+        let _ = fs::remove_file(shared_state_path);
+    }
+
+    #[test]
+    fn training_job_route_decision_info_transport_route_reports_local_active_job_count() {
+        struct RecordingTransportConnection {
+            writes: Vec<u8>,
+        }
+
+        impl std::io::Read for RecordingTransportConnection {
+            fn read(&mut self, _buf: &mut [u8]) -> std::io::Result<usize> {
+                Ok(0)
+            }
+        }
+
+        impl std::io::Write for RecordingTransportConnection {
+            fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+                self.writes.extend_from_slice(buf);
+                Ok(buf.len())
+            }
+
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+
+        impl TransportConnection for RecordingTransportConnection {
+            fn set_read_timeout(&self, _duration: Option<Duration>) -> std::io::Result<()> {
+                Ok(())
+            }
+
+            fn peer_addr(&self) -> std::io::Result<SocketAddr> {
+                "127.0.0.1:9300"
+                    .parse()
+                    .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidInput, error))
+            }
+        }
+
+        let shared_state_path = unique_test_path("training-job-route-transport-runtime.json");
+        let mut runtime_state = SharedRuntimeState::default();
+        let mut knn_state = KnnOperationalState {
+            training_requests: 2,
+            ..KnnOperationalState::default()
+        };
+        for (model_id, state) in [("model-training", "training"), ("model-created", "created")] {
+            knn_state.trained_models.insert(
+                model_id.to_string(),
+                os_node::standalone_runtime::KnnModelState {
+                    model_id: model_id.to_string(),
+                    training_index: "vectors".to_string(),
+                    dimension: 3,
+                    description: "transport training route model".to_string(),
+                    method: serde_json::json!({"name": "hnsw", "engine": "lucene"}),
+                    state: state.to_string(),
+                    task_id: format!("{model_id}-task"),
+                    transport_action: "cluster:admin/knn_training_model_action".to_string(),
+                },
+            );
+        }
+        runtime_state.knn_operational_state = Some(knn_state);
+        fs::write(
+            &shared_state_path,
+            serde_json::to_vec_pretty(&runtime_state).unwrap(),
+        )
+        .unwrap();
+        bind_dev_transport_shared_runtime_state_path(shared_state_path.clone());
+
+        let request = os_transport::action::TrainingJobRouteDecisionInfoRequestWire::default();
+        let frame = os_transport::action::build_training_job_route_decision_info_request_message(
+            82,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(training_job_route_decision_info_request_supports_local_subset(&frame[6..]));
+        let transport_identity = DevTransportIdentity {
+            cluster_name: "steelsearch-dev".to_string(),
+            node_name: "steel-node".to_string(),
+            node_id: "steel-node-id".to_string(),
+            ephemeral_id: "steel-node-ephemeral".to_string(),
+            transport_address: "127.0.0.1:9300".parse().unwrap(),
+            attributes: Vec::new(),
+            roles: vec!["cluster_manager".to_string(), "data".to_string()],
+            seed_peer_identity: None,
+            seed_peer_identities: Vec::new(),
+            coordination_state: Arc::new(Mutex::new(DevTransportCoordinationState::default())),
+            remote_transport_queue_gate: Arc::new(RemoteTransportQueueGate::new(1, 1000)),
+            task_queue_state: None,
+        };
+        let mut stream = RecordingTransportConnection { writes: Vec::new() };
+
+        let handled = handle_subsequent_transport_request(
+            &mut stream,
+            &frame[6..],
+            &transport_identity,
+            None,
+        )
+        .unwrap();
+
+        assert!(handled);
+        let mut response_frame = BytesMut::from(&stream.writes[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut response_frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected training job route decision info response message");
+        };
+        let response =
+            os_transport::action::read_training_job_route_decision_info_response_message(&message)
+                .unwrap();
+        assert_eq!(response.cluster_name, "steelsearch-dev");
+        assert_eq!(response.nodes.len(), 1);
+        assert_eq!(response.nodes[0].node.id, "steel-node-id");
+        assert_eq!(response.nodes[0].training_job_count, 1);
         let _ = fs::remove_file(shared_state_path);
     }
 

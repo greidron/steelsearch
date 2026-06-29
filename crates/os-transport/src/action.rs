@@ -2060,8 +2060,8 @@ pub fn classify_opensearch_transport_action(
         },
         TRAINING_JOB_ROUTE_DECISION_INFO_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
-            disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "training-job-route-decision-info transport execution requires BaseNodes fanout, node-level training job count collection, failure aggregation, and response rendering",
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "training-job-route-decision-info transport adapter validates the local-node subset, reports local training job count from runtime state, and renders an OpenSearch BaseNodesResponse with one local node response",
         },
         GET_MODEL_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -20003,6 +20003,15 @@ impl TrainingJobRouteDecisionInfoRequestWire {
     }
 
     pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        self.validate_supported_execution_subset()?;
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "training job route decision info execution",
+            reason:
+                "use validate_supported_execution_subset for the implemented local training-job-route-decision-info adapter",
+        })
+    }
+
+    pub fn validate_supported_execution_subset(&self) -> Result<(), TransportActionWireError> {
         if matches!(self.node_ids.as_ref(), Some(node_ids) if !node_ids.is_empty()) {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "training job route decision info node filter",
@@ -20015,22 +20024,21 @@ impl TrainingJobRouteDecisionInfoRequestWire {
                 reason: "training job route decision info timeout semantics require BaseNodes fanout mapping",
             });
         }
-        Err(TransportActionWireError::UnsupportedWireShape {
-            shape: "training job route decision info execution",
-            reason: "training-job-route-decision-info transport execution requires BaseNodes fanout, node-level training job count collection, failure aggregation, and response rendering",
-        })
+        Ok(())
     }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TrainingJobRouteDecisionInfoResponseWire {
     pub cluster_name: String,
+    pub nodes: Vec<TrainingJobRouteDecisionInfoNodeResponseWire>,
 }
 
 impl Default for TrainingJobRouteDecisionInfoResponseWire {
     fn default() -> Self {
         Self {
             cluster_name: "steelsearch".to_string(),
+            nodes: Vec::new(),
         }
     }
 }
@@ -20038,7 +20046,10 @@ impl Default for TrainingJobRouteDecisionInfoResponseWire {
 impl TrainingJobRouteDecisionInfoResponseWire {
     pub fn write(&self, output: &mut StreamOutput) {
         output.write_string(&self.cluster_name);
-        output.write_vint(0);
+        output.write_vint(self.nodes.len() as i32);
+        for node in &self.nodes {
+            node.write(output);
+        }
         output.write_vint(0);
     }
 
@@ -20052,11 +20063,11 @@ impl TrainingJobRouteDecisionInfoResponseWire {
                 reason: "TrainingJobRouteDecisionInfoResponse nodes count must be non-negative",
             });
         }
-        if nodes_count != 0 {
-            return Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "training job route decision info node responses",
-                reason: "TrainingJobRouteDecisionInfoResponse node responses require DiscoveryNode and training job count decoding",
-            });
+        let mut nodes = Vec::with_capacity(nodes_count as usize);
+        for _ in 0..nodes_count {
+            nodes.push(TrainingJobRouteDecisionInfoNodeResponseWire::read(
+                &mut input,
+            )?);
         }
         let failures_count = input.read_vint()?;
         if failures_count < 0 {
@@ -20071,7 +20082,10 @@ impl TrainingJobRouteDecisionInfoResponseWire {
                 reason: "TrainingJobRouteDecisionInfoResponse node failures require FailedNodeException decoding",
             });
         }
-        let response = Self { cluster_name };
+        let response = Self {
+            cluster_name,
+            nodes,
+        };
         require_no_trailing_bytes(&input)?;
         Ok(response)
     }
@@ -20083,9 +20097,41 @@ impl TrainingJobRouteDecisionInfoResponseWire {
                 reason: "TrainingJobRouteDecisionInfoResponse requires a cluster name",
             });
         }
-        Err(TransportActionWireError::UnsupportedWireShape {
-            shape: "training job route decision info response rendering",
-            reason: "TrainingJobRouteDecisionInfoResponse rendering requires node aggregation, failure aggregation, and training job count rendering",
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TrainingJobRouteDecisionInfoNodeResponseWire {
+    pub node: OpenSearchDiscoveryNodeWire,
+    pub training_job_count: i32,
+}
+
+impl TrainingJobRouteDecisionInfoNodeResponseWire {
+    pub fn new(node: OpenSearchDiscoveryNodeWire, training_job_count: i32) -> Self {
+        Self {
+            node,
+            training_job_count,
+        }
+    }
+
+    fn write(&self, output: &mut StreamOutput) {
+        self.node.write(output);
+        output.write_i32(self.training_job_count);
+    }
+
+    fn read(input: &mut StreamInput) -> Result<Self, TransportActionWireError> {
+        let node = OpenSearchDiscoveryNodeWire::read(input)?;
+        let training_job_count = input.read_i32()?;
+        if training_job_count < 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "training job route decision info count",
+                reason: "TrainingJobRouteDecisionInfoNodeResponse training job count must be non-negative",
+            });
+        }
+        Ok(Self {
+            node,
+            training_job_count,
         })
     }
 }
@@ -62030,7 +62076,7 @@ mod tests {
     }
 
     #[test]
-    fn training_job_route_decision_info_request_wire_round_trips_and_rejects_execution_boundary() {
+    fn training_job_route_decision_info_request_wire_round_trips_and_validates_local_subset() {
         let request = TrainingJobRouteDecisionInfoRequestWire {
             parent_task_node: "cluster-manager".to_string(),
             parent_task_id: Some(54),
@@ -62041,6 +62087,7 @@ mod tests {
 
         let decoded = TrainingJobRouteDecisionInfoRequestWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, request);
+        decoded.validate_supported_execution_subset().unwrap();
         assert!(matches!(
             decoded.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
@@ -62098,25 +62145,24 @@ mod tests {
     }
 
     #[test]
-    fn training_job_route_decision_info_response_wire_round_trips_and_rejects_unsupported_shapes() {
+    fn training_job_route_decision_info_response_wire_round_trips_and_validates_local_nodes() {
         let response = TrainingJobRouteDecisionInfoResponseWire {
             cluster_name: "steel-dev".to_string(),
+            nodes: vec![TrainingJobRouteDecisionInfoNodeResponseWire::new(
+                test_discovery_node_wire(),
+                2,
+            )],
         };
         let mut output = StreamOutput::new();
         response.write(&mut output);
 
         let decoded = TrainingJobRouteDecisionInfoResponseWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, response);
-        assert!(matches!(
-            decoded.reject_unsupported_rendering(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "training job route decision info response rendering",
-                ..
-            })
-        ));
+        decoded.reject_unsupported_rendering().unwrap();
 
         let blank_cluster_name = TrainingJobRouteDecisionInfoResponseWire {
             cluster_name: String::new(),
+            nodes: Vec::new(),
         };
         assert!(matches!(
             blank_cluster_name.reject_unsupported_rendering(),
@@ -62129,10 +62175,12 @@ mod tests {
         let mut node_payload = StreamOutput::new();
         node_payload.write_string("steel-dev");
         node_payload.write_vint(1);
+        test_discovery_node_wire().write(&mut node_payload);
+        node_payload.write_i32(-1);
         assert!(matches!(
             TrainingJobRouteDecisionInfoResponseWire::read(node_payload.freeze()),
             Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "training job route decision info node responses",
+                shape: "training job route decision info count",
                 ..
             })
         ));
@@ -62151,8 +62199,8 @@ mod tests {
     }
 
     #[test]
-    fn training_job_route_decision_info_transport_messages_bind_rejected_action_frame_and_response()
-    {
+    fn training_job_route_decision_info_transport_messages_bind_implemented_action_frame_and_response(
+    ) {
         let request = TrainingJobRouteDecisionInfoRequestWire::default();
         let mut frame = build_training_job_route_decision_info_request_message(
             54,
@@ -62167,21 +62215,16 @@ mod tests {
             classify_opensearch_transport_request_message(&message)
                 .unwrap()
                 .disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             read_training_job_route_decision_info_request_message(&message).unwrap(),
             request
         );
-        assert!(matches!(
-            read_training_job_route_decision_info_request_message(&message)
-                .unwrap()
-                .reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "training job route decision info execution",
-                ..
-            })
-        ));
+        read_training_job_route_decision_info_request_message(&message)
+            .unwrap()
+            .validate_supported_execution_subset()
+            .unwrap();
 
         let response = TrainingJobRouteDecisionInfoResponseWire::default();
         let mut frame = build_training_job_route_decision_info_response_message(

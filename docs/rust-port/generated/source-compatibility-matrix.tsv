@@ -539,7 +539,7 @@ transport_action	implemented	action	GetTieringStatusAction.INSTANCE	TransportGet
 transport_action	implemented	action	KNNStatsAction.INSTANCE	KNNStatsTransportAction.class	/home/ubuntu/k-NN/src/main/java/org/opensearch/knn/plugin/KNNPlugin.java	348
 transport_action	implemented	action	KNNWarmupAction.INSTANCE	KNNWarmupTransportAction.class	/home/ubuntu/k-NN/src/main/java/org/opensearch/knn/plugin/KNNPlugin.java	349
 transport_action	partial	action	UpdateModelMetadataAction.INSTANCE	UpdateModelMetadataTransportAction.class	/home/ubuntu/k-NN/src/main/java/org/opensearch/knn/plugin/KNNPlugin.java	350
-transport_action	partial	action	TrainingJobRouteDecisionInfoAction.INSTANCE	TrainingJobRouteDecisionInfoTransportAction.class	/home/ubuntu/k-NN/src/main/java/org/opensearch/knn/plugin/KNNPlugin.java	351
+transport_action	implemented	action	TrainingJobRouteDecisionInfoAction.INSTANCE	TrainingJobRouteDecisionInfoTransportAction.class	/home/ubuntu/k-NN/src/main/java/org/opensearch/knn/plugin/KNNPlugin.java	351
 transport_action	partial	action	GetModelAction.INSTANCE	GetModelTransportAction.class	/home/ubuntu/k-NN/src/main/java/org/opensearch/knn/plugin/KNNPlugin.java	352
 transport_action	partial	action	DeleteModelAction.INSTANCE	DeleteModelTransportAction.class	/home/ubuntu/k-NN/src/main/java/org/opensearch/knn/plugin/KNNPlugin.java	353
 transport_action	partial	action	TrainingJobRouterAction.INSTANCE	TrainingJobRouterTransportAction.class	/home/ubuntu/k-NN/src/main/java/org/opensearch/knn/plugin/KNNPlugin.java	354
