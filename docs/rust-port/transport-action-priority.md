@@ -177,8 +177,8 @@ The source-derived transport inventory currently has 160 rows:
 
 | Status | Count | Meaning |
 | --- | ---: | --- |
-| `implemented` | 104 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
-| `partial` | 56 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
+| `implemented` | 108 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
+| `partial` | 52 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
 | `planned` | 0 | No source-derived transport action remains unclassified. |
 
 The k-NN plugin action sweep is complete at the boundary layer. All 12
@@ -257,7 +257,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `cluster:admin/repository/verify` (implemented manifest-backed local node verification subset)
 - `cluster:admin/repository/_cleanup` (implemented manifest-backed zero cleanup-result subset)
 - `cluster:admin/snapshot/get` (implemented manifest-backed zero-snapshot subset)
-- `cluster:admin/snapshot/delete` (rejected fail-closed)
+- `cluster:admin/snapshot/delete` (implemented manifest-backed snapshot deletion subset)
 - `cluster:admin/snapshot/create` (rejected fail-closed)
 - `cluster:admin/snapshot/clone` (rejected fail-closed)
 - `cluster:admin/snapshot/restore` (rejected fail-closed)
@@ -677,11 +677,15 @@ The delete-snapshot boundary covers:
 
 - OpenSearch `DeleteSnapshotRequest` parent task, cluster-manager timeout,
   repository name, and snapshot name array at the wire decode/build layer;
-- explicit fail-closed classification for `cluster:admin/snapshot/delete`
-  until snapshot deletion coordination and acknowledgement rendering are
-  implemented;
+- OpenSearch `AcknowledgedResponse` decode/build for the delete-snapshot
+  response acknowledgement bit;
+- implemented classification for `cluster:admin/snapshot/delete` when the
+  request targets exact local manifest repository and snapshot records;
+- manifest-backed local deletion of object- and array-shaped snapshot records,
+  followed by an acknowledged transport response;
 - explicit rejection for custom cluster-manager timeout, blank repository names,
-  empty or blank snapshot names, and delete-snapshot execution.
+  empty or blank snapshot names, repository/snapshot pattern selectors, missing
+  local repositories, and missing local snapshot records.
 
 The create-snapshot boundary covers:
 
@@ -3268,23 +3272,24 @@ release run, this boundary is not a material transport bottleneck; the first
 performance-sensitive work is repository data loading, current snapshot
 resolution, and snapshot info loading.
 
-Current delete-snapshot reject wire microbenchmark:
+Current delete-snapshot wire microbenchmark:
 
 ```text
-cargo run -p os-transport --release --bin delete-snapshot-reject-wire-benchmark
-delete_snapshot_reject_request_encode iterations=400000 elapsed_ms=255.413 ops_per_second=1566090.24 nanos_per_op=638.53
-delete_snapshot_reject_request_decode iterations=400000 elapsed_ms=286.485 ops_per_second=1396232.22 nanos_per_op=716.21
-delete_snapshot_reject_validation iterations=400000 elapsed_ms=269.831 ops_per_second=1482410.58 nanos_per_op=674.58
-delete_snapshot_reject_wire_bottleneck_ops_per_second=1396232.22
+cargo run -p os-transport --release --bin delete-snapshot-wire-benchmark
+delete_snapshot_request_encode iterations=400000 elapsed_ms=257.690 ops_per_second=1552254.28 nanos_per_op=644.22
+delete_snapshot_request_decode iterations=400000 elapsed_ms=254.545 ops_per_second=1571430.47 nanos_per_op=636.36
+delete_snapshot_request_validate iterations=400000 elapsed_ms=272.655 ops_per_second=1467053.05 nanos_per_op=681.64
+delete_snapshot_response_encode iterations=400000 elapsed_ms=48.964 ops_per_second=8169194.64 nanos_per_op=122.41
+delete_snapshot_response_decode iterations=400000 elapsed_ms=53.920 ops_per_second=7418413.86 nanos_per_op=134.80
+delete_snapshot_wire_bottleneck_ops_per_second=1467053.05
 ```
 
-The current delete-snapshot fail-closed boundary bottleneck is request decode.
-The payload includes the cluster-manager request envelope, repository name, and
-snapshot name array before admission rejects execution. At roughly 1.40M ops/s
-in the latest local release run, this boundary is not a material transport
+The current delete-snapshot transport subset bottleneck is request validation.
+The payload includes the cluster-manager request envelope, repository name,
+snapshot name array, and acknowledged response shape. At roughly 1.47M ops/s in
+the latest local release run, this boundary is not a material transport
 bottleneck; the first performance-sensitive work is snapshot deletion
-coordination, repository cleanup, cluster-state publication, and
-acknowledgement rendering.
+coordination, repository data cleanup, and cluster-state publication.
 
 Current create-snapshot reject wire microbenchmark:
 

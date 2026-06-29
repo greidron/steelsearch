@@ -1754,6 +1754,32 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end,
             &mut connection_end_at_ms,
         )?;
+    } else if is_request
+        && normalized_action_hint == Some("cluster:admin/snapshot/delete")
+        && delete_snapshot_request_supports_manifest_execution_subset(&body)
+    {
+        let response = build_delete_snapshot_response(request_id, header_version_id, &body);
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("cluster:admin/snapshot/delete"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
     } else if is_request && normalized_action_hint == Some("indices:admin/aliases/get") {
         let response = build_get_aliases_response(request_id, header_version_id, &body);
         response_frame = summarize_transport_response_frame_for_action(
@@ -6109,6 +6135,126 @@ fn snapshot_repository_has_no_manifest_snapshots(repository: &str) -> bool {
         Some(Value::Object(items)) => items.is_empty(),
         Some(Value::Null) => true,
         Some(_) => false,
+    }
+}
+
+fn build_delete_snapshot_response(request_id: i64, header_version_id: u32, body: &[u8]) -> Vec<u8> {
+    let Some(request) = decode_delete_snapshot_request_from_transport_body(body) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    if !delete_snapshot_request_matches_manifest_subset(&request) {
+        return build_empty_transport_response(request_id, header_version_id);
+    }
+    if !apply_transport_delete_snapshot_to_manifest(&request.repository, &request.snapshots) {
+        return build_empty_transport_response(request_id, header_version_id);
+    }
+    build_acknowledged_template_response(
+        request_id,
+        header_version_id,
+        os_transport::action::build_delete_snapshot_response_message,
+    )
+}
+
+fn delete_snapshot_request_supports_manifest_execution_subset(body: &[u8]) -> bool {
+    decode_delete_snapshot_request_from_transport_body(body)
+        .is_some_and(|request| delete_snapshot_request_matches_manifest_subset(&request))
+}
+
+fn decode_delete_snapshot_request_from_transport_body(
+    body: &[u8],
+) -> Option<os_transport::action::DeleteSnapshotRequestWire> {
+    let message = decode_transport_message_from_body(body)?;
+    os_transport::action::read_delete_snapshot_request_message(&message).ok()
+}
+
+fn delete_snapshot_request_matches_manifest_subset(
+    request: &os_transport::action::DeleteSnapshotRequestWire,
+) -> bool {
+    request.validate_supported_execution_subset().is_ok()
+        && snapshot_repository_exists_in_manifest(&request.repository)
+        && manifest_snapshot_records_exist(&request.repository, &request.snapshots)
+}
+
+fn manifest_snapshot_records_exist(repository: &str, snapshots: &[String]) -> bool {
+    let bindings = dev_transport_pit_bindings();
+    let manifest = bindings
+        .metadata_manifest
+        .lock()
+        .expect("dev transport metadata manifest lock poisoned");
+    let Some(repository_snapshots) = manifest
+        .get("snapshots")
+        .and_then(|value| value.get(repository))
+    else {
+        return false;
+    };
+    snapshots
+        .iter()
+        .all(|snapshot| manifest_snapshot_record_exists(repository_snapshots, snapshot))
+}
+
+fn manifest_snapshot_record_exists(repository_snapshots: &Value, snapshot: &str) -> bool {
+    match repository_snapshots {
+        Value::Object(items) => items.contains_key(snapshot),
+        Value::Array(items) => manifest_snapshot_array_contains(items, snapshot),
+        _ => false,
+    }
+}
+
+fn manifest_snapshot_array_contains(items: &[Value], snapshot: &str) -> bool {
+    items.iter().any(|item| {
+        item.get("snapshot")
+            .or_else(|| item.get("name"))
+            .and_then(Value::as_str)
+            == Some(snapshot)
+    })
+}
+
+fn apply_transport_delete_snapshot_to_manifest(repository: &str, snapshots: &[String]) -> bool {
+    let bindings = dev_transport_pit_bindings();
+    let mut manifest = bindings
+        .metadata_manifest
+        .lock()
+        .expect("dev transport metadata manifest lock poisoned");
+    let Some(repository_snapshots) = manifest
+        .get_mut("snapshots")
+        .and_then(Value::as_object_mut)
+        .and_then(|snapshots_by_repository| snapshots_by_repository.get_mut(repository))
+    else {
+        return false;
+    };
+    match repository_snapshots {
+        Value::Object(items) => {
+            if !snapshots
+                .iter()
+                .all(|snapshot| items.contains_key(snapshot))
+            {
+                return false;
+            }
+            for snapshot in snapshots {
+                items.remove(snapshot);
+            }
+            true
+        }
+        Value::Array(items) => {
+            if !snapshots
+                .iter()
+                .all(|snapshot| manifest_snapshot_array_contains(items, snapshot))
+            {
+                return false;
+            }
+            items.retain(|item| {
+                let snapshot_name = item
+                    .get("snapshot")
+                    .or_else(|| item.get("name"))
+                    .and_then(Value::as_str);
+                match snapshot_name {
+                    Some(name) => !snapshots.iter().any(|snapshot| snapshot == name),
+                    None => true,
+                }
+            });
+            true
+        }
+        _ => false,
     }
 }
 
@@ -18565,6 +18711,15 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
                 body,
             ))
         }
+        Some("cluster:admin/snapshot/delete")
+            if delete_snapshot_request_supports_manifest_execution_subset(body) =>
+        {
+            Some(build_delete_snapshot_response(
+                request_id,
+                header_version_id,
+                body,
+            ))
+        }
         Some("indices:admin/aliases/get") => Some(build_get_aliases_response(
             request_id,
             header_version_id,
@@ -24083,6 +24238,188 @@ mod tests {
         )
         .unwrap();
         assert!(!get_snapshots_request_supports_manifest_execution_subset(
+            &frame[6..]
+        ));
+    }
+
+    #[test]
+    fn delete_snapshot_transport_route_removes_object_manifest_snapshot_records() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        let bindings = dev_transport_pit_bindings();
+        {
+            let mut manifest = bindings
+                .metadata_manifest
+                .lock()
+                .expect("dev transport metadata manifest lock poisoned");
+            *manifest = serde_json::json!({
+                "snapshot_repositories": {
+                    "repo-snapshots": {
+                        "type": "fs",
+                        "settings": {
+                            "location": "/tmp/repo-snapshots"
+                        }
+                    }
+                },
+                "snapshots": {
+                    "repo-snapshots": {
+                        "snapshot-a": {"state": "SUCCESS"},
+                        "snapshot-b": {"state": "SUCCESS"}
+                    }
+                }
+            });
+        }
+
+        let request = os_transport::action::DeleteSnapshotRequestWire {
+            repository: "repo-snapshots".to_string(),
+            snapshots: vec!["snapshot-a".to_string()],
+            ..os_transport::action::DeleteSnapshotRequestWire::default()
+        };
+        let frame = os_transport::action::build_delete_snapshot_request_message(
+            88,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(delete_snapshot_request_supports_manifest_execution_subset(
+            &frame[6..]
+        ));
+
+        let response =
+            build_delete_snapshot_response(88, OPENSEARCH_3_7_0_TRANSPORT.id() as u32, &frame[6..]);
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected delete snapshot response message");
+        };
+        assert_eq!(message.request_id, 88);
+        let response =
+            os_transport::action::read_delete_snapshot_response_message(&message).unwrap();
+        assert!(response.acknowledged);
+
+        let manifest = bindings
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned");
+        assert!(manifest["snapshots"]["repo-snapshots"]
+            .get("snapshot-a")
+            .is_none());
+        assert!(manifest["snapshots"]["repo-snapshots"]
+            .get("snapshot-b")
+            .is_some());
+    }
+
+    #[test]
+    fn delete_snapshot_transport_route_removes_array_manifest_snapshot_records() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        let bindings = dev_transport_pit_bindings();
+        {
+            let mut manifest = bindings
+                .metadata_manifest
+                .lock()
+                .expect("dev transport metadata manifest lock poisoned");
+            *manifest = serde_json::json!({
+                "snapshot_repositories": {
+                    "repo-snapshots": {
+                        "type": "fs",
+                        "settings": {
+                            "location": "/tmp/repo-snapshots"
+                        }
+                    }
+                },
+                "snapshots": {
+                    "repo-snapshots": [
+                        {"snapshot": "snapshot-a", "state": "SUCCESS"},
+                        {"snapshot": "snapshot-b", "state": "SUCCESS"}
+                    ]
+                }
+            });
+        }
+
+        let request = os_transport::action::DeleteSnapshotRequestWire {
+            repository: "repo-snapshots".to_string(),
+            snapshots: vec!["snapshot-b".to_string()],
+            ..os_transport::action::DeleteSnapshotRequestWire::default()
+        };
+        let frame = os_transport::action::build_delete_snapshot_request_message(
+            89,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(delete_snapshot_request_supports_manifest_execution_subset(
+            &frame[6..]
+        ));
+
+        let response =
+            build_delete_snapshot_response(89, OPENSEARCH_3_7_0_TRANSPORT.id() as u32, &frame[6..]);
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected delete snapshot response message");
+        };
+        let response =
+            os_transport::action::read_delete_snapshot_response_message(&message).unwrap();
+        assert!(response.acknowledged);
+
+        let manifest = bindings
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned");
+        let snapshots = manifest["snapshots"]["repo-snapshots"].as_array().unwrap();
+        assert_eq!(snapshots.len(), 1);
+        assert_eq!(snapshots[0]["snapshot"], "snapshot-a");
+    }
+
+    #[test]
+    fn delete_snapshot_transport_route_excludes_missing_manifest_snapshot_records() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        let bindings = dev_transport_pit_bindings();
+        {
+            let mut manifest = bindings
+                .metadata_manifest
+                .lock()
+                .expect("dev transport metadata manifest lock poisoned");
+            *manifest = serde_json::json!({
+                "snapshot_repositories": {
+                    "repo-snapshots": {
+                        "type": "fs",
+                        "settings": {
+                            "location": "/tmp/repo-snapshots"
+                        }
+                    }
+                },
+                "snapshots": {
+                    "repo-snapshots": {
+                        "snapshot-a": {"state": "SUCCESS"}
+                    }
+                }
+            });
+        }
+
+        let request = os_transport::action::DeleteSnapshotRequestWire {
+            repository: "repo-snapshots".to_string(),
+            snapshots: vec!["snapshot-missing".to_string()],
+            ..os_transport::action::DeleteSnapshotRequestWire::default()
+        };
+        let frame = os_transport::action::build_delete_snapshot_request_message(
+            90,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(!delete_snapshot_request_supports_manifest_execution_subset(
             &frame[6..]
         ));
     }

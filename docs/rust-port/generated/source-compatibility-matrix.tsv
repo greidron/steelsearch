@@ -418,7 +418,7 @@ transport_action	implemented	action	DeleteRepositoryAction.INSTANCE	TransportDel
 transport_action	implemented	action	VerifyRepositoryAction.INSTANCE	TransportVerifyRepositoryAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	684
 transport_action	implemented	action	CleanupRepositoryAction.INSTANCE	TransportCleanupRepositoryAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	685
 transport_action	implemented	action	GetSnapshotsAction.INSTANCE	TransportGetSnapshotsAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	686
-transport_action	partial	action	DeleteSnapshotAction.INSTANCE	TransportDeleteSnapshotAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	687
+transport_action	implemented	action	DeleteSnapshotAction.INSTANCE	TransportDeleteSnapshotAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	687
 transport_action	partial	action	CreateSnapshotAction.INSTANCE	TransportCreateSnapshotAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	688
 transport_action	partial	action	CloneSnapshotAction.INSTANCE	TransportCloneSnapshotAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	689
 transport_action	partial	action	RestoreSnapshotAction.INSTANCE	TransportRestoreSnapshotAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	690

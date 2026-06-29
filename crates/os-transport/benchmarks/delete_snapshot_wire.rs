@@ -1,7 +1,8 @@
 use os_core::OPENSEARCH_3_7_0_TRANSPORT;
 use os_transport::action::{
-    build_delete_snapshot_request_message, read_delete_snapshot_request_message,
-    DeleteSnapshotRequestWire,
+    build_delete_snapshot_request_message, build_delete_snapshot_response_message,
+    read_delete_snapshot_request_message, read_delete_snapshot_response_message,
+    AcknowledgedResponseWire, DeleteSnapshotRequestWire,
 };
 use os_transport::frame::{decode_frame, DecodedFrame};
 use std::hint::black_box;
@@ -12,7 +13,7 @@ const ITERATIONS: usize = 400_000;
 fn main() {
     let request = DeleteSnapshotRequestWire::default();
 
-    let request_encode = measure("delete_snapshot_reject_request_encode", ITERATIONS, || {
+    let request_encode = measure("delete_snapshot_request_encode", ITERATIONS, || {
         let frame = build_delete_snapshot_request_message(
             36,
             OPENSEARCH_3_7_0_TRANSPORT,
@@ -26,7 +27,7 @@ fn main() {
         build_delete_snapshot_request_message(36, OPENSEARCH_3_7_0_TRANSPORT, &request)
             .expect("delete snapshot request encode should succeed");
 
-    let request_decode = measure("delete_snapshot_reject_request_decode", ITERATIONS, || {
+    let request_decode = measure("delete_snapshot_request_decode", ITERATIONS, || {
         let mut frame = black_box(request_frame.clone());
         let message = decode_message(&mut frame);
         let decoded = read_delete_snapshot_request_message(black_box(&message))
@@ -34,22 +35,47 @@ fn main() {
         black_box(decoded);
     });
 
-    let reject_validate = measure("delete_snapshot_reject_validation", ITERATIONS, || {
+    let request_validate = measure("delete_snapshot_request_validate", ITERATIONS, || {
         let mut frame = black_box(request_frame.clone());
         let message = decode_message(&mut frame);
         let decoded = read_delete_snapshot_request_message(black_box(&message))
             .expect("delete snapshot request decode");
-        let err = decoded
-            .reject_unsupported_execution()
-            .expect_err("delete snapshot execution should reject");
-        black_box(err);
+        decoded
+            .validate_supported_execution_subset()
+            .expect("delete snapshot request should validate");
+        black_box(decoded);
+    });
+
+    let response = AcknowledgedResponseWire { acknowledged: true };
+    let response_encode = measure("delete_snapshot_response_encode", ITERATIONS, || {
+        let frame = build_delete_snapshot_response_message(
+            36,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            black_box(&response),
+        )
+        .expect("delete snapshot response encode should succeed");
+        black_box(frame);
+    });
+
+    let response_frame =
+        build_delete_snapshot_response_message(36, OPENSEARCH_3_7_0_TRANSPORT, &response)
+            .expect("delete snapshot response encode should succeed");
+
+    let response_decode = measure("delete_snapshot_response_decode", ITERATIONS, || {
+        let mut frame = black_box(response_frame.clone());
+        let message = decode_message(&mut frame);
+        let decoded = read_delete_snapshot_response_message(black_box(&message))
+            .expect("delete snapshot response decode");
+        black_box(decoded);
     });
 
     let combined_ops_per_second = request_encode
         .ops_per_second
         .min(request_decode.ops_per_second)
-        .min(reject_validate.ops_per_second);
-    println!("delete_snapshot_reject_wire_bottleneck_ops_per_second={combined_ops_per_second:.2}");
+        .min(request_validate.ops_per_second)
+        .min(response_encode.ops_per_second)
+        .min(response_decode.ops_per_second);
+    println!("delete_snapshot_wire_bottleneck_ops_per_second={combined_ops_per_second:.2}");
 }
 
 #[derive(Clone, Copy)]
