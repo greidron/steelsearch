@@ -4042,6 +4042,32 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end_at_ms,
         )?;
     } else if is_request
+        && normalized_action_hint == Some("cluster:admin/knn_update_model_graveyard_action")
+        && update_model_graveyard_request_supports_local_subset(&body)
+    {
+        let response = build_update_model_graveyard_response(request_id, header_version_id, &body);
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("cluster:admin/knn_update_model_graveyard_action"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request
         && normalized_action_hint == Some("cluster:admin/knn_get_model_action")
         && get_model_request_supports_local_subset(&body)
     {
@@ -15229,6 +15255,26 @@ fn build_update_model_metadata_response(
     .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
 }
 
+fn build_update_model_graveyard_response(
+    request_id: i64,
+    header_version_id: u32,
+    body: &[u8],
+) -> Vec<u8> {
+    let Some(request) = decode_update_model_graveyard_request_from_transport_body(body) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    if !local_transport_update_model_graveyard(&request) {
+        return build_empty_transport_response(request_id, header_version_id);
+    }
+    os_transport::action::build_update_model_graveyard_response_message(
+        request_id,
+        Version::from_id(header_version_id as i32),
+        &os_transport::action::AcknowledgedResponseWire { acknowledged: true },
+    )
+    .map(|frame| frame.to_vec())
+    .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
+}
+
 fn build_get_model_response(request_id: i64, header_version_id: u32, body: &[u8]) -> Vec<u8> {
     let Some(request) = decode_get_model_request_from_transport_body(body) else {
         return build_empty_transport_response(request_id, header_version_id);
@@ -15292,6 +15338,14 @@ fn update_model_metadata_request_supports_local_subset(body: &[u8]) -> bool {
         .is_some_and(|request| request.validate_supported_execution_subset().is_ok())
 }
 
+fn update_model_graveyard_request_supports_local_subset(body: &[u8]) -> bool {
+    decode_update_model_graveyard_request_from_transport_body(body).is_some_and(|request| {
+        request.validate_supported_execution_subset().is_ok()
+            && (request.remove_request
+                || !transport_manifest_model_id_is_used_by_knn_mapping(&request.model_id))
+    })
+}
+
 fn get_model_request_supports_local_subset(body: &[u8]) -> bool {
     decode_get_model_request_from_transport_body(body)
         .is_some_and(|request| local_transport_get_model_response(&request).is_some())
@@ -15342,6 +15396,13 @@ fn decode_update_model_metadata_request_from_transport_body(
 ) -> Option<os_transport::action::UpdateModelMetadataRequestWire> {
     let message = decode_transport_message_from_body(body)?;
     os_transport::action::read_update_model_metadata_request_message(&message).ok()
+}
+
+fn decode_update_model_graveyard_request_from_transport_body(
+    body: &[u8],
+) -> Option<os_transport::action::UpdateModelGraveyardRequestWire> {
+    let message = decode_transport_message_from_body(body)?;
+    os_transport::action::read_update_model_graveyard_request_message(&message).ok()
 }
 
 fn decode_get_model_request_from_transport_body(
@@ -15411,6 +15472,19 @@ fn update_transport_knn_model_metadata_remove_state(model_id: &str) -> bool {
     persist_transport_shared_runtime_state(&state)
 }
 
+fn update_transport_knn_model_graveyard_state(model_id: &str, remove_request: bool) -> bool {
+    let mut state = load_transport_shared_runtime_state().unwrap_or_default();
+    let current = state
+        .knn_operational_state
+        .get_or_insert_with(KnnOperationalState::default);
+    if remove_request {
+        current.model_graveyard.remove(model_id);
+    } else {
+        current.model_graveyard.insert(model_id.to_string());
+    }
+    persist_transport_shared_runtime_state(&state)
+}
+
 fn local_knn_indices_total_shards(
     indices: Option<&Vec<String>>,
     indices_options: &os_transport::action::OpenSearchIndicesOptionsWire,
@@ -15439,6 +15513,36 @@ fn local_knn_indices_total_shards(
         total_shards = total_shards.checked_add(shard_count)?;
     }
     Some(total_shards.max(1))
+}
+
+fn transport_manifest_model_id_is_used_by_knn_mapping(model_id: &str) -> bool {
+    let bindings = dev_transport_pit_bindings();
+    let manifest = bindings
+        .metadata_manifest
+        .lock()
+        .expect("dev transport metadata manifest lock poisoned");
+    let Some(indices) = manifest["indices"].as_object() else {
+        return false;
+    };
+    indices.values().any(|index_body| {
+        transport_manifest_index_is_knn_enabled(index_body)
+            && transport_mapping_value_references_model_id(&index_body["mappings"], model_id)
+    })
+}
+
+fn transport_mapping_value_references_model_id(value: &Value, model_id: &str) -> bool {
+    match value {
+        Value::Object(object) => {
+            object.get("model_id").and_then(Value::as_str) == Some(model_id)
+                || object
+                    .values()
+                    .any(|child| transport_mapping_value_references_model_id(child, model_id))
+        }
+        Value::Array(values) => values
+            .iter()
+            .any(|child| transport_mapping_value_references_model_id(child, model_id)),
+        _ => false,
+    }
 }
 
 fn load_transport_knn_operational_state() -> Option<KnnOperationalState> {
@@ -15585,6 +15689,20 @@ fn local_transport_update_model_metadata(
 ) -> bool {
     request.validate_supported_execution_subset().is_ok()
         && update_transport_knn_model_metadata_remove_state(&request.model_id)
+}
+
+fn local_transport_update_model_graveyard(
+    request: &os_transport::action::UpdateModelGraveyardRequestWire,
+) -> bool {
+    if request.validate_supported_execution_subset().is_err() {
+        return false;
+    }
+    if !request.remove_request
+        && transport_manifest_model_id_is_used_by_knn_mapping(&request.model_id)
+    {
+        return false;
+    }
+    update_transport_knn_model_graveyard_state(&request.model_id, request.remove_request)
 }
 
 fn local_transport_delete_model_response(
@@ -27833,6 +27951,15 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
                 body,
             ))
         }
+        Some("cluster:admin/knn_update_model_graveyard_action")
+            if update_model_graveyard_request_supports_local_subset(body) =>
+        {
+            Some(build_update_model_graveyard_response(
+                request_id,
+                header_version_id,
+                body,
+            ))
+        }
         Some("cluster:admin/knn_get_model_action")
             if get_model_request_supports_local_subset(body) =>
         {
@@ -32930,6 +33057,149 @@ mod tests {
         let knn_state = runtime_state.knn_operational_state.unwrap();
         assert!(!knn_state.trained_models.contains_key("model-a"));
         assert_eq!(knn_state.model_cache_used_bytes, 0);
+        let _ = fs::remove_file(shared_state_path);
+    }
+
+    #[test]
+    fn update_model_graveyard_transport_route_mutates_local_runtime_graveyard() {
+        struct RecordingTransportConnection {
+            writes: Vec<u8>,
+        }
+
+        impl std::io::Read for RecordingTransportConnection {
+            fn read(&mut self, _buf: &mut [u8]) -> std::io::Result<usize> {
+                Ok(0)
+            }
+        }
+
+        impl std::io::Write for RecordingTransportConnection {
+            fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+                self.writes.extend_from_slice(buf);
+                Ok(buf.len())
+            }
+
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+
+        impl TransportConnection for RecordingTransportConnection {
+            fn set_read_timeout(&self, _duration: Option<Duration>) -> std::io::Result<()> {
+                Ok(())
+            }
+
+            fn peer_addr(&self) -> std::io::Result<SocketAddr> {
+                "127.0.0.1:9300"
+                    .parse()
+                    .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidInput, error))
+            }
+        }
+
+        let shared_state_path = unique_test_path("update-model-graveyard-transport-runtime.json");
+        let mut runtime_state = SharedRuntimeState::default();
+        runtime_state.knn_operational_state = Some(KnnOperationalState::default());
+        fs::write(
+            &shared_state_path,
+            serde_json::to_vec_pretty(&runtime_state).unwrap(),
+        )
+        .unwrap();
+        bind_dev_transport_shared_runtime_state_path(shared_state_path.clone());
+
+        let transport_identity = DevTransportIdentity {
+            cluster_name: "steelsearch-dev".to_string(),
+            node_name: "steel-node".to_string(),
+            node_id: "steel-node-id".to_string(),
+            ephemeral_id: "steel-node-ephemeral".to_string(),
+            transport_address: "127.0.0.1:9300".parse().unwrap(),
+            attributes: Vec::new(),
+            roles: vec!["cluster_manager".to_string(), "data".to_string()],
+            seed_peer_identity: None,
+            seed_peer_identities: Vec::new(),
+            coordination_state: Arc::new(Mutex::new(DevTransportCoordinationState::default())),
+            remote_transport_queue_gate: Arc::new(RemoteTransportQueueGate::new(1, 1000)),
+            task_queue_state: None,
+        };
+
+        let add_request = os_transport::action::UpdateModelGraveyardRequestWire {
+            model_id: "model-a".to_string(),
+            remove_request: false,
+            ..os_transport::action::UpdateModelGraveyardRequestWire::default()
+        };
+        let add_frame = os_transport::action::build_update_model_graveyard_request_message(
+            86,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &add_request,
+        )
+        .unwrap();
+        assert!(update_model_graveyard_request_supports_local_subset(
+            &add_frame[6..]
+        ));
+        let mut add_stream = RecordingTransportConnection { writes: Vec::new() };
+
+        let handled = handle_subsequent_transport_request(
+            &mut add_stream,
+            &add_frame[6..],
+            &transport_identity,
+            None,
+        )
+        .unwrap();
+
+        assert!(handled);
+        let mut response_frame = BytesMut::from(&add_stream.writes[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut response_frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected update model graveyard add response message");
+        };
+        let response =
+            os_transport::action::read_update_model_graveyard_response_message(&message).unwrap();
+        assert!(response.acknowledged);
+        let runtime_state =
+            serde_json::from_slice::<SharedRuntimeState>(&fs::read(&shared_state_path).unwrap())
+                .unwrap();
+        assert!(runtime_state
+            .knn_operational_state
+            .as_ref()
+            .unwrap()
+            .model_graveyard
+            .contains("model-a"));
+
+        let remove_request = os_transport::action::UpdateModelGraveyardRequestWire {
+            model_id: "model-a".to_string(),
+            remove_request: true,
+            ..os_transport::action::UpdateModelGraveyardRequestWire::default()
+        };
+        let remove_frame = os_transport::action::build_update_model_graveyard_request_message(
+            87,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &remove_request,
+        )
+        .unwrap();
+        assert!(update_model_graveyard_request_supports_local_subset(
+            &remove_frame[6..]
+        ));
+        let mut remove_stream = RecordingTransportConnection { writes: Vec::new() };
+
+        let handled = handle_subsequent_transport_request(
+            &mut remove_stream,
+            &remove_frame[6..],
+            &transport_identity,
+            None,
+        )
+        .unwrap();
+
+        assert!(handled);
+        let runtime_state =
+            serde_json::from_slice::<SharedRuntimeState>(&fs::read(&shared_state_path).unwrap())
+                .unwrap();
+        assert!(!runtime_state
+            .knn_operational_state
+            .as_ref()
+            .unwrap()
+            .model_graveyard
+            .contains("model-a"));
         let _ = fs::remove_file(shared_state_path);
     }
 

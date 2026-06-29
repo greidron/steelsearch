@@ -2095,8 +2095,8 @@ pub fn classify_opensearch_transport_action(
         },
         UPDATE_MODEL_GRAVEYARD_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
-            disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "update-model-graveyard transport execution requires cluster-manager state update submission, model graveyard metadata mutation, model usage mapping scan, delete-model conflict handling, cluster-state publication, and acknowledgement rendering",
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "update-model-graveyard transport adapter validates the local model graveyard subset, mutates shared runtime graveyard metadata, and renders OpenSearch AcknowledgedResponse",
         },
         CLEAR_CACHE_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -20857,6 +20857,15 @@ impl UpdateModelGraveyardRequestWire {
     }
 
     pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        self.validate_supported_execution_subset()?;
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "update model graveyard execution",
+            reason:
+                "use validate_supported_execution_subset for the implemented local graveyard adapter",
+        })
+    }
+
+    pub fn validate_supported_execution_subset(&self) -> Result<(), TransportActionWireError> {
         if self.cluster_manager_timeout != TimeValueWire::seconds(30) {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "update model graveyard cluster-manager timeout",
@@ -20875,10 +20884,7 @@ impl UpdateModelGraveyardRequestWire {
                 reason: "OpenSearch update-model-graveyard requests require a model id",
             });
         }
-        Err(TransportActionWireError::UnsupportedWireShape {
-            shape: "update model graveyard execution",
-            reason: "update-model-graveyard transport execution requires cluster-manager state update submission, model graveyard metadata mutation, model usage mapping scan, delete-model conflict handling, cluster-state publication, and acknowledgement rendering",
-        })
+        Ok(())
     }
 }
 
@@ -63011,7 +63017,7 @@ mod tests {
     }
 
     #[test]
-    fn update_model_graveyard_request_wire_round_trips_and_rejects_execution_boundary() {
+    fn update_model_graveyard_request_wire_round_trips_and_validates_local_subset() {
         let request = UpdateModelGraveyardRequestWire {
             parent_task_node: "cluster-manager".to_string(),
             parent_task_id: Some(61),
@@ -63024,6 +63030,7 @@ mod tests {
 
         let decoded = UpdateModelGraveyardRequestWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, request);
+        decoded.validate_supported_execution_subset().unwrap();
         assert!(matches!(
             decoded.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
@@ -63037,7 +63044,7 @@ mod tests {
             ..UpdateModelGraveyardRequestWire::default()
         };
         assert!(matches!(
-            blank_model_id.reject_unsupported_execution(),
+            blank_model_id.validate_supported_execution_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "update model graveyard model id",
                 ..
@@ -63049,7 +63056,7 @@ mod tests {
             ..UpdateModelGraveyardRequestWire::default()
         };
         assert!(matches!(
-            custom_ack_timeout.reject_unsupported_execution(),
+            custom_ack_timeout.validate_supported_execution_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "update model graveyard ack timeout",
                 ..
@@ -63058,7 +63065,7 @@ mod tests {
     }
 
     #[test]
-    fn update_model_graveyard_transport_messages_bind_rejected_action_frame_and_response() {
+    fn update_model_graveyard_transport_messages_bind_implemented_action_frame_and_response() {
         let request = UpdateModelGraveyardRequestWire::default();
         let mut frame =
             build_update_model_graveyard_request_message(61, OPENSEARCH_3_7_0_TRANSPORT, &request)
@@ -63070,7 +63077,7 @@ mod tests {
             classify_opensearch_transport_request_message(&message)
                 .unwrap()
                 .disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             read_update_model_graveyard_request_message(&message).unwrap(),

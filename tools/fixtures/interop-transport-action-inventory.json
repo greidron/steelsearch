@@ -441,8 +441,8 @@
       "transport_action": "UpdateModelGraveyardTransportAction",
       "request_wire_type": "UpdateModelGraveyardRequest",
       "response_wire_type": "AcknowledgedResponse",
-      "disposition": "rejected",
-      "reason": "Update-model-graveyard transport execution requires cluster-manager state update submission, model graveyard metadata mutation, model usage mapping scan, delete-model conflict handling, cluster-state publication, and acknowledgement rendering"
+      "disposition": "implemented",
+      "reason": "Update-model-graveyard transport adapter validates the local model graveyard subset, mutates shared runtime graveyard metadata, and renders OpenSearch AcknowledgedResponse"
     },
     {
       "action_name": "cluster:admin/clear_cache_action",

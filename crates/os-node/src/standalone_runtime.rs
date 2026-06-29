@@ -2536,6 +2536,8 @@ pub struct KnnOperationalState {
     pub training_requests: u64,
     pub plugin_settings: BTreeMap<String, Value>,
     pub trained_models: BTreeMap<String, KnnModelState>,
+    #[serde(default)]
+    pub model_graveyard: BTreeSet<String>,
 }
 
 #[derive(Clone, Debug)]
