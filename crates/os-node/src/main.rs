@@ -34694,11 +34694,24 @@ mod tests {
                 .expect("dev transport documents lock poisoned");
             documents.insert("logs-search-pit-transport:doc-1:".to_string(), before_doc);
             documents.insert(
+                "logs-search-pit-transport:doc-1:".to_string(),
+                StoredDocument {
+                    source: serde_json::json!({ "status": "updated-after-pit" }),
+                    version: 2,
+                    seq_no: 2,
+                    primary_term: 1,
+                    routing: None,
+                    refreshed: true,
+                }
+                .into(),
+            );
+            documents.remove("logs-search-pit-transport:doc-1:");
+            documents.insert(
                 "logs-search-pit-transport:doc-2:".to_string(),
                 StoredDocument {
                     source: serde_json::json!({ "status": "after-pit" }),
                     version: 1,
-                    seq_no: 2,
+                    seq_no: 3,
                     primary_term: 1,
                     routing: None,
                     refreshed: true,
@@ -34769,6 +34782,13 @@ mod tests {
         assert_eq!(response.total_hits, Some(1));
         assert_eq!(response.hits.len(), 1);
         assert_eq!(response.hits[0].id.as_deref(), Some("doc-1"));
+        assert_eq!(
+            response.hits[0]
+                .source
+                .as_ref()
+                .and_then(|source| source.get("status")),
+            Some(&serde_json::json!("before-pit"))
+        );
         assert_eq!(
             bindings
                 .contexts
