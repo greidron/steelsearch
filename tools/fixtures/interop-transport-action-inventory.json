@@ -243,8 +243,8 @@
       "transport_action": "TransportDecommissionAction",
       "request_wire_type": "DecommissionRequest",
       "response_wire_type": "DecommissionResponse",
-      "disposition": "rejected",
-      "reason": "Decommission transport execution requires decommission metadata mutation, node draining coordination, cluster-state publication, and acknowledgement rendering"
+      "disposition": "implemented",
+      "reason": "Decommission transport adapter registers OpenSearch-shaped INIT decommission metadata in the Rust manifest and renders an acknowledgement for the explicit-request-id subset"
     },
     {
       "action_name": "cluster:admin/decommission/awareness/get",

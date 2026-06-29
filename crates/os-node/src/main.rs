@@ -2092,6 +2092,32 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end_at_ms,
         )?;
     } else if is_request
+        && normalized_action_hint == Some("cluster:admin/decommission/awareness/put")
+        && decommission_request_supports_manifest_execution_subset(&body)
+    {
+        let response = build_decommission_response(request_id, header_version_id, &body);
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("cluster:admin/decommission/awareness/put"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request
         && normalized_action_hint == Some("cluster:admin/decommission/awareness/get")
         && get_decommission_state_request_supports_manifest_subset(&body)
     {
@@ -9792,6 +9818,82 @@ fn build_get_decommission_state_response(
     )
     .map(|frame| frame.to_vec())
     .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
+}
+
+fn build_decommission_response(request_id: i64, header_version_id: u32, body: &[u8]) -> Vec<u8> {
+    let Some(request) = decode_decommission_request_from_transport_body(body) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    if request.validate_manifest_execution_subset().is_err() {
+        return build_empty_transport_response(request_id, header_version_id);
+    }
+    register_decommission_state_in_metadata_manifest(
+        &mut dev_transport_pit_bindings()
+            .metadata_manifest
+            .lock()
+            .expect("metadata manifest lock poisoned"),
+        &request,
+    );
+    os_transport::action::build_decommission_response_message(
+        request_id,
+        Version::from_id(header_version_id as i32),
+        &os_transport::action::AcknowledgedResponseWire { acknowledged: true },
+    )
+    .map(|frame| frame.to_vec())
+    .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
+}
+
+fn decommission_request_supports_manifest_execution_subset(body: &[u8]) -> bool {
+    decode_decommission_request_from_transport_body(body)
+        .as_ref()
+        .is_some_and(|request| request.validate_manifest_execution_subset().is_ok())
+}
+
+fn decode_decommission_request_from_transport_body(
+    body: &[u8],
+) -> Option<os_transport::action::DecommissionRequestWire> {
+    let message = decode_transport_message_from_body(body)?;
+    os_transport::action::read_decommission_request_message(&message).ok()
+}
+
+fn register_decommission_state_in_metadata_manifest(
+    metadata_manifest: &mut Value,
+    request: &os_transport::action::DecommissionRequestWire,
+) {
+    if !metadata_manifest.is_object() {
+        *metadata_manifest = serde_json::json!({});
+    }
+    let Some(root) = metadata_manifest.as_object_mut() else {
+        return;
+    };
+    let metadata = root
+        .entry("metadata".to_string())
+        .or_insert_with(|| serde_json::json!({}));
+    if !metadata.is_object() {
+        *metadata = serde_json::json!({});
+    }
+    let Some(metadata) = metadata.as_object_mut() else {
+        return;
+    };
+    let customs = metadata
+        .entry("customs".to_string())
+        .or_insert_with(|| serde_json::json!({}));
+    if !customs.is_object() {
+        *customs = serde_json::json!({});
+    }
+    let Some(customs) = customs.as_object_mut() else {
+        return;
+    };
+    customs.insert(
+        "decommissionedAttribute".to_string(),
+        serde_json::json!({
+            "awareness": {
+                request.attribute_name.clone(): request.attribute_value.clone()
+            },
+            "status": "init",
+            "requestID": request.request_id.clone().unwrap_or_default()
+        }),
+    );
 }
 
 fn get_decommission_state_request_supports_manifest_subset(body: &[u8]) -> bool {
@@ -25353,6 +25455,15 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
             if get_decommission_state_request_supports_manifest_subset(body) =>
         {
             Some(build_get_decommission_state_response(
+                request_id,
+                header_version_id,
+                body,
+            ))
+        }
+        Some("cluster:admin/decommission/awareness/put")
+            if decommission_request_supports_manifest_execution_subset(body) =>
+        {
+            Some(build_decommission_response(
                 request_id,
                 header_version_id,
                 body,
@@ -52257,6 +52368,98 @@ mod tests {
             response,
             os_transport::action::ClusterGetWeightedRoutingResponseWire::empty()
         );
+    }
+
+    #[test]
+    fn decommission_transport_route_registers_manifest_state() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        *dev_transport_pit_bindings()
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned") = serde_json::json!({});
+
+        let request = os_transport::action::DecommissionRequestWire {
+            attribute_name: "zone".to_string(),
+            attribute_value: "zone-a".to_string(),
+            request_id: Some("decommission-1".to_string()),
+            ..os_transport::action::DecommissionRequestWire::default()
+        };
+        let frame = os_transport::action::build_decommission_request_message(
+            208,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(decommission_request_supports_manifest_execution_subset(
+            &frame[6..]
+        ));
+
+        let response =
+            build_decommission_response(208, OPENSEARCH_3_7_0_TRANSPORT.id() as u32, &frame[6..]);
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected decommission response message");
+        };
+        assert_eq!(message.request_id, 208);
+        assert_eq!(
+            os_transport::action::read_decommission_response_message(&message).unwrap(),
+            os_transport::action::AcknowledgedResponseWire { acknowledged: true }
+        );
+
+        let get_request = os_transport::action::GetDecommissionStateRequestWire {
+            attribute_name: "zone".to_string(),
+            ..os_transport::action::GetDecommissionStateRequestWire::default()
+        };
+        let get_frame = os_transport::action::build_get_decommission_state_request_message(
+            209,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &get_request,
+        )
+        .unwrap();
+        let get_response = build_get_decommission_state_response(
+            209,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &get_frame[6..],
+        );
+        let mut frame = BytesMut::from(&get_response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected get-decommission-state response message after put");
+        };
+        assert_eq!(
+            os_transport::action::read_get_decommission_state_response_message(&message)
+                .unwrap()
+                .state,
+            Some(
+                os_transport::action::GetDecommissionStateResponseEntryWire {
+                    attribute_value: "zone-a".to_string(),
+                    status: os_transport::action::DecommissionStatusWire::Init,
+                }
+            )
+        );
+
+        let missing_request_id = os_transport::action::DecommissionRequestWire {
+            request_id: None,
+            ..request
+        };
+        let missing_frame = os_transport::action::build_decommission_request_message(
+            210,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &missing_request_id,
+        )
+        .unwrap();
+        assert!(!decommission_request_supports_manifest_execution_subset(
+            &missing_frame[6..]
+        ));
     }
 
     #[test]

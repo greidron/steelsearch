@@ -359,6 +359,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `cluster:admin/ingest/pipeline/get` (implemented empty pipeline metadata-read subset)
 - `cluster:admin/ingest/pipeline/delete` (implemented manifest-backed metadata-write subset)
 - `cluster:admin/ingest/pipeline/simulate` (implemented empty-doc simulation subset)
+- `cluster:admin/decommission/awareness/put` (implemented manifest metadata registration subset)
 - `indices:admin/refresh`
 - `indices:data/read/tv` (implemented missing-index subset)
 - `indices:data/read/mtv` (implemented all-missing-index subset)
@@ -795,13 +796,15 @@ The decommission boundary covers:
   timeout, `noDelay`, and optional request id at the wire decode/build layer;
 - OpenSearch `DecommissionResponse` acknowledged response payload at the wire
   decode/build layer;
-- explicit fail-closed classification for
-  `cluster:admin/decommission/awareness/put` until decommission metadata
-  mutation, node draining coordination, cluster-state publication, and
-  acknowledgement rendering are implemented;
+- implemented classification for `cluster:admin/decommission/awareness/put`
+  in the explicit-request-id subset, registering OpenSearch-shaped
+  `decommissionedAttribute` metadata with `init` status in the Rust manifest
+  and returning an acknowledged response;
 - explicit rejection for custom cluster-manager timeout, missing awareness
   attribute name/value, invalid `noDelay` timeout pairing, custom delay
-  timeout, and decommission execution.
+  timeout, missing request id, node draining coordination, voting-config
+  exclusion, asynchronous status transitions, and cluster-state publication
+  acknowledgement semantics outside the local manifest mutation.
 
 The get-decommission-state boundary covers:
 

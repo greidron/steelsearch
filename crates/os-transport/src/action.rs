@@ -1987,8 +1987,8 @@ pub fn classify_opensearch_transport_action(
         },
         DECOMMISSION_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
-            disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "decommission transport execution requires decommission metadata mutation, node draining coordination, cluster-state publication, and acknowledgement rendering",
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "decommission transport adapter registers OpenSearch-shaped INIT decommission metadata in the Rust manifest and renders an acknowledgement for the explicit-request-id subset",
         },
         GET_DECOMMISSION_STATE_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -17203,7 +17203,7 @@ impl DecommissionRequestWire {
         Ok(request)
     }
 
-    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+    pub fn validate_manifest_execution_subset(&self) -> Result<(), TransportActionWireError> {
         if self.cluster_manager_timeout != TimeValueWire::seconds(30) {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "decommission cluster-manager timeout",
@@ -17235,6 +17235,22 @@ impl DecommissionRequestWire {
                     "custom decommission delay timeout requires node draining timeout semantics",
             });
         }
+        if self
+            .request_id
+            .as_deref()
+            .map(|request_id| request_id.trim().is_empty())
+            .unwrap_or(true)
+        {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "decommission request id",
+                reason: "the manifest decommission subset requires an explicit request id instead of generating an OpenSearch UUID",
+            });
+        }
+        Ok(())
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        self.validate_manifest_execution_subset()?;
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "decommission execution",
             reason: "decommission transport execution requires decommission metadata mutation, node draining coordination, cluster-state publication, and acknowledgement rendering",
@@ -58804,6 +58820,7 @@ mod tests {
 
         let decoded = DecommissionRequestWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, request);
+        decoded.validate_manifest_execution_subset().unwrap();
         assert!(matches!(
             decoded.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
@@ -58876,6 +58893,18 @@ mod tests {
             })
         ));
 
+        let missing_request_id = DecommissionRequestWire {
+            request_id: None,
+            ..DecommissionRequestWire::default()
+        };
+        assert!(matches!(
+            missing_request_id.validate_manifest_execution_subset(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "decommission request id",
+                ..
+            })
+        ));
+
         let mut output = StreamOutput::new();
         DecommissionRequestWire::default().write(&mut output);
         output.write_byte(0);
@@ -58886,8 +58915,11 @@ mod tests {
     }
 
     #[test]
-    fn decommission_transport_messages_bind_rejected_action_frame_and_ack_response() {
-        let request = DecommissionRequestWire::default();
+    fn decommission_transport_messages_bind_supported_action_frame_and_ack_response() {
+        let request = DecommissionRequestWire {
+            request_id: Some("decommission-1".to_string()),
+            ..DecommissionRequestWire::default()
+        };
         let mut frame =
             build_decommission_request_message(39, OPENSEARCH_3_7_0_TRANSPORT, &request).unwrap();
         let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
@@ -58897,12 +58929,16 @@ mod tests {
             classify_opensearch_transport_request_message(&message)
                 .unwrap()
                 .disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             read_decommission_request_message(&message).unwrap(),
             request
         );
+        read_decommission_request_message(&message)
+            .unwrap()
+            .validate_manifest_execution_subset()
+            .unwrap();
         assert!(matches!(
             read_decommission_request_message(&message)
                 .unwrap()
