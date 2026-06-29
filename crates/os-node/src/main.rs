@@ -3635,6 +3635,32 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end_at_ms,
         )?;
     } else if is_request
+        && normalized_action_hint == Some("indices:data/write/delete")
+        && delete_request_supports_local_execution_subset(&body)
+    {
+        let response = build_local_delete_response(request_id, header_version_id, &body);
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("indices:data/write/delete"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request
         && normalized_action_hint == Some("indices:data/read/explain")
         && explain_request_supports_local_execution_subset(&body)
     {
@@ -12604,6 +12630,69 @@ fn ensure_local_transport_index_registered(index: &str) {
     }
 }
 
+fn build_local_delete_response(request_id: i64, header_version_id: u32, body: &[u8]) -> Vec<u8> {
+    let Some(request) = decode_delete_request_from_transport_body(body) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    if request.to_engine_request().is_err() {
+        return build_empty_transport_response(request_id, header_version_id);
+    }
+    let response = local_transport_delete_response_from_request(&request);
+    os_transport::action::build_opensearch_delete_response_message(
+        request_id,
+        Version::from_id(header_version_id as i32),
+        &response,
+    )
+    .map(|frame| frame.to_vec())
+    .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
+}
+
+fn delete_request_supports_local_execution_subset(body: &[u8]) -> bool {
+    decode_delete_request_from_transport_body(body)
+        .and_then(|request| request.to_engine_request().ok())
+        .is_some()
+}
+
+fn decode_delete_request_from_transport_body(
+    body: &[u8],
+) -> Option<os_transport::action::OpenSearchDeleteRequestWire> {
+    let message = decode_transport_message_from_body(body)?;
+    os_transport::action::read_opensearch_delete_request_message(&message).ok()
+}
+
+fn local_transport_delete_response_from_request(
+    request: &os_transport::action::OpenSearchDeleteRequestWire,
+) -> os_transport::action::OpenSearchDeleteResponseWire {
+    let key = format!("{}:{}:", request.index, request.id);
+    let bindings = dev_transport_pit_bindings();
+    let mut documents = bindings
+        .documents
+        .lock()
+        .expect("dev transport documents lock poisoned");
+    let seq_no = documents
+        .iter()
+        .filter_map(|(document_key, document)| {
+            let (index, _, _) = split_transport_document_key(document_key)?;
+            (index == request.index).then_some(document.seq_no)
+        })
+        .max()
+        .map_or(0, |seq_no| seq_no + 1);
+    let removed = documents.remove(&key);
+    let Some(document) = removed else {
+        return os_transport::action::OpenSearchDeleteResponseWire::not_found(
+            request.index.clone(),
+            request.id.clone(),
+        );
+    };
+    let metadata = os_engine::DocumentMetadata {
+        id: request.id.clone(),
+        version: (document.version + 1) as u64,
+        seq_no,
+        primary_term: document.primary_term.max(1) as u64,
+    };
+    os_transport::action::OpenSearchDeleteResponseWire::deleted(request.index.clone(), metadata)
+}
+
 fn build_local_search_response(request_id: i64, header_version_id: u32, body: &[u8]) -> Vec<u8> {
     let Some(request) = decode_search_request_from_transport_body(body) else {
         return build_empty_transport_response(request_id, header_version_id);
@@ -21367,6 +21456,15 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
         }
         Some("indices:data/write/index") if index_request_supports_local_execution_subset(body) => {
             Some(build_local_index_response(
+                request_id,
+                header_version_id,
+                body,
+            ))
+        }
+        Some("indices:data/write/delete")
+            if delete_request_supports_local_execution_subset(body) =>
+        {
+            Some(build_local_delete_response(
                 request_id,
                 header_version_id,
                 body,
@@ -33934,6 +34032,167 @@ mod tests {
         apply_local_transport_refresh(&refresh);
         let refreshed_get = local_transport_get_response_for_index_and_id("logs-index", "doc-1");
         assert!(refreshed_get.found);
+    }
+
+    #[test]
+    fn delete_transport_route_removes_local_store_document() {
+        struct RecordingTransportConnection {
+            writes: Vec<u8>,
+        }
+
+        impl std::io::Read for RecordingTransportConnection {
+            fn read(&mut self, _buf: &mut [u8]) -> std::io::Result<usize> {
+                Ok(0)
+            }
+        }
+
+        impl std::io::Write for RecordingTransportConnection {
+            fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+                self.writes.extend_from_slice(buf);
+                Ok(buf.len())
+            }
+
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+
+        impl TransportConnection for RecordingTransportConnection {
+            fn set_read_timeout(&self, _duration: Option<Duration>) -> std::io::Result<()> {
+                Ok(())
+            }
+
+            fn peer_addr(&self) -> std::io::Result<SocketAddr> {
+                "127.0.0.1:9300"
+                    .parse()
+                    .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidInput, error))
+            }
+        }
+
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        let bindings = dev_transport_pit_bindings();
+        bindings
+            .created_indices
+            .lock()
+            .expect("dev transport created indices lock poisoned")
+            .clear();
+        bindings
+            .created_indices
+            .lock()
+            .expect("dev transport created indices lock poisoned")
+            .insert("logs-delete".to_string());
+        bindings
+            .documents
+            .lock()
+            .expect("dev transport documents lock poisoned")
+            .clear();
+        bindings
+            .documents
+            .lock()
+            .expect("dev transport documents lock poisoned")
+            .insert(
+                "logs-delete:doc-1:".to_string(),
+                Arc::new(StoredDocument {
+                    source: serde_json::json!({ "status": "active" }),
+                    version: 3,
+                    seq_no: 7,
+                    primary_term: 2,
+                    routing: None,
+                    refreshed: true,
+                }),
+            );
+
+        let request = os_transport::action::OpenSearchDeleteRequestWire::new(
+            "logs-delete".into(),
+            "doc-1".into(),
+        );
+        let frame = os_transport::action::build_opensearch_delete_request_message(
+            314,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(delete_request_supports_local_execution_subset(&frame[6..]));
+        let transport_identity = DevTransportIdentity {
+            cluster_name: "steelsearch-dev".to_string(),
+            node_name: "steel-node".to_string(),
+            node_id: "steel-node-id".to_string(),
+            ephemeral_id: "steel-node-ephemeral".to_string(),
+            transport_address: "127.0.0.1:9300".parse().unwrap(),
+            attributes: Vec::new(),
+            roles: vec!["cluster_manager".to_string(), "data".to_string()],
+            seed_peer_identity: None,
+            seed_peer_identities: Vec::new(),
+            coordination_state: Arc::new(Mutex::new(DevTransportCoordinationState::default())),
+            remote_transport_queue_gate: Arc::new(RemoteTransportQueueGate::new(1, 1000)),
+            task_queue_state: None,
+        };
+        let mut stream = RecordingTransportConnection { writes: Vec::new() };
+
+        let handled = handle_subsequent_transport_request(
+            &mut stream,
+            &frame[6..],
+            &transport_identity,
+            None,
+        )
+        .unwrap();
+
+        assert!(handled);
+        let mut frame = BytesMut::from(&stream.writes[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected delete response message");
+        };
+        assert_eq!(message.request_id, 314);
+        assert!(!message.status.is_request());
+        let response =
+            os_transport::action::read_opensearch_delete_response_message(&message).unwrap();
+        assert_eq!(response.index, "logs-delete");
+        assert_eq!(response.id, "doc-1");
+        assert_eq!(response.version, 4);
+        assert_eq!(response.seq_no, 8);
+        assert_eq!(response.primary_term, 2);
+        assert_eq!(response.result, 2);
+        assert!(!bindings
+            .documents
+            .lock()
+            .expect("dev transport documents lock poisoned")
+            .contains_key("logs-delete:doc-1:"));
+        assert!(!local_transport_get_response_for_index_and_id("logs-delete", "doc-1").found);
+
+        let missing_request = os_transport::action::OpenSearchDeleteRequestWire::new(
+            "logs-delete".into(),
+            "doc-404".into(),
+        );
+        let missing_frame = os_transport::action::build_opensearch_delete_request_message(
+            315,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &missing_request,
+        )
+        .unwrap();
+        let missing_response = build_local_delete_response(
+            315,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &missing_frame[6..],
+        );
+        let mut missing_frame = BytesMut::from(&missing_response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut missing_frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected missing delete response message");
+        };
+        let missing =
+            os_transport::action::read_opensearch_delete_response_message(&message).unwrap();
+        assert_eq!(missing.index, "logs-delete");
+        assert_eq!(missing.id, "doc-404");
+        assert_eq!(missing.result, 3);
     }
 
     #[test]
