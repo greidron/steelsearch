@@ -3583,6 +3583,32 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end_at_ms,
         )?;
     } else if is_request
+        && normalized_action_hint == Some("indices:data/read/mget")
+        && multi_get_request_supports_local_execution_subset(&body)
+    {
+        let response = build_local_multi_get_response(request_id, header_version_id, &body);
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("indices:data/read/mget"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request
         && normalized_action_hint == Some("indices:data/read/explain")
         && explain_request_supports_local_execution_subset(&body)
     {
@@ -12370,6 +12396,58 @@ fn local_transport_get_response_from_request(
 ) -> os_transport::action::OpenSearchGetResponseWire {
     let index = request.index.clone().unwrap_or_default();
     let id = request.id.clone();
+    local_transport_get_response_for_index_and_id(&index, &id)
+}
+
+fn build_local_multi_get_response(request_id: i64, header_version_id: u32, body: &[u8]) -> Vec<u8> {
+    let Some(request) = decode_multi_get_request_from_transport_body(body) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    if request.to_engine_requests().is_err() {
+        return build_empty_transport_response(request_id, header_version_id);
+    }
+    let response = local_transport_multi_get_response_from_request(&request);
+    os_transport::action::build_opensearch_multi_get_response_message(
+        request_id,
+        Version::from_id(header_version_id as i32),
+        &response,
+    )
+    .map(|frame| frame.to_vec())
+    .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
+}
+
+fn multi_get_request_supports_local_execution_subset(body: &[u8]) -> bool {
+    decode_multi_get_request_from_transport_body(body)
+        .and_then(|request| request.to_engine_requests().ok())
+        .is_some()
+}
+
+fn decode_multi_get_request_from_transport_body(
+    body: &[u8],
+) -> Option<os_transport::action::OpenSearchMultiGetRequestWire> {
+    let message = decode_transport_message_from_body(body)?;
+    os_transport::action::read_opensearch_multi_get_request_message(&message).ok()
+}
+
+fn local_transport_multi_get_response_from_request(
+    request: &os_transport::action::OpenSearchMultiGetRequestWire,
+) -> os_transport::action::OpenSearchMultiGetResponseWire {
+    let items = request
+        .items
+        .iter()
+        .map(
+            |item| os_transport::action::OpenSearchMultiGetItemResponseWire {
+                response: local_transport_get_response_for_index_and_id(&item.index, &item.id),
+            },
+        )
+        .collect();
+    os_transport::action::OpenSearchMultiGetResponseWire { items }
+}
+
+fn local_transport_get_response_for_index_and_id(
+    index: &str,
+    id: &str,
+) -> os_transport::action::OpenSearchGetResponseWire {
     let documents = dev_transport_pit_bindings()
         .documents
         .lock()
@@ -12379,11 +12457,14 @@ fn local_transport_get_response_from_request(
         (record_index == index && record_id == id && record.refreshed).then_some(record)
     });
     let Some(record) = found else {
-        return os_transport::action::OpenSearchGetResponseWire::not_found(index, id);
+        return os_transport::action::OpenSearchGetResponseWire::not_found(
+            index.to_string(),
+            id.to_string(),
+        );
     };
     os_transport::action::OpenSearchGetResponseWire {
-        index,
-        id,
+        index: index.to_string(),
+        id: id.to_string(),
         seq_no: record.seq_no,
         primary_term: record.primary_term,
         version: record.version,
@@ -21144,6 +21225,15 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
         Some("indices:data/read/get") if get_request_supports_local_execution_subset(body) => Some(
             build_local_get_response(request_id, header_version_id, body),
         ),
+        Some("indices:data/read/mget")
+            if multi_get_request_supports_local_execution_subset(body) =>
+        {
+            Some(build_local_multi_get_response(
+                request_id,
+                header_version_id,
+                body,
+            ))
+        }
         Some("indices:data/read/explain")
             if explain_request_supports_local_execution_subset(body) =>
         {
@@ -33405,6 +33495,169 @@ mod tests {
         assert!(!response.found);
         assert_eq!(response.index, "logs-get");
         assert_eq!(response.id, "doc-pending");
+    }
+
+    #[test]
+    fn multi_get_transport_route_returns_ordered_local_store_items() {
+        struct RecordingTransportConnection {
+            writes: Vec<u8>,
+        }
+
+        impl std::io::Read for RecordingTransportConnection {
+            fn read(&mut self, _buf: &mut [u8]) -> std::io::Result<usize> {
+                Ok(0)
+            }
+        }
+
+        impl std::io::Write for RecordingTransportConnection {
+            fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+                self.writes.extend_from_slice(buf);
+                Ok(buf.len())
+            }
+
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+
+        impl TransportConnection for RecordingTransportConnection {
+            fn set_read_timeout(&self, _duration: Option<Duration>) -> std::io::Result<()> {
+                Ok(())
+            }
+
+            fn peer_addr(&self) -> std::io::Result<SocketAddr> {
+                "127.0.0.1:9300"
+                    .parse()
+                    .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidInput, error))
+            }
+        }
+
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        let bindings = dev_transport_pit_bindings();
+        bindings
+            .documents
+            .lock()
+            .expect("dev transport documents lock poisoned")
+            .clear();
+        bindings
+            .documents
+            .lock()
+            .expect("dev transport documents lock poisoned")
+            .insert(
+                "logs-mget:doc-1:".to_string(),
+                Arc::new(StoredDocument {
+                    source: serde_json::json!({ "status": "active" }),
+                    version: 4,
+                    seq_no: 21,
+                    primary_term: 2,
+                    routing: None,
+                    refreshed: true,
+                }),
+            );
+        bindings
+            .documents
+            .lock()
+            .expect("dev transport documents lock poisoned")
+            .insert(
+                "logs-mget:doc-pending:".to_string(),
+                Arc::new(StoredDocument {
+                    source: serde_json::json!({ "status": "pending" }),
+                    version: 5,
+                    seq_no: 22,
+                    primary_term: 2,
+                    routing: None,
+                    refreshed: false,
+                }),
+            );
+
+        let request = os_transport::action::OpenSearchMultiGetRequestWire::new(vec![
+            os_transport::action::OpenSearchMultiGetItemRequestWire::new(
+                "logs-mget".into(),
+                "doc-1".into(),
+            ),
+            os_transport::action::OpenSearchMultiGetItemRequestWire::new(
+                "logs-mget".into(),
+                "doc-missing".into(),
+            ),
+            os_transport::action::OpenSearchMultiGetItemRequestWire::new(
+                "logs-mget".into(),
+                "doc-pending".into(),
+            ),
+        ]);
+        let frame = os_transport::action::build_opensearch_multi_get_request_message(
+            312,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(multi_get_request_supports_local_execution_subset(
+            &frame[6..]
+        ));
+        let transport_identity = DevTransportIdentity {
+            cluster_name: "steelsearch-dev".to_string(),
+            node_name: "steel-node".to_string(),
+            node_id: "steel-node-id".to_string(),
+            ephemeral_id: "steel-node-ephemeral".to_string(),
+            transport_address: "127.0.0.1:9300".parse().unwrap(),
+            attributes: Vec::new(),
+            roles: vec!["cluster_manager".to_string(), "data".to_string()],
+            seed_peer_identity: None,
+            seed_peer_identities: Vec::new(),
+            coordination_state: Arc::new(Mutex::new(DevTransportCoordinationState::default())),
+            remote_transport_queue_gate: Arc::new(RemoteTransportQueueGate::new(1, 1000)),
+            task_queue_state: None,
+        };
+        let mut stream = RecordingTransportConnection { writes: Vec::new() };
+
+        let handled = handle_subsequent_transport_request(
+            &mut stream,
+            &frame[6..],
+            &transport_identity,
+            None,
+        )
+        .unwrap();
+
+        assert!(handled);
+        let mut frame = BytesMut::from(&stream.writes[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected multi-get response message");
+        };
+        assert_eq!(message.request_id, 312);
+        assert!(!message.status.is_request());
+        let response =
+            os_transport::action::read_opensearch_multi_get_response_message(&message).unwrap();
+        assert_eq!(response.items.len(), 3);
+
+        let first = &response.items[0].response;
+        assert!(first.found);
+        assert_eq!(first.index, "logs-mget");
+        assert_eq!(first.id, "doc-1");
+        assert_eq!(first.version, 4);
+        assert_eq!(first.seq_no, 21);
+        assert_eq!(first.primary_term, 2);
+        assert_eq!(
+            first
+                .source
+                .as_ref()
+                .and_then(|source| source.get("status")),
+            Some(&serde_json::json!("active"))
+        );
+
+        let second = &response.items[1].response;
+        assert!(!second.found);
+        assert_eq!(second.index, "logs-mget");
+        assert_eq!(second.id, "doc-missing");
+
+        let third = &response.items[2].response;
+        assert!(!third.found);
+        assert_eq!(third.index, "logs-mget");
+        assert_eq!(third.id, "doc-pending");
     }
 
     #[test]
