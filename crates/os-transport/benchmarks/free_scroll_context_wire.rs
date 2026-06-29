@@ -1,14 +1,16 @@
 use os_core::OPENSEARCH_3_7_0_TRANSPORT;
 use os_transport::action::{
+    build_opensearch_clear_scroll_contexts_request_message,
     build_opensearch_free_context_request_message,
     build_opensearch_free_scroll_context_request_message,
     build_opensearch_free_search_context_response_message,
+    read_opensearch_clear_scroll_contexts_request_message,
     read_opensearch_free_context_request_message,
     read_opensearch_free_scroll_context_request_message,
-    read_opensearch_free_search_context_response_message, OpenSearchFreeContextRequestWire,
-    OpenSearchFreeScrollContextRequestWire, OpenSearchFreeSearchContextResponseWire,
-    OpenSearchIndicesOptionsWire, OpenSearchOriginalIndicesWire,
-    OpenSearchShardSearchContextIdWire,
+    read_opensearch_free_search_context_response_message, OpenSearchEmptyTransportRequestWire,
+    OpenSearchFreeContextRequestWire, OpenSearchFreeScrollContextRequestWire,
+    OpenSearchFreeSearchContextResponseWire, OpenSearchIndicesOptionsWire,
+    OpenSearchOriginalIndicesWire, OpenSearchShardSearchContextIdWire,
 };
 use os_transport::frame::{decode_frame, DecodedFrame};
 use std::hint::black_box;
@@ -27,6 +29,7 @@ fn main() {
             OpenSearchIndicesOptionsWire::strict_expand_open_forbid_closed_ignore_throttled(),
         ),
     );
+    let clear_all_request = OpenSearchEmptyTransportRequestWire::default();
     let response = OpenSearchFreeSearchContextResponseWire::new(true);
 
     let request_encode = measure("free_scroll_context_request_encode", ITERATIONS, || {
@@ -90,6 +93,34 @@ fn main() {
         black_box(decoded);
     });
 
+    let clear_all_request_encode =
+        measure("clear_scroll_contexts_request_encode", ITERATIONS, || {
+            let frame = build_opensearch_clear_scroll_contexts_request_message(
+                65,
+                OPENSEARCH_3_7_0_TRANSPORT,
+                black_box(&clear_all_request),
+            )
+            .expect("clear-scroll-contexts request encode should succeed");
+            black_box(frame);
+        });
+
+    let clear_all_request_frame = build_opensearch_clear_scroll_contexts_request_message(
+        65,
+        OPENSEARCH_3_7_0_TRANSPORT,
+        &clear_all_request,
+    )
+    .expect("clear-scroll-contexts request encode should succeed");
+
+    let clear_all_request_decode =
+        measure("clear_scroll_contexts_request_decode", ITERATIONS, || {
+            let mut frame = black_box(clear_all_request_frame.clone());
+            let message = decode_message(&mut frame);
+            let decoded =
+                read_opensearch_clear_scroll_contexts_request_message(black_box(&message))
+                    .expect("clear-scroll-contexts request decode");
+            black_box(decoded);
+        });
+
     let response_encode = measure("free_scroll_context_response_encode", ITERATIONS, || {
         let frame = build_opensearch_free_search_context_response_message(
             63,
@@ -121,6 +152,8 @@ fn main() {
         .min(request_validate.ops_per_second)
         .min(search_request_encode.ops_per_second)
         .min(search_request_decode.ops_per_second)
+        .min(clear_all_request_encode.ops_per_second)
+        .min(clear_all_request_decode.ops_per_second)
         .min(response_encode.ops_per_second)
         .min(response_decode.ops_per_second);
     println!("free_scroll_context_wire_bottleneck_ops_per_second={combined_ops_per_second:.2}");

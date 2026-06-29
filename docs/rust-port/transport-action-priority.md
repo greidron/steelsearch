@@ -320,6 +320,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `indices:data/read/scroll/clear` (implemented local clear-scroll lifecycle subset)
 - `indices:data/read/search[free_context/scroll]` (implemented local scroll free-context lifecycle subset)
 - `indices:data/read/search[free_context]` (implemented local search free-context lifecycle subset)
+- `indices:data/read/search[clear_scroll_contexts]` (implemented local clear-all-scroll-context lifecycle subset)
 - `indices:data/read/explain` (implemented bounded local explain subset)
 - `indices:data/read/point_in_time/create` (implemented local PIT lifecycle subset)
 - `indices:data/read/point_in_time/delete` (implemented local PIT lifecycle subset)
@@ -2399,6 +2400,14 @@ The search free-context boundary covers:
   PIT/search reader contexts second because both are modeled as local active
   readers in Steelsearch;
 - missing contexts return `freed=false` instead of a transport error.
+
+The clear-all-scroll-contexts boundary covers:
+
+- OpenSearch `SearchTransportService.CLEAR_SCROLL_CONTEXTS_ACTION_NAME` with
+  `TransportRequest.Empty` parent-task wire decode/build;
+- local invalidation of all active transport scroll contexts, matching
+  `SearchService.freeAllScrollContexts()`;
+- OpenSearch `TransportResponse.Empty` rendering as an empty response body.
 
 The explain boundary covers:
 

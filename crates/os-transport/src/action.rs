@@ -115,6 +115,8 @@ pub const OPENSEARCH_CLEAR_SCROLL_ACTION_NAME: &str = "indices:data/read/scroll/
 pub const OPENSEARCH_FREE_CONTEXT_ACTION_NAME: &str = "indices:data/read/search[free_context]";
 pub const OPENSEARCH_FREE_SCROLL_CONTEXT_ACTION_NAME: &str =
     "indices:data/read/search[free_context/scroll]";
+pub const OPENSEARCH_CLEAR_SCROLL_CONTEXTS_ACTION_NAME: &str =
+    "indices:data/read/search[clear_scroll_contexts]";
 pub const OPENSEARCH_EXPLAIN_ACTION_NAME: &str = "indices:data/read/explain";
 pub const OPENSEARCH_CREATE_PIT_ACTION_NAME: &str = "indices:data/read/point_in_time/create";
 pub const OPENSEARCH_DELETE_PIT_ACTION_NAME: &str = "indices:data/read/point_in_time/delete";
@@ -783,6 +785,15 @@ pub const OPENSEARCH_PRIORITY_TRANSPORT_ACTIONS: &[OpenSearchPriorityTransportAc
         response_wire_type: "SearchFreeContextResponse",
         adapter_stage: "search-read",
         next_step: "map search free-context cleanup requests onto Rust reader context lifecycle",
+    },
+    OpenSearchPriorityTransportActionSpec {
+        action_name: OPENSEARCH_CLEAR_SCROLL_CONTEXTS_ACTION_NAME,
+        action_type: "TransportRequest.Empty",
+        transport_action: "SearchTransportService",
+        request_wire_type: "TransportRequest.Empty",
+        response_wire_type: "TransportResponse.Empty",
+        adapter_stage: "search-scroll",
+        next_step: "map clear-all-scroll-context requests onto Rust scroll context lifecycle",
     },
     OpenSearchPriorityTransportActionSpec {
         action_name: OPENSEARCH_EXPLAIN_ACTION_NAME,
@@ -2451,6 +2462,11 @@ pub fn classify_opensearch_transport_action(
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Implemented,
             reason: "search free-context transport adapter decodes OriginalIndices metadata, invalidates a local reader context, and renders OpenSearch SearchFreeContextResponse wire",
+        },
+        OPENSEARCH_CLEAR_SCROLL_CONTEXTS_ACTION_NAME => OpenSearchTransportDispatchDecision {
+            action_name: action_name.to_string(),
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "clear-all-scroll-contexts transport adapter decodes an empty transport request, clears local scroll contexts, and renders TransportResponse.Empty",
         },
         OPENSEARCH_EXPLAIN_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -13921,6 +13937,44 @@ pub fn read_opensearch_free_context_request_message(
         });
     }
     OpenSearchFreeContextRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_opensearch_clear_scroll_contexts_request_message(
+    request_id: i64,
+    version: Version,
+    request: &OpenSearchEmptyTransportRequestWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    request.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::request(),
+        version,
+        variable_header: BytesMut::from(
+            &RequestVariableHeader::new(OPENSEARCH_CLEAR_SCROLL_CONTEXTS_ACTION_NAME).to_bytes()[..],
+        ),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_clear_scroll_contexts_request_message(
+    message: &TransportMessage,
+) -> Result<OpenSearchEmptyTransportRequestWire, TransportActionWireError> {
+    if !message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "request",
+            actual: message.status.bits(),
+        });
+    }
+    let header = RequestVariableHeader::read(message.variable_header.clone().freeze())?;
+    if header.action != OPENSEARCH_CLEAR_SCROLL_CONTEXTS_ACTION_NAME {
+        return Err(TransportActionWireError::UnexpectedAction {
+            expected: OPENSEARCH_CLEAR_SCROLL_CONTEXTS_ACTION_NAME,
+            actual: header.action,
+        });
+    }
+    OpenSearchEmptyTransportRequestWire::read(message.body.clone().freeze())
 }
 
 pub fn build_opensearch_explain_request_message(
@@ -37837,6 +37891,28 @@ impl OpenSearchFreeContextRequestWire {
     }
 }
 
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct OpenSearchEmptyTransportRequestWire {
+    pub parent_task_node: String,
+    pub parent_task_id: Option<i64>,
+}
+
+impl OpenSearchEmptyTransportRequestWire {
+    pub fn write(&self, output: &mut StreamOutput) {
+        write_parent_task_id(output, &self.parent_task_node, self.parent_task_id);
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
+        require_no_trailing_bytes(&input)?;
+        Ok(Self {
+            parent_task_node,
+            parent_task_id,
+        })
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OpenSearchUpdateReaderContextRequestWire {
     pub parent_task_node: String,
@@ -47983,6 +48059,15 @@ mod tests {
                     next_step: "map search free-context cleanup requests onto Rust reader context lifecycle",
                 },
                 OpenSearchPriorityTransportActionSpec {
+                    action_name: "indices:data/read/search[clear_scroll_contexts]",
+                    action_type: "TransportRequest.Empty",
+                    transport_action: "SearchTransportService",
+                    request_wire_type: "TransportRequest.Empty",
+                    response_wire_type: "TransportResponse.Empty",
+                    adapter_stage: "search-scroll",
+                    next_step: "map clear-all-scroll-context requests onto Rust scroll context lifecycle",
+                },
+                OpenSearchPriorityTransportActionSpec {
                     action_name: "indices:data/read/explain",
                     action_type: "ExplainAction",
                     transport_action: "TransportExplainAction",
@@ -48987,6 +49072,11 @@ mod tests {
             OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
+            classify_opensearch_transport_action(OPENSEARCH_CLEAR_SCROLL_CONTEXTS_ACTION_NAME)
+                .disposition,
+            OpenSearchTransportActionDisposition::Implemented
+        );
+        assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_EXPLAIN_ACTION_NAME).disposition,
             OpenSearchTransportActionDisposition::Implemented
         );
@@ -49455,6 +49545,7 @@ mod tests {
                 || spec.action_name == OPENSEARCH_FREE_PIT_CONTEXT_ACTION_NAME
                 || spec.action_name == OPENSEARCH_FREE_SCROLL_CONTEXT_ACTION_NAME
                 || spec.action_name == OPENSEARCH_FREE_CONTEXT_ACTION_NAME
+                || spec.action_name == OPENSEARCH_CLEAR_SCROLL_CONTEXTS_ACTION_NAME
                 || spec.action_name == OPENSEARCH_CLEAR_SCROLL_ACTION_NAME
                 || spec.action_name == OPENSEARCH_GET_ALIASES_ACTION_NAME
                 || spec.action_name == OPENSEARCH_GET_SETTINGS_ACTION_NAME
@@ -78117,6 +78208,49 @@ mod tests {
         assert_eq!(
             read_opensearch_free_context_request_message(&message).unwrap(),
             null_indices_request
+        );
+    }
+
+    #[test]
+    fn opensearch_clear_scroll_contexts_transport_message_round_trips_empty_request() {
+        let request = OpenSearchEmptyTransportRequestWire::default();
+        let mut frame = build_opensearch_clear_scroll_contexts_request_message(
+            67,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected clear-scroll-contexts request message");
+        };
+        assert_eq!(
+            read_opensearch_clear_scroll_contexts_request_message(&message).unwrap(),
+            request
+        );
+        assert!(matches!(
+            read_opensearch_clear_scroll_request_message(&message).unwrap_err(),
+            TransportActionWireError::UnexpectedAction {
+                expected: OPENSEARCH_CLEAR_SCROLL_ACTION_NAME,
+                ..
+            }
+        ));
+
+        let request = OpenSearchEmptyTransportRequestWire {
+            parent_task_node: "node-a".to_string(),
+            parent_task_id: Some(7),
+        };
+        let mut frame = build_opensearch_clear_scroll_contexts_request_message(
+            68,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected parent-task clear-scroll-contexts request message");
+        };
+        assert_eq!(
+            read_opensearch_clear_scroll_contexts_request_message(&message).unwrap(),
+            request
         );
     }
 
