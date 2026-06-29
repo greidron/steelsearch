@@ -126,7 +126,7 @@ fn interop_transport_action_inventory_covers_all_source_derived_cluster_actions(
     );
     assert_eq!(
         by_action["cluster:admin/settings/update"].disposition,
-        "rejected"
+        "implemented"
     );
     assert_eq!(by_action["cluster:monitor/task"].disposition, "implemented");
     assert_eq!(

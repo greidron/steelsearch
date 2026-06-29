@@ -532,7 +532,7 @@
       "request_wire_type": "ClusterUpdateSettingsRequest",
       "response_wire_type": "ClusterUpdateSettingsResponse",
       "disposition": "implemented",
-      "reason": "Cluster-update-settings transport adapter applies bounded persistent and transient settings to the Rust manifest and returns an OpenSearch-shaped acknowledged response"
+      "reason": "Cluster-update-settings transport adapter validates bounded settings maps, applies them to the Rust manifest, and returns an OpenSearch acknowledged response"
     },
     {
       "action_name": "cluster:admin/reroute",
@@ -1089,8 +1089,8 @@
       "transport_action": "CreateViewAction.TransportAction",
       "request_wire_type": "CreateViewAction.Request",
       "response_wire_type": "GetViewAction.Response",
-      "disposition": "implemented",
-      "reason": "Create-view transport adapter validates bounded view requests, mutates manifest-backed view metadata, and renders GetViewAction.Response wire"
+      "disposition": "rejected",
+      "reason": "Create-view transport execution requires view validation, target resolution, metadata mutation, and view response rendering"
     },
     {
       "action_name": "cluster:admin/views/delete",
@@ -1098,8 +1098,8 @@
       "transport_action": "DeleteViewAction.TransportAction",
       "request_wire_type": "DeleteViewAction.Request",
       "response_wire_type": "AcknowledgedResponse",
-      "disposition": "implemented",
-      "reason": "Delete-view transport adapter looks up manifest-backed views, removes view metadata, and renders AcknowledgedResponse wire"
+      "disposition": "rejected",
+      "reason": "Delete-view transport execution requires view lookup, metadata deletion, and acknowledgement rendering"
     },
     {
       "action_name": "views:data/read/get",
@@ -1107,8 +1107,8 @@
       "transport_action": "GetViewAction.TransportAction",
       "request_wire_type": "GetViewAction.Request",
       "response_wire_type": "GetViewAction.Response",
-      "disposition": "implemented",
-      "reason": "Get-view transport adapter looks up manifest-backed view metadata and renders GetViewAction.Response wire"
+      "disposition": "rejected",
+      "reason": "Get-view transport execution requires view lookup and view response rendering"
     },
     {
       "action_name": "cluster:admin/views/update",
@@ -1116,8 +1116,8 @@
       "transport_action": "UpdateViewAction.TransportAction",
       "request_wire_type": "CreateViewAction.Request",
       "response_wire_type": "GetViewAction.Response",
-      "disposition": "implemented",
-      "reason": "Update-view transport adapter validates bounded view requests, preserves created_at, mutates manifest-backed view metadata, and renders GetViewAction.Response wire"
+      "disposition": "rejected",
+      "reason": "Update-view transport execution requires view validation, target resolution, metadata mutation, and view response rendering"
     },
     {
       "action_name": "views:data/read/list",
@@ -1126,7 +1126,7 @@
       "request_wire_type": "ListViewNamesAction.Request",
       "response_wire_type": "ListViewNamesAction.Response",
       "disposition": "implemented",
-      "reason": "List-view-names transport adapter renders manifest-backed OpenSearch-shaped view-name lists for the default request"
+      "reason": "List-view-names transport adapter returns an OpenSearch-shaped empty view-name list for the default request"
     },
     {
       "action_name": "views:data/read/search",
@@ -1134,8 +1134,8 @@
       "transport_action": "SearchViewAction.TransportAction",
       "request_wire_type": "SearchViewAction.Request",
       "response_wire_type": "SearchResponse",
-      "disposition": "implemented",
-      "reason": "Search-view transport adapter looks up manifest-backed views, injects view targets into bounded SearchRequest execution, and renders SearchResponse wire"
+      "disposition": "rejected",
+      "reason": "Search-view transport execution requires view lookup, target index resolution, search execution, and search response rendering"
     },
     {
       "action_name": "cluster:admin/persistent/start",
@@ -1503,8 +1503,8 @@
       "transport_action": "SearchTransportService",
       "request_wire_type": "ShardSearchRequest",
       "response_wire_type": "DfsSearchResult",
-      "disposition": "rejected",
-      "reason": "DFS phase transport execution requires ShardSearchRequest decode, distributed term-stat collection, and DfsSearchResult rendering"
+      "disposition": "implemented",
+      "reason": "DFS phase transport adapter decodes bounded local ShardSearchRequest shapes and renders empty DfsSearchResult payloads with reader contexts"
     },
     {
       "action_name": "indices:data/read/search[phase/query]",
@@ -1521,8 +1521,8 @@
       "transport_action": "SearchTransportService",
       "request_wire_type": "QuerySearchRequest",
       "response_wire_type": "QuerySearchResult",
-      "disposition": "rejected",
-      "reason": "Query-id phase transport execution requires QuerySearchRequest decode, reader-context lookup, and QuerySearchResult rendering"
+      "disposition": "implemented",
+      "reason": "Query-id phase transport adapter decodes QuerySearchRequest, looks up local reader contexts, and renders bounded QuerySearchResult payloads"
     },
     {
       "action_name": "indices:data/read/search[phase/query/scroll]",
@@ -1530,8 +1530,8 @@
       "transport_action": "SearchTransportService",
       "request_wire_type": "InternalScrollSearchRequest",
       "response_wire_type": "ScrollQuerySearchResult",
-      "disposition": "rejected",
-      "reason": "Query-scroll phase transport execution requires InternalScrollSearchRequest decode, scroll reader-context lookup, and ScrollQuerySearchResult rendering"
+      "disposition": "implemented",
+      "reason": "Query-scroll phase transport adapter decodes InternalScrollSearchRequest, looks up local scroll contexts, and renders bounded ScrollQuerySearchResult payloads"
     },
     {
       "action_name": "indices:data/read/search[phase/query+fetch/scroll]",
@@ -1539,8 +1539,8 @@
       "transport_action": "SearchTransportService",
       "request_wire_type": "InternalScrollSearchRequest",
       "response_wire_type": "ScrollQueryFetchSearchResult",
-      "disposition": "rejected",
-      "reason": "Query-fetch-scroll phase transport execution requires InternalScrollSearchRequest decode, scroll fetch execution, and ScrollQueryFetchSearchResult rendering"
+      "disposition": "implemented",
+      "reason": "Query-fetch-scroll phase transport adapter decodes InternalScrollSearchRequest, fetches the bounded local scroll page, and renders ScrollQueryFetchSearchResult payloads"
     },
     {
       "action_name": "indices:data/read/search[phase/fetch/id/scroll]",
@@ -1548,8 +1548,8 @@
       "transport_action": "SearchTransportService",
       "request_wire_type": "ShardFetchRequest",
       "response_wire_type": "FetchSearchResult",
-      "disposition": "rejected",
-      "reason": "Fetch-id-scroll phase transport execution requires ShardFetchRequest decode, scroll reader-context fetch, and FetchSearchResult rendering"
+      "disposition": "implemented",
+      "reason": "Fetch-id-scroll phase transport adapter decodes ShardFetchRequest, maps doc ids into local scroll context hits, and renders FetchSearchResult payloads"
     },
     {
       "action_name": "indices:data/read/search[phase/fetch/id]",
@@ -1557,8 +1557,8 @@
       "transport_action": "SearchTransportService",
       "request_wire_type": "ShardFetchSearchRequest",
       "response_wire_type": "FetchSearchResult",
-      "disposition": "rejected",
-      "reason": "Fetch-id phase transport execution requires ShardFetchSearchRequest decode, reader-context fetch, and FetchSearchResult rendering"
+      "disposition": "implemented",
+      "reason": "Fetch-id phase transport adapter decodes ShardFetchSearchRequest, maps doc ids into local reader-context documents, and renders FetchSearchResult payloads"
     },
     {
       "action_name": "indices:data/read/search[can_match]",

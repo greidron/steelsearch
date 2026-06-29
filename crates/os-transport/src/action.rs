@@ -2557,7 +2557,7 @@ pub fn classify_opensearch_transport_action(
         },
         OPENSEARCH_DFS_PHASE_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
-            disposition: OpenSearchTransportActionDisposition::Rejected,
+            disposition: OpenSearchTransportActionDisposition::Implemented,
             reason: "DFS phase transport adapter decodes ShardSearchRequest and returns a bounded empty DfsSearchResult for source-free, match_all, and match_none local shard requests; distributed term-stat collection is not mapped yet",
         },
         OPENSEARCH_QUERY_PHASE_ACTION_NAME => OpenSearchTransportDispatchDecision {
@@ -2567,28 +2567,28 @@ pub fn classify_opensearch_transport_action(
         },
         OPENSEARCH_QUERY_ID_PHASE_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
-            disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "query-id phase transport adapter decodes QuerySearchRequest and returns OpenSearch SearchContextMissingException for missing reader contexts, but successful QuerySearchResult rendering is not mapped yet",
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "query-id phase transport adapter decodes QuerySearchRequest, looks up local reader contexts, and renders bounded OpenSearch QuerySearchResult payloads with score doc ids",
         },
         OPENSEARCH_QUERY_SCROLL_PHASE_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
-            disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "query-scroll phase transport execution requires InternalScrollSearchRequest decode, scroll reader-context lookup, and ScrollQuerySearchResult rendering",
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "query-scroll phase transport adapter decodes InternalScrollSearchRequest, looks up local scroll contexts, and renders bounded ScrollQuerySearchResult payloads",
         },
         OPENSEARCH_QUERY_FETCH_SCROLL_PHASE_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
-            disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "query-fetch-scroll phase transport execution requires InternalScrollSearchRequest decode, scroll fetch execution, and ScrollQueryFetchSearchResult rendering",
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "query-fetch-scroll phase transport adapter decodes InternalScrollSearchRequest, fetches the bounded local scroll page, and renders ScrollQueryFetchSearchResult payloads",
         },
         OPENSEARCH_FETCH_ID_SCROLL_PHASE_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
-            disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "fetch-id-scroll phase transport execution requires ShardFetchRequest decode, scroll reader-context fetch, and FetchSearchResult rendering",
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "fetch-id-scroll phase transport adapter decodes ShardFetchRequest, maps doc ids into local scroll context hits, and renders FetchSearchResult payloads",
         },
         OPENSEARCH_FETCH_ID_PHASE_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
-            disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "fetch-id phase transport execution requires ShardFetchSearchRequest decode, reader-context fetch, and FetchSearchResult rendering",
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "fetch-id phase transport adapter decodes ShardFetchSearchRequest, maps doc ids into local reader-context documents, and renders FetchSearchResult payloads",
         },
         OPENSEARCH_QUERY_CAN_MATCH_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -51146,7 +51146,7 @@ mod tests {
         );
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_DFS_PHASE_ACTION_NAME).disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_QUERY_PHASE_ACTION_NAME).disposition,
@@ -51154,26 +51154,26 @@ mod tests {
         );
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_QUERY_ID_PHASE_ACTION_NAME).disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_QUERY_SCROLL_PHASE_ACTION_NAME)
                 .disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_QUERY_FETCH_SCROLL_PHASE_ACTION_NAME)
                 .disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_FETCH_ID_SCROLL_PHASE_ACTION_NAME)
                 .disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_FETCH_ID_PHASE_ACTION_NAME).disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_QUERY_CAN_MATCH_ACTION_NAME)

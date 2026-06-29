@@ -247,7 +247,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `cluster:admin/voting_config/add_exclusions` (implemented node_names subset)
 - `cluster:admin/voting_config/clear_exclusions` (implemented no-wait subset)
 - `cluster:monitor/allocation/explain` (rejected fail-closed)
-- `cluster:admin/settings/update` (rejected fail-closed)
+- `cluster:admin/settings/update` (implemented bounded manifest-backed settings mutation subset)
 - `cluster:admin/reroute` (rejected fail-closed)
 - `cluster:admin/filecache/prune` (rejected fail-closed)
 - `cluster:admin/nodes/reload_secure_settings` (rejected fail-closed)
@@ -324,9 +324,9 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `indices:data/read/search[phase/query]` (implemented bounded query-phase gateway subset)
 - `indices:data/read/search[phase/dfs]` (implemented bounded empty-result local shard path with reader context)
 - `indices:data/read/search[phase/query/id]` (implemented bounded local reader-context query-result subset)
-- `indices:data/read/search[phase/query/scroll]` (rejected fail-closed)
-- `indices:data/read/search[phase/query+fetch/scroll]` (rejected fail-closed)
-- `indices:data/read/search[phase/fetch/id/scroll]` (rejected fail-closed)
+- `indices:data/read/search[phase/query/scroll]` (implemented bounded scroll query-result subset)
+- `indices:data/read/search[phase/query+fetch/scroll]` (implemented bounded scroll query+fetch-result subset)
+- `indices:data/read/search[phase/fetch/id/scroll]` (implemented bounded scroll doc-id fetch-result subset)
 - `indices:data/read/search[phase/fetch/id]` (implemented bounded reader-context doc-id fetch-result subset)
 - `indices:data/read/search[can_match]` (implemented bounded local shard subset for null, match_all, and match_none sources)
 - `indices:data/read/explain` (implemented bounded local explain subset)
@@ -564,12 +564,10 @@ The cluster-update-settings boundary covers:
   settings map at the wire decode/build layer;
 - OpenSearch `ClusterUpdateSettingsResponse` acknowledged flag plus transient
   and persistent settings maps at the wire decode/build layer;
-- explicit fail-closed classification for `cluster:admin/settings/update` until
-  cluster-manager update, acknowledgement, and publication semantics are mapped
-  for transport mutation;
+- implemented bounded manifest-backed settings mutation for default timeout
+  requests, with OpenSearch-shaped acknowledgement response rendering;
 - explicit rejection for custom cluster-manager timeout, custom acknowledgement
-  timeout, transient settings, persistent settings, and update-settings
-  execution.
+  timeout, and unsupported settings shapes outside the bounded manifest subset.
 
 The cluster-reroute boundary covers:
 
@@ -2430,10 +2428,9 @@ The search phase transport boundary covers:
   existing bounded gateway that passes requests through the remote transport
   queue gate and returns cached local shard-query response bodies or forwarded
   OpenSearch query-phase response bodies;
-- DFS, query-id, scroll query/query-fetch, fetch-id, and fetch-id-scroll
-  remain fail-closed because their OpenSearch handlers require
-  reader-context execution, query rewrite, and native phase execution that are
-  not yet Rust adapters;
+- DFS, query-id, scroll query/query-fetch, fetch-id, and fetch-id-scroll now
+  have bounded local reader-context or scroll-context adapters, including
+  OpenSearch-shaped missing-context errors and phase-specific result payloads;
 - the bounded `ShardSearchRequest` wire is implemented for local can-match
   requests, covering parent task, `ShardId`, search type, shard count, bounded
   `AliasFilter` payloads carrying no query, `match_all`, `match_none`, or bool
@@ -3393,7 +3390,8 @@ execution. At roughly 1.65M ops/s in the latest local release run, this boundary
 is not a material transport bottleneck; the first performance-sensitive work is
 shard routing allocation decision rendering.
 
-Current cluster-update-settings reject wire microbenchmark:
+Current cluster-update-settings implemented-path wire microbenchmark
+(legacy benchmark binary name):
 
 ```text
 cargo run -p os-transport --release --bin cluster-update-settings-reject-wire-benchmark
@@ -3403,11 +3401,11 @@ cluster_update_settings_reject_validation iterations=400000 elapsed_ms=214.743 o
 cluster_update_settings_reject_wire_bottleneck_ops_per_second=1509739.46
 ```
 
-The current cluster-update-settings fail-closed boundary bottleneck is request
-encode. The request payload writes the parent task, two timeout values, and the
-empty transient/persistent settings maps before failing closed at admission. At
-roughly 1.51M ops/s in the latest local release run, it stays in the same range
-as the lightweight admin transport boundaries.
+The current cluster-update-settings implemented-path boundary bottleneck is
+request encode. The request payload writes the parent task, two timeout values,
+and the empty transient/persistent settings maps before the bounded manifest
+mutation path. At roughly 1.51M ops/s in the latest local release run, it stays
+in the same range as the lightweight admin transport boundaries.
 
 Current cluster-reroute reject wire microbenchmark:
 
