@@ -309,9 +309,9 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `views:data/read/list` (implemented empty view-name list subset)
 - `views:data/read/search` (rejected fail-closed)
 - `cluster:admin/persistent/start` (implemented fixture persistent-task subset)
-- `cluster:admin/persistent/update_status` (implemented empty-metadata missing-task error subset)
-- `cluster:admin/persistent/completion` (implemented empty-metadata missing-task error subset)
-- `cluster:admin/persistent/remove` (implemented empty-metadata missing-task error subset)
+- `cluster:admin/persistent/update_status` (implemented manifest-backed fixture task update subset)
+- `cluster:admin/persistent/completion` (implemented manifest-backed fixture task completion subset)
+- `cluster:admin/persistent/remove` (implemented manifest-backed fixture task removal subset)
 - `indices:admin/seq_no/add_retention_lease` (implemented missing-shard resolution subset)
 - `indices:admin/seq_no/renew_retention_lease` (implemented missing-shard resolution subset)
 - `indices:admin/seq_no/remove_retention_lease` (implemented missing-shard resolution subset)
@@ -2182,43 +2182,39 @@ The update-persistent-task-status adapter covers:
 - OpenSearch `UpdatePersistentTaskStatusAction.Request` parent task,
   cluster-manager timeout, task id, allocation id, and absent optional
   `PersistentTaskState` named-writeable marker at the wire decode/build layer;
-- reuse of OpenSearch `PersistentTaskResponse` decode/build for the empty
-  optional task payload shape, with concrete task payloads rejected until
-  persistent task params/state/metadata named-writeables are mapped;
-- implemented classification for `cluster:admin/persistent/update_status` in
-  the empty persistent-task metadata subset, returning OpenSearch's
-  `ResourceNotFoundException` when the task/allocation pair is missing;
+- manifest-backed fixture task lookup by task/allocation id, recording
+  `allocation_id_on_last_status_update`, and `PersistentTaskResponse`
+  rendering with the updated concrete fixture task payload;
+- OpenSearch-shaped `ResourceNotFoundException` when the task/allocation pair is
+  missing;
 - explicit rejection for custom cluster-manager timeouts, missing or oversized
-  task ids, missing allocation ids, state payloads, and concrete
-  persistent-task response payloads.
+  task ids, missing allocation ids, and state payloads.
 
 The completion-persistent-task adapter covers:
 
 - OpenSearch `CompletionPersistentTaskAction.Request` parent task,
   cluster-manager timeout, task id, allocation id, and null exception marker at
   the wire decode/build layer;
-- reuse of OpenSearch `PersistentTaskResponse` decode/build for the empty
-  optional task payload shape, with concrete task payloads rejected until
-  persistent task params/state/metadata named-writeables are mapped;
-- implemented classification for `cluster:admin/persistent/completion` in the
-  empty persistent-task metadata subset, returning OpenSearch's
-  `ResourceNotFoundException` when the task/allocation pair is missing;
+- manifest-backed fixture task lookup by task/allocation id, removal from
+  `persistent_tasks.started`, and `PersistentTaskResponse` rendering with the
+  removed concrete fixture task payload, matching OpenSearch's old-state
+  response shape;
+- OpenSearch-shaped `ResourceNotFoundException` when the task/allocation pair is
+  missing;
 - explicit rejection for custom cluster-manager timeouts, missing or oversized
-  task ids, missing allocation ids, exception payloads, and concrete
-  persistent-task response payloads.
+  task ids, missing allocation ids, and exception payloads.
 
 The remove-persistent-task adapter covers:
 
 - OpenSearch `RemovePersistentTaskAction.Request` parent task,
   cluster-manager timeout, and task id at the wire decode/build layer;
-- reuse of OpenSearch `PersistentTaskResponse` decode/build for the empty
-  optional task payload shape, with concrete task payloads rejected until
-  persistent task params/state/metadata named-writeables are mapped;
-- implemented classification for `cluster:admin/persistent/remove` in the empty
-  persistent-task metadata subset, returning OpenSearch's
-  `ResourceNotFoundException` for a missing task id;
+- manifest-backed fixture task lookup by task id, removal from
+  `persistent_tasks.started`, and `PersistentTaskResponse` rendering with the
+  removed concrete fixture task payload, matching OpenSearch's old-state
+  response shape;
+- OpenSearch-shaped `ResourceNotFoundException` for a missing task id;
 - explicit rejection for custom cluster-manager timeouts, missing or oversized
-  task ids, and concrete persistent-task response payloads.
+  task ids.
 
 The add-retention-lease boundary covers:
 
@@ -5451,58 +5447,58 @@ task/params strings make it heavier than the adjacent view-admin boundaries;
 future performance-sensitive work is params named-writeable decode, cluster
 metadata mutation, task assignment, and response rendering.
 
-Previous update-persistent-task-status reject wire microbenchmark:
+Latest update-persistent-task-status reject wire microbenchmark:
 
 ```text
 cargo run -p os-transport --release --bin update-persistent-task-status-reject-wire-benchmark
-update_persistent_task_status_reject_request_encode iterations=400000 elapsed_ms=310.972 ops_per_second=1286288.70 nanos_per_op=777.43
-update_persistent_task_status_reject_request_decode iterations=400000 elapsed_ms=278.119 ops_per_second=1438233.49 nanos_per_op=695.30
-update_persistent_task_status_reject_validation iterations=400000 elapsed_ms=283.443 ops_per_second=1411220.44 nanos_per_op=708.61
-update_persistent_task_status_empty_response_decode iterations=400000 elapsed_ms=54.428 ops_per_second=7349123.28 nanos_per_op=136.07
-update_persistent_task_status_reject_wire_bottleneck_ops_per_second=1286288.70
+update_persistent_task_status_reject_request_encode iterations=400000 elapsed_ms=304.230 ops_per_second=1314793.09 nanos_per_op=760.58
+update_persistent_task_status_reject_request_decode iterations=400000 elapsed_ms=280.372 ops_per_second=1426675.81 nanos_per_op=700.93
+update_persistent_task_status_reject_validation iterations=400000 elapsed_ms=294.651 ops_per_second=1357537.65 nanos_per_op=736.63
+update_persistent_task_status_empty_response_decode iterations=400000 elapsed_ms=59.497 ops_per_second=6723010.09 nanos_per_op=148.74
+update_persistent_task_status_reject_wire_bottleneck_ops_per_second=1314793.09
 ```
 
-The previous update-persistent-task-status fail-closed boundary bottleneck was
-request encode. The implemented empty-metadata missing-task subset now validates
-the same ClusterManagerNode envelope, task id, allocation id, and absent state
-marker before rendering the OpenSearch-shaped missing-task error. Future
-performance-sensitive work is state named-writeable decode, allocation checks,
-cluster metadata mutation, and concrete response rendering.
+The latest update-persistent-task-status wire bottleneck is request encode. The
+implemented fixture lifecycle subset validates the same
+ClusterManagerNode envelope, task id, allocation id, and absent state marker,
+updates the manifest-backed fixture task when present, and preserves the
+OpenSearch-shaped missing-task error otherwise. Future performance-sensitive
+work is state named-writeable decode and broader allocation checks.
 
-Previous completion-persistent-task reject wire microbenchmark:
+Latest completion-persistent-task reject wire microbenchmark:
 
 ```text
 cargo run -p os-transport --release --bin completion-persistent-task-reject-wire-benchmark
-completion_persistent_task_reject_request_encode iterations=400000 elapsed_ms=300.951 ops_per_second=1329121.40 nanos_per_op=752.38
-completion_persistent_task_reject_request_decode iterations=400000 elapsed_ms=270.317 ops_per_second=1479743.26 nanos_per_op=675.79
-completion_persistent_task_reject_validation iterations=400000 elapsed_ms=276.649 ops_per_second=1445874.93 nanos_per_op=691.62
-completion_persistent_task_empty_response_decode iterations=400000 elapsed_ms=53.964 ops_per_second=7412411.75 nanos_per_op=134.91
-completion_persistent_task_reject_wire_bottleneck_ops_per_second=1329121.40
+completion_persistent_task_reject_request_encode iterations=400000 elapsed_ms=301.285 ops_per_second=1327647.50 nanos_per_op=753.21
+completion_persistent_task_reject_request_decode iterations=400000 elapsed_ms=275.113 ops_per_second=1453949.57 nanos_per_op=687.78
+completion_persistent_task_reject_validation iterations=400000 elapsed_ms=296.574 ops_per_second=1348735.05 nanos_per_op=741.44
+completion_persistent_task_empty_response_decode iterations=400000 elapsed_ms=105.931 ops_per_second=3776058.76 nanos_per_op=264.83
+completion_persistent_task_reject_wire_bottleneck_ops_per_second=1327647.50
 ```
 
-The previous completion-persistent-task fail-closed boundary bottleneck was
-request encode. The implemented empty-metadata missing-task subset now validates
-the same ClusterManagerNode envelope, task id, allocation id, and null exception
-marker before rendering the OpenSearch-shaped missing-task error. Future
-performance-sensitive work is exception payload decoding, allocation checks,
-cluster metadata mutation, restart/removal semantics, and concrete response
-rendering.
+The latest completion-persistent-task wire bottleneck is request encode. The
+implemented fixture lifecycle subset validates the same
+ClusterManagerNode envelope, task id, allocation id, and null exception marker,
+removes the matching manifest-backed fixture task when present, and preserves
+the OpenSearch-shaped missing-task error otherwise. Future performance-sensitive
+work is exception payload decoding and broader allocation/restart semantics.
 
-Previous remove-persistent-task reject wire microbenchmark:
+Latest remove-persistent-task reject wire microbenchmark:
 
 ```text
 cargo run -p os-transport --release --bin remove-persistent-task-reject-wire-benchmark
-remove_persistent_task_reject_request_encode iterations=400000 elapsed_ms=304.565 ops_per_second=1313347.09 nanos_per_op=761.41
-remove_persistent_task_reject_request_decode iterations=400000 elapsed_ms=286.942 ops_per_second=1394011.82 nanos_per_op=717.35
-remove_persistent_task_reject_validation iterations=400000 elapsed_ms=272.016 ops_per_second=1470500.70 nanos_per_op=680.04
-remove_persistent_task_empty_response_decode iterations=400000 elapsed_ms=54.764 ops_per_second=7304037.16 nanos_per_op=136.91
-remove_persistent_task_reject_wire_bottleneck_ops_per_second=1313347.09
+remove_persistent_task_reject_request_encode iterations=400000 elapsed_ms=294.337 ops_per_second=1358986.26 nanos_per_op=735.84
+remove_persistent_task_reject_request_decode iterations=400000 elapsed_ms=262.470 ops_per_second=1523982.85 nanos_per_op=656.18
+remove_persistent_task_reject_validation iterations=400000 elapsed_ms=267.546 ops_per_second=1495072.28 nanos_per_op=668.86
+remove_persistent_task_empty_response_decode iterations=400000 elapsed_ms=58.720 ops_per_second=6812008.59 nanos_per_op=146.80
+remove_persistent_task_reject_wire_bottleneck_ops_per_second=1358986.26
 ```
 
-The previous remove-persistent-task fail-closed boundary bottleneck was request
-encode. The implemented empty-metadata missing-task subset now uses the same
-ClusterManagerNode envelope and task id validation before rendering the
-OpenSearch-shaped missing-task error response.
+The latest remove-persistent-task wire bottleneck is request encode. The
+implemented fixture lifecycle subset uses the same ClusterManagerNode envelope
+and task id validation, removes matching manifest-backed fixture tasks when
+present, and preserves the OpenSearch-shaped missing-task error response
+otherwise.
 
 Previous add-retention-lease reject wire microbenchmark:
 

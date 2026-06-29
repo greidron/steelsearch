@@ -2465,18 +2465,18 @@ pub fn classify_opensearch_transport_action(
             OpenSearchTransportDispatchDecision {
                 action_name: action_name.to_string(),
                 disposition: OpenSearchTransportActionDisposition::Implemented,
-                reason: "update-persistent-task-status transport adapter validates the bounded no-state request and returns OpenSearch's ResourceNotFoundException for the empty persistent-task metadata subset",
+                reason: "update-persistent-task-status transport adapter validates the bounded no-state request, updates manifest-backed fixture tasks, and preserves OpenSearch's missing-task error",
             }
         }
         OPENSEARCH_COMPLETION_PERSISTENT_TASK_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Implemented,
-            reason: "completion-persistent-task transport adapter validates the bounded no-exception request and returns OpenSearch's ResourceNotFoundException for the empty persistent-task metadata subset",
+            reason: "completion-persistent-task transport adapter validates the bounded no-exception request, removes matching manifest-backed fixture tasks, and preserves OpenSearch's missing-task error",
         },
         OPENSEARCH_REMOVE_PERSISTENT_TASK_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Implemented,
-            reason: "remove-persistent-task transport adapter validates the bounded request and returns OpenSearch's ResourceNotFoundException for the empty persistent-task metadata subset",
+            reason: "remove-persistent-task transport adapter validates the bounded request, removes manifest-backed fixture tasks, and preserves OpenSearch's missing-task error",
         },
         OPENSEARCH_ADD_RETENTION_LEASE_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),

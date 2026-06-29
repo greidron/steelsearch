@@ -1153,7 +1153,7 @@
       "request_wire_type": "UpdatePersistentTaskStatusAction.Request",
       "response_wire_type": "PersistentTaskResponse",
       "disposition": "implemented",
-      "reason": "Update-persistent-task-status transport adapter validates the bounded no-state request and returns OpenSearch's ResourceNotFoundException for the empty persistent-task metadata subset"
+      "reason": "Update-persistent-task-status transport adapter validates the bounded no-state request, updates manifest-backed fixture tasks, and preserves OpenSearch's missing-task error"
     },
     {
       "action_name": "cluster:admin/persistent/completion",
@@ -1162,7 +1162,7 @@
       "request_wire_type": "CompletionPersistentTaskAction.Request",
       "response_wire_type": "PersistentTaskResponse",
       "disposition": "implemented",
-      "reason": "Completion-persistent-task transport adapter validates the bounded no-exception request and returns OpenSearch's ResourceNotFoundException for the empty persistent-task metadata subset"
+      "reason": "Completion-persistent-task transport adapter validates the bounded no-exception request, removes matching manifest-backed fixture tasks, and preserves OpenSearch's missing-task error"
     },
     {
       "action_name": "cluster:admin/persistent/remove",
@@ -1171,7 +1171,7 @@
       "request_wire_type": "RemovePersistentTaskAction.Request",
       "response_wire_type": "PersistentTaskResponse",
       "disposition": "implemented",
-      "reason": "Remove-persistent-task transport adapter validates the bounded request and returns OpenSearch's ResourceNotFoundException for the empty persistent-task metadata subset"
+      "reason": "Remove-persistent-task transport adapter validates the bounded request, removes manifest-backed fixture tasks, and preserves OpenSearch's missing-task error"
     },
     {
       "action_name": "indices:admin/seq_no/add_retention_lease",
