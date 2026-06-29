@@ -177,8 +177,8 @@ The source-derived transport inventory currently has 160 rows:
 
 | Status | Count | Meaning |
 | --- | ---: | --- |
-| `implemented` | 103 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
-| `partial` | 57 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
+| `implemented` | 104 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
+| `partial` | 56 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
 | `planned` | 0 | No source-derived transport action remains unclassified. |
 
 The k-NN plugin action sweep is complete at the boundary layer. All 12
@@ -618,11 +618,13 @@ The delete-repository boundary covers:
 
 - OpenSearch `DeleteRepositoryRequest` parent task, cluster-manager timeout,
   acknowledgement timeout, and repository name at the wire decode/build layer;
-- explicit fail-closed classification for `cluster:admin/repository/delete`
-  until repository metadata mutation and acknowledgement response rendering are
-  implemented;
+- implemented classification for the bounded exact-name
+  `cluster:admin/repository/delete` subset with manifest-backed repository
+  metadata removal, associated local snapshot-record cleanup, and
+  OpenSearch-shaped acknowledgement rendering;
 - explicit rejection for custom cluster-manager timeout, custom acknowledgement
-  timeout, blank name, and delete-repository execution.
+  timeout, blank names, wildcard names, multi-name selectors, and missing local
+  repositories.
 
 The verify-repository boundary covers:
 
@@ -3177,22 +3179,26 @@ repository-name array; the empty response is a single repository-list count. At
 roughly 2.06M ops/s in the latest local release run, it does not introduce a
 transport-wire bottleneck.
 
-Current delete-repository reject wire microbenchmark:
+Current delete-repository wire microbenchmark:
 
 ```text
-cargo run -p os-transport --release --bin delete-repository-reject-wire-benchmark
-delete_repository_reject_request_encode iterations=400000 elapsed_ms=233.755 ops_per_second=1711192.22 nanos_per_op=584.39
-delete_repository_reject_request_decode iterations=400000 elapsed_ms=225.736 ops_per_second=1771978.29 nanos_per_op=564.34
-delete_repository_reject_validation iterations=400000 elapsed_ms=230.712 ops_per_second=1733765.37 nanos_per_op=576.78
-delete_repository_reject_wire_bottleneck_ops_per_second=1711192.22
+cargo run -q -p os-transport --release --bin delete-repository-wire-benchmark
+delete_repository_request_encode iterations=400000 elapsed_ms=235.065 ops_per_second=1701657.61 nanos_per_op=587.66
+delete_repository_request_decode iterations=400000 elapsed_ms=229.331 ops_per_second=1744206.68 nanos_per_op=573.33
+delete_repository_request_validate iterations=400000 elapsed_ms=237.094 ops_per_second=1687093.62 nanos_per_op=592.74
+delete_repository_response_encode iterations=400000 elapsed_ms=49.064 ops_per_second=8152699.08 nanos_per_op=122.66
+delete_repository_response_decode iterations=400000 elapsed_ms=55.102 ops_per_second=7259211.41 nanos_per_op=137.76
+delete_repository_wire_bottleneck_ops_per_second=1687093.62
 ```
 
-The current delete-repository fail-closed boundary bottleneck is request encode.
+The current delete-repository transport boundary bottleneck is request
+validation.
 The payload includes the acknowledged cluster-manager request envelope and
-repository name before admission rejects execution. At roughly 1.71M ops/s in
-the latest local release run, this boundary is not a material transport
-bottleneck; the first performance-sensitive work is repository metadata
-mutation, cluster-state publication, and acknowledgement rendering.
+repository name before subset validation and acknowledgement response rendering.
+At roughly 1.69M ops/s in the latest local release run, this boundary is not a
+material transport bottleneck; the first performance-sensitive work is broader
+repository pattern resolution, cluster-state publication, and acknowledgement
+tracking.
 
 Current verify-repository reject wire microbenchmark:
 

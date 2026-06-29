@@ -1818,8 +1818,8 @@ pub fn classify_opensearch_transport_action(
         },
         DELETE_REPOSITORY_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
-            disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "delete-repository transport execution requires repository metadata mutation and acknowledgement rendering",
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "delete-repository transport adapter validates the bounded exact-name subset, removes local repository metadata, and renders an OpenSearch-shaped acknowledgement",
         },
         VERIFY_REPOSITORY_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -6606,6 +6606,35 @@ pub fn read_delete_repository_request_message(
         });
     }
     DeleteRepositoryRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_delete_repository_response_message(
+    request_id: i64,
+    version: Version,
+    response: &AcknowledgedResponseWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    response.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::response(),
+        version,
+        variable_header: BytesMut::new(),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_delete_repository_response_message(
+    message: &TransportMessage,
+) -> Result<AcknowledgedResponseWire, TransportActionWireError> {
+    if message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "response",
+            actual: message.status.bits(),
+        });
+    }
+    AcknowledgedResponseWire::read(message.body.clone().freeze())
 }
 
 pub fn build_verify_repository_request_message(
@@ -14445,7 +14474,7 @@ impl DeleteRepositoryRequestWire {
         Ok(request)
     }
 
-    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+    pub fn validate_supported_execution_subset(&self) -> Result<(), TransportActionWireError> {
         if self.cluster_manager_timeout != TimeValueWire::seconds(30) {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "delete repository cluster-manager timeout",
@@ -14464,9 +14493,20 @@ impl DeleteRepositoryRequestWire {
                 reason: "OpenSearch delete-repository requests require a repository name",
             });
         }
+        if self.name.contains('*') || self.name.contains('?') || self.name.contains(',') {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "delete repository name pattern",
+                reason: "repository wildcard and multi-name deletion requires repository pattern resolution semantics",
+            });
+        }
+        Ok(())
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        self.validate_supported_execution_subset()?;
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "delete repository execution",
-            reason: "delete-repository transport execution requires repository metadata mutation and acknowledgement rendering",
+            reason: "delete-repository transport execution is handled by the manifest-backed local adapter",
         })
     }
 }
@@ -53588,7 +53628,7 @@ mod tests {
     }
 
     #[test]
-    fn delete_repository_request_wire_round_trips_and_rejects_execution_boundary() {
+    fn delete_repository_request_wire_round_trips_and_validates_supported_subset() {
         let request = DeleteRepositoryRequestWire {
             parent_task_node: "cluster-manager".to_string(),
             parent_task_id: Some(36),
@@ -53599,6 +53639,7 @@ mod tests {
 
         let decoded = DeleteRepositoryRequestWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, request);
+        decoded.validate_supported_execution_subset().unwrap();
         assert!(matches!(
             decoded.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
@@ -53615,7 +53656,7 @@ mod tests {
             ..DeleteRepositoryRequestWire::default()
         };
         assert!(matches!(
-            cluster_manager_timeout.reject_unsupported_execution(),
+            cluster_manager_timeout.validate_supported_execution_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "delete repository cluster-manager timeout",
                 ..
@@ -53627,7 +53668,7 @@ mod tests {
             ..DeleteRepositoryRequestWire::default()
         };
         assert!(matches!(
-            ack_timeout.reject_unsupported_execution(),
+            ack_timeout.validate_supported_execution_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "delete repository ack timeout",
                 ..
@@ -53639,16 +53680,30 @@ mod tests {
             ..DeleteRepositoryRequestWire::default()
         };
         assert!(matches!(
-            missing_name.reject_unsupported_execution(),
+            missing_name.validate_supported_execution_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "delete repository missing name",
                 ..
             })
         ));
+
+        for name in ["repo-*", "repo?", "repo-a,repo-b"] {
+            let request = DeleteRepositoryRequestWire {
+                name: name.to_string(),
+                ..DeleteRepositoryRequestWire::default()
+            };
+            assert!(matches!(
+                request.validate_supported_execution_subset(),
+                Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "delete repository name pattern",
+                    ..
+                })
+            ));
+        }
     }
 
     #[test]
-    fn delete_repository_transport_messages_bind_rejected_action_frame() {
+    fn delete_repository_transport_messages_bind_supported_action_frame() {
         let request = DeleteRepositoryRequestWire::default();
         let mut frame =
             build_delete_repository_request_message(36, OPENSEARCH_3_7_0_TRANSPORT, &request)
@@ -53660,15 +53715,28 @@ mod tests {
             read_delete_repository_request_message(&message).unwrap(),
             request
         );
-        assert!(matches!(
-            read_delete_repository_request_message(&message)
+        assert_eq!(
+            classify_opensearch_transport_request_message(&message)
                 .unwrap()
-                .reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "delete repository execution",
-                ..
-            })
-        ));
+                .disposition,
+            OpenSearchTransportActionDisposition::Implemented
+        );
+        read_delete_repository_request_message(&message)
+            .unwrap()
+            .validate_supported_execution_subset()
+            .unwrap();
+
+        let response = AcknowledgedResponseWire { acknowledged: true };
+        let mut frame =
+            build_delete_repository_response_message(36, OPENSEARCH_3_7_0_TRANSPORT, &response)
+                .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected delete repository response message");
+        };
+        assert_eq!(
+            read_delete_repository_response_message(&message).unwrap(),
+            response
+        );
     }
 
     #[test]

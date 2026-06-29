@@ -1645,6 +1645,32 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end,
             &mut connection_end_at_ms,
         )?;
+    } else if is_request
+        && normalized_action_hint == Some("cluster:admin/repository/delete")
+        && delete_repository_request_supports_manifest_execution_subset(&body)
+    {
+        let response = build_delete_repository_response(request_id, header_version_id, &body);
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("cluster:admin/repository/delete"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
     } else if is_request && normalized_action_hint == Some("indices:admin/aliases/get") {
         let response = build_get_aliases_response(request_id, header_version_id, &body);
         response_frame = summarize_transport_response_frame_for_action(
@@ -5775,6 +5801,79 @@ fn build_empty_get_repositories_response(request_id: i64, header_version_id: u32
     )
     .map(|frame| frame.to_vec())
     .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
+}
+
+fn build_delete_repository_response(
+    request_id: i64,
+    header_version_id: u32,
+    body: &[u8],
+) -> Vec<u8> {
+    let Some(request) = decode_delete_repository_request_from_transport_body(body) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    if !delete_repository_request_matches_manifest_subset(&request) {
+        return build_empty_transport_response(request_id, header_version_id);
+    }
+    if !apply_transport_delete_repository_to_manifest(&request.name) {
+        return build_empty_transport_response(request_id, header_version_id);
+    }
+    build_acknowledged_template_response(
+        request_id,
+        header_version_id,
+        os_transport::action::build_delete_repository_response_message,
+    )
+}
+
+fn delete_repository_request_supports_manifest_execution_subset(body: &[u8]) -> bool {
+    decode_delete_repository_request_from_transport_body(body)
+        .is_some_and(|request| delete_repository_request_matches_manifest_subset(&request))
+}
+
+fn decode_delete_repository_request_from_transport_body(
+    body: &[u8],
+) -> Option<os_transport::action::DeleteRepositoryRequestWire> {
+    let message = decode_transport_message_from_body(body)?;
+    os_transport::action::read_delete_repository_request_message(&message).ok()
+}
+
+fn delete_repository_request_matches_manifest_subset(
+    request: &os_transport::action::DeleteRepositoryRequestWire,
+) -> bool {
+    request.validate_supported_execution_subset().is_ok()
+        && snapshot_repository_exists_in_manifest(&request.name)
+}
+
+fn snapshot_repository_exists_in_manifest(repository: &str) -> bool {
+    dev_transport_pit_bindings()
+        .metadata_manifest
+        .lock()
+        .expect("dev transport metadata manifest lock poisoned")["snapshot_repositories"]
+        .get(repository)
+        .is_some()
+}
+
+fn apply_transport_delete_repository_to_manifest(repository: &str) -> bool {
+    let bindings = dev_transport_pit_bindings();
+    let mut manifest = bindings
+        .metadata_manifest
+        .lock()
+        .expect("dev transport metadata manifest lock poisoned");
+    let Some(object) = manifest.as_object_mut() else {
+        return false;
+    };
+    let Some(repositories) = object
+        .get_mut("snapshot_repositories")
+        .and_then(Value::as_object_mut)
+    else {
+        return false;
+    };
+    if repositories.remove(repository).is_none() {
+        return false;
+    }
+    if let Some(snapshots) = object.get_mut("snapshots").and_then(Value::as_object_mut) {
+        snapshots.remove(repository);
+    }
+    true
 }
 
 fn build_empty_get_pipeline_response(
@@ -18193,6 +18292,15 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
             request_id,
             header_version_id,
         )),
+        Some("cluster:admin/repository/delete")
+            if delete_repository_request_supports_manifest_execution_subset(body) =>
+        {
+            Some(build_delete_repository_response(
+                request_id,
+                header_version_id,
+                body,
+            ))
+        }
         Some("indices:admin/aliases/get") => Some(build_get_aliases_response(
             request_id,
             header_version_id,
@@ -23386,6 +23494,76 @@ mod tests {
         let response =
             os_transport::action::read_get_repositories_response_message(&message).unwrap();
         assert_eq!(response.repository_count, 0);
+    }
+
+    #[test]
+    fn delete_repository_transport_route_removes_manifest_repository_and_snapshots() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        let bindings = dev_transport_pit_bindings();
+        {
+            let mut manifest = bindings
+                .metadata_manifest
+                .lock()
+                .expect("dev transport metadata manifest lock poisoned");
+            *manifest = serde_json::json!({
+                "snapshot_repositories": {
+                    "repo-delete": {
+                        "type": "fs",
+                        "settings": {
+                            "location": "/tmp/repo-delete"
+                        }
+                    }
+                },
+                "snapshots": {
+                    "repo-delete": {
+                        "snap-a": {
+                            "state": "SUCCESS"
+                        }
+                    }
+                }
+            });
+        }
+
+        let request = os_transport::action::DeleteRepositoryRequestWire {
+            name: "repo-delete".to_string(),
+            ..os_transport::action::DeleteRepositoryRequestWire::default()
+        };
+        let frame = os_transport::action::build_delete_repository_request_message(
+            82,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(delete_repository_request_supports_manifest_execution_subset(&frame[6..]));
+
+        let response = build_delete_repository_response(
+            82,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &frame[6..],
+        );
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected delete repository response message");
+        };
+        assert_eq!(message.request_id, 82);
+        let response =
+            os_transport::action::read_delete_repository_response_message(&message).unwrap();
+        assert!(response.acknowledged);
+
+        let manifest = bindings
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned");
+        assert!(manifest["snapshot_repositories"]
+            .get("repo-delete")
+            .is_none());
+        assert!(manifest["snapshots"].get("repo-delete").is_none());
     }
 
     #[test]
