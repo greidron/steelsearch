@@ -312,7 +312,8 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `indices:admin/seq_no/renew_retention_lease` (rejected fail-closed)
 - `indices:admin/seq_no/remove_retention_lease` (rejected fail-closed)
 - `cluster:admin/indices/dangling/list` (implemented empty dangling-index subset)
-- `cluster:admin/indices/dangling/import` (rejected fail-closed)
+- `cluster:admin/indices/dangling/import` (implemented empty-state missing dangling-index subset)
+- `cluster:admin/indices/dangling/delete` (implemented empty-state missing dangling-index subset)
 - `indices:data/read/search` (implemented bounded local search subset)
 - `indices:data/read/search/stream` (implemented bounded local search subset)
 - `indices:data/read/msearch` (implemented bounded ordered sub-search subset)
@@ -2259,13 +2260,13 @@ The import-dangling-index boundary covers:
   timeout, acknowledgement timeout, index UUID, and `acceptDataLoss` flag at
   the wire decode/build layer;
 - OpenSearch `AcknowledgedResponse` decode/build for the acknowledgement flag;
-- explicit fail-closed classification for
-  `cluster:admin/indices/dangling/import` until dangling index lookup,
-  accept-data-loss validation, allocation, cluster metadata mutation, and
-  acknowledgement rendering are implemented;
+- implemented classification for `cluster:admin/indices/dangling/import` when
+  the request uses default timeouts and a non-empty bounded UUID, returning
+  OpenSearch's `IllegalArgumentException("No dangling index found for UUID [...]")`
+  for the empty local dangling-index state before `acceptDataLoss` is checked;
 - explicit rejection for custom cluster-manager timeouts, custom ack
-  timeouts, missing or oversized index UUIDs, `acceptDataLoss=false`,
-  import-dangling-index execution, and acknowledgement rendering.
+  timeouts, missing or oversized index UUIDs, actual dangling-index allocation,
+  cluster metadata mutation, and acknowledgement rendering.
 
 The delete-dangling-index boundary covers:
 
@@ -2273,13 +2274,13 @@ The delete-dangling-index boundary covers:
   timeout, acknowledgement timeout, index UUID, and `acceptDataLoss` flag at
   the wire decode/build layer;
 - OpenSearch `AcknowledgedResponse` decode/build for the acknowledgement flag;
-- explicit fail-closed classification for
-  `cluster:admin/indices/dangling/delete` until dangling index lookup,
-  accept-data-loss validation, index graveyard mutation, cluster metadata
-  publication, and acknowledgement rendering are implemented;
+- implemented classification for `cluster:admin/indices/dangling/delete` when
+  the request uses default timeouts and a non-empty bounded UUID, returning
+  OpenSearch's `IllegalArgumentException("No dangling index found for UUID [...]")`
+  for the empty local dangling-index state before `acceptDataLoss` is checked;
 - explicit rejection for custom cluster-manager timeouts, custom ack
-  timeouts, missing or oversized index UUIDs, `acceptDataLoss=false`,
-  delete-dangling-index execution, and acknowledgement rendering.
+  timeouts, missing or oversized index UUIDs, actual dangling-index graveyard
+  mutation, cluster metadata publication, and acknowledgement rendering.
 
 The find-dangling-index boundary covers:
 

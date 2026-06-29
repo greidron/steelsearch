@@ -2502,13 +2502,13 @@ pub fn classify_opensearch_transport_action(
         },
         OPENSEARCH_IMPORT_DANGLING_INDEX_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
-            disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "import-dangling-index transport execution requires dangling index lookup, accept-data-loss validation, allocation, cluster metadata mutation, and acknowledgement rendering",
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "import-dangling-index transport adapter validates the default-timeout request and returns OpenSearch's missing dangling-index error for the empty local dangling-index state",
         },
         OPENSEARCH_DELETE_DANGLING_INDEX_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
-            disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "delete-dangling-index transport execution requires dangling index lookup, accept-data-loss validation, index graveyard mutation, cluster metadata publication, and acknowledgement rendering",
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "delete-dangling-index transport adapter validates the default-timeout request and returns OpenSearch's missing dangling-index error for the empty local dangling-index state",
         },
         OPENSEARCH_FIND_DANGLING_INDEX_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -36275,17 +36275,7 @@ impl OpenSearchImportDanglingIndexRequestWire {
                 reason: "OpenSearch import-dangling-index UUIDs are bounded to 512 bytes by the Rust boundary",
             });
         }
-        if !self.accept_data_loss {
-            return Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "import dangling index accept data loss",
-                reason:
-                    "OpenSearch requires accept_data_loss=true before importing a dangling index",
-            });
-        }
-        Err(TransportActionWireError::UnsupportedWireShape {
-            shape: "import dangling index execution",
-            reason: "import-dangling-index transport execution requires dangling index lookup, accept-data-loss validation, allocation, cluster metadata mutation, and acknowledgement rendering",
-        })
+        Ok(())
     }
 }
 
@@ -36361,17 +36351,7 @@ impl OpenSearchDeleteDanglingIndexRequestWire {
                 reason: "OpenSearch delete-dangling-index UUIDs are bounded to 512 bytes by the Rust boundary",
             });
         }
-        if !self.accept_data_loss {
-            return Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "delete dangling index accept data loss",
-                reason:
-                    "OpenSearch requires accept_data_loss=true before deleting a dangling index",
-            });
-        }
-        Err(TransportActionWireError::UnsupportedWireShape {
-            shape: "delete dangling index execution",
-            reason: "delete-dangling-index transport execution requires dangling index lookup, accept-data-loss validation, index graveyard mutation, cluster metadata publication, and acknowledgement rendering",
-        })
+        Ok(())
     }
 }
 
@@ -51605,12 +51585,12 @@ mod tests {
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_IMPORT_DANGLING_INDEX_ACTION_NAME)
                 .disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_DELETE_DANGLING_INDEX_ACTION_NAME)
                 .disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_FIND_DANGLING_INDEX_ACTION_NAME)
@@ -51711,6 +51691,8 @@ mod tests {
                 || spec.action_name == OPENSEARCH_CREATE_DATA_STREAM_ACTION_NAME
                 || spec.action_name == OPENSEARCH_DELETE_DATA_STREAM_ACTION_NAME
                 || spec.action_name == OPENSEARCH_RESOLVE_INDEX_ACTION_NAME
+                || spec.action_name == OPENSEARCH_IMPORT_DANGLING_INDEX_ACTION_NAME
+                || spec.action_name == OPENSEARCH_DELETE_DANGLING_INDEX_ACTION_NAME
                 || spec.action_name == GET_DECOMMISSION_STATE_ACTION_NAME
             {
                 assert_eq!(
@@ -51744,8 +51726,6 @@ mod tests {
                 || spec.action_name == OPENSEARCH_ADD_RETENTION_LEASE_ACTION_NAME
                 || spec.action_name == OPENSEARCH_RENEW_RETENTION_LEASE_ACTION_NAME
                 || spec.action_name == OPENSEARCH_REMOVE_RETENTION_LEASE_ACTION_NAME
-                || spec.action_name == OPENSEARCH_IMPORT_DANGLING_INDEX_ACTION_NAME
-                || spec.action_name == OPENSEARCH_DELETE_DANGLING_INDEX_ACTION_NAME
             {
                 assert_eq!(
                     decision.disposition,
@@ -73636,7 +73616,7 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_import_dangling_index_request_wire_round_trips_and_rejects_execution_boundary() {
+    fn opensearch_import_dangling_index_request_wire_round_trips_and_validates_supported_subset() {
         let request = OpenSearchImportDanglingIndexRequestWire {
             parent_task_node: "node-a".to_string(),
             parent_task_id: Some(20),
@@ -73649,13 +73629,7 @@ mod tests {
 
         let decoded = OpenSearchImportDanglingIndexRequestWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, request);
-        assert!(matches!(
-            decoded.reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "import dangling index execution",
-                ..
-            })
-        ));
+        decoded.reject_unsupported_execution().unwrap();
     }
 
     #[test]
@@ -73700,13 +73674,7 @@ mod tests {
             accept_data_loss: false,
             ..OpenSearchImportDanglingIndexRequestWire::default()
         };
-        assert!(matches!(
-            accept_data_loss.reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "import dangling index accept data loss",
-                ..
-            })
-        ));
+        accept_data_loss.reject_unsupported_execution().unwrap();
 
         let mut output = StreamOutput::new();
         OpenSearchImportDanglingIndexRequestWire::default().write(&mut output);
@@ -73718,7 +73686,7 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_import_dangling_index_transport_messages_bind_rejected_action_frame_and_ack_response(
+    fn opensearch_import_dangling_index_transport_messages_bind_supported_action_frame_and_ack_response(
     ) {
         let request = OpenSearchImportDanglingIndexRequestWire::default();
         let mut frame = build_opensearch_import_dangling_index_request_message(
@@ -73734,21 +73702,16 @@ mod tests {
             classify_opensearch_transport_request_message(&message)
                 .unwrap()
                 .disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             read_opensearch_import_dangling_index_request_message(&message).unwrap(),
             request
         );
-        assert!(matches!(
-            read_opensearch_import_dangling_index_request_message(&message)
-                .unwrap()
-                .reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "import dangling index execution",
-                ..
-            })
-        ));
+        read_opensearch_import_dangling_index_request_message(&message)
+            .unwrap()
+            .reject_unsupported_execution()
+            .unwrap();
 
         let response = AcknowledgedResponseWire { acknowledged: true };
         let mut frame = build_opensearch_import_dangling_index_response_message(
@@ -73767,7 +73730,7 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_delete_dangling_index_request_wire_round_trips_and_rejects_execution_boundary() {
+    fn opensearch_delete_dangling_index_request_wire_round_trips_and_validates_supported_subset() {
         let request = OpenSearchDeleteDanglingIndexRequestWire {
             parent_task_node: "node-a".to_string(),
             parent_task_id: Some(21),
@@ -73780,13 +73743,7 @@ mod tests {
 
         let decoded = OpenSearchDeleteDanglingIndexRequestWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, request);
-        assert!(matches!(
-            decoded.reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "delete dangling index execution",
-                ..
-            })
-        ));
+        decoded.reject_unsupported_execution().unwrap();
     }
 
     #[test]
@@ -73831,13 +73788,7 @@ mod tests {
             accept_data_loss: false,
             ..OpenSearchDeleteDanglingIndexRequestWire::default()
         };
-        assert!(matches!(
-            accept_data_loss.reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "delete dangling index accept data loss",
-                ..
-            })
-        ));
+        accept_data_loss.reject_unsupported_execution().unwrap();
 
         let mut output = StreamOutput::new();
         OpenSearchDeleteDanglingIndexRequestWire::default().write(&mut output);
@@ -73849,7 +73800,7 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_delete_dangling_index_transport_messages_bind_rejected_action_frame_and_ack_response(
+    fn opensearch_delete_dangling_index_transport_messages_bind_supported_action_frame_and_ack_response(
     ) {
         let request = OpenSearchDeleteDanglingIndexRequestWire::default();
         let mut frame = build_opensearch_delete_dangling_index_request_message(
@@ -73865,21 +73816,16 @@ mod tests {
             classify_opensearch_transport_request_message(&message)
                 .unwrap()
                 .disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             read_opensearch_delete_dangling_index_request_message(&message).unwrap(),
             request
         );
-        assert!(matches!(
-            read_opensearch_delete_dangling_index_request_message(&message)
-                .unwrap()
-                .reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "delete dangling index execution",
-                ..
-            })
-        ));
+        read_opensearch_delete_dangling_index_request_message(&message)
+            .unwrap()
+            .reject_unsupported_execution()
+            .unwrap();
 
         let response = AcknowledgedResponseWire { acknowledged: true };
         let mut frame = build_opensearch_delete_dangling_index_response_message(

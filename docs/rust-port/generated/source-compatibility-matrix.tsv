@@ -515,8 +515,8 @@ transport_action	partial	action	RetentionLeaseActions.Add.INSTANCE	RetentionLeas
 transport_action	partial	action	RetentionLeaseActions.Renew.INSTANCE	RetentionLeaseActions.Renew.TransportAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	811
 transport_action	partial	action	RetentionLeaseActions.Remove.INSTANCE	RetentionLeaseActions.Remove.TransportAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	812
 transport_action	implemented	action	ListDanglingIndicesAction.INSTANCE	TransportListDanglingIndicesAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	815
-transport_action	partial	action	ImportDanglingIndexAction.INSTANCE	TransportImportDanglingIndexAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	816
-transport_action	partial	action	DeleteDanglingIndexAction.INSTANCE	TransportDeleteDanglingIndexAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	817
+transport_action	implemented	action	ImportDanglingIndexAction.INSTANCE	TransportImportDanglingIndexAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	816
+transport_action	implemented	action	DeleteDanglingIndexAction.INSTANCE	TransportDeleteDanglingIndexAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	817
 transport_action	implemented	action	FindDanglingIndexAction.INSTANCE	TransportFindDanglingIndexAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	818
 transport_action	implemented	action	CreatePitAction.INSTANCE	TransportCreatePitAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	821
 transport_action	implemented	action	DeletePitAction.INSTANCE	TransportDeletePitAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	822

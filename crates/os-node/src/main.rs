@@ -3382,6 +3382,66 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end_at_ms,
         )?;
     } else if is_request
+        && normalized_action_hint == Some("cluster:admin/indices/dangling/import")
+        && import_dangling_index_request_supports_empty_state_missing_subset(&body)
+    {
+        let response = build_import_dangling_index_missing_error_response(
+            request_id,
+            header_version_id,
+            &body,
+        );
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("cluster:admin/indices/dangling/import"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request
+        && normalized_action_hint == Some("cluster:admin/indices/dangling/delete")
+        && delete_dangling_index_request_supports_empty_state_missing_subset(&body)
+    {
+        let response = build_delete_dangling_index_missing_error_response(
+            request_id,
+            header_version_id,
+            &body,
+        );
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("cluster:admin/indices/dangling/delete"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request
         && normalized_action_hint == Some("cluster:monitor/_remotestore/stats")
         && remote_store_stats_request_supports_empty_subset(&body)
     {
@@ -12949,6 +13009,83 @@ fn build_empty_find_dangling_index_response(
     )
     .map(|frame| frame.to_vec())
     .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
+}
+
+fn build_import_dangling_index_missing_error_response(
+    request_id: i64,
+    header_version_id: u32,
+    body: &[u8],
+) -> Vec<u8> {
+    let Some(request) = decode_import_dangling_index_request_from_transport_body(body) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    build_missing_dangling_index_error_response(request_id, header_version_id, &request.index_uuid)
+}
+
+fn build_delete_dangling_index_missing_error_response(
+    request_id: i64,
+    header_version_id: u32,
+    body: &[u8],
+) -> Vec<u8> {
+    let Some(request) = decode_delete_dangling_index_request_from_transport_body(body) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    build_missing_dangling_index_error_response(request_id, header_version_id, &request.index_uuid)
+}
+
+fn build_missing_dangling_index_error_response(
+    request_id: i64,
+    header_version_id: u32,
+    index_uuid: &str,
+) -> Vec<u8> {
+    let reason = format!("No dangling index found for UUID [{index_uuid}]");
+    let mut output = StreamOutput::new();
+    os_transport::error::write_illegal_argument_exception(&mut output, Some(&reason));
+    build_transport_error_response_frame(request_id, header_version_id, output.freeze().to_vec())
+}
+
+fn import_dangling_index_request_supports_empty_state_missing_subset(body: &[u8]) -> bool {
+    decode_import_dangling_index_request_from_transport_body(body).is_some_and(|request| {
+        import_dangling_index_request_matches_empty_state_missing_subset(&request)
+    })
+}
+
+fn delete_dangling_index_request_supports_empty_state_missing_subset(body: &[u8]) -> bool {
+    decode_delete_dangling_index_request_from_transport_body(body).is_some_and(|request| {
+        delete_dangling_index_request_matches_empty_state_missing_subset(&request)
+    })
+}
+
+fn decode_import_dangling_index_request_from_transport_body(
+    body: &[u8],
+) -> Option<os_transport::action::OpenSearchImportDanglingIndexRequestWire> {
+    let message = decode_transport_message_from_body(body)?;
+    os_transport::action::read_opensearch_import_dangling_index_request_message(&message).ok()
+}
+
+fn decode_delete_dangling_index_request_from_transport_body(
+    body: &[u8],
+) -> Option<os_transport::action::OpenSearchDeleteDanglingIndexRequestWire> {
+    let message = decode_transport_message_from_body(body)?;
+    os_transport::action::read_opensearch_delete_dangling_index_request_message(&message).ok()
+}
+
+fn import_dangling_index_request_matches_empty_state_missing_subset(
+    request: &os_transport::action::OpenSearchImportDanglingIndexRequestWire,
+) -> bool {
+    request.cluster_manager_timeout == os_transport::action::TimeValueWire::seconds(30)
+        && request.ack_timeout == os_transport::action::TimeValueWire::seconds(30)
+        && !request.index_uuid.trim().is_empty()
+        && request.index_uuid.len() <= 512
+}
+
+fn delete_dangling_index_request_matches_empty_state_missing_subset(
+    request: &os_transport::action::OpenSearchDeleteDanglingIndexRequestWire,
+) -> bool {
+    request.cluster_manager_timeout == os_transport::action::TimeValueWire::seconds(30)
+        && request.ack_timeout == os_transport::action::TimeValueWire::seconds(30)
+        && !request.index_uuid.trim().is_empty()
+        && request.index_uuid.len() <= 512
 }
 
 #[cfg(test)]
@@ -24679,6 +24816,24 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
                 transport_identity,
             ))
         }
+        Some("cluster:admin/indices/dangling/import")
+            if import_dangling_index_request_supports_empty_state_missing_subset(body) =>
+        {
+            Some(build_import_dangling_index_missing_error_response(
+                request_id,
+                header_version_id,
+                body,
+            ))
+        }
+        Some("cluster:admin/indices/dangling/delete")
+            if delete_dangling_index_request_supports_empty_state_missing_subset(body) =>
+        {
+            Some(build_delete_dangling_index_missing_error_response(
+                request_id,
+                header_version_id,
+                body,
+            ))
+        }
         Some("indices:data/read/search") if search_request_has_invalid_pit_id(body) => Some(
             build_search_invalid_pit_id_error_response(request_id, header_version_id, body),
         ),
@@ -35104,6 +35259,86 @@ mod tests {
         assert_eq!(
             response,
             os_transport::action::OpenSearchFindDanglingIndexResponseWire::empty("steelsearch-dev")
+        );
+    }
+
+    #[test]
+    fn import_dangling_index_transport_route_returns_missing_index_error() {
+        let request = os_transport::action::OpenSearchImportDanglingIndexRequestWire {
+            index_uuid: "dangling-uuid".to_string(),
+            accept_data_loss: false,
+            ..os_transport::action::OpenSearchImportDanglingIndexRequestWire::default()
+        };
+        let frame = os_transport::action::build_opensearch_import_dangling_index_request_message(
+            97,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(import_dangling_index_request_supports_empty_state_missing_subset(&frame[6..]));
+
+        let response = build_import_dangling_index_missing_error_response(
+            97,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &frame[6..],
+        );
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected import dangling index error response message");
+        };
+        assert_eq!(message.request_id, 97);
+        assert!(message.status.is_error());
+        let error = os_transport::error::TransportError::read(message.body.freeze())
+            .unwrap()
+            .unwrap();
+        assert_eq!(error.class_name, "java.lang.IllegalArgumentException");
+        assert_eq!(
+            error.message.as_deref(),
+            Some("No dangling index found for UUID [dangling-uuid]")
+        );
+    }
+
+    #[test]
+    fn delete_dangling_index_transport_route_returns_missing_index_error() {
+        let request = os_transport::action::OpenSearchDeleteDanglingIndexRequestWire {
+            index_uuid: "dangling-uuid".to_string(),
+            accept_data_loss: false,
+            ..os_transport::action::OpenSearchDeleteDanglingIndexRequestWire::default()
+        };
+        let frame = os_transport::action::build_opensearch_delete_dangling_index_request_message(
+            98,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(delete_dangling_index_request_supports_empty_state_missing_subset(&frame[6..]));
+
+        let response = build_delete_dangling_index_missing_error_response(
+            98,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &frame[6..],
+        );
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected delete dangling index error response message");
+        };
+        assert_eq!(message.request_id, 98);
+        assert!(message.status.is_error());
+        let error = os_transport::error::TransportError::read(message.body.freeze())
+            .unwrap()
+            .unwrap();
+        assert_eq!(error.class_name, "java.lang.IllegalArgumentException");
+        assert_eq!(
+            error.message.as_deref(),
+            Some("No dangling index found for UUID [dangling-uuid]")
         );
     }
 

@@ -1215,8 +1215,8 @@
       "transport_action": "TransportImportDanglingIndexAction",
       "request_wire_type": "ImportDanglingIndexRequest",
       "response_wire_type": "AcknowledgedResponse",
-      "disposition": "rejected",
-      "reason": "Import-dangling-index transport execution requires dangling index lookup, accept-data-loss validation, allocation, cluster metadata mutation, and acknowledgement rendering"
+      "disposition": "implemented",
+      "reason": "Import-dangling-index transport adapter validates the default request and returns OpenSearch's missing dangling-index error for the empty local dangling-index state"
     },
     {
       "action_name": "cluster:admin/indices/dangling/delete",
@@ -1224,8 +1224,8 @@
       "transport_action": "TransportDeleteDanglingIndexAction",
       "request_wire_type": "DeleteDanglingIndexRequest",
       "response_wire_type": "AcknowledgedResponse",
-      "disposition": "rejected",
-      "reason": "Delete-dangling-index transport execution requires dangling index lookup, accept-data-loss validation, index graveyard mutation, cluster metadata publication, and acknowledgement rendering"
+      "disposition": "implemented",
+      "reason": "Delete-dangling-index transport adapter validates the default request and returns OpenSearch's missing dangling-index error for the empty local dangling-index state"
     },
     {
       "action_name": "cluster:admin/indices/dangling/find",
