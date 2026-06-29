@@ -7579,11 +7579,13 @@ impl SteelNode {
         let next_index = new_index
             .map(ToOwned::to_owned)
             .unwrap_or_else(|| Self::next_rollover_index_name(&old_index));
-        let condition_results =
-            match rollover_condition_results(&request_body, self.index_document_count(&old_index)) {
-                Ok(condition_results) => condition_results,
-                Err(response) => return response,
-            };
+        let condition_results = match rollover_condition_results(
+            &request_body,
+            self.index_document_count(&old_index),
+        ) {
+            Ok(condition_results) => condition_results,
+            Err(response) => return response,
+        };
         let conditions_met = rollover_conditions_met(&condition_results);
         if dry_run {
             return RestResponse::json(
@@ -36143,7 +36145,10 @@ fn rollover_conditions_met(condition_results: &Value) -> bool {
     let Some(conditions) = condition_results.as_object() else {
         return true;
     };
-    conditions.is_empty() || conditions.values().any(|value| value.as_bool() == Some(true))
+    conditions.is_empty()
+        || conditions
+            .values()
+            .any(|value| value.as_bool() == Some(true))
 }
 
 #[cfg(test)]
@@ -37227,10 +37232,13 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(create.status, 200);
 
         let alias = node.handle_rest_request(
-            RestRequest::new(RestMethod::Put, "/logs-dry-run-000001/_alias/logs-dry-run-write")
-                .with_json_body(serde_json::json!({
-                    "is_write_index": true
-                })),
+            RestRequest::new(
+                RestMethod::Put,
+                "/logs-dry-run-000001/_alias/logs-dry-run-write",
+            )
+            .with_json_body(serde_json::json!({
+                "is_write_index": true
+            })),
         );
         assert_eq!(alias.status, 200);
 
@@ -37275,10 +37283,13 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(create.status, 200);
 
         let alias = node.handle_rest_request(
-            RestRequest::new(RestMethod::Put, "/logs-condition-000001/_alias/logs-condition-write")
-                .with_json_body(serde_json::json!({
-                    "is_write_index": true
-                })),
+            RestRequest::new(
+                RestMethod::Put,
+                "/logs-condition-000001/_alias/logs-condition-write",
+            )
+            .with_json_body(serde_json::json!({
+                "is_write_index": true
+            })),
         );
         assert_eq!(alias.status, 200);
 
@@ -37299,7 +37310,10 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(response.body["rolled_over"], Value::Bool(false));
         assert_eq!(response.body["acknowledged"], Value::Bool(false));
         assert_eq!(response.body["shards_acknowledged"], Value::Bool(false));
-        assert_eq!(response.body["conditions"]["[max_docs: 1]"], Value::Bool(false));
+        assert_eq!(
+            response.body["conditions"]["[max_docs: 1]"],
+            Value::Bool(false)
+        );
 
         let manifest = node
             .metadata_manifest_state
@@ -37341,10 +37355,13 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(alias.status, 200);
 
         let doc = node.handle_rest_request(
-            RestRequest::new(RestMethod::Put, "/logs-condition-met-000001/_doc/doc-1?refresh=true")
-                .with_json_body(serde_json::json!({
-                    "message": "ready for rollover"
-                })),
+            RestRequest::new(
+                RestMethod::Put,
+                "/logs-condition-met-000001/_doc/doc-1?refresh=true",
+            )
+            .with_json_body(serde_json::json!({
+                "message": "ready for rollover"
+            })),
         );
         assert_eq!(doc.status, 201);
 
@@ -37365,7 +37382,10 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(response.body["rolled_over"], Value::Bool(true));
         assert_eq!(response.body["acknowledged"], Value::Bool(true));
         assert_eq!(response.body["shards_acknowledged"], Value::Bool(true));
-        assert_eq!(response.body["conditions"]["[max_docs: 1]"], Value::Bool(true));
+        assert_eq!(
+            response.body["conditions"]["[max_docs: 1]"],
+            Value::Bool(true)
+        );
 
         let manifest = node
             .metadata_manifest_state
@@ -37420,12 +37440,10 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         );
         assert_eq!(response.status, 400);
         assert_eq!(response.body["error"]["type"], "x_content_parse_exception");
-        assert!(
-            response.body["error"]["reason"]
-                .as_str()
-                .unwrap_or_default()
-                .contains("unknown field [min_docs]")
-        );
+        assert!(response.body["error"]["reason"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("unknown field [min_docs]"));
 
         let manifest = node
             .metadata_manifest_state
@@ -37437,7 +37455,9 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             Value::Bool(true)
         );
         assert!(
-            manifest["indices"].get("logs-unknown-condition-000002").is_none(),
+            manifest["indices"]
+                .get("logs-unknown-condition-000002")
+                .is_none(),
             "unknown rollover condition must not create the candidate index"
         );
     }

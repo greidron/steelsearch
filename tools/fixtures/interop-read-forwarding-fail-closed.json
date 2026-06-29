@@ -14,7 +14,7 @@
     },
     {
       "name": "unsupported_read_forwarding_surface",
-      "surface": "GET /_cluster/allocation/explain",
+      "surface": "GET /_nodes/usage",
       "state_shape": "single_node",
       "expected_error_class": "UnsupportedRequest"
     }

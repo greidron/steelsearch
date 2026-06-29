@@ -175,8 +175,8 @@
       "kind": "rest",
       "family": "cluster-read",
       "backing": "cluster:monitor/allocation/explain",
-      "disposition": "rejected",
-      "reason": "Explanation routing depends on request decoding and shard-level resolution not yet proven safe in Phase B."
+      "disposition": "implemented",
+      "reason": "Allocation explain REST forwarding is a read-only cluster-manager observer surface; transport execution remains separately bounded."
     },
     {
       "surface": "cluster:monitor/allocation/explain",
