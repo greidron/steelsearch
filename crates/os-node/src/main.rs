@@ -4530,6 +4530,67 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end_at_ms,
         )?;
     } else if is_request
+        && normalized_action_hint == Some("indices:data/read/search[phase/query+fetch/scroll]")
+        && query_fetch_scroll_phase_request_has_missing_context(&body)
+    {
+        let response = build_query_fetch_scroll_phase_missing_context_error_response(
+            request_id,
+            header_version_id,
+            &body,
+        );
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("indices:data/read/search[phase/query+fetch/scroll]"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request
+        && normalized_action_hint == Some("indices:data/read/search[phase/query+fetch/scroll]")
+        && query_fetch_scroll_phase_request_supports_local_execution_subset(&body)
+    {
+        let response = build_local_query_fetch_scroll_phase_response(
+            request_id,
+            header_version_id,
+            &body,
+            transport_identity,
+        );
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("indices:data/read/search[phase/query+fetch/scroll]"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request
         && normalized_action_hint == Some("indices:data/read/search[can_match]")
         && can_match_request_exceeds_local_reader_keep_alive_limit(&body)
     {
@@ -14550,12 +14611,35 @@ fn query_scroll_phase_request_supports_local_execution_subset(body: &[u8]) -> bo
         .is_some_and(|request| scroll_context_exists(&request.context_id))
 }
 
+fn query_fetch_scroll_phase_request_has_missing_context(body: &[u8]) -> bool {
+    decode_query_fetch_scroll_phase_request_from_transport_body(body)
+        .filter(|request| request.validate_supported_subset().is_ok())
+        .is_some_and(|request| !scroll_context_exists(&request.context_id))
+}
+
+fn query_fetch_scroll_phase_request_supports_local_execution_subset(body: &[u8]) -> bool {
+    decode_query_fetch_scroll_phase_request_from_transport_body(body)
+        .filter(|request| request.validate_supported_subset().is_ok())
+        .is_some_and(|request| scroll_context_exists(&request.context_id))
+}
+
 fn build_query_scroll_phase_missing_context_error_response(
     request_id: i64,
     header_version_id: u32,
     body: &[u8],
 ) -> Vec<u8> {
     let Some(request) = decode_query_scroll_phase_request_from_transport_body(body) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    build_missing_search_context_error_response(request_id, header_version_id, &request.context_id)
+}
+
+fn build_query_fetch_scroll_phase_missing_context_error_response(
+    request_id: i64,
+    header_version_id: u32,
+    body: &[u8],
+) -> Vec<u8> {
+    let Some(request) = decode_query_fetch_scroll_phase_request_from_transport_body(body) else {
         return build_empty_transport_response(request_id, header_version_id);
     };
     build_missing_search_context_error_response(request_id, header_version_id, &request.context_id)
@@ -14607,6 +14691,66 @@ fn build_local_query_scroll_phase_response(
     .to_vec()
 }
 
+fn build_local_query_fetch_scroll_phase_response(
+    request_id: i64,
+    header_version_id: u32,
+    body: &[u8],
+    transport_identity: &DevTransportIdentity,
+) -> Vec<u8> {
+    let Some(request) = decode_query_fetch_scroll_phase_request_from_transport_body(body) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    if !query_fetch_scroll_phase_request_supports_local_execution_subset(body) {
+        return build_empty_transport_response(request_id, header_version_id);
+    }
+    let Some(context) = scroll_context_for_query_fetch_scroll_phase_request(&request) else {
+        return build_missing_search_context_error_response(
+            request_id,
+            header_version_id,
+            &request.context_id,
+        );
+    };
+    let index_name = context
+        .remaining_hits
+        .iter()
+        .find_map(|hit| hit.get("_index").and_then(Value::as_str))
+        .unwrap_or("steelsearch-scroll");
+    let score_doc_ids = query_scroll_phase_score_doc_ids_for_context(&context);
+    let total_hits = i64::try_from(score_doc_ids.len()).unwrap_or(i64::MAX);
+    let Some(mut payload) = build_java_query_phase_result_body(
+        transport_identity,
+        index_name,
+        "_na_",
+        0,
+        &request.context_id,
+        total_hits,
+        &score_doc_ids,
+        true,
+    ) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    let hits = query_fetch_scroll_phase_hits_for_context(&context);
+    let fetch_result =
+        os_transport::action::OpenSearchFetchSearchResultWire::new(request.context_id, hits);
+    let mut fetch_output = StreamOutput::new();
+    if fetch_result
+        .write(
+            &mut fetch_output,
+            Version::from_id(header_version_id as i32),
+        )
+        .is_err()
+    {
+        return build_empty_transport_response(request_id, header_version_id);
+    }
+    payload.extend_from_slice(&fetch_output.freeze());
+    os_transport::action::build_opensearch_query_fetch_scroll_phase_response_message(
+        request_id,
+        Version::from_id(header_version_id as i32),
+        &payload,
+    )
+    .to_vec()
+}
+
 fn scroll_context_for_query_scroll_phase_request(
     request: &os_transport::action::OpenSearchInternalScrollSearchRequestWire,
 ) -> Option<ScrollContext> {
@@ -14618,12 +14762,30 @@ fn scroll_context_for_query_scroll_phase_request(
     contexts.get(&key).cloned()
 }
 
+fn scroll_context_for_query_fetch_scroll_phase_request(
+    request: &os_transport::action::OpenSearchInternalScrollSearchRequestWire,
+) -> Option<ScrollContext> {
+    scroll_context_for_query_scroll_phase_request(request)
+}
+
 fn query_scroll_phase_score_doc_ids_for_context(context: &ScrollContext) -> Vec<i32> {
     context
         .remaining_hits
         .iter()
         .enumerate()
         .map(|(doc_id, _)| i32::try_from(doc_id).unwrap_or(i32::MAX))
+        .collect()
+}
+
+fn query_fetch_scroll_phase_hits_for_context(
+    context: &ScrollContext,
+) -> Vec<os_transport::action::OpenSearchSearchHitWire> {
+    let take = context.page_size.max(1);
+    context
+        .remaining_hits
+        .iter()
+        .take(take)
+        .map(transport_scroll_hit_from_rest_hit)
         .collect()
 }
 
@@ -14660,6 +14822,13 @@ fn decode_query_scroll_phase_request_from_transport_body(
 ) -> Option<os_transport::action::OpenSearchInternalScrollSearchRequestWire> {
     let message = decode_transport_message_from_body(body)?;
     os_transport::action::read_opensearch_query_scroll_phase_request_message(&message).ok()
+}
+
+fn decode_query_fetch_scroll_phase_request_from_transport_body(
+    body: &[u8],
+) -> Option<os_transport::action::OpenSearchInternalScrollSearchRequestWire> {
+    let message = decode_transport_message_from_body(body)?;
+    os_transport::action::read_opensearch_query_fetch_scroll_phase_request_message(&message).ok()
 }
 
 fn build_local_free_scroll_context_response(
@@ -24556,6 +24725,27 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
             if query_scroll_phase_request_supports_local_execution_subset(body) =>
         {
             Some(build_local_query_scroll_phase_response(
+                request_id,
+                header_version_id,
+                body,
+                transport_identity,
+            ))
+        }
+        Some("indices:data/read/search[phase/query+fetch/scroll]")
+            if query_fetch_scroll_phase_request_has_missing_context(body) =>
+        {
+            Some(
+                build_query_fetch_scroll_phase_missing_context_error_response(
+                    request_id,
+                    header_version_id,
+                    body,
+                ),
+            )
+        }
+        Some("indices:data/read/search[phase/query+fetch/scroll]")
+            if query_fetch_scroll_phase_request_supports_local_execution_subset(body) =>
+        {
+            Some(build_local_query_fetch_scroll_phase_response(
                 request_id,
                 header_version_id,
                 body,
@@ -44114,6 +44304,150 @@ mod tests {
         assert!(
             !message.body.is_empty(),
             "query-scroll phase should return a ScrollQuerySearchResult payload"
+        );
+    }
+
+    #[test]
+    fn query_fetch_scroll_phase_route_rejects_missing_context_like_opensearch() {
+        let _lock = dev_transport_scroll_test_lock()
+            .lock()
+            .expect("dev transport scroll test lock poisoned");
+        dev_transport_scroll_bindings()
+            .contexts
+            .lock()
+            .expect("dev transport scroll contexts lock poisoned")
+            .clear();
+        let context_id = os_transport::action::OpenSearchShardSearchContextIdWire::new(
+            "missing-query-fetch-scroll",
+            85,
+        );
+        let request = os_transport::action::OpenSearchInternalScrollSearchRequestWire::new(
+            context_id.clone(),
+            Some(os_transport::action::TimeValueWire::minutes(1)),
+        );
+        let frame =
+            os_transport::action::build_opensearch_query_fetch_scroll_phase_request_message(
+                358,
+                OPENSEARCH_3_7_0_TRANSPORT,
+                &request,
+            )
+            .unwrap();
+        assert!(query_fetch_scroll_phase_request_has_missing_context(
+            &frame[6..]
+        ));
+
+        let response = build_query_fetch_scroll_phase_missing_context_error_response(
+            358,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &frame[6..],
+        );
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected query-fetch-scroll missing-context error response frame");
+        };
+        assert_eq!(message.request_id, 358);
+        assert!(message.status.is_error());
+        let error = os_transport::error::TransportError::read(message.body.freeze())
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            error.class_name,
+            "org.opensearch.search.SearchContextMissingException"
+        );
+        assert_eq!(
+            error.message.as_deref(),
+            Some("No search context found for id [85]")
+        );
+    }
+
+    #[test]
+    fn query_fetch_scroll_phase_route_returns_scroll_query_fetch_result_for_context() {
+        let _lock = dev_transport_scroll_test_lock()
+            .lock()
+            .expect("dev transport scroll test lock poisoned");
+        dev_transport_scroll_bindings()
+            .contexts
+            .lock()
+            .expect("dev transport scroll contexts lock poisoned")
+            .clear();
+        let context_id =
+            os_transport::action::OpenSearchShardSearchContextIdWire::new("query-fetch-scroll", 86);
+        dev_transport_scroll_bindings()
+            .contexts
+            .lock()
+            .expect("dev transport scroll contexts lock poisoned")
+            .insert(
+                "query-fetch-scroll:86".to_string(),
+                ScrollContext {
+                    remaining_hits: vec![
+                        serde_json::json!({
+                            "_index": "logs-query-fetch-scroll",
+                            "_id": "doc-1",
+                            "_score": 1.0,
+                            "_source": { "message": "first" }
+                        }),
+                        serde_json::json!({
+                            "_index": "logs-query-fetch-scroll",
+                            "_id": "doc-2",
+                            "_score": 2.0,
+                            "_source": { "message": "second" }
+                        }),
+                    ],
+                    page_size: 1,
+                    total_hits: 2,
+                },
+            );
+        let request = os_transport::action::OpenSearchInternalScrollSearchRequestWire::new(
+            context_id,
+            Some(os_transport::action::TimeValueWire::minutes(1)),
+        );
+        let frame =
+            os_transport::action::build_opensearch_query_fetch_scroll_phase_request_message(
+                359,
+                OPENSEARCH_3_7_0_TRANSPORT,
+                &request,
+            )
+            .unwrap();
+        assert!(query_fetch_scroll_phase_request_supports_local_execution_subset(&frame[6..]));
+        let transport_identity = DevTransportIdentity {
+            node_id: "steel-node-id".to_string(),
+            node_name: "steel-node".to_string(),
+            ephemeral_id: "steel-ephemeral".to_string(),
+            transport_address: "127.0.0.1:9300".parse().unwrap(),
+            attributes: Vec::new(),
+            roles: vec!["data".to_string()],
+            cluster_name: "steel-cluster".to_string(),
+            seed_peer_identity: None,
+            seed_peer_identities: Vec::new(),
+            coordination_state: Arc::new(Mutex::new(DevTransportCoordinationState::default())),
+            remote_transport_queue_gate: Arc::new(RemoteTransportQueueGate::new(1, 1000)),
+            task_queue_state: None,
+        };
+
+        let response = build_local_query_fetch_scroll_phase_response(
+            359,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &frame[6..],
+            &transport_identity,
+        );
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected query-fetch-scroll phase response frame");
+        };
+        assert_eq!(message.request_id, 359);
+        assert!(!message.status.is_error());
+        assert!(!message.status.is_request());
+        assert!(
+            message.body.len() > 32,
+            "query-fetch-scroll phase should return a ScrollQueryFetchSearchResult payload"
         );
     }
 

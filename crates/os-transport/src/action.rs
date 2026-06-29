@@ -14263,6 +14263,45 @@ pub fn read_opensearch_query_scroll_phase_request_message(
     OpenSearchInternalScrollSearchRequestWire::read(message.body.clone().freeze())
 }
 
+pub fn build_opensearch_query_fetch_scroll_phase_request_message(
+    request_id: i64,
+    version: Version,
+    request: &OpenSearchInternalScrollSearchRequestWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    request.write(&mut body)?;
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::request(),
+        version,
+        variable_header: BytesMut::from(
+            &RequestVariableHeader::new(OPENSEARCH_QUERY_FETCH_SCROLL_PHASE_ACTION_NAME).to_bytes()
+                [..],
+        ),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_query_fetch_scroll_phase_request_message(
+    message: &TransportMessage,
+) -> Result<OpenSearchInternalScrollSearchRequestWire, TransportActionWireError> {
+    if !message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "request",
+            actual: message.status.bits(),
+        });
+    }
+    let header = RequestVariableHeader::read(message.variable_header.clone().freeze())?;
+    if header.action != OPENSEARCH_QUERY_FETCH_SCROLL_PHASE_ACTION_NAME {
+        return Err(TransportActionWireError::UnexpectedAction {
+            expected: OPENSEARCH_QUERY_FETCH_SCROLL_PHASE_ACTION_NAME,
+            actual: header.action,
+        });
+    }
+    OpenSearchInternalScrollSearchRequestWire::read(message.body.clone().freeze())
+}
+
 pub fn build_opensearch_query_scroll_phase_response_message(
     request_id: i64,
     version: Version,
@@ -14276,6 +14315,14 @@ pub fn build_opensearch_query_scroll_phase_response_message(
         body: BytesMut::from(payload),
     };
     encode_message(&message)
+}
+
+pub fn build_opensearch_query_fetch_scroll_phase_response_message(
+    request_id: i64,
+    version: Version,
+    payload: &[u8],
+) -> BytesMut {
+    build_opensearch_query_scroll_phase_response_message(request_id, version, payload)
 }
 
 pub fn build_opensearch_dfs_phase_response_message(
@@ -81340,6 +81387,34 @@ mod tests {
             read_opensearch_fetch_id_scroll_phase_request_message(&message).unwrap_err(),
             TransportActionWireError::UnexpectedAction {
                 expected: OPENSEARCH_FETCH_ID_SCROLL_PHASE_ACTION_NAME,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn opensearch_query_fetch_scroll_phase_transport_request_round_trips() {
+        let request = OpenSearchInternalScrollSearchRequestWire::new(
+            OpenSearchShardSearchContextIdWire::new("query-fetch-scroll-session", 74),
+            Some(TimeValueWire::minutes(1)),
+        );
+        let mut frame = build_opensearch_query_fetch_scroll_phase_request_message(
+            74,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected query-fetch-scroll phase request message");
+        };
+        assert_eq!(
+            read_opensearch_query_fetch_scroll_phase_request_message(&message).unwrap(),
+            request
+        );
+        assert!(matches!(
+            read_opensearch_query_scroll_phase_request_message(&message).unwrap_err(),
+            TransportActionWireError::UnexpectedAction {
+                expected: OPENSEARCH_QUERY_SCROLL_PHASE_ACTION_NAME,
                 ..
             }
         ));
