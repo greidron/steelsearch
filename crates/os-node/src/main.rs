@@ -11088,7 +11088,8 @@ fn build_local_create_pit_response_for_node(
     let Some(request) = decode_create_pit_request_from_transport_body(body) else {
         return build_empty_transport_response(request_id, header_version_id);
     };
-    if request.validate_supported_subset().is_err() {
+    if request.validate_supported_subset().is_err() || request.allow_partial_pit_creation.is_none()
+    {
         return build_empty_transport_response(request_id, header_version_id);
     }
     let now_millis = now_epoch_ms();
@@ -15774,6 +15775,7 @@ fn create_pit_request_supports_local_lifecycle_subset(body: &[u8]) -> bool {
             time_value_wire_to_millis(&request.keep_alive)
                 <= DEV_TRANSPORT_MAX_PIT_KEEP_ALIVE_MILLIS
         })
+        .filter(|request| request.allow_partial_pit_creation.is_some())
         .and_then(|request| request.validate_supported_subset().ok())
         .is_some()
 }

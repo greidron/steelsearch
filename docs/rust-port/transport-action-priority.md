@@ -2521,11 +2521,11 @@ The create-PIT boundary covers:
 - local transport create-PIT resolves manifest-backed data stream selectors to
   their backing indices before allocating the PIT `SearchContextId` and
   snapshot, matching OpenSearch index-abstraction resolution for PIT targets;
-- create-PIT `preference` and `allow_partial_pit_creation` wire/runtime
-  admission for the local all-success shard subset, requiring an explicit
-  `allowPartialPitCreation` true/false value before local execution because
-  OpenSearch REST/client create-PIT paths set it before `CreatePitRequest`
-  execution;
+- create-PIT `preference` and nullable `allow_partial_pit_creation` wire
+  decoding now follows OpenSearch `CreatePitRequest` validation, while local
+  all-success shard execution still requires an explicit
+  `allowPartialPitCreation` true/false value because OpenSearch REST/client
+  create-PIT paths set it before normal execution;
 - REST and local transport create-PIT normalize non-positive keep-alive values
   to the OpenSearch-compatible 30s local keep-alive value, while wire decoding
   still rejects unknown keep-alive units.
@@ -5527,12 +5527,12 @@ Current create-PIT wire microbenchmark:
 
 ```text
 cargo run -p os-transport --release --bin create-pit-wire-benchmark
-create_pit_request_encode iterations=400000 elapsed_ms=282.640 ops_per_second=1415228.81 nanos_per_op=706.60
-create_pit_request_decode iterations=400000 elapsed_ms=266.453 ops_per_second=1501200.73 nanos_per_op=666.13
-create_pit_request_validate iterations=400000 elapsed_ms=266.615 ops_per_second=1500289.24 nanos_per_op=666.54
-create_pit_response_encode iterations=400000 elapsed_ms=123.950 ops_per_second=3227113.46 nanos_per_op=309.87
-create_pit_response_decode iterations=400000 elapsed_ms=104.441 ops_per_second=3829924.03 nanos_per_op=261.10
-create_pit_wire_bottleneck_ops_per_second=1415228.81
+create_pit_request_encode iterations=400000 elapsed_ms=277.674 ops_per_second=1440537.55 nanos_per_op=694.19
+create_pit_request_decode iterations=400000 elapsed_ms=265.133 ops_per_second=1508675.38 nanos_per_op=662.83
+create_pit_request_validate iterations=400000 elapsed_ms=265.190 ops_per_second=1508351.56 nanos_per_op=662.98
+create_pit_response_encode iterations=400000 elapsed_ms=121.651 ops_per_second=3288100.58 nanos_per_op=304.13
+create_pit_response_decode iterations=400000 elapsed_ms=104.524 ops_per_second=3826889.14 nanos_per_op=261.31
+create_pit_wire_bottleneck_ops_per_second=1440537.55
 ```
 
 The current create-PIT wire subset bottleneck is request encode. This path
