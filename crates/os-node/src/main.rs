@@ -119,6 +119,13 @@ struct DevTransportReaderContext {
     creation_time_millis: Option<i64>,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum CreateReaderContextShardAdmission {
+    Accepted,
+    MissingIndex,
+    MissingShard,
+}
+
 #[derive(Clone, Debug)]
 struct DevTransportPitBindings {
     contexts: Arc<Mutex<BTreeMap<String, PitContext>>>,
@@ -3973,6 +3980,33 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             header_version_id,
             &body,
         );
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("indices:data/read/search[create_context]"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request
+        && normalized_action_hint == Some("indices:data/read/search[create_context]")
+        && create_reader_context_request_has_missing_shard_or_index(&body)
+    {
+        let response =
+            build_local_create_reader_context_response(request_id, header_version_id, &body);
         response_frame = summarize_transport_response_frame_for_action(
             &response,
             Some("indices:data/read/search[create_context]"),
@@ -16189,8 +16223,22 @@ fn build_local_create_reader_context_response(
     if time_value_wire_to_millis(&request.keep_alive) > DEV_TRANSPORT_MAX_PIT_KEEP_ALIVE_MILLIS {
         return build_empty_transport_response(request_id, header_version_id);
     }
-    if !create_reader_context_shard_exists(dev_transport_pit_bindings(), &request.shard_id) {
-        return build_empty_transport_response(request_id, header_version_id);
+    match create_reader_context_shard_admission(dev_transport_pit_bindings(), &request.shard_id) {
+        CreateReaderContextShardAdmission::Accepted => {}
+        CreateReaderContextShardAdmission::MissingIndex => {
+            return build_create_reader_context_index_not_found_error_response(
+                request_id,
+                header_version_id,
+                &request.shard_id,
+            );
+        }
+        CreateReaderContextShardAdmission::MissingShard => {
+            return build_create_reader_context_shard_not_found_error_response(
+                request_id,
+                header_version_id,
+                &request.shard_id,
+            );
+        }
     }
     if !can_allocate_reader_context(dev_transport_pit_bindings()) {
         return build_empty_transport_response(request_id, header_version_id);
@@ -16244,7 +16292,8 @@ fn create_reader_context_request_supports_local_subset(body: &[u8]) -> bool {
                 <= DEV_TRANSPORT_MAX_PIT_KEEP_ALIVE_MILLIS
         })
         .filter(|request| {
-            create_reader_context_shard_exists(dev_transport_pit_bindings(), &request.shard_id)
+            create_reader_context_shard_admission(dev_transport_pit_bindings(), &request.shard_id)
+                == CreateReaderContextShardAdmission::Accepted
         })
         .filter(|_| can_allocate_reader_context(dev_transport_pit_bindings()))
         .and_then(|request| request.validate_supported_subset().ok())
@@ -16267,9 +16316,23 @@ fn create_reader_context_request_exceeds_local_open_context_limit(body: &[u8]) -
                 <= DEV_TRANSPORT_MAX_PIT_KEEP_ALIVE_MILLIS
         })
         .filter(|request| {
-            create_reader_context_shard_exists(dev_transport_pit_bindings(), &request.shard_id)
+            create_reader_context_shard_admission(dev_transport_pit_bindings(), &request.shard_id)
+                == CreateReaderContextShardAdmission::Accepted
         })
         .is_some_and(|_| !can_allocate_reader_context(dev_transport_pit_bindings()))
+}
+
+fn create_reader_context_request_has_missing_shard_or_index(body: &[u8]) -> bool {
+    decode_create_reader_context_request_from_transport_body(body)
+        .filter(|request| request.validate_supported_subset().is_ok())
+        .filter(|request| {
+            time_value_wire_to_millis(&request.keep_alive)
+                <= DEV_TRANSPORT_MAX_PIT_KEEP_ALIVE_MILLIS
+        })
+        .is_some_and(|request| {
+            create_reader_context_shard_admission(dev_transport_pit_bindings(), &request.shard_id)
+                != CreateReaderContextShardAdmission::Accepted
+        })
 }
 
 fn build_create_reader_context_keep_alive_too_large_error_response(
@@ -16300,6 +16363,36 @@ fn build_create_reader_context_too_many_open_contexts_error_response(
     build_transport_error_response_frame(request_id, header_version_id, output.freeze().to_vec())
 }
 
+fn build_create_reader_context_index_not_found_error_response(
+    request_id: i64,
+    header_version_id: u32,
+    shard_id: &os_transport::action::OpenSearchShardIdWire,
+) -> Vec<u8> {
+    let mut output = StreamOutput::new();
+    os_transport::error::write_index_not_found_exception(&mut output, &shard_id.index_name);
+    build_transport_error_response_frame(request_id, header_version_id, output.freeze().to_vec())
+}
+
+fn build_create_reader_context_shard_not_found_error_response(
+    request_id: i64,
+    header_version_id: u32,
+    shard_id: &os_transport::action::OpenSearchShardIdWire,
+) -> Vec<u8> {
+    let index_uuid = if shard_id.index_uuid.is_empty() {
+        "_na_"
+    } else {
+        &shard_id.index_uuid
+    };
+    let mut output = StreamOutput::new();
+    os_transport::error::write_shard_not_found_exception(
+        &mut output,
+        &shard_id.index_name,
+        index_uuid,
+        shard_id.shard_id,
+    );
+    build_transport_error_response_frame(request_id, header_version_id, output.freeze().to_vec())
+}
+
 fn decode_create_reader_context_request_from_transport_body(
     body: &[u8],
 ) -> Option<os_transport::action::OpenSearchCreateReaderContextRequestWire> {
@@ -16307,10 +16400,10 @@ fn decode_create_reader_context_request_from_transport_body(
     os_transport::action::read_opensearch_create_reader_context_request_message(&message).ok()
 }
 
-fn create_reader_context_shard_exists(
+fn create_reader_context_shard_admission(
     bindings: &DevTransportPitBindings,
     shard_id: &os_transport::action::OpenSearchShardIdWire,
-) -> bool {
+) -> CreateReaderContextShardAdmission {
     let manifest = bindings
         .metadata_manifest
         .lock()
@@ -16320,11 +16413,11 @@ fn create_reader_context_shard_exists(
             .as_str()
             .is_some_and(|state| state == "close")
         {
-            return false;
+            return CreateReaderContextShardAdmission::MissingIndex;
         }
         if let Some(index_uuid) = transport_manifest_index_uuid(index_body) {
             if shard_id.index_uuid != "_na_" && shard_id.index_uuid != index_uuid {
-                return false;
+                return CreateReaderContextShardAdmission::MissingIndex;
             }
         }
         let settings = &index_body["settings"];
@@ -16333,16 +16426,28 @@ fn create_reader_context_shard_exists(
             .or_else(|| settings["number_of_shards"].as_str())
             .and_then(|value| value.parse::<i32>().ok())
             .unwrap_or(1);
-        return shard_id.shard_id >= 0 && shard_id.shard_id < shard_count;
+        return if shard_id.shard_id >= 0 && shard_id.shard_id < shard_count {
+            CreateReaderContextShardAdmission::Accepted
+        } else {
+            CreateReaderContextShardAdmission::MissingShard
+        };
     }
     drop(manifest);
 
-    bindings
+    if bindings
         .created_indices
         .lock()
         .expect("dev transport created indices lock poisoned")
         .contains(&shard_id.index_name)
-        && shard_id.shard_id == 0
+    {
+        if shard_id.shard_id == 0 {
+            CreateReaderContextShardAdmission::Accepted
+        } else {
+            CreateReaderContextShardAdmission::MissingShard
+        }
+    } else {
+        CreateReaderContextShardAdmission::MissingIndex
+    }
 }
 
 fn build_local_update_reader_context_response(
@@ -20110,6 +20215,15 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
                     body,
                 ),
             )
+        }
+        Some("indices:data/read/search[create_context]")
+            if create_reader_context_request_has_missing_shard_or_index(body) =>
+        {
+            Some(build_local_create_reader_context_response(
+                request_id,
+                header_version_id,
+                body,
+            ))
         }
         Some("indices:data/read/search[create_context]")
             if create_reader_context_request_supports_local_subset(body) =>
@@ -35688,7 +35802,7 @@ mod tests {
             .lock()
             .expect("dev transport next PIT id lock poisoned") = 17;
 
-        for (request_id, shard_id) in [
+        for (request_id, shard_id, expected_class, expected_message) in [
             (
                 299,
                 os_transport::action::OpenSearchShardIdWire {
@@ -35696,6 +35810,8 @@ mod tests {
                     index_uuid: "uuid-reader-missing".to_string(),
                     shard_id: 0,
                 },
+                "org.opensearch.index.IndexNotFoundException",
+                "no such index [logs-reader-missing]",
             ),
             (
                 300,
@@ -35704,6 +35820,8 @@ mod tests {
                     index_uuid: "uuid-reader-manifest".to_string(),
                     shard_id: 2,
                 },
+                "org.opensearch.index.shard.ShardNotFoundException",
+                "no such shard",
             ),
             (
                 301,
@@ -35712,6 +35830,8 @@ mod tests {
                     index_uuid: "uuid-reader-closed".to_string(),
                     shard_id: 0,
                 },
+                "org.opensearch.index.IndexNotFoundException",
+                "no such index [logs-reader-closed]",
             ),
         ] {
             let request = os_transport::action::OpenSearchCreateReaderContextRequestWire::new(
@@ -35740,10 +35860,15 @@ mod tests {
                     .unwrap()
                     .unwrap()
             else {
-                panic!("expected create-reader-context fallback response frame");
+                panic!("expected create-reader-context error response frame");
             };
             assert_eq!(message.request_id, request_id);
-            assert!(message.body.is_empty());
+            assert!(message.status.is_error());
+            let error = os_transport::error::TransportError::read(message.body.freeze())
+                .unwrap()
+                .unwrap();
+            assert_eq!(error.class_name, expected_class);
+            assert_eq!(error.message.as_deref(), Some(expected_message));
         }
 
         assert_eq!(
@@ -35831,10 +35956,21 @@ mod tests {
                 .unwrap()
                 .unwrap()
         else {
-            panic!("expected wrong-uuid create-reader-context fallback response frame");
+            panic!("expected wrong-uuid create-reader-context error response frame");
         };
         assert_eq!(message.request_id, 327);
-        assert!(message.body.is_empty());
+        assert!(message.status.is_error());
+        let error = os_transport::error::TransportError::read(message.body.freeze())
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            error.class_name,
+            "org.opensearch.index.IndexNotFoundException"
+        );
+        assert_eq!(
+            error.message.as_deref(),
+            Some("no such index [logs-reader-uuid]")
+        );
         assert!(bindings
             .reader_contexts
             .lock()

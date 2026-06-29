@@ -2598,6 +2598,11 @@ The create-PIT boundary covers:
   `search.max_open_pit_context` limit of `300` before allocating a reader
   context, matching the `SearchService.createPitReaderContext` open-context
   admission boundary for the local-node subset.
+- local transport create-reader-context now renders OpenSearch-style transport
+  errors instead of empty responses when `SearchService.createPitReaderContext`
+  would fail before reader allocation: missing indices use
+  `IndexNotFoundException`, and known indices with out-of-range shard ids use
+  `ShardNotFoundException`.
 - local transport update-reader-context now requires a reader context id
   previously allocated by the local create-reader-context route before updating
   PIT state, matching OpenSearch `getPitReaderContext(...)` missing-context
@@ -5636,27 +5641,27 @@ Current PIT reader-context wire microbenchmark:
 
 ```text
 cargo run -q -p os-transport --release --bin pit-reader-context-wire-benchmark
-pit_reader_create_request_encode iterations=400000 elapsed_ms=414.961 ops_per_second=963945.70 nanos_per_op=1037.40
-pit_reader_create_request_decode iterations=400000 elapsed_ms=309.127 ops_per_second=1293965.39 nanos_per_op=772.82
-pit_reader_create_response_encode iterations=400000 elapsed_ms=119.649 ops_per_second=3343122.39 nanos_per_op=299.12
-pit_reader_create_response_decode iterations=400000 elapsed_ms=108.141 ops_per_second=3698862.47 nanos_per_op=270.35
-pit_reader_update_request_encode iterations=400000 elapsed_ms=351.685 ops_per_second=1137380.54 nanos_per_op=879.21
-pit_reader_update_request_decode iterations=400000 elapsed_ms=318.380 ops_per_second=1256359.82 nanos_per_op=795.95
-pit_reader_update_response_encode iterations=400000 elapsed_ms=116.240 ops_per_second=3441160.02 nanos_per_op=290.60
-pit_reader_update_response_decode iterations=400000 elapsed_ms=94.968 ops_per_second=4211954.43 nanos_per_op=237.42
-pit_reader_free_request_encode iterations=400000 elapsed_ms=404.949 ops_per_second=987777.54 nanos_per_op=1012.37
-pit_reader_free_request_decode iterations=400000 elapsed_ms=376.596 ops_per_second=1062146.27 nanos_per_op=941.49
-pit_reader_free_response_encode iterations=400000 elapsed_ms=100.315 ops_per_second=3987447.52 nanos_per_op=250.79
-pit_reader_free_response_decode iterations=400000 elapsed_ms=107.461 ops_per_second=3722264.40 nanos_per_op=268.65
-pit_reader_context_wire_bottleneck_ops_per_second=963945.70
+pit_reader_create_request_encode iterations=400000 elapsed_ms=339.386 ops_per_second=1178598.36 nanos_per_op=848.47
+pit_reader_create_request_decode iterations=400000 elapsed_ms=309.493 ops_per_second=1292435.59 nanos_per_op=773.73
+pit_reader_create_response_encode iterations=400000 elapsed_ms=116.570 ops_per_second=3431417.31 nanos_per_op=291.42
+pit_reader_create_response_decode iterations=400000 elapsed_ms=107.046 ops_per_second=3736723.33 nanos_per_op=267.61
+pit_reader_update_request_encode iterations=400000 elapsed_ms=351.784 ops_per_second=1137060.15 nanos_per_op=879.46
+pit_reader_update_request_decode iterations=400000 elapsed_ms=317.491 ops_per_second=1259878.65 nanos_per_op=793.73
+pit_reader_update_response_encode iterations=400000 elapsed_ms=116.342 ops_per_second=3438132.63 nanos_per_op=290.86
+pit_reader_update_response_decode iterations=400000 elapsed_ms=95.235 ops_per_second=4200135.45 nanos_per_op=238.09
+pit_reader_free_request_encode iterations=400000 elapsed_ms=405.777 ops_per_second=985762.69 nanos_per_op=1014.44
+pit_reader_free_request_decode iterations=400000 elapsed_ms=376.489 ops_per_second=1062449.01 nanos_per_op=941.22
+pit_reader_free_response_encode iterations=400000 elapsed_ms=100.552 ops_per_second=3978060.40 nanos_per_op=251.38
+pit_reader_free_response_decode iterations=400000 elapsed_ms=106.857 ops_per_second=3743325.59 nanos_per_op=267.14
+pit_reader_context_wire_bottleneck_ops_per_second=985762.69
 ```
 
-The current PIT reader-context wire bottleneck is create-reader-context request
-encode with one local shard id. Create/update response rendering remains
+The current PIT reader-context wire bottleneck is free-PIT-context request
+encode with one local context id. Create/update response rendering remains
 above 3.4M ops/s in the latest local release run, so the first performance
-point to inspect before expanding distributed reader-context fanout is request
-payload allocation and context-id grouping, then runtime lock hold time around
-reader context mutation.
+point to inspect before expanding distributed reader-context fanout is
+context-id grouping and request payload allocation, then runtime lock hold time
+around reader context mutation.
 
 Current PIT-segments wire microbenchmark:
 

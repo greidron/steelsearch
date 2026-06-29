@@ -171,6 +171,31 @@ pub fn write_index_not_found_exception(output: &mut StreamOutput, index: &str) {
     output.write_string("_na_");
 }
 
+pub fn write_shard_not_found_exception(
+    output: &mut StreamOutput,
+    index: &str,
+    index_uuid: &str,
+    shard_id: i32,
+) {
+    output.write_bool(true);
+    output.write_vint(0);
+    output.write_vint(11);
+    output.write_optional_string(Some("no such shard"));
+    output.write_bool(false);
+    write_empty_stack_trace(output);
+    write_empty_string_list_map(output);
+    output.write_vint(3);
+    output.write_string("opensearch.index");
+    output.write_vint(1);
+    output.write_string(index);
+    output.write_string("opensearch.index_uuid");
+    output.write_vint(1);
+    output.write_string(index_uuid);
+    output.write_string("opensearch.shard");
+    output.write_vint(1);
+    output.write_string(&shard_id.to_string());
+}
+
 pub fn write_invalid_index_name_exception(output: &mut StreamOutput, index: &str, desc: &str) {
     output.write_bool(true);
     output.write_vint(0);
@@ -361,6 +386,7 @@ fn read_non_negative_len(input: &mut StreamInput) -> Result<usize, TransportErro
 fn opensearch_exception_class_name(id: i32) -> &'static str {
     match id {
         6 => "org.opensearch.indices.IndexClosedException",
+        11 => "org.opensearch.index.shard.ShardNotFoundException",
         16 => "org.opensearch.index.IndexNotFoundException",
         24 => "org.opensearch.search.SearchContextMissingException",
         32 => "org.opensearch.indices.InvalidIndexNameException",
@@ -507,6 +533,21 @@ mod tests {
             error.message.as_deref(),
             Some("no such index [logs-missing]")
         );
+        assert!(error.cause.is_none());
+    }
+
+    #[test]
+    fn writes_opensearch_shard_not_found_exception_message() {
+        let mut output = StreamOutput::new();
+        super::write_shard_not_found_exception(&mut output, "logs", "uuid-logs", 2);
+
+        let error = TransportError::read(output.freeze()).unwrap().unwrap();
+
+        assert_eq!(
+            error.class_name,
+            "org.opensearch.index.shard.ShardNotFoundException"
+        );
+        assert_eq!(error.message.as_deref(), Some("no such shard"));
         assert!(error.cause.is_none());
     }
 
