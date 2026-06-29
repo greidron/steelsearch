@@ -76,6 +76,14 @@ pub fn write_illegal_argument_exception(output: &mut StreamOutput, message: Opti
     write_empty_stack_trace(output);
 }
 
+pub fn write_illegal_state_exception(output: &mut StreamOutput, message: Option<&str>) {
+    output.write_bool(true);
+    output.write_vint(14);
+    output.write_optional_string(message);
+    output.write_bool(false);
+    write_empty_stack_trace(output);
+}
+
 pub fn write_rejected_execution_exception(output: &mut StreamOutput, message: Option<&str>) {
     output.write_bool(true);
     output.write_vint(18);
@@ -447,6 +455,18 @@ mod tests {
 
         assert_eq!(error.class_name, "java.lang.IllegalArgumentException");
         assert_eq!(error.message.as_deref(), Some("bad request"));
+        assert!(error.cause.is_none());
+    }
+
+    #[test]
+    fn writes_jvm_illegal_state_exception_message() {
+        let mut output = StreamOutput::new();
+        super::write_illegal_state_exception(&mut output, Some("bad state"));
+
+        let error = TransportError::read(output.freeze()).unwrap().unwrap();
+
+        assert_eq!(error.class_name, "java.lang.IllegalStateException");
+        assert_eq!(error.message.as_deref(), Some("bad state"));
         assert!(error.cause.is_none());
     }
 

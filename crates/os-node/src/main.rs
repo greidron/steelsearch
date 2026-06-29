@@ -4117,6 +4117,36 @@ fn handle_transport_seed_connection<S: TransportConnection>(
         )?;
     } else if is_request
         && normalized_action_hint == Some("indices:data/read/search[update_context]")
+        && update_reader_context_request_has_assigned_context(&body)
+    {
+        let response = build_update_reader_context_already_assigned_error_response(
+            request_id,
+            header_version_id,
+            &body,
+        );
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("indices:data/read/search[update_context]"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request
+        && normalized_action_hint == Some("indices:data/read/search[update_context]")
         && update_reader_context_request_supports_local_subset(&body)
     {
         let response =
@@ -16504,6 +16534,13 @@ fn build_local_update_reader_context_response(
             body,
         );
     }
+    if !reader_context_available_for_update(&request.search_context_id) {
+        return build_update_reader_context_already_assigned_error_response(
+            request_id,
+            header_version_id,
+            body,
+        );
+    }
     if !upsert_transport_pit_context_from_reader_update(&request) {
         return build_empty_transport_response(request_id, header_version_id);
     }
@@ -16543,6 +16580,17 @@ fn update_reader_context_request_has_missing_context(body: &[u8]) -> bool {
         .is_some_and(|request| !reader_context_exists(&request.search_context_id))
 }
 
+fn update_reader_context_request_has_assigned_context(body: &[u8]) -> bool {
+    decode_update_reader_context_request_from_transport_body(body)
+        .filter(|request| request.validate_supported_subset().is_ok())
+        .filter(|request| request.keep_alive_millis <= DEV_TRANSPORT_MAX_PIT_KEEP_ALIVE_MILLIS)
+        .filter(|request| !request.pit_id.is_empty())
+        .is_some_and(|request| {
+            reader_context_exists(&request.search_context_id)
+                && !reader_context_available_for_update(&request.search_context_id)
+        })
+}
+
 fn build_update_reader_context_keep_alive_too_large_error_response(
     request_id: i64,
     header_version_id: u32,
@@ -16573,11 +16621,42 @@ fn build_update_reader_context_missing_context_error_response(
     )
 }
 
+fn build_update_reader_context_already_assigned_error_response(
+    request_id: i64,
+    header_version_id: u32,
+    body: &[u8],
+) -> Vec<u8> {
+    release_update_reader_context_if_present(body);
+    let mut output = os_stream::StreamOutput::new();
+    os_transport::error::write_illegal_state_exception(
+        &mut output,
+        Some("The object cannot be set twice!"),
+    );
+    build_transport_error_response_frame(request_id, header_version_id, output.freeze().to_vec())
+}
+
 fn decode_update_reader_context_request_from_transport_body(
     body: &[u8],
 ) -> Option<os_transport::action::OpenSearchUpdateReaderContextRequestWire> {
     let message = decode_transport_message_from_body(body)?;
     os_transport::action::read_opensearch_update_reader_context_request_message(&message).ok()
+}
+
+fn release_update_reader_context_if_present(body: &[u8]) {
+    let Some(request) = decode_update_reader_context_request_from_transport_body(body) else {
+        return;
+    };
+    let bindings = dev_transport_pit_bindings();
+    let mut reader_contexts = bindings
+        .reader_contexts
+        .lock()
+        .expect("dev transport reader contexts lock poisoned");
+    prune_expired_transport_reader_contexts(&mut reader_contexts, now_epoch_ms());
+    if let Some(reader_context_key) =
+        reader_context_key_by_numeric_id(&reader_contexts, request.search_context_id.id)
+    {
+        reader_contexts.remove(&reader_context_key);
+    }
 }
 
 fn upsert_transport_pit_context_from_reader_update(
@@ -20306,6 +20385,15 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
             if update_reader_context_request_has_missing_context(body) =>
         {
             Some(build_update_reader_context_missing_context_error_response(
+                request_id,
+                header_version_id,
+                body,
+            ))
+        }
+        Some("indices:data/read/search[update_context]")
+            if update_reader_context_request_has_assigned_context(body) =>
+        {
+            Some(build_update_reader_context_already_assigned_error_response(
                 request_id,
                 header_version_id,
                 body,
@@ -36874,6 +36962,9 @@ mod tests {
         assert!(!update_reader_context_request_supports_local_subset(
             &second_frame[6..]
         ));
+        assert!(update_reader_context_request_has_assigned_context(
+            &second_frame[6..]
+        ));
         let second_response = build_local_update_reader_context_response(
             326,
             OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
@@ -36885,10 +36976,18 @@ mod tests {
                 .unwrap()
                 .unwrap()
         else {
-            panic!("expected second update-reader-context fallback response frame");
+            panic!("expected second update-reader-context SetOnce error response frame");
         };
         assert_eq!(message.request_id, 326);
-        assert!(message.body.is_empty());
+        assert!(message.status.is_error());
+        let error = os_transport::error::TransportError::read(message.body.freeze())
+            .unwrap()
+            .unwrap();
+        assert_eq!(error.class_name, "java.lang.IllegalStateException");
+        assert_eq!(
+            error.message.as_deref(),
+            Some("The object cannot be set twice!")
+        );
         assert!(!bindings
             .reader_contexts
             .lock()
