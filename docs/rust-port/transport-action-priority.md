@@ -2432,8 +2432,15 @@ The search phase transport boundary covers:
   OpenSearch query-phase response bodies;
 - DFS, query-id, scroll query/query-fetch, fetch-id, fetch-id-scroll, and
   can-match remain fail-closed because their OpenSearch handlers require
-  phase-specific request wire objects, reader-context execution, query rewrite,
-  and native phase execution that are not yet Rust adapters;
+  reader-context execution, query rewrite, and native phase execution that are
+  not yet Rust adapters;
+- the bounded `ShardSearchRequest` wire is implemented for source-free
+  can-match requests, covering parent task, `ShardId`, search type, shard
+  count, empty `AliasFilter`, boost, `nowInMillis`, request cache,
+  network-time counters, cluster alias, partial-results flag, routings,
+  preference, and `OriginalIndices`; search source, scroll, bottom sort values,
+  reader context, and keep-alive remain rejected until native can-match
+  execution exists;
 - the bounded `SearchService.CanMatchResponse` wire is implemented for
   `canMatch` plus absent `estimatedMinAndMax`, matching `SearchPhaseResult`
   writing no prefix fields and `CanMatchResponse.writeTo(...)` writing the
@@ -2444,9 +2451,11 @@ Current can-match response wire microbenchmark:
 
 ```text
 cargo run -p os-transport --release --bin can-match-response-wire-benchmark
-can_match_response_encode iterations=400000 elapsed_ms=61.235 ops_per_second=6532254.64 nanos_per_op=153.09
-can_match_response_decode iterations=400000 elapsed_ms=68.224 ops_per_second=5863071.71 nanos_per_op=170.56
-can_match_response_wire_bottleneck_ops_per_second=5863071.71
+can_match_request_encode iterations=400000 elapsed_ms=405.638 ops_per_second=986100.29 nanos_per_op=1014.10
+can_match_request_decode iterations=400000 elapsed_ms=427.313 ops_per_second=936081.68 nanos_per_op=1068.28
+can_match_response_encode iterations=400000 elapsed_ms=49.375 ops_per_second=8101308.48 nanos_per_op=123.44
+can_match_response_decode iterations=400000 elapsed_ms=50.854 ops_per_second=7865630.95 nanos_per_op=127.14
+can_match_wire_bottleneck_ops_per_second=936081.68
 ```
 
 The explain boundary covers:

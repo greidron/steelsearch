@@ -2591,7 +2591,7 @@ pub fn classify_opensearch_transport_action(
         OPENSEARCH_QUERY_CAN_MATCH_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "can-match transport execution requires ShardSearchRequest decode, query rewrite, and shard metadata checks; bounded CanMatchResponse rendering is available",
+            reason: "can-match transport execution has bounded ShardSearchRequest decode and CanMatchResponse rendering, but native query rewrite and shard metadata checks are not mapped yet",
         },
         OPENSEARCH_EXPLAIN_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -13744,6 +13744,47 @@ pub fn read_opensearch_stream_search_request_message(
         });
     }
     OpenSearchSearchRequestWire::read_for_version(message.body.clone().freeze(), message.version)
+}
+
+pub fn build_opensearch_can_match_request_message(
+    request_id: i64,
+    version: Version,
+    request: &OpenSearchShardSearchRequestWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    request.write(&mut body, version)?;
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::request(),
+        version,
+        variable_header: BytesMut::from(
+            &RequestVariableHeader::new(OPENSEARCH_QUERY_CAN_MATCH_ACTION_NAME).to_bytes()[..],
+        ),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_can_match_request_message(
+    message: &TransportMessage,
+) -> Result<OpenSearchShardSearchRequestWire, TransportActionWireError> {
+    if !message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "request",
+            actual: message.status.bits(),
+        });
+    }
+    let header = RequestVariableHeader::read(message.variable_header.clone().freeze())?;
+    if header.action != OPENSEARCH_QUERY_CAN_MATCH_ACTION_NAME {
+        return Err(TransportActionWireError::UnexpectedAction {
+            expected: OPENSEARCH_QUERY_CAN_MATCH_ACTION_NAME,
+            actual: header.action,
+        });
+    }
+    OpenSearchShardSearchRequestWire::read_for_version(
+        message.body.clone().freeze(),
+        message.version,
+    )
 }
 
 pub fn build_opensearch_can_match_response_message(
@@ -28768,6 +28809,249 @@ impl OpenSearchCanMatchResponseWire {
         Ok(Self {
             can_match,
             estimated_min_and_max_present,
+        })
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct OpenSearchShardSearchRequestWire {
+    pub parent_task_node: String,
+    pub parent_task_id: Option<i64>,
+    pub shard_id: OpenSearchShardIdWire,
+    pub search_type: u8,
+    pub number_of_shards: i32,
+    pub scroll: Option<OpenSearchScrollWire>,
+    pub source: Option<OpenSearchSearchSourceBuilderWire>,
+    pub alias_filter: OpenSearchAliasFilterWire,
+    pub index_boost: f32,
+    pub now_in_millis: i64,
+    pub request_cache: Option<bool>,
+    pub inbound_network_time: i64,
+    pub outbound_network_time: i64,
+    pub cluster_alias: Option<String>,
+    pub allow_partial_search_results: bool,
+    pub index_routings: Vec<String>,
+    pub preference: Option<String>,
+    pub can_return_null_response_if_match_no_docs: bool,
+    pub bottom_sort_values_present: bool,
+    pub reader_id: Option<OpenSearchShardSearchContextIdWire>,
+    pub keep_alive: Option<TimeValueWire>,
+    pub original_indices: OpenSearchOriginalIndicesWire,
+}
+
+impl Default for OpenSearchShardSearchRequestWire {
+    fn default() -> Self {
+        Self {
+            parent_task_node: String::new(),
+            parent_task_id: None,
+            shard_id: OpenSearchShardIdWire::default(),
+            search_type: 1,
+            number_of_shards: 1,
+            scroll: None,
+            source: None,
+            alias_filter: OpenSearchAliasFilterWire::new(Vec::new(), None),
+            index_boost: 1.0,
+            now_in_millis: 0,
+            request_cache: None,
+            inbound_network_time: 0,
+            outbound_network_time: 0,
+            cluster_alias: None,
+            allow_partial_search_results: true,
+            index_routings: Vec::new(),
+            preference: None,
+            can_return_null_response_if_match_no_docs: false,
+            bottom_sort_values_present: false,
+            reader_id: None,
+            keep_alive: None,
+            original_indices: OpenSearchOriginalIndicesWire::new(
+                Some(Vec::new()),
+                OpenSearchIndicesOptionsWire::strict_expand_open_forbid_closed_ignore_throttled(),
+            ),
+        }
+    }
+}
+
+impl OpenSearchShardSearchRequestWire {
+    pub fn write(
+        &self,
+        output: &mut StreamOutput,
+        version: Version,
+    ) -> Result<(), TransportActionWireError> {
+        self.validate_supported_subset()?;
+        write_parent_task_id(output, &self.parent_task_node, self.parent_task_id);
+        self.shard_id.write(output);
+        output.write_byte(self.search_type);
+        output.write_vint(self.number_of_shards);
+        write_optional_search_scroll(output, self.scroll.as_ref());
+        output.write_bool(self.source.is_some());
+        if let Some(source) = &self.source {
+            write_search_source_builder(output, source, version);
+        }
+        self.alias_filter.write(output);
+        output.write_f32(self.index_boost);
+        output.write_vlong(self.now_in_millis);
+        write_optional_bool(output, self.request_cache);
+        output.write_vlong(self.inbound_network_time);
+        output.write_vlong(self.outbound_network_time);
+        output.write_optional_string(self.cluster_alias.as_deref());
+        output.write_bool(self.allow_partial_search_results);
+        output.write_string_array(&self.index_routings);
+        output.write_optional_string(self.preference.as_deref());
+        output.write_bool(self.can_return_null_response_if_match_no_docs);
+        output.write_bool(self.bottom_sort_values_present);
+        if let Some(reader_id) = &self.reader_id {
+            output.write_bool(true);
+            reader_id.write(output)?;
+        } else {
+            output.write_bool(false);
+        }
+        write_optional_time_value(output, self.keep_alive.as_ref());
+        self.original_indices.write(output);
+        Ok(())
+    }
+
+    pub fn read_for_version(
+        bytes: Bytes,
+        version: Version,
+    ) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
+        let shard_id = OpenSearchShardIdWire::read(&mut input)?;
+        let search_type = input.read_byte()?;
+        let number_of_shards = input.read_vint()?;
+        let scroll = read_optional_search_scroll(&mut input)?;
+        let source = if input.read_bool()? {
+            Some(read_search_source_builder(&mut input, version)?)
+        } else {
+            None
+        };
+        let alias_filter = OpenSearchAliasFilterWire::read(&mut input)?;
+        let index_boost = input.read_f32()?;
+        let now_in_millis = input.read_vlong()?;
+        let request_cache = read_optional_bool(&mut input)?;
+        let inbound_network_time = input.read_vlong()?;
+        let outbound_network_time = input.read_vlong()?;
+        let cluster_alias = input.read_optional_string()?;
+        let allow_partial_search_results = input.read_bool()?;
+        let index_routings = input.read_string_array()?;
+        let preference = input.read_optional_string()?;
+        let can_return_null_response_if_match_no_docs = input.read_bool()?;
+        let bottom_sort_values_present = input.read_bool()?;
+        if bottom_sort_values_present {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "shard search request bottom sort values",
+                reason: "SearchSortValuesAndFormats payloads are not decoded by the bounded ShardSearchRequest reader yet",
+            });
+        }
+        let reader_id = if input.read_bool()? {
+            Some(OpenSearchShardSearchContextIdWire::read(&mut input)?)
+        } else {
+            None
+        };
+        let keep_alive = read_optional_time_value(&mut input)?;
+        let original_indices = OpenSearchOriginalIndicesWire::read(&mut input)?;
+        require_no_trailing_bytes(&input)?;
+        let request = Self {
+            parent_task_node,
+            parent_task_id,
+            shard_id,
+            search_type,
+            number_of_shards,
+            scroll,
+            source,
+            alias_filter,
+            index_boost,
+            now_in_millis,
+            request_cache,
+            inbound_network_time,
+            outbound_network_time,
+            cluster_alias,
+            allow_partial_search_results,
+            index_routings,
+            preference,
+            can_return_null_response_if_match_no_docs,
+            bottom_sort_values_present,
+            reader_id,
+            keep_alive,
+            original_indices,
+        };
+        request.validate_supported_subset()?;
+        Ok(request)
+    }
+
+    pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
+        self.shard_id
+            .validate_supported_shape("shard search request shard id")?;
+        if self.search_type != 1 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "shard search request search type",
+                reason: "can-match shard requests require QUERY_THEN_FETCH search type",
+            });
+        }
+        if self.number_of_shards < -1 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "shard search request shard count",
+                reason: "OpenSearch ShardSearchRequest shard counts cannot be below -1",
+            });
+        }
+        if self.scroll.is_some() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "shard search request scroll",
+                reason: "scroll can-match ShardSearchRequest execution is not mapped yet",
+            });
+        }
+        if self.source.is_some() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "shard search request source",
+                reason:
+                    "can-match query rewrite for SearchSourceBuilder payloads is not mapped yet",
+            });
+        }
+        if !self.alias_filter.aliases.is_empty() || self.alias_filter.query.is_some() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "shard search request alias filter",
+                reason: "can-match alias filter rewrite is not mapped yet",
+            });
+        }
+        if self.index_boost <= 0.0 || !self.index_boost.is_finite() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "shard search request index boost",
+                reason: "OpenSearch shard search index boost must be a positive finite value",
+            });
+        }
+        if self.inbound_network_time < 0 || self.outbound_network_time < 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "shard search request network time",
+                reason: "OpenSearch shard search network timing counters cannot be negative",
+            });
+        }
+        if self.can_return_null_response_if_match_no_docs {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "shard search request null response optimization",
+                reason: "can-return-null-response optimization is not mapped by the bounded can-match adapter yet",
+            });
+        }
+        if self.bottom_sort_values_present {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "shard search request bottom sort values",
+                reason: "SearchSortValuesAndFormats payloads are not mapped by the bounded can-match adapter yet",
+            });
+        }
+        if self.reader_id.is_some() || self.keep_alive.is_some() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "shard search request reader context",
+                reason: "reader-context can-match requests require PIT/search context lifecycle execution",
+            });
+        }
+        self.original_indices.validate_supported_subset()
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        self.validate_supported_subset()?;
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "can-match execution",
+            reason:
+                "can-match execution still requires native query rewrite and shard metadata checks",
         })
     }
 }
@@ -76506,6 +76790,98 @@ mod tests {
             OpenSearchCanMatchResponseWire::read(body.freeze()),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "can-match estimated min/max response",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_can_match_request_message_round_trips_bounded_shard_search_request() {
+        let request = OpenSearchShardSearchRequestWire {
+            parent_task_node: "node-a".to_string(),
+            parent_task_id: Some(7),
+            shard_id: OpenSearchShardIdWire {
+                index_name: "logs-000001".to_string(),
+                index_uuid: "uuid-logs-000001".to_string(),
+                shard_id: 2,
+            },
+            number_of_shards: 3,
+            now_in_millis: 123_456,
+            request_cache: Some(false),
+            inbound_network_time: 11,
+            outbound_network_time: 17,
+            cluster_alias: Some("remote-a".to_string()),
+            index_routings: vec!["tenant-a".to_string()],
+            preference: Some("_local".to_string()),
+            original_indices: OpenSearchOriginalIndicesWire::new(
+                Some(vec!["logs-*".to_string()]),
+                OpenSearchIndicesOptionsWire::strict_expand_open_forbid_closed_ignore_throttled(),
+            ),
+            ..OpenSearchShardSearchRequestWire::default()
+        };
+        let mut frame =
+            build_opensearch_can_match_request_message(149, OPENSEARCH_3_7_0_TRANSPORT, &request)
+                .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected can-match request message");
+        };
+        assert_eq!(
+            read_opensearch_can_match_request_message(&message).unwrap(),
+            request
+        );
+        assert!(matches!(
+            read_opensearch_search_request_message(&message).unwrap_err(),
+            TransportActionWireError::UnexpectedAction {
+                expected: OPENSEARCH_SEARCH_ACTION_NAME,
+                ..
+            }
+        ));
+        assert!(matches!(
+            read_opensearch_can_match_request_message(&message)
+                .unwrap()
+                .reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "can-match execution",
+                ..
+            })
+        ));
+
+        let source_request = OpenSearchShardSearchRequestWire {
+            source: Some(OpenSearchSearchSourceBuilderWire::default()),
+            ..OpenSearchShardSearchRequestWire::default()
+        };
+        let mut output = StreamOutput::new();
+        assert!(matches!(
+            source_request.write(&mut output, OPENSEARCH_3_7_0_TRANSPORT),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "shard search request source",
+                ..
+            })
+        ));
+
+        let reader_request = OpenSearchShardSearchRequestWire {
+            reader_id: Some(OpenSearchShardSearchContextIdWire::new("reader", 5)),
+            keep_alive: Some(TimeValueWire::minutes(1)),
+            ..OpenSearchShardSearchRequestWire::default()
+        };
+        let mut output = StreamOutput::new();
+        assert!(matches!(
+            reader_request.write(&mut output, OPENSEARCH_3_7_0_TRANSPORT),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "shard search request reader context",
+                ..
+            })
+        ));
+
+        let bottom_sort_request = OpenSearchShardSearchRequestWire {
+            bottom_sort_values_present: true,
+            ..OpenSearchShardSearchRequestWire::default()
+        };
+        let mut output = StreamOutput::new();
+        assert!(matches!(
+            bottom_sort_request.write(&mut output, OPENSEARCH_3_7_0_TRANSPORT),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "shard search request bottom sort values",
                 ..
             })
         ));
