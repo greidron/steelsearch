@@ -3523,6 +3523,29 @@ fn multi_daemon_transport_create_pit_binds_reader_contexts_to_target_node() {
     let mut observed_nodes = BTreeSet::new();
     for (index, transport_port) in transport_ports.iter().copied().enumerate() {
         let expected_node = format!("steel-node-pit-{}", index + 1);
+        let doc_id = format!("doc-{}", index + 1);
+        let index_doc = http_response(
+            http_ports[index],
+            "PUT",
+            &format!("/pit-transport-multi-it/_doc/{doc_id}"),
+            Some(
+                format!(
+                    r#"{{"status":"before-pit","ordinal":{},"node":"{}"}}"#,
+                    index + 1,
+                    expected_node
+                )
+                .as_bytes(),
+            ),
+        );
+        assert_eq!(index_doc["status"], 201, "{index_doc}");
+        let refresh_before_pit = http_response(
+            http_ports[index],
+            "POST",
+            "/pit-transport-multi-it/_refresh",
+            Some(b"{}"),
+        );
+        assert_eq!(refresh_before_pit["status"], 200, "{refresh_before_pit}");
+
         let request = os_transport::action::OpenSearchCreatePitRequestWire {
             indices: vec!["pit-transport-multi-it".to_string()],
             ..os_transport::action::OpenSearchCreatePitRequestWire::default()
@@ -3574,6 +3597,67 @@ fn multi_daemon_transport_create_pit_binds_reader_contexts_to_target_node() {
             .pit_infos
             .iter()
             .any(|pit_info| pit_info.pit_id == pit_response.pit_id));
+
+        let update_doc = http_response(
+            http_ports[index],
+            "PUT",
+            &format!("/pit-transport-multi-it/_doc/{doc_id}"),
+            Some(
+                format!(
+                    r#"{{"status":"after-pit","ordinal":{},"node":"{}"}}"#,
+                    index + 1,
+                    expected_node
+                )
+                .as_bytes(),
+            ),
+        );
+        assert_eq!(update_doc["status"], 200, "{update_doc}");
+        let refresh_after_pit = http_response(
+            http_ports[index],
+            "POST",
+            "/pit-transport-multi-it/_refresh",
+            Some(b"{}"),
+        );
+        assert_eq!(refresh_after_pit["status"], 200, "{refresh_after_pit}");
+
+        let pit_search_request = os_transport::action::OpenSearchSearchRequestWire {
+            source: Some(os_transport::action::OpenSearchSearchSourceBuilderWire {
+                point_in_time: Some(os_transport::action::OpenSearchPointInTimeBuilderWire {
+                    id: pit_response.pit_id.clone(),
+                    keep_alive: Some(os_transport::action::TimeValueWire::minutes(2)),
+                }),
+                ..os_transport::action::OpenSearchSearchSourceBuilderWire::default()
+            }),
+            indices_options:
+                os_transport::action::OpenSearchIndicesOptionsWire::point_in_time_search_prepared(),
+            ccs_minimize_roundtrips: false,
+            ..os_transport::action::OpenSearchSearchRequestWire::default()
+        };
+        let pit_search_frame = os_transport::action::build_opensearch_search_request_message(
+            350 + index as i64,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &pit_search_request,
+        )
+        .unwrap();
+        let pit_search_response =
+            send_transport_request_and_decode_response(transport_port, &pit_search_frame);
+        let pit_search =
+            os_transport::action::read_opensearch_search_response_message(&pit_search_response)
+                .unwrap();
+        assert_eq!(
+            pit_search.point_in_time_id.as_deref(),
+            Some(pit_response.pit_id.as_str())
+        );
+        assert_eq!(pit_search.total_hits, Some(1));
+        assert_eq!(pit_search.hits.len(), 1);
+        assert_eq!(pit_search.hits[0].id.as_deref(), Some(doc_id.as_str()));
+        assert_eq!(
+            pit_search.hits[0]
+                .source
+                .as_ref()
+                .and_then(|source| source.get("status")),
+            Some(&serde_json::json!("before-pit"))
+        );
 
         let delete_request = os_transport::action::OpenSearchDeletePitRequestWire {
             pit_ids: vec![pit_response.pit_id.clone()],
