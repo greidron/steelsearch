@@ -2590,8 +2590,8 @@ pub fn classify_opensearch_transport_action(
         },
         OPENSEARCH_QUERY_CAN_MATCH_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
-            disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "can-match transport execution has bounded ShardSearchRequest decode and CanMatchResponse rendering, but native query rewrite and shard metadata checks are not mapped yet",
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "can-match transport execution implements the source-free local shard subset with bounded ShardSearchRequest decode and CanMatchResponse rendering",
         },
         OPENSEARCH_EXPLAIN_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -29048,11 +29048,7 @@ impl OpenSearchShardSearchRequestWire {
 
     pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
         self.validate_supported_subset()?;
-        Err(TransportActionWireError::UnsupportedWireShape {
-            shape: "can-match execution",
-            reason:
-                "can-match execution still requires native query rewrite and shard metadata checks",
-        })
+        Ok(())
     }
 }
 
@@ -49669,7 +49665,7 @@ mod tests {
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_QUERY_CAN_MATCH_ACTION_NAME)
                 .disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_EXPLAIN_ACTION_NAME).disposition,
@@ -50189,6 +50185,7 @@ mod tests {
                 || spec.action_name == OPENSEARCH_STREAM_SEARCH_ACTION_NAME
                 || spec.action_name == OPENSEARCH_MULTI_SEARCH_ACTION_NAME
                 || spec.action_name == OPENSEARCH_QUERY_PHASE_ACTION_NAME
+                || spec.action_name == OPENSEARCH_QUERY_CAN_MATCH_ACTION_NAME
                 || spec.action_name == OPENSEARCH_SEARCH_SCROLL_ACTION_NAME
                 || spec.action_name == OPENSEARCH_EXPLAIN_ACTION_NAME
                 || spec.action_name == OPENSEARCH_VALIDATE_QUERY_ACTION_NAME
@@ -50227,7 +50224,6 @@ mod tests {
                 || spec.action_name == OPENSEARCH_QUERY_FETCH_SCROLL_PHASE_ACTION_NAME
                 || spec.action_name == OPENSEARCH_FETCH_ID_SCROLL_PHASE_ACTION_NAME
                 || spec.action_name == OPENSEARCH_FETCH_ID_PHASE_ACTION_NAME
-                || spec.action_name == OPENSEARCH_QUERY_CAN_MATCH_ACTION_NAME
                 || spec.action_name == OPENSEARCH_START_PERSISTENT_TASK_ACTION_NAME
                 || spec.action_name == OPENSEARCH_UPDATE_PERSISTENT_TASK_STATUS_ACTION_NAME
                 || spec.action_name == OPENSEARCH_COMPLETION_PERSISTENT_TASK_ACTION_NAME
@@ -76840,10 +76836,7 @@ mod tests {
             read_opensearch_can_match_request_message(&message)
                 .unwrap()
                 .reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "can-match execution",
-                ..
-            })
+            Ok(())
         ));
 
         let source_request = OpenSearchShardSearchRequestWire {

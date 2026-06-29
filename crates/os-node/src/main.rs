@@ -3737,6 +3737,32 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end_at_ms,
         )?;
     } else if is_request
+        && normalized_action_hint == Some("indices:data/read/search[can_match]")
+        && can_match_request_supports_local_execution_subset(&body)
+    {
+        let response = build_local_can_match_response(request_id, header_version_id, &body);
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("indices:data/read/search[can_match]"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request
         && normalized_action_hint == Some("indices:data/read/point_in_time/create")
         && create_pit_request_exceeds_local_keep_alive_limit(&body)
     {
@@ -16321,6 +16347,43 @@ fn create_pit_request_supports_local_lifecycle_subset(body: &[u8]) -> bool {
         .filter(|request| request.allow_partial_pit_creation.is_some())
         .and_then(|request| request.validate_supported_subset().ok())
         .is_some()
+}
+
+fn build_local_can_match_response(request_id: i64, header_version_id: u32, body: &[u8]) -> Vec<u8> {
+    let Some(request) = decode_can_match_request_from_transport_body(body) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    if request.reject_unsupported_execution().is_err() {
+        return build_empty_transport_response(request_id, header_version_id);
+    }
+    if create_reader_context_shard_admission(dev_transport_pit_bindings(), &request.shard_id)
+        != CreateReaderContextShardAdmission::Accepted
+    {
+        return build_empty_transport_response(request_id, header_version_id);
+    }
+    os_transport::action::build_opensearch_can_match_response_message(
+        request_id,
+        Version::from_id(header_version_id as i32),
+        &os_transport::action::OpenSearchCanMatchResponseWire::new(true),
+    )
+    .map(|frame| frame.to_vec())
+    .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
+}
+
+fn can_match_request_supports_local_execution_subset(body: &[u8]) -> bool {
+    decode_can_match_request_from_transport_body(body)
+        .filter(|request| request.reject_unsupported_execution().is_ok())
+        .is_some_and(|request| {
+            create_reader_context_shard_admission(dev_transport_pit_bindings(), &request.shard_id)
+                == CreateReaderContextShardAdmission::Accepted
+        })
+}
+
+fn decode_can_match_request_from_transport_body(
+    body: &[u8],
+) -> Option<os_transport::action::OpenSearchShardSearchRequestWire> {
+    let message = decode_transport_message_from_body(body)?;
+    os_transport::action::read_opensearch_can_match_request_message(&message).ok()
 }
 
 fn create_pit_request_exceeds_local_keep_alive_limit(body: &[u8]) -> bool {
@@ -37260,6 +37323,65 @@ mod tests {
             .lock()
             .expect("dev transport PIT contexts lock poisoned")
             .is_empty());
+    }
+
+    #[test]
+    fn can_match_transport_route_returns_true_for_source_free_local_subset() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        let bindings = dev_transport_pit_bindings();
+        bindings
+            .created_indices
+            .lock()
+            .expect("dev transport created indices lock poisoned")
+            .clear();
+        bindings
+            .created_indices
+            .lock()
+            .expect("dev transport created indices lock poisoned")
+            .insert("logs-can-match".to_string());
+        let request = os_transport::action::OpenSearchShardSearchRequestWire {
+            shard_id: os_transport::action::OpenSearchShardIdWire {
+                index_name: "logs-can-match".to_string(),
+                index_uuid: "uuid-logs-can-match".to_string(),
+                shard_id: 0,
+            },
+            original_indices: os_transport::action::OpenSearchOriginalIndicesWire::new(
+                Some(vec!["logs-can-match".to_string()]),
+                os_transport::action::OpenSearchIndicesOptionsWire::strict_expand_open_forbid_closed_ignore_throttled(),
+            ),
+            ..os_transport::action::OpenSearchShardSearchRequestWire::default()
+        };
+        let frame = os_transport::action::build_opensearch_can_match_request_message(
+            341,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(can_match_request_supports_local_execution_subset(
+            &frame[6..]
+        ));
+
+        let response = build_local_can_match_response(
+            341,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &frame[6..],
+        );
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected can-match response message");
+        };
+        assert_eq!(message.request_id, 341);
+        assert!(!message.status.is_request());
+        let response =
+            os_transport::action::read_opensearch_can_match_response_message(&message).unwrap();
+        assert!(response.can_match);
+        assert!(!response.estimated_min_and_max_present);
     }
 
     #[test]

@@ -328,7 +328,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `indices:data/read/search[phase/query+fetch/scroll]` (rejected fail-closed)
 - `indices:data/read/search[phase/fetch/id/scroll]` (rejected fail-closed)
 - `indices:data/read/search[phase/fetch/id]` (rejected fail-closed)
-- `indices:data/read/search[can_match]` (rejected fail-closed)
+- `indices:data/read/search[can_match]` (implemented source-free local shard subset)
 - `indices:data/read/explain` (implemented bounded local explain subset)
 - `indices:data/read/point_in_time/create` (implemented local PIT lifecycle subset)
 - `indices:data/read/point_in_time/delete` (implemented local PIT lifecycle subset)
@@ -2430,8 +2430,8 @@ The search phase transport boundary covers:
   existing bounded gateway that passes requests through the remote transport
   queue gate and returns cached local shard-query response bodies or forwarded
   OpenSearch query-phase response bodies;
-- DFS, query-id, scroll query/query-fetch, fetch-id, fetch-id-scroll, and
-  can-match remain fail-closed because their OpenSearch handlers require
+- DFS, query-id, scroll query/query-fetch, fetch-id, and fetch-id-scroll
+  remain fail-closed because their OpenSearch handlers require
   reader-context execution, query rewrite, and native phase execution that are
   not yet Rust adapters;
 - the bounded `ShardSearchRequest` wire is implemented for source-free
@@ -2441,6 +2441,12 @@ The search phase transport boundary covers:
   preference, and `OriginalIndices`; search source, scroll, bottom sort values,
   reader context, and keep-alive remain rejected until native can-match
   execution exists;
+- the local can-match transport route executes the source-free subset by
+  returning `canMatch=true` with absent `estimatedMinAndMax`, matching the
+  OpenSearch null-query/match-all boundary when no alias filter, reader
+  context, search source, or search-after min/max pruning is present; local
+  execution first verifies the addressed index/shard through the same bounded
+  shard admission used by PIT reader-context creation;
 - the bounded `SearchService.CanMatchResponse` wire is implemented for
   `canMatch` plus absent `estimatedMinAndMax`, matching `SearchPhaseResult`
   writing no prefix fields and `CanMatchResponse.writeTo(...)` writing the
@@ -2451,11 +2457,11 @@ Current can-match response wire microbenchmark:
 
 ```text
 cargo run -p os-transport --release --bin can-match-response-wire-benchmark
-can_match_request_encode iterations=400000 elapsed_ms=405.638 ops_per_second=986100.29 nanos_per_op=1014.10
-can_match_request_decode iterations=400000 elapsed_ms=427.313 ops_per_second=936081.68 nanos_per_op=1068.28
-can_match_response_encode iterations=400000 elapsed_ms=49.375 ops_per_second=8101308.48 nanos_per_op=123.44
-can_match_response_decode iterations=400000 elapsed_ms=50.854 ops_per_second=7865630.95 nanos_per_op=127.14
-can_match_wire_bottleneck_ops_per_second=936081.68
+can_match_request_encode iterations=400000 elapsed_ms=401.335 ops_per_second=996673.67 nanos_per_op=1003.34
+can_match_request_decode iterations=400000 elapsed_ms=421.594 ops_per_second=948779.02 nanos_per_op=1053.99
+can_match_response_encode iterations=400000 elapsed_ms=48.341 ops_per_second=8274519.77 nanos_per_op=120.85
+can_match_response_decode iterations=400000 elapsed_ms=50.845 ops_per_second=7867028.65 nanos_per_op=127.11
+can_match_wire_bottleneck_ops_per_second=948779.02
 ```
 
 The explain boundary covers:
