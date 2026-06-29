@@ -609,7 +609,7 @@
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_delete_pit_transport_messages_bind_action_frames",
-      "response_evidence": "crates/os-node/tests/dev_cluster_daemons.rs::multi_daemon_transport_create_pit_binds_reader_contexts_to_target_node"
+      "response_evidence": "crates/os-node/tests/dev_cluster_daemons.rs::multi_daemon_get_all_pits_fans_out_to_seed_peers"
     },
     {
       "action_name": "indices:data/read/point_in_time/readall",

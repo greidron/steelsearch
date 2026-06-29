@@ -4775,9 +4775,10 @@ fn handle_transport_seed_connection<S: TransportConnection>(
         )?;
     } else if is_request
         && normalized_action_hint == Some("indices:data/read/point_in_time/delete")
-        && delete_pit_request_supports_local_lifecycle_subset(&body)
+        && delete_pit_request_supports_bounded_fanout_subset(&body, transport_identity)
     {
-        let response = build_local_delete_pit_response(request_id, header_version_id, &body);
+        let response =
+            build_delete_pit_response(request_id, header_version_id, &body, transport_identity);
         response_frame = summarize_transport_response_frame_for_action(
             &response,
             Some("indices:data/read/point_in_time/delete"),
@@ -18787,6 +18788,29 @@ fn build_local_delete_pit_response(
     header_version_id: u32,
     body: &[u8],
 ) -> Vec<u8> {
+    build_delete_pit_response_for_request(request_id, header_version_id, body, None)
+}
+
+fn build_delete_pit_response(
+    request_id: i64,
+    header_version_id: u32,
+    body: &[u8],
+    transport_identity: &DevTransportIdentity,
+) -> Vec<u8> {
+    build_delete_pit_response_for_request(
+        request_id,
+        header_version_id,
+        body,
+        Some(transport_identity),
+    )
+}
+
+fn build_delete_pit_response_for_request(
+    request_id: i64,
+    header_version_id: u32,
+    body: &[u8],
+    transport_identity: Option<&DevTransportIdentity>,
+) -> Vec<u8> {
     let Some(request) = decode_delete_pit_request_from_transport_body(body) else {
         return build_empty_transport_response(request_id, header_version_id);
     };
@@ -18796,7 +18820,11 @@ fn build_local_delete_pit_response(
     if !delete_pit_request_matches_local_lifecycle_subset(&request) {
         return build_empty_transport_response(request_id, header_version_id);
     }
-    let response = delete_transport_pit_contexts(&request.pit_ids);
+    let response = if let Some(transport_identity) = transport_identity {
+        delete_transport_pit_contexts_with_fanout(&request.pit_ids, transport_identity)
+    } else {
+        delete_transport_pit_contexts(&request.pit_ids)
+    };
     os_transport::action::build_opensearch_delete_pit_response_message(
         request_id,
         Version::from_id(header_version_id as i32),
@@ -18812,6 +18840,17 @@ fn delete_pit_request_supports_local_lifecycle_subset(body: &[u8]) -> bool {
         .is_some_and(delete_pit_request_matches_local_lifecycle_subset)
 }
 
+fn delete_pit_request_supports_bounded_fanout_subset(
+    body: &[u8],
+    transport_identity: &DevTransportIdentity,
+) -> bool {
+    decode_delete_pit_request_from_transport_body(body)
+        .as_ref()
+        .is_some_and(|request| {
+            delete_pit_request_matches_bounded_fanout_subset(request, transport_identity)
+        })
+}
+
 fn delete_pit_request_has_invalid_pit_id(body: &[u8]) -> bool {
     decode_delete_pit_request_from_transport_body(body)
         .filter(|request| request.validate_supported_subset().is_ok())
@@ -18823,6 +18862,34 @@ fn delete_pit_request_matches_local_lifecycle_subset(
 ) -> bool {
     request.validate_supported_subset().is_ok()
         && delete_pit_ids_match_local_lifecycle_subset(&request.pit_ids)
+}
+
+fn delete_pit_request_matches_bounded_fanout_subset(
+    request: &os_transport::action::OpenSearchDeletePitRequestWire,
+    transport_identity: &DevTransportIdentity,
+) -> bool {
+    if !delete_pit_request_matches_local_lifecycle_subset(request) {
+        return false;
+    }
+    if request.pit_ids.len() == 1 && request.pit_ids.first().is_some_and(|id| id == "_all") {
+        return true;
+    }
+    request.pit_ids.iter().all(|pit_id| {
+        os_transport::action::OpenSearchSearchContextIdWire::decode(pit_id)
+            .ok()
+            .is_some_and(|context_id| {
+                context_id.shards.values().all(|search_context| {
+                    let cluster_alias_is_local = search_context
+                        .cluster_alias
+                        .as_deref()
+                        .map_or(true, str::is_empty);
+                    cluster_alias_is_local
+                        && (free_pit_context_targets_local_node(search_context, transport_identity)
+                            || free_pit_context_target_peer(search_context, transport_identity)
+                                .is_some())
+                })
+            })
+    })
 }
 
 fn delete_pit_ids_match_local_lifecycle_subset(ids: &[String]) -> bool {
@@ -19640,6 +19707,118 @@ fn delete_transport_pit_contexts(
             .clear();
     }
     os_transport::action::OpenSearchDeletePitResponseWire::with_results(results)
+}
+
+fn delete_transport_pit_contexts_with_fanout(
+    pit_ids: &[String],
+    transport_identity: &DevTransportIdentity,
+) -> os_transport::action::OpenSearchDeletePitResponseWire {
+    if pit_ids.len() == 1 && pit_ids.first().is_some_and(|id| id == "_all") {
+        return delete_transport_pit_contexts(pit_ids);
+    }
+
+    let mut ordered_pit_ids = Vec::new();
+    let mut seen_pit_ids = BTreeSet::new();
+    for pit_id in pit_ids {
+        if seen_pit_ids.insert(pit_id.clone()) {
+            ordered_pit_ids.push(pit_id.clone());
+        }
+    }
+
+    let mut local_context_ids = Vec::new();
+    let mut grouped_remote_contexts: BTreeMap<String, (GetAllPitsPeerTarget, Vec<_>)> =
+        BTreeMap::new();
+    let mut result_by_pit_id = BTreeMap::new();
+
+    for pit_id in &ordered_pit_ids {
+        result_by_pit_id.entry(pit_id.clone()).or_insert(true);
+        let Ok(context_id) = os_transport::action::OpenSearchSearchContextIdWire::decode(pit_id)
+        else {
+            record_delete_pit_result(&mut result_by_pit_id, pit_id, false);
+            continue;
+        };
+        for search_context in context_id.shards.values() {
+            let context_for_node = os_transport::action::OpenSearchPitSearchContextIdForNodeWire {
+                pit_id: pit_id.clone(),
+                search_context: search_context.clone(),
+            };
+            if free_pit_context_targets_local_node(search_context, transport_identity) {
+                local_context_ids.push(context_for_node);
+            } else if let Some(peer) =
+                free_pit_context_target_peer(search_context, transport_identity)
+            {
+                grouped_remote_contexts
+                    .entry(peer.node_id.clone())
+                    .or_insert_with(|| (peer, Vec::new()))
+                    .1
+                    .push(context_for_node);
+            } else {
+                record_delete_pit_result(&mut result_by_pit_id, pit_id, false);
+            }
+        }
+    }
+
+    if !local_context_ids.is_empty() {
+        let local_request = os_transport::action::OpenSearchFreePitContextRequestWire {
+            parent_task_node: String::new(),
+            parent_task_id: None,
+            context_ids: local_context_ids,
+        };
+        let local_response = free_transport_reader_contexts_for_free_pit_request(&local_request);
+        remove_transport_pit_context_entries_without_readers(
+            local_response
+                .results
+                .iter()
+                .map(|result| result.pit_id.as_str()),
+        );
+        for result in local_response.results {
+            record_delete_pit_result(&mut result_by_pit_id, &result.pit_id, result.successful);
+        }
+    }
+
+    for (_node_id, (peer, context_ids)) in grouped_remote_contexts {
+        let remote_request = os_transport::action::OpenSearchFreePitContextRequestWire {
+            parent_task_node: String::new(),
+            parent_task_id: None,
+            context_ids,
+        };
+        match free_pit_contexts_on_peer(&peer, &remote_request) {
+            Ok(response) => {
+                for result in response.results {
+                    record_delete_pit_result(
+                        &mut result_by_pit_id,
+                        &result.pit_id,
+                        result.successful,
+                    );
+                }
+            }
+            Err(_) => {
+                for context in remote_request.context_ids {
+                    record_delete_pit_result(&mut result_by_pit_id, &context.pit_id, false);
+                }
+            }
+        }
+    }
+
+    let results = ordered_pit_ids
+        .into_iter()
+        .map(|pit_id| {
+            os_transport::action::OpenSearchDeletePitInfoWire::new(
+                result_by_pit_id.get(&pit_id).copied().unwrap_or(false),
+                pit_id,
+            )
+        })
+        .collect();
+    os_transport::action::OpenSearchDeletePitResponseWire::with_results(results)
+}
+
+fn record_delete_pit_result(
+    result_by_pit_id: &mut BTreeMap<String, bool>,
+    pit_id: &str,
+    successful: bool,
+) {
+    let entry = result_by_pit_id.entry(pit_id.to_string()).or_insert(true);
+    *entry = *entry && successful;
 }
 
 fn remove_transport_pit_context_entries_without_readers<'a>(
@@ -23106,12 +23285,13 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
             ))
         }
         Some("indices:data/read/point_in_time/delete")
-            if delete_pit_request_supports_local_lifecycle_subset(body) =>
+            if delete_pit_request_supports_bounded_fanout_subset(body, transport_identity) =>
         {
-            Some(build_local_delete_pit_response(
+            Some(build_delete_pit_response(
                 request_id,
                 header_version_id,
                 body,
+                transport_identity,
             ))
         }
         Some("indices:data/read/scroll/clear")

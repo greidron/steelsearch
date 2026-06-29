@@ -4653,6 +4653,58 @@ fn multi_daemon_get_all_pits_fans_out_to_seed_peers() {
         "{default_list:?}"
     );
 
+    let delete_update_pit_request = os_transport::action::OpenSearchDeletePitRequestWire {
+        pit_ids: vec![update_pit_id.clone()],
+        ..os_transport::action::OpenSearchDeletePitRequestWire::default()
+    };
+    let delete_update_pit_frame =
+        os_transport::action::build_opensearch_delete_pit_request_message(
+            615,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &delete_update_pit_request,
+        )
+        .unwrap();
+    let delete_update_pit_response =
+        send_transport_request_and_decode_response(transport_ports[1], &delete_update_pit_frame);
+    let deleted_update_pit = os_transport::action::read_opensearch_delete_pit_response_message(
+        &delete_update_pit_response,
+    )
+    .unwrap();
+    assert_eq!(
+        deleted_update_pit.results.len(),
+        1,
+        "{deleted_update_pit:?}"
+    );
+    assert_eq!(deleted_update_pit.results[0].pit_id, update_pit_id);
+    assert!(
+        deleted_update_pit.results[0].successful,
+        "{deleted_update_pit:?}"
+    );
+
+    let post_delete_update_list_frame =
+        os_transport::action::build_opensearch_get_all_pits_request_message(
+            616,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &default_list_request,
+        )
+        .unwrap();
+    let post_delete_update_list_response = send_transport_request_and_decode_response(
+        transport_ports[1],
+        &post_delete_update_list_frame,
+    );
+    let post_delete_update_list =
+        os_transport::action::read_opensearch_get_all_pits_response_message(
+            &post_delete_update_list_response,
+        )
+        .unwrap();
+    assert!(
+        !post_delete_update_list
+            .nodes
+            .iter()
+            .any(|node| node.pit_infos.iter().any(|pit| pit.pit_id == update_pit_id)),
+        "{post_delete_update_list:?}"
+    );
+
     let local_list_request = os_transport::action::OpenSearchGetAllPitsRequestWire {
         node_ids: Some(vec!["_local".to_string()]),
         ..os_transport::action::OpenSearchGetAllPitsRequestWire::default()

@@ -1306,7 +1306,7 @@
       "request_wire_type": "DeletePitRequest",
       "response_wire_type": "DeletePitResponse",
       "disposition": "implemented",
-      "reason": "Delete-pit transport wire adapter decodes PIT id arrays and renders OpenSearch-shaped DeletePitInfo response entries"
+      "reason": "Delete-pit transport adapter decodes PIT id arrays, frees local reader contexts, and fans out bounded seed-peer context deletion with OpenSearch-shaped DeletePitInfo entries"
     },
     {
       "action_name": "indices:data/read/point_in_time/readall",
