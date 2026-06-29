@@ -3738,6 +3738,36 @@ fn handle_transport_seed_connection<S: TransportConnection>(
         )?;
     } else if is_request
         && normalized_action_hint == Some("indices:data/read/search[can_match]")
+        && can_match_request_has_missing_reader_context(&body)
+    {
+        let response = build_can_match_missing_reader_context_error_response(
+            request_id,
+            header_version_id,
+            &body,
+        );
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("indices:data/read/search[can_match]"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request
+        && normalized_action_hint == Some("indices:data/read/search[can_match]")
         && can_match_request_supports_local_execution_subset(&body)
     {
         let response = build_local_can_match_response(request_id, header_version_id, &body);
@@ -16381,6 +16411,27 @@ fn can_match_request_supports_local_execution_subset(body: &[u8]) -> bool {
         })
 }
 
+fn can_match_request_has_missing_reader_context(body: &[u8]) -> bool {
+    decode_can_match_request_from_transport_body(body)
+        .filter(|request| request.reject_unsupported_execution().is_ok())
+        .and_then(|request| request.reader_id)
+        .is_some_and(|reader_id| !reader_context_exists(&reader_id))
+}
+
+fn build_can_match_missing_reader_context_error_response(
+    request_id: i64,
+    header_version_id: u32,
+    body: &[u8],
+) -> Vec<u8> {
+    let Some(request) = decode_can_match_request_from_transport_body(body) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    let Some(reader_id) = request.reader_id else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    build_missing_search_context_error_response(request_id, header_version_id, &reader_id)
+}
+
 fn decode_can_match_request_from_transport_body(
     body: &[u8],
 ) -> Option<os_transport::action::OpenSearchShardSearchRequestWire> {
@@ -20682,6 +20733,24 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
             if stream_search_request_supports_local_execution_subset(body) =>
         {
             Some(build_local_stream_search_response(
+                request_id,
+                header_version_id,
+                body,
+            ))
+        }
+        Some("indices:data/read/search[can_match]")
+            if can_match_request_has_missing_reader_context(body) =>
+        {
+            Some(build_can_match_missing_reader_context_error_response(
+                request_id,
+                header_version_id,
+                body,
+            ))
+        }
+        Some("indices:data/read/search[can_match]")
+            if can_match_request_supports_local_execution_subset(body) =>
+        {
+            Some(build_local_can_match_response(
                 request_id,
                 header_version_id,
                 body,
@@ -37845,6 +37914,77 @@ mod tests {
             os_transport::action::read_opensearch_can_match_response_message(&message).unwrap();
         assert!(!response.can_match);
         assert!(!response.estimated_min_and_max_present);
+    }
+
+    #[test]
+    fn can_match_reader_context_route_rejects_missing_context_like_opensearch() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        let bindings = dev_transport_pit_bindings();
+        bindings
+            .reader_contexts
+            .lock()
+            .expect("dev transport reader contexts lock poisoned")
+            .clear();
+        let reader_context_id =
+            os_transport::action::OpenSearchShardSearchContextIdWire::new("missing-reader", 46);
+        let request = os_transport::action::OpenSearchShardSearchRequestWire {
+            shard_id: os_transport::action::OpenSearchShardIdWire {
+                index_name: "logs-can-match-missing-reader".to_string(),
+                index_uuid: "uuid-logs-can-match-missing-reader".to_string(),
+                shard_id: 0,
+            },
+            reader_id: Some(reader_context_id.clone()),
+            source: Some(os_transport::action::OpenSearchSearchSourceBuilderWire {
+                query: Some(os_transport::action::OpenSearchQueryBuilderWire::MatchAll(
+                    os_transport::action::OpenSearchMatchAllQueryBuilderWire::default(),
+                )),
+                ..os_transport::action::OpenSearchSearchSourceBuilderWire::default()
+            }),
+            original_indices: os_transport::action::OpenSearchOriginalIndicesWire::new(
+                Some(vec!["logs-can-match-missing-reader".to_string()]),
+                os_transport::action::OpenSearchIndicesOptionsWire::strict_expand_open_forbid_closed_ignore_throttled(),
+            ),
+            ..os_transport::action::OpenSearchShardSearchRequestWire::default()
+        };
+        let frame = os_transport::action::build_opensearch_can_match_request_message(
+            346,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(can_match_request_has_missing_reader_context(&frame[6..]));
+        assert!(!can_match_request_supports_local_execution_subset(
+            &frame[6..]
+        ));
+
+        let response = build_can_match_missing_reader_context_error_response(
+            346,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &frame[6..],
+        );
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected can-match missing-context error response frame");
+        };
+        assert_eq!(message.request_id, 346);
+        assert!(message.status.is_error());
+        let error = os_transport::error::TransportError::read(message.body.freeze())
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            error.class_name,
+            "org.opensearch.search.SearchContextMissingException"
+        );
+        assert_eq!(
+            error.message.as_deref(),
+            Some("No search context found for id [46]")
+        );
     }
 
     #[test]

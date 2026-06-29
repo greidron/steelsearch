@@ -2470,7 +2470,10 @@ The search phase transport boundary covers:
   requests now also follow OpenSearch's `canMatch || hasRefreshPending`
   behavior by returning `canMatch=true` when an unrefreshed local document is
   pending on the addressed shard, while reader-context can-match keeps
-  `hasRefreshPending=false` like OpenSearch;
+  `hasRefreshPending=false` like OpenSearch. Reader-context can-match requests
+  with a missing or expired local reader context now render an OpenSearch-style
+  `SearchContextMissingException` transport error instead of falling through to
+  an empty local response;
 - the bounded `SearchService.CanMatchResponse` wire is implemented for
   `canMatch` plus absent `estimatedMinAndMax`, matching `SearchPhaseResult`
   writing no prefix fields and `CanMatchResponse.writeTo(...)` writing the
@@ -2481,11 +2484,11 @@ Current can-match response wire microbenchmark:
 
 ```text
 cargo run -q -p os-transport --release --bin can-match-response-wire-benchmark
-can_match_request_encode iterations=400000 elapsed_ms=403.444 ops_per_second=991462.65 nanos_per_op=1008.61
-can_match_request_decode iterations=400000 elapsed_ms=429.030 ops_per_second=932335.42 nanos_per_op=1072.58
-can_match_response_encode iterations=400000 elapsed_ms=48.907 ops_per_second=8178704.86 nanos_per_op=122.27
-can_match_response_decode iterations=400000 elapsed_ms=50.841 ops_per_second=7867678.70 nanos_per_op=127.10
-can_match_wire_bottleneck_ops_per_second=932335.42
+can_match_request_encode iterations=400000 elapsed_ms=400.651 ops_per_second=998374.82 nanos_per_op=1001.63
+can_match_request_decode iterations=400000 elapsed_ms=430.003 ops_per_second=930227.09 nanos_per_op=1075.01
+can_match_response_encode iterations=400000 elapsed_ms=49.920 ops_per_second=8012886.32 nanos_per_op=124.80
+can_match_response_decode iterations=400000 elapsed_ms=50.967 ops_per_second=7848172.40 nanos_per_op=127.42
+can_match_wire_bottleneck_ops_per_second=930227.09
 ```
 
 The explain boundary covers:
