@@ -32973,6 +32973,9 @@ fn validate_can_match_query_subset(
         OpenSearchQueryBuilderWire::MatchAll(_) | OpenSearchQueryBuilderWire::MatchNone(_) => {
             Ok(())
         }
+        OpenSearchQueryBuilderWire::Boosting(query) => {
+            validate_can_match_query_subset(Some(query.positive.as_ref()), shape)
+        }
         OpenSearchQueryBuilderWire::Bool(query) => {
             if query.minimum_should_match.is_some() {
                 return Err(TransportActionWireError::UnsupportedWireShape {
@@ -32991,9 +32994,18 @@ fn validate_can_match_query_subset(
             }
             Ok(())
         }
+        OpenSearchQueryBuilderWire::ConstantScore(query) => {
+            validate_can_match_query_subset(Some(query.filter.as_ref()), shape)
+        }
+        OpenSearchQueryBuilderWire::FunctionScore(query) => {
+            validate_can_match_query_subset(Some(query.query.as_ref()), shape)
+        }
+        OpenSearchQueryBuilderWire::ScriptScore(query) => {
+            validate_can_match_query_subset(Some(query.query.as_ref()), shape)
+        }
         _ => Err(TransportActionWireError::UnsupportedWireShape {
             shape,
-            reason: "bounded can-match query rewrite currently supports only null, match_all, match_none, and bool queries composed from that subset",
+            reason: "bounded can-match query rewrite currently supports only null, match_all, match_none, bool, and selected wrapper queries composed from that subset",
         }),
     }
 }
@@ -33009,6 +33021,9 @@ fn can_match_query_subset_result(
     match query {
         OpenSearchQueryBuilderWire::MatchAll(_) => Ok(true),
         OpenSearchQueryBuilderWire::MatchNone(_) => Ok(false),
+        OpenSearchQueryBuilderWire::Boosting(query) => {
+            can_match_query_subset_result(Some(query.positive.as_ref()), shape)
+        }
         OpenSearchQueryBuilderWire::Bool(query) => {
             if query.must.is_empty()
                 && query.must_not.is_empty()
@@ -33036,9 +33051,18 @@ fn can_match_query_subset_result(
             }
             Ok(true)
         }
+        OpenSearchQueryBuilderWire::ConstantScore(query) => {
+            can_match_query_subset_result(Some(query.filter.as_ref()), shape)
+        }
+        OpenSearchQueryBuilderWire::FunctionScore(query) => {
+            can_match_query_subset_result(Some(query.query.as_ref()), shape)
+        }
+        OpenSearchQueryBuilderWire::ScriptScore(query) => {
+            can_match_query_subset_result(Some(query.query.as_ref()), shape)
+        }
         _ => Err(TransportActionWireError::UnsupportedWireShape {
             shape,
-            reason: "bounded can-match query rewrite currently supports only null, match_all, match_none, and bool queries composed from that subset",
+            reason: "bounded can-match query rewrite currently supports only null, match_all, match_none, bool, and selected wrapper queries composed from that subset",
         }),
     }
 }
@@ -77125,6 +77149,134 @@ mod tests {
         assert_eq!(decoded, bool_should_match_none_source_request);
         assert_eq!(decoded.can_match_local_subset_result().unwrap(), false);
 
+        let constant_score_match_none_source_request = OpenSearchShardSearchRequestWire {
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                query: Some(OpenSearchQueryBuilderWire::ConstantScore(
+                    OpenSearchConstantScoreQueryBuilderWire {
+                        boost: 1.0,
+                        query_name: None,
+                        filter: Box::new(OpenSearchQueryBuilderWire::MatchNone(
+                            OpenSearchMatchNoneQueryBuilderWire::default(),
+                        )),
+                    },
+                )),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchShardSearchRequestWire::default()
+        };
+        let mut frame = build_opensearch_can_match_request_message(
+            156,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &constant_score_match_none_source_request,
+        )
+        .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected constant-score-match-none can-match request message");
+        };
+        let decoded = read_opensearch_can_match_request_message(&message).unwrap();
+        assert_eq!(decoded, constant_score_match_none_source_request);
+        assert_eq!(decoded.can_match_local_subset_result().unwrap(), false);
+
+        let boosting_match_none_source_request = OpenSearchShardSearchRequestWire {
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                query: Some(OpenSearchQueryBuilderWire::Boosting(
+                    OpenSearchBoostingQueryBuilderWire {
+                        boost: 1.0,
+                        query_name: None,
+                        positive: Box::new(OpenSearchQueryBuilderWire::MatchNone(
+                            OpenSearchMatchNoneQueryBuilderWire::default(),
+                        )),
+                        negative: Box::new(OpenSearchQueryBuilderWire::MatchAll(
+                            OpenSearchMatchAllQueryBuilderWire::default(),
+                        )),
+                        negative_boost: 0.2,
+                    },
+                )),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchShardSearchRequestWire::default()
+        };
+        let mut frame = build_opensearch_can_match_request_message(
+            157,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &boosting_match_none_source_request,
+        )
+        .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected boosting-match-none can-match request message");
+        };
+        let decoded = read_opensearch_can_match_request_message(&message).unwrap();
+        assert_eq!(decoded, boosting_match_none_source_request);
+        assert_eq!(decoded.can_match_local_subset_result().unwrap(), false);
+
+        let script_score_match_none_source_request = OpenSearchShardSearchRequestWire {
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                query: Some(OpenSearchQueryBuilderWire::ScriptScore(
+                    OpenSearchScriptScoreQueryBuilderWire {
+                        boost: 1.0,
+                        query_name: None,
+                        query: Box::new(OpenSearchQueryBuilderWire::MatchNone(
+                            OpenSearchMatchNoneQueryBuilderWire::default(),
+                        )),
+                        script: OpenSearchInlineScriptWire {
+                            lang: Some("painless".to_string()),
+                            source: "2.0".to_string(),
+                            options: json!({}),
+                            params: json!({}),
+                        },
+                        min_score: None,
+                    },
+                )),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchShardSearchRequestWire::default()
+        };
+        let mut frame = build_opensearch_can_match_request_message(
+            158,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &script_score_match_none_source_request,
+        )
+        .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected script-score-match-none can-match request message");
+        };
+        let decoded = read_opensearch_can_match_request_message(&message).unwrap();
+        assert_eq!(decoded, script_score_match_none_source_request);
+        assert_eq!(decoded.can_match_local_subset_result().unwrap(), false);
+
+        let function_score_match_none_source_request = OpenSearchShardSearchRequestWire {
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                query: Some(OpenSearchQueryBuilderWire::FunctionScore(
+                    OpenSearchFunctionScoreQueryBuilderWire {
+                        boost: 1.0,
+                        query_name: None,
+                        query: Box::new(OpenSearchQueryBuilderWire::MatchNone(
+                            OpenSearchMatchNoneQueryBuilderWire::default(),
+                        )),
+                        filter_functions: Vec::new(),
+                        max_boost: f32::MAX,
+                        min_score: None,
+                        boost_mode: Some(OpenSearchCombineFunctionWire::Multiply),
+                        score_mode: OpenSearchFunctionScoreModeWire::Multiply,
+                    },
+                )),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchShardSearchRequestWire::default()
+        };
+        let mut frame = build_opensearch_can_match_request_message(
+            159,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &function_score_match_none_source_request,
+        )
+        .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected function-score-match-none can-match request message");
+        };
+        let decoded = read_opensearch_can_match_request_message(&message).unwrap();
+        assert_eq!(decoded, function_score_match_none_source_request);
+        assert_eq!(decoded.can_match_local_subset_result().unwrap(), false);
+
         let match_all_alias_filter_request = OpenSearchShardSearchRequestWire {
             alias_filter: OpenSearchAliasFilterWire::new(
                 vec!["logs_alias".to_string()],
@@ -77135,7 +77287,7 @@ mod tests {
             ..OpenSearchShardSearchRequestWire::default()
         };
         let mut frame = build_opensearch_can_match_request_message(
-            156,
+            160,
             OPENSEARCH_3_7_0_TRANSPORT,
             &match_all_alias_filter_request,
         )
@@ -77157,7 +77309,7 @@ mod tests {
             ..OpenSearchShardSearchRequestWire::default()
         };
         let mut frame = build_opensearch_can_match_request_message(
-            157,
+            161,
             OPENSEARCH_3_7_0_TRANSPORT,
             &match_none_alias_filter_request,
         )
@@ -77190,7 +77342,7 @@ mod tests {
             ..OpenSearchShardSearchRequestWire::default()
         };
         let mut frame = build_opensearch_can_match_request_message(
-            158,
+            162,
             OPENSEARCH_3_7_0_TRANSPORT,
             &bool_filter_match_none_alias_request,
         )
@@ -77223,7 +77375,7 @@ mod tests {
             ..OpenSearchShardSearchRequestWire::default()
         };
         let mut frame = build_opensearch_can_match_request_message(
-            159,
+            163,
             OPENSEARCH_3_7_0_TRANSPORT,
             &inert_source_request,
         )
