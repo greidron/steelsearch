@@ -194,7 +194,9 @@ def check_post_conditions(
         left = extract_case_value(case_reports, check["left"])
         right = extract_case_value(case_reports, check["right"])
         errors: list[str] = []
-        if left != right:
+        if (left is None or right is None) and not check.get("allow_null"):
+            errors.append(f"left {left!r} or right {right!r} is null")
+        elif left != right:
             errors.append(f"left {left!r} != right {right!r}")
         reports.append(
             {
