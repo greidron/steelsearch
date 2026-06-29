@@ -84,6 +84,16 @@ fn interop_read_action_inventory_uses_only_supported_phase_b_dispositions() {
         "cluster:monitor/nodes/usage",
         "GET /_nodes/hot_threads",
         "cluster:monitor/nodes/hot_threads",
+        "GET /_cluster/stats",
+        "cluster:monitor/stats",
+        "GET /{index}",
+        "indices:admin/get",
+        "GET /_alias",
+        "indices:admin/aliases/get",
+        "GET /_settings",
+        "indices:monitor/settings/get",
+        "GET /_data_stream",
+        "indices:admin/data_stream/get",
     ] {
         assert!(
             seen_surfaces.contains(required_surface),

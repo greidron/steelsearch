@@ -1152,7 +1152,11 @@ pub fn plan_interop_read_forwarding(
         | "GET /_cluster/settings"
         | "GET /_cluster/pending_tasks"
         | "GET /_cluster/allocation/explain"
-        | "GET /_tasks" => {
+        | "GET /_data_stream"
+        | "GET /_alias"
+        | "GET /_settings"
+        | "GET /_tasks"
+        | "GET /{index}" => {
             let cluster_manager_node_id = state
                 .discovery_nodes
                 .cluster_manager_node_id
@@ -1180,6 +1184,7 @@ pub fn plan_interop_read_forwarding(
             }])
         }
         "GET /_nodes/hot_threads"
+        | "GET /_cluster/stats"
         | "GET /_nodes/info"
         | "GET /_nodes/stats"
         | "GET /_nodes/usage" => {
@@ -7887,6 +7892,18 @@ mod tests {
     }
 
     #[derive(Debug, Deserialize)]
+    struct InteropReadActionInventoryCase {
+        surface: String,
+        kind: String,
+        disposition: String,
+    }
+
+    #[derive(Debug, Deserialize)]
+    struct InteropReadActionInventory {
+        actions: Vec<InteropReadActionInventoryCase>,
+    }
+
+    #[derive(Debug, Deserialize)]
     struct InteropSearchRoutingExpectedShard {
         index_name: String,
         shard_id: i32,
@@ -8498,6 +8515,31 @@ mod tests {
     }
 
     #[test]
+    fn interop_read_forwarding_plans_all_implemented_rest_inventory_surfaces() {
+        let inventory: InteropReadActionInventory = serde_json::from_str(include_str!(
+            "../../../tools/fixtures/interop-read-action-inventory.json"
+        ))
+        .unwrap();
+
+        let mut state = minimal_cluster_state_with_uuid("cached-state-uuid");
+        state.discovery_nodes.cluster_manager_node_id = Some("node-1".into());
+        state.discovery_nodes.nodes = vec![
+            interop_discovery_node("node-1", "interop-node-1", 9300),
+            interop_discovery_node("node-2", "interop-node-2", 9301),
+        ];
+
+        for action in inventory
+            .actions
+            .iter()
+            .filter(|action| action.kind == "rest" && action.disposition == "implemented")
+        {
+            let targets = plan_interop_read_forwarding(&state, &action.surface)
+                .unwrap_or_else(|error| panic!("{}: {error:?}", action.surface));
+            assert!(!targets.is_empty(), "{}", action.surface);
+        }
+    }
+
+    #[test]
     fn interop_read_forwarding_plans_nodes_info_to_all_discovery_nodes() {
         let mut state = minimal_cluster_state_with_uuid("cached-state-uuid");
         state.discovery_nodes.cluster_manager_node_id = Some("node-1".into());
@@ -8540,6 +8582,24 @@ mod tests {
     }
 
     #[test]
+    fn interop_read_forwarding_plans_cluster_stats_to_all_discovery_nodes() {
+        let mut state = minimal_cluster_state_with_uuid("cached-state-uuid");
+        state.discovery_nodes.cluster_manager_node_id = Some("node-1".into());
+        state.discovery_nodes.nodes = vec![
+            interop_discovery_node("node-1", "interop-node-1", 9300),
+            interop_discovery_node("node-2", "interop-node-2", 9301),
+        ];
+
+        let targets = plan_interop_read_forwarding(&state, "GET /_cluster/stats").unwrap();
+
+        assert_eq!(targets.len(), 2);
+        assert_eq!(targets[0].node_id, "node-1");
+        assert_eq!(targets[0].transport_address.port, 9300);
+        assert_eq!(targets[1].node_id, "node-2");
+        assert_eq!(targets[1].transport_address.port, 9301);
+    }
+
+    #[test]
     fn interop_read_forwarding_plans_allocation_explain_to_cluster_manager() {
         let mut state = minimal_cluster_state_with_uuid("cached-state-uuid");
         state.discovery_nodes.cluster_manager_node_id = Some("node-2".into());
@@ -8556,6 +8616,30 @@ mod tests {
         assert_eq!(targets[0].node_name, "interop-node-2");
         assert_eq!(targets[0].transport_address.host, "127.0.0.1");
         assert_eq!(targets[0].transport_address.port, 9301);
+    }
+
+    #[test]
+    fn interop_read_forwarding_plans_metadata_reads_to_cluster_manager() {
+        let mut state = minimal_cluster_state_with_uuid("cached-state-uuid");
+        state.discovery_nodes.cluster_manager_node_id = Some("node-2".into());
+        state.discovery_nodes.nodes = vec![
+            interop_discovery_node("node-1", "interop-node-1", 9300),
+            interop_discovery_node("node-2", "interop-node-2", 9301),
+        ];
+
+        for surface in [
+            "GET /{index}",
+            "GET /_alias",
+            "GET /_settings",
+            "GET /_data_stream",
+        ] {
+            let targets = plan_interop_read_forwarding(&state, surface).unwrap();
+
+            assert_eq!(targets.len(), 1, "{surface}");
+            assert_eq!(targets[0].node_id, "node-2", "{surface}");
+            assert_eq!(targets[0].node_name, "interop-node-2", "{surface}");
+            assert_eq!(targets[0].transport_address.port, 9301, "{surface}");
+        }
     }
 
     #[test]
