@@ -17227,6 +17227,11 @@ fn remove_transport_pit_context_entries_without_readers<'a>(
 
 fn remove_transport_reader_contexts_for_pit_id(pit_id: &str) {
     let Ok(context_id) = os_transport::action::OpenSearchSearchContextIdWire::decode(pit_id) else {
+        dev_transport_pit_bindings()
+            .reader_contexts
+            .lock()
+            .expect("dev transport reader contexts lock poisoned")
+            .retain(|_, context| context.pit_id.as_deref() != Some(pit_id));
         return;
     };
     let context_keys = context_id.pit_context_ids();
@@ -17272,20 +17277,41 @@ fn get_all_transport_pits_response(
     transport_identity: &DevTransportIdentity,
 ) -> os_transport::action::OpenSearchGetAllPitsResponseWire {
     let pit_infos = {
-        let mut contexts = dev_transport_pit_bindings()
+        let bindings = dev_transport_pit_bindings();
+        let now_millis = now_epoch_ms();
+        let mut contexts = bindings
             .contexts
             .lock()
             .expect("dev transport PIT contexts lock poisoned");
-        prune_expired_transport_pits(&mut contexts, now_epoch_ms());
+        prune_expired_transport_pits(&mut contexts, now_millis);
         prune_unavailable_transport_pits(&mut contexts);
-        contexts
-            .iter()
-            .map(|(pit_id, context)| {
-                os_transport::action::OpenSearchListPitInfoWire::new(
+        let pit_contexts = contexts.clone();
+        drop(contexts);
+
+        let mut reader_contexts = bindings
+            .reader_contexts
+            .lock()
+            .expect("dev transport reader contexts lock poisoned");
+        prune_expired_transport_reader_contexts(&mut reader_contexts, now_millis);
+        let mut seen_infos = BTreeSet::new();
+        reader_contexts
+            .values()
+            .filter_map(|reader_context| {
+                let pit_id = reader_context.pit_id.as_ref()?;
+                let creation_time_millis = reader_context.creation_time_millis?;
+                let keep_alive_millis = pit_contexts
+                    .get(pit_id)
+                    .map(|context| context.keep_alive_millis)
+                    .unwrap_or_else(|| {
+                        u64::try_from(reader_context.expires_at_millis.saturating_sub(now_millis))
+                            .unwrap_or(u64::MAX)
+                    });
+                let pit_info = os_transport::action::OpenSearchListPitInfoWire::new(
                     pit_id.clone(),
-                    u128_to_i64_saturating(context.creation_time_millis),
-                    u64_to_i64_saturating(context.keep_alive_millis),
-                )
+                    u128_to_i64_saturating(creation_time_millis),
+                    u64_to_i64_saturating(keep_alive_millis),
+                );
+                seen_infos.insert(pit_info.clone()).then_some(pit_info)
             })
             .collect::<Vec<_>>()
     };
@@ -31921,6 +31947,11 @@ mod tests {
             .expect("dev transport created indices lock poisoned")
             .insert("logs-pit-000001".to_string());
         dev_transport_pit_bindings()
+            .reader_contexts
+            .lock()
+            .expect("dev transport reader contexts lock poisoned")
+            .clear();
+        dev_transport_pit_bindings()
             .documents
             .lock()
             .expect("dev transport documents lock poisoned")
@@ -36154,6 +36185,11 @@ mod tests {
             .expect("dev transport created indices lock poisoned")
             .clear();
         dev_transport_pit_bindings()
+            .reader_contexts
+            .lock()
+            .expect("dev transport reader contexts lock poisoned")
+            .clear();
+        dev_transport_pit_bindings()
             .created_indices
             .lock()
             .expect("dev transport created indices lock poisoned")
@@ -38060,6 +38096,37 @@ mod tests {
                     creation_time_millis: now.saturating_sub(2_000),
                 },
             );
+            contexts.insert(
+                "pit-orphan-no-reader".to_string(),
+                PitContext {
+                    indices: vec!["logs-pit-000001".to_string()],
+                    documents: Arc::new(BTreeMap::new()),
+                    keep_alive_millis: 60_000,
+                    expires_at_millis: now + 60_000,
+                    creation_time_millis: now - 3_000,
+                },
+            );
+        }
+        {
+            let mut reader_contexts = dev_transport_pit_bindings()
+                .reader_contexts
+                .lock()
+                .expect("dev transport reader contexts lock poisoned");
+            reader_contexts.clear();
+            reader_contexts.insert(
+                ("pit-live-a-reader".to_string(), 1),
+                DevTransportReaderContext {
+                    shard_id: os_transport::action::OpenSearchShardIdWire {
+                        index_name: "logs-pit-000001".to_string(),
+                        index_uuid: "_na_".to_string(),
+                        shard_id: 0,
+                    },
+                    documents: Arc::new(BTreeMap::new()),
+                    expires_at_millis: now + 60_000,
+                    pit_id: Some("pit-live-a".to_string()),
+                    creation_time_millis: Some(now - 1_000),
+                },
+            );
         }
         let response = build_local_get_all_pits_response(
             93,
@@ -38096,6 +38163,11 @@ mod tests {
             .lock()
             .expect("dev transport PIT contexts lock poisoned")
             .contains_key("pit-expired"));
+        assert!(dev_transport_pit_bindings()
+            .contexts
+            .lock()
+            .expect("dev transport PIT contexts lock poisoned")
+            .contains_key("pit-orphan-no-reader"));
     }
 
     #[test]
@@ -38165,6 +38237,55 @@ mod tests {
                 );
             }
         }
+        {
+            let mut reader_contexts = dev_transport_pit_bindings()
+                .reader_contexts
+                .lock()
+                .expect("dev transport reader contexts lock poisoned");
+            reader_contexts.clear();
+            reader_contexts.insert(
+                ("pit-live-index-reader".to_string(), 1),
+                DevTransportReaderContext {
+                    shard_id: os_transport::action::OpenSearchShardIdWire {
+                        index_name: "logs-live-pit-000001".to_string(),
+                        index_uuid: "_na_".to_string(),
+                        shard_id: 0,
+                    },
+                    documents: Arc::new(BTreeMap::new()),
+                    expires_at_millis: now + 60_000,
+                    pit_id: Some(live_pit_id.to_string()),
+                    creation_time_millis: Some(now),
+                },
+            );
+            reader_contexts.insert(
+                ("pit-deleted-index-reader".to_string(), 2),
+                DevTransportReaderContext {
+                    shard_id: os_transport::action::OpenSearchShardIdWire {
+                        index_name: "logs-deleted-pit-000001".to_string(),
+                        index_uuid: "_na_".to_string(),
+                        shard_id: 0,
+                    },
+                    documents: Arc::new(BTreeMap::new()),
+                    expires_at_millis: now + 60_000,
+                    pit_id: Some(deleted_pit_id.to_string()),
+                    creation_time_millis: Some(now),
+                },
+            );
+            reader_contexts.insert(
+                ("pit-closed-index-reader".to_string(), 3),
+                DevTransportReaderContext {
+                    shard_id: os_transport::action::OpenSearchShardIdWire {
+                        index_name: "logs-closed-pit-000001".to_string(),
+                        index_uuid: "_na_".to_string(),
+                        shard_id: 0,
+                    },
+                    documents: Arc::new(BTreeMap::new()),
+                    expires_at_millis: now + 60_000,
+                    pit_id: Some(closed_pit_id.to_string()),
+                    creation_time_millis: Some(now),
+                },
+            );
+        }
         let transport_identity = DevTransportIdentity {
             cluster_name: "steelsearch-dev".to_string(),
             node_name: "steel-node".to_string(),
@@ -38229,6 +38350,11 @@ mod tests {
             .expect("dev transport PIT test lock poisoned");
         let pit_id = "pit-expired-context";
         let now = now_epoch_ms();
+        dev_transport_pit_bindings()
+            .reader_contexts
+            .lock()
+            .expect("dev transport reader contexts lock poisoned")
+            .clear();
         {
             let mut contexts = dev_transport_pit_bindings()
                 .contexts
