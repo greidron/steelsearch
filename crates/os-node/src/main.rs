@@ -4016,6 +4016,32 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end_at_ms,
         )?;
     } else if is_request
+        && normalized_action_hint == Some("cluster:admin/knn_get_model_action")
+        && get_model_request_supports_local_subset(&body)
+    {
+        let response = build_get_model_response(request_id, header_version_id, &body);
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("cluster:admin/knn_get_model_action"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request
         && normalized_action_hint == Some("cluster:admin/knn_remove_model_from_cache_action")
         && remove_model_from_cache_request_supports_local_subset(&body)
     {
@@ -15131,6 +15157,22 @@ fn build_training_job_route_decision_info_response(
     .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
 }
 
+fn build_get_model_response(request_id: i64, header_version_id: u32, body: &[u8]) -> Vec<u8> {
+    let Some(request) = decode_get_model_request_from_transport_body(body) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    let Some(response) = local_transport_get_model_response(&request) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    os_transport::action::build_get_model_response_message(
+        request_id,
+        Version::from_id(header_version_id as i32),
+        &response,
+    )
+    .map(|frame| frame.to_vec())
+    .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
+}
+
 fn knn_stats_request_supports_local_subset(body: &[u8]) -> bool {
     decode_knn_stats_request_from_transport_body(body)
         .is_some_and(|request| knn_stats_request_matches_local_subset(&request))
@@ -15155,6 +15197,11 @@ fn training_job_route_decision_info_request_supports_local_subset(body: &[u8]) -
     decode_training_job_route_decision_info_request_from_transport_body(body).is_some_and(
         |request| training_job_route_decision_info_request_matches_local_subset(&request),
     )
+}
+
+fn get_model_request_supports_local_subset(body: &[u8]) -> bool {
+    decode_get_model_request_from_transport_body(body)
+        .is_some_and(|request| local_transport_get_model_response(&request).is_some())
 }
 
 fn decode_knn_stats_request_from_transport_body(
@@ -15190,6 +15237,13 @@ fn decode_training_job_route_decision_info_request_from_transport_body(
 ) -> Option<os_transport::action::TrainingJobRouteDecisionInfoRequestWire> {
     let message = decode_transport_message_from_body(body)?;
     os_transport::action::read_training_job_route_decision_info_request_message(&message).ok()
+}
+
+fn decode_get_model_request_from_transport_body(
+    body: &[u8],
+) -> Option<os_transport::action::GetModelRequestWire> {
+    let message = decode_transport_message_from_body(body)?;
+    os_transport::action::read_get_model_request_message(&message).ok()
 }
 
 fn knn_stats_request_matches_local_subset(
@@ -15335,6 +15389,50 @@ fn local_transport_active_knn_training_job_count() -> i32 {
             .count(),
     )
     .unwrap_or(i32::MAX)
+}
+
+fn local_transport_get_model_response(
+    request: &os_transport::action::GetModelRequestWire,
+) -> Option<os_transport::action::GetModelResponseWire> {
+    request.validate_supported_execution_subset().ok()?;
+    let state = load_transport_knn_operational_state()?;
+    let model = state.trained_models.get(&request.model_id)?;
+    if model.state == "created" {
+        return None;
+    }
+    let method_name = model
+        .method
+        .get("name")
+        .and_then(Value::as_str)
+        .unwrap_or("hnsw");
+    let engine = model
+        .method
+        .get("engine")
+        .and_then(Value::as_str)
+        .unwrap_or("lucene")
+        .to_string();
+    let space_type = model
+        .method
+        .get("space_type")
+        .or_else(|| model.method.get("spaceType"))
+        .and_then(Value::as_str)
+        .unwrap_or("l2")
+        .to_string();
+    Some(os_transport::action::GetModelResponseWire {
+        engine,
+        space_type,
+        dimension: i32::try_from(model.dimension).unwrap_or(i32::MAX),
+        state: model.state.clone(),
+        timestamp: "1970-01-01T00:00:00Z".to_string(),
+        description: if model.description.is_empty() {
+            format!("Steelsearch local k-NN {method_name} model")
+        } else {
+            model.description.clone()
+        },
+        error: String::new(),
+        model_blob: None,
+        model_id: model.model_id.clone(),
+    })
 }
 
 fn transport_manifest_index_is_knn_enabled(index_body: &Value) -> bool {
@@ -27560,6 +27658,15 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
                 transport_identity,
             ))
         }
+        Some("cluster:admin/knn_get_model_action")
+            if get_model_request_supports_local_subset(body) =>
+        {
+            Some(build_get_model_response(
+                request_id,
+                header_version_id,
+                body,
+            ))
+        }
         Some("cluster:admin/knn_remove_model_from_cache_action")
             if remove_model_from_cache_request_supports_local_subset(body) =>
         {
@@ -32320,7 +32427,7 @@ mod tests {
                 dimension: 3,
                 description: "transport stats model".to_string(),
                 method: serde_json::json!({"name": "hnsw", "engine": "lucene"}),
-                state: "created".to_string(),
+                state: "failed".to_string(),
                 task_id: "task-a".to_string(),
                 transport_action: "cluster:admin/knn_training_model_action".to_string(),
             },
@@ -32517,6 +32624,124 @@ mod tests {
         assert_eq!(response.nodes.len(), 1);
         assert_eq!(response.nodes[0].node.id, "steel-node-id");
         assert_eq!(response.nodes[0].training_job_count, 1);
+        let _ = fs::remove_file(shared_state_path);
+    }
+
+    #[test]
+    fn get_model_transport_route_returns_local_runtime_model_payload() {
+        struct RecordingTransportConnection {
+            writes: Vec<u8>,
+        }
+
+        impl std::io::Read for RecordingTransportConnection {
+            fn read(&mut self, _buf: &mut [u8]) -> std::io::Result<usize> {
+                Ok(0)
+            }
+        }
+
+        impl std::io::Write for RecordingTransportConnection {
+            fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+                self.writes.extend_from_slice(buf);
+                Ok(buf.len())
+            }
+
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+
+        impl TransportConnection for RecordingTransportConnection {
+            fn set_read_timeout(&self, _duration: Option<Duration>) -> std::io::Result<()> {
+                Ok(())
+            }
+
+            fn peer_addr(&self) -> std::io::Result<SocketAddr> {
+                "127.0.0.1:9300"
+                    .parse()
+                    .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidInput, error))
+            }
+        }
+
+        let shared_state_path = unique_test_path("get-model-transport-runtime.json");
+        let mut runtime_state = SharedRuntimeState::default();
+        let mut knn_state = KnnOperationalState::default();
+        knn_state.trained_models.insert(
+            "model-a".to_string(),
+            os_node::standalone_runtime::KnnModelState {
+                model_id: "model-a".to_string(),
+                training_index: "vectors".to_string(),
+                dimension: 3,
+                description: "transport get model".to_string(),
+                method: serde_json::json!({
+                    "name": "hnsw",
+                    "engine": "lucene",
+                    "space_type": "l2"
+                }),
+                state: "failed".to_string(),
+                task_id: "task-a".to_string(),
+                transport_action: "cluster:admin/knn_training_model_action".to_string(),
+            },
+        );
+        runtime_state.knn_operational_state = Some(knn_state);
+        fs::write(
+            &shared_state_path,
+            serde_json::to_vec_pretty(&runtime_state).unwrap(),
+        )
+        .unwrap();
+        bind_dev_transport_shared_runtime_state_path(shared_state_path.clone());
+
+        let request = os_transport::action::GetModelRequestWire {
+            model_id: "model-a".to_string(),
+            ..os_transport::action::GetModelRequestWire::default()
+        };
+        let frame = os_transport::action::build_get_model_request_message(
+            83,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(get_model_request_supports_local_subset(&frame[6..]));
+        let transport_identity = DevTransportIdentity {
+            cluster_name: "steelsearch-dev".to_string(),
+            node_name: "steel-node".to_string(),
+            node_id: "steel-node-id".to_string(),
+            ephemeral_id: "steel-node-ephemeral".to_string(),
+            transport_address: "127.0.0.1:9300".parse().unwrap(),
+            attributes: Vec::new(),
+            roles: vec!["cluster_manager".to_string(), "data".to_string()],
+            seed_peer_identity: None,
+            seed_peer_identities: Vec::new(),
+            coordination_state: Arc::new(Mutex::new(DevTransportCoordinationState::default())),
+            remote_transport_queue_gate: Arc::new(RemoteTransportQueueGate::new(1, 1000)),
+            task_queue_state: None,
+        };
+        let mut stream = RecordingTransportConnection { writes: Vec::new() };
+
+        let handled = handle_subsequent_transport_request(
+            &mut stream,
+            &frame[6..],
+            &transport_identity,
+            None,
+        )
+        .unwrap();
+
+        assert!(handled);
+        let mut response_frame = BytesMut::from(&stream.writes[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut response_frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected get model response message");
+        };
+        let response = os_transport::action::read_get_model_response_message(&message).unwrap();
+        assert_eq!(response.model_id, "model-a");
+        assert_eq!(response.engine, "lucene");
+        assert_eq!(response.space_type, "l2");
+        assert_eq!(response.dimension, 3);
+        assert_eq!(response.state, "failed");
+        assert_eq!(response.description, "transport get model");
+        assert_eq!(response.model_blob, None);
         let _ = fs::remove_file(shared_state_path);
     }
 

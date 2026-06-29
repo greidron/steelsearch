@@ -387,8 +387,8 @@
       "transport_action": "GetModelTransportAction",
       "request_wire_type": "GetModelRequest",
       "response_wire_type": "GetModelResponse",
-      "disposition": "rejected",
-      "reason": "Get-model transport execution requires model system-index lookup, Model wire parsing, model blob handling, and response rendering"
+      "disposition": "implemented",
+      "reason": "Get-model transport adapter validates a local model id, reads eligible model metadata from shared runtime state, and renders the supported OpenSearch Model response payload without synthetic blobs"
     },
     {
       "action_name": "cluster:admin/knn_delete_model_action",

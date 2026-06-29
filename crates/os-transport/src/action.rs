@@ -2065,8 +2065,8 @@ pub fn classify_opensearch_transport_action(
         },
         GET_MODEL_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
-            disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "get-model transport execution requires model system-index lookup, Model wire parsing, model blob handling, and response rendering",
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "get-model transport adapter validates a local model id, reads eligible model metadata from shared runtime state, and renders the supported OpenSearch Model response payload without synthetic blobs",
         },
         DELETE_MODEL_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -20172,68 +20172,119 @@ impl GetModelRequestWire {
     }
 
     pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        self.validate_supported_execution_subset()?;
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "get model execution",
-            reason: "get-model transport execution requires model system-index lookup, Model wire parsing, model blob handling, and response rendering",
+            reason:
+                "use validate_supported_execution_subset for the implemented local get-model adapter",
         })
+    }
+
+    pub fn validate_supported_execution_subset(&self) -> Result<(), TransportActionWireError> {
+        if self.model_id.trim().is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get model id",
+                reason: "OpenSearch get-model requests require a model id",
+            });
+        }
+        Ok(())
     }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct GetModelResponseWire {
-    pub model_payload_present: bool,
+    pub engine: String,
+    pub space_type: String,
+    pub dimension: i32,
+    pub state: String,
+    pub timestamp: String,
+    pub description: String,
+    pub error: String,
+    pub model_blob: Option<Vec<u8>>,
+    pub model_id: String,
 }
 
 impl Default for GetModelResponseWire {
     fn default() -> Self {
         Self {
-            model_payload_present: true,
+            engine: "nmslib".to_string(),
+            space_type: "l2".to_string(),
+            dimension: 1,
+            state: "created".to_string(),
+            timestamp: "1970-01-01T00:00:00Z".to_string(),
+            description: String::new(),
+            error: String::new(),
+            model_blob: None,
+            model_id: "model-000001".to_string(),
         }
     }
 }
 
 impl GetModelResponseWire {
     pub fn write(&self, output: &mut StreamOutput) {
-        if self.model_payload_present {
-            output.write_string("nmslib");
-            output.write_string("l2");
-            output.write_i32(1);
-            output.write_string("created");
-            output.write_string("1970-01-01T00:00:00Z");
-            output.write_string("");
-            output.write_string("");
-            output.write_bool(false);
-            output.write_string("model-000001");
+        output.write_string(&self.engine);
+        output.write_string(&self.space_type);
+        output.write_i32(self.dimension);
+        output.write_string(&self.state);
+        output.write_string(&self.timestamp);
+        output.write_string(&self.description);
+        output.write_string(&self.error);
+        match &self.model_blob {
+            Some(bytes) => {
+                output.write_bool(true);
+                output.write_bytes_reference(bytes);
+            }
+            None => output.write_bool(false),
         }
+        output.write_string(&self.model_id);
     }
 
     pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
         let mut input = StreamInput::new(bytes);
-        let remaining = input.remaining();
-        let model_payload_present = if remaining > 0 {
-            let _ = input.read_bytes(remaining)?;
-            true
-        } else {
-            false
-        };
-        let response = Self {
-            model_payload_present,
-        };
-        require_no_trailing_bytes(&input)?;
-        Ok(response)
-    }
-
-    pub fn reject_unsupported_rendering(&self) -> Result<(), TransportActionWireError> {
-        if !self.model_payload_present {
+        if input.remaining() == 0 {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "get model missing model",
                 reason: "OpenSearch GetModelResponse requires a Model payload",
             });
         }
-        Err(TransportActionWireError::UnsupportedWireShape {
-            shape: "get model response rendering",
-            reason: "GetModelResponse rendering requires KNN ModelMetadata parsing, optional model blob handling, model id rendering, and xcontent rendering",
-        })
+        let response = Self {
+            engine: input.read_string()?,
+            space_type: input.read_string()?,
+            dimension: input.read_i32()?,
+            state: input.read_string()?,
+            timestamp: input.read_string()?,
+            description: input.read_string()?,
+            error: input.read_string()?,
+            model_blob: if input.read_bool()? {
+                Some(input.read_bytes_reference()?.to_vec())
+            } else {
+                None
+            },
+            model_id: input.read_string()?,
+        };
+        require_no_trailing_bytes(&input)?;
+        response.validate_supported_rendering_subset()?;
+        Ok(response)
+    }
+
+    pub fn reject_unsupported_rendering(&self) -> Result<(), TransportActionWireError> {
+        self.validate_supported_rendering_subset()
+    }
+
+    pub fn validate_supported_rendering_subset(&self) -> Result<(), TransportActionWireError> {
+        if self.model_id.trim().is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get model response model id",
+                reason: "OpenSearch GetModelResponse Model payload requires a model id",
+            });
+        }
+        if self.dimension < 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get model response dimension",
+                reason: "OpenSearch GetModelResponse Model dimension must be non-negative",
+            });
+        }
+        Ok(())
     }
 }
 
@@ -62243,7 +62294,7 @@ mod tests {
     }
 
     #[test]
-    fn get_model_request_wire_round_trips_and_rejects_execution_boundary() {
+    fn get_model_request_wire_round_trips_and_validates_local_subset() {
         let request = GetModelRequestWire {
             parent_task_node: "cluster-manager".to_string(),
             parent_task_id: Some(55),
@@ -62254,6 +62305,7 @@ mod tests {
 
         let decoded = GetModelRequestWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, request);
+        decoded.validate_supported_execution_subset().unwrap();
         assert!(matches!(
             decoded.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
@@ -62269,43 +62321,76 @@ mod tests {
             GetModelRequestWire::read(output.freeze()),
             Err(TransportActionWireError::TrailingBytes(1))
         ));
+
+        let blank_model_id = GetModelRequestWire {
+            model_id: String::new(),
+            ..GetModelRequestWire::default()
+        };
+        assert!(matches!(
+            blank_model_id.validate_supported_execution_subset(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get model id",
+                ..
+            })
+        ));
     }
 
     #[test]
-    fn get_model_response_wire_detects_model_payload_and_rejects_rendering() {
+    fn get_model_response_wire_round_trips_supported_model_payload() {
         let response = GetModelResponseWire {
-            model_payload_present: true,
+            engine: "lucene".to_string(),
+            space_type: "l2".to_string(),
+            dimension: 3,
+            state: "created".to_string(),
+            timestamp: "2026-06-29T00:00:00Z".to_string(),
+            description: "transport model".to_string(),
+            error: String::new(),
+            model_blob: Some(vec![1, 2, 3, 4]),
+            model_id: "model-a".to_string(),
         };
         let mut output = StreamOutput::new();
         response.write(&mut output);
 
         let decoded = GetModelResponseWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, response);
+        decoded.reject_unsupported_rendering().unwrap();
+
+        let output = StreamOutput::new();
         assert!(matches!(
-            decoded.reject_unsupported_rendering(),
+            GetModelResponseWire::read(output.freeze()),
             Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "get model response rendering",
+                shape: "get model missing model",
                 ..
             })
         ));
 
-        let missing_model = GetModelResponseWire {
-            model_payload_present: false,
+        let blank_model_id = GetModelResponseWire {
+            model_id: String::new(),
+            ..GetModelResponseWire::default()
         };
-        let mut output = StreamOutput::new();
-        missing_model.write(&mut output);
-        let decoded = GetModelResponseWire::read(output.freeze()).unwrap();
         assert!(matches!(
-            decoded.reject_unsupported_rendering(),
+            blank_model_id.reject_unsupported_rendering(),
             Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "get model missing model",
+                shape: "get model response model id",
+                ..
+            })
+        ));
+
+        let negative_dimension = GetModelResponseWire {
+            dimension: -1,
+            ..GetModelResponseWire::default()
+        };
+        assert!(matches!(
+            negative_dimension.reject_unsupported_rendering(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get model response dimension",
                 ..
             })
         ));
     }
 
     #[test]
-    fn get_model_transport_messages_bind_rejected_action_frame_and_response() {
+    fn get_model_transport_messages_bind_implemented_action_frame_and_response() {
         let request = GetModelRequestWire::default();
         let mut frame =
             build_get_model_request_message(55, OPENSEARCH_3_7_0_TRANSPORT, &request).unwrap();
@@ -62316,18 +62401,13 @@ mod tests {
             classify_opensearch_transport_request_message(&message)
                 .unwrap()
                 .disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(read_get_model_request_message(&message).unwrap(), request);
-        assert!(matches!(
-            read_get_model_request_message(&message)
-                .unwrap()
-                .reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "get model execution",
-                ..
-            })
-        ));
+        read_get_model_request_message(&message)
+            .unwrap()
+            .validate_supported_execution_subset()
+            .unwrap();
 
         let response = GetModelResponseWire::default();
         let mut frame =

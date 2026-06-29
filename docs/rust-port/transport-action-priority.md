@@ -177,15 +177,15 @@ The source-derived transport inventory currently has 160 rows:
 
 | Status | Count | Meaning |
 | --- | ---: | --- |
-| `implemented` | 150 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
-| `partial` | 10 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
+| `implemented` | 151 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
+| `partial` | 9 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
 | `planned` | 0 | No source-derived transport action remains unclassified. |
 
-The k-NN plugin action sweep is complete at the boundary layer. Five of 12
+The k-NN plugin action sweep is complete at the boundary layer. Six of 12
 registrations from
 `/home/ubuntu/k-NN/src/main/java/org/opensearch/knn/plugin/KNNPlugin.java`
 lines 348-359 are now represented as `implemented` rows for bounded local-node
-stats, warmup, training-job route decision info, clear-cache, and
+stats, warmup, training-job route decision info, get-model, clear-cache, and
 remove-model-from-cache subsets; the remaining k-NN actions stay `partial` with
 request/response wire coverage and fail-closed admission. This is not a claim
 that the remaining k-NN transport actions execute their full OpenSearch
@@ -1073,13 +1073,17 @@ The get-model boundary covers:
 
 - OpenSearch k-NN `GetModelRequest` parent task and model id at the wire
   decode/build layer;
-- OpenSearch k-NN `GetModelResponse` model payload presence at the wire
-  decode/build layer while treating the full `Model` body as opaque;
-- explicit fail-closed classification for `cluster:admin/knn_get_model_action`
-  until model system-index lookup, KNN `ModelMetadata` parsing, optional model
-  blob handling, model id rendering, and response rendering are implemented;
-- explicit rejection for missing model response payloads, opaque model response
-  rendering, and get-model execution.
+- OpenSearch k-NN `GetModelResponse` supported `Model` payload fields at the
+  wire decode/build layer: engine, space type, dimension, state, timestamp,
+  description, error, optional model blob, and model id;
+- implemented classification for the bounded local model lookup subset:
+  non-empty model id, existing eligible shared-runtime model state, supported
+  model metadata/body rendering, and model id rendering. Runtime entries in
+  `created` state are not admitted unless a real model blob is available, so
+  the transport adapter does not synthesize blob bytes;
+- explicit rejection for blank model ids, missing model response payloads,
+  blank response model ids, negative dimensions, and unresolved local model
+  ids.
 
 The delete-model boundary covers:
 
