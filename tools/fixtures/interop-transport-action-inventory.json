@@ -738,8 +738,8 @@
       "transport_action": "TransportRolloverAction",
       "request_wire_type": "RolloverRequest",
       "response_wire_type": "RolloverResponse",
-      "disposition": "rejected",
-      "reason": "Rollover transport execution requires alias or data-stream metadata validation, condition evaluation, index creation, and response rendering"
+      "disposition": "implemented",
+      "reason": "Rollover transport adapter validates the bounded alias subset, creates the next manifest index, moves the alias, and renders an OpenSearch-shaped rollover response"
     },
     {
       "action_name": "indices:admin/delete",

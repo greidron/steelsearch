@@ -2825,6 +2825,32 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end_at_ms,
         )?;
     } else if is_request
+        && normalized_action_hint == Some("indices:admin/rollover")
+        && rollover_request_supports_manifest_subset(&body)
+    {
+        let response = build_rollover_response(request_id, header_version_id, &body);
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("indices:admin/rollover"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request
         && normalized_action_hint == Some("indices:admin/auto_create")
         && auto_create_request_supports_manifest_subset(&body)
     {
@@ -12094,6 +12120,27 @@ fn build_auto_create_response(request_id: i64, header_version_id: u32, body: &[u
     .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
 }
 
+fn build_rollover_response(request_id: i64, header_version_id: u32, body: &[u8]) -> Vec<u8> {
+    let Some(request) = decode_rollover_request_from_transport_body(body) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    let Some((old_index, new_index)) = rollover_request_matches_manifest_subset(&request) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    if !apply_transport_rollover_to_manifest(&request, &old_index, &new_index) {
+        return build_empty_transport_response(request_id, header_version_id);
+    }
+    let response =
+        os_transport::action::OpenSearchRolloverResponseWire::success(old_index, new_index);
+    os_transport::action::build_opensearch_rollover_response_message(
+        request_id,
+        Version::from_id(header_version_id as i32),
+        &response,
+    )
+    .map(|frame| frame.to_vec())
+    .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
+}
+
 fn build_delete_index_response(request_id: i64, header_version_id: u32, body: &[u8]) -> Vec<u8> {
     let Some(request) = decode_delete_index_request_from_transport_body(body) else {
         return build_empty_transport_response(request_id, header_version_id);
@@ -12201,6 +12248,11 @@ fn auto_create_request_supports_manifest_subset(body: &[u8]) -> bool {
         .is_some_and(|request| auto_create_request_matches_manifest_subset(&request))
 }
 
+fn rollover_request_supports_manifest_subset(body: &[u8]) -> bool {
+    decode_rollover_request_from_transport_body(body)
+        .is_some_and(|request| rollover_request_matches_manifest_subset(&request).is_some())
+}
+
 fn create_index_request_matches_manifest_subset(
     request: &os_transport::action::OpenSearchCreateIndexRequestWire,
 ) -> bool {
@@ -12217,6 +12269,27 @@ fn auto_create_request_matches_manifest_subset(
         .is_ok()
         && transport_create_index_name_is_valid(&request.index)
         && !transport_index_exists(&request.index)
+}
+
+fn rollover_request_matches_manifest_subset(
+    request: &os_transport::action::OpenSearchRolloverRequestWire,
+) -> Option<(String, String)> {
+    request.validate_supported_execution_subset().ok()?;
+    if !transport_delete_index_name_is_concrete(&request.rollover_target) {
+        return None;
+    }
+    if manifest_rollover_target_has_template_alias_conflict(&request.rollover_target) {
+        return None;
+    }
+    let old_index = manifest_rollover_write_index(&request.rollover_target)?;
+    let new_index = request
+        .new_index_name
+        .clone()
+        .unwrap_or_else(|| rollover_next_index_name(&old_index).unwrap_or_default());
+    if !transport_create_index_name_is_valid(&new_index) || transport_index_exists(&new_index) {
+        return None;
+    }
+    Some((old_index, new_index))
 }
 
 fn delete_index_request_matches_manifest_subset(
@@ -12286,6 +12359,13 @@ fn decode_auto_create_request_from_transport_body(
     os_transport::action::read_opensearch_auto_create_request_message(&message).ok()
 }
 
+fn decode_rollover_request_from_transport_body(
+    body: &[u8],
+) -> Option<os_transport::action::OpenSearchRolloverRequestWire> {
+    let message = decode_transport_message_from_body(body)?;
+    os_transport::action::read_opensearch_rollover_request_message(&message).ok()
+}
+
 fn decode_delete_index_request_from_transport_body(
     body: &[u8],
 ) -> Option<os_transport::action::OpenSearchDeleteIndexRequestWire> {
@@ -12352,6 +12432,188 @@ fn transport_index_exists(index: &str) -> bool {
         .expect("dev transport metadata manifest lock poisoned")["indices"]
         .as_object()
         .is_some_and(|indices| indices.contains_key(index))
+}
+
+fn manifest_rollover_write_index(alias: &str) -> Option<String> {
+    let bindings = dev_transport_pit_bindings();
+    let manifest = bindings
+        .metadata_manifest
+        .lock()
+        .expect("dev transport metadata manifest lock poisoned");
+    let indices = manifest["indices"].as_object()?;
+    let mut matches = indices
+        .iter()
+        .filter_map(|(index, entry)| {
+            entry
+                .get("aliases")
+                .and_then(Value::as_object)
+                .and_then(|aliases| aliases.get(alias))
+                .map(|metadata| (index.clone(), metadata.clone()))
+        })
+        .collect::<Vec<_>>();
+    if matches.is_empty() {
+        return None;
+    }
+    let explicit = matches
+        .iter()
+        .filter(|(_, metadata)| alias_metadata_write_index(metadata) == Some(true))
+        .map(|(index, _)| index.clone())
+        .collect::<Vec<_>>();
+    if explicit.len() == 1 {
+        return explicit.into_iter().next();
+    }
+    if explicit.len() > 1 {
+        return None;
+    }
+    if matches.len() == 1 {
+        return matches.pop().map(|(index, _)| index);
+    }
+    None
+}
+
+fn alias_metadata_write_index(metadata: &Value) -> Option<bool> {
+    metadata
+        .get("is_write_index")
+        .or_else(|| metadata.get("write_index"))
+        .or_else(|| metadata.get("writeIndex"))
+        .and_then(Value::as_bool)
+}
+
+fn rollover_next_index_name(source_index: &str) -> Option<String> {
+    let (prefix, suffix) = source_index.rsplit_once('-')?;
+    if suffix.is_empty() || !suffix.chars().all(|ch| ch.is_ascii_digit()) {
+        return None;
+    }
+    let next = suffix.parse::<u64>().ok()?.checked_add(1)?;
+    Some(format!(
+        "{prefix}-{next:0width$}",
+        width = suffix.len().max(6)
+    ))
+}
+
+fn manifest_rollover_target_has_template_alias_conflict(alias: &str) -> bool {
+    let bindings = dev_transport_pit_bindings();
+    let manifest = bindings
+        .metadata_manifest
+        .lock()
+        .expect("dev transport metadata manifest lock poisoned");
+    let has_conflict =
+        manifest_template_aliases(&manifest).any(|template_alias| template_alias == alias);
+    has_conflict
+}
+
+fn manifest_template_aliases<'a>(manifest: &'a Value) -> Box<dyn Iterator<Item = &'a str> + 'a> {
+    let legacy = manifest
+        .pointer("/templates/legacy_index_templates")
+        .and_then(Value::as_object)
+        .into_iter()
+        .flat_map(|templates| templates.values())
+        .flat_map(|template| template.get("aliases").and_then(Value::as_object))
+        .flat_map(|aliases| aliases.keys().map(String::as_str));
+    let composable = manifest
+        .pointer("/templates/index_templates")
+        .and_then(Value::as_object)
+        .into_iter()
+        .flat_map(|templates| templates.values())
+        .filter_map(|template| {
+            template
+                .get("template")
+                .or_else(|| template.get("index_template"))
+                .and_then(|inner| inner.get("aliases"))
+                .and_then(Value::as_object)
+        })
+        .flat_map(|aliases| aliases.keys().map(String::as_str));
+    let composable_nested = manifest
+        .pointer("/templates/index_templates")
+        .and_then(Value::as_object)
+        .into_iter()
+        .flat_map(|templates| templates.values())
+        .filter_map(|template| {
+            template
+                .get("index_template")
+                .and_then(|inner| inner.get("template"))
+                .and_then(|inner| inner.get("aliases"))
+                .and_then(Value::as_object)
+        })
+        .flat_map(|aliases| aliases.keys().map(String::as_str));
+    Box::new(legacy.chain(composable).chain(composable_nested))
+}
+
+fn apply_transport_rollover_to_manifest(
+    request: &os_transport::action::OpenSearchRolloverRequestWire,
+    old_index: &str,
+    new_index: &str,
+) -> bool {
+    let bindings = dev_transport_pit_bindings();
+    let mut manifest = bindings
+        .metadata_manifest
+        .lock()
+        .expect("dev transport metadata manifest lock poisoned");
+    let Some(indices) = manifest["indices"].as_object_mut() else {
+        return false;
+    };
+    if !indices.contains_key(old_index) || indices.contains_key(new_index) {
+        return false;
+    }
+    let Some(old_aliases) = indices
+        .get(old_index)
+        .and_then(|entry| entry.get("aliases"))
+        .and_then(Value::as_object)
+    else {
+        return false;
+    };
+    let Some(old_alias_metadata) = old_aliases.get(&request.rollover_target).cloned() else {
+        return false;
+    };
+    let explicit_write_index = alias_metadata_write_index(&old_alias_metadata) == Some(true);
+    let mut new_alias_metadata = old_alias_metadata.clone();
+    if explicit_write_index {
+        ensure_alias_metadata_object(&mut new_alias_metadata);
+        new_alias_metadata["is_write_index"] = serde_json::json!(true);
+    } else if let Some(object) = new_alias_metadata.as_object_mut() {
+        object.remove("is_write_index");
+        object.remove("write_index");
+        object.remove("writeIndex");
+    }
+    let mut new_aliases = serde_json::Map::new();
+    new_aliases.insert(request.rollover_target.clone(), new_alias_metadata);
+    indices.insert(
+        new_index.to_string(),
+        serde_json::json!({
+            "settings": {},
+            "mappings": {},
+            "aliases": Value::Object(new_aliases),
+            "state": "open"
+        }),
+    );
+    let Some(old_entry) = indices.get_mut(old_index) else {
+        return false;
+    };
+    let Some(old_aliases) = old_entry.get_mut("aliases").and_then(Value::as_object_mut) else {
+        return false;
+    };
+    if explicit_write_index {
+        let Some(old_alias_metadata) = old_aliases.get_mut(&request.rollover_target) else {
+            return false;
+        };
+        ensure_alias_metadata_object(old_alias_metadata);
+        old_alias_metadata["is_write_index"] = serde_json::json!(false);
+    } else {
+        old_aliases.remove(&request.rollover_target);
+    }
+    drop(manifest);
+    bindings
+        .created_indices
+        .lock()
+        .expect("dev transport created indices lock poisoned")
+        .insert(new_index.to_string());
+    true
+}
+
+fn ensure_alias_metadata_object(metadata: &mut Value) {
+    if !metadata.is_object() {
+        *metadata = serde_json::json!({});
+    }
 }
 
 fn insert_transport_created_index(
@@ -25968,6 +26230,9 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
                 body,
             ))
         }
+        Some("indices:admin/rollover") if rollover_request_supports_manifest_subset(body) => {
+            Some(build_rollover_response(request_id, header_version_id, body))
+        }
         Some("indices:admin/auto_create") if auto_create_request_supports_manifest_subset(body) => {
             Some(build_auto_create_response(
                 request_id,
@@ -33750,6 +34015,280 @@ mod tests {
         assert!(!auto_create_request_supports_manifest_subset(
             &duplicate_frame[6..]
         ));
+    }
+
+    #[test]
+    fn rollover_transport_route_moves_single_alias_and_renders_response() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        let bindings = dev_transport_pit_bindings();
+        bindings
+            .created_indices
+            .lock()
+            .expect("dev transport created indices lock poisoned")
+            .clear();
+        *bindings
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned") = serde_json::json!({
+            "indices": {
+                "logs-000001": {
+                    "settings": {},
+                    "mappings": {},
+                    "aliases": {
+                        "logs-write": {}
+                    },
+                    "state": "open"
+                }
+            },
+            "templates": {
+                "legacy_index_templates": {},
+                "component_templates": {},
+                "index_templates": {}
+            }
+        });
+
+        let request = os_transport::action::OpenSearchRolloverRequestWire {
+            rollover_target: "logs-write".to_string(),
+            ..os_transport::action::OpenSearchRolloverRequestWire::default()
+        };
+        let frame = os_transport::action::build_opensearch_rollover_request_message(
+            91,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(rollover_request_supports_manifest_subset(&frame[6..]));
+
+        let response =
+            build_rollover_response(91, OPENSEARCH_3_7_0_TRANSPORT.id() as u32, &frame[6..]);
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected rollover response message");
+        };
+        let response =
+            os_transport::action::read_opensearch_rollover_response_message(&message).unwrap();
+        assert_eq!(response.old_index, "logs-000001");
+        assert_eq!(response.new_index, "logs-000002");
+        assert!(response.acknowledged);
+        assert!(response.rolled_over);
+        assert!(response.shards_acknowledged);
+        assert!(response.condition_status.is_empty());
+
+        let manifest = bindings
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned");
+        assert!(manifest["indices"]["logs-000001"]["aliases"]
+            .get("logs-write")
+            .is_none());
+        assert!(manifest["indices"]["logs-000002"]["aliases"]
+            .get("logs-write")
+            .is_some());
+        assert!(bindings
+            .created_indices
+            .lock()
+            .expect("dev transport created indices lock poisoned")
+            .contains("logs-000002"));
+    }
+
+    #[test]
+    fn rollover_transport_route_preserves_explicit_write_index_alias() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        let bindings = dev_transport_pit_bindings();
+        bindings
+            .created_indices
+            .lock()
+            .expect("dev transport created indices lock poisoned")
+            .clear();
+        *bindings
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned") = serde_json::json!({
+            "indices": {
+                "logs-000009": {
+                    "settings": {},
+                    "mappings": {},
+                    "aliases": {
+                        "logs-write": {
+                            "is_write_index": true
+                        }
+                    },
+                    "state": "open"
+                },
+                "logs-000008": {
+                    "settings": {},
+                    "mappings": {},
+                    "aliases": {
+                        "logs-write": {
+                            "is_write_index": false
+                        }
+                    },
+                    "state": "open"
+                }
+            },
+            "templates": {
+                "legacy_index_templates": {},
+                "component_templates": {},
+                "index_templates": {}
+            }
+        });
+
+        let request = os_transport::action::OpenSearchRolloverRequestWire {
+            rollover_target: "logs-write".to_string(),
+            new_index_name: Some("logs-000010".to_string()),
+            ..os_transport::action::OpenSearchRolloverRequestWire::default()
+        };
+        let frame = os_transport::action::build_opensearch_rollover_request_message(
+            92,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(rollover_request_supports_manifest_subset(&frame[6..]));
+
+        let response =
+            build_rollover_response(92, OPENSEARCH_3_7_0_TRANSPORT.id() as u32, &frame[6..]);
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected rollover response message");
+        };
+        let response =
+            os_transport::action::read_opensearch_rollover_response_message(&message).unwrap();
+        assert_eq!(response.old_index, "logs-000009");
+        assert_eq!(response.new_index, "logs-000010");
+
+        let manifest = bindings
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned");
+        assert_eq!(
+            manifest["indices"]["logs-000009"]["aliases"]["logs-write"]["is_write_index"],
+            false
+        );
+        assert_eq!(
+            manifest["indices"]["logs-000010"]["aliases"]["logs-write"]["is_write_index"],
+            true
+        );
+    }
+
+    #[test]
+    fn rollover_transport_route_rejects_ambiguous_or_existing_target() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        let bindings = dev_transport_pit_bindings();
+        bindings
+            .created_indices
+            .lock()
+            .expect("dev transport created indices lock poisoned")
+            .clear();
+        *bindings
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned") = serde_json::json!({
+            "indices": {
+                "logs-000001": {
+                    "settings": {},
+                    "mappings": {},
+                    "aliases": {
+                        "logs-write": {}
+                    }
+                },
+                "logs-000002": {
+                    "settings": {},
+                    "mappings": {},
+                    "aliases": {
+                        "logs-write": {}
+                    }
+                }
+            },
+            "templates": {
+                "legacy_index_templates": {},
+                "component_templates": {},
+                "index_templates": {}
+            }
+        });
+
+        let request = os_transport::action::OpenSearchRolloverRequestWire {
+            rollover_target: "logs-write".to_string(),
+            ..os_transport::action::OpenSearchRolloverRequestWire::default()
+        };
+        let frame = os_transport::action::build_opensearch_rollover_request_message(
+            93,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(!rollover_request_supports_manifest_subset(&frame[6..]));
+
+        *bindings
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned") = serde_json::json!({
+            "indices": {
+                "logs-000001": {
+                    "settings": {},
+                    "mappings": {},
+                    "aliases": {
+                        "logs-write": {}
+                    }
+                },
+                "logs-000002": {
+                    "settings": {},
+                    "mappings": {},
+                    "aliases": {}
+                }
+            },
+            "templates": {
+                "legacy_index_templates": {},
+                "component_templates": {},
+                "index_templates": {}
+            }
+        });
+        assert!(!rollover_request_supports_manifest_subset(&frame[6..]));
+
+        *bindings
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned") = serde_json::json!({
+            "indices": {
+                "logs-000001": {
+                    "settings": {},
+                    "mappings": {},
+                    "aliases": {
+                        "logs-write": {}
+                    }
+                }
+            },
+            "templates": {
+                "legacy_index_templates": {},
+                "component_templates": {},
+                "index_templates": {
+                    "logs-template": {
+                        "index_template": {
+                            "template": {
+                                "aliases": {
+                                    "logs-write": {}
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        });
+        assert!(!rollover_request_supports_manifest_subset(&frame[6..]));
     }
 
     #[test]

@@ -1540,13 +1540,15 @@ The rollover boundary covers:
   acknowledgement timeout, rollover target, optional new index name, `dryRun`,
   zero-condition marker, and nested `CreateIndexRequest` at the OpenSearch 3.x
   wire decode/build layer;
-- explicit fail-closed classification for `indices:admin/rollover` until alias
-  or data-stream metadata validation, condition evaluation, index creation, and
-  rollover response rendering are implemented;
+- implemented classification for the bounded alias subset: default timeouts,
+  concrete alias target, zero conditions, non-dry-run execution, `_na_` nested
+  create-index placeholder, single manifest write-index resolution, generated
+  or explicit target index creation, alias movement, and OpenSearch-shaped
+  `RolloverResponse` rendering;
 - explicit rejection for custom cluster-manager timeouts, custom
   acknowledgement timeouts, missing rollover targets, dry-run requests,
   condition payloads, unsupported nested create-index shapes, and rollover
-  execution.
+  requests outside the bounded manifest-backed alias subset.
 
 The delete-index boundary covers:
 
@@ -4599,7 +4601,7 @@ boundary work; the future performance-sensitive work is source index metadata
 validation, target index metadata mutation, shard allocation, and resize
 response rendering.
 
-Current rollover reject wire microbenchmark:
+Previous rollover reject wire microbenchmark:
 
 ```text
 cargo run -p os-transport --release --bin rollover-reject-wire-benchmark
@@ -4609,14 +4611,10 @@ rollover_reject_validation iterations=400000 elapsed_ms=343.380 ops_per_second=1
 rollover_reject_wire_bottleneck_ops_per_second=898578.64
 ```
 
-The current rollover fail-closed boundary bottleneck is request encode. The
-path writes the acknowledged-request envelope, rollover target, optional new
-index marker, dry-run flag, zero-condition marker, and nested
-`CreateIndexRequest` before rejecting execution. At roughly 0.90M ops/s in the
-latest local release run, the current overhead is still request wire boundary
-work; future performance-sensitive work is alias or data-stream metadata
-validation, condition evaluation, index creation, and rollover response
-rendering.
+The previous fail-closed rollover boundary bottleneck was request encode. The
+now-implemented transport adapter adds manifest write-index lookup, target
+index creation, alias mutation, and `RolloverResponse` rendering; its latest
+adapter-level benchmark still needs to be captured separately.
 
 Current delete-index wire microbenchmark:
 

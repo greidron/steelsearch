@@ -2227,8 +2227,8 @@ pub fn classify_opensearch_transport_action(
         },
         OPENSEARCH_ROLLOVER_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
-            disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "rollover transport execution requires alias or data-stream metadata validation, condition evaluation, index creation, and response rendering",
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "rollover transport adapter validates the bounded alias subset, creates the next manifest index, moves the alias, and renders an OpenSearch-shaped rollover response",
         },
         OPENSEARCH_DELETE_INDEX_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -11257,6 +11257,35 @@ pub fn read_opensearch_rollover_request_message(
         });
     }
     OpenSearchRolloverRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_opensearch_rollover_response_message(
+    request_id: i64,
+    version: Version,
+    response: &OpenSearchRolloverResponseWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    response.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::response(),
+        version,
+        variable_header: BytesMut::new(),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_rollover_response_message(
+    message: &TransportMessage,
+) -> Result<OpenSearchRolloverResponseWire, TransportActionWireError> {
+    if message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "response",
+            actual: message.status.bits(),
+        });
+    }
+    OpenSearchRolloverResponseWire::read(message.body.clone().freeze())
 }
 
 pub fn build_opensearch_delete_index_request_message(
@@ -25167,7 +25196,7 @@ impl OpenSearchRolloverRequestWire {
         Ok(request)
     }
 
-    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+    pub fn validate_supported_execution_subset(&self) -> Result<(), TransportActionWireError> {
         if self.cluster_manager_timeout != TimeValueWire::seconds(30) {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "rollover cluster-manager timeout",
@@ -25199,18 +25228,85 @@ impl OpenSearchRolloverRequestWire {
                 reason: "rollover conditions require named Condition writeable decoding and metadata-backed evaluation",
             });
         }
-        match self.create_index_request.reject_unsupported_execution() {
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "create index execution",
-                ..
-            }) => {}
-            Err(err) => return Err(err),
-            Ok(()) => unreachable!("create-index boundary always rejects execution"),
+        self.create_index_request
+            .validate_supported_execution_subset()?;
+        if self.create_index_request.index != "_na_" {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "rollover nested create index name",
+                reason: "OpenSearch rollover nested create-index request carries the placeholder _na_ index name",
+            });
         }
+        Ok(())
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        self.validate_supported_execution_subset()?;
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "rollover execution",
-            reason: "rollover transport execution requires alias or data-stream metadata validation, condition evaluation, index creation, and response rendering",
+            reason: "use validate_supported_execution_subset for the implemented manifest-backed rollover adapter",
         })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchRolloverResponseWire {
+    pub acknowledged: bool,
+    pub old_index: String,
+    pub new_index: String,
+    pub condition_status: BTreeMap<String, bool>,
+    pub dry_run: bool,
+    pub rolled_over: bool,
+    pub shards_acknowledged: bool,
+}
+
+impl OpenSearchRolloverResponseWire {
+    pub fn success(old_index: impl Into<String>, new_index: impl Into<String>) -> Self {
+        Self {
+            acknowledged: true,
+            old_index: old_index.into(),
+            new_index: new_index.into(),
+            condition_status: BTreeMap::new(),
+            dry_run: false,
+            rolled_over: true,
+            shards_acknowledged: true,
+        }
+    }
+
+    pub fn write(&self, output: &mut StreamOutput) {
+        output.write_bool(self.acknowledged);
+        output.write_string(&self.old_index);
+        output.write_string(&self.new_index);
+        output.write_vint(self.condition_status.len() as i32);
+        for (condition, matched) in &self.condition_status {
+            output.write_string(condition);
+            output.write_bool(*matched);
+        }
+        output.write_bool(self.dry_run);
+        output.write_bool(self.rolled_over);
+        output.write_bool(self.shards_acknowledged);
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let acknowledged = input.read_bool()?;
+        let old_index = input.read_string()?;
+        let new_index = input.read_string()?;
+        let condition_count = read_len(&mut input)?;
+        let mut condition_status = BTreeMap::new();
+        for _ in 0..condition_count {
+            condition_status.insert(input.read_string()?, input.read_bool()?);
+        }
+        let response = Self {
+            acknowledged,
+            old_index,
+            new_index,
+            condition_status,
+            dry_run: input.read_bool()?,
+            rolled_over: input.read_bool()?,
+            shards_acknowledged: input.read_bool()?,
+        };
+        require_no_trailing_bytes(&input)?;
+        Ok(response)
     }
 }
 
@@ -51731,7 +51827,7 @@ mod tests {
         );
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_ROLLOVER_ACTION_NAME).disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_DELETE_INDEX_ACTION_NAME).disposition,
@@ -52076,6 +52172,7 @@ mod tests {
                 || spec.action_name == OPENSEARCH_ANALYZE_ACTION_NAME
                 || spec.action_name == OPENSEARCH_CREATE_INDEX_ACTION_NAME
                 || spec.action_name == OPENSEARCH_AUTO_CREATE_ACTION_NAME
+                || spec.action_name == OPENSEARCH_ROLLOVER_ACTION_NAME
                 || spec.action_name == OPENSEARCH_DELETE_INDEX_ACTION_NAME
                 || spec.action_name == OPENSEARCH_OPEN_INDEX_ACTION_NAME
                 || spec.action_name == OPENSEARCH_CLOSE_INDEX_ACTION_NAME
@@ -52115,7 +52212,6 @@ mod tests {
             if spec.action_name == OPENSEARCH_TERM_VECTORS_ACTION_NAME
                 || spec.action_name == OPENSEARCH_MULTI_TERM_VECTORS_ACTION_NAME
                 || spec.action_name == OPENSEARCH_RESIZE_ACTION_NAME
-                || spec.action_name == OPENSEARCH_ROLLOVER_ACTION_NAME
                 || spec.action_name == OPENSEARCH_SIMULATE_TEMPLATE_ACTION_NAME
                 || spec.action_name == OPENSEARCH_CREATE_VIEW_ACTION_NAME
                 || spec.action_name == OPENSEARCH_DELETE_VIEW_ACTION_NAME
@@ -67212,7 +67308,7 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_rollover_request_wire_round_trips_and_rejects_execution_boundary() {
+    fn opensearch_rollover_request_wire_round_trips_supported_manifest_subset() {
         let request = OpenSearchRolloverRequestWire::default();
         let mut output = StreamOutput::new();
         request.write(&mut output);
@@ -67221,6 +67317,7 @@ mod tests {
         assert_eq!(decoded, request);
         assert_eq!(decoded.rollover_target, "logs-write");
         assert_eq!(decoded.create_index_request.index, "_na_");
+        decoded.validate_supported_execution_subset().unwrap();
         assert!(matches!(
             decoded.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
@@ -67294,6 +67391,7 @@ mod tests {
 
         let create_index_settings = OpenSearchRolloverRequestWire {
             create_index_request: OpenSearchCreateIndexRequestWire {
+                index: "_na_".to_string(),
                 settings: BTreeMap::from([("index.number_of_shards".to_string(), "1".to_string())]),
                 ..OpenSearchCreateIndexRequestWire::default()
             },
@@ -67303,6 +67401,21 @@ mod tests {
             create_index_settings.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "create index settings",
+                ..
+            })
+        ));
+
+        let create_index_name = OpenSearchRolloverRequestWire {
+            create_index_request: OpenSearchCreateIndexRequestWire {
+                index: "logs-000002".to_string(),
+                ..OpenSearchCreateIndexRequestWire::default()
+            },
+            ..OpenSearchRolloverRequestWire::default()
+        };
+        assert!(matches!(
+            create_index_name.validate_supported_execution_subset(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "rollover nested create index name",
                 ..
             })
         ));
@@ -67339,7 +67452,7 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_rollover_transport_messages_bind_rejected_action_frame() {
+    fn opensearch_rollover_transport_messages_bind_supported_action_frame_and_response() {
         let request = OpenSearchRolloverRequestWire::default();
         let mut frame =
             build_opensearch_rollover_request_message(69, OPENSEARCH_3_7_0_TRANSPORT, &request)
@@ -67351,15 +67464,28 @@ mod tests {
             read_opensearch_rollover_request_message(&message).unwrap(),
             request
         );
-        assert!(matches!(
-            read_opensearch_rollover_request_message(&message)
+        read_opensearch_rollover_request_message(&message)
+            .unwrap()
+            .validate_supported_execution_subset()
+            .unwrap();
+        assert_eq!(
+            classify_opensearch_transport_request_message(&message)
                 .unwrap()
-                .reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "rollover execution",
-                ..
-            })
-        ));
+                .disposition,
+            OpenSearchTransportActionDisposition::Implemented
+        );
+
+        let response = OpenSearchRolloverResponseWire::success("logs-000001", "logs-000002");
+        let mut frame =
+            build_opensearch_rollover_response_message(69, OPENSEARCH_3_7_0_TRANSPORT, &response)
+                .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected rollover response message");
+        };
+        assert_eq!(
+            read_opensearch_rollover_response_message(&message).unwrap(),
+            response
+        );
     }
 
     #[test]
