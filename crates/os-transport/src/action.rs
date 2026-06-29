@@ -117,6 +117,17 @@ pub const OPENSEARCH_FREE_SCROLL_CONTEXT_ACTION_NAME: &str =
     "indices:data/read/search[free_context/scroll]";
 pub const OPENSEARCH_CLEAR_SCROLL_CONTEXTS_ACTION_NAME: &str =
     "indices:data/read/search[clear_scroll_contexts]";
+pub const OPENSEARCH_DFS_PHASE_ACTION_NAME: &str = "indices:data/read/search[phase/dfs]";
+pub const OPENSEARCH_QUERY_PHASE_ACTION_NAME: &str = "indices:data/read/search[phase/query]";
+pub const OPENSEARCH_QUERY_ID_PHASE_ACTION_NAME: &str = "indices:data/read/search[phase/query/id]";
+pub const OPENSEARCH_QUERY_SCROLL_PHASE_ACTION_NAME: &str =
+    "indices:data/read/search[phase/query/scroll]";
+pub const OPENSEARCH_QUERY_FETCH_SCROLL_PHASE_ACTION_NAME: &str =
+    "indices:data/read/search[phase/query+fetch/scroll]";
+pub const OPENSEARCH_FETCH_ID_SCROLL_PHASE_ACTION_NAME: &str =
+    "indices:data/read/search[phase/fetch/id/scroll]";
+pub const OPENSEARCH_FETCH_ID_PHASE_ACTION_NAME: &str = "indices:data/read/search[phase/fetch/id]";
+pub const OPENSEARCH_QUERY_CAN_MATCH_ACTION_NAME: &str = "indices:data/read/search[can_match]";
 pub const OPENSEARCH_EXPLAIN_ACTION_NAME: &str = "indices:data/read/explain";
 pub const OPENSEARCH_CREATE_PIT_ACTION_NAME: &str = "indices:data/read/point_in_time/create";
 pub const OPENSEARCH_DELETE_PIT_ACTION_NAME: &str = "indices:data/read/point_in_time/delete";
@@ -796,6 +807,78 @@ pub const OPENSEARCH_PRIORITY_TRANSPORT_ACTIONS: &[OpenSearchPriorityTransportAc
         response_wire_type: "TransportResponse.Empty",
         adapter_stage: "search-scroll",
         next_step: "map clear-all-scroll-context requests onto Rust scroll context lifecycle",
+    },
+    OpenSearchPriorityTransportActionSpec {
+        action_name: OPENSEARCH_DFS_PHASE_ACTION_NAME,
+        action_type: "ShardSearchRequest",
+        transport_action: "SearchTransportService",
+        request_wire_type: "ShardSearchRequest",
+        response_wire_type: "DfsSearchResult",
+        adapter_stage: "search-phase",
+        next_step: "map DFS term-stat collection onto Rust shard search execution",
+    },
+    OpenSearchPriorityTransportActionSpec {
+        action_name: OPENSEARCH_QUERY_PHASE_ACTION_NAME,
+        action_type: "ShardSearchRequest",
+        transport_action: "SearchTransportService",
+        request_wire_type: "ShardSearchRequest",
+        response_wire_type: "QuerySearchResult or QueryFetchSearchResult",
+        adapter_stage: "search-phase",
+        next_step: "replace cached/forwarded Java query-phase response handling with native Rust shard query execution",
+    },
+    OpenSearchPriorityTransportActionSpec {
+        action_name: OPENSEARCH_QUERY_ID_PHASE_ACTION_NAME,
+        action_type: "QuerySearchRequest",
+        transport_action: "SearchTransportService",
+        request_wire_type: "QuerySearchRequest",
+        response_wire_type: "QuerySearchResult",
+        adapter_stage: "search-phase",
+        next_step: "map query-by-context requests onto Rust reader contexts",
+    },
+    OpenSearchPriorityTransportActionSpec {
+        action_name: OPENSEARCH_QUERY_SCROLL_PHASE_ACTION_NAME,
+        action_type: "InternalScrollSearchRequest",
+        transport_action: "SearchTransportService",
+        request_wire_type: "InternalScrollSearchRequest",
+        response_wire_type: "ScrollQuerySearchResult",
+        adapter_stage: "search-phase",
+        next_step: "map scroll query phase requests onto Rust scroll reader contexts",
+    },
+    OpenSearchPriorityTransportActionSpec {
+        action_name: OPENSEARCH_QUERY_FETCH_SCROLL_PHASE_ACTION_NAME,
+        action_type: "InternalScrollSearchRequest",
+        transport_action: "SearchTransportService",
+        request_wire_type: "InternalScrollSearchRequest",
+        response_wire_type: "ScrollQueryFetchSearchResult",
+        adapter_stage: "search-phase",
+        next_step: "map scroll query-fetch phase requests onto Rust scroll reader contexts",
+    },
+    OpenSearchPriorityTransportActionSpec {
+        action_name: OPENSEARCH_FETCH_ID_SCROLL_PHASE_ACTION_NAME,
+        action_type: "ShardFetchRequest",
+        transport_action: "SearchTransportService",
+        request_wire_type: "ShardFetchRequest",
+        response_wire_type: "FetchSearchResult",
+        adapter_stage: "search-phase",
+        next_step: "map scroll fetch requests onto Rust reader contexts and fetch rendering",
+    },
+    OpenSearchPriorityTransportActionSpec {
+        action_name: OPENSEARCH_FETCH_ID_PHASE_ACTION_NAME,
+        action_type: "ShardFetchSearchRequest",
+        transport_action: "SearchTransportService",
+        request_wire_type: "ShardFetchSearchRequest",
+        response_wire_type: "FetchSearchResult",
+        adapter_stage: "search-phase",
+        next_step: "map fetch-by-context requests onto Rust reader contexts and fetch rendering",
+    },
+    OpenSearchPriorityTransportActionSpec {
+        action_name: OPENSEARCH_QUERY_CAN_MATCH_ACTION_NAME,
+        action_type: "ShardSearchRequest",
+        transport_action: "SearchTransportService",
+        request_wire_type: "ShardSearchRequest",
+        response_wire_type: "SearchService.CanMatchResponse",
+        adapter_stage: "search-phase",
+        next_step: "map can-match rewrite checks onto Rust query parsing and shard metadata",
     },
     OpenSearchPriorityTransportActionSpec {
         action_name: OPENSEARCH_EXPLAIN_ACTION_NAME,
@@ -2469,6 +2552,46 @@ pub fn classify_opensearch_transport_action(
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Implemented,
             reason: "clear-all-scroll-contexts transport adapter decodes an empty transport request, clears local scroll contexts, and renders TransportResponse.Empty",
+        },
+        OPENSEARCH_DFS_PHASE_ACTION_NAME => OpenSearchTransportDispatchDecision {
+            action_name: action_name.to_string(),
+            disposition: OpenSearchTransportActionDisposition::Rejected,
+            reason: "DFS phase transport execution requires ShardSearchRequest decode, distributed term-stat collection, and DfsSearchResult rendering",
+        },
+        OPENSEARCH_QUERY_PHASE_ACTION_NAME => OpenSearchTransportDispatchDecision {
+            action_name: action_name.to_string(),
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "query phase transport gateway admits bounded shard query-phase requests through the remote transport queue gate and returns cached or forwarded OpenSearch query-phase response bodies",
+        },
+        OPENSEARCH_QUERY_ID_PHASE_ACTION_NAME => OpenSearchTransportDispatchDecision {
+            action_name: action_name.to_string(),
+            disposition: OpenSearchTransportActionDisposition::Rejected,
+            reason: "query-id phase transport execution requires QuerySearchRequest decode, reader-context lookup, and QuerySearchResult rendering",
+        },
+        OPENSEARCH_QUERY_SCROLL_PHASE_ACTION_NAME => OpenSearchTransportDispatchDecision {
+            action_name: action_name.to_string(),
+            disposition: OpenSearchTransportActionDisposition::Rejected,
+            reason: "query-scroll phase transport execution requires InternalScrollSearchRequest decode, scroll reader-context lookup, and ScrollQuerySearchResult rendering",
+        },
+        OPENSEARCH_QUERY_FETCH_SCROLL_PHASE_ACTION_NAME => OpenSearchTransportDispatchDecision {
+            action_name: action_name.to_string(),
+            disposition: OpenSearchTransportActionDisposition::Rejected,
+            reason: "query-fetch-scroll phase transport execution requires InternalScrollSearchRequest decode, scroll fetch execution, and ScrollQueryFetchSearchResult rendering",
+        },
+        OPENSEARCH_FETCH_ID_SCROLL_PHASE_ACTION_NAME => OpenSearchTransportDispatchDecision {
+            action_name: action_name.to_string(),
+            disposition: OpenSearchTransportActionDisposition::Rejected,
+            reason: "fetch-id-scroll phase transport execution requires ShardFetchRequest decode, scroll reader-context fetch, and FetchSearchResult rendering",
+        },
+        OPENSEARCH_FETCH_ID_PHASE_ACTION_NAME => OpenSearchTransportDispatchDecision {
+            action_name: action_name.to_string(),
+            disposition: OpenSearchTransportActionDisposition::Rejected,
+            reason: "fetch-id phase transport execution requires ShardFetchSearchRequest decode, reader-context fetch, and FetchSearchResult rendering",
+        },
+        OPENSEARCH_QUERY_CAN_MATCH_ACTION_NAME => OpenSearchTransportDispatchDecision {
+            action_name: action_name.to_string(),
+            disposition: OpenSearchTransportActionDisposition::Rejected,
+            reason: "can-match transport execution requires ShardSearchRequest decode, query rewrite, shard metadata checks, and CanMatchResponse rendering",
         },
         OPENSEARCH_EXPLAIN_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -48075,6 +48198,78 @@ mod tests {
                     next_step: "map clear-all-scroll-context requests onto Rust scroll context lifecycle",
                 },
                 OpenSearchPriorityTransportActionSpec {
+                    action_name: "indices:data/read/search[phase/dfs]",
+                    action_type: "ShardSearchRequest",
+                    transport_action: "SearchTransportService",
+                    request_wire_type: "ShardSearchRequest",
+                    response_wire_type: "DfsSearchResult",
+                    adapter_stage: "search-phase",
+                    next_step: "map DFS term-stat collection onto Rust shard search execution",
+                },
+                OpenSearchPriorityTransportActionSpec {
+                    action_name: "indices:data/read/search[phase/query]",
+                    action_type: "ShardSearchRequest",
+                    transport_action: "SearchTransportService",
+                    request_wire_type: "ShardSearchRequest",
+                    response_wire_type: "QuerySearchResult or QueryFetchSearchResult",
+                    adapter_stage: "search-phase",
+                    next_step: "replace cached/forwarded Java query-phase response handling with native Rust shard query execution",
+                },
+                OpenSearchPriorityTransportActionSpec {
+                    action_name: "indices:data/read/search[phase/query/id]",
+                    action_type: "QuerySearchRequest",
+                    transport_action: "SearchTransportService",
+                    request_wire_type: "QuerySearchRequest",
+                    response_wire_type: "QuerySearchResult",
+                    adapter_stage: "search-phase",
+                    next_step: "map query-by-context requests onto Rust reader contexts",
+                },
+                OpenSearchPriorityTransportActionSpec {
+                    action_name: "indices:data/read/search[phase/query/scroll]",
+                    action_type: "InternalScrollSearchRequest",
+                    transport_action: "SearchTransportService",
+                    request_wire_type: "InternalScrollSearchRequest",
+                    response_wire_type: "ScrollQuerySearchResult",
+                    adapter_stage: "search-phase",
+                    next_step: "map scroll query phase requests onto Rust scroll reader contexts",
+                },
+                OpenSearchPriorityTransportActionSpec {
+                    action_name: "indices:data/read/search[phase/query+fetch/scroll]",
+                    action_type: "InternalScrollSearchRequest",
+                    transport_action: "SearchTransportService",
+                    request_wire_type: "InternalScrollSearchRequest",
+                    response_wire_type: "ScrollQueryFetchSearchResult",
+                    adapter_stage: "search-phase",
+                    next_step: "map scroll query-fetch phase requests onto Rust scroll reader contexts",
+                },
+                OpenSearchPriorityTransportActionSpec {
+                    action_name: "indices:data/read/search[phase/fetch/id/scroll]",
+                    action_type: "ShardFetchRequest",
+                    transport_action: "SearchTransportService",
+                    request_wire_type: "ShardFetchRequest",
+                    response_wire_type: "FetchSearchResult",
+                    adapter_stage: "search-phase",
+                    next_step: "map scroll fetch requests onto Rust reader contexts and fetch rendering",
+                },
+                OpenSearchPriorityTransportActionSpec {
+                    action_name: "indices:data/read/search[phase/fetch/id]",
+                    action_type: "ShardFetchSearchRequest",
+                    transport_action: "SearchTransportService",
+                    request_wire_type: "ShardFetchSearchRequest",
+                    response_wire_type: "FetchSearchResult",
+                    adapter_stage: "search-phase",
+                    next_step: "map fetch-by-context requests onto Rust reader contexts and fetch rendering",
+                },
+                OpenSearchPriorityTransportActionSpec {
+                    action_name: "indices:data/read/search[can_match]",
+                    action_type: "ShardSearchRequest",
+                    transport_action: "SearchTransportService",
+                    request_wire_type: "ShardSearchRequest",
+                    response_wire_type: "SearchService.CanMatchResponse",
+                    adapter_stage: "search-phase",
+                    next_step: "map can-match rewrite checks onto Rust query parsing and shard metadata",
+                },
+                OpenSearchPriorityTransportActionSpec {
                     action_name: "indices:data/read/explain",
                     action_type: "ExplainAction",
                     transport_action: "TransportExplainAction",
@@ -49084,6 +49279,42 @@ mod tests {
             OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
+            classify_opensearch_transport_action(OPENSEARCH_DFS_PHASE_ACTION_NAME).disposition,
+            OpenSearchTransportActionDisposition::Rejected
+        );
+        assert_eq!(
+            classify_opensearch_transport_action(OPENSEARCH_QUERY_PHASE_ACTION_NAME).disposition,
+            OpenSearchTransportActionDisposition::Implemented
+        );
+        assert_eq!(
+            classify_opensearch_transport_action(OPENSEARCH_QUERY_ID_PHASE_ACTION_NAME).disposition,
+            OpenSearchTransportActionDisposition::Rejected
+        );
+        assert_eq!(
+            classify_opensearch_transport_action(OPENSEARCH_QUERY_SCROLL_PHASE_ACTION_NAME)
+                .disposition,
+            OpenSearchTransportActionDisposition::Rejected
+        );
+        assert_eq!(
+            classify_opensearch_transport_action(OPENSEARCH_QUERY_FETCH_SCROLL_PHASE_ACTION_NAME)
+                .disposition,
+            OpenSearchTransportActionDisposition::Rejected
+        );
+        assert_eq!(
+            classify_opensearch_transport_action(OPENSEARCH_FETCH_ID_SCROLL_PHASE_ACTION_NAME)
+                .disposition,
+            OpenSearchTransportActionDisposition::Rejected
+        );
+        assert_eq!(
+            classify_opensearch_transport_action(OPENSEARCH_FETCH_ID_PHASE_ACTION_NAME).disposition,
+            OpenSearchTransportActionDisposition::Rejected
+        );
+        assert_eq!(
+            classify_opensearch_transport_action(OPENSEARCH_QUERY_CAN_MATCH_ACTION_NAME)
+                .disposition,
+            OpenSearchTransportActionDisposition::Rejected
+        );
+        assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_EXPLAIN_ACTION_NAME).disposition,
             OpenSearchTransportActionDisposition::Implemented
         );
@@ -49600,6 +49831,7 @@ mod tests {
                 || spec.action_name == OPENSEARCH_SEARCH_ACTION_NAME
                 || spec.action_name == OPENSEARCH_STREAM_SEARCH_ACTION_NAME
                 || spec.action_name == OPENSEARCH_MULTI_SEARCH_ACTION_NAME
+                || spec.action_name == OPENSEARCH_QUERY_PHASE_ACTION_NAME
                 || spec.action_name == OPENSEARCH_SEARCH_SCROLL_ACTION_NAME
                 || spec.action_name == OPENSEARCH_EXPLAIN_ACTION_NAME
                 || spec.action_name == OPENSEARCH_VALIDATE_QUERY_ACTION_NAME
@@ -49632,6 +49864,13 @@ mod tests {
                 || spec.action_name == OPENSEARCH_GET_VIEW_ACTION_NAME
                 || spec.action_name == OPENSEARCH_UPDATE_VIEW_ACTION_NAME
                 || spec.action_name == OPENSEARCH_SEARCH_VIEW_ACTION_NAME
+                || spec.action_name == OPENSEARCH_DFS_PHASE_ACTION_NAME
+                || spec.action_name == OPENSEARCH_QUERY_ID_PHASE_ACTION_NAME
+                || spec.action_name == OPENSEARCH_QUERY_SCROLL_PHASE_ACTION_NAME
+                || spec.action_name == OPENSEARCH_QUERY_FETCH_SCROLL_PHASE_ACTION_NAME
+                || spec.action_name == OPENSEARCH_FETCH_ID_SCROLL_PHASE_ACTION_NAME
+                || spec.action_name == OPENSEARCH_FETCH_ID_PHASE_ACTION_NAME
+                || spec.action_name == OPENSEARCH_QUERY_CAN_MATCH_ACTION_NAME
                 || spec.action_name == OPENSEARCH_START_PERSISTENT_TASK_ACTION_NAME
                 || spec.action_name == OPENSEARCH_UPDATE_PERSISTENT_TASK_STATUS_ACTION_NAME
                 || spec.action_name == OPENSEARCH_COMPLETION_PERSISTENT_TASK_ACTION_NAME

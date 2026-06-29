@@ -321,6 +321,14 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `indices:data/read/search[free_context/scroll]` (implemented local scroll free-context lifecycle subset)
 - `indices:data/read/search[free_context]` (implemented local search free-context lifecycle subset)
 - `indices:data/read/search[clear_scroll_contexts]` (implemented local clear-all-scroll-context lifecycle subset)
+- `indices:data/read/search[phase/query]` (implemented bounded query-phase gateway subset)
+- `indices:data/read/search[phase/dfs]` (rejected fail-closed)
+- `indices:data/read/search[phase/query/id]` (rejected fail-closed)
+- `indices:data/read/search[phase/query/scroll]` (rejected fail-closed)
+- `indices:data/read/search[phase/query+fetch/scroll]` (rejected fail-closed)
+- `indices:data/read/search[phase/fetch/id/scroll]` (rejected fail-closed)
+- `indices:data/read/search[phase/fetch/id]` (rejected fail-closed)
+- `indices:data/read/search[can_match]` (rejected fail-closed)
 - `indices:data/read/explain` (implemented bounded local explain subset)
 - `indices:data/read/point_in_time/create` (implemented local PIT lifecycle subset)
 - `indices:data/read/point_in_time/delete` (implemented local PIT lifecycle subset)
@@ -2412,6 +2420,20 @@ The clear-all-scroll-contexts boundary covers:
 - local invalidation of all active transport scroll contexts, matching
   `SearchService.freeAllScrollContexts()`;
 - OpenSearch `TransportResponse.Empty` rendering as an empty response body.
+
+The search phase transport boundary covers:
+
+- OpenSearch `SearchTransportService` phase action names are now tracked for
+  DFS, root query, query-by-context, scroll query, scroll query-fetch, fetch by
+  scroll context, fetch by search context, and can-match;
+- `indices:data/read/search[phase/query]` is classified as implemented for the
+  existing bounded gateway that passes requests through the remote transport
+  queue gate and returns cached local shard-query response bodies or forwarded
+  OpenSearch query-phase response bodies;
+- DFS, query-id, scroll query/query-fetch, fetch-id, fetch-id-scroll, and
+  can-match remain fail-closed because their OpenSearch handlers require
+  phase-specific request wire objects, reader-context execution, query rewrite,
+  and phase result rendering that are not yet native Rust adapters.
 
 The explain boundary covers:
 
