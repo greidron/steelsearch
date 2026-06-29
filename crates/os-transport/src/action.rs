@@ -112,6 +112,7 @@ pub const OPENSEARCH_STREAM_SEARCH_ACTION_NAME: &str = "indices:data/read/search
 pub const OPENSEARCH_MULTI_SEARCH_ACTION_NAME: &str = "indices:data/read/msearch";
 pub const OPENSEARCH_SEARCH_SCROLL_ACTION_NAME: &str = "indices:data/read/scroll";
 pub const OPENSEARCH_CLEAR_SCROLL_ACTION_NAME: &str = "indices:data/read/scroll/clear";
+pub const OPENSEARCH_FREE_CONTEXT_ACTION_NAME: &str = "indices:data/read/search[free_context]";
 pub const OPENSEARCH_FREE_SCROLL_CONTEXT_ACTION_NAME: &str =
     "indices:data/read/search[free_context/scroll]";
 pub const OPENSEARCH_EXPLAIN_ACTION_NAME: &str = "indices:data/read/explain";
@@ -773,6 +774,15 @@ pub const OPENSEARCH_PRIORITY_TRANSPORT_ACTIONS: &[OpenSearchPriorityTransportAc
         response_wire_type: "SearchFreeContextResponse",
         adapter_stage: "search-scroll",
         next_step: "map scroll free-context requests onto Rust scroll context lifecycle",
+    },
+    OpenSearchPriorityTransportActionSpec {
+        action_name: OPENSEARCH_FREE_CONTEXT_ACTION_NAME,
+        action_type: "SearchFreeContextRequest",
+        transport_action: "SearchTransportService",
+        request_wire_type: "SearchFreeContextRequest",
+        response_wire_type: "SearchFreeContextResponse",
+        adapter_stage: "search-read",
+        next_step: "map search free-context cleanup requests onto Rust reader context lifecycle",
     },
     OpenSearchPriorityTransportActionSpec {
         action_name: OPENSEARCH_EXPLAIN_ACTION_NAME,
@@ -2436,6 +2446,11 @@ pub fn classify_opensearch_transport_action(
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Implemented,
             reason: "free-scroll-context transport adapter invalidates one local scroll context and renders OpenSearch SearchFreeContextResponse wire",
+        },
+        OPENSEARCH_FREE_CONTEXT_ACTION_NAME => OpenSearchTransportDispatchDecision {
+            action_name: action_name.to_string(),
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "search free-context transport adapter decodes OriginalIndices metadata, invalidates a local reader context, and renders OpenSearch SearchFreeContextResponse wire",
         },
         OPENSEARCH_EXPLAIN_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -13868,6 +13883,44 @@ pub fn read_opensearch_free_search_context_response_message(
         });
     }
     OpenSearchFreeSearchContextResponseWire::read(message.body.clone().freeze())
+}
+
+pub fn build_opensearch_free_context_request_message(
+    request_id: i64,
+    version: Version,
+    request: &OpenSearchFreeContextRequestWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    request.write(&mut body)?;
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::request(),
+        version,
+        variable_header: BytesMut::from(
+            &RequestVariableHeader::new(OPENSEARCH_FREE_CONTEXT_ACTION_NAME).to_bytes()[..],
+        ),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_free_context_request_message(
+    message: &TransportMessage,
+) -> Result<OpenSearchFreeContextRequestWire, TransportActionWireError> {
+    if !message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "request",
+            actual: message.status.bits(),
+        });
+    }
+    let header = RequestVariableHeader::read(message.variable_header.clone().freeze())?;
+    if header.action != OPENSEARCH_FREE_CONTEXT_ACTION_NAME {
+        return Err(TransportActionWireError::UnexpectedAction {
+            expected: OPENSEARCH_FREE_CONTEXT_ACTION_NAME,
+            actual: header.action,
+        });
+    }
+    OpenSearchFreeContextRequestWire::read(message.body.clone().freeze())
 }
 
 pub fn build_opensearch_explain_request_message(
@@ -37691,21 +37744,96 @@ impl OpenSearchFreeSearchContextResponseWire {
 
     pub fn write(&self, output: &mut StreamOutput) {
         output.write_bool(self.freed);
-        output.write_bool(self.freed);
     }
 
     pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
         let mut input = StreamInput::new(bytes);
         let freed = input.read_bool()?;
-        let repeated = input.read_bool()?;
         require_no_trailing_bytes(&input)?;
-        if repeated != freed {
-            return Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "search free context response",
-                reason: "OpenSearch SearchFreeContextResponse writes the freed flag twice with matching values",
-            });
-        }
         Ok(Self { freed })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchOriginalIndicesWire {
+    pub indices: Option<Vec<String>>,
+    pub indices_options: OpenSearchIndicesOptionsWire,
+}
+
+impl OpenSearchOriginalIndicesWire {
+    pub fn new(
+        indices: Option<Vec<String>>,
+        indices_options: OpenSearchIndicesOptionsWire,
+    ) -> Self {
+        Self {
+            indices,
+            indices_options,
+        }
+    }
+
+    fn write(&self, output: &mut StreamOutput) {
+        write_nullable_string_array(output, self.indices.as_deref());
+        self.indices_options.write(output);
+    }
+
+    fn read(input: &mut StreamInput) -> Result<Self, TransportActionWireError> {
+        Ok(Self {
+            indices: read_nullable_string_array(input)?,
+            indices_options: OpenSearchIndicesOptionsWire::read(input)?,
+        })
+    }
+
+    pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchFreeContextRequestWire {
+    pub parent_task_node: String,
+    pub parent_task_id: Option<i64>,
+    pub context_id: OpenSearchShardSearchContextIdWire,
+    pub original_indices: OpenSearchOriginalIndicesWire,
+}
+
+impl OpenSearchFreeContextRequestWire {
+    pub fn new(
+        context_id: OpenSearchShardSearchContextIdWire,
+        original_indices: OpenSearchOriginalIndicesWire,
+    ) -> Self {
+        Self {
+            parent_task_node: String::new(),
+            parent_task_id: None,
+            context_id,
+            original_indices,
+        }
+    }
+
+    pub fn write(&self, output: &mut StreamOutput) -> Result<(), TransportActionWireError> {
+        self.validate_supported_subset()?;
+        write_parent_task_id(output, &self.parent_task_node, self.parent_task_id);
+        self.context_id.write(output)?;
+        self.original_indices.write(output);
+        Ok(())
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
+        let request = Self {
+            parent_task_node,
+            parent_task_id,
+            context_id: OpenSearchShardSearchContextIdWire::read(&mut input)?,
+            original_indices: OpenSearchOriginalIndicesWire::read(&mut input)?,
+        };
+        require_no_trailing_bytes(&input)?;
+        request.validate_supported_subset()?;
+        Ok(request)
+    }
+
+    pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
+        self.context_id.validate_supported_subset()?;
+        self.original_indices.validate_supported_subset()
     }
 }
 
@@ -47846,6 +47974,15 @@ mod tests {
                     next_step: "map scroll free-context requests onto Rust scroll context lifecycle",
                 },
                 OpenSearchPriorityTransportActionSpec {
+                    action_name: "indices:data/read/search[free_context]",
+                    action_type: "SearchFreeContextRequest",
+                    transport_action: "SearchTransportService",
+                    request_wire_type: "SearchFreeContextRequest",
+                    response_wire_type: "SearchFreeContextResponse",
+                    adapter_stage: "search-read",
+                    next_step: "map search free-context cleanup requests onto Rust reader context lifecycle",
+                },
+                OpenSearchPriorityTransportActionSpec {
                     action_name: "indices:data/read/explain",
                     action_type: "ExplainAction",
                     transport_action: "TransportExplainAction",
@@ -48846,6 +48983,10 @@ mod tests {
             OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
+            classify_opensearch_transport_action(OPENSEARCH_FREE_CONTEXT_ACTION_NAME).disposition,
+            OpenSearchTransportActionDisposition::Implemented
+        );
+        assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_EXPLAIN_ACTION_NAME).disposition,
             OpenSearchTransportActionDisposition::Implemented
         );
@@ -49313,6 +49454,7 @@ mod tests {
                 || spec.action_name == OPENSEARCH_UPDATE_READER_CONTEXT_ACTION_NAME
                 || spec.action_name == OPENSEARCH_FREE_PIT_CONTEXT_ACTION_NAME
                 || spec.action_name == OPENSEARCH_FREE_SCROLL_CONTEXT_ACTION_NAME
+                || spec.action_name == OPENSEARCH_FREE_CONTEXT_ACTION_NAME
                 || spec.action_name == OPENSEARCH_CLEAR_SCROLL_ACTION_NAME
                 || spec.action_name == OPENSEARCH_GET_ALIASES_ACTION_NAME
                 || spec.action_name == OPENSEARCH_GET_SETTINGS_ACTION_NAME
@@ -77921,17 +78063,61 @@ mod tests {
             read_opensearch_free_search_context_response_message(&message).unwrap(),
             response
         );
+        assert_eq!(message.body.len(), 1);
 
-        let mut mismatched = StreamOutput::new();
-        mismatched.write_bool(true);
-        mismatched.write_bool(false);
         assert!(matches!(
-            OpenSearchFreeSearchContextResponseWire::read(mismatched.freeze()),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "search free context response",
-                ..
-            })
+            OpenSearchFreeSearchContextResponseWire::read(Bytes::from_static(&[1, 0])),
+            Err(TransportActionWireError::TrailingBytes { .. })
         ));
+    }
+
+    #[test]
+    fn opensearch_free_context_transport_message_round_trips_original_indices() {
+        let request = OpenSearchFreeContextRequestWire::new(
+            OpenSearchShardSearchContextIdWire::new("search-session", 44),
+            OpenSearchOriginalIndicesWire::new(
+                Some(vec!["logs-*".to_string()]),
+                OpenSearchIndicesOptionsWire::strict_expand_open_forbid_closed_ignore_throttled(),
+            ),
+        );
+        let mut frame =
+            build_opensearch_free_context_request_message(65, OPENSEARCH_3_7_0_TRANSPORT, &request)
+                .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected free-context request message");
+        };
+        assert_eq!(
+            read_opensearch_free_context_request_message(&message).unwrap(),
+            request
+        );
+        assert!(matches!(
+            read_opensearch_free_scroll_context_request_message(&message).unwrap_err(),
+            TransportActionWireError::UnexpectedAction {
+                expected: OPENSEARCH_FREE_SCROLL_CONTEXT_ACTION_NAME,
+                ..
+            }
+        ));
+
+        let null_indices_request = OpenSearchFreeContextRequestWire::new(
+            OpenSearchShardSearchContextIdWire::new("", 45),
+            OpenSearchOriginalIndicesWire::new(
+                None,
+                OpenSearchIndicesOptionsWire::strict_expand_open(),
+            ),
+        );
+        let mut frame = build_opensearch_free_context_request_message(
+            66,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &null_indices_request,
+        )
+        .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected null-indices free-context request message");
+        };
+        assert_eq!(
+            read_opensearch_free_context_request_message(&message).unwrap(),
+            null_indices_request
+        );
     }
 
     #[test]

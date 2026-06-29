@@ -1,10 +1,14 @@
 use os_core::OPENSEARCH_3_7_0_TRANSPORT;
 use os_transport::action::{
+    build_opensearch_free_context_request_message,
     build_opensearch_free_scroll_context_request_message,
     build_opensearch_free_search_context_response_message,
+    read_opensearch_free_context_request_message,
     read_opensearch_free_scroll_context_request_message,
-    read_opensearch_free_search_context_response_message, OpenSearchFreeScrollContextRequestWire,
-    OpenSearchFreeSearchContextResponseWire, OpenSearchShardSearchContextIdWire,
+    read_opensearch_free_search_context_response_message, OpenSearchFreeContextRequestWire,
+    OpenSearchFreeScrollContextRequestWire, OpenSearchFreeSearchContextResponseWire,
+    OpenSearchIndicesOptionsWire, OpenSearchOriginalIndicesWire,
+    OpenSearchShardSearchContextIdWire,
 };
 use os_transport::frame::{decode_frame, DecodedFrame};
 use std::hint::black_box;
@@ -15,6 +19,13 @@ const ITERATIONS: usize = 400_000;
 fn main() {
     let request = OpenSearchFreeScrollContextRequestWire::new(
         OpenSearchShardSearchContextIdWire::new("scroll-session", 42),
+    );
+    let search_request = OpenSearchFreeContextRequestWire::new(
+        OpenSearchShardSearchContextIdWire::new("search-session", 44),
+        OpenSearchOriginalIndicesWire::new(
+            Some(vec!["logs-*".to_string()]),
+            OpenSearchIndicesOptionsWire::strict_expand_open_forbid_closed_ignore_throttled(),
+        ),
     );
     let response = OpenSearchFreeSearchContextResponseWire::new(true);
 
@@ -54,6 +65,31 @@ fn main() {
         black_box(decoded);
     });
 
+    let search_request_encode = measure("free_context_request_encode", ITERATIONS, || {
+        let frame = build_opensearch_free_context_request_message(
+            64,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            black_box(&search_request),
+        )
+        .expect("free-context request encode should succeed");
+        black_box(frame);
+    });
+
+    let search_request_frame = build_opensearch_free_context_request_message(
+        64,
+        OPENSEARCH_3_7_0_TRANSPORT,
+        &search_request,
+    )
+    .expect("free-context request encode should succeed");
+
+    let search_request_decode = measure("free_context_request_decode", ITERATIONS, || {
+        let mut frame = black_box(search_request_frame.clone());
+        let message = decode_message(&mut frame);
+        let decoded = read_opensearch_free_context_request_message(black_box(&message))
+            .expect("free-context request decode");
+        black_box(decoded);
+    });
+
     let response_encode = measure("free_scroll_context_response_encode", ITERATIONS, || {
         let frame = build_opensearch_free_search_context_response_message(
             63,
@@ -83,6 +119,8 @@ fn main() {
         .ops_per_second
         .min(request_decode.ops_per_second)
         .min(request_validate.ops_per_second)
+        .min(search_request_encode.ops_per_second)
+        .min(search_request_decode.ops_per_second)
         .min(response_encode.ops_per_second)
         .min(response_decode.ops_per_second);
     println!("free_scroll_context_wire_bottleneck_ops_per_second={combined_ops_per_second:.2}");

@@ -319,6 +319,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `indices:data/read/scroll` (implemented local scroll-page subset)
 - `indices:data/read/scroll/clear` (implemented local clear-scroll lifecycle subset)
 - `indices:data/read/search[free_context/scroll]` (implemented local scroll free-context lifecycle subset)
+- `indices:data/read/search[free_context]` (implemented local search free-context lifecycle subset)
 - `indices:data/read/explain` (implemented bounded local explain subset)
 - `indices:data/read/point_in_time/create` (implemented local PIT lifecycle subset)
 - `indices:data/read/point_in_time/delete` (implemented local PIT lifecycle subset)
@@ -2380,12 +2381,23 @@ The free-scroll-context boundary covers:
 
 - OpenSearch `SearchTransportService.ScrollFreeContextRequest` parent task plus
   `ShardSearchContextId` wire decode/build;
-- OpenSearch `SearchFreeContextResponse` boolean rendering, including the
-  duplicated `freed` flag written by OpenSearch;
+- OpenSearch `SearchFreeContextResponse` single-boolean `freed` rendering;
 - local scroll context invalidation through the same `freeReaderContext(...)`
   lookup semantics used by OpenSearch: non-empty session ids require exact
   `(session,id)` matching, while empty session ids resolve by numeric context
   id;
+- missing contexts return `freed=false` instead of a transport error.
+
+The search free-context boundary covers:
+
+- OpenSearch `SearchTransportService.SearchFreeContextRequest` parent task,
+  `ShardSearchContextId`, nullable `OriginalIndices.indices`, and
+  `IndicesOptions` wire decode/build;
+- OpenSearch `SearchFreeContextResponse` single-boolean `freed` rendering;
+- local reader-context invalidation through the same `freeReaderContext(...)`
+  lookup semantics used by OpenSearch, checking local scroll contexts first and
+  PIT/search reader contexts second because both are modeled as local active
+  readers in Steelsearch;
 - missing contexts return `freed=false` instead of a transport error.
 
 The explain boundary covers:
