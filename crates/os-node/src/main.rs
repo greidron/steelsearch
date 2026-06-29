@@ -7,7 +7,8 @@ use os_cluster_state::{
 };
 use os_core::version::{Version, OPENSEARCH_3_7_0, OPENSEARCH_3_7_0_TRANSPORT};
 use os_node::standalone_runtime::{
-    build_local_pit_id, DocumentMap, PitContext, ScrollContext, StoredDocument,
+    build_local_pit_id, DocumentMap, KnnOperationalState, PitContext, ScrollContext,
+    SharedRuntimeState, StoredDocument,
 };
 use os_node::{
     apply_gateway_metadata_commit_state_to_manifest, apply_gateway_metadata_state_to_manifest,
@@ -48,6 +49,7 @@ static SHUTDOWN_REQUESTED: AtomicBool = AtomicBool::new(false);
 static TRANSPORT_REQUEST_SEQUENCE: AtomicI64 = AtomicI64::new(10_000);
 static DEV_TRANSPORT_PIT_BINDINGS: OnceLock<DevTransportPitBindings> = OnceLock::new();
 static DEV_TRANSPORT_SCROLL_BINDINGS: OnceLock<DevTransportScrollBindings> = OnceLock::new();
+static DEV_TRANSPORT_SHARED_RUNTIME_STATE_PATH: OnceLock<PathBuf> = OnceLock::new();
 const TRANSPORT_PIT_EXPIRY_REAPER_GRACE_MILLIS: u64 = 60_000;
 const DEV_TRANSPORT_MAX_OPEN_PIT_CONTEXTS: usize = 300;
 const DEV_TRANSPORT_MAX_PIT_KEEP_ALIVE_MILLIS: i64 = 86_400_000;
@@ -162,6 +164,14 @@ fn dev_transport_scroll_bindings() -> &'static DevTransportScrollBindings {
     DEV_TRANSPORT_SCROLL_BINDINGS.get_or_init(|| DevTransportScrollBindings {
         contexts: Arc::new(Mutex::new(BTreeMap::new())),
     })
+}
+
+fn dev_transport_shared_runtime_state_path() -> Option<&'static PathBuf> {
+    DEV_TRANSPORT_SHARED_RUNTIME_STATE_PATH.get()
+}
+
+fn bind_dev_transport_shared_runtime_state_path(path: PathBuf) {
+    let _ = DEV_TRANSPORT_SHARED_RUNTIME_STATE_PATH.set(path);
 }
 
 fn bind_dev_transport_pit_store(
@@ -437,6 +447,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Arc::clone(&node.metadata_manifest_state),
     );
     bind_dev_transport_scroll_store(Arc::clone(&node.scroll_contexts));
+    if let Some(path) = node.shared_runtime_state_path.clone() {
+        bind_dev_transport_shared_runtime_state_path(path);
+    }
     let transport_capture_path = config.data_path.join("transport-seed-capture.json");
     let transport_identity = DevTransportIdentity {
         cluster_name: config.cluster_name.clone(),
@@ -3894,6 +3907,33 @@ fn handle_transport_seed_connection<S: TransportConnection>(
         response_frame = summarize_transport_response_frame_for_action(
             &response,
             Some("cluster:admin/_tier/all"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request
+        && normalized_action_hint == Some("cluster:admin/knn_stats_action")
+        && knn_stats_request_supports_local_subset(&body)
+    {
+        let response =
+            build_knn_stats_response(request_id, header_version_id, &body, transport_identity);
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("cluster:admin/knn_stats_action"),
         );
         stream.write_all(&response)?;
         stream.flush()?;
@@ -14816,6 +14856,300 @@ fn build_empty_list_tiering_status_response(request_id: i64, header_version_id: 
     )
     .map(|frame| frame.to_vec())
     .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
+}
+
+fn build_knn_stats_response(
+    request_id: i64,
+    header_version_id: u32,
+    body: &[u8],
+    transport_identity: &DevTransportIdentity,
+) -> Vec<u8> {
+    let Some(request) = decode_knn_stats_request_from_transport_body(body) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    if !knn_stats_request_matches_local_subset(&request) {
+        return build_empty_transport_response(request_id, header_version_id);
+    }
+    let Some(state) = load_transport_knn_operational_state() else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    let requested_stats = knn_stats_requested_names(&request);
+    let node_stats = source_knn_node_stats_from_operational_state(&state, &requested_stats);
+    let cluster_stats = source_knn_cluster_stats_from_operational_state(&state, &requested_stats);
+    let response = os_transport::action::KnnStatsResponseWire {
+        cluster_name: transport_identity.cluster_name.clone(),
+        nodes: vec![os_transport::action::KnnStatsNodeResponseWire::new(
+            discovery_node_wire_from_identity(transport_identity),
+            node_stats,
+        )],
+        cluster_stats,
+    };
+    os_transport::action::build_knn_stats_response_message(
+        request_id,
+        Version::from_id(header_version_id as i32),
+        &response,
+    )
+    .map(|frame| frame.to_vec())
+    .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
+}
+
+fn knn_stats_request_supports_local_subset(body: &[u8]) -> bool {
+    decode_knn_stats_request_from_transport_body(body)
+        .is_some_and(|request| knn_stats_request_matches_local_subset(&request))
+}
+
+fn decode_knn_stats_request_from_transport_body(
+    body: &[u8],
+) -> Option<os_transport::action::KnnStatsRequestWire> {
+    let message = decode_transport_message_from_body(body)?;
+    os_transport::action::read_knn_stats_request_message(&message).ok()
+}
+
+fn knn_stats_request_matches_local_subset(
+    request: &os_transport::action::KnnStatsRequestWire,
+) -> bool {
+    request.validate_supported_execution_subset().is_ok()
+}
+
+fn load_transport_knn_operational_state() -> Option<KnnOperationalState> {
+    let path = dev_transport_shared_runtime_state_path()?;
+    let bytes = std::fs::read(path).ok()?;
+    serde_json::from_slice::<SharedRuntimeState>(&bytes)
+        .ok()?
+        .knn_operational_state
+}
+
+fn knn_stats_requested_names(
+    request: &os_transport::action::KnnStatsRequestWire,
+) -> BTreeSet<String> {
+    if request.stats_to_be_retrieved.is_empty() {
+        request.valid_stats.iter().cloned().collect()
+    } else {
+        request.stats_to_be_retrieved.iter().cloned().collect()
+    }
+}
+
+fn source_knn_node_stats_from_operational_state(
+    state: &KnnOperationalState,
+    requested_stats: &BTreeSet<String>,
+) -> BTreeMap<String, Value> {
+    let mut stats = BTreeMap::new();
+    insert_requested_u64(&mut stats, requested_stats, "hit_count", 0);
+    insert_requested_u64(&mut stats, requested_stats, "miss_count", 0);
+    insert_requested_u64(
+        &mut stats,
+        requested_stats,
+        "load_success_count",
+        state.cache_entry_count,
+    );
+    insert_requested_u64(&mut stats, requested_stats, "load_exception_count", 0);
+    insert_requested_u64(&mut stats, requested_stats, "total_load_time", 0);
+    insert_requested_u64(
+        &mut stats,
+        requested_stats,
+        "eviction_count",
+        state.clear_cache_requests,
+    );
+    insert_requested_u64(
+        &mut stats,
+        requested_stats,
+        "graph_memory_usage",
+        state.native_memory_used_bytes / 1024,
+    );
+    insert_requested_f64(
+        &mut stats,
+        requested_stats,
+        "graph_memory_usage_percentage",
+        if state.native_memory_used_bytes == 0 {
+            0.0
+        } else {
+            0.1
+        },
+    );
+    if requested_stats.contains("indices_in_cache") {
+        stats.insert(
+            "indices_in_cache".to_string(),
+            serde_json::json!({
+                "graph_count": state.graph_count,
+                "warmed_index_count": state.warmed_index_count,
+                "cache_entry_count": state.cache_entry_count
+            }),
+        );
+    }
+    insert_requested_bool(
+        &mut stats,
+        requested_stats,
+        "cache_capacity_reached",
+        state
+            .native_memory_used_bytes
+            .saturating_add(state.model_cache_used_bytes)
+            .saturating_add(state.quantization_cache_used_bytes)
+            >= 805_306_368,
+    );
+    insert_requested_u64(&mut stats, requested_stats, "graph_query_errors", 0);
+    insert_requested_u64(
+        &mut stats,
+        requested_stats,
+        "graph_query_requests",
+        state.graph_count,
+    );
+    insert_requested_u64(&mut stats, requested_stats, "graph_index_errors", 0);
+    insert_requested_u64(
+        &mut stats,
+        requested_stats,
+        "graph_index_requests",
+        state.graph_count,
+    );
+    insert_requested_bool(&mut stats, requested_stats, "faiss_initialized", false);
+    insert_requested_bool(&mut stats, requested_stats, "nmslib_initialized", false);
+    insert_requested_bool(&mut stats, requested_stats, "lucene_initialized", true);
+    insert_requested_u64(&mut stats, requested_stats, "script_compilations", 0);
+    insert_requested_u64(&mut stats, requested_stats, "script_compilation_errors", 0);
+    insert_requested_u64(&mut stats, requested_stats, "script_query_requests", 0);
+    insert_requested_u64(&mut stats, requested_stats, "script_query_errors", 0);
+    insert_requested_bool(
+        &mut stats,
+        requested_stats,
+        "indexing_from_model_degraded",
+        false,
+    );
+    insert_requested_u64(
+        &mut stats,
+        requested_stats,
+        "training_requests",
+        state.training_requests,
+    );
+    insert_requested_u64(&mut stats, requested_stats, "training_errors", 0);
+    insert_requested_u64(
+        &mut stats,
+        requested_stats,
+        "training_memory_usage",
+        state.model_cache_used_bytes / 1024,
+    );
+    insert_requested_f64(
+        &mut stats,
+        requested_stats,
+        "training_memory_usage_percentage",
+        if state.model_cache_used_bytes == 0 {
+            0.0
+        } else {
+            0.1
+        },
+    );
+    if requested_stats.contains("graph_stats") {
+        stats.insert(
+            "graph_stats".to_string(),
+            serde_json::json!({
+                "merge": {
+                    "current": state.graph_count,
+                    "total": state.graph_count
+                },
+                "refresh": {
+                    "total": state.warmed_index_count
+                }
+            }),
+        );
+    }
+    if requested_stats.contains("remote_vector_index_build_stats") {
+        stats.insert(
+            "remote_vector_index_build_stats".to_string(),
+            serde_json::json!({
+                "client_stats": {},
+                "repository_stats": {},
+                "build_stats": {}
+            }),
+        );
+    }
+    insert_requested_u64(&mut stats, requested_stats, "knn_query_requests", 0);
+    insert_requested_u64(
+        &mut stats,
+        requested_stats,
+        "knn_query_with_filter_requests",
+        0,
+    );
+    insert_requested_u64(&mut stats, requested_stats, "min_score_query_requests", 0);
+    insert_requested_u64(
+        &mut stats,
+        requested_stats,
+        "min_score_query_with_filter_requests",
+        0,
+    );
+    insert_requested_u64(
+        &mut stats,
+        requested_stats,
+        "max_distance_query_requests",
+        0,
+    );
+    insert_requested_u64(
+        &mut stats,
+        requested_stats,
+        "max_distance_query_with_filter_requests",
+        0,
+    );
+    stats
+}
+
+fn source_knn_cluster_stats_from_operational_state(
+    state: &KnnOperationalState,
+    requested_stats: &BTreeSet<String>,
+) -> BTreeMap<String, Value> {
+    let mut stats = BTreeMap::new();
+    insert_requested_bool(
+        &mut stats,
+        requested_stats,
+        "circuit_breaker_triggered",
+        state
+            .native_memory_used_bytes
+            .saturating_add(state.model_cache_used_bytes)
+            .saturating_add(state.quantization_cache_used_bytes)
+            >= 805_306_368,
+    );
+    if requested_stats.contains("model_index_status") {
+        stats.insert(
+            "model_index_status".to_string(),
+            Value::String(if state.trained_models.is_empty() {
+                "NA".to_string()
+            } else {
+                "GREEN".to_string()
+            }),
+        );
+    }
+    stats
+}
+
+fn insert_requested_u64(
+    stats: &mut BTreeMap<String, Value>,
+    requested_stats: &BTreeSet<String>,
+    name: &str,
+    value: u64,
+) {
+    if requested_stats.contains(name) {
+        stats.insert(name.to_string(), Value::Number(value.into()));
+    }
+}
+
+fn insert_requested_f64(
+    stats: &mut BTreeMap<String, Value>,
+    requested_stats: &BTreeSet<String>,
+    name: &str,
+    value: f64,
+) {
+    if requested_stats.contains(name) {
+        if let Some(number) = serde_json::Number::from_f64(value) {
+            stats.insert(name.to_string(), Value::Number(number));
+        }
+    }
+}
+
+fn insert_requested_bool(
+    stats: &mut BTreeMap<String, Value>,
+    requested_stats: &BTreeSet<String>,
+    name: &str,
+    value: bool,
+) {
+    if requested_stats.contains(name) {
+        stats.insert(name.to_string(), Value::Bool(value));
+    }
 }
 
 fn list_tiering_status_request_supports_empty_subset(body: &[u8]) -> bool {
@@ -26768,6 +27102,14 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
                 header_version_id,
             ))
         }
+        Some("cluster:admin/knn_stats_action") if knn_stats_request_supports_local_subset(body) => {
+            Some(build_knn_stats_response(
+                request_id,
+                header_version_id,
+                body,
+                transport_identity,
+            ))
+        }
         Some("indices:admin/_tier/get")
             if get_tiering_status_request_supports_no_active_migration_subset(body) =>
         {
@@ -31454,7 +31796,7 @@ mod tests {
     }
 
     #[test]
-    fn knn_stats_transport_route_remains_fail_closed_until_stats_aggregation_exists() {
+    fn knn_stats_transport_route_builds_local_runtime_state_response() {
         struct RecordingTransportConnection {
             writes: Vec<u8>,
         }
@@ -31488,7 +31830,49 @@ mod tests {
             }
         }
 
-        let request = os_transport::action::KnnStatsRequestWire::default();
+        let shared_state_path = unique_test_path("knn-stats-transport-shared-runtime.json");
+        let mut runtime_state = SharedRuntimeState::default();
+        let mut knn_state = KnnOperationalState {
+            graph_count: 4,
+            warmed_index_count: 1,
+            cache_entry_count: 1,
+            native_memory_used_bytes: 4096,
+            model_cache_used_bytes: 2048,
+            quantization_cache_used_bytes: 0,
+            clear_cache_requests: 2,
+            training_requests: 3,
+            ..KnnOperationalState::default()
+        };
+        knn_state.trained_models.insert(
+            "model-a".to_string(),
+            os_node::standalone_runtime::KnnModelState {
+                model_id: "model-a".to_string(),
+                training_index: "vectors".to_string(),
+                dimension: 3,
+                description: "transport stats model".to_string(),
+                method: serde_json::json!({"name": "hnsw", "engine": "lucene"}),
+                state: "created".to_string(),
+                task_id: "task-a".to_string(),
+                transport_action: "cluster:admin/knn_training_model_action".to_string(),
+            },
+        );
+        runtime_state.knn_operational_state = Some(knn_state);
+        fs::write(
+            &shared_state_path,
+            serde_json::to_vec_pretty(&runtime_state).unwrap(),
+        )
+        .unwrap();
+        bind_dev_transport_shared_runtime_state_path(shared_state_path.clone());
+
+        let request = os_transport::action::KnnStatsRequestWire {
+            stats_to_be_retrieved: vec![
+                "training_requests".to_string(),
+                "graph_memory_usage".to_string(),
+                "model_index_status".to_string(),
+                "circuit_breaker_triggered".to_string(),
+            ],
+            ..os_transport::action::KnnStatsRequestWire::default()
+        };
         let frame = os_transport::action::build_knn_stats_request_message(
             77,
             OPENSEARCH_3_7_0_TRANSPORT,
@@ -31519,8 +31903,37 @@ mod tests {
         )
         .unwrap();
 
-        assert!(!response);
-        assert!(stream.writes.is_empty());
+        assert!(response);
+        assert!(!stream.writes.is_empty());
+        let mut response_frame = BytesMut::from(&stream.writes[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut response_frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected knn stats response message");
+        };
+        let response = os_transport::action::read_knn_stats_response_message(&message).unwrap();
+        assert_eq!(response.cluster_name, "steelsearch-dev");
+        assert_eq!(response.nodes.len(), 1);
+        assert_eq!(response.nodes[0].node.id, "steel-node-id");
+        assert_eq!(
+            response.nodes[0].stats["training_requests"],
+            serde_json::json!(3)
+        );
+        assert_eq!(
+            response.nodes[0].stats["graph_memory_usage"],
+            serde_json::json!(4)
+        );
+        assert_eq!(
+            response.cluster_stats["model_index_status"],
+            serde_json::json!("GREEN")
+        );
+        assert_eq!(
+            response.cluster_stats["circuit_breaker_triggered"],
+            serde_json::json!(false)
+        );
+        let _ = fs::remove_file(shared_state_path);
     }
 
     #[test]

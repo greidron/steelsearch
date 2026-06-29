@@ -177,18 +177,19 @@ The source-derived transport inventory currently has 160 rows:
 
 | Status | Count | Meaning |
 | --- | ---: | --- |
-| `implemented` | 143 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
-| `partial` | 17 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
+| `implemented` | 146 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
+| `partial` | 14 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
 | `planned` | 0 | No source-derived transport action remains unclassified. |
 
-The k-NN plugin action sweep is complete at the boundary layer. All 12
+The k-NN plugin action sweep is complete at the boundary layer. One of 12
 registrations from
 `/home/ubuntu/k-NN/src/main/java/org/opensearch/knn/plugin/KNNPlugin.java`
-lines 348-359 are represented as `partial` rows with request/response wire
-coverage and fail-closed admission. This is not a claim that the k-NN transport
-actions execute their full OpenSearch semantics yet; it means unsupported
-transport execution is explicit and measured instead of accidentally passing
-through.
+lines 348-359 is now represented as an `implemented` row for the bounded
+local-node stats subset; the remaining k-NN actions stay `partial` with
+request/response wire coverage and fail-closed admission. This is not a claim
+that the remaining k-NN transport actions execute their full OpenSearch
+semantics yet; it means unsupported transport execution is explicit and
+measured instead of accidentally passing through.
 
 Current k-NN reject-wire bottlenecks from the retained local release runs:
 
@@ -1006,17 +1007,18 @@ The knn-stats boundary covers:
 - OpenSearch k-NN `KNNStatsRequest` `BaseNodesRequest` parent task, nullable
   node id selectors, concrete-node marker, optional timeout, valid stat name
   set, and requested stat name set at the wire decode/build layer;
-- OpenSearch k-NN `KNNStatsResponse` cluster name, empty node response list,
-  empty node failure list, and empty generic cluster-stats map at the wire
-  decode/build layer;
-- explicit fail-closed classification for `cluster:admin/knn_stats_action`
-  until BaseNodes fanout, stat selection validation, node-level KNN stat
-  collection, cluster-level KNN stat aggregation, failure aggregation, and
-  response rendering are implemented;
+- OpenSearch k-NN `KNNStatsResponse` cluster name, one local
+  `KNNStatsNodeResponse` with a `DiscoveryNode` payload and source-shaped
+  typed generic stat map, empty node failure list, and source-shaped generic
+  cluster-stats map at the wire decode/build layer;
+- implemented classification for the local-node subset:
+  no node-id routing filter, no custom timeout, valid requested stat names,
+  shared-runtime-backed local k-NN operational state, local node stat rendering,
+  and cluster stat rendering for the mapped source stat names;
 - explicit rejection for node filters, concrete node payloads, custom timeout,
-  blank stat names, unknown requested stat names, KNN stats execution, node
-  response rendering, node failure rendering, cluster stat rendering, and
-  response rendering.
+  blank stat names, unknown requested stat names, multi-node BaseNodes fanout,
+  node failures, and stats unavailable before local k-NN operational state has
+  been created.
 
 The knn-warmup boundary covers:
 

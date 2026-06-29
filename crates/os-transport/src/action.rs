@@ -2045,8 +2045,8 @@ pub fn classify_opensearch_transport_action(
         },
         KNN_STATS_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
-            disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "knn-stats transport execution requires BaseNodes fanout, stat selection validation, node-level KNN stat collection, cluster-level KNN stat aggregation, failure aggregation, and response rendering",
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "knn-stats transport adapter validates the local-node subset, renders a BaseNodesResponse with one local KNNStatsNodeResponse, and includes source-shaped cluster stat values from runtime state",
         },
         KNN_WARMUP_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -19553,10 +19553,19 @@ impl KnnStatsRequestWire {
     }
 
     pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        self.validate_supported_execution_subset()?;
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "knn stats execution",
+            reason: "use validate_supported_execution_subset for the implemented local-node stats adapter",
+        })
+    }
+
+    pub fn validate_supported_execution_subset(&self) -> Result<(), TransportActionWireError> {
         if matches!(self.node_ids.as_ref(), Some(node_ids) if !node_ids.is_empty()) {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "knn stats node filter",
-                reason: "KNN stats node-scoped routing requires BaseNodes fanout mapping",
+                reason:
+                    "KNN stats node-scoped routing requires multi-node BaseNodes fanout mapping",
             });
         }
         if self.timeout.is_some() {
@@ -19591,24 +19600,23 @@ impl KnnStatsRequestWire {
                 reason: "KNN stats requested stat names must be present in the valid stats set",
             });
         }
-        Err(TransportActionWireError::UnsupportedWireShape {
-            shape: "knn stats execution",
-            reason: "knn-stats transport execution requires BaseNodes fanout, stat selection validation, node-level KNN stat collection, cluster-level KNN stat aggregation, failure aggregation, and response rendering",
-        })
+        Ok(())
     }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct KnnStatsResponseWire {
     pub cluster_name: String,
-    pub cluster_stats_present: bool,
+    pub nodes: Vec<KnnStatsNodeResponseWire>,
+    pub cluster_stats: BTreeMap<String, Value>,
 }
 
 impl Default for KnnStatsResponseWire {
     fn default() -> Self {
         Self {
             cluster_name: "steelsearch".to_string(),
-            cluster_stats_present: false,
+            nodes: Vec::new(),
+            cluster_stats: BTreeMap::new(),
         }
     }
 }
@@ -19616,18 +19624,12 @@ impl Default for KnnStatsResponseWire {
 impl KnnStatsResponseWire {
     pub fn write(&self, output: &mut StreamOutput) {
         output.write_string(&self.cluster_name);
-        output.write_vint(0);
-        output.write_vint(0);
-        if self.cluster_stats_present {
-            output.write_byte(10);
-            output.write_vint(1);
-            output.write_string("graph_query_requests");
-            output.write_byte(1);
-            output.write_i32(1);
-        } else {
-            output.write_byte(10);
-            output.write_vint(0);
+        output.write_vint(self.nodes.len() as i32);
+        for node in &self.nodes {
+            node.write(output);
         }
+        output.write_vint(0);
+        write_generic_json_map(output, &self.cluster_stats);
     }
 
     pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
@@ -19640,11 +19642,9 @@ impl KnnStatsResponseWire {
                 reason: "KNNStatsResponse nodes count must be non-negative",
             });
         }
-        if nodes_count != 0 {
-            return Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "knn stats node responses",
-                reason: "KNNStatsResponse node responses require DiscoveryNode and generic stat map decoding",
-            });
+        let mut nodes = Vec::with_capacity(nodes_count as usize);
+        for _ in 0..nodes_count {
+            nodes.push(KnnStatsNodeResponseWire::read(&mut input)?);
         }
         let failures_count = input.read_vint()?;
         if failures_count < 0 {
@@ -19659,10 +19659,11 @@ impl KnnStatsResponseWire {
                 reason: "KNNStatsResponse node failures require FailedNodeException decoding",
             });
         }
-        let cluster_stats_present = read_generic_map_has_entries(&mut input)?;
+        let cluster_stats = read_generic_json_map(&mut input, "knn stats cluster stats")?;
         let response = Self {
             cluster_name,
-            cluster_stats_present,
+            nodes,
+            cluster_stats,
         };
         require_no_trailing_bytes(&input)?;
         Ok(response)
@@ -19675,15 +19676,30 @@ impl KnnStatsResponseWire {
                 reason: "KNNStatsResponse requires a cluster name",
             });
         }
-        if self.cluster_stats_present {
-            return Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "knn stats cluster stats",
-                reason: "KNN stats cluster-level generic stat rendering is not implemented",
-            });
-        }
-        Err(TransportActionWireError::UnsupportedWireShape {
-            shape: "knn stats response rendering",
-            reason: "KNNStatsResponse rendering requires node aggregation, failure aggregation, and cluster stat rendering",
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct KnnStatsNodeResponseWire {
+    pub node: OpenSearchDiscoveryNodeWire,
+    pub stats: BTreeMap<String, Value>,
+}
+
+impl KnnStatsNodeResponseWire {
+    pub fn new(node: OpenSearchDiscoveryNodeWire, stats: BTreeMap<String, Value>) -> Self {
+        Self { node, stats }
+    }
+
+    fn write(&self, output: &mut StreamOutput) {
+        self.node.write(output);
+        write_typed_string_generic_json_map(output, &self.stats);
+    }
+
+    fn read(input: &mut StreamInput) -> Result<Self, TransportActionWireError> {
+        Ok(Self {
+            node: OpenSearchDiscoveryNodeWire::read(input)?,
+            stats: read_typed_string_generic_json_map(input, "knn stats node stats")?,
         })
     }
 }
@@ -48732,6 +48748,56 @@ fn write_generic_json_value(
     Ok(())
 }
 
+fn write_generic_json_map(output: &mut StreamOutput, values: &BTreeMap<String, Value>) {
+    output.write_byte(10);
+    output.write_vint(values.len() as i32);
+    for (key, value) in values {
+        output.write_string(key);
+        write_generic_json_value(output, value)
+            .expect("validated KNN stats generic map values must encode");
+    }
+}
+
+fn read_generic_json_map(
+    input: &mut StreamInput,
+    shape: &'static str,
+) -> Result<BTreeMap<String, Value>, TransportActionWireError> {
+    match read_generic_json_value(input, shape)? {
+        Value::Object(values) => Ok(values.into_iter().collect()),
+        Value::Null => Ok(BTreeMap::new()),
+        _ => Err(TransportActionWireError::UnsupportedWireShape {
+            shape,
+            reason: "OpenSearch generic map payload must be an object or null",
+        }),
+    }
+}
+
+fn write_typed_string_generic_json_map(
+    output: &mut StreamOutput,
+    values: &BTreeMap<String, Value>,
+) {
+    output.write_vint(values.len() as i32);
+    for (key, value) in values {
+        output.write_string(key);
+        write_generic_json_value(output, value)
+            .expect("validated KNN stats typed map values must encode");
+    }
+}
+
+fn read_typed_string_generic_json_map(
+    input: &mut StreamInput,
+    shape: &'static str,
+) -> Result<BTreeMap<String, Value>, TransportActionWireError> {
+    let len = read_len(input)?;
+    let mut values = BTreeMap::new();
+    for _ in 0..len {
+        let key = input.read_string()?;
+        let value = read_generic_json_value(input, shape)?;
+        values.insert(key, value);
+    }
+    Ok(values)
+}
+
 fn read_generic_json_value(
     input: &mut StreamInput,
     shape: &'static str,
@@ -61459,7 +61525,7 @@ mod tests {
     }
 
     #[test]
-    fn knn_stats_request_wire_round_trips_and_rejects_execution_boundary() {
+    fn knn_stats_request_wire_round_trips_and_validates_local_subset() {
         let request = KnnStatsRequestWire {
             parent_task_node: "cluster-manager".to_string(),
             parent_task_id: Some(51),
@@ -61471,6 +61537,7 @@ mod tests {
 
         let decoded = KnnStatsRequestWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, request);
+        decoded.validate_supported_execution_subset().unwrap();
         assert!(matches!(
             decoded.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
@@ -61558,58 +61625,38 @@ mod tests {
     }
 
     #[test]
-    fn knn_stats_response_wire_round_trips_and_rejects_unsupported_shapes() {
+    fn knn_stats_response_wire_round_trips_local_node_and_cluster_stats() {
+        let mut node_stats = BTreeMap::new();
+        node_stats.insert("graph_query_requests".to_string(), json!(3));
+        node_stats.insert("training_requests".to_string(), json!(2));
+        let mut cluster_stats = BTreeMap::new();
+        cluster_stats.insert("circuit_breaker_triggered".to_string(), json!(false));
+        cluster_stats.insert("model_index_status".to_string(), json!("green"));
         let response = KnnStatsResponseWire {
             cluster_name: "steel-dev".to_string(),
-            cluster_stats_present: false,
+            nodes: vec![KnnStatsNodeResponseWire::new(
+                test_discovery_node_wire(),
+                node_stats.clone(),
+            )],
+            cluster_stats: cluster_stats.clone(),
         };
         let mut output = StreamOutput::new();
         response.write(&mut output);
 
         let decoded = KnnStatsResponseWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, response);
-        assert!(matches!(
-            decoded.reject_unsupported_rendering(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "knn stats response rendering",
-                ..
-            })
-        ));
+        decoded.reject_unsupported_rendering().unwrap();
+        assert_eq!(decoded.nodes[0].stats, node_stats);
+        assert_eq!(decoded.cluster_stats, cluster_stats);
 
         let blank_cluster_name = KnnStatsResponseWire {
             cluster_name: String::new(),
-            cluster_stats_present: false,
+            ..KnnStatsResponseWire::default()
         };
         assert!(matches!(
             blank_cluster_name.reject_unsupported_rendering(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "knn stats response cluster name",
-                ..
-            })
-        ));
-
-        let cluster_stats = KnnStatsResponseWire {
-            cluster_name: "steel-dev".to_string(),
-            cluster_stats_present: true,
-        };
-        let mut output = StreamOutput::new();
-        cluster_stats.write(&mut output);
-        let decoded = KnnStatsResponseWire::read(output.freeze()).unwrap();
-        assert!(matches!(
-            decoded.reject_unsupported_rendering(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "knn stats cluster stats",
-                ..
-            })
-        ));
-
-        let mut node_payload = StreamOutput::new();
-        node_payload.write_string("steel-dev");
-        node_payload.write_vint(1);
-        assert!(matches!(
-            KnnStatsResponseWire::read(node_payload.freeze()),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "knn stats node responses",
                 ..
             })
         ));
@@ -61628,7 +61675,7 @@ mod tests {
     }
 
     #[test]
-    fn knn_stats_transport_messages_bind_rejected_action_frame_and_response() {
+    fn knn_stats_transport_messages_bind_implemented_action_frame_and_response() {
         let request = KnnStatsRequestWire::default();
         let mut frame =
             build_knn_stats_request_message(51, OPENSEARCH_3_7_0_TRANSPORT, &request).unwrap();
@@ -61639,20 +61686,22 @@ mod tests {
             classify_opensearch_transport_request_message(&message)
                 .unwrap()
                 .disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(read_knn_stats_request_message(&message).unwrap(), request);
-        assert!(matches!(
-            read_knn_stats_request_message(&message)
-                .unwrap()
-                .reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "knn stats execution",
-                ..
-            })
-        ));
+        read_knn_stats_request_message(&message)
+            .unwrap()
+            .validate_supported_execution_subset()
+            .unwrap();
 
-        let response = KnnStatsResponseWire::default();
+        let response = KnnStatsResponseWire {
+            cluster_name: "steel-dev".to_string(),
+            nodes: vec![KnnStatsNodeResponseWire::new(
+                test_discovery_node_wire(),
+                BTreeMap::from([("training_requests".to_string(), json!(1))]),
+            )],
+            cluster_stats: BTreeMap::from([("model_index_status".to_string(), json!("green"))]),
+        };
         let mut frame =
             build_knn_stats_response_message(51, OPENSEARCH_3_7_0_TRANSPORT, &response).unwrap();
         let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {

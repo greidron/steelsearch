@@ -351,8 +351,8 @@
       "transport_action": "KNNStatsTransportAction",
       "request_wire_type": "KNNStatsRequest",
       "response_wire_type": "KNNStatsResponse",
-      "disposition": "rejected",
-      "reason": "Knn-stats transport execution requires BaseNodes fanout, stat selection validation, node-level KNN stat collection, cluster-level KNN stat aggregation, failure aggregation, and response rendering"
+      "disposition": "implemented",
+      "reason": "Knn-stats transport adapter validates the local-node subset, renders a BaseNodesResponse with one local KNNStatsNodeResponse, and includes source-shaped cluster stat values from runtime state"
     },
     {
       "action_name": "cluster:admin/knn_warmup_action",
