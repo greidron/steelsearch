@@ -3768,6 +3768,36 @@ fn handle_transport_seed_connection<S: TransportConnection>(
         )?;
     } else if is_request
         && normalized_action_hint == Some("indices:data/read/search[can_match]")
+        && can_match_request_exceeds_local_reader_keep_alive_limit(&body)
+    {
+        let response = build_can_match_reader_keep_alive_too_large_error_response(
+            request_id,
+            header_version_id,
+            &body,
+        );
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("indices:data/read/search[can_match]"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request
+        && normalized_action_hint == Some("indices:data/read/search[can_match]")
         && can_match_request_supports_local_execution_subset(&body)
     {
         let response = build_local_can_match_response(request_id, header_version_id, &body);
@@ -16418,6 +16448,21 @@ fn can_match_request_has_missing_reader_context(body: &[u8]) -> bool {
         .is_some_and(|reader_id| !reader_context_exists(&reader_id))
 }
 
+fn can_match_request_exceeds_local_reader_keep_alive_limit(body: &[u8]) -> bool {
+    decode_can_match_request_from_transport_body(body)
+        .filter(|request| request.reject_unsupported_execution().is_ok())
+        .filter(|request| {
+            request
+                .reader_id
+                .as_ref()
+                .is_some_and(reader_context_exists)
+        })
+        .and_then(|request| request.keep_alive)
+        .is_some_and(|keep_alive| {
+            time_value_wire_to_millis(&keep_alive) > DEV_TRANSPORT_MAX_PIT_KEEP_ALIVE_MILLIS
+        })
+}
+
 fn build_can_match_missing_reader_context_error_response(
     request_id: i64,
     header_version_id: u32,
@@ -16430,6 +16475,24 @@ fn build_can_match_missing_reader_context_error_response(
         return build_empty_transport_response(request_id, header_version_id);
     };
     build_missing_search_context_error_response(request_id, header_version_id, &reader_id)
+}
+
+fn build_can_match_reader_keep_alive_too_large_error_response(
+    request_id: i64,
+    header_version_id: u32,
+    body: &[u8],
+) -> Vec<u8> {
+    let Some(request) = decode_can_match_request_from_transport_body(body) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    let Some(keep_alive) = request.keep_alive.as_ref() else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    build_pit_keep_alive_too_large_error_response(
+        request_id,
+        header_version_id,
+        time_value_wire_to_millis(keep_alive),
+    )
 }
 
 fn decode_can_match_request_from_transport_body(
@@ -20742,6 +20805,15 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
             if can_match_request_has_missing_reader_context(body) =>
         {
             Some(build_can_match_missing_reader_context_error_response(
+                request_id,
+                header_version_id,
+                body,
+            ))
+        }
+        Some("indices:data/read/search[can_match]")
+            if can_match_request_exceeds_local_reader_keep_alive_limit(body) =>
+        {
+            Some(build_can_match_reader_keep_alive_too_large_error_response(
                 request_id,
                 header_version_id,
                 body,
@@ -37985,6 +38057,92 @@ mod tests {
             error.message.as_deref(),
             Some("No search context found for id [46]")
         );
+    }
+
+    #[test]
+    fn can_match_reader_context_route_rejects_keep_alive_above_default_max() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        let bindings = dev_transport_pit_bindings();
+        bindings
+            .reader_contexts
+            .lock()
+            .expect("dev transport reader contexts lock poisoned")
+            .clear();
+        let shard_id = os_transport::action::OpenSearchShardIdWire {
+            index_name: "logs-can-match-reader-keep-alive".to_string(),
+            index_uuid: "uuid-logs-can-match-reader-keep-alive".to_string(),
+            shard_id: 0,
+        };
+        let reader_context_id =
+            os_transport::action::OpenSearchShardSearchContextIdWire::new("reader-keep-alive", 47);
+        bindings
+            .reader_contexts
+            .lock()
+            .expect("dev transport reader contexts lock poisoned")
+            .insert(
+                reader_context_key(&reader_context_id),
+                DevTransportReaderContext {
+                    shard_id: shard_id.clone(),
+                    documents: Arc::new(BTreeMap::new()),
+                    keep_alive_millis: 60_000,
+                    expires_at_millis: now_epoch_ms() + 60_000,
+                    pit_id: Some("can-match-reader-keep-alive-pit".to_string()),
+                    creation_time_millis: Some(u128_to_i64_saturating(now_epoch_ms())),
+                },
+            );
+        let request = os_transport::action::OpenSearchShardSearchRequestWire {
+            shard_id,
+            reader_id: Some(reader_context_id),
+            keep_alive: Some(os_transport::action::TimeValueWire::millis(90_000_000)),
+            source: Some(os_transport::action::OpenSearchSearchSourceBuilderWire {
+                query: Some(os_transport::action::OpenSearchQueryBuilderWire::MatchAll(
+                    os_transport::action::OpenSearchMatchAllQueryBuilderWire::default(),
+                )),
+                ..os_transport::action::OpenSearchSearchSourceBuilderWire::default()
+            }),
+            original_indices: os_transport::action::OpenSearchOriginalIndicesWire::new(
+                Some(vec!["logs-can-match-reader-keep-alive".to_string()]),
+                os_transport::action::OpenSearchIndicesOptionsWire::strict_expand_open_forbid_closed_ignore_throttled(),
+            ),
+            ..os_transport::action::OpenSearchShardSearchRequestWire::default()
+        };
+        let frame = os_transport::action::build_opensearch_can_match_request_message(
+            347,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(can_match_request_exceeds_local_reader_keep_alive_limit(
+            &frame[6..]
+        ));
+        assert!(!can_match_request_supports_local_execution_subset(
+            &frame[6..]
+        ));
+
+        let response = build_can_match_reader_keep_alive_too_large_error_response(
+            347,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &frame[6..],
+        );
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected can-match keep-alive error response frame");
+        };
+        assert_eq!(message.request_id, 347);
+        assert!(message.status.is_error());
+        let error = os_transport::error::TransportError::read(message.body.freeze())
+            .unwrap()
+            .unwrap();
+        assert_eq!(error.class_name, "java.lang.IllegalArgumentException");
+        let reason = error.message.as_deref().unwrap_or_default();
+        assert!(reason.contains("Keep alive for request (25h) is too large"));
+        assert!(reason.contains("point_in_time.max_keep_alive"));
     }
 
     #[test]
