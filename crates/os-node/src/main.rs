@@ -115,7 +115,7 @@ struct DevTransportReaderContext {
     documents: Arc<DocumentMap>,
     expires_at_millis: u128,
     pit_id: Option<String>,
-    creation_time_millis: Option<u128>,
+    creation_time_millis: Option<i64>,
 }
 
 #[derive(Clone, Debug)]
@@ -11706,7 +11706,7 @@ fn register_reader_contexts_for_created_transport_pit(
                 documents: Arc::clone(documents),
                 expires_at_millis,
                 pit_id: Some(pit_id.to_string()),
-                creation_time_millis: Some(creation_time_millis),
+                creation_time_millis: Some(u128_to_i64_saturating(creation_time_millis)),
             },
         );
     }
@@ -16279,10 +16279,11 @@ fn upsert_transport_pit_context_from_reader_update(
 ) -> bool {
     let keep_alive_millis = transport_positive_keep_alive_millis(request.keep_alive_millis);
     let now_millis = now_epoch_ms();
-    let creation_time_millis = if request.creation_time_millis >= 0 {
-        u128::try_from(request.creation_time_millis).unwrap_or(now_millis)
+    let creation_time_millis = request.creation_time_millis;
+    let pit_context_creation_time_millis = if creation_time_millis >= 0 {
+        u128::try_from(creation_time_millis).unwrap_or(now_millis)
     } else {
-        now_millis
+        0
     };
     let expires_at_millis = transport_pit_expires_at_millis(now_millis, keep_alive_millis);
     let reader_context_key = reader_context_key(&request.search_context_id);
@@ -16328,14 +16329,16 @@ fn upsert_transport_pit_context_from_reader_update(
             }
             context.keep_alive_millis = context.keep_alive_millis.max(keep_alive_millis);
             context.expires_at_millis = context.expires_at_millis.max(expires_at_millis);
-            context.creation_time_millis = context.creation_time_millis.min(creation_time_millis);
+            context.creation_time_millis = context
+                .creation_time_millis
+                .min(pit_context_creation_time_millis);
         })
         .or_insert_with(|| PitContext {
             indices,
             documents,
             keep_alive_millis,
             expires_at_millis,
-            creation_time_millis,
+            creation_time_millis: pit_context_creation_time_millis,
         });
     true
 }
@@ -17322,7 +17325,7 @@ fn get_all_transport_pits_response(
                     });
                 Some(os_transport::action::OpenSearchListPitInfoWire::new(
                     pit_id.clone(),
-                    u128_to_i64_saturating(creation_time_millis),
+                    creation_time_millis,
                     u64_to_i64_saturating(keep_alive_millis),
                 ))
             })
@@ -32097,7 +32100,7 @@ mod tests {
                 .values()
                 .all(|context| context.pit_id.as_deref() == Some(pit_id.as_str())));
             assert!(reader_contexts.values().all(|context| {
-                context.creation_time_millis == Some(create_response.creation_time_millis as u128)
+                context.creation_time_millis == Some(create_response.creation_time_millis)
             }));
             reader_contexts
                 .iter()
@@ -32444,8 +32447,7 @@ mod tests {
                 .values()
                 .all(|context| context.pit_id.as_deref() == Some(routed_pit_id.as_str())));
             assert!(reader_contexts.values().all(|context| {
-                context.creation_time_millis
-                    == Some(routed_create_response.creation_time_millis as u128)
+                context.creation_time_millis == Some(routed_create_response.creation_time_millis)
             }));
         }
         let routed_pit_context = dev_transport_pit_bindings()
@@ -34615,7 +34617,7 @@ mod tests {
                     documents: Arc::new(BTreeMap::new()),
                     expires_at_millis: now_epoch_ms() + 60_000,
                     pit_id: Some(encoded_pit_id.clone()),
-                    creation_time_millis: Some(now_epoch_ms()),
+                    creation_time_millis: Some(u128_to_i64_saturating(now_epoch_ms())),
                 },
             );
 
@@ -34693,7 +34695,7 @@ mod tests {
                     documents: Arc::new(BTreeMap::new()),
                     expires_at_millis: now_epoch_ms() + 60_000,
                     pit_id: Some("orphan-pit".to_string()),
-                    creation_time_millis: Some(now_epoch_ms()),
+                    creation_time_millis: Some(u128_to_i64_saturating(now_epoch_ms())),
                 },
             );
 
@@ -34891,7 +34893,7 @@ mod tests {
                     documents: Arc::new(BTreeMap::new()),
                     expires_at_millis: now_epoch_ms() + 60_000,
                     pit_id: Some(stored_pit_id.to_string()),
-                    creation_time_millis: Some(now_epoch_ms()),
+                    creation_time_millis: Some(u128_to_i64_saturating(now_epoch_ms())),
                 },
             );
         let transport_identity = DevTransportIdentity {
@@ -35020,7 +35022,7 @@ mod tests {
                     documents: Arc::new(BTreeMap::new()),
                     expires_at_millis: now_epoch_ms() + 60_000,
                     pit_id: Some(pit_id.to_string()),
-                    creation_time_millis: Some(now_epoch_ms()),
+                    creation_time_millis: Some(u128_to_i64_saturating(now_epoch_ms())),
                 },
             );
         let transport_identity = DevTransportIdentity {
@@ -35858,7 +35860,145 @@ mod tests {
             context.pit_id.as_deref(),
             Some("transport-pit-reader-extend")
         );
-        assert_eq!(context.creation_time_millis, Some(1_700_000_000_000_u128));
+        assert_eq!(context.creation_time_millis, Some(1_700_000_000_000_i64));
+    }
+
+    #[test]
+    fn update_reader_context_transport_route_preserves_negative_creation_time_like_opensearch() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        let bindings = dev_transport_pit_bindings();
+        bindings
+            .contexts
+            .lock()
+            .expect("dev transport PIT contexts lock poisoned")
+            .clear();
+        bindings
+            .reader_contexts
+            .lock()
+            .expect("dev transport reader contexts lock poisoned")
+            .clear();
+        let reader_context_id = os_transport::action::OpenSearchShardSearchContextIdWire::new(
+            "negative-creation-reader-session",
+            90,
+        );
+        bindings
+            .reader_contexts
+            .lock()
+            .expect("dev transport reader contexts lock poisoned")
+            .insert(
+                reader_context_key(&reader_context_id),
+                DevTransportReaderContext {
+                    shard_id: os_transport::action::OpenSearchShardIdWire {
+                        index_name: "logs-reader-negative-creation-update".to_string(),
+                        index_uuid: "uuid-reader-negative-creation-update".to_string(),
+                        shard_id: 0,
+                    },
+                    documents: Arc::new(BTreeMap::new()),
+                    expires_at_millis: now_epoch_ms() + 60_000,
+                    pit_id: None,
+                    creation_time_millis: None,
+                },
+            );
+
+        let request = os_transport::action::OpenSearchUpdateReaderContextRequestWire {
+            parent_task_node: String::new(),
+            parent_task_id: None,
+            pit_id: "transport-pit-reader-negative-time".to_string(),
+            keep_alive_millis: 120_000,
+            creation_time_millis: -7,
+            search_context_id: reader_context_id.clone(),
+        };
+        let frame = os_transport::action::build_opensearch_update_reader_context_request_message(
+            324,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(update_reader_context_request_supports_local_subset(
+            &frame[6..]
+        ));
+        let response = build_local_update_reader_context_response(
+            324,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &frame[6..],
+        );
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected update-reader-context response");
+        };
+        let response =
+            os_transport::action::read_opensearch_update_reader_context_response_message(&message)
+                .unwrap();
+        assert_eq!(response.pit_id, "transport-pit-reader-negative-time");
+        assert_eq!(response.creation_time_millis, -7);
+        assert_eq!(
+            bindings
+                .reader_contexts
+                .lock()
+                .expect("dev transport reader contexts lock poisoned")
+                .get(&reader_context_key(&reader_context_id))
+                .and_then(|context| context.creation_time_millis),
+            Some(-7)
+        );
+
+        bindings
+            .created_indices
+            .lock()
+            .expect("dev transport created indices lock poisoned")
+            .insert("logs-reader-negative-creation-update".to_string());
+        *bindings
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned") = serde_json::json!({
+            "indices": {
+                "logs-reader-negative-creation-update": {
+                    "settings": {
+                        "index": {
+                            "number_of_shards": "1"
+                        }
+                    }
+                }
+            }
+        });
+        let transport_identity = DevTransportIdentity {
+            cluster_name: "steelsearch-dev".to_string(),
+            node_name: "steel-node".to_string(),
+            node_id: "steel-node-id".to_string(),
+            ephemeral_id: "steel-node-ephemeral".to_string(),
+            transport_address: "127.0.0.1:9300".parse().unwrap(),
+            attributes: Vec::new(),
+            roles: vec!["cluster_manager".to_string(), "data".to_string()],
+            seed_peer_identity: None,
+            seed_peer_identities: Vec::new(),
+            coordination_state: Arc::new(Mutex::new(DevTransportCoordinationState::default())),
+            remote_transport_queue_gate: Arc::new(RemoteTransportQueueGate::new(1, 1000)),
+            task_queue_state: None,
+        };
+        let list_response = build_local_get_all_pits_response(
+            325,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &transport_identity,
+        );
+        let mut frame = BytesMut::from(&list_response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected get-all-PITs response message");
+        };
+        let list_response =
+            os_transport::action::read_opensearch_get_all_pits_response_message(&message).unwrap();
+        assert_eq!(list_response.nodes.len(), 1);
+        assert_eq!(list_response.nodes[0].pit_infos.len(), 1);
+        assert_eq!(list_response.nodes[0].pit_infos[0].pit_id, request.pit_id);
+        assert_eq!(list_response.nodes[0].pit_infos[0].creation_time_millis, -7);
     }
 
     #[test]
@@ -38172,7 +38312,7 @@ mod tests {
                     documents: Arc::new(BTreeMap::new()),
                     expires_at_millis: now + 60_000,
                     pit_id: Some("pit-live-a".to_string()),
-                    creation_time_millis: Some(now - 1_000),
+                    creation_time_millis: Some(u128_to_i64_saturating(now - 1_000)),
                 },
             );
             reader_contexts.insert(
@@ -38186,7 +38326,7 @@ mod tests {
                     documents: Arc::new(BTreeMap::new()),
                     expires_at_millis: now + 120_000,
                     pit_id: Some("pit-live-a".to_string()),
-                    creation_time_millis: Some(now - 500),
+                    creation_time_millis: Some(u128_to_i64_saturating(now - 500)),
                 },
             );
         }
@@ -38316,7 +38456,7 @@ mod tests {
                     documents: Arc::new(BTreeMap::new()),
                     expires_at_millis: now + 60_000,
                     pit_id: Some(live_pit_id.to_string()),
-                    creation_time_millis: Some(now),
+                    creation_time_millis: Some(u128_to_i64_saturating(now)),
                 },
             );
             reader_contexts.insert(
@@ -38330,7 +38470,7 @@ mod tests {
                     documents: Arc::new(BTreeMap::new()),
                     expires_at_millis: now + 60_000,
                     pit_id: Some(deleted_pit_id.to_string()),
-                    creation_time_millis: Some(now),
+                    creation_time_millis: Some(u128_to_i64_saturating(now)),
                 },
             );
             reader_contexts.insert(
@@ -38344,7 +38484,7 @@ mod tests {
                     documents: Arc::new(BTreeMap::new()),
                     expires_at_millis: now + 60_000,
                     pit_id: Some(closed_pit_id.to_string()),
-                    creation_time_millis: Some(now),
+                    creation_time_millis: Some(u128_to_i64_saturating(now)),
                 },
             );
         }
