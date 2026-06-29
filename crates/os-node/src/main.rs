@@ -4205,6 +4205,33 @@ fn handle_transport_seed_connection<S: TransportConnection>(
         )?;
     } else if is_request
         && normalized_action_hint == Some("indices:data/read/point_in_time/delete")
+        && delete_pit_request_has_invalid_pit_id(&body)
+    {
+        let response =
+            build_delete_pit_invalid_pit_id_error_response(request_id, header_version_id, &body);
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("indices:data/read/point_in_time/delete"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request
+        && normalized_action_hint == Some("indices:data/read/point_in_time/delete")
         && delete_pit_request_supports_local_lifecycle_subset(&body)
     {
         let response = build_local_delete_pit_response(request_id, header_version_id, &body);
@@ -16923,6 +16950,9 @@ fn build_local_delete_pit_response(
     let Some(request) = decode_delete_pit_request_from_transport_body(body) else {
         return build_empty_transport_response(request_id, header_version_id);
     };
+    if let Some(_) = delete_pit_request_first_invalid_pit_id(&request) {
+        return build_delete_pit_invalid_pit_id_error_response(request_id, header_version_id, body);
+    }
     if !delete_pit_request_matches_local_lifecycle_subset(&request) {
         return build_empty_transport_response(request_id, header_version_id);
     }
@@ -16942,6 +16972,12 @@ fn delete_pit_request_supports_local_lifecycle_subset(body: &[u8]) -> bool {
         .is_some_and(delete_pit_request_matches_local_lifecycle_subset)
 }
 
+fn delete_pit_request_has_invalid_pit_id(body: &[u8]) -> bool {
+    decode_delete_pit_request_from_transport_body(body)
+        .filter(|request| request.validate_supported_subset().is_ok())
+        .is_some_and(|request| delete_pit_request_first_invalid_pit_id(&request).is_some())
+}
+
 fn delete_pit_request_matches_local_lifecycle_subset(
     request: &os_transport::action::OpenSearchDeletePitRequestWire,
 ) -> bool {
@@ -16957,6 +16993,34 @@ fn delete_pit_ids_match_local_lifecycle_subset(ids: &[String]) -> bool {
         && ids
             .iter()
             .all(|id| os_transport::action::OpenSearchSearchContextIdWire::decode(id).is_ok())
+}
+
+fn delete_pit_request_first_invalid_pit_id(
+    request: &os_transport::action::OpenSearchDeletePitRequestWire,
+) -> Option<String> {
+    if request.pit_ids.len() == 1 && request.pit_ids[0] == "_all" {
+        return None;
+    }
+    request
+        .pit_ids
+        .iter()
+        .find(|pit_id| os_transport::action::OpenSearchSearchContextIdWire::decode(pit_id).is_err())
+        .cloned()
+}
+
+fn build_delete_pit_invalid_pit_id_error_response(
+    request_id: i64,
+    header_version_id: u32,
+    body: &[u8],
+) -> Vec<u8> {
+    let Some(request) = decode_delete_pit_request_from_transport_body(body) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    let pit_id = delete_pit_request_first_invalid_pit_id(&request).unwrap_or_default();
+    let reason = format!("invalid id: [{pit_id}]");
+    let mut output = StreamOutput::new();
+    os_transport::error::write_illegal_argument_exception(&mut output, Some(&reason));
+    build_transport_error_response_frame(request_id, header_version_id, output.freeze().to_vec())
 }
 
 fn ids_use_all_only_as_standalone(ids: &[String]) -> bool {
@@ -20483,6 +20547,15 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
                 header_version_id,
                 body,
                 transport_identity,
+            ))
+        }
+        Some("indices:data/read/point_in_time/delete")
+            if delete_pit_request_has_invalid_pit_id(body) =>
+        {
+            Some(build_delete_pit_invalid_pit_id_error_response(
+                request_id,
+                header_version_id,
+                body,
             ))
         }
         Some("indices:data/read/point_in_time/delete")
@@ -38635,6 +38708,7 @@ mod tests {
         assert!(!delete_pit_request_supports_local_lifecycle_subset(
             &frame[6..]
         ));
+        assert!(delete_pit_request_has_invalid_pit_id(&frame[6..]));
 
         let response = build_local_delete_pit_response(
             198,
@@ -38647,9 +38721,14 @@ mod tests {
                 .unwrap()
                 .unwrap()
         else {
-            panic!("expected delete-PIT response message");
+            panic!("expected delete-PIT invalid-id response message");
         };
-        assert!(message.body.is_empty());
+        assert!(message.status.is_error());
+        let error = os_transport::error::TransportError::read(message.body.freeze())
+            .unwrap()
+            .unwrap();
+        assert_eq!(error.class_name, "java.lang.IllegalArgumentException");
+        assert_eq!(error.message.as_deref(), Some("invalid id: []"));
     }
 
     #[test]
@@ -38687,6 +38766,7 @@ mod tests {
         assert!(!delete_pit_request_supports_local_lifecycle_subset(
             &frame[6..]
         ));
+        assert!(delete_pit_request_has_invalid_pit_id(&frame[6..]));
 
         let response = build_local_delete_pit_response(
             199,
@@ -38699,9 +38779,14 @@ mod tests {
                 .unwrap()
                 .unwrap()
         else {
-            panic!("expected delete-PIT response message");
+            panic!("expected mixed delete-PIT invalid-id response message");
         };
-        assert!(message.body.is_empty());
+        assert!(message.status.is_error());
+        let error = os_transport::error::TransportError::read(message.body.freeze())
+            .unwrap()
+            .unwrap();
+        assert_eq!(error.class_name, "java.lang.IllegalArgumentException");
+        assert_eq!(error.message.as_deref(), Some("invalid id: [_all]"));
         assert!(dev_transport_pit_bindings()
             .contexts
             .lock()
