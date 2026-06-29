@@ -3476,7 +3476,7 @@ fn daemon_transport_cluster_update_settings_empty_request_returns_acknowledged()
 }
 
 #[test]
-fn daemon_transport_put_weighted_routing_updates_get_response() {
+fn daemon_transport_put_and_delete_weighted_routing_updates_get_response() {
     let binary = os_node_binary();
     let root = unique_work_dir();
     fs::create_dir_all(root.join("data")).unwrap();
@@ -3547,6 +3547,45 @@ fn daemon_transport_put_weighted_routing_updates_get_response() {
     assert_eq!(weighted.discovered_cluster_manager, Some(true));
     assert_eq!(weighted.weights.get("zone-a"), Some(&1.0));
     assert_eq!(weighted.weights.get("zone-b"), Some(&0.5));
+
+    let delete_request = os_transport::action::ClusterDeleteWeightedRoutingRequestWire {
+        version: 4,
+        awareness_attribute: Some("zone".to_string()),
+        ..os_transport::action::ClusterDeleteWeightedRoutingRequestWire::default()
+    };
+    let delete_frame = os_transport::action::build_cluster_delete_weighted_routing_request_message(
+        97,
+        OPENSEARCH_3_7_0_TRANSPORT,
+        &delete_request,
+    )
+    .unwrap();
+    let delete_response = send_transport_request_and_decode_response(transport_port, &delete_frame);
+    let delete_ack = os_transport::action::read_cluster_delete_weighted_routing_response_message(
+        &delete_response,
+    )
+    .unwrap();
+    assert_eq!(delete_response.request_id, 97);
+    assert_eq!(delete_ack.acknowledged, true);
+
+    let post_delete_get_frame =
+        os_transport::action::build_cluster_get_weighted_routing_request_message(
+            98,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &get_request,
+        )
+        .unwrap();
+    let post_delete_get_response =
+        send_transport_request_and_decode_response(transport_port, &post_delete_get_frame);
+    let post_delete_weighted =
+        os_transport::action::read_cluster_get_weighted_routing_response_message(
+            &post_delete_get_response,
+        )
+        .unwrap();
+    assert_eq!(post_delete_get_response.request_id, 98);
+    assert_eq!(
+        post_delete_weighted,
+        os_transport::action::ClusterGetWeightedRoutingResponseWire::empty()
+    );
 
     let _ = fs::remove_dir_all(root);
 }

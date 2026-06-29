@@ -70,7 +70,14 @@
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::cluster_put_weighted_routing_transport_messages_bind_supported_action_frame_and_ack_response",
-      "response_evidence": "crates/os-node/tests/dev_cluster_daemons.rs::daemon_transport_put_weighted_routing_updates_get_response"
+      "response_evidence": "crates/os-node/tests/dev_cluster_daemons.rs::daemon_transport_put_and_delete_weighted_routing_updates_get_response"
+    },
+    {
+      "action_name": "cluster:admin/routing/awareness/weights/delete",
+      "disposition": "implemented",
+      "evidence_kind": "live_probe",
+      "request_evidence": "crates/os-transport/src/action.rs::cluster_delete_weighted_routing_transport_messages_bind_supported_action_frame_and_ack_response",
+      "response_evidence": "crates/os-node/tests/dev_cluster_daemons.rs::daemon_transport_put_and_delete_weighted_routing_updates_get_response"
     },
     {
       "action_name": "cluster:admin/script_context/get",

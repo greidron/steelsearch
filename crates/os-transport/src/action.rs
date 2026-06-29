@@ -2120,8 +2120,8 @@ pub fn classify_opensearch_transport_action(
         },
         CLUSTER_DELETE_WEIGHTED_ROUTING_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
-            disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "delete-weighted-routing transport execution requires weighted routing metadata deletion and acknowledgement rendering",
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "delete-weighted-routing transport adapter validates weighted routing metadata, mutates the Rust manifest, and returns an OpenSearch acknowledged response",
         },
         OPENSEARCH_GET_MAPPINGS_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -9334,6 +9334,36 @@ pub fn read_cluster_delete_weighted_routing_request_message(
         });
     }
     ClusterDeleteWeightedRoutingRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_cluster_delete_weighted_routing_response_message(
+    request_id: i64,
+    version: Version,
+    response: &AcknowledgedResponseWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    response.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::response(),
+        version,
+        variable_header: BytesMut::from(&ResponseVariableHeader::default().to_bytes()[..]),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_cluster_delete_weighted_routing_response_message(
+    message: &TransportMessage,
+) -> Result<AcknowledgedResponseWire, TransportActionWireError> {
+    if !message.status.is_response() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "response",
+            actual: message.status.bits(),
+        });
+    }
+    let _header = ResponseVariableHeader::read(message.variable_header.clone().freeze())?;
+    AcknowledgedResponseWire::read(message.body.clone().freeze())
 }
 
 pub fn build_opensearch_get_mappings_request_message(
@@ -20387,7 +20417,7 @@ impl ClusterDeleteWeightedRoutingRequestWire {
         Ok(request)
     }
 
-    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+    pub fn validate_supported_execution_subset(&self) -> Result<(), TransportActionWireError> {
         if self.cluster_manager_timeout != TimeValueWire::seconds(30) {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "delete weighted routing cluster-manager timeout",
@@ -20410,9 +20440,14 @@ impl ClusterDeleteWeightedRoutingRequestWire {
                 });
             }
         }
+        Ok(())
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        self.validate_supported_execution_subset()?;
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "delete weighted routing execution",
-            reason: "delete-weighted-routing transport execution requires weighted routing metadata deletion and acknowledgement rendering",
+            reason: "use validate_supported_execution_subset for the implemented manifest-backed delete-weighted-routing adapter",
         })
     }
 }
@@ -61492,13 +61527,14 @@ mod tests {
     }
 
     #[test]
-    fn cluster_delete_weighted_routing_request_wire_round_trips_and_rejects_execution_boundary() {
+    fn cluster_delete_weighted_routing_request_wire_round_trips_and_validates_manifest_subset() {
         let request = valid_cluster_delete_weighted_routing_request();
         let mut output = StreamOutput::new();
         request.write(&mut output);
 
         let decoded = ClusterDeleteWeightedRoutingRequestWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, request);
+        decoded.validate_supported_execution_subset().unwrap();
         assert!(matches!(
             decoded.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
@@ -61515,7 +61551,7 @@ mod tests {
             ..valid_cluster_delete_weighted_routing_request()
         };
         assert!(matches!(
-            timeout.reject_unsupported_execution(),
+            timeout.validate_supported_execution_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "delete weighted routing cluster-manager timeout",
                 ..
@@ -61527,7 +61563,7 @@ mod tests {
             ..valid_cluster_delete_weighted_routing_request()
         };
         assert!(matches!(
-            missing_version.reject_unsupported_execution(),
+            missing_version.validate_supported_execution_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "delete weighted routing missing version",
                 ..
@@ -61539,7 +61575,7 @@ mod tests {
             ..valid_cluster_delete_weighted_routing_request()
         };
         assert!(matches!(
-            absent_attribute.reject_unsupported_execution(),
+            absent_attribute.validate_supported_execution_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "delete weighted routing missing attribute",
                 ..
@@ -61551,7 +61587,7 @@ mod tests {
             ..valid_cluster_delete_weighted_routing_request()
         };
         assert!(matches!(
-            blank_attribute.reject_unsupported_execution(),
+            blank_attribute.validate_supported_execution_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "delete weighted routing missing attribute",
                 ..
@@ -61571,7 +61607,7 @@ mod tests {
         let decoded = ClusterDeleteWeightedRoutingRequestWire::read(output.freeze()).unwrap();
         assert_eq!(decoded.awareness_attribute, None);
         assert!(matches!(
-            decoded.reject_unsupported_execution(),
+            decoded.validate_supported_execution_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "delete weighted routing missing attribute",
                 ..
@@ -61580,7 +61616,8 @@ mod tests {
     }
 
     #[test]
-    fn cluster_delete_weighted_routing_transport_messages_bind_rejected_action_frame() {
+    fn cluster_delete_weighted_routing_transport_messages_bind_supported_action_frame_and_ack_response(
+    ) {
         let request = valid_cluster_delete_weighted_routing_request();
         let mut frame = build_cluster_delete_weighted_routing_request_message(
             39,
@@ -61595,15 +61632,25 @@ mod tests {
             read_cluster_delete_weighted_routing_request_message(&message).unwrap(),
             request
         );
-        assert!(matches!(
-            read_cluster_delete_weighted_routing_request_message(&message)
-                .unwrap()
-                .reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "delete weighted routing execution",
-                ..
-            })
-        ));
+        read_cluster_delete_weighted_routing_request_message(&message)
+            .unwrap()
+            .validate_supported_execution_subset()
+            .unwrap();
+
+        let mut frame = build_cluster_delete_weighted_routing_response_message(
+            39,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &AcknowledgedResponseWire { acknowledged: true },
+        )
+        .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected delete weighted routing response message");
+        };
+        assert_eq!(message.request_id, 39);
+        assert_eq!(
+            read_cluster_delete_weighted_routing_response_message(&message).unwrap(),
+            AcknowledgedResponseWire { acknowledged: true }
+        );
     }
 
     #[test]
