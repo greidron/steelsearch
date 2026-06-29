@@ -1926,7 +1926,7 @@ pub fn classify_opensearch_transport_action(
         CLUSTER_REROUTE_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Implemented,
-            reason: "cluster-reroute transport adapter executes the empty-command local reroute subset and renders OpenSearch ClusterRerouteResponse with empty RoutingExplanations",
+            reason: "cluster-reroute transport adapter executes empty-command reroutes and manifest-backed move allocation commands with empty RoutingExplanations",
         },
         GET_REPOSITORIES_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -41752,12 +41752,105 @@ impl GetTermVersionResponseWire {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ClusterRerouteAllocationCommandWire {
+    Move {
+        index: String,
+        shard_id: i32,
+        from_node: String,
+        to_node: String,
+    },
+}
+
+impl ClusterRerouteAllocationCommandWire {
+    pub const MOVE_NAME: &'static str = "move";
+
+    pub fn write(&self, output: &mut StreamOutput) {
+        match self {
+            Self::Move {
+                index,
+                shard_id,
+                from_node,
+                to_node,
+            } => {
+                output.write_string(Self::MOVE_NAME);
+                output.write_string(index);
+                output.write_vint(*shard_id);
+                output.write_string(from_node);
+                output.write_string(to_node);
+            }
+        }
+    }
+
+    fn read(input: &mut StreamInput) -> Result<Self, TransportActionWireError> {
+        let name = input.read_string()?;
+        match name.as_str() {
+            Self::MOVE_NAME => {
+                let index = input.read_string()?;
+                let shard_id = input.read_vint()?;
+                let from_node = input.read_string()?;
+                let to_node = input.read_string()?;
+                Ok(Self::Move {
+                    index,
+                    shard_id,
+                    from_node,
+                    to_node,
+                })
+            }
+            _ => Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cluster reroute allocation command",
+                reason: "only the move AllocationCommand named-writeable is decoded by the cluster-reroute adapter yet",
+            }),
+        }
+    }
+
+    pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
+        match self {
+            Self::Move {
+                index,
+                shard_id,
+                from_node,
+                to_node,
+            } => {
+                if index.trim().is_empty() || index.contains('*') || index.contains(',') {
+                    return Err(TransportActionWireError::UnsupportedWireShape {
+                        shape: "cluster reroute move index",
+                        reason: "move allocation commands require one concrete index",
+                    });
+                }
+                if *shard_id < 0 {
+                    return Err(TransportActionWireError::UnsupportedWireShape {
+                        shape: "cluster reroute move shard",
+                        reason: "move allocation commands require a non-negative shard id",
+                    });
+                }
+                if from_node.trim().is_empty() || to_node.trim().is_empty() {
+                    return Err(TransportActionWireError::UnsupportedWireShape {
+                        shape: "cluster reroute move nodes",
+                        reason:
+                            "move allocation commands require non-empty source and target nodes",
+                    });
+                }
+                if from_node == to_node {
+                    return Err(TransportActionWireError::UnsupportedWireShape {
+                        shape: "cluster reroute move nodes",
+                        reason:
+                            "move allocation commands require different source and target nodes",
+                    });
+                }
+                Ok(())
+            }
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ClusterRerouteRequestWire {
     pub parent_task_node: String,
     pub parent_task_id: Option<i64>,
     pub cluster_manager_timeout: TimeValueWire,
     pub ack_timeout: TimeValueWire,
     pub commands_count: i32,
+    pub commands: Vec<ClusterRerouteAllocationCommandWire>,
     pub dry_run: bool,
     pub explain: bool,
     pub retry_failed: bool,
@@ -41771,6 +41864,7 @@ impl Default for ClusterRerouteRequestWire {
             cluster_manager_timeout: TimeValueWire::seconds(30),
             ack_timeout: TimeValueWire::seconds(30),
             commands_count: 0,
+            commands: Vec::new(),
             dry_run: false,
             explain: false,
             retry_failed: false,
@@ -41783,7 +41877,15 @@ impl ClusterRerouteRequestWire {
         write_parent_task_id(output, &self.parent_task_node, self.parent_task_id);
         self.cluster_manager_timeout.write(output);
         self.ack_timeout.write(output);
-        output.write_vint(self.commands_count);
+        let commands_count = if self.commands.is_empty() {
+            self.commands_count
+        } else {
+            self.commands.len() as i32
+        };
+        output.write_vint(commands_count);
+        for command in &self.commands {
+            command.write(output);
+        }
         output.write_bool(self.dry_run);
         output.write_bool(self.explain);
         output.write_bool(self.retry_failed);
@@ -41798,12 +41900,9 @@ impl ClusterRerouteRequestWire {
         if commands_count < 0 {
             return Err(StreamInputError::NegativeLength(commands_count).into());
         }
-        if commands_count > 0 {
-            return Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "cluster reroute commands",
-                reason:
-                    "allocation command payloads require named-writeable command decoding and routing mutation semantics",
-            });
+        let mut commands = Vec::new();
+        for _ in 0..commands_count {
+            commands.push(ClusterRerouteAllocationCommandWire::read(&mut input)?);
         }
         let request = Self {
             parent_task_node,
@@ -41811,6 +41910,7 @@ impl ClusterRerouteRequestWire {
             cluster_manager_timeout,
             ack_timeout,
             commands_count,
+            commands,
             dry_run: input.read_bool()?,
             explain: input.read_bool()?,
             retry_failed: input.read_bool()?,
@@ -41823,7 +41923,7 @@ impl ClusterRerouteRequestWire {
         self.validate_supported_execution_subset()?;
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "cluster reroute execution",
-            reason: "use validate_supported_execution_subset for the implemented empty-command cluster-reroute adapter",
+            reason: "use validate_supported_execution_subset for the implemented cluster-reroute adapter",
         })
     }
 
@@ -41842,10 +41942,28 @@ impl ClusterRerouteRequestWire {
             });
         }
         if self.commands_count != 0 {
+            if self.commands_count != self.commands.len() as i32 {
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "cluster reroute commands",
+                    reason: "allocation command count must match decoded command payloads",
+                });
+            }
+            if self.explain {
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "cluster reroute explanations",
+                    reason:
+                        "non-empty reroute command explanations are not encoded by this adapter yet",
+                });
+            }
+            for command in &self.commands {
+                command.validate_supported_subset()?;
+            }
+            return Ok(());
+        }
+        if !self.commands.is_empty() {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "cluster reroute commands",
-                reason:
-                    "allocation commands require routing mutation and explanation response semantics",
+                reason: "allocation command count must match decoded command payloads",
             });
         }
         Ok(())
@@ -57472,6 +57590,38 @@ mod tests {
     }
 
     #[test]
+    fn cluster_reroute_request_decodes_move_allocation_command() {
+        let request = ClusterRerouteRequestWire {
+            commands_count: 1,
+            commands: vec![ClusterRerouteAllocationCommandWire::Move {
+                index: "logs-reroute".to_string(),
+                shard_id: 0,
+                from_node: "source-node".to_string(),
+                to_node: "target-node".to_string(),
+            }],
+            ..ClusterRerouteRequestWire::default()
+        };
+        let mut output = StreamOutput::new();
+        request.write(&mut output);
+
+        let decoded = ClusterRerouteRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, request);
+        decoded.validate_supported_execution_subset().unwrap();
+
+        let explain_request = ClusterRerouteRequestWire {
+            explain: true,
+            ..decoded
+        };
+        assert!(matches!(
+            explain_request.validate_supported_execution_subset(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cluster reroute explanations",
+                ..
+            })
+        ));
+    }
+
+    #[test]
     fn cluster_reroute_request_rejects_unsupported_shapes() {
         let cluster_manager_timeout = ClusterRerouteRequestWire {
             cluster_manager_timeout: TimeValueWire::seconds(10),
@@ -57527,13 +57677,7 @@ mod tests {
         let mut output = StreamOutput::new();
         request.write(&mut output);
 
-        assert!(matches!(
-            ClusterRerouteRequestWire::read(output.freeze()),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "cluster reroute commands",
-                ..
-            })
-        ));
+        assert!(ClusterRerouteRequestWire::read(output.freeze()).is_err());
     }
 
     #[test]

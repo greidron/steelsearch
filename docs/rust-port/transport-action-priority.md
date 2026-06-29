@@ -251,7 +251,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `cluster:admin/voting_config/clear_exclusions` (implemented no-wait subset)
 - `cluster:monitor/allocation/explain` (implemented bounded no-unassigned-shards error subset)
 - `cluster:admin/settings/update` (implemented bounded manifest-backed settings mutation subset)
-- `cluster:admin/reroute` (implemented empty-command local reroute subset)
+- `cluster:admin/reroute` (implemented empty-command and manifest-backed move-command local reroute subset)
 - `cluster:admin/filecache/prune` (implemented local no-cache response subset)
 - `cluster:admin/nodes/reload_secure_settings` (implemented local no-password reload response subset)
 - `cluster:admin/repository/put` (rejected fail-closed)
@@ -578,15 +578,19 @@ The cluster-update-settings boundary covers:
 The cluster-reroute boundary covers:
 
 - OpenSearch `ClusterRerouteRequest` parent task, cluster-manager timeout,
-  acknowledgement timeout, empty allocation command set, `dryRun`, `explain`,
-  and `retryFailed` flags at the wire decode/build layer;
+  acknowledgement timeout, allocation command set, `dryRun`, `explain`, and
+  `retryFailed` flags at the wire decode/build layer;
 - local execution for the OpenSearch-valid empty-command reroute subset,
   returning an acknowledged `ClusterRerouteResponse` with the current local
   cluster-state payload and empty `RoutingExplanations`, including empty-command
   `dry_run`, `explain`, and `retry_failed` flag combinations;
-- explicit rejection for non-empty allocation commands, custom
-  cluster-manager timeout, custom acknowledgement timeout, and non-empty
-  reroute explanations.
+- OpenSearch `move` `AllocationCommand` named-writeable decode/build for one or
+  more concrete index/shard/source/target moves, applied to manifest-backed
+  `cluster_admin_state.reroute_assignments` when the recorded current node
+  matches the command source node;
+- explicit rejection for unsupported allocation command named-writeables,
+  custom cluster-manager timeout, custom acknowledgement timeout, command
+  explanations, and malformed move commands.
 
 The prune-file-cache adapter covers:
 
@@ -3440,21 +3444,27 @@ Current cluster-reroute implemented-path wire microbenchmark:
 
 ```text
 cargo run -p os-transport --release --bin cluster-reroute-wire-benchmark
-cluster_reroute_request_encode iterations=400000 elapsed_ms=197.105 ops_per_second=2029378.79 nanos_per_op=492.76
-cluster_reroute_request_decode iterations=400000 elapsed_ms=182.470 ops_per_second=2192138.84 nanos_per_op=456.18
-cluster_reroute_request_validate iterations=400000 elapsed_ms=182.752 ops_per_second=2188755.22 nanos_per_op=456.88
-cluster_reroute_response_encode iterations=400000 elapsed_ms=387.756 ops_per_second=1031577.83 nanos_per_op=969.39
-cluster_reroute_response_decode iterations=400000 elapsed_ms=380.424 ops_per_second=1051457.67 nanos_per_op=951.06
-cluster_reroute_wire_bottleneck_ops_per_second=1031577.83
+cluster_reroute_request_encode iterations=400000 elapsed_ms=197.976 ops_per_second=2020450.80 nanos_per_op=494.94
+cluster_reroute_request_decode iterations=400000 elapsed_ms=194.267 ops_per_second=2059016.92 nanos_per_op=485.67
+cluster_reroute_request_validate iterations=400000 elapsed_ms=195.590 ops_per_second=2045096.44 nanos_per_op=488.97
+cluster_reroute_move_request_encode iterations=400000 elapsed_ms=373.785 ops_per_second=1070133.58 nanos_per_op=934.46
+cluster_reroute_move_request_decode iterations=400000 elapsed_ms=372.647 ops_per_second=1073400.92 nanos_per_op=931.62
+cluster_reroute_move_request_validate iterations=400000 elapsed_ms=389.307 ops_per_second=1027467.55 nanos_per_op=973.27
+cluster_reroute_response_encode iterations=400000 elapsed_ms=392.068 ops_per_second=1020230.65 nanos_per_op=980.17
+cluster_reroute_response_decode iterations=400000 elapsed_ms=382.842 ops_per_second=1044817.67 nanos_per_op=957.10
+cluster_reroute_wire_bottleneck_ops_per_second=1020230.65
 ```
 
 The current cluster-reroute implemented-path boundary covers request encode,
 request decode, subset validation, acknowledged response encode, and response
-decode over the parent task, two timeouts, empty allocation-command set,
-reroute flags, current cluster-state payload, and empty routing explanations.
-At roughly 1.03M ops/s in the latest local release run, the bottleneck is
-response encode for the cluster-state payload. Non-empty command sets are still
-rejected before command-specific allocation execution and routing mutation.
+decode over the parent task, two timeouts, empty and `move` allocation-command
+sets, reroute flags, current cluster-state payload, and empty routing
+explanations. At roughly 1.02M ops/s in the latest local release run, the
+bottleneck remains response encode for the cluster-state payload. The
+implemented non-empty command path is currently bounded to `move` allocation
+commands that match an existing manifest-backed shard assignment; move request
+validation itself is about 1.03M ops/s. Other allocation command types and
+command explanations are still rejected fail-closed.
 
 Current get-repositories wire microbenchmark:
 

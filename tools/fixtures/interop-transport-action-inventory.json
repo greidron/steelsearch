@@ -541,7 +541,7 @@
       "request_wire_type": "ClusterRerouteRequest",
       "response_wire_type": "ClusterRerouteResponse",
       "disposition": "implemented",
-      "reason": "Cluster-reroute transport adapter executes the empty-command local reroute subset and renders OpenSearch ClusterRerouteResponse with empty RoutingExplanations"
+      "reason": "Cluster-reroute transport adapter executes empty-command reroutes and manifest-backed move allocation commands with empty RoutingExplanations"
     },
     {
       "action_name": "cluster:admin/repository/get",

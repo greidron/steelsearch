@@ -1147,7 +1147,7 @@ fn handle_transport_seed_connection<S: TransportConnection>(
         )?;
     } else if is_request
         && normalized_action_hint == Some("cluster:admin/reroute")
-        && cluster_reroute_request_supports_empty_command_subset(&body)
+        && cluster_reroute_request_supports_execution_subset(&body)
     {
         let response = build_cluster_reroute_response(
             request_id,
@@ -26560,6 +26560,9 @@ fn build_cluster_reroute_response(
     if request.validate_supported_execution_subset().is_err() {
         return build_empty_transport_response(request_id, header_version_id);
     }
+    if !apply_cluster_reroute_request_to_manifest(&request) {
+        return build_empty_transport_response(request_id, header_version_id);
+    }
     let state_request = os_transport::action::ClusterStateRequestWire::default();
     let state = local_cluster_state_response_from_request(transport_identity, &state_request);
     let response =
@@ -26573,10 +26576,110 @@ fn build_cluster_reroute_response(
     .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
 }
 
-fn cluster_reroute_request_supports_empty_command_subset(body: &[u8]) -> bool {
+fn cluster_reroute_request_supports_execution_subset(body: &[u8]) -> bool {
     decode_cluster_reroute_request_from_transport_body(body)
         .as_ref()
         .is_some_and(|request| request.validate_supported_execution_subset().is_ok())
+}
+
+fn apply_cluster_reroute_request_to_manifest(
+    request: &os_transport::action::ClusterRerouteRequestWire,
+) -> bool {
+    if request.commands.is_empty() || request.dry_run {
+        return true;
+    }
+    let bindings = dev_transport_pit_bindings();
+    let mut manifest = bindings
+        .metadata_manifest
+        .lock()
+        .expect("dev transport metadata manifest lock poisoned");
+    let mut candidate = manifest.clone();
+    for command in &request.commands {
+        match command {
+            os_transport::action::ClusterRerouteAllocationCommandWire::Move {
+                index,
+                shard_id,
+                from_node,
+                to_node,
+            } => {
+                if !apply_cluster_reroute_move_to_manifest(
+                    &mut candidate,
+                    index,
+                    *shard_id,
+                    from_node,
+                    to_node,
+                ) {
+                    return false;
+                }
+            }
+        }
+    }
+    *manifest = candidate;
+    true
+}
+
+fn apply_cluster_reroute_move_to_manifest(
+    manifest: &mut Value,
+    index: &str,
+    shard_id: i32,
+    from_node: &str,
+    to_node: &str,
+) -> bool {
+    if manifest
+        .get("indices")
+        .and_then(|indices| indices.get(index))
+        .is_none()
+    {
+        return false;
+    }
+    let Some(root) = manifest.as_object_mut() else {
+        return false;
+    };
+    let cluster_admin_state = root
+        .entry("cluster_admin_state".to_string())
+        .or_insert_with(|| serde_json::json!({}));
+    if !cluster_admin_state.is_object() {
+        *cluster_admin_state = serde_json::json!({});
+    }
+    let Some(cluster_admin_state) = cluster_admin_state.as_object_mut() else {
+        return false;
+    };
+    let reroute_assignments = cluster_admin_state
+        .entry("reroute_assignments".to_string())
+        .or_insert_with(|| serde_json::json!({}));
+    if !reroute_assignments.is_object() {
+        *reroute_assignments = serde_json::json!({});
+    }
+    let Some(reroute_assignments) = reroute_assignments.as_object_mut() else {
+        return false;
+    };
+    let index_assignments = reroute_assignments
+        .entry(index.to_string())
+        .or_insert_with(|| serde_json::json!({}));
+    if !index_assignments.is_object() {
+        *index_assignments = serde_json::json!({});
+    }
+    let Some(index_assignments) = index_assignments.as_object_mut() else {
+        return false;
+    };
+    let shard_key = shard_id.to_string();
+    let Some(current_assignment) = index_assignments.get(&shard_key) else {
+        return false;
+    };
+    if current_assignment["current_node_id"].as_str() != Some(from_node) {
+        return false;
+    }
+    index_assignments.insert(
+        shard_key,
+        serde_json::json!({
+            "current_node_id": to_node,
+            "previous_node_id": from_node,
+            "state": "STARTED",
+            "primary": current_assignment["primary"].as_bool().unwrap_or(true),
+            "allocation_id": format!("{index}-{shard_id}-{to_node}-allocation"),
+        }),
+    );
+    true
 }
 
 fn cluster_allocation_explain_request_supports_no_unassigned_error_subset(body: &[u8]) -> bool {
@@ -26834,11 +26937,31 @@ fn cluster_state_metadata_section(
 fn cluster_state_routing_table_indices(
     request: &os_transport::action::ClusterStateRequestWire,
 ) -> Value {
+    let manifest = dev_transport_pit_bindings()
+        .metadata_manifest
+        .lock()
+        .expect("dev transport metadata manifest lock poisoned");
+    let manifest_index_names = manifest["indices"]
+        .as_object()
+        .map(|indices| indices.keys().cloned().collect::<Vec<_>>())
+        .unwrap_or_default();
+    let reroute_assignments = manifest
+        .pointer("/cluster_admin_state/reroute_assignments")
+        .cloned()
+        .unwrap_or_else(|| serde_json::json!({}));
+    drop(manifest);
+
     let created_indices = dev_transport_pit_bindings()
         .created_indices
         .lock()
         .expect("dev transport created indices lock poisoned");
-    let indices = created_indices
+    let mut index_names = created_indices.iter().cloned().collect::<Vec<_>>();
+    for index_name in manifest_index_names {
+        if !index_names.contains(&index_name) {
+            index_names.push(index_name);
+        }
+    }
+    let indices = index_names
         .iter()
         .filter(|name| {
             request.indices.is_empty()
@@ -26848,15 +26971,57 @@ fn cluster_state_routing_table_indices(
                     .any(|pattern| cluster_state_index_pattern_matches(pattern, name))
         })
         .map(|name| {
+            let shards = cluster_state_routing_table_shards_for_index(name, &reroute_assignments);
             (
                 name.clone(),
                 serde_json::json!({
-                    "shards": {}
+                    "shards": shards
                 }),
             )
         })
         .collect::<serde_json::Map<_, _>>();
     Value::Object(indices)
+}
+
+fn cluster_state_routing_table_shards_for_index(index: &str, reroute_assignments: &Value) -> Value {
+    let Some(assignments) = reroute_assignments
+        .get(index)
+        .and_then(serde_json::Value::as_object)
+    else {
+        return serde_json::json!({});
+    };
+    let shards = assignments
+        .iter()
+        .filter_map(|(shard_id, assignment)| {
+            let shard_id_number = shard_id.parse::<i32>().ok()?;
+            let current_node_id = assignment["current_node_id"].as_str()?;
+            let state = assignment["state"].as_str().unwrap_or("STARTED");
+            let primary = assignment["primary"].as_bool().unwrap_or(true);
+            let allocation_id = assignment["allocation_id"]
+                .as_str()
+                .map(str::to_string)
+                .unwrap_or_else(|| {
+                    format!("{index}-{shard_id_number}-{current_node_id}-allocation")
+                });
+            Some((
+                shard_id.clone(),
+                serde_json::json!([
+                    {
+                        "state": state,
+                        "primary": primary,
+                        "node": current_node_id,
+                        "relocating_node": Value::Null,
+                        "shard": shard_id_number,
+                        "index": index,
+                        "allocation_id": {
+                            "id": allocation_id
+                        }
+                    }
+                ]),
+            ))
+        })
+        .collect::<serde_json::Map<_, _>>();
+    Value::Object(shards)
 }
 
 fn cluster_state_index_pattern_matches(pattern: &str, index: &str) -> bool {
@@ -27699,7 +27864,7 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
             build_cluster_state_response(request_id, header_version_id, transport_identity, body),
         ),
         Some("cluster:admin/reroute")
-            if cluster_reroute_request_supports_empty_command_subset(body) =>
+            if cluster_reroute_request_supports_execution_subset(body) =>
         {
             Some(build_cluster_reroute_response(
                 request_id,
@@ -34919,7 +35084,7 @@ mod tests {
             &request,
         )
         .unwrap();
-        assert!(cluster_reroute_request_supports_empty_command_subset(
+        assert!(cluster_reroute_request_supports_execution_subset(
             &frame[6..]
         ));
         let with_flags = os_transport::action::ClusterRerouteRequestWire {
@@ -34934,7 +35099,7 @@ mod tests {
             &with_flags,
         )
         .unwrap();
-        assert!(cluster_reroute_request_supports_empty_command_subset(
+        assert!(cluster_reroute_request_supports_execution_subset(
             &with_flags_frame[6..]
         ));
         let unsupported = os_transport::action::ClusterRerouteRequestWire {
@@ -34950,7 +35115,7 @@ mod tests {
             &unsupported,
         )
         .unwrap();
-        assert!(!cluster_reroute_request_supports_empty_command_subset(
+        assert!(!cluster_reroute_request_supports_execution_subset(
             &unsupported_frame[6..]
         ));
 
@@ -35002,6 +35167,80 @@ mod tests {
             .get("logs-reroute")
             .is_some());
         assert!(response.state.sections.contains_key("routing_table"));
+
+        {
+            let bindings = dev_transport_pit_bindings();
+            *bindings
+                .metadata_manifest
+                .lock()
+                .expect("dev transport metadata manifest lock poisoned") = serde_json::json!({
+                "indices": {
+                    "logs-reroute": {
+                        "state": "open",
+                        "settings": {},
+                        "mappings": {},
+                        "aliases": {}
+                    }
+                },
+                "cluster_admin_state": {
+                    "reroute_assignments": {
+                        "logs-reroute": {
+                            "0": {
+                                "current_node_id": "source-node",
+                                "state": "STARTED",
+                                "primary": true,
+                                "allocation_id": "logs-reroute-0-source-node-allocation"
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        let move_request = os_transport::action::ClusterRerouteRequestWire {
+            commands_count: 1,
+            commands: vec![
+                os_transport::action::ClusterRerouteAllocationCommandWire::Move {
+                    index: "logs-reroute".to_string(),
+                    shard_id: 0,
+                    from_node: "source-node".to_string(),
+                    to_node: "steel-node-id".to_string(),
+                },
+            ],
+            ..os_transport::action::ClusterRerouteRequestWire::default()
+        };
+        let move_frame = os_transport::action::build_cluster_reroute_request_message(
+            85,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &move_request,
+        )
+        .unwrap();
+        assert!(cluster_reroute_request_supports_execution_subset(
+            &move_frame[6..]
+        ));
+        let move_response = build_cluster_reroute_response(
+            85,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &transport_identity,
+            &move_frame[6..],
+        );
+        let mut frame = BytesMut::from(&move_response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected cluster reroute move response message");
+        };
+        let response =
+            os_transport::action::read_cluster_reroute_response_message(&message).unwrap();
+        assert!(response.acknowledged);
+        assert_eq!(
+            response.state.sections["routing_table"]["indices"]["logs-reroute"]["shards"]["0"][0]
+                ["node"]
+                .as_str(),
+            Some("steel-node-id")
+        );
     }
 
     #[test]
