@@ -330,9 +330,9 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `indices:data/read/search[phase/fetch/id]` (rejected fail-closed)
 - `indices:data/read/search[can_match]` (implemented bounded local shard subset for null, match_all, and match_none sources)
 - `indices:data/read/explain` (implemented bounded local explain subset)
-- `indices:data/read/point_in_time/create` (implemented local PIT lifecycle subset)
-- `indices:data/read/point_in_time/delete` (implemented local PIT lifecycle subset)
-- `indices:data/read/point_in_time/readall` (implemented local PIT lifecycle subset)
+- `indices:data/read/point_in_time/create` (implemented PIT lifecycle subset with multi-daemon socket evidence)
+- `indices:data/read/point_in_time/delete` (implemented PIT lifecycle subset with multi-daemon socket evidence)
+- `indices:data/read/point_in_time/readall` (implemented PIT lifecycle subset with multi-daemon socket evidence)
 - `indices:data/read/search[free_pit_contexts]` is tracked as an OpenSearch
   `SearchTransportService` constant, but current OpenSearch source does not
   register a request handler or sender for it; Steelsearch therefore keeps it
@@ -2519,6 +2519,10 @@ The delete-PIT boundary covers:
   removed valid-shaped PIT contexts still render successful `DeletePitInfo`
   entries, with duplicate explicit ids collapsed for both missing and existing
   contexts like the REST close-PIT route;
+- multi-daemon socket probes now validate create/list/search/search_after
+  followed by explicit delete-PIT removal on separate transport node
+  identities, so the route evidence covers runtime node identity binding rather
+  than only direct helper invocation;
 - REST close-PIT now rejects malformed explicit PIT ids before local context
   invalidation, matching OpenSearch `SearchContextId.decode(...)` admission
   before missing-context idempotence;
@@ -2562,6 +2566,9 @@ The get-all-PITs boundary covers:
   matching OpenSearch `PitService` requests that target the local transport node;
 - raw `ListPitInfo` values decode without local id/range validation like the
   OpenSearch wire object.
+- multi-daemon socket probes now validate that each transport node lists the
+  PIT reader context it created, reflects PIT-search keep-alive extension in
+  `ListPitInfo.keep_alive`, and stops listing the PIT after free/delete.
 
 The `free_pit_contexts` source boundary is intentionally not routed:
 
@@ -2590,6 +2597,9 @@ The create-PIT boundary covers:
   including the resolved index set, document snapshot, primary-shard count,
   keep-alive expiry bookkeeping, and read-all/delete visibility through the
   same lifecycle state;
+- daemon socket probes cover create-PIT on three joined local daemons, decode
+  the returned OpenSearch `SearchContextId`, and assert that each PIT reader
+  context is bound to the transport node that handled the request;
 - REST create-PIT responses now return OpenSearch `SearchContextId`-shaped
   base64url opaque PIT ids, and local transport create-PIT uses the same
   `SearchContextId` wire model; legacy local opaque ids remain accepted for
@@ -2617,6 +2627,10 @@ The create-PIT boundary covers:
   `search_after` bounds for stable local snapshot pagination;
 - PIT searches apply field-sort `search_after` against the stored PIT snapshot,
   preserving divergence from live searches after later writes;
+- multi-daemon socket probes now exercise PIT search over the transport action
+  path after live document mutation, confirming snapshot isolation,
+  `_shard_doc` `search_after` pagination, and keep-alive extension without
+  bypassing the daemon TCP transport layer;
 - PIT searches invalidate the local PIT context when its backing index has been
   deleted or closed, matching OpenSearch deleted-index and missing-context
   failure semantics;
@@ -2814,6 +2828,9 @@ The create-PIT boundary covers:
   owns the same PIT id, matching OpenSearch `SearchService` behavior where a
   missing reader returns a successful `DeletePitInfo` without freeing unrelated
   reader state.
+- multi-daemon socket probes now release one node's PIT through
+  `free_context/pit` and other nodes through delete-PIT, then verify read-all no
+  longer exposes the released PIT contexts.
 
 The indices-stats boundary covers:
 
