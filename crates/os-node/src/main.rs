@@ -3635,6 +3635,30 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end_at_ms,
         )?;
     } else if is_request
+        && normalized_action_hint == Some("indices:admin/refresh")
+        && refresh_request_supports_local_execution_subset(&body)
+    {
+        let response = build_local_refresh_response(request_id, header_version_id, &body);
+        response_frame =
+            summarize_transport_response_frame_for_action(&response, Some("indices:admin/refresh"));
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request
         && normalized_action_hint == Some("indices:admin/cache/clear")
         && clear_indices_cache_request_supports_local_execution_subset(&body)
     {
@@ -13134,6 +13158,100 @@ fn local_transport_flush_response_from_request(
     os_transport::action::OpenSearchFlushResponseWire::success(total_shards)
 }
 
+fn build_local_refresh_response(request_id: i64, header_version_id: u32, body: &[u8]) -> Vec<u8> {
+    let Some(request) = decode_refresh_request_from_transport_body(body) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    if !refresh_request_matches_local_execution_subset(&request) {
+        return build_empty_transport_response(request_id, header_version_id);
+    }
+    let response = local_transport_refresh_response_from_request(&request);
+    os_transport::action::build_opensearch_refresh_response_message(
+        request_id,
+        Version::from_id(header_version_id as i32),
+        &response,
+    )
+    .map(|frame| frame.to_vec())
+    .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
+}
+
+fn refresh_request_supports_local_execution_subset(body: &[u8]) -> bool {
+    decode_refresh_request_from_transport_body(body)
+        .as_ref()
+        .is_some_and(refresh_request_matches_local_execution_subset)
+}
+
+fn decode_refresh_request_from_transport_body(
+    body: &[u8],
+) -> Option<os_transport::action::OpenSearchRefreshRequestWire> {
+    let message = decode_transport_message_from_body(body)?;
+    os_transport::action::read_opensearch_refresh_request_message(&message).ok()
+}
+
+fn refresh_request_matches_local_execution_subset(
+    request: &os_transport::action::OpenSearchRefreshRequestWire,
+) -> bool {
+    if request.indices_options
+        != os_transport::action::OpenSearchIndicesOptionsWire::strict_expand_open_forbid_closed()
+    {
+        return false;
+    }
+    if request.indices.is_empty() {
+        return true;
+    }
+    let created_indices = dev_transport_pit_bindings()
+        .created_indices
+        .lock()
+        .expect("dev transport created indices lock poisoned");
+    request
+        .indices
+        .iter()
+        .all(|index| created_indices.contains(index))
+}
+
+fn local_transport_refresh_response_from_request(
+    request: &os_transport::action::OpenSearchRefreshRequestWire,
+) -> os_transport::action::OpenSearchRefreshResponseWire {
+    let total_shards = apply_local_transport_refresh(request);
+    os_transport::action::OpenSearchRefreshResponseWire::success(total_shards)
+}
+
+fn apply_local_transport_refresh(
+    request: &os_transport::action::OpenSearchRefreshRequestWire,
+) -> i32 {
+    let target_indices = (!request.indices.is_empty()).then(|| {
+        request
+            .indices
+            .iter()
+            .cloned()
+            .collect::<BTreeSet<String>>()
+    });
+    let bindings = dev_transport_pit_bindings();
+    let mut documents = bindings
+        .documents
+        .lock()
+        .expect("dev transport documents lock poisoned");
+    for (key, record) in documents.iter_mut() {
+        let Some((index, _, _)) = split_transport_document_key(key) else {
+            continue;
+        };
+        if target_indices
+            .as_ref()
+            .is_some_and(|indices| !indices.contains(index))
+        {
+            continue;
+        }
+        if !record.refreshed {
+            let mut refreshed = (**record).clone();
+            refreshed.refreshed = true;
+            *record = Arc::new(refreshed);
+        }
+    }
+    target_indices
+        .map(|indices| indices.len() as i32)
+        .unwrap_or_else(local_transport_global_index_count)
+}
+
 fn build_local_clear_indices_cache_response(
     request_id: i64,
     header_version_id: u32,
@@ -20963,6 +21081,13 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
         Some("indices:admin/flush") if flush_request_supports_local_execution_subset(body) => Some(
             build_local_flush_response(request_id, header_version_id, body),
         ),
+        Some("indices:admin/refresh") if refresh_request_supports_local_execution_subset(body) => {
+            Some(build_local_refresh_response(
+                request_id,
+                header_version_id,
+                body,
+            ))
+        }
         Some("indices:admin/cache/clear")
             if clear_indices_cache_request_supports_local_execution_subset(body) =>
         {
@@ -33204,6 +33329,137 @@ mod tests {
         assert_eq!(response.total_shards, 2);
         assert_eq!(response.successful_shards, 2);
         assert_eq!(response.failed_shards, 0);
+    }
+
+    #[test]
+    fn refresh_transport_route_marks_exact_index_documents_searchable() {
+        struct RecordingTransportConnection {
+            writes: Vec<u8>,
+        }
+
+        impl std::io::Read for RecordingTransportConnection {
+            fn read(&mut self, _buf: &mut [u8]) -> std::io::Result<usize> {
+                Ok(0)
+            }
+        }
+
+        impl std::io::Write for RecordingTransportConnection {
+            fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+                self.writes.extend_from_slice(buf);
+                Ok(buf.len())
+            }
+
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+
+        impl TransportConnection for RecordingTransportConnection {
+            fn set_read_timeout(&self, _duration: Option<Duration>) -> std::io::Result<()> {
+                Ok(())
+            }
+
+            fn peer_addr(&self) -> std::io::Result<SocketAddr> {
+                "127.0.0.1:9300"
+                    .parse()
+                    .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidInput, error))
+            }
+        }
+
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        let bindings = dev_transport_pit_bindings();
+        bindings
+            .created_indices
+            .lock()
+            .expect("dev transport created indices lock poisoned")
+            .clear();
+        bindings
+            .created_indices
+            .lock()
+            .expect("dev transport created indices lock poisoned")
+            .insert("logs-refresh".to_string());
+        bindings
+            .documents
+            .lock()
+            .expect("dev transport documents lock poisoned")
+            .clear();
+        bindings
+            .documents
+            .lock()
+            .expect("dev transport documents lock poisoned")
+            .insert(
+                "logs-refresh:doc-1:".to_string(),
+                Arc::new(StoredDocument {
+                    source: serde_json::json!({ "status": "pending" }),
+                    version: 1,
+                    seq_no: 1,
+                    primary_term: 1,
+                    routing: None,
+                    refreshed: false,
+                }),
+            );
+
+        let request =
+            os_transport::action::OpenSearchRefreshRequestWire::new(vec!["logs-refresh".into()]);
+        let frame = os_transport::action::build_opensearch_refresh_request_message(
+            309,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(refresh_request_supports_local_execution_subset(&frame[6..]));
+        let transport_identity = DevTransportIdentity {
+            cluster_name: "steelsearch-dev".to_string(),
+            node_name: "steel-node".to_string(),
+            node_id: "steel-node-id".to_string(),
+            ephemeral_id: "steel-node-ephemeral".to_string(),
+            transport_address: "127.0.0.1:9300".parse().unwrap(),
+            attributes: Vec::new(),
+            roles: vec!["cluster_manager".to_string(), "data".to_string()],
+            seed_peer_identity: None,
+            seed_peer_identities: Vec::new(),
+            coordination_state: Arc::new(Mutex::new(DevTransportCoordinationState::default())),
+            remote_transport_queue_gate: Arc::new(RemoteTransportQueueGate::new(1, 1000)),
+            task_queue_state: None,
+        };
+        let mut stream = RecordingTransportConnection { writes: Vec::new() };
+
+        let handled = handle_subsequent_transport_request(
+            &mut stream,
+            &frame[6..],
+            &transport_identity,
+            None,
+        )
+        .unwrap();
+
+        assert!(handled);
+        let mut frame = BytesMut::from(&stream.writes[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected refresh response message");
+        };
+        assert_eq!(message.request_id, 309);
+        assert!(!message.status.is_request());
+        let response =
+            os_transport::action::read_opensearch_refresh_response_message(&message).unwrap();
+        assert_eq!(response.total_shards, 1);
+        assert_eq!(response.successful_shards, 1);
+        assert_eq!(response.failed_shards, 0);
+        let documents = bindings
+            .documents
+            .lock()
+            .expect("dev transport documents lock poisoned");
+        assert!(
+            documents
+                .get("logs-refresh:doc-1:")
+                .expect("refresh fixture document should remain")
+                .refreshed
+        );
     }
 
     #[test]
