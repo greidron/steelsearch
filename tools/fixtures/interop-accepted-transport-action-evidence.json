@@ -528,11 +528,39 @@
       "response_evidence": "crates/os-node/src/main.rs::data_streams_stats_transport_route_builds_opensearch_shaped_empty_response"
     },
     {
+      "action_name": "cluster:admin/views/create",
+      "disposition": "implemented",
+      "evidence_kind": "live_probe",
+      "request_evidence": "crates/os-transport/src/action.rs::opensearch_create_view_transport_messages_bind_rejected_action_frame_and_view_response",
+      "response_evidence": "crates/os-node/src/main.rs::view_admin_transport_routes_mutate_manifest_backed_metadata"
+    },
+    {
+      "action_name": "cluster:admin/views/delete",
+      "disposition": "implemented",
+      "evidence_kind": "live_probe",
+      "request_evidence": "crates/os-transport/src/action.rs::opensearch_delete_view_transport_messages_bind_rejected_action_frame_and_ack_response",
+      "response_evidence": "crates/os-node/src/main.rs::view_admin_transport_routes_mutate_manifest_backed_metadata"
+    },
+    {
+      "action_name": "views:data/read/get",
+      "disposition": "implemented",
+      "evidence_kind": "live_probe",
+      "request_evidence": "crates/os-transport/src/action.rs::opensearch_get_view_transport_messages_bind_rejected_action_frame_and_view_response",
+      "response_evidence": "crates/os-node/src/main.rs::view_admin_transport_routes_mutate_manifest_backed_metadata"
+    },
+    {
+      "action_name": "cluster:admin/views/update",
+      "disposition": "implemented",
+      "evidence_kind": "live_probe",
+      "request_evidence": "crates/os-transport/src/action.rs::opensearch_update_view_transport_messages_bind_rejected_action_frame_and_view_response",
+      "response_evidence": "crates/os-node/src/main.rs::view_admin_transport_routes_mutate_manifest_backed_metadata"
+    },
+    {
       "action_name": "views:data/read/list",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_list_view_names_transport_messages_bind_supported_action_frame_and_empty_response",
-      "response_evidence": "crates/os-node/src/main.rs::list_view_names_transport_route_builds_opensearch_shaped_empty_response"
+      "response_evidence": "crates/os-node/src/main.rs::view_admin_transport_routes_mutate_manifest_backed_metadata"
     },
     {
       "action_name": "cluster:admin/indices/dangling/find",
