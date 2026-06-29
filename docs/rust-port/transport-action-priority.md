@@ -582,11 +582,11 @@ The cluster-reroute boundary covers:
   and `retryFailed` flags at the wire decode/build layer;
 - local execution for the OpenSearch-valid empty-command reroute subset,
   returning an acknowledged `ClusterRerouteResponse` with the current local
-  cluster-state payload and empty `RoutingExplanations`;
+  cluster-state payload and empty `RoutingExplanations`, including empty-command
+  `dry_run`, `explain`, and `retry_failed` flag combinations;
 - explicit rejection for non-empty allocation commands, custom
-  cluster-manager timeout, custom acknowledgement timeout, dry-run execution,
-  explanation rendering, retry-failed execution, and non-empty reroute
-  explanations.
+  cluster-manager timeout, custom acknowledgement timeout, and non-empty
+  reroute explanations.
 
 The prune-file-cache adapter covers:
 
@@ -3440,21 +3440,25 @@ and the empty transient/persistent settings maps before the bounded manifest
 mutation path. At roughly 1.51M ops/s in the latest local release run, it stays
 in the same range as the lightweight admin transport boundaries.
 
-Current cluster-reroute reject wire microbenchmark:
+Current cluster-reroute implemented-path wire microbenchmark:
 
 ```text
-cargo run -p os-transport --release --bin cluster-reroute-reject-wire-benchmark
-cluster_reroute_reject_request_encode iterations=400000 elapsed_ms=201.057 ops_per_second=1989487.94 nanos_per_op=502.64
-cluster_reroute_reject_request_decode iterations=400000 elapsed_ms=185.703 ops_per_second=2153982.47 nanos_per_op=464.26
-cluster_reroute_reject_validation iterations=400000 elapsed_ms=188.575 ops_per_second=2121174.19 nanos_per_op=471.44
-cluster_reroute_reject_wire_bottleneck_ops_per_second=1989487.94
+cargo run -p os-transport --release --bin cluster-reroute-wire-benchmark
+cluster_reroute_request_encode iterations=400000 elapsed_ms=197.105 ops_per_second=2029378.79 nanos_per_op=492.76
+cluster_reroute_request_decode iterations=400000 elapsed_ms=182.470 ops_per_second=2192138.84 nanos_per_op=456.18
+cluster_reroute_request_validate iterations=400000 elapsed_ms=182.752 ops_per_second=2188755.22 nanos_per_op=456.88
+cluster_reroute_response_encode iterations=400000 elapsed_ms=387.756 ops_per_second=1031577.83 nanos_per_op=969.39
+cluster_reroute_response_decode iterations=400000 elapsed_ms=380.424 ops_per_second=1051457.67 nanos_per_op=951.06
+cluster_reroute_wire_bottleneck_ops_per_second=1031577.83
 ```
 
-The current cluster-reroute fail-closed boundary bottleneck is request encode
-over the parent task, two timeouts, empty allocation-command set, and reroute
-flags. At roughly 1.99M ops/s in the latest local release run, this boundary is
-not a material performance bottleneck; the first performance-sensitive work is
-allocation command execution, routing mutation, and reroute response rendering.
+The current cluster-reroute implemented-path boundary covers request encode,
+request decode, subset validation, acknowledged response encode, and response
+decode over the parent task, two timeouts, empty allocation-command set,
+reroute flags, current cluster-state payload, and empty routing explanations.
+At roughly 1.03M ops/s in the latest local release run, the bottleneck is
+response encode for the cluster-state payload. Non-empty command sets are still
+rejected before command-specific allocation execution and routing mutation.
 
 Current get-repositories wire microbenchmark:
 

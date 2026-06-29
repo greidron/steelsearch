@@ -34800,12 +34800,30 @@ mod tests {
         assert!(cluster_reroute_request_supports_empty_command_subset(
             &frame[6..]
         ));
-        let unsupported = os_transport::action::ClusterRerouteRequestWire {
+        let with_flags = os_transport::action::ClusterRerouteRequestWire {
             dry_run: true,
+            explain: true,
+            retry_failed: true,
+            ..request.clone()
+        };
+        let with_flags_frame = os_transport::action::build_cluster_reroute_request_message(
+            83,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &with_flags,
+        )
+        .unwrap();
+        assert!(cluster_reroute_request_supports_empty_command_subset(
+            &with_flags_frame[6..]
+        ));
+        let unsupported = os_transport::action::ClusterRerouteRequestWire {
+            commands_count: 1,
             ..request
         };
+        let mut output = os_stream::StreamOutput::new();
+        unsupported.write(&mut output);
+        assert!(os_transport::action::ClusterRerouteRequestWire::read(output.freeze()).is_err());
         let unsupported_frame = os_transport::action::build_cluster_reroute_request_message(
-            83,
+            84,
             OPENSEARCH_3_7_0_TRANSPORT,
             &unsupported,
         )

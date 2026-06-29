@@ -41848,24 +41848,6 @@ impl ClusterRerouteRequestWire {
                     "allocation commands require routing mutation and explanation response semantics",
             });
         }
-        if self.dry_run {
-            return Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "cluster reroute dry run",
-                reason: "dry-run reroute requires simulated allocation and cluster-state response rendering",
-            });
-        }
-        if self.explain {
-            return Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "cluster reroute explain",
-                reason: "reroute explanations require allocation decision rendering",
-            });
-        }
-        if self.retry_failed {
-            return Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "cluster reroute retry failed",
-                reason: "retry-failed reroute requires failed-allocation accounting semantics",
-            });
-        }
         Ok(())
     }
 }
@@ -57527,41 +57509,13 @@ mod tests {
             })
         ));
 
-        let dry_run = ClusterRerouteRequestWire {
+        let with_flags = ClusterRerouteRequestWire {
             dry_run: true,
-            ..ClusterRerouteRequestWire::default()
-        };
-        assert!(matches!(
-            dry_run.reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "cluster reroute dry run",
-                ..
-            })
-        ));
-
-        let explain = ClusterRerouteRequestWire {
             explain: true,
-            ..ClusterRerouteRequestWire::default()
-        };
-        assert!(matches!(
-            explain.reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "cluster reroute explain",
-                ..
-            })
-        ));
-
-        let retry_failed = ClusterRerouteRequestWire {
             retry_failed: true,
             ..ClusterRerouteRequestWire::default()
         };
-        assert!(matches!(
-            retry_failed.reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "cluster reroute retry failed",
-                ..
-            })
-        ));
+        with_flags.validate_supported_execution_subset().unwrap();
     }
 
     #[test]
