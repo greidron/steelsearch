@@ -3559,6 +3559,30 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end_at_ms,
         )?;
     } else if is_request
+        && normalized_action_hint == Some("indices:data/read/get")
+        && get_request_supports_local_execution_subset(&body)
+    {
+        let response = build_local_get_response(request_id, header_version_id, &body);
+        response_frame =
+            summarize_transport_response_frame_for_action(&response, Some("indices:data/read/get"));
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request
         && normalized_action_hint == Some("indices:data/read/explain")
         && explain_request_supports_local_execution_subset(&body)
     {
@@ -12311,6 +12335,63 @@ fn split_transport_document_key(key: &str) -> Option<(&str, &str, &str)> {
     Some((parts.next()?, parts.next()?, parts.next()?))
 }
 
+fn build_local_get_response(request_id: i64, header_version_id: u32, body: &[u8]) -> Vec<u8> {
+    let Some(request) = decode_get_request_from_transport_body(body) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    if request.to_engine_request().is_err() {
+        return build_empty_transport_response(request_id, header_version_id);
+    }
+    let response = local_transport_get_response_from_request(&request);
+    os_transport::action::build_opensearch_get_response_message(
+        request_id,
+        Version::from_id(header_version_id as i32),
+        &response,
+    )
+    .map(|frame| frame.to_vec())
+    .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
+}
+
+fn get_request_supports_local_execution_subset(body: &[u8]) -> bool {
+    decode_get_request_from_transport_body(body)
+        .and_then(|request| request.to_engine_request().ok())
+        .is_some()
+}
+
+fn decode_get_request_from_transport_body(
+    body: &[u8],
+) -> Option<os_transport::action::OpenSearchGetRequestWire> {
+    let message = decode_transport_message_from_body(body)?;
+    os_transport::action::read_opensearch_get_request_message(&message).ok()
+}
+
+fn local_transport_get_response_from_request(
+    request: &os_transport::action::OpenSearchGetRequestWire,
+) -> os_transport::action::OpenSearchGetResponseWire {
+    let index = request.index.clone().unwrap_or_default();
+    let id = request.id.clone();
+    let documents = dev_transport_pit_bindings()
+        .documents
+        .lock()
+        .expect("dev transport documents lock poisoned");
+    let found = documents.iter().find_map(|(key, record)| {
+        let (record_index, record_id, _) = split_transport_document_key(key)?;
+        (record_index == index && record_id == id && record.refreshed).then_some(record)
+    });
+    let Some(record) = found else {
+        return os_transport::action::OpenSearchGetResponseWire::not_found(index, id);
+    };
+    os_transport::action::OpenSearchGetResponseWire {
+        index,
+        id,
+        seq_no: record.seq_no,
+        primary_term: record.primary_term,
+        version: record.version,
+        found: true,
+        source: Some(record.source.clone()),
+    }
+}
+
 fn build_local_search_response(request_id: i64, header_version_id: u32, body: &[u8]) -> Vec<u8> {
     let Some(request) = decode_search_request_from_transport_body(body) else {
         return build_empty_transport_response(request_id, header_version_id);
@@ -21060,6 +21141,9 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
                 header_version_id,
             ))
         }
+        Some("indices:data/read/get") if get_request_supports_local_execution_subset(body) => Some(
+            build_local_get_response(request_id, header_version_id, body),
+        ),
         Some("indices:data/read/explain")
             if explain_request_supports_local_execution_subset(body) =>
         {
@@ -33156,6 +33240,171 @@ mod tests {
                 "doc-4".to_string()
             ])
         );
+    }
+
+    #[test]
+    fn get_transport_route_returns_refreshed_document_from_local_store() {
+        struct RecordingTransportConnection {
+            writes: Vec<u8>,
+        }
+
+        impl std::io::Read for RecordingTransportConnection {
+            fn read(&mut self, _buf: &mut [u8]) -> std::io::Result<usize> {
+                Ok(0)
+            }
+        }
+
+        impl std::io::Write for RecordingTransportConnection {
+            fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+                self.writes.extend_from_slice(buf);
+                Ok(buf.len())
+            }
+
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+
+        impl TransportConnection for RecordingTransportConnection {
+            fn set_read_timeout(&self, _duration: Option<Duration>) -> std::io::Result<()> {
+                Ok(())
+            }
+
+            fn peer_addr(&self) -> std::io::Result<SocketAddr> {
+                "127.0.0.1:9300"
+                    .parse()
+                    .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidInput, error))
+            }
+        }
+
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        let bindings = dev_transport_pit_bindings();
+        bindings
+            .documents
+            .lock()
+            .expect("dev transport documents lock poisoned")
+            .clear();
+        bindings
+            .documents
+            .lock()
+            .expect("dev transport documents lock poisoned")
+            .insert(
+                "logs-get:doc-1:".to_string(),
+                Arc::new(StoredDocument {
+                    source: serde_json::json!({ "status": "active" }),
+                    version: 7,
+                    seq_no: 11,
+                    primary_term: 3,
+                    routing: None,
+                    refreshed: true,
+                }),
+            );
+        bindings
+            .documents
+            .lock()
+            .expect("dev transport documents lock poisoned")
+            .insert(
+                "logs-get:doc-pending:".to_string(),
+                Arc::new(StoredDocument {
+                    source: serde_json::json!({ "status": "pending" }),
+                    version: 1,
+                    seq_no: 12,
+                    primary_term: 3,
+                    routing: None,
+                    refreshed: false,
+                }),
+            );
+
+        let request =
+            os_transport::action::OpenSearchGetRequestWire::new("logs-get".into(), "doc-1".into());
+        let frame = os_transport::action::build_opensearch_get_request_message(
+            310,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(get_request_supports_local_execution_subset(&frame[6..]));
+        let transport_identity = DevTransportIdentity {
+            cluster_name: "steelsearch-dev".to_string(),
+            node_name: "steel-node".to_string(),
+            node_id: "steel-node-id".to_string(),
+            ephemeral_id: "steel-node-ephemeral".to_string(),
+            transport_address: "127.0.0.1:9300".parse().unwrap(),
+            attributes: Vec::new(),
+            roles: vec!["cluster_manager".to_string(), "data".to_string()],
+            seed_peer_identity: None,
+            seed_peer_identities: Vec::new(),
+            coordination_state: Arc::new(Mutex::new(DevTransportCoordinationState::default())),
+            remote_transport_queue_gate: Arc::new(RemoteTransportQueueGate::new(1, 1000)),
+            task_queue_state: None,
+        };
+        let mut stream = RecordingTransportConnection { writes: Vec::new() };
+
+        let handled = handle_subsequent_transport_request(
+            &mut stream,
+            &frame[6..],
+            &transport_identity,
+            None,
+        )
+        .unwrap();
+
+        assert!(handled);
+        let mut frame = BytesMut::from(&stream.writes[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected get response message");
+        };
+        assert_eq!(message.request_id, 310);
+        assert!(!message.status.is_request());
+        let response =
+            os_transport::action::read_opensearch_get_response_message(&message).unwrap();
+        assert!(response.found);
+        assert_eq!(response.index, "logs-get");
+        assert_eq!(response.id, "doc-1");
+        assert_eq!(response.version, 7);
+        assert_eq!(response.seq_no, 11);
+        assert_eq!(response.primary_term, 3);
+        assert_eq!(
+            response
+                .source
+                .as_ref()
+                .and_then(|source| source.get("status")),
+            Some(&serde_json::json!("active"))
+        );
+
+        let pending_request = os_transport::action::OpenSearchGetRequestWire::new(
+            "logs-get".into(),
+            "doc-pending".into(),
+        );
+        let pending_frame = os_transport::action::build_opensearch_get_request_message(
+            311,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &pending_request,
+        )
+        .unwrap();
+        let pending_response = build_local_get_response(
+            311,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &pending_frame[6..],
+        );
+        let mut pending_frame = BytesMut::from(&pending_response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut pending_frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected pending get response message");
+        };
+        let response =
+            os_transport::action::read_opensearch_get_response_message(&message).unwrap();
+        assert!(!response.found);
+        assert_eq!(response.index, "logs-get");
+        assert_eq!(response.id, "doc-pending");
     }
 
     #[test]
