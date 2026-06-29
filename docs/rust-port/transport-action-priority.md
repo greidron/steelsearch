@@ -325,6 +325,10 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `indices:data/read/point_in_time/create` (implemented local PIT lifecycle subset)
 - `indices:data/read/point_in_time/delete` (implemented local PIT lifecycle subset)
 - `indices:data/read/point_in_time/readall` (implemented local PIT lifecycle subset)
+- `indices:data/read/search[free_pit_contexts]` is tracked as an OpenSearch
+  `SearchTransportService` constant, but current OpenSearch source does not
+  register a request handler or sender for it; Steelsearch therefore keeps it
+  classified as missing instead of installing a local route.
 - `cluster:monitor/task` (implemented pending/in-flight task subset)
 - `cluster:monitor/tasks/lists` (implemented pending/in-flight task info subset)
 - `cluster:monitor/task/get` (implemented tracked running task result subset)
@@ -2477,6 +2481,16 @@ The get-all-PITs boundary covers:
   matching OpenSearch `PitService` requests that target the local transport node;
 - raw `ListPitInfo` values decode without local id/range validation like the
   OpenSearch wire object.
+
+The `free_pit_contexts` source boundary is intentionally not routed:
+
+- current OpenSearch `SearchTransportService` declares
+  `FREE_ALL_PIT_CONTEXTS_ACTION_NAME =
+  "indices:data/read/search[free_pit_contexts]"`;
+- the same source does not register a request handler, proxy action, or sender
+  for that action name, unlike `FREE_PIT_CONTEXT_ACTION_NAME`;
+- Steelsearch tracks the action constant and classifies it as missing so a
+  synthetic local clear-all-PIT route is not mistaken for OpenSearch behavior.
 
 The create-PIT boundary covers:
 

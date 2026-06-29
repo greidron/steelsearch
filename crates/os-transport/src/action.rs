@@ -127,6 +127,8 @@ pub const OPENSEARCH_UPDATE_READER_CONTEXT_ACTION_NAME: &str =
     "indices:data/read/search[update_context]";
 pub const OPENSEARCH_FREE_PIT_CONTEXT_ACTION_NAME: &str =
     "indices:data/read/search[free_context/pit]";
+pub const OPENSEARCH_FREE_ALL_PIT_CONTEXTS_ACTION_NAME: &str =
+    "indices:data/read/search[free_pit_contexts]";
 pub const OPENSEARCH_GET_MAPPINGS_ACTION_NAME: &str = "indices:admin/mappings/get";
 pub const OPENSEARCH_GET_FIELD_MAPPINGS_ACTION_NAME: &str = "indices:admin/mappings/fields/get";
 pub const OPENSEARCH_PUT_MAPPING_ACTION_NAME: &str = "indices:admin/mapping/put";
@@ -2502,6 +2504,11 @@ pub fn classify_opensearch_transport_action(
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Implemented,
             reason: "free-PIT-context transport adapter decodes PIT context ids and renders OpenSearch DeletePitResponse entries for the local lifecycle subset",
+        },
+        OPENSEARCH_FREE_ALL_PIT_CONTEXTS_ACTION_NAME => OpenSearchTransportDispatchDecision {
+            action_name: action_name.to_string(),
+            disposition: OpenSearchTransportActionDisposition::Missing,
+            reason: "OpenSearch SearchTransportService declares FREE_ALL_PIT_CONTEXTS_ACTION_NAME but does not register a request handler or sender for this action",
         },
         OPENSEARCH_GET_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -49107,6 +49114,13 @@ mod tests {
                 .disposition,
             OpenSearchTransportActionDisposition::Implemented
         );
+        let free_all_pit_decision =
+            classify_opensearch_transport_action(OPENSEARCH_FREE_ALL_PIT_CONTEXTS_ACTION_NAME);
+        assert_eq!(
+            free_all_pit_decision.disposition,
+            OpenSearchTransportActionDisposition::Missing
+        );
+        assert!(free_all_pit_decision.reason.contains("does not register"));
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_GET_ACTION_NAME).disposition,
             OpenSearchTransportActionDisposition::Implemented
