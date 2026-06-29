@@ -16353,9 +16353,9 @@ fn build_local_can_match_response(request_id: i64, header_version_id: u32, body:
     let Some(request) = decode_can_match_request_from_transport_body(body) else {
         return build_empty_transport_response(request_id, header_version_id);
     };
-    if request.reject_unsupported_execution().is_err() {
+    let Ok(can_match) = request.can_match_local_subset_result() else {
         return build_empty_transport_response(request_id, header_version_id);
-    }
+    };
     if create_reader_context_shard_admission(dev_transport_pit_bindings(), &request.shard_id)
         != CreateReaderContextShardAdmission::Accepted
     {
@@ -16364,7 +16364,7 @@ fn build_local_can_match_response(request_id: i64, header_version_id: u32, body:
     os_transport::action::build_opensearch_can_match_response_message(
         request_id,
         Version::from_id(header_version_id as i32),
-        &os_transport::action::OpenSearchCanMatchResponseWire::new(true),
+        &os_transport::action::OpenSearchCanMatchResponseWire::new(can_match),
     )
     .map(|frame| frame.to_vec())
     .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
@@ -37381,6 +37381,71 @@ mod tests {
         let response =
             os_transport::action::read_opensearch_can_match_response_message(&message).unwrap();
         assert!(response.can_match);
+        assert!(!response.estimated_min_and_max_present);
+    }
+
+    #[test]
+    fn can_match_transport_route_returns_false_for_match_none_local_subset() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        let bindings = dev_transport_pit_bindings();
+        bindings
+            .created_indices
+            .lock()
+            .expect("dev transport created indices lock poisoned")
+            .clear();
+        bindings
+            .created_indices
+            .lock()
+            .expect("dev transport created indices lock poisoned")
+            .insert("logs-can-match-none".to_string());
+        let request = os_transport::action::OpenSearchShardSearchRequestWire {
+            shard_id: os_transport::action::OpenSearchShardIdWire {
+                index_name: "logs-can-match-none".to_string(),
+                index_uuid: "uuid-logs-can-match-none".to_string(),
+                shard_id: 0,
+            },
+            source: Some(os_transport::action::OpenSearchSearchSourceBuilderWire {
+                query: Some(os_transport::action::OpenSearchQueryBuilderWire::MatchNone(
+                    os_transport::action::OpenSearchMatchNoneQueryBuilderWire::default(),
+                )),
+                ..os_transport::action::OpenSearchSearchSourceBuilderWire::default()
+            }),
+            original_indices: os_transport::action::OpenSearchOriginalIndicesWire::new(
+                Some(vec!["logs-can-match-none".to_string()]),
+                os_transport::action::OpenSearchIndicesOptionsWire::strict_expand_open_forbid_closed_ignore_throttled(),
+            ),
+            ..os_transport::action::OpenSearchShardSearchRequestWire::default()
+        };
+        let frame = os_transport::action::build_opensearch_can_match_request_message(
+            342,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(can_match_request_supports_local_execution_subset(
+            &frame[6..]
+        ));
+
+        let response = build_local_can_match_response(
+            342,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &frame[6..],
+        );
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected can-match response message");
+        };
+        assert_eq!(message.request_id, 342);
+        assert!(!message.status.is_request());
+        let response =
+            os_transport::action::read_opensearch_can_match_response_message(&message).unwrap();
+        assert!(!response.can_match);
         assert!(!response.estimated_min_and_max_present);
     }
 

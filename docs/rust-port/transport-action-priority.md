@@ -328,7 +328,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `indices:data/read/search[phase/query+fetch/scroll]` (rejected fail-closed)
 - `indices:data/read/search[phase/fetch/id/scroll]` (rejected fail-closed)
 - `indices:data/read/search[phase/fetch/id]` (rejected fail-closed)
-- `indices:data/read/search[can_match]` (implemented source-free local shard subset)
+- `indices:data/read/search[can_match]` (implemented bounded local shard subset for null, match_all, and match_none sources)
 - `indices:data/read/explain` (implemented bounded local explain subset)
 - `indices:data/read/point_in_time/create` (implemented local PIT lifecycle subset)
 - `indices:data/read/point_in_time/delete` (implemented local PIT lifecycle subset)
@@ -2434,19 +2434,21 @@ The search phase transport boundary covers:
   remain fail-closed because their OpenSearch handlers require
   reader-context execution, query rewrite, and native phase execution that are
   not yet Rust adapters;
-- the bounded `ShardSearchRequest` wire is implemented for source-free
-  can-match requests, covering parent task, `ShardId`, search type, shard
-  count, empty `AliasFilter`, boost, `nowInMillis`, request cache,
-  network-time counters, cluster alias, partial-results flag, routings,
-  preference, and `OriginalIndices`; search source, scroll, bottom sort values,
-  reader context, and keep-alive remain rejected until native can-match
-  execution exists;
-- the local can-match transport route executes the source-free subset by
-  returning `canMatch=true` with absent `estimatedMinAndMax`, matching the
-  OpenSearch null-query/match-all boundary when no alias filter, reader
-  context, search source, or search-after min/max pruning is present; local
-  execution first verifies the addressed index/shard through the same bounded
-  shard admission used by PIT reader-context creation;
+- the bounded `ShardSearchRequest` wire is implemented for local can-match
+  requests, covering parent task, `ShardId`, search type, shard count, empty
+  `AliasFilter`, boost, `nowInMillis`, request cache, network-time counters,
+  cluster alias, partial-results flag, routings, preference, `OriginalIndices`,
+  and a default `SearchSourceBuilder` carrying no query, `match_all`, or
+  `match_none`; scroll, non-default source options, bottom sort values, reader
+  context, and keep-alive remain rejected until the corresponding native
+  can-match execution pieces are mapped;
+- the local can-match transport route executes the bounded subset by returning
+  `canMatch=true` for null-query/default source and `match_all`, or
+  `canMatch=false` for `match_none`, with absent `estimatedMinAndMax`; this
+  follows the OpenSearch `SearchService.canMatch` boundary before alias-filter,
+  reader-context, refresh-pending, search-after, or min/max pruning effects are
+  introduced. Local execution first verifies the addressed index/shard through
+  the same bounded shard admission used by PIT reader-context creation;
 - the bounded `SearchService.CanMatchResponse` wire is implemented for
   `canMatch` plus absent `estimatedMinAndMax`, matching `SearchPhaseResult`
   writing no prefix fields and `CanMatchResponse.writeTo(...)` writing the
@@ -2456,12 +2458,12 @@ The search phase transport boundary covers:
 Current can-match response wire microbenchmark:
 
 ```text
-cargo run -p os-transport --release --bin can-match-response-wire-benchmark
-can_match_request_encode iterations=400000 elapsed_ms=401.335 ops_per_second=996673.67 nanos_per_op=1003.34
-can_match_request_decode iterations=400000 elapsed_ms=421.594 ops_per_second=948779.02 nanos_per_op=1053.99
-can_match_response_encode iterations=400000 elapsed_ms=48.341 ops_per_second=8274519.77 nanos_per_op=120.85
-can_match_response_decode iterations=400000 elapsed_ms=50.845 ops_per_second=7867028.65 nanos_per_op=127.11
-can_match_wire_bottleneck_ops_per_second=948779.02
+cargo run -q -p os-transport --release --bin can-match-response-wire-benchmark
+can_match_request_encode iterations=400000 elapsed_ms=393.832 ops_per_second=1015661.88 nanos_per_op=984.58
+can_match_request_decode iterations=400000 elapsed_ms=426.061 ops_per_second=938832.28 nanos_per_op=1065.15
+can_match_response_encode iterations=400000 elapsed_ms=49.219 ops_per_second=8127016.00 nanos_per_op=123.05
+can_match_response_decode iterations=400000 elapsed_ms=50.851 ops_per_second=7866104.27 nanos_per_op=127.13
+can_match_wire_bottleneck_ops_per_second=938832.28
 ```
 
 The explain boundary covers:

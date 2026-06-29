@@ -29000,12 +29000,8 @@ impl OpenSearchShardSearchRequestWire {
                 reason: "scroll can-match ShardSearchRequest execution is not mapped yet",
             });
         }
-        if self.source.is_some() {
-            return Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "shard search request source",
-                reason:
-                    "can-match query rewrite for SearchSourceBuilder payloads is not mapped yet",
-            });
+        if let Some(source) = &self.source {
+            source.validate_can_match_local_subset()?;
         }
         if !self.alias_filter.aliases.is_empty() || self.alias_filter.query.is_some() {
             return Err(TransportActionWireError::UnsupportedWireShape {
@@ -29049,6 +29045,14 @@ impl OpenSearchShardSearchRequestWire {
     pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
         self.validate_supported_subset()?;
         Ok(())
+    }
+
+    pub fn can_match_local_subset_result(&self) -> Result<bool, TransportActionWireError> {
+        self.validate_supported_subset()?;
+        self.source
+            .as_ref()
+            .map(OpenSearchSearchSourceBuilderWire::can_match_local_subset_result)
+            .unwrap_or(Ok(true))
     }
 }
 
@@ -29570,6 +29574,37 @@ impl Default for OpenSearchSearchSourceBuilderWire {
 }
 
 impl OpenSearchSearchSourceBuilderWire {
+    fn validate_can_match_local_subset(&self) -> Result<(), TransportActionWireError> {
+        self.validate_supported_wire_subset()?;
+        let expected = OpenSearchSearchSourceBuilderWire {
+            query: self.query.clone(),
+            ..OpenSearchSearchSourceBuilderWire::default()
+        };
+        if self != &expected {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "shard search request source",
+                reason: "bounded can-match source execution currently supports only default SearchSourceBuilder fields plus match_all or match_none query",
+            });
+        }
+        match &self.query {
+            None
+            | Some(OpenSearchQueryBuilderWire::MatchAll(_))
+            | Some(OpenSearchQueryBuilderWire::MatchNone(_)) => Ok(()),
+            Some(_) => Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "shard search request source query",
+                reason: "bounded can-match source execution currently supports only null, match_all, and match_none query builders",
+            }),
+        }
+    }
+
+    fn can_match_local_subset_result(&self) -> Result<bool, TransportActionWireError> {
+        self.validate_can_match_local_subset()?;
+        Ok(!matches!(
+            &self.query,
+            Some(OpenSearchQueryBuilderWire::MatchNone(_))
+        ))
+    }
+
     fn validate_supported_wire_subset(&self) -> Result<(), TransportActionWireError> {
         if self.from < 0 {
             return Err(TransportActionWireError::UnsupportedWireShape {
@@ -76839,8 +76874,72 @@ mod tests {
             Ok(())
         ));
 
-        let source_request = OpenSearchShardSearchRequestWire {
+        let default_source_request = OpenSearchShardSearchRequestWire {
             source: Some(OpenSearchSearchSourceBuilderWire::default()),
+            ..OpenSearchShardSearchRequestWire::default()
+        };
+        let mut frame = build_opensearch_can_match_request_message(
+            150,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &default_source_request,
+        )
+        .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected default-source can-match request message");
+        };
+        let decoded = read_opensearch_can_match_request_message(&message).unwrap();
+        assert_eq!(decoded, default_source_request);
+        assert_eq!(decoded.can_match_local_subset_result().unwrap(), true);
+
+        let match_all_source_request = OpenSearchShardSearchRequestWire {
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                query: Some(OpenSearchQueryBuilderWire::MatchAll(
+                    OpenSearchMatchAllQueryBuilderWire::default(),
+                )),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchShardSearchRequestWire::default()
+        };
+        let mut frame = build_opensearch_can_match_request_message(
+            151,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &match_all_source_request,
+        )
+        .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected match-all can-match request message");
+        };
+        let decoded = read_opensearch_can_match_request_message(&message).unwrap();
+        assert_eq!(decoded, match_all_source_request);
+        assert_eq!(decoded.can_match_local_subset_result().unwrap(), true);
+
+        let match_none_source_request = OpenSearchShardSearchRequestWire {
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                query: Some(OpenSearchQueryBuilderWire::MatchNone(
+                    OpenSearchMatchNoneQueryBuilderWire::default(),
+                )),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchShardSearchRequestWire::default()
+        };
+        let mut frame = build_opensearch_can_match_request_message(
+            152,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &match_none_source_request,
+        )
+        .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected match-none can-match request message");
+        };
+        let decoded = read_opensearch_can_match_request_message(&message).unwrap();
+        assert_eq!(decoded, match_none_source_request);
+        assert_eq!(decoded.can_match_local_subset_result().unwrap(), false);
+
+        let source_request = OpenSearchShardSearchRequestWire {
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                from: 1,
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
             ..OpenSearchShardSearchRequestWire::default()
         };
         let mut output = StreamOutput::new();
