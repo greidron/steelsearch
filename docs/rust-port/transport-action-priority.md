@@ -1754,12 +1754,13 @@ The simulate-template boundary covers:
   timeout, local flag, optional template name, and optional nested
   `PutComposableIndexTemplateAction.Request` marker at the OpenSearch 3.x wire
   decode/build layer;
-- explicit fail-closed classification for `indices:admin/index_template/simulate`
-  until named or inline composable template resolution and simulated metadata
-  response rendering are implemented against Rust cluster metadata;
+- implemented classification for `indices:admin/index_template/simulate`
+  when the request uses the default timeout, `local=false`, no inline template
+  body, a non-empty template name, and no manifest composable template has that
+  name, returning OpenSearch's missing-template `IllegalArgumentException`;
 - explicit rejection for custom cluster-manager timeouts, local reads, missing
-  template name/body targets, empty template names, inline template bodies, and
-  simulate-template execution.
+  template name/body targets, empty template names, inline template bodies,
+  matched template simulation, and full simulated metadata response rendering.
 
 The validate-query boundary covers:
 

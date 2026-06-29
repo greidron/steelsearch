@@ -2681,6 +2681,36 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end_at_ms,
         )?;
     } else if is_request
+        && normalized_action_hint == Some("indices:admin/index_template/simulate")
+        && simulate_template_request_supports_missing_named_template_subset(&body)
+    {
+        let response = build_simulate_template_missing_named_template_error_response(
+            request_id,
+            header_version_id,
+            &body,
+        );
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("indices:admin/index_template/simulate"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request
         && normalized_action_hint == Some("indices:admin/template/put")
         && put_index_template_request_supports_manifest_execution_subset(&body)
     {
@@ -9985,6 +10015,39 @@ fn simulate_index_template_request_supports_no_match_subset(body: &[u8]) -> bool
         .is_some_and(|request| simulate_index_template_request_matches_no_match_subset(&request))
 }
 
+fn build_simulate_template_missing_named_template_error_response(
+    request_id: i64,
+    header_version_id: u32,
+    body: &[u8],
+) -> Vec<u8> {
+    let Some(request) = decode_simulate_template_request_from_transport_body(body) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    let Some(template_name) = request.template_name.as_deref() else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    if !simulate_template_request_matches_missing_named_template_subset(&request) {
+        return build_empty_transport_response(request_id, header_version_id);
+    }
+    let reason = format!("unable to simulate template [{template_name}] that does not exist");
+    let mut output = StreamOutput::new();
+    os_transport::error::write_illegal_argument_exception(&mut output, Some(&reason));
+    build_transport_error_response_frame(request_id, header_version_id, output.freeze().to_vec())
+}
+
+fn simulate_template_request_supports_missing_named_template_subset(body: &[u8]) -> bool {
+    decode_simulate_template_request_from_transport_body(body).is_some_and(|request| {
+        simulate_template_request_matches_missing_named_template_subset(&request)
+    })
+}
+
+fn decode_simulate_template_request_from_transport_body(
+    body: &[u8],
+) -> Option<os_transport::action::OpenSearchSimulateTemplateRequestWire> {
+    let message = decode_transport_message_from_body(body)?;
+    os_transport::action::read_opensearch_simulate_template_request_message(&message).ok()
+}
+
 fn decode_simulate_index_template_request_from_transport_body(
     body: &[u8],
 ) -> Option<os_transport::action::OpenSearchSimulateIndexTemplateRequestWire> {
@@ -9997,6 +10060,32 @@ fn simulate_index_template_request_matches_no_match_subset(
 ) -> bool {
     request.validate_supported_no_match_subset().is_ok()
         && !manifest_composable_index_template_matches(&request.index_name)
+}
+
+fn simulate_template_request_matches_missing_named_template_subset(
+    request: &os_transport::action::OpenSearchSimulateTemplateRequestWire,
+) -> bool {
+    request.cluster_manager_timeout == os_transport::action::TimeValueWire::seconds(30)
+        && !request.local
+        && request.index_template_request.is_none()
+        && request
+            .template_name
+            .as_deref()
+            .is_some_and(|template_name| {
+                !template_name.trim().is_empty()
+                    && !manifest_composable_index_template_exists(template_name)
+            })
+}
+
+fn manifest_composable_index_template_exists(template_name: &str) -> bool {
+    let manifest = dev_transport_pit_bindings()
+        .metadata_manifest
+        .lock()
+        .expect("dev transport metadata manifest lock poisoned");
+    manifest
+        .pointer("/templates/index_templates")
+        .and_then(Value::as_object)
+        .is_some_and(|templates| templates.contains_key(template_name))
 }
 
 fn manifest_composable_index_template_matches(index_name: &str) -> bool {
@@ -24343,6 +24432,17 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
                 body,
             ))
         }
+        Some("indices:admin/index_template/simulate")
+            if simulate_template_request_supports_missing_named_template_subset(body) =>
+        {
+            Some(
+                build_simulate_template_missing_named_template_error_response(
+                    request_id,
+                    header_version_id,
+                    body,
+                ),
+            )
+        }
         Some("indices:admin/template/put")
             if put_index_template_request_supports_manifest_execution_subset(body) =>
         {
@@ -33154,6 +33254,81 @@ mod tests {
         assert!(!simulate_index_template_request_supports_no_match_subset(
             &matched_frame[6..]
         ));
+    }
+
+    #[test]
+    fn simulate_template_transport_route_returns_missing_named_template_error() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        *dev_transport_pit_bindings()
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned") = serde_json::json!({
+            "templates": {
+                "index_templates": {
+                    "metrics-template": {
+                        "index_template": {
+                            "index_patterns": ["metrics-*"],
+                            "template": {
+                                "settings": {}
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+        let request = os_transport::action::OpenSearchSimulateTemplateRequestWire {
+            template_name: Some("logs-template".to_string()),
+            ..os_transport::action::OpenSearchSimulateTemplateRequestWire::default()
+        };
+        let frame = os_transport::action::build_opensearch_simulate_template_request_message(
+            188,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(simulate_template_request_supports_missing_named_template_subset(&frame[6..]));
+
+        let response = build_simulate_template_missing_named_template_error_response(
+            188,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &frame[6..],
+        );
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected simulate template error response message");
+        };
+        assert_eq!(message.request_id, 188);
+        assert!(message.status.is_error());
+        let error = os_transport::error::TransportError::read(message.body.freeze())
+            .unwrap()
+            .unwrap();
+        assert_eq!(error.class_name, "java.lang.IllegalArgumentException");
+        assert_eq!(
+            error.message.as_deref(),
+            Some("unable to simulate template [logs-template] that does not exist")
+        );
+
+        let matched_request = os_transport::action::OpenSearchSimulateTemplateRequestWire {
+            template_name: Some("metrics-template".to_string()),
+            ..os_transport::action::OpenSearchSimulateTemplateRequestWire::default()
+        };
+        let matched_frame =
+            os_transport::action::build_opensearch_simulate_template_request_message(
+                189,
+                OPENSEARCH_3_7_0_TRANSPORT,
+                &matched_request,
+            )
+            .unwrap();
+        assert!(
+            !simulate_template_request_supports_missing_named_template_subset(&matched_frame[6..])
+        );
     }
 
     #[test]

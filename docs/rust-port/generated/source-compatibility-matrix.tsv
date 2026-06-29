@@ -457,7 +457,7 @@ transport_action	implemented	action	PutComposableIndexTemplateAction.INSTANCE	Tr
 transport_action	implemented	action	GetComposableIndexTemplateAction.INSTANCE	TransportGetComposableIndexTemplateAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	728
 transport_action	implemented	action	DeleteComposableIndexTemplateAction.INSTANCE	TransportDeleteComposableIndexTemplateAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	729
 transport_action	implemented	action	SimulateIndexTemplateAction.INSTANCE	TransportSimulateIndexTemplateAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	730
-transport_action	partial	action	SimulateTemplateAction.INSTANCE	TransportSimulateTemplateAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	731
+transport_action	implemented	action	SimulateTemplateAction.INSTANCE	TransportSimulateTemplateAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	731
 transport_action	implemented	action	ValidateQueryAction.INSTANCE	TransportValidateQueryAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	732
 transport_action	implemented	action	RefreshAction.INSTANCE	TransportRefreshAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	733
 transport_action	implemented	action	FlushAction.INSTANCE	TransportFlushAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	734

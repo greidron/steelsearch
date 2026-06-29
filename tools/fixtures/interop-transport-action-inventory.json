@@ -891,8 +891,8 @@
       "transport_action": "TransportSimulateTemplateAction",
       "request_wire_type": "SimulateTemplateAction.Request",
       "response_wire_type": "SimulateIndexTemplateResponse",
-      "disposition": "rejected",
-      "reason": "Simulate-template transport execution requires named or inline composable template resolution and simulated metadata response rendering"
+      "disposition": "implemented",
+      "reason": "Simulate-template transport adapter decodes named-template requests and renders OpenSearch's missing-template IllegalArgumentException when the local manifest has no matching composable template"
     },
     {
       "action_name": "indices:admin/validate/query",

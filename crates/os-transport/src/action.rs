@@ -2320,8 +2320,8 @@ pub fn classify_opensearch_transport_action(
         },
         OPENSEARCH_SIMULATE_TEMPLATE_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
-            disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "simulate-template transport execution requires named or inline composable template resolution and simulated metadata response rendering",
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "simulate-template transport adapter decodes named-template requests and renders OpenSearch's missing-template IllegalArgumentException when the local manifest has no matching composable template",
         },
         OPENSEARCH_VALIDATE_QUERY_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -51438,7 +51438,7 @@ mod tests {
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_SIMULATE_TEMPLATE_ACTION_NAME)
                 .disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_VALIDATE_QUERY_ACTION_NAME).disposition,
