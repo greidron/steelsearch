@@ -16761,10 +16761,7 @@ fn local_pit_segment_shards_for_request(
             os_transport::action::OpenSearchSearchContextIdWire::decode(&pit_id)
         {
             for (shard_id, context) in search_context_id.shards {
-                if context.cluster_alias.is_none()
-                    && context.search_context_id.id >= 0
-                    && context.node == transport_identity.node_id
-                {
+                if context.cluster_alias.is_none() && context.node == transport_identity.node_id {
                     shards.push(shard_id);
                 }
             }
@@ -39021,6 +39018,117 @@ mod tests {
             .lock()
             .expect("dev transport PIT contexts lock poisoned")
             .remove(pit_id);
+    }
+
+    #[test]
+    fn pit_segments_transport_route_keeps_negative_search_context_id_like_opensearch() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        let mut shards = BTreeMap::new();
+        shards.insert(
+            os_transport::action::OpenSearchShardIdWire {
+                index_name: "logs-negative-context-pit".to_string(),
+                index_uuid: "uuid-negative-context-pit".to_string(),
+                shard_id: 0,
+            },
+            os_transport::action::OpenSearchSearchContextIdForNodeWire {
+                node: "steel-node-id".to_string(),
+                cluster_alias: None,
+                search_context_id: os_transport::action::OpenSearchShardSearchContextIdWire::new(
+                    "negative-context-session",
+                    -7,
+                ),
+            },
+        );
+        let pit_id = os_transport::action::OpenSearchSearchContextIdWire::new(shards)
+            .encode(OPENSEARCH_3_7_0_TRANSPORT)
+            .expect("negative context PIT id should encode");
+        dev_transport_pit_bindings()
+            .created_indices
+            .lock()
+            .expect("dev transport created indices lock poisoned")
+            .insert("logs-negative-context-pit".to_string());
+        *dev_transport_pit_bindings()
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned") = serde_json::json!({
+            "indices": {
+                "logs-negative-context-pit": {
+                    "settings": {
+                        "index": {
+                            "number_of_shards": "1"
+                        }
+                    }
+                }
+            }
+        });
+        {
+            let mut contexts = dev_transport_pit_bindings()
+                .contexts
+                .lock()
+                .expect("dev transport PIT contexts lock poisoned");
+            contexts.clear();
+            contexts.insert(
+                pit_id.clone(),
+                PitContext {
+                    indices: vec!["logs-negative-context-pit".to_string()],
+                    documents: Arc::new(BTreeMap::new()),
+                    keep_alive_millis: 60_000,
+                    expires_at_millis: now_epoch_ms() + 60_000,
+                    creation_time_millis: now_epoch_ms(),
+                },
+            );
+        }
+        let transport_identity = DevTransportIdentity {
+            cluster_name: "steelsearch-dev".to_string(),
+            node_name: "steel-node".to_string(),
+            node_id: "steel-node-id".to_string(),
+            ephemeral_id: "steel-node-ephemeral".to_string(),
+            transport_address: "127.0.0.1:9300".parse().unwrap(),
+            attributes: Vec::new(),
+            roles: vec!["cluster_manager".to_string(), "data".to_string()],
+            seed_peer_identity: None,
+            seed_peer_identities: Vec::new(),
+            coordination_state: Arc::new(Mutex::new(DevTransportCoordinationState::default())),
+            remote_transport_queue_gate: Arc::new(RemoteTransportQueueGate::new(1, 1000)),
+            task_queue_state: None,
+        };
+        let request = os_transport::action::OpenSearchPitSegmentsRequestWire {
+            pit_ids: vec![pit_id],
+            ..os_transport::action::OpenSearchPitSegmentsRequestWire::default()
+        };
+        let frame = os_transport::action::build_opensearch_pit_segments_request_message(
+            104,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(pit_segments_request_supports_local_subset(&frame[6..]));
+
+        let response = build_local_pit_segments_node_response(
+            104,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &transport_identity,
+            &frame[6..],
+        );
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected negative context PIT segments node response message");
+        };
+        assert_eq!(message.request_id, 104);
+        let mut input = StreamInput::new(message.body.freeze());
+        assert_eq!(input.read_string().unwrap(), "steel-node-id");
+        assert_eq!(input.read_vint().unwrap(), 1);
+        assert_eq!(input.read_vint().unwrap(), 1);
+        assert!(input.read_bool().unwrap());
+        assert_eq!(input.read_string().unwrap(), "logs-negative-context-pit");
+        assert_eq!(input.read_string().unwrap(), "uuid-negative-context-pit");
+        assert_eq!(input.read_vint().unwrap(), 0);
     }
 
     #[test]
