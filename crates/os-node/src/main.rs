@@ -37450,6 +37450,71 @@ mod tests {
     }
 
     #[test]
+    fn can_match_transport_route_returns_false_for_match_none_alias_filter_subset() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        let bindings = dev_transport_pit_bindings();
+        bindings
+            .created_indices
+            .lock()
+            .expect("dev transport created indices lock poisoned")
+            .clear();
+        bindings
+            .created_indices
+            .lock()
+            .expect("dev transport created indices lock poisoned")
+            .insert("logs-can-match-alias".to_string());
+        let request = os_transport::action::OpenSearchShardSearchRequestWire {
+            shard_id: os_transport::action::OpenSearchShardIdWire {
+                index_name: "logs-can-match-alias".to_string(),
+                index_uuid: "uuid-logs-can-match-alias".to_string(),
+                shard_id: 0,
+            },
+            alias_filter: os_transport::action::OpenSearchAliasFilterWire::new(
+                vec!["logs_alias".to_string()],
+                Some(os_transport::action::OpenSearchQueryBuilderWire::MatchNone(
+                    os_transport::action::OpenSearchMatchNoneQueryBuilderWire::default(),
+                )),
+            ),
+            original_indices: os_transport::action::OpenSearchOriginalIndicesWire::new(
+                Some(vec!["logs-can-match-alias".to_string()]),
+                os_transport::action::OpenSearchIndicesOptionsWire::strict_expand_open_forbid_closed_ignore_throttled(),
+            ),
+            ..os_transport::action::OpenSearchShardSearchRequestWire::default()
+        };
+        let frame = os_transport::action::build_opensearch_can_match_request_message(
+            343,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(can_match_request_supports_local_execution_subset(
+            &frame[6..]
+        ));
+
+        let response = build_local_can_match_response(
+            343,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &frame[6..],
+        );
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected can-match response message");
+        };
+        assert_eq!(message.request_id, 343);
+        assert!(!message.status.is_request());
+        let response =
+            os_transport::action::read_opensearch_can_match_response_message(&message).unwrap();
+        assert!(!response.can_match);
+        assert!(!response.estimated_min_and_max_present);
+    }
+
+    #[test]
     fn update_reader_context_transport_route_extends_reader_context_keep_alive() {
         let _lock = dev_transport_pit_test_lock()
             .lock()

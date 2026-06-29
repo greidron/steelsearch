@@ -29003,12 +29003,7 @@ impl OpenSearchShardSearchRequestWire {
         if let Some(source) = &self.source {
             source.validate_can_match_local_subset()?;
         }
-        if !self.alias_filter.aliases.is_empty() || self.alias_filter.query.is_some() {
-            return Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "shard search request alias filter",
-                reason: "can-match alias filter rewrite is not mapped yet",
-            });
-        }
+        self.alias_filter.validate_can_match_local_subset()?;
         if self.index_boost <= 0.0 || !self.index_boost.is_finite() {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "shard search request index boost",
@@ -29049,10 +29044,13 @@ impl OpenSearchShardSearchRequestWire {
 
     pub fn can_match_local_subset_result(&self) -> Result<bool, TransportActionWireError> {
         self.validate_supported_subset()?;
-        self.source
+        let source_can_match = self
+            .source
             .as_ref()
             .map(OpenSearchSearchSourceBuilderWire::can_match_local_subset_result)
-            .unwrap_or(Ok(true))
+            .unwrap_or(Ok(true))?;
+        let alias_filter_can_match = self.alias_filter.can_match_local_subset_result()?;
+        Ok(source_can_match && alias_filter_can_match)
     }
 }
 
@@ -33639,6 +33637,27 @@ impl Eq for OpenSearchAliasFilterWire {}
 impl OpenSearchAliasFilterWire {
     pub fn new(aliases: Vec<String>, query: Option<OpenSearchQueryBuilderWire>) -> Self {
         Self { aliases, query }
+    }
+
+    fn validate_can_match_local_subset(&self) -> Result<(), TransportActionWireError> {
+        validate_query_builder(self.query.as_ref())?;
+        match &self.query {
+            None
+            | Some(OpenSearchQueryBuilderWire::MatchAll(_))
+            | Some(OpenSearchQueryBuilderWire::MatchNone(_)) => Ok(()),
+            Some(_) => Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "shard search request alias filter",
+                reason: "bounded can-match alias filter execution currently supports only null, match_all, and match_none query builders",
+            }),
+        }
+    }
+
+    fn can_match_local_subset_result(&self) -> Result<bool, TransportActionWireError> {
+        self.validate_can_match_local_subset()?;
+        Ok(!matches!(
+            &self.query,
+            Some(OpenSearchQueryBuilderWire::MatchNone(_))
+        ))
     }
 
     fn write(&self, output: &mut StreamOutput) {
@@ -76950,6 +76969,50 @@ mod tests {
         assert_eq!(decoded, match_none_source_request);
         assert_eq!(decoded.can_match_local_subset_result().unwrap(), false);
 
+        let match_all_alias_filter_request = OpenSearchShardSearchRequestWire {
+            alias_filter: OpenSearchAliasFilterWire::new(
+                vec!["logs_alias".to_string()],
+                Some(OpenSearchQueryBuilderWire::MatchAll(
+                    OpenSearchMatchAllQueryBuilderWire::default(),
+                )),
+            ),
+            ..OpenSearchShardSearchRequestWire::default()
+        };
+        let mut frame = build_opensearch_can_match_request_message(
+            153,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &match_all_alias_filter_request,
+        )
+        .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected match-all alias-filter can-match request message");
+        };
+        let decoded = read_opensearch_can_match_request_message(&message).unwrap();
+        assert_eq!(decoded, match_all_alias_filter_request);
+        assert_eq!(decoded.can_match_local_subset_result().unwrap(), true);
+
+        let match_none_alias_filter_request = OpenSearchShardSearchRequestWire {
+            alias_filter: OpenSearchAliasFilterWire::new(
+                vec!["logs_alias".to_string()],
+                Some(OpenSearchQueryBuilderWire::MatchNone(
+                    OpenSearchMatchNoneQueryBuilderWire::default(),
+                )),
+            ),
+            ..OpenSearchShardSearchRequestWire::default()
+        };
+        let mut frame = build_opensearch_can_match_request_message(
+            154,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &match_none_alias_filter_request,
+        )
+        .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected match-none alias-filter can-match request message");
+        };
+        let decoded = read_opensearch_can_match_request_message(&message).unwrap();
+        assert_eq!(decoded, match_none_alias_filter_request);
+        assert_eq!(decoded.can_match_local_subset_result().unwrap(), false);
+
         let inert_source_request = OpenSearchShardSearchRequestWire {
             source: Some(OpenSearchSearchSourceBuilderWire {
                 from: 5,
@@ -76971,7 +77034,7 @@ mod tests {
             ..OpenSearchShardSearchRequestWire::default()
         };
         let mut frame = build_opensearch_can_match_request_message(
-            153,
+            155,
             OPENSEARCH_3_7_0_TRANSPORT,
             &inert_source_request,
         )
@@ -76995,6 +77058,30 @@ mod tests {
             source_request.write(&mut output, OPENSEARCH_3_7_0_TRANSPORT),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "shard search request source search_after",
+                ..
+            })
+        ));
+
+        let alias_filter_request = OpenSearchShardSearchRequestWire {
+            alias_filter: OpenSearchAliasFilterWire::new(
+                vec!["logs_alias".to_string()],
+                Some(OpenSearchQueryBuilderWire::Term(
+                    OpenSearchTermQueryBuilderWire {
+                        boost: 1.0,
+                        query_name: None,
+                        field_name: "tenant".to_string(),
+                        value: json!("a"),
+                        case_insensitive: false,
+                    },
+                )),
+            ),
+            ..OpenSearchShardSearchRequestWire::default()
+        };
+        let mut output = StreamOutput::new();
+        assert!(matches!(
+            alias_filter_request.write(&mut output, OPENSEARCH_3_7_0_TRANSPORT),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "shard search request alias filter",
                 ..
             })
         ));

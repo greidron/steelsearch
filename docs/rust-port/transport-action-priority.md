@@ -2435,22 +2435,24 @@ The search phase transport boundary covers:
   reader-context execution, query rewrite, and native phase execution that are
   not yet Rust adapters;
 - the bounded `ShardSearchRequest` wire is implemented for local can-match
-  requests, covering parent task, `ShardId`, search type, shard count, empty
-  `AliasFilter`, boost, `nowInMillis`, request cache, network-time counters,
-  cluster alias, partial-results flag, routings, preference, `OriginalIndices`,
-  and bounded `SearchSourceBuilder` payloads carrying no query, `match_all`,
-  or `match_none`; inert source options such as `from`, `size`, `explain`,
+  requests, covering parent task, `ShardId`, search type, shard count, bounded
+  `AliasFilter` payloads carrying no query, `match_all`, or `match_none`, boost,
+  `nowInMillis`, request cache, network-time counters, cluster alias,
+  partial-results flag, routings, preference, `OriginalIndices`, and bounded
+  `SearchSourceBuilder` payloads carrying no query, `match_all`, or `match_none`;
+  inert source options such as `from`, `size`, `explain`,
   `min_score`, timeout, tracking, profiling, and fetch-shape fields are allowed,
   while scroll, source PIT, slice, sort/search_after min-max pruning, bottom
   sort values, reader context, and keep-alive remain rejected until the
   corresponding native can-match execution pieces are mapped;
 - the local can-match transport route executes the bounded subset by returning
   `canMatch=true` for null-query/default source and `match_all`, or
-  `canMatch=false` for `match_none`, with absent `estimatedMinAndMax`; this
-  follows the OpenSearch `SearchService.canMatch` boundary before alias-filter,
-  reader-context, refresh-pending, search-after, or min/max pruning effects are
-  introduced. Local execution first verifies the addressed index/shard through
-  the same bounded shard admission used by PIT reader-context creation;
+  `canMatch=false` when either the source query or alias filter query is
+  `match_none`, with absent `estimatedMinAndMax`; this follows the OpenSearch
+  `SearchService.canMatch` boundary before reader-context, refresh-pending,
+  search-after, or min/max pruning effects are introduced. Local execution first
+  verifies the addressed index/shard through the same bounded shard admission
+  used by PIT reader-context creation;
 - the bounded `SearchService.CanMatchResponse` wire is implemented for
   `canMatch` plus absent `estimatedMinAndMax`, matching `SearchPhaseResult`
   writing no prefix fields and `CanMatchResponse.writeTo(...)` writing the
@@ -2461,11 +2463,11 @@ Current can-match response wire microbenchmark:
 
 ```text
 cargo run -q -p os-transport --release --bin can-match-response-wire-benchmark
-can_match_request_encode iterations=400000 elapsed_ms=448.227 ops_per_second=892404.93 nanos_per_op=1120.57
-can_match_request_decode iterations=400000 elapsed_ms=598.730 ops_per_second=668081.09 nanos_per_op=1496.82
-can_match_response_encode iterations=400000 elapsed_ms=49.962 ops_per_second=8006004.98 nanos_per_op=124.91
-can_match_response_decode iterations=400000 elapsed_ms=51.842 ops_per_second=7715698.87 nanos_per_op=129.61
-can_match_wire_bottleneck_ops_per_second=668081.09
+can_match_request_encode iterations=400000 elapsed_ms=715.951 ops_per_second=558697.54 nanos_per_op=1789.88
+can_match_request_decode iterations=400000 elapsed_ms=534.394 ops_per_second=748511.41 nanos_per_op=1335.98
+can_match_response_encode iterations=400000 elapsed_ms=49.342 ops_per_second=8106690.04 nanos_per_op=123.35
+can_match_response_decode iterations=400000 elapsed_ms=52.644 ops_per_second=7598219.09 nanos_per_op=131.61
+can_match_wire_bottleneck_ops_per_second=558697.54
 ```
 
 The explain boundary covers:
