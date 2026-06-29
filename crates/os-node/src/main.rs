@@ -17304,14 +17304,10 @@ fn get_all_transport_pits_response(
             .lock()
             .expect("dev transport reader contexts lock poisoned");
         prune_expired_transport_reader_contexts(&mut reader_contexts, now_millis);
-        let mut seen_pit_ids = BTreeSet::new();
         reader_contexts
             .values()
             .filter_map(|reader_context| {
                 let pit_id = reader_context.pit_id.as_ref()?;
-                if !seen_pit_ids.insert(pit_id.clone()) {
-                    return None;
-                }
                 let creation_time_millis = reader_context.creation_time_millis?;
                 let keep_alive_millis = pit_contexts
                     .get(pit_id)
@@ -38351,11 +38347,18 @@ mod tests {
         assert_eq!(response.nodes[0].node.id, "steel-node-id");
         assert_eq!(
             response.nodes[0].pit_infos,
-            vec![os_transport::action::OpenSearchListPitInfoWire::new(
-                "pit-live-a",
-                u128_to_i64_saturating(now - 1_000),
-                60_000
-            )]
+            vec![
+                os_transport::action::OpenSearchListPitInfoWire::new(
+                    "pit-live-a",
+                    u128_to_i64_saturating(now - 1_000),
+                    60_000
+                ),
+                os_transport::action::OpenSearchListPitInfoWire::new(
+                    "pit-live-a",
+                    u128_to_i64_saturating(now - 500),
+                    60_000
+                ),
+            ]
         );
         assert!(!dev_transport_pit_bindings()
             .contexts

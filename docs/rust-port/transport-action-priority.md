@@ -2611,9 +2611,10 @@ The create-PIT boundary covers:
   to local node selectors or the local concrete node.
 - local transport get-all-PIT now renders `ListPitInfo` entries from active
   local PIT reader contexts instead of orphan PIT context store entries,
-  matching OpenSearch `SearchService.getAllPITReaderContexts`; duplicate
-  reader entries are deduped by PIT id in the local single-node response,
-  matching `GetAllPitNodesResponse` aggregation.
+  matching OpenSearch `SearchService.getAllPITReaderContexts`; the local node
+  response preserves each active reader entry, while OpenSearch's top-level
+  `GetAllPitNodesResponse` aggregation remains the layer that collapses PIT ids
+  for REST rendering.
 - local transport free-PIT-context admission now accepts only context ids that
   target the current Steelsearch node id/name, `_local`, or OpenSearch's empty
   raw-string wire shape, and rejects remote cluster aliases or nonlocal node
@@ -5535,12 +5536,12 @@ Current get-all-PITs wire microbenchmark:
 
 ```text
 cargo run -p os-transport --release --bin get-all-pits-wire-benchmark
-get_all_pits_request_encode iterations=400000 elapsed_ms=224.458 ops_per_second=1782068.18 nanos_per_op=561.15
-get_all_pits_request_decode iterations=400000 elapsed_ms=224.548 ops_per_second=1781352.96 nanos_per_op=561.37
-get_all_pits_request_validate iterations=400000 elapsed_ms=223.874 ops_per_second=1786718.53 nanos_per_op=559.69
-get_all_pits_response_encode iterations=400000 elapsed_ms=734.179 ops_per_second=544826.51 nanos_per_op=1835.45
-get_all_pits_response_decode iterations=400000 elapsed_ms=740.194 ops_per_second=540399.16 nanos_per_op=1850.48
-get_all_pits_wire_bottleneck_ops_per_second=540399.16
+get_all_pits_request_encode iterations=400000 elapsed_ms=225.539 ops_per_second=1773531.68 nanos_per_op=563.85
+get_all_pits_request_decode iterations=400000 elapsed_ms=224.847 ops_per_second=1778986.26 nanos_per_op=562.12
+get_all_pits_request_validate iterations=400000 elapsed_ms=225.944 ops_per_second=1770351.69 nanos_per_op=564.86
+get_all_pits_response_encode iterations=400000 elapsed_ms=739.606 ops_per_second=540828.70 nanos_per_op=1849.01
+get_all_pits_response_decode iterations=400000 elapsed_ms=746.953 ops_per_second=535508.68 nanos_per_op=1867.38
+get_all_pits_wire_bottleneck_ops_per_second=535508.68
 ```
 
 The current get-all-PITs wire subset bottleneck is non-empty response decode
