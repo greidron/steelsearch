@@ -3635,6 +3635,32 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end_at_ms,
         )?;
     } else if is_request
+        && normalized_action_hint == Some("indices:data/write/bulk")
+        && bulk_request_supports_local_execution_subset(&body)
+    {
+        let response = build_local_bulk_response(request_id, header_version_id, &body);
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("indices:data/write/bulk"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request
         && normalized_action_hint == Some("indices:data/write/delete")
         && delete_request_supports_local_execution_subset(&body)
     {
@@ -12603,6 +12629,61 @@ fn local_transport_index_response_from_request(
     }
 }
 
+fn build_local_bulk_response(request_id: i64, header_version_id: u32, body: &[u8]) -> Vec<u8> {
+    let Some(request) = decode_bulk_request_from_transport_body(body) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    if request.to_engine_request().is_err() {
+        return build_empty_transport_response(request_id, header_version_id);
+    }
+    let response = local_transport_bulk_response_from_request(&request);
+    os_transport::action::build_opensearch_bulk_response_message(
+        request_id,
+        Version::from_id(header_version_id as i32),
+        &response,
+    )
+    .map(|frame| frame.to_vec())
+    .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
+}
+
+fn bulk_request_supports_local_execution_subset(body: &[u8]) -> bool {
+    decode_bulk_request_from_transport_body(body)
+        .and_then(|request| request.to_engine_request().ok())
+        .is_some()
+}
+
+fn decode_bulk_request_from_transport_body(
+    body: &[u8],
+) -> Option<os_transport::action::OpenSearchBulkRequestWire> {
+    let message = decode_transport_message_from_body(body)?;
+    os_transport::action::read_opensearch_bulk_request_message(&message).ok()
+}
+
+fn local_transport_bulk_response_from_request(
+    request: &os_transport::action::OpenSearchBulkRequestWire,
+) -> os_transport::action::OpenSearchBulkResponseWire {
+    let items = request
+        .items
+        .iter()
+        .enumerate()
+        .map(|(item_id, item)| match item {
+            os_transport::action::OpenSearchBulkRequestItemWire::Index(request) => {
+                os_transport::action::OpenSearchBulkItemResponseWire::index(
+                    item_id as i32,
+                    local_transport_index_response_from_request(request),
+                )
+            }
+            os_transport::action::OpenSearchBulkRequestItemWire::Delete(request) => {
+                os_transport::action::OpenSearchBulkItemResponseWire::delete(
+                    item_id as i32,
+                    local_transport_delete_response_from_request(request),
+                )
+            }
+        })
+        .collect();
+    os_transport::action::OpenSearchBulkResponseWire::success(items)
+}
+
 fn ensure_local_transport_index_registered(index: &str) {
     let bindings = dev_transport_pit_bindings();
     bindings
@@ -21456,6 +21537,13 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
         }
         Some("indices:data/write/index") if index_request_supports_local_execution_subset(body) => {
             Some(build_local_index_response(
+                request_id,
+                header_version_id,
+                body,
+            ))
+        }
+        Some("indices:data/write/bulk") if bulk_request_supports_local_execution_subset(body) => {
+            Some(build_local_bulk_response(
                 request_id,
                 header_version_id,
                 body,
@@ -34193,6 +34281,171 @@ mod tests {
         assert_eq!(missing.index, "logs-delete");
         assert_eq!(missing.id, "doc-404");
         assert_eq!(missing.result, 3);
+    }
+
+    #[test]
+    fn bulk_transport_route_applies_ordered_index_and_delete_items() {
+        struct RecordingTransportConnection {
+            writes: Vec<u8>,
+        }
+
+        impl std::io::Read for RecordingTransportConnection {
+            fn read(&mut self, _buf: &mut [u8]) -> std::io::Result<usize> {
+                Ok(0)
+            }
+        }
+
+        impl std::io::Write for RecordingTransportConnection {
+            fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+                self.writes.extend_from_slice(buf);
+                Ok(buf.len())
+            }
+
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+
+        impl TransportConnection for RecordingTransportConnection {
+            fn set_read_timeout(&self, _duration: Option<Duration>) -> std::io::Result<()> {
+                Ok(())
+            }
+
+            fn peer_addr(&self) -> std::io::Result<SocketAddr> {
+                "127.0.0.1:9300"
+                    .parse()
+                    .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidInput, error))
+            }
+        }
+
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        let bindings = dev_transport_pit_bindings();
+        bindings
+            .created_indices
+            .lock()
+            .expect("dev transport created indices lock poisoned")
+            .clear();
+        bindings
+            .documents
+            .lock()
+            .expect("dev transport documents lock poisoned")
+            .clear();
+        *bindings
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned") = serde_json::json!({});
+        bindings
+            .documents
+            .lock()
+            .expect("dev transport documents lock poisoned")
+            .insert(
+                "logs-bulk:doc-delete:".to_string(),
+                Arc::new(StoredDocument {
+                    source: serde_json::json!({ "status": "old" }),
+                    version: 2,
+                    seq_no: 4,
+                    primary_term: 1,
+                    routing: None,
+                    refreshed: true,
+                }),
+            );
+
+        let request = os_transport::action::OpenSearchBulkRequestWire::new(vec![
+            os_transport::action::OpenSearchBulkRequestItemWire::Index(
+                os_transport::action::OpenSearchIndexRequestWire::new(
+                    "logs-bulk".into(),
+                    "doc-index".into(),
+                    serde_json::json!({ "status": "new" }),
+                ),
+            ),
+            os_transport::action::OpenSearchBulkRequestItemWire::Delete(
+                os_transport::action::OpenSearchDeleteRequestWire::new(
+                    "logs-bulk".into(),
+                    "doc-delete".into(),
+                ),
+            ),
+        ]);
+        let frame = os_transport::action::build_opensearch_bulk_request_message(
+            316,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(bulk_request_supports_local_execution_subset(&frame[6..]));
+        let transport_identity = DevTransportIdentity {
+            cluster_name: "steelsearch-dev".to_string(),
+            node_name: "steel-node".to_string(),
+            node_id: "steel-node-id".to_string(),
+            ephemeral_id: "steel-node-ephemeral".to_string(),
+            transport_address: "127.0.0.1:9300".parse().unwrap(),
+            attributes: Vec::new(),
+            roles: vec!["cluster_manager".to_string(), "data".to_string()],
+            seed_peer_identity: None,
+            seed_peer_identities: Vec::new(),
+            coordination_state: Arc::new(Mutex::new(DevTransportCoordinationState::default())),
+            remote_transport_queue_gate: Arc::new(RemoteTransportQueueGate::new(1, 1000)),
+            task_queue_state: None,
+        };
+        let mut stream = RecordingTransportConnection { writes: Vec::new() };
+
+        let handled = handle_subsequent_transport_request(
+            &mut stream,
+            &frame[6..],
+            &transport_identity,
+            None,
+        )
+        .unwrap();
+
+        assert!(handled);
+        let mut frame = BytesMut::from(&stream.writes[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected bulk response message");
+        };
+        assert_eq!(message.request_id, 316);
+        assert!(!message.status.is_request());
+        let response =
+            os_transport::action::read_opensearch_bulk_response_message(&message).unwrap();
+        assert_eq!(response.items.len(), 2);
+        assert_eq!(response.items[0].item_id, 0);
+        assert_eq!(response.items[1].item_id, 1);
+        match &response.items[0].response {
+            os_transport::action::OpenSearchBulkItemResponseBodyWire::Index(index) => {
+                assert_eq!(index.index, "logs-bulk");
+                assert_eq!(index.id, "doc-index");
+                assert_eq!(index.version, 1);
+                assert_eq!(index.seq_no, 5);
+                assert_eq!(index.result, 0);
+            }
+            _ => panic!("expected index bulk response item"),
+        }
+        match &response.items[1].response {
+            os_transport::action::OpenSearchBulkItemResponseBodyWire::Delete(delete) => {
+                assert_eq!(delete.index, "logs-bulk");
+                assert_eq!(delete.id, "doc-delete");
+                assert_eq!(delete.version, 3);
+                assert_eq!(delete.seq_no, 6);
+                assert_eq!(delete.result, 2);
+            }
+            _ => panic!("expected delete bulk response item"),
+        }
+
+        let documents = bindings
+            .documents
+            .lock()
+            .expect("dev transport documents lock poisoned");
+        assert!(documents.contains_key("logs-bulk:doc-index:"));
+        assert!(!documents.contains_key("logs-bulk:doc-delete:"));
+        assert!(bindings
+            .created_indices
+            .lock()
+            .expect("dev transport created indices lock poisoned")
+            .contains("logs-bulk"));
     }
 
     #[test]
