@@ -5,7 +5,7 @@ OPENSEARCH_ROOT=${OPENSEARCH_ROOT:-/home/ubuntu/OpenSearch}
 DISTRO_ROOT="${OPENSEARCH_ROOT}/distribution/archives/linux-arm64-tar/build/install/opensearch-3.7.0-SNAPSHOT"
 LIB_CP="${DISTRO_ROOT}/lib/*"
 CACHE_DIR="${TMPDIR:-/tmp}/steelsearch-java-response-cache"
-CLASS_NAME="BuildQueryPhaseResultV3"
+CLASS_NAME="BuildQueryPhaseResultV5"
 JAVA_FILE="${CACHE_DIR}/${CLASS_NAME}.java"
 CLASS_FILE="${CACHE_DIR}/${CLASS_NAME}.class"
 
@@ -17,6 +17,7 @@ total_hits=""
 context_session_id="steelsearch-phase-query"
 context_id="1"
 score_doc_ids=""
+wrap_scroll_query="false"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -28,6 +29,7 @@ while [[ $# -gt 0 ]]; do
     --context-session-id) context_session_id="$2"; shift 2 ;;
     --context-id) context_id="$2"; shift 2 ;;
     --score-doc-ids) score_doc_ids="$2"; shift 2 ;;
+    --wrap-scroll-query) wrap_scroll_query="true"; shift ;;
     *)
       echo "unknown arg: $1" >&2
       exit 2
@@ -54,11 +56,12 @@ import org.opensearch.search.DocValueFormat;
 import org.opensearch.search.SearchShardTarget;
 import org.opensearch.search.internal.ShardSearchContextId;
 import org.opensearch.search.query.QuerySearchResult;
+import org.opensearch.search.query.ScrollQuerySearchResult;
 import org.opensearch.core.common.bytes.BytesReference;
 import org.opensearch.core.index.Index;
 import org.opensearch.core.index.shard.ShardId;
 
-public class BuildQueryPhaseResultV3 {
+public class BuildQueryPhaseResultV5 {
     private static String hex(byte[] bytes, int offset, int length) {
         StringBuilder sb = new StringBuilder(length * 2);
         for (int i = offset; i < offset + length; i++) {
@@ -83,6 +86,7 @@ public class BuildQueryPhaseResultV3 {
                 case "--context-session-id": break;
                 case "--context-id": break;
                 case "--score-doc-ids": break;
+                case "--wrap-scroll-query": break;
                 default: throw new IllegalArgumentException("unknown arg " + args[i]);
             }
         }
@@ -90,18 +94,21 @@ public class BuildQueryPhaseResultV3 {
         String contextSessionId = "steelsearch-phase-query";
         long contextId = 1L;
         String scoreDocIds = "";
+        boolean wrapScrollQuery = false;
         for (int i = 0; i < args.length; i += 2) {
             switch (args[i]) {
                 case "--context-session-id": contextSessionId = args[i + 1]; break;
                 case "--context-id": contextId = Long.parseLong(args[i + 1]); break;
                 case "--score-doc-ids": scoreDocIds = args[i + 1]; break;
+                case "--wrap-scroll-query": wrapScrollQuery = Boolean.parseBoolean(args[i + 1]); break;
                 default: break;
             }
         }
 
+        SearchShardTarget shardTarget = new SearchShardTarget(localNodeId, new ShardId(new Index(indexName, indexUuid), shardId), null, OriginalIndices.NONE);
         QuerySearchResult querySearchResult = new QuerySearchResult(
             new ShardSearchContextId(contextSessionId, contextId),
-            new SearchShardTarget(localNodeId, new ShardId(new Index(indexName, indexUuid), shardId), null, OriginalIndices.NONE),
+            shardTarget,
             null
         );
         ScoreDoc[] scoreDocs;
@@ -119,7 +126,11 @@ public class BuildQueryPhaseResultV3 {
         querySearchResult.setShardIndex(shardId);
 
         BytesStreamOutput out = new BytesStreamOutput();
-        querySearchResult.writeTo(out);
+        if (wrapScrollQuery) {
+            new ScrollQuerySearchResult(querySearchResult, shardTarget).writeTo(out);
+        } else {
+            querySearchResult.writeTo(out);
+        }
         BytesReference bytesRef = out.bytes();
         var ref = bytesRef.toBytesRef();
         System.out.println(hex(ref.bytes, ref.offset, ref.length));
@@ -138,4 +149,5 @@ java -cp "${LIB_CP}:${CACHE_DIR}" "${CLASS_NAME}" \
   --total-hits "${total_hits}" \
   --context-session-id "${context_session_id}" \
   --context-id "${context_id}" \
-  --score-doc-ids "${score_doc_ids}"
+  --score-doc-ids "${score_doc_ids}" \
+  --wrap-scroll-query "${wrap_scroll_query}"
