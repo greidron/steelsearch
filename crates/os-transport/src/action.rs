@@ -2458,8 +2458,8 @@ pub fn classify_opensearch_transport_action(
         },
         OPENSEARCH_START_PERSISTENT_TASK_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
-            disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "start-persistent-task transport execution requires persistent task params named-writeables, cluster metadata mutation, assignment, and response rendering",
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "start-persistent-task transport adapter maps the fixture PersistentTaskParams named-writeable, records a local persistent task, and renders a PersistentTaskResponse task payload",
         },
         OPENSEARCH_UPDATE_PERSISTENT_TASK_STATUS_ACTION_NAME => {
             OpenSearchTransportDispatchDecision {
@@ -35984,6 +35984,55 @@ impl OpenSearchSearchViewRequestWire {
     }
 }
 
+pub const OPENSEARCH_FIXTURE_PERSISTENT_TASK_NAME: &str = "steelsearch-fixture-persistent-task";
+pub const OPENSEARCH_FIXTURE_PERSISTENT_TASK_DEFAULT_MARKER: &str = "steelsearch-fixture-payload";
+pub const OPENSEARCH_FIXTURE_PERSISTENT_TASK_DEFAULT_GENERATION: i64 = 7;
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchFixturePersistentTaskParamsWire {
+    pub marker: String,
+    pub generation: i64,
+}
+
+impl Default for OpenSearchFixturePersistentTaskParamsWire {
+    fn default() -> Self {
+        Self {
+            marker: OPENSEARCH_FIXTURE_PERSISTENT_TASK_DEFAULT_MARKER.to_string(),
+            generation: OPENSEARCH_FIXTURE_PERSISTENT_TASK_DEFAULT_GENERATION,
+        }
+    }
+}
+
+impl OpenSearchFixturePersistentTaskParamsWire {
+    pub fn write(&self, output: &mut StreamOutput) {
+        output.write_string(&self.marker);
+        output.write_i64(self.generation);
+    }
+
+    pub fn read(input: &mut StreamInput) -> Result<Self, TransportActionWireError> {
+        Ok(Self {
+            marker: input.read_string()?,
+            generation: input.read_i64()?,
+        })
+    }
+
+    pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
+        if self.marker.trim().is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "start persistent task params marker",
+                reason: "fixture persistent task params marker must be non-empty",
+            });
+        }
+        if self.generation < 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "start persistent task params generation",
+                reason: "fixture persistent task params generation must be non-negative",
+            });
+        }
+        Ok(())
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OpenSearchStartPersistentTaskRequestWire {
     pub parent_task_node: String,
@@ -35992,6 +36041,7 @@ pub struct OpenSearchStartPersistentTaskRequestWire {
     pub task_id: String,
     pub task_name: String,
     pub params_writeable_name: String,
+    pub fixture_params: Option<OpenSearchFixturePersistentTaskParamsWire>,
 }
 
 impl Default for OpenSearchStartPersistentTaskRequestWire {
@@ -36001,8 +36051,9 @@ impl Default for OpenSearchStartPersistentTaskRequestWire {
             parent_task_id: None,
             cluster_manager_timeout: TimeValueWire::seconds(30),
             task_id: "persistent-task-1".to_string(),
-            task_name: "steelsearch-empty-persistent-task".to_string(),
-            params_writeable_name: "steelsearch-empty-persistent-task".to_string(),
+            task_name: OPENSEARCH_FIXTURE_PERSISTENT_TASK_NAME.to_string(),
+            params_writeable_name: OPENSEARCH_FIXTURE_PERSISTENT_TASK_NAME.to_string(),
+            fixture_params: Some(OpenSearchFixturePersistentTaskParamsWire::default()),
         }
     }
 }
@@ -36014,6 +36065,9 @@ impl OpenSearchStartPersistentTaskRequestWire {
         output.write_string(&self.task_id);
         output.write_string(&self.task_name);
         output.write_string(&self.params_writeable_name);
+        if let Some(params) = self.fixture_params.as_ref() {
+            params.write(output);
+        }
     }
 
     pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
@@ -36023,6 +36077,11 @@ impl OpenSearchStartPersistentTaskRequestWire {
         let task_id = input.read_string()?;
         let task_name = input.read_string()?;
         let params_writeable_name = input.read_string()?;
+        let fixture_params = if params_writeable_name == OPENSEARCH_FIXTURE_PERSISTENT_TASK_NAME {
+            Some(OpenSearchFixturePersistentTaskParamsWire::read(&mut input)?)
+        } else {
+            None
+        };
         require_no_trailing_bytes(&input)?;
         Ok(Self {
             parent_task_node,
@@ -36031,10 +36090,13 @@ impl OpenSearchStartPersistentTaskRequestWire {
             task_id,
             task_name,
             params_writeable_name,
+            fixture_params,
         })
     }
 
-    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+    pub fn validate_supported_fixture_execution_subset(
+        &self,
+    ) -> Result<(), TransportActionWireError> {
         if self.cluster_manager_timeout != TimeValueWire::seconds(30) {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "start persistent task cluster-manager timeout",
@@ -36071,9 +36133,27 @@ impl OpenSearchStartPersistentTaskRequestWire {
                 reason: "OpenSearch requires persistent task params writeable name to match the task name",
             });
         }
+        if self.task_name != OPENSEARCH_FIXTURE_PERSISTENT_TASK_NAME {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "start persistent task params type",
+                reason: "only the OpenSearch persistent-task-live-fixture params named-writeable is mapped by this adapter",
+            });
+        }
+        let Some(params) = self.fixture_params.as_ref() else {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "start persistent task params payload",
+                reason: "fixture persistent task params payload is required",
+            });
+        };
+        params.validate_supported_subset()?;
+        Ok(())
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        self.validate_supported_fixture_execution_subset()?;
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "start persistent task execution",
-            reason: "start-persistent-task transport execution requires persistent task params named-writeables, cluster metadata mutation, assignment, and response rendering",
+            reason: "use validate_supported_fixture_execution_subset for the implemented local start-persistent-task adapter",
         })
     }
 }
@@ -37243,30 +37323,144 @@ impl OpenSearchRetentionLeaseResponseWire {
     }
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchPersistentTaskWire {
+    pub task_id: String,
+    pub allocation_id: i64,
+    pub task_name: String,
+    pub fixture_params: OpenSearchFixturePersistentTaskParamsWire,
+    pub assignment_executor_node: Option<String>,
+    pub assignment_explanation: String,
+    pub allocation_id_on_last_status_update: Option<i64>,
+}
+
+impl OpenSearchPersistentTaskWire {
+    pub fn fixture(task_id: impl Into<String>, allocation_id: i64) -> Self {
+        Self {
+            task_id: task_id.into(),
+            allocation_id,
+            task_name: OPENSEARCH_FIXTURE_PERSISTENT_TASK_NAME.to_string(),
+            fixture_params: OpenSearchFixturePersistentTaskParamsWire::default(),
+            assignment_executor_node: None,
+            assignment_explanation: "waiting for initial assignment".to_string(),
+            allocation_id_on_last_status_update: None,
+        }
+    }
+
+    pub fn write(&self, output: &mut StreamOutput) -> Result<(), TransportActionWireError> {
+        self.validate_supported_subset()?;
+        output.write_string(&self.task_id);
+        output.write_i64(self.allocation_id);
+        output.write_string(&self.task_name);
+        output.write_string(OPENSEARCH_FIXTURE_PERSISTENT_TASK_NAME);
+        self.fixture_params.write(output);
+        output.write_bool(false);
+        output.write_optional_string(self.assignment_executor_node.as_deref());
+        output.write_string(&self.assignment_explanation);
+        write_optional_i64(output, self.allocation_id_on_last_status_update);
+        Ok(())
+    }
+
+    pub fn read(input: &mut StreamInput) -> Result<Self, TransportActionWireError> {
+        let task_id = input.read_string()?;
+        let allocation_id = input.read_i64()?;
+        let task_name = input.read_string()?;
+        let params_writeable_name = input.read_string()?;
+        if params_writeable_name != OPENSEARCH_FIXTURE_PERSISTENT_TASK_NAME {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "persistent task params type",
+                reason: "only the OpenSearch persistent-task-live-fixture params named-writeable is decoded by this adapter",
+            });
+        }
+        let fixture_params = OpenSearchFixturePersistentTaskParamsWire::read(input)?;
+        if input.read_bool()? {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "persistent task state payload",
+                reason:
+                    "persistent task state named-writeables are not decoded by this adapter yet",
+            });
+        }
+        let assignment_executor_node = input.read_optional_string()?;
+        let assignment_explanation = input.read_string()?;
+        let allocation_id_on_last_status_update = read_optional_i64(input)?;
+        let task = Self {
+            task_id,
+            allocation_id,
+            task_name,
+            fixture_params,
+            assignment_executor_node,
+            assignment_explanation,
+            allocation_id_on_last_status_update,
+        };
+        task.validate_supported_subset()?;
+        Ok(task)
+    }
+
+    pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
+        if self.task_id.trim().is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "persistent task id",
+                reason: "PersistentTask id must be non-empty",
+            });
+        }
+        if self.allocation_id < 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "persistent task allocation id",
+                reason: "PersistentTask allocation id must be non-negative",
+            });
+        }
+        if self.task_name != OPENSEARCH_FIXTURE_PERSISTENT_TASK_NAME {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "persistent task name",
+                reason: "only fixture persistent task payloads are mapped by this adapter",
+            });
+        }
+        if self.assignment_explanation.trim().is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "persistent task assignment explanation",
+                reason: "PersistentTask assignment explanation must be non-empty",
+            });
+        }
+        self.fixture_params.validate_supported_subset()?;
+        Ok(())
+    }
+}
+
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct OpenSearchPersistentTaskResponseWire {
-    pub has_task: bool,
+    pub task: Option<OpenSearchPersistentTaskWire>,
 }
 
 impl OpenSearchPersistentTaskResponseWire {
     pub fn write(&self, output: &mut StreamOutput) {
-        output.write_bool(self.has_task);
+        if let Some(task) = self.task.as_ref() {
+            output.write_bool(true);
+            task.write(output)
+                .expect("persistent task response task must be supported");
+        } else {
+            output.write_bool(false);
+        }
     }
 
     pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
         let mut input = StreamInput::new(bytes);
         let has_task = input.read_bool()?;
-        if has_task {
-            return Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "persistent task response task payload",
-                reason: "PersistentTaskResponse task payload requires persistent task params, state, assignment, and metadata named-writeable decoding",
-            });
-        }
+        let task = if has_task {
+            Some(OpenSearchPersistentTaskWire::read(&mut input)?)
+        } else {
+            None
+        };
         require_no_trailing_bytes(&input)?;
-        Ok(Self { has_task })
+        Ok(Self { task })
     }
 
     pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        if self.task.is_some() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "persistent task response rendering",
+                reason: "use the implemented persistent-task response message builder for fixture task responses",
+            });
+        }
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "persistent task response rendering",
             reason: "PersistentTaskResponse rendering requires persistent task metadata and named-writeable support",
@@ -73495,13 +73689,11 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_start_persistent_task_request_wire_round_trips_and_rejects_execution_boundary() {
+    fn opensearch_start_persistent_task_request_wire_round_trips_and_validates_fixture_subset() {
         let request = OpenSearchStartPersistentTaskRequestWire {
             parent_task_node: "node-a".to_string(),
             parent_task_id: Some(12),
             task_id: "task-a".to_string(),
-            task_name: "steelsearch-empty-persistent-task".to_string(),
-            params_writeable_name: "steelsearch-empty-persistent-task".to_string(),
             ..OpenSearchStartPersistentTaskRequestWire::default()
         };
         let mut output = StreamOutput::new();
@@ -73509,6 +73701,9 @@ mod tests {
 
         let decoded = OpenSearchStartPersistentTaskRequestWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, request);
+        decoded
+            .validate_supported_fixture_execution_subset()
+            .unwrap();
         assert!(matches!(
             decoded.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
@@ -73547,6 +73742,7 @@ mod tests {
         let missing_name = OpenSearchStartPersistentTaskRequestWire {
             task_name: " ".to_string(),
             params_writeable_name: " ".to_string(),
+            fixture_params: None,
             ..OpenSearchStartPersistentTaskRequestWire::default()
         };
         assert!(matches!(
@@ -73559,12 +73755,57 @@ mod tests {
 
         let mismatched_params = OpenSearchStartPersistentTaskRequestWire {
             params_writeable_name: "different-task".to_string(),
+            fixture_params: None,
             ..OpenSearchStartPersistentTaskRequestWire::default()
         };
         assert!(matches!(
             mismatched_params.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "start persistent task params name mismatch",
+                ..
+            })
+        ));
+
+        let unsupported_params = OpenSearchStartPersistentTaskRequestWire {
+            task_name: "other-task".to_string(),
+            params_writeable_name: "other-task".to_string(),
+            fixture_params: None,
+            ..OpenSearchStartPersistentTaskRequestWire::default()
+        };
+        assert!(matches!(
+            unsupported_params.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "start persistent task params type",
+                ..
+            })
+        ));
+
+        let blank_marker = OpenSearchStartPersistentTaskRequestWire {
+            fixture_params: Some(OpenSearchFixturePersistentTaskParamsWire {
+                marker: " ".to_string(),
+                ..OpenSearchFixturePersistentTaskParamsWire::default()
+            }),
+            ..OpenSearchStartPersistentTaskRequestWire::default()
+        };
+        assert!(matches!(
+            blank_marker.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "start persistent task params marker",
+                ..
+            })
+        ));
+
+        let negative_generation = OpenSearchStartPersistentTaskRequestWire {
+            fixture_params: Some(OpenSearchFixturePersistentTaskParamsWire {
+                generation: -1,
+                ..OpenSearchFixturePersistentTaskParamsWire::default()
+            }),
+            ..OpenSearchStartPersistentTaskRequestWire::default()
+        };
+        assert!(matches!(
+            negative_generation.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "start persistent task params generation",
                 ..
             })
         ));
@@ -73579,7 +73820,7 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_start_persistent_task_transport_messages_bind_rejected_action_frame_and_empty_response(
+    fn opensearch_start_persistent_task_transport_messages_bind_implemented_action_frame_and_fixture_response(
     ) {
         let request = OpenSearchStartPersistentTaskRequestWire::default();
         let mut frame = build_opensearch_start_persistent_task_request_message(
@@ -73595,12 +73836,16 @@ mod tests {
             classify_opensearch_transport_request_message(&message)
                 .unwrap()
                 .disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             read_opensearch_start_persistent_task_request_message(&message).unwrap(),
             request
         );
+        read_opensearch_start_persistent_task_request_message(&message)
+            .unwrap()
+            .validate_supported_fixture_execution_subset()
+            .unwrap();
         assert!(matches!(
             read_opensearch_start_persistent_task_request_message(&message)
                 .unwrap()
@@ -73611,7 +73856,12 @@ mod tests {
             })
         ));
 
-        let response = OpenSearchPersistentTaskResponseWire { has_task: false };
+        let response = OpenSearchPersistentTaskResponseWire {
+            task: Some(OpenSearchPersistentTaskWire::fixture(
+                request.task_id.clone(),
+                1,
+            )),
+        };
         let mut frame = build_opensearch_start_persistent_task_response_message(
             86,
             OPENSEARCH_3_7_0_TRANSPORT,
@@ -73628,10 +73878,16 @@ mod tests {
 
         let mut output = StreamOutput::new();
         output.write_bool(true);
+        output.write_string("persistent-task-1");
+        output.write_i64(1);
+        output.write_string(OPENSEARCH_FIXTURE_PERSISTENT_TASK_NAME);
+        output.write_string(OPENSEARCH_FIXTURE_PERSISTENT_TASK_NAME);
+        OpenSearchFixturePersistentTaskParamsWire::default().write(&mut output);
+        output.write_bool(true);
         assert!(matches!(
             OpenSearchPersistentTaskResponseWire::read(output.freeze()),
             Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "persistent task response task payload",
+                shape: "persistent task state payload",
                 ..
             })
         ));
@@ -73768,7 +74024,7 @@ mod tests {
             })
         ));
 
-        let response = OpenSearchPersistentTaskResponseWire { has_task: false };
+        let response = OpenSearchPersistentTaskResponseWire { task: None };
         let mut frame = build_opensearch_update_persistent_task_status_response_message(
             87,
             OPENSEARCH_3_7_0_TRANSPORT,
@@ -73913,7 +74169,7 @@ mod tests {
             })
         ));
 
-        let response = OpenSearchPersistentTaskResponseWire { has_task: false };
+        let response = OpenSearchPersistentTaskResponseWire { task: None };
         let mut frame = build_opensearch_completion_persistent_task_response_message(
             88,
             OPENSEARCH_3_7_0_TRANSPORT,
@@ -74035,7 +74291,7 @@ mod tests {
             })
         ));
 
-        let response = OpenSearchPersistentTaskResponseWire { has_task: false };
+        let response = OpenSearchPersistentTaskResponseWire { task: None };
         let mut frame = build_opensearch_remove_persistent_task_response_message(
             89,
             OPENSEARCH_3_7_0_TRANSPORT,

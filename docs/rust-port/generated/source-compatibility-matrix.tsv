@@ -507,7 +507,7 @@ transport_action	implemented	action	GetViewAction.INSTANCE	GetViewAction.Transpo
 transport_action	implemented	action	UpdateViewAction.INSTANCE	UpdateViewAction.TransportAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	799
 transport_action	implemented	action	ListViewNamesAction.INSTANCE	ListViewNamesAction.TransportAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	800
 transport_action	implemented	action	SearchViewAction.INSTANCE	SearchViewAction.TransportAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	801
-transport_action	partial	action	StartPersistentTaskAction.INSTANCE	StartPersistentTaskAction.TransportAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	804
+transport_action	implemented	action	StartPersistentTaskAction.INSTANCE	StartPersistentTaskAction.TransportAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	804
 transport_action	implemented	action	UpdatePersistentTaskStatusAction.INSTANCE	UpdatePersistentTaskStatusAction.TransportAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	805
 transport_action	implemented	action	CompletionPersistentTaskAction.INSTANCE	CompletionPersistentTaskAction.TransportAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	806
 transport_action	implemented	action	RemovePersistentTaskAction.INSTANCE	RemovePersistentTaskAction.TransportAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	807

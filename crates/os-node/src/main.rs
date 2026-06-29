@@ -1528,6 +1528,32 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end_at_ms,
         )?;
     } else if is_request
+        && normalized_action_hint == Some("cluster:admin/persistent/start")
+        && start_persistent_task_request_supports_fixture_subset(&body)
+    {
+        let response = build_start_persistent_task_response(request_id, header_version_id, &body);
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("cluster:admin/persistent/start"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request
         && normalized_action_hint == Some("cluster:admin/persistent/remove")
         && remove_persistent_task_request_supports_empty_metadata_missing_subset(&body)
     {
@@ -9582,6 +9608,99 @@ fn transport_ingestion_state_index_is_concrete(index: &str) -> bool {
         && !trimmed.contains(',')
         && !trimmed.starts_with('<')
         && !trimmed.contains(':')
+}
+
+fn build_start_persistent_task_response(
+    request_id: i64,
+    header_version_id: u32,
+    body: &[u8],
+) -> Vec<u8> {
+    let Some(request) = decode_start_persistent_task_request_from_transport_body(body) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    let Some(task) = record_local_fixture_persistent_task(&request) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    let response = os_transport::action::OpenSearchPersistentTaskResponseWire { task: Some(task) };
+    os_transport::action::build_opensearch_start_persistent_task_response_message(
+        request_id,
+        Version::from_id(header_version_id as i32),
+        &response,
+    )
+    .map(|frame| frame.to_vec())
+    .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
+}
+
+fn start_persistent_task_request_supports_fixture_subset(body: &[u8]) -> bool {
+    decode_start_persistent_task_request_from_transport_body(body)
+        .as_ref()
+        .is_some_and(|request| {
+            request
+                .validate_supported_fixture_execution_subset()
+                .is_ok()
+        })
+}
+
+fn decode_start_persistent_task_request_from_transport_body(
+    body: &[u8],
+) -> Option<os_transport::action::OpenSearchStartPersistentTaskRequestWire> {
+    let message = decode_transport_message_from_body(body)?;
+    os_transport::action::read_opensearch_start_persistent_task_request_message(&message).ok()
+}
+
+fn record_local_fixture_persistent_task(
+    request: &os_transport::action::OpenSearchStartPersistentTaskRequestWire,
+) -> Option<os_transport::action::OpenSearchPersistentTaskWire> {
+    request.validate_supported_fixture_execution_subset().ok()?;
+    let fixture_params = request.fixture_params.clone()?;
+    let bindings = dev_transport_pit_bindings();
+    let mut manifest = bindings
+        .metadata_manifest
+        .lock()
+        .expect("dev transport metadata manifest lock poisoned");
+    if !manifest.is_object() {
+        *manifest = serde_json::json!({});
+    }
+    let root = manifest.as_object_mut()?;
+    let persistent_tasks = root
+        .entry("persistent_tasks".to_string())
+        .or_insert_with(|| serde_json::json!({}));
+    if !persistent_tasks.is_object() {
+        *persistent_tasks = serde_json::json!({});
+    }
+    let persistent_tasks = persistent_tasks.as_object_mut()?;
+    let started = persistent_tasks
+        .entry("started".to_string())
+        .or_insert_with(|| serde_json::json!([]));
+    if !started.is_array() {
+        *started = serde_json::json!([]);
+    }
+    let started = started.as_array_mut()?;
+    let allocation_id = i64::try_from(started.len().saturating_add(1)).ok()?;
+    let task = os_transport::action::OpenSearchPersistentTaskWire {
+        task_id: request.task_id.clone(),
+        allocation_id,
+        task_name: request.task_name.clone(),
+        fixture_params: fixture_params.clone(),
+        assignment_executor_node: None,
+        assignment_explanation: "waiting for initial assignment".to_string(),
+        allocation_id_on_last_status_update: None,
+    };
+    task.validate_supported_subset().ok()?;
+    started.push(serde_json::json!({
+        "task_id": task.task_id.clone(),
+        "allocation_id": task.allocation_id,
+        "task_name": task.task_name.clone(),
+        "params": {
+            "marker": fixture_params.marker,
+            "generation": fixture_params.generation,
+        },
+        "assignment": {
+            "executor_node": task.assignment_executor_node.clone(),
+            "explanation": task.assignment_explanation.clone(),
+        },
+    }));
+    Some(task)
 }
 
 fn build_update_persistent_task_status_missing_error_response(
@@ -27490,6 +27609,15 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
             if multi_term_vectors_request_supports_all_missing_index_subset(body) =>
         {
             Some(build_multi_term_vectors_missing_index_response(
+                request_id,
+                header_version_id,
+                body,
+            ))
+        }
+        Some("cluster:admin/persistent/start")
+            if start_persistent_task_request_supports_fixture_subset(body) =>
+        {
+            Some(build_start_persistent_task_response(
                 request_id,
                 header_version_id,
                 body,
@@ -57888,6 +58016,97 @@ mod tests {
                 &timeout_frame[6..]
             )
         );
+    }
+
+    #[test]
+    fn start_persistent_task_transport_route_records_fixture_task_like_opensearch() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport pit test lock poisoned");
+        {
+            let bindings = dev_transport_pit_bindings();
+            *bindings
+                .metadata_manifest
+                .lock()
+                .expect("dev transport metadata manifest lock poisoned") =
+                serde_json::json!({ "indices": {} });
+        }
+
+        let request = os_transport::action::OpenSearchStartPersistentTaskRequestWire {
+            task_id: "persistent-task-1".to_string(),
+            ..os_transport::action::OpenSearchStartPersistentTaskRequestWire::default()
+        };
+        let request_frame =
+            os_transport::action::build_opensearch_start_persistent_task_request_message(
+                91,
+                OPENSEARCH_3_7_0_TRANSPORT,
+                &request,
+            )
+            .unwrap();
+        let request_body = request_frame[6..].to_vec();
+        assert!(start_persistent_task_request_supports_fixture_subset(
+            &request_body
+        ));
+
+        let response = build_start_persistent_task_response(
+            91,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &request_body,
+        );
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected start persistent task response message");
+        };
+        assert_eq!(message.request_id, 91);
+        assert!(!message.status.is_error());
+        let response =
+            os_transport::action::read_opensearch_start_persistent_task_response_message(&message)
+                .unwrap();
+        let task = response.task.as_ref().expect("expected persistent task");
+        assert_eq!(task.task_id, "persistent-task-1");
+        assert_eq!(task.allocation_id, 1);
+        assert_eq!(
+            task.task_name,
+            os_transport::action::OPENSEARCH_FIXTURE_PERSISTENT_TASK_NAME
+        );
+        assert_eq!(
+            task.fixture_params.marker,
+            os_transport::action::OPENSEARCH_FIXTURE_PERSISTENT_TASK_DEFAULT_MARKER
+        );
+
+        let manifest = dev_transport_pit_bindings()
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned");
+        assert_eq!(
+            manifest["persistent_tasks"]["started"][0]["task_id"].as_str(),
+            Some("persistent-task-1")
+        );
+        assert_eq!(
+            manifest["persistent_tasks"]["started"][0]["allocation_id"].as_i64(),
+            Some(1)
+        );
+
+        let unsupported_request = os_transport::action::OpenSearchStartPersistentTaskRequestWire {
+            task_name: "other-task".to_string(),
+            params_writeable_name: "other-task".to_string(),
+            fixture_params: None,
+            ..request
+        };
+        let unsupported_frame =
+            os_transport::action::build_opensearch_start_persistent_task_request_message(
+                92,
+                OPENSEARCH_3_7_0_TRANSPORT,
+                &unsupported_request,
+            )
+            .unwrap();
+        assert!(!start_persistent_task_request_supports_fixture_subset(
+            &unsupported_frame[6..]
+        ));
     }
 
     #[test]

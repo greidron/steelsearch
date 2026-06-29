@@ -177,8 +177,8 @@ The source-derived transport inventory currently has 160 rows:
 
 | Status | Count | Meaning |
 | --- | ---: | --- |
-| `implemented` | 158 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
-| `partial` | 2 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
+| `implemented` | 159 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
+| `partial` | 1 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
 | `planned` | 0 | No source-derived transport action remains unclassified. |
 
 The k-NN plugin action sweep is complete at the boundary layer. All 12
@@ -308,7 +308,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `cluster:admin/views/update` (rejected fail-closed)
 - `views:data/read/list` (implemented empty view-name list subset)
 - `views:data/read/search` (rejected fail-closed)
-- `cluster:admin/persistent/start` (rejected fail-closed)
+- `cluster:admin/persistent/start` (implemented fixture persistent-task subset)
 - `cluster:admin/persistent/update_status` (implemented empty-metadata missing-task error subset)
 - `cluster:admin/persistent/completion` (implemented empty-metadata missing-task error subset)
 - `cluster:admin/persistent/remove` (implemented empty-metadata missing-task error subset)
@@ -2166,15 +2166,15 @@ The start-persistent-task boundary covers:
 - OpenSearch `StartPersistentTaskAction.Request` parent task,
   cluster-manager timeout, task id, task name, and persistent-task params
   named-writeable name at the wire decode/build layer;
-- OpenSearch `PersistentTaskResponse` decode/build only for the empty optional
-  task payload shape, with concrete task payloads rejected until persistent
-  task params/state/metadata named-writeables are mapped;
-- explicit fail-closed classification for `cluster:admin/persistent/start`
-  until persistent task params named-writeables, cluster metadata mutation,
-  task assignment, and response rendering are implemented;
+- the OpenSearch source-backed `steelsearch-fixture-persistent-task`
+  `PersistentTaskParams` named-writeable shape, including marker and generation
+  payloads;
+- local metadata-manifest recording under `persistent_tasks.started`, allocation
+  id assignment, and `PersistentTaskResponse` rendering with a concrete fixture
+  task payload;
 - explicit rejection for custom cluster-manager timeouts, missing or oversized
-  task ids/names, params-name mismatches, start-persistent-task execution, and
-  persistent-task response rendering.
+  task ids/names, params-name mismatches, unsupported params named-writeable
+  types, invalid fixture params, and unsupported persistent task state payloads.
 
 The update-persistent-task-status adapter covers:
 

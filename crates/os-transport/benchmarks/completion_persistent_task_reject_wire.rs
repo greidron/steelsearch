@@ -65,7 +65,7 @@ fn main() {
         },
     );
 
-    let response = OpenSearchPersistentTaskResponseWire { has_task: false };
+    let response = OpenSearchPersistentTaskResponseWire { task: None };
     let response_frame = build_opensearch_completion_persistent_task_response_message(
         88,
         OPENSEARCH_3_7_0_TRANSPORT,

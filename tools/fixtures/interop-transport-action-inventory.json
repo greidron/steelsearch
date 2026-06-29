@@ -1143,8 +1143,8 @@
       "transport_action": "StartPersistentTaskAction.TransportAction",
       "request_wire_type": "StartPersistentTaskAction.Request",
       "response_wire_type": "PersistentTaskResponse",
-      "disposition": "rejected",
-      "reason": "Start-persistent-task transport execution requires persistent task params named-writeables, cluster metadata mutation, assignment, and response rendering"
+      "disposition": "implemented",
+      "reason": "Start-persistent-task transport adapter maps the fixture PersistentTaskParams named-writeable, records a local persistent task, and renders a PersistentTaskResponse task payload"
     },
     {
       "action_name": "cluster:admin/persistent/update_status",
