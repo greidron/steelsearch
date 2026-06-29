@@ -909,7 +909,7 @@ The resume-ingestion boundary covers:
   reset execution, response shard failure rendering, response error rendering,
   negative failure counts, and negative shard ids.
 
-The get-ingestion-state boundary covers:
+The get-ingestion-state adapter covers:
 
 - OpenSearch `GetIngestionStateRequest` broadcast parent task, nullable index
   selector array encoded as a string-array count, strict-expand-open-and-forbid
@@ -922,9 +922,10 @@ The get-ingestion-state boundary covers:
 - OpenSearch shard ingestion state fields for index, shard id, optional poller
   state, optional error policy, poller paused flag, write-block flag, batch start
   pointer, primary flag, and node name for the OpenSearch 3.7 transport version;
-- explicit fail-closed classification for `indices:monitor/ingestion/state`
-  until broadcast shard selection, optional pagination, shard ingestion-state
-  collection, shard failure aggregation, and response rendering are implemented;
+- implemented classification for `indices:monitor/ingestion/state` in the
+  manifest missing-index subset, returning OpenSearch's
+  `IndexNotFoundException` for missing concrete index selectors before shard
+  ingestion-state collection;
 - explicit rejection for duplicate indices, blank index selectors, custom index
   resolution options, invalid shard ids, invalid page params, paginated execution
   pair filters, non-empty shard states, next-page token rendering, shard failure
@@ -3792,7 +3793,7 @@ performance-sensitive work is destructive-index guard checks, index resolution,
 optional shard pointer reset, ingestion poller state mutation, shard
 acknowledgement aggregation, and response rendering.
 
-Current get-ingestion-state reject wire microbenchmark:
+Previous get-ingestion-state reject wire microbenchmark:
 
 ```text
 cargo run -p os-transport --release --bin get-ingestion-state-reject-wire-benchmark
@@ -3803,13 +3804,14 @@ get_ingestion_state_response_decode iterations=400000 elapsed_ms=66.428 ops_per_
 get_ingestion_state_reject_wire_bottleneck_ops_per_second=1093796.22
 ```
 
-The current get-ingestion-state fail-closed boundary bottleneck is request
-validation. The admission path checks duplicate index selectors, default index
-resolution options, shard selectors, and page params before rejecting execution.
-At roughly 1.09M ops/s in the latest local release run, this boundary is not a
-material transport bottleneck; the first performance-sensitive work is broadcast
-shard selection, optional cluster-state pagination, shard ingestion-state
-collection, shard failure aggregation, and response rendering.
+The previous get-ingestion-state fail-closed boundary bottleneck was request
+validation. The implemented missing-index subset still validates duplicate index
+selectors, default index resolution options, shard selectors, and page params,
+then resolves concrete selectors against the Rust manifest before rendering the
+OpenSearch-shaped `IndexNotFoundException`. The first remaining
+performance-sensitive work is successful broadcast shard selection, optional
+cluster-state pagination, shard ingestion-state collection, shard failure
+aggregation, and response rendering.
 
 Current update-ingestion-state reject wire microbenchmark:
 

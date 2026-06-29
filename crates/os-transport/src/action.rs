@@ -2027,8 +2027,8 @@ pub fn classify_opensearch_transport_action(
         },
         GET_INGESTION_STATE_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
-            disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "get-ingestion-state transport execution requires broadcast shard selection, optional pagination, shard ingestion-state collection, shard failure aggregation, and response rendering",
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "get-ingestion-state transport adapter validates concrete index selectors and returns OpenSearch's IndexNotFoundException for the manifest missing-index subset",
         },
         UPDATE_INGESTION_STATE_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -18375,7 +18375,7 @@ impl GetIngestionStateRequestWire {
         Ok(request)
     }
 
-    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+    pub fn validate_missing_index_resolution_subset(&self) -> Result<(), TransportActionWireError> {
         if self.indices.is_empty() {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "get ingestion state missing indices",
@@ -18439,6 +18439,11 @@ impl GetIngestionStateRequestWire {
                 reason: "get-ingestion-state paginated execution requires cluster-state pagination and shard pair filtering",
             });
         }
+        Ok(())
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        self.validate_missing_index_resolution_subset()?;
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "get ingestion state execution",
             reason: "get-ingestion-state transport execution requires broadcast shard selection, shard ingestion-state collection, shard failure aggregation, and response rendering",
@@ -60017,6 +60022,7 @@ mod tests {
 
         let decoded = GetIngestionStateRequestWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, request);
+        decoded.validate_missing_index_resolution_subset().unwrap();
         assert!(matches!(
             decoded.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
@@ -60282,7 +60288,7 @@ mod tests {
     }
 
     #[test]
-    fn get_ingestion_state_transport_messages_bind_rejected_action_frame_and_response() {
+    fn get_ingestion_state_transport_messages_bind_supported_action_frame_and_response() {
         let request = GetIngestionStateRequestWire::default();
         let mut frame =
             build_get_ingestion_state_request_message(47, OPENSEARCH_3_7_0_TRANSPORT, &request)
@@ -60294,12 +60300,16 @@ mod tests {
             classify_opensearch_transport_request_message(&message)
                 .unwrap()
                 .disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             read_get_ingestion_state_request_message(&message).unwrap(),
             request
         );
+        read_get_ingestion_state_request_message(&message)
+            .unwrap()
+            .validate_missing_index_resolution_subset()
+            .unwrap();
         assert!(matches!(
             read_get_ingestion_state_request_message(&message)
                 .unwrap()

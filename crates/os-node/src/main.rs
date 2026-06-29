@@ -1313,6 +1313,36 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end_at_ms,
         )?;
     } else if is_request
+        && normalized_action_hint == Some("indices:monitor/ingestion/state")
+        && get_ingestion_state_request_supports_missing_index_subset(&body)
+    {
+        let response = build_get_ingestion_state_index_not_found_error_response(
+            request_id,
+            header_version_id,
+            &body,
+        );
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("indices:monitor/ingestion/state"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request
         && normalized_action_hint == Some("cluster:admin/persistent/remove")
         && remove_persistent_task_request_supports_empty_metadata_missing_subset(&body)
     {
@@ -8311,6 +8341,63 @@ fn decode_get_pipeline_request_from_transport_body(
 ) -> Option<os_transport::action::OpenSearchGetPipelineRequestWire> {
     let message = decode_transport_message_from_body(body)?;
     os_transport::action::read_opensearch_get_pipeline_request_message(&message).ok()
+}
+
+fn build_get_ingestion_state_index_not_found_error_response(
+    request_id: i64,
+    header_version_id: u32,
+    body: &[u8],
+) -> Vec<u8> {
+    let Some(request) = decode_get_ingestion_state_request_from_transport_body(body) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    if request.validate_missing_index_resolution_subset().is_err() {
+        return build_empty_transport_response(request_id, header_version_id);
+    }
+    let Some(index) = get_ingestion_state_missing_concrete_index(&request) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    let mut output = StreamOutput::new();
+    os_transport::error::write_index_not_found_exception(&mut output, &index);
+    build_transport_error_response_frame(request_id, header_version_id, output.freeze().to_vec())
+}
+
+fn get_ingestion_state_request_supports_missing_index_subset(body: &[u8]) -> bool {
+    let Some(request) = decode_get_ingestion_state_request_from_transport_body(body) else {
+        return false;
+    };
+    request.validate_missing_index_resolution_subset().is_ok()
+        && get_ingestion_state_missing_concrete_index(&request).is_some()
+}
+
+fn decode_get_ingestion_state_request_from_transport_body(
+    body: &[u8],
+) -> Option<os_transport::action::GetIngestionStateRequestWire> {
+    let message = decode_transport_message_from_body(body)?;
+    os_transport::action::read_get_ingestion_state_request_message(&message).ok()
+}
+
+fn get_ingestion_state_missing_concrete_index(
+    request: &os_transport::action::GetIngestionStateRequestWire,
+) -> Option<String> {
+    request
+        .indices
+        .iter()
+        .find(|index| {
+            transport_ingestion_state_index_is_concrete(index) && !transport_index_exists(index)
+        })
+        .cloned()
+}
+
+fn transport_ingestion_state_index_is_concrete(index: &str) -> bool {
+    let trimmed = index.trim();
+    !trimmed.is_empty()
+        && trimmed == index
+        && !trimmed.contains('*')
+        && !trimmed.contains('?')
+        && !trimmed.contains(',')
+        && !trimmed.starts_with('<')
+        && !trimmed.contains(':')
 }
 
 fn build_update_persistent_task_status_missing_error_response(
@@ -24572,6 +24659,15 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
             if completion_persistent_task_request_supports_empty_metadata_missing_subset(body) =>
         {
             Some(build_completion_persistent_task_missing_error_response(
+                request_id,
+                header_version_id,
+                body,
+            ))
+        }
+        Some("indices:monitor/ingestion/state")
+            if get_ingestion_state_request_supports_missing_index_subset(body) =>
+        {
+            Some(build_get_ingestion_state_index_not_found_error_response(
                 request_id,
                 header_version_id,
                 body,
@@ -52768,6 +52864,65 @@ mod tests {
             )
             .is_err()
         );
+    }
+
+    #[test]
+    fn get_ingestion_state_transport_route_reports_missing_index_like_opensearch() {
+        let request = os_transport::action::GetIngestionStateRequestWire {
+            indices: vec!["missing-ingestion-index".to_string()],
+            ..os_transport::action::GetIngestionStateRequestWire::default()
+        };
+        let request_frame = os_transport::action::build_get_ingestion_state_request_message(
+            94,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        let request_body = request_frame[6..].to_vec();
+        assert!(get_ingestion_state_request_supports_missing_index_subset(
+            &request_body
+        ));
+
+        let response = build_get_ingestion_state_index_not_found_error_response(
+            94,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &request_body,
+        );
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected get ingestion state index-not-found response message");
+        };
+        assert_eq!(message.request_id, 94);
+        assert!(message.status.is_error());
+        let error = os_transport::error::TransportError::read(message.body.freeze())
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            error.class_name,
+            "org.opensearch.index.IndexNotFoundException"
+        );
+        assert_eq!(
+            error.message.as_deref(),
+            Some("no such index [missing-ingestion-index]")
+        );
+
+        let wildcard_request = os_transport::action::GetIngestionStateRequestWire {
+            indices: vec!["missing-*".to_string()],
+            ..request
+        };
+        let wildcard_frame = os_transport::action::build_get_ingestion_state_request_message(
+            95,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &wildcard_request,
+        )
+        .unwrap();
+        assert!(!get_ingestion_state_request_supports_missing_index_subset(
+            &wildcard_frame[6..]
+        ));
     }
 
     #[test]
