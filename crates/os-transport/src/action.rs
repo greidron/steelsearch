@@ -2017,8 +2017,8 @@ pub fn classify_opensearch_transport_action(
         },
         PAUSE_INGESTION_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
-            disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "pause-ingestion transport execution requires destructive-index guard checks, index resolution, ingestion poller state mutation, shard acknowledgement aggregation, and response rendering",
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "pause-ingestion transport adapter validates concrete index selectors and returns OpenSearch's IndexNotFoundException for the manifest missing-index subset",
         },
         RESUME_INGESTION_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -17864,7 +17864,7 @@ impl PauseIngestionRequestWire {
         Ok(request)
     }
 
-    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+    pub fn validate_missing_index_resolution_subset(&self) -> Result<(), TransportActionWireError> {
         if self.cluster_manager_timeout != TimeValueWire::seconds(30) {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "pause ingestion cluster-manager timeout",
@@ -17895,6 +17895,11 @@ impl PauseIngestionRequestWire {
                 reason: "custom index resolution options require OpenSearch index expression resolution semantics",
             });
         }
+        Ok(())
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        self.validate_missing_index_resolution_subset()?;
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "pause ingestion execution",
             reason: "pause-ingestion transport execution requires destructive-index guard checks, index resolution, ingestion poller state mutation, shard acknowledgement aggregation, and response rendering",
@@ -59531,6 +59536,7 @@ mod tests {
 
         let decoded = PauseIngestionRequestWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, request);
+        decoded.validate_missing_index_resolution_subset().unwrap();
         assert!(matches!(
             decoded.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
@@ -59679,7 +59685,7 @@ mod tests {
     }
 
     #[test]
-    fn pause_ingestion_transport_messages_bind_rejected_action_frame_and_response() {
+    fn pause_ingestion_transport_messages_bind_supported_action_frame_and_response() {
         let request = PauseIngestionRequestWire::default();
         let mut frame =
             build_pause_ingestion_request_message(45, OPENSEARCH_3_7_0_TRANSPORT, &request)
@@ -59691,12 +59697,16 @@ mod tests {
             classify_opensearch_transport_request_message(&message)
                 .unwrap()
                 .disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             read_pause_ingestion_request_message(&message).unwrap(),
             request
         );
+        read_pause_ingestion_request_message(&message)
+            .unwrap()
+            .validate_missing_index_resolution_subset()
+            .unwrap();
         assert!(matches!(
             read_pause_ingestion_request_message(&message)
                 .unwrap()

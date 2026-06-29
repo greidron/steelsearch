@@ -1343,6 +1343,36 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end_at_ms,
         )?;
     } else if is_request
+        && normalized_action_hint == Some("indices:admin/ingestion/pause")
+        && pause_ingestion_request_supports_missing_index_subset(&body)
+    {
+        let response = build_pause_ingestion_index_not_found_error_response(
+            request_id,
+            header_version_id,
+            &body,
+        );
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("indices:admin/ingestion/pause"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request
         && normalized_action_hint == Some("cluster:admin/persistent/remove")
         && remove_persistent_task_request_supports_empty_metadata_missing_subset(&body)
     {
@@ -8341,6 +8371,52 @@ fn decode_get_pipeline_request_from_transport_body(
 ) -> Option<os_transport::action::OpenSearchGetPipelineRequestWire> {
     let message = decode_transport_message_from_body(body)?;
     os_transport::action::read_opensearch_get_pipeline_request_message(&message).ok()
+}
+
+fn build_pause_ingestion_index_not_found_error_response(
+    request_id: i64,
+    header_version_id: u32,
+    body: &[u8],
+) -> Vec<u8> {
+    let Some(request) = decode_pause_ingestion_request_from_transport_body(body) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    if request.validate_missing_index_resolution_subset().is_err() {
+        return build_empty_transport_response(request_id, header_version_id);
+    }
+    let Some(index) = pause_ingestion_missing_concrete_index(&request) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    let mut output = StreamOutput::new();
+    os_transport::error::write_index_not_found_exception(&mut output, &index);
+    build_transport_error_response_frame(request_id, header_version_id, output.freeze().to_vec())
+}
+
+fn pause_ingestion_request_supports_missing_index_subset(body: &[u8]) -> bool {
+    let Some(request) = decode_pause_ingestion_request_from_transport_body(body) else {
+        return false;
+    };
+    request.validate_missing_index_resolution_subset().is_ok()
+        && pause_ingestion_missing_concrete_index(&request).is_some()
+}
+
+fn decode_pause_ingestion_request_from_transport_body(
+    body: &[u8],
+) -> Option<os_transport::action::PauseIngestionRequestWire> {
+    let message = decode_transport_message_from_body(body)?;
+    os_transport::action::read_pause_ingestion_request_message(&message).ok()
+}
+
+fn pause_ingestion_missing_concrete_index(
+    request: &os_transport::action::PauseIngestionRequestWire,
+) -> Option<String> {
+    request
+        .indices
+        .iter()
+        .find(|index| {
+            transport_ingestion_state_index_is_concrete(index) && !transport_index_exists(index)
+        })
+        .cloned()
 }
 
 fn build_get_ingestion_state_index_not_found_error_response(
@@ -24635,6 +24711,15 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
             transport_identity,
             Some(body),
         )),
+        Some("indices:admin/ingestion/pause")
+            if pause_ingestion_request_supports_missing_index_subset(body) =>
+        {
+            Some(build_pause_ingestion_index_not_found_error_response(
+                request_id,
+                header_version_id,
+                body,
+            ))
+        }
         Some("cluster:admin/persistent/remove")
             if remove_persistent_task_request_supports_empty_metadata_missing_subset(body) =>
         {
@@ -52921,6 +53006,65 @@ mod tests {
         )
         .unwrap();
         assert!(!get_ingestion_state_request_supports_missing_index_subset(
+            &wildcard_frame[6..]
+        ));
+    }
+
+    #[test]
+    fn pause_ingestion_transport_route_reports_missing_index_like_opensearch() {
+        let request = os_transport::action::PauseIngestionRequestWire {
+            indices: vec!["missing-pause-index".to_string()],
+            ..os_transport::action::PauseIngestionRequestWire::default()
+        };
+        let request_frame = os_transport::action::build_pause_ingestion_request_message(
+            96,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        let request_body = request_frame[6..].to_vec();
+        assert!(pause_ingestion_request_supports_missing_index_subset(
+            &request_body
+        ));
+
+        let response = build_pause_ingestion_index_not_found_error_response(
+            96,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &request_body,
+        );
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected pause ingestion index-not-found response message");
+        };
+        assert_eq!(message.request_id, 96);
+        assert!(message.status.is_error());
+        let error = os_transport::error::TransportError::read(message.body.freeze())
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            error.class_name,
+            "org.opensearch.index.IndexNotFoundException"
+        );
+        assert_eq!(
+            error.message.as_deref(),
+            Some("no such index [missing-pause-index]")
+        );
+
+        let wildcard_request = os_transport::action::PauseIngestionRequestWire {
+            indices: vec!["missing-*".to_string()],
+            ..request
+        };
+        let wildcard_frame = os_transport::action::build_pause_ingestion_request_message(
+            97,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &wildcard_request,
+        )
+        .unwrap();
+        assert!(!pause_ingestion_request_supports_missing_index_subset(
             &wildcard_frame[6..]
         ));
     }

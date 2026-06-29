@@ -872,17 +872,17 @@ The delete-search-pipeline boundary covers:
   acknowledgement timeout, missing pipeline id, and explicit missing-pipeline
   requests that require OpenSearch `ResourceNotFoundException` rendering.
 
-The pause-ingestion boundary covers:
+The pause-ingestion adapter covers:
 
 - OpenSearch `PauseIngestionRequest` parent task, cluster-manager timeout,
   acknowledgement timeout, index selector array, and strict-expand-open
   `IndicesOptions` at the wire decode/build layer;
 - OpenSearch `PauseIngestionResponse` acknowledgement bit, shard failure array,
   error string, and shard acknowledgement bit at the wire decode/build layer;
-- explicit fail-closed classification for `indices:admin/ingestion/pause`
-  until destructive-index guard checks, index resolution, ingestion poller
-  state mutation, shard acknowledgement aggregation, and response rendering are
-  implemented;
+- implemented classification for `indices:admin/ingestion/pause` in the
+  manifest missing-index subset, returning OpenSearch's
+  `IndexNotFoundException` for missing concrete index selectors before
+  ingestion poller state mutation;
 - explicit rejection for custom cluster-manager timeout, custom
   acknowledgement timeout, missing indices, blank index selectors, custom
   index resolution options, pause-ingestion execution, response shard failure
@@ -2482,6 +2482,8 @@ The search phase transport boundary covers:
 
 Current can-match response wire microbenchmark:
 
+Previous pause-ingestion reject wire microbenchmark:
+
 ```text
 cargo run -q -p os-transport --release --bin can-match-response-wire-benchmark
 can_match_request_encode iterations=400000 elapsed_ms=435.702 ops_per_second=918057.70 nanos_per_op=1089.26
@@ -3754,7 +3756,7 @@ local release run, this boundary is not a material transport bottleneck; the
 next performance-sensitive work is keeping wildcard matching and manifest
 mutation cheap as search pipeline metadata grows.
 
-Current pause-ingestion reject wire microbenchmark:
+Previous pause-ingestion reject wire microbenchmark:
 
 ```text
 cargo run -p os-transport --release --bin pause-ingestion-reject-wire-benchmark
@@ -3765,13 +3767,14 @@ pause_ingestion_response_decode iterations=400000 elapsed_ms=65.463 ops_per_seco
 pause_ingestion_reject_wire_bottleneck_ops_per_second=1106690.45
 ```
 
-The current pause-ingestion fail-closed boundary bottleneck is request encode.
-The payload includes the acknowledged cluster-manager request envelope, index
-selector array, and strict-expand-open index options before admission rejects
-execution. At roughly 1.11M ops/s in the latest local release run, this
-boundary is not a material transport bottleneck; the first performance-sensitive
-work is destructive-index guard checks, index resolution, ingestion poller state
-mutation, shard acknowledgement aggregation, and response rendering.
+The previous pause-ingestion fail-closed boundary bottleneck was request encode.
+The implemented missing-index subset still validates the acknowledged
+cluster-manager request envelope, index selector array, and strict-expand-open
+index options, then resolves concrete selectors against the Rust manifest before
+rendering the OpenSearch-shaped `IndexNotFoundException`. The first remaining
+performance-sensitive work is successful destructive-index guard checks,
+ingestion poller state mutation, shard acknowledgement aggregation, and response
+rendering.
 
 Current resume-ingestion reject wire microbenchmark:
 

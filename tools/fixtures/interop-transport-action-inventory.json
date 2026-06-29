@@ -297,8 +297,8 @@
       "transport_action": "TransportPauseIngestionAction",
       "request_wire_type": "PauseIngestionRequest",
       "response_wire_type": "PauseIngestionResponse",
-      "disposition": "rejected",
-      "reason": "Pause-ingestion transport execution requires destructive-index guard checks, index resolution, ingestion poller state mutation, shard acknowledgement aggregation, and response rendering"
+      "disposition": "implemented",
+      "reason": "Pause-ingestion transport adapter validates concrete index selectors and returns OpenSearch's IndexNotFoundException for the manifest missing-index subset"
     },
     {
       "action_name": "indices:admin/ingestion/resume",

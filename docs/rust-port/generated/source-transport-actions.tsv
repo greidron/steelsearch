@@ -141,7 +141,7 @@ implemented	DeleteDecommissionStateAction.INSTANCE	TransportDeleteDecommissionSt
 implemented	PutSearchPipelineAction.INSTANCE	PutSearchPipelineTransportAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	840
 implemented	GetSearchPipelineAction.INSTANCE	GetSearchPipelineTransportAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	841
 implemented	DeleteSearchPipelineAction.INSTANCE	DeleteSearchPipelineTransportAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	842
-partial	PauseIngestionAction.INSTANCE	TransportPauseIngestionAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	845
+implemented	PauseIngestionAction.INSTANCE	TransportPauseIngestionAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	845
 partial	ResumeIngestionAction.INSTANCE	TransportResumeIngestionAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	846
 implemented	GetIngestionStateAction.INSTANCE	TransportGetIngestionStateAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	847
 partial	UpdateIngestionStateAction.INSTANCE	TransportUpdateIngestionStateAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	848
