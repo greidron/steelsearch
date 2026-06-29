@@ -2448,8 +2448,11 @@ The search phase transport boundary covers:
   inert source options such as `from`, `size`, `explain`,
   `min_score`, timeout, tracking, profiling, and fetch-shape fields are allowed,
   while scroll, source PIT, slice, sort/search_after min-max pruning, bottom
-  sort values, reader context, and keep-alive remain rejected until the
-  corresponding native can-match execution pieces are mapped;
+  sort values, and keep-alive without a reader id remain rejected until the
+  corresponding native can-match execution pieces are mapped. Reader-context
+  can-match requests are admitted when the referenced local reader context
+  exists, targets the same shard, and any request keep-alive is within the
+  local PIT keep-alive cap;
 - the local can-match transport route executes the bounded subset by returning
   `canMatch=true` for null-query/default source and `match_all`, or
   `canMatch=false` when either the source query or alias filter query is
@@ -2459,10 +2462,11 @@ The search phase transport boundary covers:
   `function_score`, or `script_score` rewrite through their deciding child to
   `match_none`, or when `ids`/`terms` have no values, with absent
   `estimatedMinAndMax`; this follows the OpenSearch `SearchService.canMatch`
-  boundary before reader-context, refresh-pending, mapping-aware field rewrite,
-  search-after, or min/max pruning effects are introduced. Local execution first
-  verifies the addressed index/shard through the same bounded shard admission
-  used by PIT reader-context creation;
+  boundary before refresh-pending, mapping-aware field rewrite, search-after, or
+  min/max pruning effects are introduced. Local execution first verifies the
+  addressed index/shard through the same bounded shard admission used by PIT
+  reader-context creation for source-free requests, or through the referenced
+  local reader context for reader-context can-match requests;
 - the bounded `SearchService.CanMatchResponse` wire is implemented for
   `canMatch` plus absent `estimatedMinAndMax`, matching `SearchPhaseResult`
   writing no prefix fields and `CanMatchResponse.writeTo(...)` writing the
@@ -2473,11 +2477,11 @@ Current can-match response wire microbenchmark:
 
 ```text
 cargo run -q -p os-transport --release --bin can-match-response-wire-benchmark
-can_match_request_encode iterations=400000 elapsed_ms=658.345 ops_per_second=607584.58 nanos_per_op=1645.86
-can_match_request_decode iterations=400000 elapsed_ms=462.111 ops_per_second=865593.64 nanos_per_op=1155.28
-can_match_response_encode iterations=400000 elapsed_ms=53.894 ops_per_second=7421948.93 nanos_per_op=134.74
-can_match_response_decode iterations=400000 elapsed_ms=78.990 ops_per_second=5063933.17 nanos_per_op=197.47
-can_match_wire_bottleneck_ops_per_second=607584.58
+can_match_request_encode iterations=400000 elapsed_ms=399.735 ops_per_second=1000664.16 nanos_per_op=999.34
+can_match_request_decode iterations=400000 elapsed_ms=425.382 ops_per_second=940332.27 nanos_per_op=1063.45
+can_match_response_encode iterations=400000 elapsed_ms=49.248 ops_per_second=8122200.46 nanos_per_op=123.12
+can_match_response_decode iterations=400000 elapsed_ms=51.024 ops_per_second=7839492.04 nanos_per_op=127.56
+can_match_wire_bottleneck_ops_per_second=940332.27
 ```
 
 The explain boundary covers:

@@ -29028,11 +29028,25 @@ impl OpenSearchShardSearchRequestWire {
                 reason: "SearchSortValuesAndFormats payloads are not mapped by the bounded can-match adapter yet",
             });
         }
-        if self.reader_id.is_some() || self.keep_alive.is_some() {
-            return Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "shard search request reader context",
-                reason: "reader-context can-match requests require PIT/search context lifecycle execution",
-            });
+        if let Some(keep_alive) = &self.keep_alive {
+            if self.reader_id.is_none() {
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "shard search request reader context",
+                    reason: "reader-context keep-alive can-match requests require a reader id",
+                });
+            }
+            if keep_alive.duration < -1 {
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "shard search request reader context keep-alive",
+                    reason: "OpenSearch shard search reader-context keep-alive cannot be below -1",
+                });
+            }
+            if keep_alive.time_unit_ordinal > 6 {
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "shard search request reader context keep-alive",
+                    reason: "OpenSearch shard search reader-context keep-alive time unit ordinal is unknown",
+                });
+            }
         }
         self.original_indices.validate_supported_subset()
     }
@@ -77541,9 +77555,26 @@ mod tests {
             keep_alive: Some(TimeValueWire::minutes(1)),
             ..OpenSearchShardSearchRequestWire::default()
         };
+        let mut frame = build_opensearch_can_match_request_message(
+            164,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &reader_request,
+        )
+        .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected reader-context can-match request message");
+        };
+        let decoded = read_opensearch_can_match_request_message(&message).unwrap();
+        assert_eq!(decoded, reader_request);
+        assert_eq!(decoded.can_match_local_subset_result().unwrap(), true);
+
+        let keep_alive_without_reader_request = OpenSearchShardSearchRequestWire {
+            keep_alive: Some(TimeValueWire::minutes(1)),
+            ..OpenSearchShardSearchRequestWire::default()
+        };
         let mut output = StreamOutput::new();
         assert!(matches!(
-            reader_request.write(&mut output, OPENSEARCH_3_7_0_TRANSPORT),
+            keep_alive_without_reader_request.write(&mut output, OPENSEARCH_3_7_0_TRANSPORT),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "shard search request reader context",
                 ..

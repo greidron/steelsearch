@@ -16356,9 +16356,7 @@ fn build_local_can_match_response(request_id: i64, header_version_id: u32, body:
     let Ok(can_match) = request.can_match_local_subset_result() else {
         return build_empty_transport_response(request_id, header_version_id);
     };
-    if create_reader_context_shard_admission(dev_transport_pit_bindings(), &request.shard_id)
-        != CreateReaderContextShardAdmission::Accepted
-    {
+    if !can_match_request_context_admitted(dev_transport_pit_bindings(), &request) {
         return build_empty_transport_response(request_id, header_version_id);
     }
     os_transport::action::build_opensearch_can_match_response_message(
@@ -16374,8 +16372,7 @@ fn can_match_request_supports_local_execution_subset(body: &[u8]) -> bool {
     decode_can_match_request_from_transport_body(body)
         .filter(|request| request.reject_unsupported_execution().is_ok())
         .is_some_and(|request| {
-            create_reader_context_shard_admission(dev_transport_pit_bindings(), &request.shard_id)
-                == CreateReaderContextShardAdmission::Accepted
+            can_match_request_context_admitted(dev_transport_pit_bindings(), &request)
         })
 }
 
@@ -16384,6 +16381,47 @@ fn decode_can_match_request_from_transport_body(
 ) -> Option<os_transport::action::OpenSearchShardSearchRequestWire> {
     let message = decode_transport_message_from_body(body)?;
     os_transport::action::read_opensearch_can_match_request_message(&message).ok()
+}
+
+fn can_match_request_context_admitted(
+    bindings: &DevTransportPitBindings,
+    request: &os_transport::action::OpenSearchShardSearchRequestWire,
+) -> bool {
+    let Some(reader_id) = &request.reader_id else {
+        return create_reader_context_shard_admission(bindings, &request.shard_id)
+            == CreateReaderContextShardAdmission::Accepted;
+    };
+    let now_millis = now_epoch_ms();
+    let mut reader_contexts = bindings
+        .reader_contexts
+        .lock()
+        .expect("dev transport reader contexts lock poisoned");
+    prune_expired_transport_reader_contexts(&mut reader_contexts, now_millis);
+    let Some(reader_context_key) =
+        reader_context_lookup_key_for_request(&reader_contexts, reader_id)
+    else {
+        return false;
+    };
+    let Some(reader_context) = reader_contexts.get_mut(&reader_context_key) else {
+        return false;
+    };
+    if reader_context.shard_id != request.shard_id {
+        return false;
+    }
+    if let Some(keep_alive) = request.keep_alive.as_ref() {
+        let keep_alive_millis = time_value_wire_to_millis(keep_alive);
+        if keep_alive_millis > DEV_TRANSPORT_MAX_PIT_KEEP_ALIVE_MILLIS {
+            return false;
+        }
+        let keep_alive_millis = keep_alive_millis.max(0) as u64;
+        if keep_alive_millis > 0 {
+            let effective_keep_alive = reader_context.keep_alive_millis.max(keep_alive_millis);
+            reader_context.keep_alive_millis = effective_keep_alive;
+            reader_context.expires_at_millis =
+                transport_pit_expires_at_millis(now_millis, effective_keep_alive);
+        }
+    }
+    true
 }
 
 fn create_pit_request_exceeds_local_keep_alive_limit(body: &[u8]) -> bool {
@@ -37512,6 +37550,101 @@ mod tests {
             os_transport::action::read_opensearch_can_match_response_message(&message).unwrap();
         assert!(!response.can_match);
         assert!(!response.estimated_min_and_max_present);
+    }
+
+    #[test]
+    fn can_match_transport_route_uses_reader_context_and_extends_keep_alive() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        let bindings = dev_transport_pit_bindings();
+        bindings
+            .created_indices
+            .lock()
+            .expect("dev transport created indices lock poisoned")
+            .clear();
+        bindings
+            .reader_contexts
+            .lock()
+            .expect("dev transport reader contexts lock poisoned")
+            .clear();
+        let shard_id = os_transport::action::OpenSearchShardIdWire {
+            index_name: "logs-can-match-reader".to_string(),
+            index_uuid: "uuid-logs-can-match-reader".to_string(),
+            shard_id: 0,
+        };
+        let reader_context_id =
+            os_transport::action::OpenSearchShardSearchContextIdWire::new("reader-can-match", 44);
+        let initial_expires_at = now_epoch_ms() + 60_000;
+        bindings
+            .reader_contexts
+            .lock()
+            .expect("dev transport reader contexts lock poisoned")
+            .insert(
+                reader_context_key(&reader_context_id),
+                DevTransportReaderContext {
+                    shard_id: shard_id.clone(),
+                    documents: Arc::new(BTreeMap::new()),
+                    keep_alive_millis: 60_000,
+                    expires_at_millis: initial_expires_at,
+                    pit_id: Some("can-match-reader-pit".to_string()),
+                    creation_time_millis: Some(u128_to_i64_saturating(now_epoch_ms())),
+                },
+            );
+
+        let request = os_transport::action::OpenSearchShardSearchRequestWire {
+            shard_id,
+            reader_id: Some(reader_context_id.clone()),
+            keep_alive: Some(os_transport::action::TimeValueWire::minutes(2)),
+            source: Some(os_transport::action::OpenSearchSearchSourceBuilderWire {
+                query: Some(os_transport::action::OpenSearchQueryBuilderWire::MatchNone(
+                    os_transport::action::OpenSearchMatchNoneQueryBuilderWire::default(),
+                )),
+                ..os_transport::action::OpenSearchSearchSourceBuilderWire::default()
+            }),
+            original_indices: os_transport::action::OpenSearchOriginalIndicesWire::new(
+                Some(vec!["logs-can-match-reader".to_string()]),
+                os_transport::action::OpenSearchIndicesOptionsWire::strict_expand_open_forbid_closed_ignore_throttled(),
+            ),
+            ..os_transport::action::OpenSearchShardSearchRequestWire::default()
+        };
+        let frame = os_transport::action::build_opensearch_can_match_request_message(
+            344,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(can_match_request_supports_local_execution_subset(
+            &frame[6..]
+        ));
+
+        let response = build_local_can_match_response(
+            344,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &frame[6..],
+        );
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected reader-context can-match response message");
+        };
+        assert_eq!(message.request_id, 344);
+        let response =
+            os_transport::action::read_opensearch_can_match_response_message(&message).unwrap();
+        assert!(!response.can_match);
+        assert!(!response.estimated_min_and_max_present);
+        let reader_contexts = bindings
+            .reader_contexts
+            .lock()
+            .expect("dev transport reader contexts lock poisoned");
+        let reader_context = reader_contexts
+            .get(&reader_context_key(&reader_context_id))
+            .expect("reader context should remain active");
+        assert_eq!(reader_context.keep_alive_millis, 120_000);
+        assert!(reader_context.expires_at_millis > initial_expires_at);
     }
 
     #[test]
