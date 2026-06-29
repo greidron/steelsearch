@@ -7473,6 +7473,7 @@ impl SteelNode {
         request: &RestRequest,
     ) -> RestResponse {
         let dry_run = query_param_is_true(request.query_params.get("dry_run"));
+        let request_body = serde_json::from_slice::<Value>(&request.body).unwrap_or(Value::Null);
         let mut manifest = self
             .metadata_manifest_state
             .lock()
@@ -7493,6 +7494,9 @@ impl SteelNode {
                 let next_index = new_index.map(ToOwned::to_owned).unwrap_or_else(|| {
                     Self::data_stream_backing_index_name(target, next_generation)
                 });
+                let condition_results =
+                    rollover_condition_results(&request_body, self.index_document_count(&old_index));
+                let conditions_met = rollover_conditions_met(&condition_results);
                 if dry_run {
                     return RestResponse::json(
                         200,
@@ -7503,7 +7507,21 @@ impl SteelNode {
                             "new_index": next_index,
                             "rolled_over": false,
                             "dry_run": true,
-                            "conditions": {}
+                            "conditions": condition_results
+                        }),
+                    );
+                }
+                if !conditions_met {
+                    return RestResponse::json(
+                        200,
+                        serde_json::json!({
+                            "acknowledged": false,
+                            "shards_acknowledged": false,
+                            "old_index": old_index,
+                            "new_index": next_index,
+                            "rolled_over": false,
+                            "dry_run": false,
+                            "conditions": condition_results
                         }),
                     );
                 }
@@ -7519,7 +7537,7 @@ impl SteelNode {
                     "new_index": next_index.clone(),
                     "rolled_over": true,
                     "dry_run": false,
-                    "conditions": {}
+                    "conditions": condition_results
                 });
                 (old_index, next_index, response)
             };
@@ -7556,6 +7574,9 @@ impl SteelNode {
         let next_index = new_index
             .map(ToOwned::to_owned)
             .unwrap_or_else(|| Self::next_rollover_index_name(&old_index));
+        let condition_results =
+            rollover_condition_results(&request_body, self.index_document_count(&old_index));
+        let conditions_met = rollover_conditions_met(&condition_results);
         if dry_run {
             return RestResponse::json(
                 200,
@@ -7566,7 +7587,21 @@ impl SteelNode {
                     "new_index": next_index,
                     "rolled_over": false,
                     "dry_run": true,
-                    "conditions": {}
+                    "conditions": condition_results
+                }),
+            );
+        }
+        if !conditions_met {
+            return RestResponse::json(
+                200,
+                serde_json::json!({
+                    "acknowledged": false,
+                    "shards_acknowledged": false,
+                    "old_index": old_index,
+                    "new_index": next_index,
+                    "rolled_over": false,
+                    "dry_run": false,
+                    "conditions": condition_results
                 }),
             );
         }
@@ -7597,7 +7632,7 @@ impl SteelNode {
                 "new_index": next_index,
                 "rolled_over": true,
                 "dry_run": false,
-                "conditions": {}
+                "conditions": condition_results
             }),
         )
     }
@@ -36061,6 +36096,26 @@ fn query_param_is_true(raw: Option<&String>) -> bool {
     matches!(raw.map(String::as_str), Some("true") | Some("1"))
 }
 
+fn rollover_condition_results(body: &Value, document_count: usize) -> Value {
+    let Some(max_docs) = body
+        .get("conditions")
+        .and_then(|conditions| conditions.get("max_docs"))
+        .and_then(Value::as_u64)
+    else {
+        return serde_json::json!({});
+    };
+    serde_json::json!({
+        format!("[max_docs: {max_docs}]"): (document_count as u64) >= max_docs
+    })
+}
+
+fn rollover_conditions_met(condition_results: &Value) -> bool {
+    let Some(conditions) = condition_results.as_object() else {
+        return true;
+    };
+    conditions.is_empty() || conditions.values().any(|value| value.as_bool() == Some(true))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -37173,6 +37228,61 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert!(
             manifest["indices"].get("logs-dry-run-000002").is_none(),
             "dry-run rollover must not create the candidate index"
+        );
+    }
+
+    #[test]
+    fn rollover_max_docs_condition_false_does_not_mutate_alias_target() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        let create = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/logs-condition-000001")
+                .with_json_body(serde_json::json!({})),
+        );
+        assert_eq!(create.status, 200);
+
+        let alias = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/logs-condition-000001/_alias/logs-condition-write")
+                .with_json_body(serde_json::json!({
+                    "is_write_index": true
+                })),
+        );
+        assert_eq!(alias.status, 200);
+
+        let response = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/logs-condition-write/_rollover/logs-condition-000002",
+            )
+            .with_json_body(serde_json::json!({
+                "conditions": {
+                    "max_docs": 1
+                }
+            })),
+        );
+        assert_eq!(response.status, 200);
+        assert_eq!(response.body["old_index"], "logs-condition-000001");
+        assert_eq!(response.body["new_index"], "logs-condition-000002");
+        assert_eq!(response.body["rolled_over"], Value::Bool(false));
+        assert_eq!(response.body["acknowledged"], Value::Bool(false));
+        assert_eq!(response.body["shards_acknowledged"], Value::Bool(false));
+        assert_eq!(response.body["conditions"]["[max_docs: 1]"], Value::Bool(false));
+
+        let manifest = node
+            .metadata_manifest_state
+            .lock()
+            .expect("metadata manifest state lock poisoned");
+        assert_eq!(
+            manifest["indices"]["logs-condition-000001"]["aliases"]["logs-condition-write"]
+                ["is_write_index"],
+            Value::Bool(true)
+        );
+        assert!(
+            manifest["indices"].get("logs-condition-000002").is_none(),
+            "unmet rollover condition must not create the candidate index"
         );
     }
 

@@ -124,6 +124,7 @@ def normalize_body(case: dict[str, Any], body: Any) -> Any:
             "acknowledged": body.get("acknowledged"),
             "shards_acknowledged": body.get("shards_acknowledged"),
             "dry_run": body.get("dry_run"),
+            "conditions": body.get("conditions"),
         }
     return body
 
