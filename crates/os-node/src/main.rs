@@ -3661,6 +3661,32 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end_at_ms,
         )?;
     } else if is_request
+        && normalized_action_hint == Some("indices:data/write/update")
+        && update_request_supports_local_execution_subset(&body)
+    {
+        let response = build_local_update_response(request_id, header_version_id, &body);
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("indices:data/write/update"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request
         && normalized_action_hint == Some("indices:data/write/delete")
         && delete_request_supports_local_execution_subset(&body)
     {
@@ -12684,6 +12710,115 @@ fn local_transport_bulk_response_from_request(
     os_transport::action::OpenSearchBulkResponseWire::success(items)
 }
 
+fn build_local_update_response(request_id: i64, header_version_id: u32, body: &[u8]) -> Vec<u8> {
+    let Some(request) = decode_update_request_from_transport_body(body) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    if request.to_engine_request().is_err() {
+        return build_empty_transport_response(request_id, header_version_id);
+    }
+    let Some(response) = local_transport_update_response_from_request(&request) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    os_transport::action::build_opensearch_update_response_message(
+        request_id,
+        Version::from_id(header_version_id as i32),
+        &response,
+    )
+    .map(|frame| frame.to_vec())
+    .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
+}
+
+fn update_request_supports_local_execution_subset(body: &[u8]) -> bool {
+    decode_update_request_from_transport_body(body)
+        .and_then(|request| request.to_engine_request().ok())
+        .is_some()
+}
+
+fn decode_update_request_from_transport_body(
+    body: &[u8],
+) -> Option<os_transport::action::OpenSearchUpdateRequestWire> {
+    let message = decode_transport_message_from_body(body)?;
+    os_transport::action::read_opensearch_update_request_message(&message).ok()
+}
+
+fn local_transport_update_response_from_request(
+    request: &os_transport::action::OpenSearchUpdateRequestWire,
+) -> Option<os_transport::action::OpenSearchUpdateResponseWire> {
+    let engine_request = request.to_engine_request().ok()?;
+    let key = format!("{}:{}:", engine_request.index, engine_request.id);
+    let bindings = dev_transport_pit_bindings();
+    let mut documents = bindings
+        .documents
+        .lock()
+        .expect("dev transport documents lock poisoned");
+    let seq_no = documents
+        .iter()
+        .filter_map(|(document_key, document)| {
+            let (index, _, _) = split_transport_document_key(document_key)?;
+            (index == engine_request.index).then_some(document.seq_no)
+        })
+        .max()
+        .map_or(0, |seq_no| seq_no + 1);
+    let existing = documents.get(&key).cloned();
+    let (source, version, primary_term, created) = match existing {
+        Some(document) => {
+            let mut source = document.source.clone();
+            merge_transport_update_document(&mut source, engine_request.doc);
+            (
+                source,
+                document.version + 1,
+                document.primary_term.max(1),
+                false,
+            )
+        }
+        None if engine_request.doc_as_upsert => {
+            ensure_local_transport_index_registered(&engine_request.index);
+            (engine_request.doc, 1, 1, true)
+        }
+        None => return None,
+    };
+    documents.insert(
+        key,
+        Arc::new(StoredDocument {
+            source,
+            version,
+            seq_no,
+            primary_term,
+            routing: None,
+            refreshed: false,
+        }),
+    );
+    let metadata = os_engine::DocumentMetadata {
+        id: engine_request.id,
+        version: version as u64,
+        seq_no,
+        primary_term: primary_term as u64,
+    };
+    if created {
+        Some(os_transport::action::OpenSearchUpdateResponseWire::created(
+            engine_request.index,
+            metadata,
+        ))
+    } else {
+        Some(os_transport::action::OpenSearchUpdateResponseWire::updated(
+            engine_request.index,
+            metadata,
+        ))
+    }
+}
+
+fn merge_transport_update_document(source: &mut Value, doc: Value) {
+    match (source, doc) {
+        (Value::Object(source), Value::Object(doc)) => {
+            for (field, value) in doc {
+                source.insert(field, value);
+            }
+        }
+        (source, doc) => *source = doc,
+    }
+}
+
 fn ensure_local_transport_index_registered(index: &str) {
     let bindings = dev_transport_pit_bindings();
     bindings
@@ -21544,6 +21679,15 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
         }
         Some("indices:data/write/bulk") if bulk_request_supports_local_execution_subset(body) => {
             Some(build_local_bulk_response(
+                request_id,
+                header_version_id,
+                body,
+            ))
+        }
+        Some("indices:data/write/update")
+            if update_request_supports_local_execution_subset(body) =>
+        {
+            Some(build_local_update_response(
                 request_id,
                 header_version_id,
                 body,
@@ -34446,6 +34590,187 @@ mod tests {
             .lock()
             .expect("dev transport created indices lock poisoned")
             .contains("logs-bulk"));
+    }
+
+    #[test]
+    fn update_transport_route_merges_local_store_document_and_upserts() {
+        struct RecordingTransportConnection {
+            writes: Vec<u8>,
+        }
+
+        impl std::io::Read for RecordingTransportConnection {
+            fn read(&mut self, _buf: &mut [u8]) -> std::io::Result<usize> {
+                Ok(0)
+            }
+        }
+
+        impl std::io::Write for RecordingTransportConnection {
+            fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+                self.writes.extend_from_slice(buf);
+                Ok(buf.len())
+            }
+
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+
+        impl TransportConnection for RecordingTransportConnection {
+            fn set_read_timeout(&self, _duration: Option<Duration>) -> std::io::Result<()> {
+                Ok(())
+            }
+
+            fn peer_addr(&self) -> std::io::Result<SocketAddr> {
+                "127.0.0.1:9300"
+                    .parse()
+                    .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidInput, error))
+            }
+        }
+
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        let bindings = dev_transport_pit_bindings();
+        bindings
+            .created_indices
+            .lock()
+            .expect("dev transport created indices lock poisoned")
+            .clear();
+        bindings
+            .created_indices
+            .lock()
+            .expect("dev transport created indices lock poisoned")
+            .insert("logs-update".to_string());
+        bindings
+            .documents
+            .lock()
+            .expect("dev transport documents lock poisoned")
+            .clear();
+        bindings
+            .documents
+            .lock()
+            .expect("dev transport documents lock poisoned")
+            .insert(
+                "logs-update:doc-1:".to_string(),
+                Arc::new(StoredDocument {
+                    source: serde_json::json!({
+                        "status": "old",
+                        "tenant": "a"
+                    }),
+                    version: 5,
+                    seq_no: 9,
+                    primary_term: 3,
+                    routing: None,
+                    refreshed: true,
+                }),
+            );
+
+        let request = os_transport::action::OpenSearchUpdateRequestWire::new(
+            "logs-update".into(),
+            "doc-1".into(),
+            serde_json::json!({ "status": "patched" }),
+        );
+        let frame = os_transport::action::build_opensearch_update_request_message(
+            317,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(update_request_supports_local_execution_subset(&frame[6..]));
+        let transport_identity = DevTransportIdentity {
+            cluster_name: "steelsearch-dev".to_string(),
+            node_name: "steel-node".to_string(),
+            node_id: "steel-node-id".to_string(),
+            ephemeral_id: "steel-node-ephemeral".to_string(),
+            transport_address: "127.0.0.1:9300".parse().unwrap(),
+            attributes: Vec::new(),
+            roles: vec!["cluster_manager".to_string(), "data".to_string()],
+            seed_peer_identity: None,
+            seed_peer_identities: Vec::new(),
+            coordination_state: Arc::new(Mutex::new(DevTransportCoordinationState::default())),
+            remote_transport_queue_gate: Arc::new(RemoteTransportQueueGate::new(1, 1000)),
+            task_queue_state: None,
+        };
+        let mut stream = RecordingTransportConnection { writes: Vec::new() };
+
+        let handled = handle_subsequent_transport_request(
+            &mut stream,
+            &frame[6..],
+            &transport_identity,
+            None,
+        )
+        .unwrap();
+
+        assert!(handled);
+        let mut frame = BytesMut::from(&stream.writes[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected update response message");
+        };
+        assert_eq!(message.request_id, 317);
+        assert!(!message.status.is_request());
+        let response =
+            os_transport::action::read_opensearch_update_response_message(&message).unwrap();
+        assert_eq!(response.index, "logs-update");
+        assert_eq!(response.id, "doc-1");
+        assert_eq!(response.version, 6);
+        assert_eq!(response.seq_no, 10);
+        assert_eq!(response.primary_term, 3);
+        assert_eq!(response.result, 1);
+
+        let documents = bindings
+            .documents
+            .lock()
+            .expect("dev transport documents lock poisoned");
+        let document = documents
+            .get("logs-update:doc-1:")
+            .expect("updated document should be stored");
+        assert_eq!(document.source["status"], serde_json::json!("patched"));
+        assert_eq!(document.source["tenant"], serde_json::json!("a"));
+        assert!(!document.refreshed);
+        drop(documents);
+
+        let mut upsert_request = os_transport::action::OpenSearchUpdateRequestWire::new(
+            "logs-update".into(),
+            "doc-created".into(),
+            serde_json::json!({ "status": "created" }),
+        );
+        upsert_request.doc_as_upsert = true;
+        let upsert_frame = os_transport::action::build_opensearch_update_request_message(
+            318,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &upsert_request,
+        )
+        .unwrap();
+        let upsert_response = build_local_update_response(
+            318,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &upsert_frame[6..],
+        );
+        let mut upsert_frame = BytesMut::from(&upsert_response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut upsert_frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected update upsert response message");
+        };
+        let created =
+            os_transport::action::read_opensearch_update_response_message(&message).unwrap();
+        assert_eq!(created.index, "logs-update");
+        assert_eq!(created.id, "doc-created");
+        assert_eq!(created.version, 1);
+        assert_eq!(created.seq_no, 11);
+        assert_eq!(created.primary_term, 1);
+        assert_eq!(created.result, 0);
+        assert!(bindings
+            .documents
+            .lock()
+            .expect("dev transport documents lock poisoned")
+            .contains_key("logs-update:doc-created:"));
     }
 
     #[test]
