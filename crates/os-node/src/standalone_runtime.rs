@@ -37287,6 +37287,73 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
     }
 
     #[test]
+    fn rollover_max_docs_condition_true_mutates_alias_target() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        let create = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/logs-condition-met-000001")
+                .with_json_body(serde_json::json!({})),
+        );
+        assert_eq!(create.status, 200);
+
+        let alias = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Put,
+                "/logs-condition-met-000001/_alias/logs-condition-met-write",
+            )
+            .with_json_body(serde_json::json!({
+                "is_write_index": true
+            })),
+        );
+        assert_eq!(alias.status, 200);
+
+        let doc = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/logs-condition-met-000001/_doc/doc-1?refresh=true")
+                .with_json_body(serde_json::json!({
+                    "message": "ready for rollover"
+                })),
+        );
+        assert_eq!(doc.status, 201);
+
+        let response = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/logs-condition-met-write/_rollover/logs-condition-met-000002",
+            )
+            .with_json_body(serde_json::json!({
+                "conditions": {
+                    "max_docs": 1
+                }
+            })),
+        );
+        assert_eq!(response.status, 200);
+        assert_eq!(response.body["old_index"], "logs-condition-met-000001");
+        assert_eq!(response.body["new_index"], "logs-condition-met-000002");
+        assert_eq!(response.body["rolled_over"], Value::Bool(true));
+        assert_eq!(response.body["acknowledged"], Value::Bool(true));
+        assert_eq!(response.body["shards_acknowledged"], Value::Bool(true));
+        assert_eq!(response.body["conditions"]["[max_docs: 1]"], Value::Bool(true));
+
+        let manifest = node
+            .metadata_manifest_state
+            .lock()
+            .expect("metadata manifest state lock poisoned");
+        assert_eq!(
+            manifest["indices"]["logs-condition-met-000001"]["aliases"]["logs-condition-met-write"]
+                ["is_write_index"],
+            Value::Bool(false)
+        );
+        assert_eq!(
+            manifest["indices"]["logs-condition-met-000002"]["aliases"]["logs-condition-met-write"]
+                ["is_write_index"],
+            Value::Bool(true)
+        );
+    }
+
+    #[test]
     fn rollover_named_target_resolves_create_index_body_write_alias_after_cleanup() {
         let node = SteelNode::new(NodeInfo {
             name: "steel-node".to_string(),
