@@ -3453,6 +3453,123 @@ fn daemon_transport_create_pit_returns_search_context_id_for_local_node() {
 }
 
 #[test]
+fn multi_daemon_transport_create_pit_binds_reader_contexts_to_target_node() {
+    let binary = os_node_binary();
+    let root = unique_work_dir();
+    fs::create_dir_all(&root).unwrap();
+    let http_ports = [free_port(), free_port(), free_port()];
+    let transport_ports = [free_port(), free_port(), free_port()];
+    let seed_hosts = transport_ports
+        .iter()
+        .map(|port| format!("127.0.0.1:{port}"))
+        .collect::<Vec<_>>()
+        .join(",");
+    let mut children = Vec::new();
+
+    for index in 0..3 {
+        let node_dir = root.join(format!("node-{}", index + 1));
+        fs::create_dir_all(node_dir.join("data")).unwrap();
+        fs::create_dir_all(node_dir.join("logs")).unwrap();
+        let stdout = fs::File::create(node_dir.join("logs/stdout.log")).unwrap();
+        let stderr = fs::File::create(node_dir.join("logs/stderr.log")).unwrap();
+        children.push(
+            Command::new(&binary)
+                .arg("--http.host")
+                .arg("127.0.0.1")
+                .arg("--http.port")
+                .arg(http_ports[index].to_string())
+                .arg("--transport.host")
+                .arg("127.0.0.1")
+                .arg("--transport.port")
+                .arg(transport_ports[index].to_string())
+                .arg("--node.id")
+                .arg(format!("steel-node-pit-{}", index + 1))
+                .arg("--node.name")
+                .arg(format!("steel-node-pit-{}", index + 1))
+                .arg("--cluster.name")
+                .arg("steel-dev-pit-transport-multi")
+                .arg("--node.roles")
+                .arg("cluster_manager,data,ingest")
+                .arg("--discovery.seed_hosts")
+                .arg(&seed_hosts)
+                .arg("--path.data")
+                .arg(node_dir.join("data"))
+                .stdout(Stdio::from(stdout))
+                .stderr(Stdio::from(stderr))
+                .spawn()
+                .unwrap(),
+        );
+    }
+    let _guard = ChildGuard { children };
+
+    for port in http_ports {
+        let cluster = wait_json(port, "GET", "/_steelsearch/dev/cluster", None);
+        assert_eq!(cluster["cluster_name"], "steel-dev-pit-transport-multi");
+        assert_eq!(cluster["number_of_nodes"], 3);
+        assert_eq!(cluster["formed"], true);
+        assert_eq!(cluster["coordination"]["publication_committed"], true);
+    }
+
+    for (index, http_port) in http_ports.iter().copied().enumerate() {
+        let create = wait_http_response(
+            http_port,
+            "PUT",
+            "/pit-transport-multi-it",
+            Some(br#"{"settings":{"number_of_shards":1,"number_of_replicas":0}}"#),
+        );
+        assert_eq!(create["status"], 200, "node {} create: {create}", index + 1);
+    }
+
+    let mut observed_nodes = BTreeSet::new();
+    for (index, transport_port) in transport_ports.iter().copied().enumerate() {
+        let expected_node = format!("steel-node-pit-{}", index + 1);
+        let request = os_transport::action::OpenSearchCreatePitRequestWire {
+            indices: vec!["pit-transport-multi-it".to_string()],
+            ..os_transport::action::OpenSearchCreatePitRequestWire::default()
+        };
+        let frame = os_transport::action::build_opensearch_create_pit_request_message(
+            200 + index as i64,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        let response = send_transport_request_and_decode_response(transport_port, &frame);
+        let pit_response =
+            os_transport::action::read_opensearch_create_pit_response_message(&response).unwrap();
+
+        assert_eq!(pit_response.total_shards, 1);
+        assert_eq!(pit_response.successful_shards, 1);
+        assert_eq!(pit_response.failed_shards, 0);
+        let context_id =
+            os_transport::action::OpenSearchSearchContextIdWire::decode(&pit_response.pit_id)
+                .unwrap();
+        assert_eq!(
+            context_id.actual_indices(),
+            vec!["pit-transport-multi-it".to_string()]
+        );
+        assert_eq!(context_id.shards.len(), 1);
+        let node_ids = context_id
+            .shards
+            .values()
+            .map(|context| context.node.clone())
+            .collect::<BTreeSet<_>>();
+        assert_eq!(node_ids, BTreeSet::from([expected_node.clone()]));
+        observed_nodes.insert(expected_node);
+    }
+
+    assert_eq!(
+        observed_nodes,
+        BTreeSet::from([
+            "steel-node-pit-1".to_string(),
+            "steel-node-pit-2".to_string(),
+            "steel-node-pit-3".to_string()
+        ])
+    );
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
 fn daemon_search_endpoint_preserves_result_shape_sorting_and_pagination() {
     let binary = os_node_binary();
     let root = unique_work_dir();
