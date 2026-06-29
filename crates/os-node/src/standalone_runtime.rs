@@ -2379,10 +2379,61 @@ fn persisted_documents_from_runtime(documents: &DocumentMap) -> BTreeMap<String,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+pub struct PersistedPitContext {
+    pub indices: Vec<String>,
+    pub documents: BTreeMap<String, StoredDocument>,
+    pub keep_alive_millis: u64,
+    pub expires_at_millis: u128,
+    pub creation_time_millis: u128,
+}
+
+fn runtime_pit_contexts_from_persisted(
+    contexts: BTreeMap<String, PersistedPitContext>,
+) -> BTreeMap<String, PitContext> {
+    contexts
+        .into_iter()
+        .map(|(id, context)| {
+            (
+                id,
+                PitContext {
+                    indices: context.indices,
+                    documents: Arc::new(runtime_documents_from_persisted(context.documents)),
+                    keep_alive_millis: context.keep_alive_millis,
+                    expires_at_millis: context.expires_at_millis,
+                    creation_time_millis: context.creation_time_millis,
+                },
+            )
+        })
+        .collect()
+}
+
+fn persisted_pit_contexts_from_runtime(
+    contexts: &BTreeMap<String, PitContext>,
+) -> BTreeMap<String, PersistedPitContext> {
+    contexts
+        .iter()
+        .map(|(id, context)| {
+            (
+                id.clone(),
+                PersistedPitContext {
+                    indices: context.indices.clone(),
+                    documents: persisted_documents_from_runtime(context.documents.as_ref()),
+                    keep_alive_millis: context.keep_alive_millis,
+                    expires_at_millis: context.expires_at_millis,
+                    creation_time_millis: context.creation_time_millis,
+                },
+            )
+        })
+        .collect()
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct SharedRuntimeState {
     pub created_indices: BTreeSet<String>,
     pub metadata_manifest: Value,
     pub documents: BTreeMap<String, StoredDocument>,
+    #[serde(default)]
+    pub pit_contexts: BTreeMap<String, PersistedPitContext>,
     pub next_seq_no: u64,
     #[serde(default)]
     pub next_seq_no_by_index: BTreeMap<String, u64>,
@@ -11169,6 +11220,8 @@ impl SteelNode {
             })
             .collect::<Vec<_>>();
         contexts.clear();
+        drop(contexts);
+        self.persist_shared_runtime_state_to_disk();
         RestResponse::json(
             200,
             serde_json::json!({
@@ -11352,6 +11405,7 @@ impl SteelNode {
         );
         drop(pit_contexts);
         self.record_pit_open_context_totals(&resolved_indices);
+        self.persist_shared_runtime_state_to_disk();
         RestResponse::json(
             200,
             serde_json::json!({
@@ -11506,6 +11560,8 @@ impl SteelNode {
                 })
             })
             .collect::<Vec<_>>();
+        drop(contexts);
+        self.persist_shared_runtime_state_to_disk();
         RestResponse::json(
             200,
             serde_json::json!({
@@ -21062,6 +21118,11 @@ impl SteelNode {
             .documents_state
             .lock()
             .expect("documents state lock poisoned") = runtime_documents;
+        *self
+            .pit_contexts
+            .lock()
+            .expect("pit contexts lock poisoned") =
+            runtime_pit_contexts_from_persisted(state.pit_contexts);
         *self.next_seq_no.lock().expect("seq_no lock poisoned") = state.next_seq_no;
         *self
             .next_seq_no_by_index
@@ -21256,6 +21317,12 @@ impl SteelNode {
                     .documents_state
                     .lock()
                     .expect("documents state lock poisoned"),
+            ),
+            pit_contexts: persisted_pit_contexts_from_runtime(
+                &self
+                    .pit_contexts
+                    .lock()
+                    .expect("pit contexts lock poisoned"),
             ),
             next_seq_no: *self.next_seq_no.lock().expect("seq_no lock poisoned"),
             next_seq_no_by_index: self

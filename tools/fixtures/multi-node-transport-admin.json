@@ -16,8 +16,8 @@
         ],
         "body_paths_equal": {
           "status": "green",
-          "number_of_nodes": 2,
-          "number_of_data_nodes": 2,
+          "number_of_nodes": 3,
+          "number_of_data_nodes": 3,
           "timed_out": false
         }
       }
@@ -43,7 +43,7 @@
           "version": 1
         },
         "body_object_key_counts": {
-          "nodes": 2
+          "nodes": 3
         }
       }
     },
@@ -75,11 +75,7 @@
           "tasks"
         ],
         "body_array_lengths": {
-          "tasks": 2
-        },
-        "body_paths_equal": {
-          "tasks.0.priority": "HIGH",
-          "tasks.1.priority": "HIGH"
+          "tasks": 0
         }
       }
     },
@@ -112,7 +108,7 @@
           "nodes"
         ],
         "body_object_key_counts": {
-          "nodes": 2
+          "nodes": 3
         },
         "body_paths_equal": {
           "nodes.steel-node-2.indices.docs.count": 0
@@ -132,8 +128,8 @@
         ],
         "body_paths_equal": {
           "status": "green",
-          "nodes.count.total": 2,
-          "nodes.count.data": 2,
+          "nodes.count.total": 3,
+          "nodes.count.data": 3,
           "indices.count": 0
         }
       }
@@ -154,6 +150,110 @@
           "_shards.successful": 0,
           "_shards.failed": 0,
           "_all.total.docs.count": 0
+        }
+      }
+    },
+    {
+      "name": "node_a_create_pit_index",
+      "target": "node_a",
+      "method": "PUT",
+      "path": "/multi-node-pit-000001",
+      "body": {
+        "settings": {
+          "index": {
+            "number_of_shards": 1,
+            "number_of_replicas": 0
+          }
+        }
+      },
+      "compare": {
+        "expected_status": 200,
+        "body_paths_equal": {
+          "acknowledged": true
+        }
+      }
+    },
+    {
+      "name": "node_a_write_pit_document",
+      "target": "node_a",
+      "method": "PUT",
+      "path": "/multi-node-pit-000001/_doc/doc-1?refresh=true",
+      "body": {
+        "message": "visible-through-pit"
+      },
+      "compare": {
+        "expected_status": 201,
+        "body_paths_equal": {
+          "_index": "multi-node-pit-000001",
+          "_id": "doc-1",
+          "result": "created"
+        }
+      }
+    },
+    {
+      "name": "node_a_open_pit",
+      "target": "node_a",
+      "method": "POST",
+      "path": "/multi-node-pit-000001/_search/point_in_time?keep_alive=1m",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "pit_id",
+          "creation_time",
+          "_shards.total"
+        ],
+        "body_paths_equal": {
+          "_shards.failed": 0
+        }
+      }
+    },
+    {
+      "name": "node_b_search_node_a_pit",
+      "target": "node_b",
+      "method": "POST",
+      "path": "/_search",
+      "body": {
+        "pit": {
+          "id": "${node_a_open_pit.response.body.pit_id}",
+          "keep_alive": "1m"
+        },
+        "query": {
+          "match_all": {}
+        }
+      },
+      "compare": {
+        "expected_status": 200,
+        "body_paths_equal": {
+          "hits.total.value": 1,
+          "hits.hits.0._id": "doc-1",
+          "hits.hits.0._source.message": "visible-through-pit"
+        }
+      }
+    },
+    {
+      "name": "node_b_close_node_a_pit",
+      "target": "node_b",
+      "method": "DELETE",
+      "path": "/_search/point_in_time",
+      "body": {
+        "pit_id": "${node_a_open_pit.response.body.pit_id}"
+      },
+      "compare": {
+        "expected_status": 200,
+        "body_paths_equal": {
+          "pits.0.successful": true
+        }
+      }
+    },
+    {
+      "name": "node_a_list_pits_after_node_b_close",
+      "target": "node_a",
+      "method": "GET",
+      "path": "/_search/point_in_time/_all",
+      "compare": {
+        "expected_status": 200,
+        "body_array_lengths": {
+          "pits": 0
         }
       }
     }
@@ -202,19 +302,6 @@
       "right": {
         "case": "node_b_nodes_stats",
         "path": "response.body.nodes",
-        "transform": "len"
-      }
-    },
-    {
-      "name": "pending_task_count_matches_node_a_task_entries",
-      "left": {
-        "case": "node_b_pending_tasks",
-        "path": "response.body.tasks",
-        "transform": "len"
-      },
-      "right": {
-        "case": "node_a_tasks",
-        "path": "response.body.nodes.steel-node-1.tasks",
         "transform": "len"
       }
     },

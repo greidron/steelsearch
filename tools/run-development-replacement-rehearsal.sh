@@ -560,6 +560,20 @@ PY
   fi
   export STEELSEARCH_NODE_A_URL="${STEELSEARCH_NODE_A_URL:-${cluster_urls[0]}}"
   export STEELSEARCH_NODE_B_URL="${STEELSEARCH_NODE_B_URL:-${cluster_urls[1]}}"
+  for cluster_url in "${STEELSEARCH_NODE_A_URL}" "${STEELSEARCH_NODE_B_URL}"; do
+    ready=0
+    for _ in $(seq 1 "$((WAIT_TIMEOUT * 4))"); do
+      if curl -fsS "${cluster_url%/}/_steelsearch/dev/cluster" >/dev/null 2>&1; then
+        ready=1
+        break
+      fi
+      sleep 0.25
+    done
+    if [[ "${ready}" != "1" ]]; then
+      echo "Steelsearch cluster node did not become ready at ${cluster_url}" >&2
+      exit 1
+    fi
+  done
 fi
 
 if [[ "${PHASE_A_COMPARE_SCOPE}" != "transport-admin" ]]; then

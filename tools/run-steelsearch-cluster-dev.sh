@@ -12,6 +12,7 @@ TRANSPORT_ACCESS_HOST="${STEELSEARCH_TRANSPORT_ACCESS_HOST:-127.0.0.1}"
 MANIFEST="${WORK_DIR}/cluster.json"
 PIDS=()
 BUILD_PROFILE="${STEELSEARCH_BUILD_PROFILE:-debug}"
+WAIT_TIMEOUT="${STEELSEARCH_CLUSTER_WAIT_TIMEOUT:-120}"
 
 find_free_port() {
   python3 - "$1" <<'PY'
@@ -129,6 +130,8 @@ for ((i = 0; i < NODE_COUNT; i++)); do
     export STEELSEARCH_DATA_PATH="${node_dir}/data"
     export STEELSEARCH_WORK_DIR="${node_dir}"
     export STEELSEARCH_BUILD_PROFILE="${BUILD_PROFILE}"
+    export STEELSEARCH_PERSIST_SHARED_RUNTIME_STATE_PER_WRITE=1
+    export STEELSEARCH_SYNC_SHARED_RUNTIME_STATE_PER_REQUEST=1
     exec "${ROOT}/tools/run-steelsearch-dev.sh" >"${node_dir}/logs/stdout.log" 2>"${node_dir}/logs/stderr.log"
   ) &
   PIDS+=("$!")
@@ -143,7 +146,7 @@ echo "Waiting for nodes to expose development cluster views..." >&2
 for ((i = 0; i < NODE_COUNT; i++)); do
   http_port="${http_ports[$i]}"
   ready=0
-  for _ in {1..80}; do
+  for _ in $(seq 1 "$((WAIT_TIMEOUT * 4))"); do
     if curl -fsS "http://${HTTP_ACCESS_HOST}:${http_port}/_steelsearch/dev/cluster" >/dev/null 2>&1; then
       ready=1
       break

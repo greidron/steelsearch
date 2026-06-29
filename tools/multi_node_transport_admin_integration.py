@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 import urllib.error
 import urllib.request
@@ -31,11 +32,64 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def request_response(base_url: str, case: dict[str, Any], timeout: float) -> dict[str, Any]:
+REFERENCE_PATTERN = re.compile(r"\$\{([^}]+)\}")
+
+
+def resolve_reference(case_reports: dict[str, dict[str, Any]], reference: str) -> Any:
+    case_name, separator, path = reference.partition(".")
+    if not separator:
+        return None
+    return extract_path(case_reports.get(case_name), path)
+
+
+def render_template(value: Any, case_reports: dict[str, dict[str, Any]]) -> Any:
+    if isinstance(value, dict):
+        return {key: render_template(child, case_reports) for key, child in value.items()}
+    if isinstance(value, list):
+        return [render_template(child, case_reports) for child in value]
+    if not isinstance(value, str):
+        return value
+
+    full_match = REFERENCE_PATTERN.fullmatch(value)
+    if full_match:
+        resolved = resolve_reference(case_reports, full_match.group(1))
+        return resolved if resolved is not None else value
+
+    def replace(match: re.Match[str]) -> str:
+        resolved = resolve_reference(case_reports, match.group(1))
+        return "" if resolved is None else str(resolved)
+
+    return REFERENCE_PATTERN.sub(replace, value)
+
+
+def encode_request_body(
+    case: dict[str, Any],
+    case_reports: dict[str, dict[str, Any]],
+) -> bytes | None:
+    if "body" not in case:
+        return None
+    body = render_template(case["body"], case_reports)
+    if isinstance(body, (dict, list)):
+        return json.dumps(body).encode("utf-8")
+    if isinstance(body, str):
+        return body.encode("utf-8")
+    raise TypeError(f"unsupported request body type: {type(body)!r}")
+
+
+def request_response(
+    base_url: str,
+    case: dict[str, Any],
+    timeout: float,
+    case_reports: dict[str, dict[str, Any]],
+) -> dict[str, Any]:
+    body = encode_request_body(case, case_reports)
     request = urllib.request.Request(
-        base_url.rstrip("/") + case["path"],
+        base_url.rstrip("/") + render_template(case["path"], case_reports),
+        data=body,
         method=case["method"],
     )
+    if body is not None:
+        request.add_header("Content-Type", "application/json")
     try:
         with urllib.request.urlopen(request, timeout=timeout) as response:
             payload = response.read()
@@ -182,7 +236,7 @@ def main() -> int:
 
     exit_code = 0
     for case in fixture.get("cases", []):
-        response = request_response(targets[case["target"]], case, args.timeout)
+        response = request_response(targets[case["target"]], case, args.timeout, case_reports)
         errors = check_case(case, response)
         status = "passed" if not errors else "failed"
         if errors:
