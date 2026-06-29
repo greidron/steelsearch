@@ -1089,8 +1089,8 @@
       "transport_action": "CreateViewAction.TransportAction",
       "request_wire_type": "CreateViewAction.Request",
       "response_wire_type": "GetViewAction.Response",
-      "disposition": "rejected",
-      "reason": "Create-view transport execution requires view validation, target resolution, metadata mutation, and view response rendering"
+      "disposition": "implemented",
+      "reason": "Create-view transport adapter validates the bounded request, records manifest-backed view metadata, and renders GetViewAction.Response"
     },
     {
       "action_name": "cluster:admin/views/delete",
@@ -1098,8 +1098,8 @@
       "transport_action": "DeleteViewAction.TransportAction",
       "request_wire_type": "DeleteViewAction.Request",
       "response_wire_type": "AcknowledgedResponse",
-      "disposition": "rejected",
-      "reason": "Delete-view transport execution requires view lookup, metadata deletion, and acknowledgement rendering"
+      "disposition": "implemented",
+      "reason": "Delete-view transport adapter deletes manifest-backed view metadata and renders an acknowledged response"
     },
     {
       "action_name": "views:data/read/get",
@@ -1107,8 +1107,8 @@
       "transport_action": "GetViewAction.TransportAction",
       "request_wire_type": "GetViewAction.Request",
       "response_wire_type": "GetViewAction.Response",
-      "disposition": "rejected",
-      "reason": "Get-view transport execution requires view lookup and view response rendering"
+      "disposition": "implemented",
+      "reason": "Get-view transport adapter reads manifest-backed view metadata and renders GetViewAction.Response"
     },
     {
       "action_name": "cluster:admin/views/update",
@@ -1116,8 +1116,8 @@
       "transport_action": "UpdateViewAction.TransportAction",
       "request_wire_type": "CreateViewAction.Request",
       "response_wire_type": "GetViewAction.Response",
-      "disposition": "rejected",
-      "reason": "Update-view transport execution requires view validation, target resolution, metadata mutation, and view response rendering"
+      "disposition": "implemented",
+      "reason": "Update-view transport adapter validates the bounded request, updates manifest-backed view metadata, and renders GetViewAction.Response"
     },
     {
       "action_name": "views:data/read/list",
@@ -1134,8 +1134,8 @@
       "transport_action": "SearchViewAction.TransportAction",
       "request_wire_type": "SearchViewAction.Request",
       "response_wire_type": "SearchResponse",
-      "disposition": "rejected",
-      "reason": "Search-view transport execution requires view lookup, target index resolution, search execution, and search response rendering"
+      "disposition": "implemented",
+      "reason": "Search-view transport adapter resolves manifest-backed view targets and executes the supported local search subset"
     },
     {
       "action_name": "cluster:admin/persistent/start",

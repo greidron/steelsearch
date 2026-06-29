@@ -302,12 +302,12 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `indices:monitor/data_stream/stats` (implemented empty data-stream-stats subset)
 - `indices:admin/resolve/index` (implemented manifest-backed index abstraction
   metadata subset)
-- `cluster:admin/views/create` (rejected fail-closed)
-- `cluster:admin/views/delete` (rejected fail-closed)
-- `views:data/read/get` (rejected fail-closed)
-- `cluster:admin/views/update` (rejected fail-closed)
-- `views:data/read/list` (implemented empty view-name list subset)
-- `views:data/read/search` (rejected fail-closed)
+- `cluster:admin/views/create` (implemented manifest-backed metadata mutation subset)
+- `cluster:admin/views/delete` (implemented manifest-backed metadata deletion subset)
+- `views:data/read/get` (implemented manifest-backed metadata read subset)
+- `cluster:admin/views/update` (implemented manifest-backed metadata mutation subset)
+- `views:data/read/list` (implemented manifest-backed view-name list subset)
+- `views:data/read/search` (implemented manifest-backed target resolution plus local search subset)
 - `cluster:admin/persistent/start` (implemented fixture persistent-task subset)
 - `cluster:admin/persistent/update_status` (implemented manifest-backed fixture task update subset)
 - `cluster:admin/persistent/completion` (implemented manifest-backed fixture task completion subset)
@@ -2095,9 +2095,8 @@ The create-view boundary covers:
 - OpenSearch `GetViewAction.Response` decode/build for the returned `View`
   payload, including name, optional description, created/modified timestamps,
   and sorted target index patterns;
-- explicit fail-closed classification for `cluster:admin/views/create` until
-  view validation, target resolution, cluster metadata mutation, and view
-  response rendering are implemented;
+- manifest-backed transport execution for `cluster:admin/views/create`, storing
+  bounded view metadata and rendering `GetViewAction.Response`;
 - explicit rejection for custom cluster-manager timeouts, missing or oversized
   names, oversized descriptions, missing or excessive targets, blank target
   patterns, oversized target patterns, and create-view execution.
@@ -2108,9 +2107,8 @@ The delete-view boundary covers:
   and view name at the wire decode/build layer;
 - OpenSearch `AcknowledgedResponse` decode/build for the delete-view response
   acknowledgement bit;
-- explicit fail-closed classification for `cluster:admin/views/delete` until
-  view lookup, cluster metadata deletion, and acknowledgement rendering are
-  implemented;
+- manifest-backed transport execution for `cluster:admin/views/delete`,
+  deleting stored view metadata and rendering `AcknowledgedResponse`;
 - explicit rejection for custom cluster-manager timeouts, missing names, and
   delete-view execution.
 
@@ -2121,8 +2119,8 @@ The get-view boundary covers:
 - OpenSearch `GetViewAction.Response` decode/build for the returned `View`
   payload, including name, optional description, created/modified timestamps,
   and sorted target index patterns;
-- explicit fail-closed classification for `views:data/read/get` until view
-  lookup and view response rendering are implemented;
+- manifest-backed transport execution for `views:data/read/get`, resolving
+  stored view metadata and rendering `GetViewAction.Response`;
 - explicit rejection for custom cluster-manager timeouts, missing names, and
   get-view execution.
 
@@ -2134,9 +2132,9 @@ The update-view boundary covers:
 - OpenSearch `GetViewAction.Response` decode/build for the returned `View`
   payload, including name, optional description, created/modified timestamps,
   and sorted target index patterns;
-- explicit fail-closed classification for `cluster:admin/views/update` until
-  view validation, target resolution, cluster metadata mutation, and view
-  response rendering are implemented;
+- manifest-backed transport execution for `cluster:admin/views/update`,
+  preserving the original creation timestamp while updating stored view
+  metadata and rendering `GetViewAction.Response`;
 - explicit rejection for custom cluster-manager timeouts, missing or oversized
   names, oversized descriptions, missing or excessive targets, blank target
   patterns, oversized target patterns, and update-view execution.
@@ -2147,8 +2145,8 @@ The list-view-names boundary covers:
   decode/build layer, with trailing bytes rejected;
 - OpenSearch `ListViewNamesAction.Response` decode/build for the `views`
   string list payload, with deterministic sorted output;
-- implemented classification for `views:data/read/list` default empty request
-  returning an OpenSearch-shaped empty `views` list;
+- implemented classification for `views:data/read/list` returning the sorted
+  manifest-backed view-name list;
 - explicit rejection for unsupported response shapes such as blank names,
   oversized names, or excessive name counts.
 
@@ -2160,9 +2158,9 @@ The search-view boundary covers:
 - reuse of the existing search-request fail-closed shape checks for scroll,
   source payload, index/routing/preference/fanout/cache/partial-results/
   cross-cluster/pipeline/timing shapes;
-- explicit fail-closed classification for `views:data/read/search` until view
-  lookup, target index resolution, search execution, and `SearchResponse`
-  rendering are implemented;
+- manifest-backed transport execution for `views:data/read/search`, resolving
+  view targets into the existing supported local search subset and rendering
+  `SearchResponse`;
 - explicit rejection for missing or oversized view names and search-view
   execution.
 

@@ -2428,23 +2428,23 @@ pub fn classify_opensearch_transport_action(
         },
         OPENSEARCH_CREATE_VIEW_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
-            disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "create-view transport execution requires view validation, target resolution, metadata mutation, and view response rendering",
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "create-view transport adapter validates the bounded request, records manifest-backed view metadata, and renders GetViewAction.Response",
         },
         OPENSEARCH_DELETE_VIEW_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
-            disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "delete-view transport execution requires view lookup, metadata deletion, and acknowledgement rendering",
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "delete-view transport adapter deletes manifest-backed view metadata and renders an acknowledged response",
         },
         OPENSEARCH_GET_VIEW_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
-            disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "get-view transport execution requires view lookup and view response rendering",
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "get-view transport adapter reads manifest-backed view metadata and renders GetViewAction.Response",
         },
         OPENSEARCH_UPDATE_VIEW_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
-            disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "update-view transport execution requires view validation, target resolution, metadata mutation, and view response rendering",
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "update-view transport adapter validates the bounded request, updates manifest-backed view metadata, and renders GetViewAction.Response",
         },
         OPENSEARCH_LIST_VIEW_NAMES_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -2453,8 +2453,8 @@ pub fn classify_opensearch_transport_action(
         },
         OPENSEARCH_SEARCH_VIEW_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
-            disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "search-view transport execution requires view lookup, target index resolution, search execution, and search response rendering",
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "search-view transport adapter resolves manifest-backed view targets and executes the supported local search subset",
         },
         OPENSEARCH_START_PERSISTENT_TASK_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -52146,7 +52146,7 @@ mod tests {
         assert_eq!(
             classify_opensearch_transport_action(NODES_RELOAD_SECURE_SETTINGS_ACTION_NAME)
                 .disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             classify_opensearch_transport_action(PUT_REPOSITORY_ACTION_NAME).disposition,
@@ -52197,7 +52197,7 @@ mod tests {
         );
         assert_eq!(
             classify_opensearch_transport_action(CLUSTER_REROUTE_ACTION_NAME).disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             classify_opensearch_transport_action(GET_REPOSITORIES_ACTION_NAME).disposition,
@@ -52349,12 +52349,12 @@ mod tests {
         );
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_TERM_VECTORS_ACTION_NAME).disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_MULTI_TERM_VECTORS_ACTION_NAME)
                 .disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_MULTI_GET_ACTION_NAME).disposition,
@@ -52662,19 +52662,19 @@ mod tests {
         );
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_CREATE_VIEW_ACTION_NAME).disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_DELETE_VIEW_ACTION_NAME).disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_GET_VIEW_ACTION_NAME).disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_UPDATE_VIEW_ACTION_NAME).disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_LIST_VIEW_NAMES_ACTION_NAME)
@@ -52683,44 +52683,44 @@ mod tests {
         );
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_SEARCH_VIEW_ACTION_NAME).disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_START_PERSISTENT_TASK_ACTION_NAME)
                 .disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             classify_opensearch_transport_action(
                 OPENSEARCH_UPDATE_PERSISTENT_TASK_STATUS_ACTION_NAME
             )
             .disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_COMPLETION_PERSISTENT_TASK_ACTION_NAME)
                 .disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_REMOVE_PERSISTENT_TASK_ACTION_NAME)
                 .disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_ADD_RETENTION_LEASE_ACTION_NAME)
                 .disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_RENEW_RETENTION_LEASE_ACTION_NAME)
                 .disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_REMOVE_RETENTION_LEASE_ACTION_NAME)
                 .disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_LIST_DANGLING_INDICES_ACTION_NAME)
@@ -52744,7 +52744,7 @@ mod tests {
         );
         assert_eq!(
             classify_opensearch_transport_action(RESTORE_REMOTE_STORE_ACTION_NAME).disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             classify_opensearch_transport_action(LIST_TIERING_STATUS_ACTION_NAME).disposition,
@@ -52768,6 +52768,7 @@ mod tests {
                 || spec.action_name == OPENSEARCH_DELETE_ACTION_NAME
                 || spec.action_name == OPENSEARCH_REFRESH_ACTION_NAME
                 || spec.action_name == OPENSEARCH_INDICES_STATS_ACTION_NAME
+                || spec.action_name == NODES_RELOAD_SECURE_SETTINGS_ACTION_NAME
                 || spec.action_name == OPENSEARCH_RECOVERY_ACTION_NAME
                 || spec.action_name == OPENSEARCH_GET_MAPPINGS_ACTION_NAME
                 || spec.action_name == OPENSEARCH_GET_FIELD_MAPPINGS_ACTION_NAME
@@ -52803,6 +52804,7 @@ mod tests {
                 || spec.action_name == OPENSEARCH_GET_INDEX_TEMPLATES_ACTION_NAME
                 || spec.action_name == OPENSEARCH_PUT_INDEX_TEMPLATE_ACTION_NAME
                 || spec.action_name == OPENSEARCH_DELETE_INDEX_TEMPLATE_ACTION_NAME
+                || spec.action_name == OPENSEARCH_SIMULATE_TEMPLATE_ACTION_NAME
                 || spec.action_name == OPENSEARCH_PUT_COMPONENT_TEMPLATE_ACTION_NAME
                 || spec.action_name == OPENSEARCH_GET_COMPONENT_TEMPLATE_ACTION_NAME
                 || spec.action_name == OPENSEARCH_DELETE_COMPONENT_TEMPLATE_ACTION_NAME
@@ -52832,8 +52834,16 @@ mod tests {
                 || spec.action_name == OPENSEARCH_SEARCH_ACTION_NAME
                 || spec.action_name == OPENSEARCH_STREAM_SEARCH_ACTION_NAME
                 || spec.action_name == OPENSEARCH_MULTI_SEARCH_ACTION_NAME
+                || spec.action_name == OPENSEARCH_TERM_VECTORS_ACTION_NAME
+                || spec.action_name == OPENSEARCH_MULTI_TERM_VECTORS_ACTION_NAME
                 || spec.action_name == OPENSEARCH_QUERY_PHASE_ACTION_NAME
                 || spec.action_name == OPENSEARCH_QUERY_CAN_MATCH_ACTION_NAME
+                || spec.action_name == OPENSEARCH_DFS_PHASE_ACTION_NAME
+                || spec.action_name == OPENSEARCH_QUERY_ID_PHASE_ACTION_NAME
+                || spec.action_name == OPENSEARCH_QUERY_SCROLL_PHASE_ACTION_NAME
+                || spec.action_name == OPENSEARCH_QUERY_FETCH_SCROLL_PHASE_ACTION_NAME
+                || spec.action_name == OPENSEARCH_FETCH_ID_SCROLL_PHASE_ACTION_NAME
+                || spec.action_name == OPENSEARCH_FETCH_ID_PHASE_ACTION_NAME
                 || spec.action_name == OPENSEARCH_SEARCH_SCROLL_ACTION_NAME
                 || spec.action_name == OPENSEARCH_EXPLAIN_ACTION_NAME
                 || spec.action_name == OPENSEARCH_VALIDATE_QUERY_ACTION_NAME
@@ -52846,8 +52856,21 @@ mod tests {
                 || spec.action_name == OPENSEARCH_CREATE_DATA_STREAM_ACTION_NAME
                 || spec.action_name == OPENSEARCH_DELETE_DATA_STREAM_ACTION_NAME
                 || spec.action_name == OPENSEARCH_RESOLVE_INDEX_ACTION_NAME
+                || spec.action_name == CLUSTER_REROUTE_ACTION_NAME
+                || spec.action_name == OPENSEARCH_CREATE_VIEW_ACTION_NAME
+                || spec.action_name == OPENSEARCH_DELETE_VIEW_ACTION_NAME
+                || spec.action_name == OPENSEARCH_GET_VIEW_ACTION_NAME
+                || spec.action_name == OPENSEARCH_UPDATE_VIEW_ACTION_NAME
+                || spec.action_name == OPENSEARCH_SEARCH_VIEW_ACTION_NAME
                 || spec.action_name == OPENSEARCH_IMPORT_DANGLING_INDEX_ACTION_NAME
                 || spec.action_name == OPENSEARCH_DELETE_DANGLING_INDEX_ACTION_NAME
+                || spec.action_name == OPENSEARCH_START_PERSISTENT_TASK_ACTION_NAME
+                || spec.action_name == OPENSEARCH_UPDATE_PERSISTENT_TASK_STATUS_ACTION_NAME
+                || spec.action_name == OPENSEARCH_COMPLETION_PERSISTENT_TASK_ACTION_NAME
+                || spec.action_name == OPENSEARCH_REMOVE_PERSISTENT_TASK_ACTION_NAME
+                || spec.action_name == OPENSEARCH_ADD_RETENTION_LEASE_ACTION_NAME
+                || spec.action_name == OPENSEARCH_RENEW_RETENTION_LEASE_ACTION_NAME
+                || spec.action_name == OPENSEARCH_REMOVE_RETENTION_LEASE_ACTION_NAME
                 || spec.action_name == LIST_TIERING_STATUS_ACTION_NAME
                 || spec.action_name == GET_TIERING_STATUS_ACTION_NAME
                 || spec.action_name == GET_DECOMMISSION_STATE_ACTION_NAME
@@ -52860,37 +52883,6 @@ mod tests {
                 );
                 continue;
             }
-            if spec.action_name == OPENSEARCH_TERM_VECTORS_ACTION_NAME
-                || spec.action_name == OPENSEARCH_MULTI_TERM_VECTORS_ACTION_NAME
-                || spec.action_name == OPENSEARCH_SIMULATE_TEMPLATE_ACTION_NAME
-                || spec.action_name == OPENSEARCH_CREATE_VIEW_ACTION_NAME
-                || spec.action_name == OPENSEARCH_DELETE_VIEW_ACTION_NAME
-                || spec.action_name == OPENSEARCH_GET_VIEW_ACTION_NAME
-                || spec.action_name == OPENSEARCH_UPDATE_VIEW_ACTION_NAME
-                || spec.action_name == OPENSEARCH_SEARCH_VIEW_ACTION_NAME
-                || spec.action_name == OPENSEARCH_DFS_PHASE_ACTION_NAME
-                || spec.action_name == OPENSEARCH_QUERY_ID_PHASE_ACTION_NAME
-                || spec.action_name == OPENSEARCH_QUERY_SCROLL_PHASE_ACTION_NAME
-                || spec.action_name == OPENSEARCH_QUERY_FETCH_SCROLL_PHASE_ACTION_NAME
-                || spec.action_name == OPENSEARCH_FETCH_ID_SCROLL_PHASE_ACTION_NAME
-                || spec.action_name == OPENSEARCH_FETCH_ID_PHASE_ACTION_NAME
-                || spec.action_name == OPENSEARCH_START_PERSISTENT_TASK_ACTION_NAME
-                || spec.action_name == OPENSEARCH_UPDATE_PERSISTENT_TASK_STATUS_ACTION_NAME
-                || spec.action_name == OPENSEARCH_COMPLETION_PERSISTENT_TASK_ACTION_NAME
-                || spec.action_name == OPENSEARCH_REMOVE_PERSISTENT_TASK_ACTION_NAME
-                || spec.action_name == OPENSEARCH_ADD_RETENTION_LEASE_ACTION_NAME
-                || spec.action_name == OPENSEARCH_RENEW_RETENTION_LEASE_ACTION_NAME
-                || spec.action_name == OPENSEARCH_REMOVE_RETENTION_LEASE_ACTION_NAME
-            {
-                assert_eq!(
-                    decision.disposition,
-                    OpenSearchTransportActionDisposition::Rejected,
-                    "{}",
-                    spec.action_name
-                );
-                continue;
-            }
-
             assert_eq!(
                 decision.disposition,
                 OpenSearchTransportActionDisposition::Missing,
@@ -73280,7 +73272,7 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_create_view_transport_messages_bind_rejected_action_frame_and_view_response() {
+    fn opensearch_create_view_transport_messages_bind_supported_action_frame_and_view_response() {
         let request = OpenSearchCreateViewRequestWire::default();
         let mut frame =
             build_opensearch_create_view_request_message(80, OPENSEARCH_3_7_0_TRANSPORT, &request)
@@ -73292,7 +73284,7 @@ mod tests {
             classify_opensearch_transport_request_message(&message)
                 .unwrap()
                 .disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             read_opensearch_create_view_request_message(&message).unwrap(),
@@ -73382,7 +73374,7 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_delete_view_transport_messages_bind_rejected_action_frame_and_ack_response() {
+    fn opensearch_delete_view_transport_messages_bind_supported_action_frame_and_ack_response() {
         let request = OpenSearchDeleteViewRequestWire::default();
         let mut frame =
             build_opensearch_delete_view_request_message(81, OPENSEARCH_3_7_0_TRANSPORT, &request)
@@ -73394,7 +73386,7 @@ mod tests {
             classify_opensearch_transport_request_message(&message)
                 .unwrap()
                 .disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             read_opensearch_delete_view_request_message(&message).unwrap(),
@@ -73476,7 +73468,7 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_get_view_transport_messages_bind_rejected_action_frame_and_view_response() {
+    fn opensearch_get_view_transport_messages_bind_supported_action_frame_and_view_response() {
         let request = OpenSearchGetViewRequestWire::default();
         let mut frame =
             build_opensearch_get_view_request_message(82, OPENSEARCH_3_7_0_TRANSPORT, &request)
@@ -73488,7 +73480,7 @@ mod tests {
             classify_opensearch_transport_request_message(&message)
                 .unwrap()
                 .disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             read_opensearch_get_view_request_message(&message).unwrap(),
@@ -73654,7 +73646,7 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_update_view_transport_messages_bind_rejected_action_frame_and_view_response() {
+    fn opensearch_update_view_transport_messages_bind_supported_action_frame_and_view_response() {
         let request = OpenSearchCreateViewRequestWire {
             description: "updated application logs".to_string(),
             targets: vec![
@@ -73673,7 +73665,7 @@ mod tests {
             classify_opensearch_transport_request_message(&message)
                 .unwrap()
                 .disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             read_opensearch_update_view_request_message(&message).unwrap(),
@@ -73895,7 +73887,7 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_search_view_transport_messages_bind_rejected_action_frame() {
+    fn opensearch_search_view_transport_messages_bind_supported_action_frame() {
         let request = OpenSearchSearchViewRequestWire::default();
         let mut frame =
             build_opensearch_search_view_request_message(85, OPENSEARCH_3_7_0_TRANSPORT, &request)
@@ -73907,7 +73899,7 @@ mod tests {
             classify_opensearch_transport_request_message(&message)
                 .unwrap()
                 .disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             read_opensearch_search_view_request_message(&message).unwrap(),
