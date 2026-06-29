@@ -3563,6 +3563,188 @@ fn daemon_transport_create_pit_returns_search_context_id_for_local_node() {
 }
 
 #[test]
+fn daemon_transport_point_in_time_contexts_do_not_survive_restart() {
+    let binary = os_node_binary();
+    let root = unique_work_dir();
+    let data_path = root.join("data");
+    fs::create_dir_all(&data_path).unwrap();
+    let transport_port = free_port();
+
+    let mut child = Command::new(&binary)
+        .arg("--http.host")
+        .arg("127.0.0.1")
+        .arg("--http.port")
+        .arg("0")
+        .arg("--transport.host")
+        .arg("127.0.0.1")
+        .arg("--transport.port")
+        .arg(transport_port.to_string())
+        .arg("--node.id")
+        .arg("steel-node-pit-transport-restart")
+        .arg("--node.name")
+        .arg("steel-node-pit-transport-restart")
+        .arg("--cluster.name")
+        .arg("steel-dev-pit-transport-restart")
+        .arg("--path.data")
+        .arg(&data_path)
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+
+    let stderr = child.stderr.take().unwrap();
+    let mut reader = BufReader::new(stderr);
+    let http_port = read_reported_http_port(&mut reader);
+
+    let create = wait_http_response(
+        http_port,
+        "PUT",
+        "/pit-transport-restart-it",
+        Some(br#"{"settings":{"number_of_shards":1,"number_of_replicas":0}}"#),
+    );
+    assert_eq!(create["status"], 200, "{create}");
+    let index_doc = http_response(
+        http_port,
+        "PUT",
+        "/pit-transport-restart-it/_doc/1",
+        Some(br#"{"status":"before-restart","ordinal":1}"#),
+    );
+    assert_eq!(index_doc["status"], 201, "{index_doc}");
+    let refresh = http_response(
+        http_port,
+        "POST",
+        "/pit-transport-restart-it/_refresh",
+        Some(b"{}"),
+    );
+    assert_eq!(refresh["status"], 200, "{refresh}");
+
+    let create_pit_request = os_transport::action::OpenSearchCreatePitRequestWire {
+        indices: vec!["pit-transport-restart-it".to_string()],
+        ..os_transport::action::OpenSearchCreatePitRequestWire::default()
+    };
+    let create_pit_frame = os_transport::action::build_opensearch_create_pit_request_message(
+        420,
+        OPENSEARCH_3_7_0_TRANSPORT,
+        &create_pit_request,
+    )
+    .unwrap();
+    let create_pit_response =
+        send_transport_request_and_decode_response(transport_port, &create_pit_frame);
+    let pit_response =
+        os_transport::action::read_opensearch_create_pit_response_message(&create_pit_response)
+            .unwrap();
+    assert!(!pit_response.pit_id.is_empty());
+
+    let list_request = os_transport::action::OpenSearchGetAllPitsRequestWire::default();
+    let list_frame = os_transport::action::build_opensearch_get_all_pits_request_message(
+        421,
+        OPENSEARCH_3_7_0_TRANSPORT,
+        &list_request,
+    )
+    .unwrap();
+    let list_response = send_transport_request_and_decode_response(transport_port, &list_frame);
+    let listed_pits =
+        os_transport::action::read_opensearch_get_all_pits_response_message(&list_response)
+            .unwrap();
+    assert!(listed_pits
+        .nodes
+        .iter()
+        .flat_map(|node| node.pit_infos.iter())
+        .any(|pit_info| pit_info.pit_id == pit_response.pit_id));
+
+    terminate_child(&child);
+    let status = wait_for_child_exit(&mut child);
+    assert!(status.success(), "daemon did not exit cleanly: {status}");
+
+    let mut restarted = Command::new(&binary)
+        .arg("--http.host")
+        .arg("127.0.0.1")
+        .arg("--http.port")
+        .arg("0")
+        .arg("--transport.host")
+        .arg("127.0.0.1")
+        .arg("--transport.port")
+        .arg(transport_port.to_string())
+        .arg("--node.id")
+        .arg("steel-node-pit-transport-restart")
+        .arg("--node.name")
+        .arg("steel-node-pit-transport-restart")
+        .arg("--cluster.name")
+        .arg("steel-dev-pit-transport-restart")
+        .arg("--path.data")
+        .arg(&data_path)
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+
+    let stderr = restarted.stderr.take().unwrap();
+    let mut reader = BufReader::new(stderr);
+    let _restarted_http_port = read_reported_http_port(&mut reader);
+    let _guard = ChildGuard {
+        children: vec![restarted],
+    };
+
+    let post_restart_list_frame =
+        os_transport::action::build_opensearch_get_all_pits_request_message(
+            422,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &list_request,
+        )
+        .unwrap();
+    let post_restart_list_response =
+        send_transport_request_and_decode_response(transport_port, &post_restart_list_frame);
+    let post_restart_pits = os_transport::action::read_opensearch_get_all_pits_response_message(
+        &post_restart_list_response,
+    )
+    .unwrap();
+    assert!(post_restart_pits
+        .nodes
+        .iter()
+        .flat_map(|node| node.pit_infos.iter())
+        .all(|pit_info| pit_info.pit_id != pit_response.pit_id));
+
+    let stale_search_request = os_transport::action::OpenSearchSearchRequestWire {
+        source: Some(os_transport::action::OpenSearchSearchSourceBuilderWire {
+            point_in_time: Some(os_transport::action::OpenSearchPointInTimeBuilderWire {
+                id: pit_response.pit_id,
+                keep_alive: Some(os_transport::action::TimeValueWire::minutes(1)),
+            }),
+            ..os_transport::action::OpenSearchSearchSourceBuilderWire::default()
+        }),
+        indices_options:
+            os_transport::action::OpenSearchIndicesOptionsWire::point_in_time_search_prepared(),
+        ccs_minimize_roundtrips: false,
+        ..os_transport::action::OpenSearchSearchRequestWire::default()
+    };
+    let stale_search_frame = os_transport::action::build_opensearch_search_request_message(
+        423,
+        OPENSEARCH_3_7_0_TRANSPORT,
+        &stale_search_request,
+    )
+    .unwrap();
+    let stale_search_response =
+        send_transport_request_and_decode_response(transport_port, &stale_search_frame);
+    assert!(stale_search_response.status.is_error());
+    let error = os_transport::error::TransportError::read(stale_search_response.body.freeze())
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        error.class_name,
+        "org.opensearch.search.SearchContextMissingException"
+    );
+    assert!(
+        error
+            .message
+            .as_deref()
+            .is_some_and(|message| message.contains("No search context found for id")),
+        "{error:?}"
+    );
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
 fn multi_daemon_transport_create_pit_binds_reader_contexts_to_target_node() {
     let binary = os_node_binary();
     let root = unique_work_dir();
