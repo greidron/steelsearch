@@ -102,6 +102,58 @@ pub fn write_search_context_missing_exception(
     output.write_string(session_id);
 }
 
+pub fn write_search_phase_execution_exception_for_missing_context(
+    output: &mut StreamOutput,
+    phase_name: &str,
+    message: &str,
+    missing_context_message: &str,
+    session_id: &str,
+    context_id: i64,
+) {
+    output.write_bool(true);
+    output.write_vint(0);
+    output.write_vint(100);
+    output.write_optional_string(Some(message));
+    write_nested_search_context_missing_exception(
+        output,
+        Some(missing_context_message),
+        session_id,
+        context_id,
+    );
+    write_empty_stack_trace(output);
+    write_empty_string_list_map(output);
+    write_empty_string_list_map(output);
+    output.write_optional_string(Some(phase_name));
+    output.write_vint(1);
+    output.write_bool(false);
+    output.write_string(missing_context_message);
+    output.write_string("NOT_FOUND");
+    write_nested_search_context_missing_exception(
+        output,
+        Some(missing_context_message),
+        session_id,
+        context_id,
+    );
+}
+
+fn write_nested_search_context_missing_exception(
+    output: &mut StreamOutput,
+    message: Option<&str>,
+    session_id: &str,
+    context_id: i64,
+) {
+    output.write_bool(true);
+    output.write_vint(0);
+    output.write_vint(24);
+    output.write_optional_string(message);
+    output.write_bool(false);
+    write_empty_stack_trace(output);
+    write_empty_string_list_map(output);
+    write_empty_string_list_map(output);
+    output.write_i64(context_id);
+    output.write_string(session_id);
+}
+
 pub fn write_index_not_found_exception(output: &mut StreamOutput, index: &str) {
     output.write_bool(true);
     output.write_vint(0);
@@ -210,6 +262,10 @@ fn read_opensearch_exception(
             let _context_id = input.read_i64()?;
             let _session_id = input.read_string()?;
         }
+        100 => {
+            let _phase_name = input.read_optional_string()?;
+            skip_shard_search_failures(input)?;
+        }
         _ => {}
     }
 
@@ -274,6 +330,26 @@ fn skip_optional_transport_address(
     Ok(())
 }
 
+fn skip_shard_search_failures(input: &mut StreamInput) -> Result<(), TransportErrorDecodeError> {
+    let len = read_non_negative_len(input)?;
+    for _ in 0..len {
+        skip_optional_search_shard_target(input)?;
+        let _reason = input.read_string()?;
+        let _status = input.read_string()?;
+        let _cause = read_exception(input)?;
+    }
+    Ok(())
+}
+
+fn skip_optional_search_shard_target(
+    input: &mut StreamInput,
+) -> Result<(), TransportErrorDecodeError> {
+    if input.read_bool()? {
+        return Err(TransportErrorDecodeError::UnsupportedSearchShardTarget);
+    }
+    Ok(())
+}
+
 fn read_non_negative_len(input: &mut StreamInput) -> Result<usize, TransportErrorDecodeError> {
     let len = input.read_vint()?;
     if len < 0 {
@@ -291,6 +367,7 @@ fn opensearch_exception_class_name(id: i32) -> &'static str {
         19 => "org.opensearch.ResourceNotFoundException",
         68 => "org.opensearch.OpenSearchException",
         71 => "org.opensearch.action.FailedNodeException",
+        100 => "org.opensearch.action.search.SearchPhaseExecutionException",
         101 => "org.opensearch.transport.ActionNotFoundTransportException",
         102 => "org.opensearch.transport.TransportSerializationException",
         103 => "org.opensearch.transport.RemoteTransportException",
@@ -308,6 +385,8 @@ pub enum TransportErrorDecodeError {
     NegativeLength(i32),
     #[error("invalid transport address IP byte length: {0}")]
     InvalidIpLength(usize),
+    #[error("serialized search shard target payload is not supported")]
+    UnsupportedSearchShardTarget,
     #[error("transport error body has {0} trailing bytes")]
     TrailingBytes(usize),
 }
@@ -381,6 +460,36 @@ mod tests {
             Some("No search context found for id [42]")
         );
         assert!(error.cause.is_none());
+    }
+
+    #[test]
+    fn writes_search_phase_execution_exception_for_missing_context() {
+        let mut output = StreamOutput::new();
+        super::write_search_phase_execution_exception_for_missing_context(
+            &mut output,
+            "query",
+            "all shards failed",
+            "No search context found for id [77]",
+            "scroll-session",
+            77,
+        );
+
+        let error = TransportError::read(output.freeze()).unwrap().unwrap();
+
+        assert_eq!(
+            error.class_name,
+            "org.opensearch.action.search.SearchPhaseExecutionException"
+        );
+        assert_eq!(error.message.as_deref(), Some("all shards failed"));
+        let cause = error.cause.as_ref().expect("search phase cause");
+        assert_eq!(
+            cause.class_name,
+            "org.opensearch.search.SearchContextMissingException"
+        );
+        assert_eq!(
+            cause.message.as_deref(),
+            Some("No search context found for id [77]")
+        );
     }
 
     #[test]

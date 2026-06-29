@@ -12332,7 +12332,29 @@ fn build_search_scroll_missing_context_error_response(
     let Some(context_id) = missing_search_scroll_context_id(&request) else {
         return build_empty_transport_response(request_id, header_version_id);
     };
-    build_missing_search_context_error_response(request_id, header_version_id, &context_id)
+    build_search_scroll_phase_missing_context_error_response(
+        request_id,
+        header_version_id,
+        &context_id,
+    )
+}
+
+fn build_search_scroll_phase_missing_context_error_response(
+    request_id: i64,
+    header_version_id: u32,
+    context_id: &os_transport::action::OpenSearchShardSearchContextIdWire,
+) -> Vec<u8> {
+    let reason = format!("No search context found for id [{}]", context_id.id);
+    let mut output = StreamOutput::new();
+    os_transport::error::write_search_phase_execution_exception_for_missing_context(
+        &mut output,
+        "query",
+        "all shards failed",
+        &reason,
+        &context_id.session_id,
+        context_id.id,
+    );
+    build_transport_error_response_frame(request_id, header_version_id, output.freeze().to_vec())
 }
 
 fn search_scroll_request_supports_local_lifecycle_subset(body: &[u8]) -> bool {
@@ -38728,10 +38750,16 @@ mod tests {
             .unwrap();
         assert_eq!(
             error.class_name,
+            "org.opensearch.action.search.SearchPhaseExecutionException"
+        );
+        assert_eq!(error.message.as_deref(), Some("all shards failed"));
+        let cause = error.cause.as_ref().expect("search phase cause");
+        assert_eq!(
+            cause.class_name,
             "org.opensearch.search.SearchContextMissingException"
         );
         assert_eq!(
-            error.message.as_deref(),
+            cause.message.as_deref(),
             Some("No search context found for id [77]")
         );
     }
