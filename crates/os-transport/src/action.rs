@@ -2558,7 +2558,7 @@ pub fn classify_opensearch_transport_action(
         OPENSEARCH_DFS_PHASE_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "DFS phase transport execution requires ShardSearchRequest decode, distributed term-stat collection, and DfsSearchResult rendering",
+            reason: "DFS phase transport adapter decodes ShardSearchRequest and returns a bounded empty DfsSearchResult for source-free, match_all, and match_none local shard requests; distributed term-stat collection is not mapped yet",
         },
         OPENSEARCH_QUERY_PHASE_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -14064,6 +14064,47 @@ pub fn read_opensearch_can_match_request_message(
     )
 }
 
+pub fn build_opensearch_dfs_phase_request_message(
+    request_id: i64,
+    version: Version,
+    request: &OpenSearchShardSearchRequestWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    request.write(&mut body, version)?;
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::request(),
+        version,
+        variable_header: BytesMut::from(
+            &RequestVariableHeader::new(OPENSEARCH_DFS_PHASE_ACTION_NAME).to_bytes()[..],
+        ),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_dfs_phase_request_message(
+    message: &TransportMessage,
+) -> Result<OpenSearchShardSearchRequestWire, TransportActionWireError> {
+    if !message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "request",
+            actual: message.status.bits(),
+        });
+    }
+    let header = RequestVariableHeader::read(message.variable_header.clone().freeze())?;
+    if header.action != OPENSEARCH_DFS_PHASE_ACTION_NAME {
+        return Err(TransportActionWireError::UnexpectedAction {
+            expected: OPENSEARCH_DFS_PHASE_ACTION_NAME,
+            actual: header.action,
+        });
+    }
+    OpenSearchShardSearchRequestWire::read_for_version(
+        message.body.clone().freeze(),
+        message.version,
+    )
+}
+
 pub fn build_opensearch_query_id_request_message(
     request_id: i64,
     version: Version,
@@ -14103,6 +14144,35 @@ pub fn read_opensearch_query_id_request_message(
         message.body.clone().freeze(),
         message.version,
     )
+}
+
+pub fn build_opensearch_dfs_phase_response_message(
+    request_id: i64,
+    version: Version,
+    response: &OpenSearchDfsSearchResultWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    response.write(&mut body, version)?;
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::response(),
+        version,
+        variable_header: BytesMut::new(),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_dfs_phase_response_message(
+    message: &TransportMessage,
+) -> Result<OpenSearchDfsSearchResultWire, TransportActionWireError> {
+    if message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "response",
+            actual: message.status.bits(),
+        });
+    }
+    OpenSearchDfsSearchResultWire::read_for_version(message.body.clone().freeze(), message.version)
 }
 
 pub fn build_opensearch_can_match_response_message(
@@ -38768,6 +38838,174 @@ impl OpenSearchFreeScrollContextRequestWire {
 
     pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
         self.context_id.validate_supported_subset()
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchDfsTermStatisticsWire {
+    pub field: String,
+    pub term: Bytes,
+    pub doc_freq: i64,
+    pub total_term_freq_plus_one: i64,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct OpenSearchDfsSearchResultWire {
+    pub context_id: OpenSearchShardSearchContextIdWire,
+    pub term_statistics: Vec<OpenSearchDfsTermStatisticsWire>,
+    pub field_statistics: Vec<OpenSearchAggregatedDfsFieldStatisticsWire>,
+    pub max_doc: i32,
+    pub shard_search_request: Option<OpenSearchShardSearchRequestWire>,
+}
+
+impl OpenSearchDfsSearchResultWire {
+    pub fn empty(context_id: OpenSearchShardSearchContextIdWire, max_doc: i32) -> Self {
+        Self {
+            context_id,
+            term_statistics: Vec::new(),
+            field_statistics: Vec::new(),
+            max_doc,
+            shard_search_request: None,
+        }
+    }
+
+    pub fn write(
+        &self,
+        output: &mut StreamOutput,
+        version: Version,
+    ) -> Result<(), TransportActionWireError> {
+        self.validate_supported_subset()?;
+        self.context_id.write(output)?;
+        output.write_vint(self.term_statistics.len() as i32);
+        for stats in &self.term_statistics {
+            output.write_string(&stats.field);
+            output.write_bytes_reference(&stats.term);
+        }
+        output.write_vint(self.term_statistics.len() as i32);
+        for stats in &self.term_statistics {
+            output.write_vlong(stats.doc_freq);
+            output.write_vlong(stats.total_term_freq_plus_one);
+        }
+        output.write_vint(self.field_statistics.len() as i32);
+        for stats in &self.field_statistics {
+            output.write_string(&stats.field);
+            output.write_vlong(stats.max_doc);
+            output.write_vlong(stats.doc_count);
+            output.write_vlong(stats.sum_total_term_freq);
+            output.write_vlong(stats.sum_doc_freq);
+        }
+        output.write_vint(self.max_doc);
+        if let Some(request) = &self.shard_search_request {
+            output.write_bool(true);
+            request.write(output, version)?;
+        } else {
+            output.write_bool(false);
+        }
+        Ok(())
+    }
+
+    pub fn read_for_version(
+        bytes: Bytes,
+        version: Version,
+    ) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let context_id = OpenSearchShardSearchContextIdWire::read(&mut input)?;
+        let term_count = input.read_vint()?;
+        if term_count < 0 {
+            return Err(StreamInputError::NegativeLength(term_count).into());
+        }
+        let mut terms = Vec::with_capacity(term_count as usize);
+        for _ in 0..term_count {
+            terms.push((input.read_string()?, input.read_bytes_reference()?));
+        }
+        let stats_count = input.read_vint()?;
+        if stats_count < 0 {
+            return Err(StreamInputError::NegativeLength(stats_count).into());
+        }
+        if stats_count != term_count {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "dfs term statistics",
+                reason: "OpenSearch DfsSearchResult term count must match term-stat count",
+            });
+        }
+        let mut term_statistics = Vec::with_capacity(stats_count as usize);
+        for (field, term) in terms {
+            term_statistics.push(OpenSearchDfsTermStatisticsWire {
+                field,
+                term,
+                doc_freq: input.read_vlong()?,
+                total_term_freq_plus_one: input.read_vlong()?,
+            });
+        }
+
+        let field_count = input.read_vint()?;
+        if field_count < 0 {
+            return Err(StreamInputError::NegativeLength(field_count).into());
+        }
+        let mut field_statistics = Vec::with_capacity(field_count as usize);
+        for _ in 0..field_count {
+            field_statistics.push(OpenSearchAggregatedDfsFieldStatisticsWire {
+                field: input.read_string()?,
+                max_doc: input.read_vlong()?,
+                doc_count: input.read_vlong()?,
+                sum_total_term_freq: input.read_vlong()?,
+                sum_doc_freq: input.read_vlong()?,
+            });
+        }
+        let max_doc = input.read_vint()?;
+        let shard_search_request = if input.read_bool()? {
+            let remaining = input.remaining();
+            Some(OpenSearchShardSearchRequestWire::read_for_version(
+                input.read_bytes(remaining)?,
+                version,
+            )?)
+        } else {
+            None
+        };
+        require_no_trailing_bytes(&input)?;
+        let response = Self {
+            context_id,
+            term_statistics,
+            field_statistics,
+            max_doc,
+            shard_search_request,
+        };
+        response.validate_supported_subset()?;
+        Ok(response)
+    }
+
+    pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
+        self.context_id.validate_supported_subset()?;
+        for stats in &self.term_statistics {
+            if stats.doc_freq < 0 || stats.total_term_freq_plus_one < 0 {
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "dfs term statistics",
+                    reason: "OpenSearch DfsSearchResult term statistics are encoded as non-negative VLong values",
+                });
+            }
+        }
+        for stats in &self.field_statistics {
+            if stats.max_doc < 0
+                || stats.doc_count < 0
+                || stats.sum_total_term_freq < 0
+                || stats.sum_doc_freq < 0
+            {
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "dfs field statistics",
+                    reason: "OpenSearch DfsSearchResult field statistics are encoded as non-negative VLong values",
+                });
+            }
+        }
+        if self.max_doc < 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "dfs max doc",
+                reason: "OpenSearch DfsSearchResult maxDoc cannot be negative",
+            });
+        }
+        if let Some(request) = &self.shard_search_request {
+            request.validate_supported_subset()?;
+        }
+        Ok(())
     }
 }
 
@@ -80495,6 +80733,92 @@ mod tests {
         assert_eq!(
             read_opensearch_query_id_request_message(&message).unwrap(),
             empty_dfs_request
+        );
+    }
+
+    #[test]
+    fn opensearch_dfs_phase_transport_messages_round_trip() {
+        let request = OpenSearchShardSearchRequestWire {
+            shard_id: OpenSearchShardIdWire {
+                index_name: "logs-dfs".to_string(),
+                index_uuid: "uuid-logs-dfs".to_string(),
+                shard_id: 0,
+            },
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                query: Some(OpenSearchQueryBuilderWire::MatchAll(
+                    OpenSearchMatchAllQueryBuilderWire::default(),
+                )),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            original_indices: OpenSearchOriginalIndicesWire::new(
+                Some(vec!["logs-dfs".to_string()]),
+                OpenSearchIndicesOptionsWire::strict_expand_open_forbid_closed_ignore_throttled(),
+            ),
+            ..OpenSearchShardSearchRequestWire::default()
+        };
+        let mut frame =
+            build_opensearch_dfs_phase_request_message(69, OPENSEARCH_3_7_0_TRANSPORT, &request)
+                .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected dfs phase request message");
+        };
+        assert_eq!(
+            read_opensearch_dfs_phase_request_message(&message).unwrap(),
+            request
+        );
+        assert!(matches!(
+            read_opensearch_can_match_request_message(&message).unwrap_err(),
+            TransportActionWireError::UnexpectedAction {
+                expected: OPENSEARCH_QUERY_CAN_MATCH_ACTION_NAME,
+                ..
+            }
+        ));
+
+        let response = OpenSearchDfsSearchResultWire {
+            context_id: OpenSearchShardSearchContextIdWire::new("dfs-session", 69),
+            term_statistics: vec![OpenSearchDfsTermStatisticsWire {
+                field: "message".to_string(),
+                term: Bytes::from_static(b"steel"),
+                doc_freq: 2,
+                total_term_freq_plus_one: 5,
+            }],
+            field_statistics: vec![OpenSearchAggregatedDfsFieldStatisticsWire {
+                field: "message".to_string(),
+                max_doc: 6,
+                doc_count: 4,
+                sum_total_term_freq: 12,
+                sum_doc_freq: 8,
+            }],
+            max_doc: 6,
+            shard_search_request: None,
+        };
+        let mut frame =
+            build_opensearch_dfs_phase_response_message(69, OPENSEARCH_3_7_0_TRANSPORT, &response)
+                .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected dfs phase response message");
+        };
+        assert_eq!(
+            read_opensearch_dfs_phase_response_message(&message).unwrap(),
+            response
+        );
+
+        let empty_response = OpenSearchDfsSearchResultWire::empty(
+            OpenSearchShardSearchContextIdWire::new("", 70),
+            0,
+        );
+        let mut frame = build_opensearch_dfs_phase_response_message(
+            70,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &empty_response,
+        )
+        .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected empty dfs phase response message");
+        };
+        assert_eq!(
+            read_opensearch_dfs_phase_response_message(&message).unwrap(),
+            empty_response
         );
     }
 

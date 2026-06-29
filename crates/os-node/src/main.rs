@@ -4269,6 +4269,32 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end_at_ms,
         )?;
     } else if is_request
+        && normalized_action_hint == Some("indices:data/read/search[phase/dfs]")
+        && dfs_phase_request_supports_local_execution_subset(&body)
+    {
+        let response = build_local_dfs_phase_response(request_id, header_version_id, &body);
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("indices:data/read/search[phase/dfs]"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request
         && normalized_action_hint == Some("indices:data/read/search[phase/query/id]")
         && query_id_request_has_missing_reader_context(&body)
     {
@@ -18256,6 +18282,34 @@ fn can_match_request_supports_local_execution_subset(body: &[u8]) -> bool {
         })
 }
 
+fn dfs_phase_request_supports_local_execution_subset(body: &[u8]) -> bool {
+    decode_dfs_phase_request_from_transport_body(body)
+        .filter(|request| request.reject_unsupported_execution().is_ok())
+        .filter(|request| request.reader_id.is_none())
+        .filter(dfs_phase_request_has_no_term_statistics)
+        .filter(|request| {
+            create_reader_context_shard_admission(dev_transport_pit_bindings(), &request.shard_id)
+                == CreateReaderContextShardAdmission::Accepted
+        })
+        .is_some_and(|_| can_allocate_reader_context(dev_transport_pit_bindings()))
+}
+
+fn dfs_phase_request_has_no_term_statistics(
+    request: &os_transport::action::OpenSearchShardSearchRequestWire,
+) -> bool {
+    request
+        .source
+        .as_ref()
+        .and_then(|source| source.query.as_ref())
+        .map_or(true, |query| {
+            matches!(
+                query,
+                os_transport::action::OpenSearchQueryBuilderWire::MatchAll(_)
+                    | os_transport::action::OpenSearchQueryBuilderWire::MatchNone(_)
+            )
+        })
+}
+
 fn can_match_request_has_missing_reader_context(body: &[u8]) -> bool {
     decode_can_match_request_from_transport_body(body)
         .filter(|request| request.reject_unsupported_execution().is_ok())
@@ -18298,6 +18352,69 @@ fn build_can_match_missing_reader_context_error_response(
     build_missing_search_context_error_response(request_id, header_version_id, &reader_id)
 }
 
+fn build_local_dfs_phase_response(request_id: i64, header_version_id: u32, body: &[u8]) -> Vec<u8> {
+    let Some(request) = decode_dfs_phase_request_from_transport_body(body) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    if request.reject_unsupported_execution().is_err() || request.reader_id.is_some() {
+        return build_empty_transport_response(request_id, header_version_id);
+    }
+    if !dfs_phase_request_has_no_term_statistics(&request) {
+        return build_empty_transport_response(request_id, header_version_id);
+    }
+    if create_reader_context_shard_admission(dev_transport_pit_bindings(), &request.shard_id)
+        != CreateReaderContextShardAdmission::Accepted
+    {
+        return build_empty_transport_response(request_id, header_version_id);
+    }
+    if !can_allocate_reader_context(dev_transport_pit_bindings()) {
+        return build_empty_transport_response(request_id, header_version_id);
+    }
+
+    let bindings = dev_transport_pit_bindings();
+    let documents = transport_pit_document_snapshot(
+        bindings,
+        std::slice::from_ref(&request.shard_id.index_name),
+        None,
+    );
+    let max_doc = i32::try_from(documents.len()).unwrap_or(i32::MAX);
+    let keep_alive_millis = DEV_TRANSPORT_NON_POSITIVE_PIT_KEEP_ALIVE_MILLIS;
+    let now_millis = now_epoch_ms();
+    let context_id = {
+        let mut next_id = bindings
+            .next_id
+            .lock()
+            .expect("dev transport next PIT id lock poisoned");
+        *next_id += 1;
+        let context_id = os_transport::action::OpenSearchShardSearchContextIdWire::new(
+            format!("steelsearch-dfs-reader-{}", *next_id),
+            i64::try_from(*next_id).unwrap_or(i64::MAX),
+        );
+        let reader_context = DevTransportReaderContext {
+            shard_id: request.shard_id.clone(),
+            documents,
+            keep_alive_millis,
+            expires_at_millis: transport_pit_expires_at_millis(now_millis, keep_alive_millis),
+            pit_id: None,
+            creation_time_millis: None,
+        };
+        bindings
+            .reader_contexts
+            .lock()
+            .expect("dev transport reader contexts lock poisoned")
+            .insert(reader_context_key(&context_id), reader_context);
+        context_id
+    };
+    let response = os_transport::action::OpenSearchDfsSearchResultWire::empty(context_id, max_doc);
+    os_transport::action::build_opensearch_dfs_phase_response_message(
+        request_id,
+        Version::from_id(header_version_id as i32),
+        &response,
+    )
+    .map(|frame| frame.to_vec())
+    .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
+}
+
 fn build_query_id_missing_reader_context_error_response(
     request_id: i64,
     header_version_id: u32,
@@ -18332,6 +18449,13 @@ fn decode_can_match_request_from_transport_body(
 ) -> Option<os_transport::action::OpenSearchShardSearchRequestWire> {
     let message = decode_transport_message_from_body(body)?;
     os_transport::action::read_opensearch_can_match_request_message(&message).ok()
+}
+
+fn decode_dfs_phase_request_from_transport_body(
+    body: &[u8],
+) -> Option<os_transport::action::OpenSearchShardSearchRequestWire> {
+    let message = decode_transport_message_from_body(body)?;
+    os_transport::action::read_opensearch_dfs_phase_request_message(&message).ok()
 }
 
 fn decode_query_id_request_from_transport_body(
@@ -23709,6 +23833,15 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
             if can_match_request_has_missing_reader_context(body) =>
         {
             Some(build_can_match_missing_reader_context_error_response(
+                request_id,
+                header_version_id,
+                body,
+            ))
+        }
+        Some("indices:data/read/search[phase/dfs]")
+            if dfs_phase_request_supports_local_execution_subset(body) =>
+        {
+            Some(build_local_dfs_phase_response(
                 request_id,
                 header_version_id,
                 body,
@@ -42533,6 +42666,108 @@ mod tests {
             os_transport::action::read_opensearch_can_match_response_message(&message).unwrap();
         assert!(response.can_match);
         assert!(!response.estimated_min_and_max_present);
+    }
+
+    #[test]
+    fn dfs_phase_transport_route_creates_reader_context_and_empty_result() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        let bindings = dev_transport_pit_bindings();
+        bindings
+            .reader_contexts
+            .lock()
+            .expect("dev transport reader contexts lock poisoned")
+            .clear();
+        bindings
+            .documents
+            .lock()
+            .expect("dev transport documents lock poisoned")
+            .clear();
+        bindings
+            .created_indices
+            .lock()
+            .expect("dev transport created indices lock poisoned")
+            .clear();
+        bindings
+            .created_indices
+            .lock()
+            .expect("dev transport created indices lock poisoned")
+            .insert("logs-dfs-route".to_string());
+        bindings
+            .documents
+            .lock()
+            .expect("dev transport documents lock poisoned")
+            .insert(
+                "logs-dfs-route:doc-1:".to_string(),
+                StoredDocument {
+                    source: serde_json::json!({"message":"steel"}),
+                    version: 1,
+                    seq_no: 0,
+                    primary_term: 1,
+                    routing: None,
+                    refreshed: true,
+                }
+                .into(),
+            );
+        let request = os_transport::action::OpenSearchShardSearchRequestWire {
+            shard_id: os_transport::action::OpenSearchShardIdWire {
+                index_name: "logs-dfs-route".to_string(),
+                index_uuid: "uuid-logs-dfs-route".to_string(),
+                shard_id: 0,
+            },
+            source: Some(os_transport::action::OpenSearchSearchSourceBuilderWire {
+                query: Some(os_transport::action::OpenSearchQueryBuilderWire::MatchAll(
+                    os_transport::action::OpenSearchMatchAllQueryBuilderWire::default(),
+                )),
+                ..os_transport::action::OpenSearchSearchSourceBuilderWire::default()
+            }),
+            original_indices: os_transport::action::OpenSearchOriginalIndicesWire::new(
+                Some(vec!["logs-dfs-route".to_string()]),
+                os_transport::action::OpenSearchIndicesOptionsWire::strict_expand_open_forbid_closed_ignore_throttled(),
+            ),
+            ..os_transport::action::OpenSearchShardSearchRequestWire::default()
+        };
+        let frame = os_transport::action::build_opensearch_dfs_phase_request_message(
+            348,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(dfs_phase_request_supports_local_execution_subset(
+            &frame[6..]
+        ));
+
+        let response = build_local_dfs_phase_response(
+            348,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &frame[6..],
+        );
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected dfs phase response frame");
+        };
+        assert_eq!(message.request_id, 348);
+        assert!(!message.status.is_error());
+        let response =
+            os_transport::action::read_opensearch_dfs_phase_response_message(&message).unwrap();
+        assert!(response.term_statistics.is_empty());
+        assert!(response.field_statistics.is_empty());
+        assert_eq!(response.max_doc, 1);
+
+        let reader_contexts = bindings
+            .reader_contexts
+            .lock()
+            .expect("dev transport reader contexts lock poisoned");
+        let reader_context = reader_contexts
+            .get(&reader_context_key(&response.context_id))
+            .expect("dfs phase should register a reader context");
+        assert_eq!(reader_context.shard_id, request.shard_id);
+        assert_eq!(reader_context.documents.len(), 1);
     }
 
     #[test]
