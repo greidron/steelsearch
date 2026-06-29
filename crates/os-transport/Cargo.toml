@@ -416,8 +416,8 @@ name = "delete-composable-index-template-wire-benchmark"
 path = "benchmarks/delete_composable_index_template_wire.rs"
 
 [[bin]]
-name = "simulate-index-template-reject-wire-benchmark"
-path = "benchmarks/simulate_index_template_reject_wire.rs"
+name = "simulate-index-template-wire-benchmark"
+path = "benchmarks/simulate_index_template_wire.rs"
 
 [[bin]]
 name = "simulate-template-reject-wire-benchmark"

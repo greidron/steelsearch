@@ -2196,8 +2196,8 @@ pub fn classify_opensearch_transport_action(
         }
         OPENSEARCH_SIMULATE_INDEX_TEMPLATE_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
-            disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "simulate-index-template transport execution requires composable template resolution and simulated metadata response rendering",
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "simulate-index-template transport adapter renders the OpenSearch no-match response when no manifest composable template matches the requested index",
         },
         OPENSEARCH_SIMULATE_TEMPLATE_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -11202,6 +11202,35 @@ pub fn read_opensearch_simulate_index_template_request_message(
         });
     }
     OpenSearchSimulateIndexTemplateRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_opensearch_simulate_index_template_response_message(
+    request_id: i64,
+    version: Version,
+    response: &OpenSearchSimulateIndexTemplateResponseWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    response.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::response(),
+        version,
+        variable_header: BytesMut::new(),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_simulate_index_template_response_message(
+    message: &TransportMessage,
+) -> Result<OpenSearchSimulateIndexTemplateResponseWire, TransportActionWireError> {
+    if message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "response",
+            actual: message.status.bits(),
+        });
+    }
+    OpenSearchSimulateIndexTemplateResponseWire::read(message.body.clone().freeze())
 }
 
 pub fn build_opensearch_simulate_template_request_message(
@@ -25055,7 +25084,7 @@ impl OpenSearchSimulateIndexTemplateRequestWire {
         Ok(request)
     }
 
-    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+    pub fn validate_supported_no_match_subset(&self) -> Result<(), TransportActionWireError> {
         if self.cluster_manager_timeout != TimeValueWire::seconds(30) {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "simulate index template cluster-manager timeout",
@@ -25083,10 +25112,75 @@ impl OpenSearchSimulateIndexTemplateRequestWire {
                     "inline simulate-index-template bodies require composable template validation and merge simulation",
             });
         }
+        Ok(())
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        self.validate_supported_no_match_subset()?;
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "simulate index template execution",
             reason:
-                "simulate-index-template transport execution requires template resolution and simulated metadata response rendering",
+                "use validate_supported_no_match_subset for the implemented no-match simulate-index-template adapter",
+        })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Default)]
+pub struct OpenSearchSimulateIndexTemplateResponseWire {
+    pub resolved_template: Option<OpenSearchTemplateWire>,
+    pub overlapping_templates: Option<BTreeMap<String, Vec<String>>>,
+}
+
+impl OpenSearchSimulateIndexTemplateResponseWire {
+    pub fn no_match() -> Self {
+        Self {
+            resolved_template: None,
+            overlapping_templates: None,
+        }
+    }
+
+    pub fn write(&self, output: &mut StreamOutput) {
+        if let Some(template) = &self.resolved_template {
+            output.write_bool(true);
+            template.write(output);
+        } else {
+            output.write_bool(false);
+        }
+        if let Some(overlapping_templates) = &self.overlapping_templates {
+            output.write_bool(true);
+            output.write_vint(overlapping_templates.len() as i32);
+            for (name, index_patterns) in overlapping_templates {
+                output.write_string(name);
+                output.write_string_array(index_patterns);
+            }
+        } else {
+            output.write_bool(false);
+        }
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let resolved_template = if input.read_bool()? {
+            Some(OpenSearchTemplateWire::read(&mut input)?)
+        } else {
+            None
+        };
+        let overlapping_templates = if input.read_bool()? {
+            let count = read_len(&mut input)?;
+            let mut templates = BTreeMap::new();
+            for _ in 0..count {
+                let name = input.read_string()?;
+                let index_patterns = input.read_string_array()?;
+                templates.insert(name, index_patterns);
+            }
+            Some(templates)
+        } else {
+            None
+        };
+        require_no_trailing_bytes(&input)?;
+        Ok(Self {
+            resolved_template,
+            overlapping_templates,
         })
     }
 }
@@ -64804,6 +64898,7 @@ mod tests {
         let decoded = OpenSearchSimulateIndexTemplateRequestWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, request);
         assert_eq!(decoded.index_name, "logs-000001");
+        decoded.validate_supported_no_match_subset().unwrap();
         assert!(matches!(
             decoded.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
@@ -64885,7 +64980,8 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_simulate_index_template_transport_messages_bind_rejected_action_frame() {
+    fn opensearch_simulate_index_template_transport_messages_bind_action_frame_and_no_match_response(
+    ) {
         let request = OpenSearchSimulateIndexTemplateRequestWire::default();
         let mut frame = build_opensearch_simulate_index_template_request_message(
             66,
@@ -64900,6 +64996,10 @@ mod tests {
             read_opensearch_simulate_index_template_request_message(&message).unwrap(),
             request
         );
+        read_opensearch_simulate_index_template_request_message(&message)
+            .unwrap()
+            .validate_supported_no_match_subset()
+            .unwrap();
         assert!(matches!(
             read_opensearch_simulate_index_template_request_message(&message)
                 .unwrap()
@@ -64909,6 +65009,21 @@ mod tests {
                 ..
             })
         ));
+
+        let response = OpenSearchSimulateIndexTemplateResponseWire::no_match();
+        let mut frame = build_opensearch_simulate_index_template_response_message(
+            66,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &response,
+        )
+        .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected simulate index template response message");
+        };
+        assert_eq!(
+            read_opensearch_simulate_index_template_response_message(&message).unwrap(),
+            response
+        );
     }
 
     #[test]

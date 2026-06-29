@@ -2212,6 +2212,32 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end_at_ms,
         )?;
     } else if is_request
+        && normalized_action_hint == Some("indices:admin/index_template/simulate_index")
+        && simulate_index_template_request_supports_no_match_subset(&body)
+    {
+        let response = build_simulate_index_template_response(request_id, header_version_id, &body);
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("indices:admin/index_template/simulate_index"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request
         && normalized_action_hint == Some("indices:admin/template/put")
         && put_index_template_request_supports_manifest_execution_subset(&body)
     {
@@ -7551,6 +7577,73 @@ fn decode_delete_composable_index_template_request_from_transport_body(
     let message = decode_transport_message_from_body(body)?;
     os_transport::action::read_opensearch_delete_composable_index_template_request_message(&message)
         .ok()
+}
+
+fn build_simulate_index_template_response(
+    request_id: i64,
+    header_version_id: u32,
+    body: &[u8],
+) -> Vec<u8> {
+    let Some(request) = decode_simulate_index_template_request_from_transport_body(body) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    if !simulate_index_template_request_matches_no_match_subset(&request) {
+        return build_empty_transport_response(request_id, header_version_id);
+    }
+    os_transport::action::build_opensearch_simulate_index_template_response_message(
+        request_id,
+        Version::from_id(header_version_id as i32),
+        &os_transport::action::OpenSearchSimulateIndexTemplateResponseWire::no_match(),
+    )
+    .map(|frame| frame.to_vec())
+    .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
+}
+
+fn simulate_index_template_request_supports_no_match_subset(body: &[u8]) -> bool {
+    decode_simulate_index_template_request_from_transport_body(body)
+        .is_some_and(|request| simulate_index_template_request_matches_no_match_subset(&request))
+}
+
+fn decode_simulate_index_template_request_from_transport_body(
+    body: &[u8],
+) -> Option<os_transport::action::OpenSearchSimulateIndexTemplateRequestWire> {
+    let message = decode_transport_message_from_body(body)?;
+    os_transport::action::read_opensearch_simulate_index_template_request_message(&message).ok()
+}
+
+fn simulate_index_template_request_matches_no_match_subset(
+    request: &os_transport::action::OpenSearchSimulateIndexTemplateRequestWire,
+) -> bool {
+    request.validate_supported_no_match_subset().is_ok()
+        && !manifest_composable_index_template_matches(&request.index_name)
+}
+
+fn manifest_composable_index_template_matches(index_name: &str) -> bool {
+    let manifest = dev_transport_pit_bindings()
+        .metadata_manifest
+        .lock()
+        .expect("dev transport metadata manifest lock poisoned");
+    let Some(templates) = manifest
+        .pointer("/templates/index_templates")
+        .and_then(Value::as_object)
+    else {
+        return false;
+    };
+    templates.values().any(|template_entry| {
+        let index_template = template_entry
+            .get("index_template")
+            .unwrap_or(template_entry);
+        index_template
+            .get("index_patterns")
+            .or_else(|| index_template.get("indexPatterns"))
+            .and_then(Value::as_array)
+            .is_some_and(|patterns| {
+                patterns
+                    .iter()
+                    .filter_map(Value::as_str)
+                    .any(|pattern| wildcard_match(pattern, index_name))
+            })
+    })
 }
 
 fn get_composable_index_template_response_from_metadata_manifest(
@@ -18134,6 +18227,15 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
                 body,
             ))
         }
+        Some("indices:admin/index_template/simulate_index")
+            if simulate_index_template_request_supports_no_match_subset(body) =>
+        {
+            Some(build_simulate_index_template_response(
+                request_id,
+                header_version_id,
+                body,
+            ))
+        }
         Some("indices:admin/template/put")
             if put_index_template_request_supports_manifest_execution_subset(body) =>
         {
@@ -25043,6 +25145,84 @@ mod tests {
         assert_eq!(template.aliases[0].alias, "logs-template-read");
         assert_eq!(template.aliases[0].write_index, Some(false));
         assert_eq!(template.version, Some(3));
+    }
+
+    #[test]
+    fn simulate_index_template_transport_route_returns_no_match_response() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        *dev_transport_pit_bindings()
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned") = serde_json::json!({
+            "templates": {
+                "index_templates": {
+                    "metrics-template": {
+                        "index_template": {
+                            "index_patterns": ["metrics-*"],
+                            "template": {
+                                "settings": {}
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+        let request = os_transport::action::OpenSearchSimulateIndexTemplateRequestWire {
+            index_name: "logs-simulate-000001".to_string(),
+            ..os_transport::action::OpenSearchSimulateIndexTemplateRequestWire::default()
+        };
+        let frame = os_transport::action::build_opensearch_simulate_index_template_request_message(
+            186,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(simulate_index_template_request_supports_no_match_subset(
+            &frame[6..]
+        ));
+
+        let response = build_simulate_index_template_response(
+            186,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &frame[6..],
+        );
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected simulate index template response message");
+        };
+        assert_eq!(message.request_id, 186);
+        assert!(!message.status.is_request());
+        let response =
+            os_transport::action::read_opensearch_simulate_index_template_response_message(
+                &message,
+            )
+            .unwrap();
+        assert_eq!(
+            response,
+            os_transport::action::OpenSearchSimulateIndexTemplateResponseWire::no_match()
+        );
+
+        let matched_request = os_transport::action::OpenSearchSimulateIndexTemplateRequestWire {
+            index_name: "metrics-simulate-000001".to_string(),
+            ..os_transport::action::OpenSearchSimulateIndexTemplateRequestWire::default()
+        };
+        let matched_frame =
+            os_transport::action::build_opensearch_simulate_index_template_request_message(
+                187,
+                OPENSEARCH_3_7_0_TRANSPORT,
+                &matched_request,
+            )
+            .unwrap();
+        assert!(!simulate_index_template_request_supports_no_match_subset(
+            &matched_frame[6..]
+        ));
     }
 
     #[test]

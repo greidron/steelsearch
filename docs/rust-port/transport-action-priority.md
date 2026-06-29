@@ -177,8 +177,8 @@ The source-derived transport inventory currently has 160 rows:
 
 | Status | Count | Meaning |
 | --- | ---: | --- |
-| `implemented` | 101 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
-| `partial` | 59 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
+| `implemented` | 102 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
+| `partial` | 58 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
 | `planned` | 0 | No source-derived transport action remains unclassified. |
 
 The k-NN plugin action sweep is complete at the boundary layer. All 12
@@ -1692,12 +1692,14 @@ The simulate-index-template boundary covers:
   timeout, local flag, index name, and optional nested
   `PutComposableIndexTemplateAction.Request` marker at the OpenSearch 3.x wire
   decode/build layer;
-- explicit fail-closed classification for
-  `indices:admin/index_template/simulate_index` until composable template
-  resolution and simulated metadata response rendering are implemented against
-  Rust cluster metadata;
+- implemented classification for `indices:admin/index_template/simulate_index`
+  when the request uses the default timeout, `local=false`, no inline template
+  body, a non-empty index name, and no manifest composable template matches the
+  requested index;
+- OpenSearch `SimulateIndexTemplateResponse(null, null)` wire rendering for
+  the no-match path that OpenSearch returns before template resolution work;
 - explicit rejection for custom cluster-manager timeouts, local reads, missing
-  index names, inline template bodies, and simulate-index-template execution.
+  index names, inline template bodies, and matched-template simulation.
 
 The simulate-template boundary covers:
 
@@ -4598,22 +4600,25 @@ validation, manifest-backed composable index-template metadata removal in the
 node adapter, and acknowledged response rendering; future performance-sensitive
 work is metadata publication across distributed cluster-state ownership.
 
-Current simulate-index-template reject wire microbenchmark:
+Current simulate-index-template wire microbenchmark:
 
 ```text
-cargo run -p os-transport --release --bin simulate-index-template-reject-wire-benchmark
-simulate_index_template_reject_request_encode iterations=400000 elapsed_ms=294.544 ops_per_second=1358033.57 nanos_per_op=736.36
-simulate_index_template_reject_request_decode iterations=400000 elapsed_ms=286.071 ops_per_second=1398255.80 nanos_per_op=715.18
-simulate_index_template_reject_validation iterations=400000 elapsed_ms=293.855 ops_per_second=1361217.60 nanos_per_op=734.64
-simulate_index_template_reject_wire_bottleneck_ops_per_second=1358033.57
+cargo run -q -p os-transport --release --bin simulate-index-template-wire-benchmark
+simulate_index_template_request_encode iterations=400000 elapsed_ms=295.042 ops_per_second=1355738.64 nanos_per_op=737.61
+simulate_index_template_request_decode iterations=400000 elapsed_ms=292.061 ops_per_second=1369574.80 nanos_per_op=730.15
+simulate_index_template_request_validate iterations=400000 elapsed_ms=302.256 ops_per_second=1323380.51 nanos_per_op=755.64
+simulate_index_template_response_encode iterations=400000 elapsed_ms=50.338 ops_per_second=7946220.46 nanos_per_op=125.85
+simulate_index_template_response_decode iterations=400000 elapsed_ms=65.203 ops_per_second=6134685.36 nanos_per_op=163.01
+simulate_index_template_wire_bottleneck_ops_per_second=1323380.51
 ```
 
-The current simulate-index-template fail-closed boundary bottleneck is request
-encode. The default benchmark writes the cluster-manager read request envelope,
-local flag, index name, and absent inline template body before rejecting
-execution. At roughly 1.36M ops/s in the latest local release run, the
-remaining performance-sensitive work is composable template resolution,
-simulation merge logic, and simulated metadata response rendering.
+The current simulate-index-template transport boundary bottleneck is request
+validation. The default benchmark writes the cluster-manager read request
+envelope, local flag, index name, absent inline template body, and no-match
+response. At roughly 1.32M ops/s in the latest local release run, the remaining
+performance-sensitive work is matched composable template resolution,
+simulation merge logic, overlap calculation, and full simulated metadata
+response rendering.
 
 Current simulate-template reject wire microbenchmark:
 
