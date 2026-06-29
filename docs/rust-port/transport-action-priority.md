@@ -317,7 +317,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `indices:data/read/search/stream` (implemented bounded local search subset)
 - `indices:data/read/msearch` (implemented bounded ordered sub-search subset)
 - `indices:data/read/scroll` (implemented local scroll-page subset)
-- `indices:data/read/scroll/clear` (implemented `_all` empty clear-scroll subset)
+- `indices:data/read/scroll/clear` (implemented local clear-scroll lifecycle subset)
 - `indices:data/read/explain` (implemented bounded local explain subset)
 - `indices:data/read/point_in_time/create` (implemented local PIT lifecycle subset)
 - `indices:data/read/point_in_time/delete` (implemented local PIT lifecycle subset)
@@ -2343,6 +2343,9 @@ The search-scroll boundary covers:
 - decoded OpenSearch opaque scroll ids that carry a single local
   `ShardSearchContextId`, resolving the local context key from `(session,id)`
   before advancing the stored page cursor;
+- decoded OpenSearch opaque scroll ids whose referenced local scroll context is
+  missing now render a transport `SearchContextMissingException` instead of
+  falling through to an empty transport response;
 - explicit rejection for empty scroll ids and unsupported search-scroll
   execution shapes.
 
@@ -5487,15 +5490,15 @@ Current search-scroll reject wire microbenchmark:
 
 ```text
 cargo run -p os-transport --release --bin search-scroll-reject-wire-benchmark
-search_scroll_reject_request_encode iterations=400000 elapsed_ms=267.102 ops_per_second=1497553.09 nanos_per_op=667.76
-search_scroll_reject_request_decode iterations=400000 elapsed_ms=255.354 ops_per_second=1566452.39 nanos_per_op=638.39
-search_scroll_reject_validation iterations=400000 elapsed_ms=248.034 ops_per_second=1612682.60 nanos_per_op=620.08
-search_scroll_reject_wire_bottleneck_ops_per_second=1497553.09
+search_scroll_reject_request_encode iterations=400000 elapsed_ms=259.726 ops_per_second=1540082.32 nanos_per_op=649.32
+search_scroll_reject_request_decode iterations=400000 elapsed_ms=244.065 ops_per_second=1638908.29 nanos_per_op=610.16
+search_scroll_reject_validation iterations=400000 elapsed_ms=244.530 ops_per_second=1635788.74 nanos_per_op=611.33
+search_scroll_reject_wire_bottleneck_ops_per_second=1540082.32
 ```
 
 The current search-scroll fail-closed boundary bottleneck is request encode.
 This path carries only the ActionRequest parent task, scroll id, and optional
-keep-alive time value before rejecting execution. At roughly 1.50M ops/s in the
+keep-alive time value before rejecting execution. At roughly 1.54M ops/s in the
 latest local release run, it remains a lightweight scroll control boundary; the
 first performance point to inspect before accepting execution is scroll context
 lookup/update and search response rendering.

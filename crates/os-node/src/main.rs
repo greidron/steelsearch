@@ -3391,6 +3391,36 @@ fn handle_transport_seed_connection<S: TransportConnection>(
         )?;
     } else if is_request
         && normalized_action_hint == Some("indices:data/read/scroll")
+        && search_scroll_request_has_missing_context(&body)
+    {
+        let response = build_search_scroll_missing_context_error_response(
+            request_id,
+            header_version_id,
+            &body,
+        );
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("indices:data/read/scroll"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request
+        && normalized_action_hint == Some("indices:data/read/scroll")
         && search_scroll_request_supports_local_lifecycle_subset(&body)
     {
         let response = build_local_search_scroll_response(request_id, header_version_id, &body);
@@ -12285,6 +12315,26 @@ fn build_local_search_scroll_response(
     .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
 }
 
+fn search_scroll_request_has_missing_context(body: &[u8]) -> bool {
+    decode_search_scroll_request_from_transport_body(body)
+        .as_ref()
+        .is_some_and(|request| missing_search_scroll_context_id(request).is_some())
+}
+
+fn build_search_scroll_missing_context_error_response(
+    request_id: i64,
+    header_version_id: u32,
+    body: &[u8],
+) -> Vec<u8> {
+    let Some(request) = decode_search_scroll_request_from_transport_body(body) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    let Some(context_id) = missing_search_scroll_context_id(&request) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    build_missing_search_context_error_response(request_id, header_version_id, &context_id)
+}
+
 fn search_scroll_request_supports_local_lifecycle_subset(body: &[u8]) -> bool {
     decode_search_scroll_request_from_transport_body(body)
         .as_ref()
@@ -12309,6 +12359,24 @@ fn decode_search_scroll_request_from_transport_body(
 ) -> Option<os_transport::action::OpenSearchSearchScrollRequestWire> {
     let message = decode_transport_message_from_body(body)?;
     os_transport::action::read_opensearch_search_scroll_request_message(&message).ok()
+}
+
+fn missing_search_scroll_context_id(
+    request: &os_transport::action::OpenSearchSearchScrollRequestWire,
+) -> Option<os_transport::action::OpenSearchShardSearchContextIdWire> {
+    if request.validate_supported_execution_subset().is_err() {
+        return None;
+    }
+    let parsed =
+        os_transport::action::OpenSearchParsedScrollIdWire::decode(&request.scroll_id).ok()?;
+    let contexts = dev_transport_scroll_bindings()
+        .contexts
+        .lock()
+        .expect("dev transport scroll contexts lock poisoned");
+    parsed.contexts.iter().find_map(|context| {
+        let context_key = transport_scroll_context_key(&context.search_context_id);
+        (!contexts.contains_key(&context_key)).then(|| context.search_context_id.clone())
+    })
 }
 
 fn advance_transport_scroll_context(
@@ -12361,6 +12429,12 @@ fn transport_scroll_context_key_for_scroll_id(scroll_id: &str) -> String {
             (keys.len() == 1).then(|| keys[0].clone())
         })
         .unwrap_or_else(|| scroll_id.to_string())
+}
+
+fn transport_scroll_context_key(
+    context_id: &os_transport::action::OpenSearchShardSearchContextIdWire,
+) -> String {
+    format!("{}:{}", context_id.session_id, context_id.id)
 }
 
 fn transport_scroll_hit_from_rest_hit(
@@ -19821,6 +19895,13 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
             if multi_search_request_supports_local_execution_subset(body) =>
         {
             Some(build_local_multi_search_response(
+                request_id,
+                header_version_id,
+                body,
+            ))
+        }
+        Some("indices:data/read/scroll") if search_scroll_request_has_missing_context(body) => {
+            Some(build_search_scroll_missing_context_error_response(
                 request_id,
                 header_version_id,
                 body,
@@ -38587,6 +38668,71 @@ mod tests {
                 .get("scroll-session:42")
                 .map(|context| context.remaining_hits.len()),
             Some(0)
+        );
+    }
+
+    #[test]
+    fn search_scroll_transport_route_rejects_missing_decoded_context_like_opensearch() {
+        let _lock = dev_transport_scroll_test_lock()
+            .lock()
+            .expect("dev transport scroll test lock poisoned");
+        dev_transport_scroll_bindings()
+            .contexts
+            .lock()
+            .expect("dev transport scroll contexts lock poisoned")
+            .clear();
+        let scroll_id = os_transport::action::OpenSearchParsedScrollIdWire::new(vec![
+            os_transport::action::OpenSearchSearchContextIdForNodeWire {
+                node: "steel-node-id".to_string(),
+                cluster_alias: None,
+                search_context_id: os_transport::action::OpenSearchShardSearchContextIdWire::new(
+                    "scroll-missing-session",
+                    77,
+                ),
+            },
+        ])
+        .encode()
+        .unwrap();
+        let request = os_transport::action::OpenSearchSearchScrollRequestWire {
+            scroll_id,
+            ..os_transport::action::OpenSearchSearchScrollRequestWire::default()
+        };
+        let frame = os_transport::action::build_opensearch_search_scroll_request_message(
+            207,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(search_scroll_request_has_missing_context(&frame[6..]));
+        assert!(!search_scroll_request_supports_local_lifecycle_subset(
+            &frame[6..]
+        ));
+
+        let response = build_search_scroll_missing_context_error_response(
+            207,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &frame[6..],
+        );
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected search-scroll missing-context error response message");
+        };
+        assert_eq!(message.request_id, 207);
+        assert!(message.status.is_error());
+        let error = os_transport::error::TransportError::read(message.body.freeze())
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            error.class_name,
+            "org.opensearch.search.SearchContextMissingException"
+        );
+        assert_eq!(
+            error.message.as_deref(),
+            Some("No search context found for id [77]")
         );
     }
 
