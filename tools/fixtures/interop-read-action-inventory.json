@@ -191,16 +191,16 @@
       "kind": "rest",
       "family": "cluster-read",
       "backing": "cluster:monitor/nodes/info",
-      "disposition": "rejected",
-      "reason": "Node-info forwarding is not part of the initial accepted admin scope and remains fail-closed until explicitly validated."
+      "disposition": "implemented",
+      "reason": "Node-info forwarding is a read-only observer surface and uses the same discovery-node fanout planning as node stats."
     },
     {
       "surface": "cluster:monitor/nodes/info",
       "kind": "transport",
       "family": "cluster-read",
       "backing": "TransportNodesInfoAction",
-      "disposition": "rejected",
-      "reason": "Not yet validated as a forwarded observer surface."
+      "disposition": "implemented",
+      "reason": "Nodes-info transport adapter is available for the local node-info subset."
     },
     {
       "surface": "cluster:monitor/nodes/liveness",

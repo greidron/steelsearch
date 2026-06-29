@@ -887,7 +887,7 @@ pub const OPENSEARCH_PRIORITY_TRANSPORT_ACTIONS: &[OpenSearchPriorityTransportAc
         request_wire_type: "ExplainRequest",
         response_wire_type: "ExplainResponse",
         adapter_stage: "search-read",
-        next_step: "map explain query builders and explanation rendering onto the Rust search executor",
+        next_step: "expand bounded match_all/match_none local explain execution toward broader query builders and shard routing",
     },
     OpenSearchPriorityTransportActionSpec {
         action_name: OPENSEARCH_CREATE_PIT_ACTION_NAME,
@@ -48798,7 +48798,7 @@ mod tests {
                     request_wire_type: "ExplainRequest",
                     response_wire_type: "ExplainResponse",
                     adapter_stage: "search-read",
-                    next_step: "map explain query builders and explanation rendering onto the Rust search executor",
+                    next_step: "expand bounded match_all/match_none local explain execution toward broader query builders and shard routing",
                 },
                 OpenSearchPriorityTransportActionSpec {
                     action_name: "indices:data/read/point_in_time/create",
@@ -79004,7 +79004,7 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_explain_transport_messages_bind_rejected_action_frame() {
+    fn opensearch_explain_transport_messages_bind_action_frame_and_execution_boundary() {
         let request = OpenSearchExplainRequestWire::default();
         let mut frame =
             build_opensearch_explain_request_message(50, OPENSEARCH_3_7_0_TRANSPORT, &request)

@@ -1178,7 +1178,7 @@ pub fn plan_interop_read_forwarding(
                     .unwrap_or_else(|| node.address.clone()),
             }])
         }
-        "GET /_nodes/stats" => {
+        "GET /_nodes/info" | "GET /_nodes/stats" => {
             if state.discovery_nodes.nodes.is_empty() {
                 return Err(InteropReadForwardingError::MissingDiscoveryNode {
                     surface: surface.to_string(),
@@ -8491,6 +8491,28 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn interop_read_forwarding_plans_nodes_info_to_all_discovery_nodes() {
+        let mut state = minimal_cluster_state_with_uuid("cached-state-uuid");
+        state.discovery_nodes.cluster_manager_node_id = Some("node-1".into());
+        state.discovery_nodes.nodes = vec![
+            interop_discovery_node("node-1", "interop-node-1", 9300),
+            interop_discovery_node("node-2", "interop-node-2", 9301),
+        ];
+
+        let targets = plan_interop_read_forwarding(&state, "GET /_nodes/info").unwrap();
+
+        assert_eq!(targets.len(), 2);
+        assert_eq!(targets[0].node_id, "node-1");
+        assert_eq!(targets[0].node_name, "interop-node-1");
+        assert_eq!(targets[0].transport_address.host, "127.0.0.1");
+        assert_eq!(targets[0].transport_address.port, 9300);
+        assert_eq!(targets[1].node_id, "node-2");
+        assert_eq!(targets[1].node_name, "interop-node-2");
+        assert_eq!(targets[1].transport_address.host, "127.0.0.1");
+        assert_eq!(targets[1].transport_address.port, 9301);
     }
 
     #[test]
