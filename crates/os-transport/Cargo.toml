@@ -600,6 +600,10 @@ name = "free-scroll-context-wire-benchmark"
 path = "benchmarks/free_scroll_context_wire.rs"
 
 [[bin]]
+name = "can-match-response-wire-benchmark"
+path = "benchmarks/can_match_response_wire.rs"
+
+[[bin]]
 name = "explain-reject-wire-benchmark"
 path = "benchmarks/explain_reject_wire.rs"
 

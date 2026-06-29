@@ -2591,7 +2591,7 @@ pub fn classify_opensearch_transport_action(
         OPENSEARCH_QUERY_CAN_MATCH_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "can-match transport execution requires ShardSearchRequest decode, query rewrite, shard metadata checks, and CanMatchResponse rendering",
+            reason: "can-match transport execution requires ShardSearchRequest decode, query rewrite, and shard metadata checks; bounded CanMatchResponse rendering is available",
         },
         OPENSEARCH_EXPLAIN_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -13744,6 +13744,35 @@ pub fn read_opensearch_stream_search_request_message(
         });
     }
     OpenSearchSearchRequestWire::read_for_version(message.body.clone().freeze(), message.version)
+}
+
+pub fn build_opensearch_can_match_response_message(
+    request_id: i64,
+    version: Version,
+    response: &OpenSearchCanMatchResponseWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    response.write(&mut body)?;
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::response(),
+        version,
+        variable_header: BytesMut::new(),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_can_match_response_message(
+    message: &TransportMessage,
+) -> Result<OpenSearchCanMatchResponseWire, TransportActionWireError> {
+    if message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "response",
+            actual: message.status.bits(),
+        });
+    }
+    OpenSearchCanMatchResponseWire::read(message.body.clone().freeze())
 }
 
 pub fn build_opensearch_multi_search_request_message(
@@ -28696,6 +28725,50 @@ impl OpenSearchListViewNamesResponseWire {
             });
         }
         Ok(())
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchCanMatchResponseWire {
+    pub can_match: bool,
+    pub estimated_min_and_max_present: bool,
+}
+
+impl OpenSearchCanMatchResponseWire {
+    pub fn new(can_match: bool) -> Self {
+        Self {
+            can_match,
+            estimated_min_and_max_present: false,
+        }
+    }
+
+    pub fn write(&self, output: &mut StreamOutput) -> Result<(), TransportActionWireError> {
+        output.write_bool(self.can_match);
+        if self.estimated_min_and_max_present {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "can-match estimated min/max response",
+                reason: "OpenSearch CanMatchResponse MinAndMax uses Lucene sort-value generic encoding, which is not mapped by this bounded response writer yet",
+            });
+        }
+        output.write_bool(false);
+        Ok(())
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let can_match = input.read_bool()?;
+        let estimated_min_and_max_present = input.read_bool()?;
+        if estimated_min_and_max_present {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "can-match estimated min/max response",
+                reason: "OpenSearch CanMatchResponse MinAndMax uses Lucene sort-value generic encoding, which is not decoded by this bounded response reader yet",
+            });
+        }
+        require_no_trailing_bytes(&input)?;
+        Ok(Self {
+            can_match,
+            estimated_min_and_max_present,
+        })
     }
 }
 
@@ -76382,6 +76455,57 @@ mod tests {
                 .reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "search request execution",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opensearch_can_match_response_message_round_trips_bounded_response() {
+        let response = OpenSearchCanMatchResponseWire::new(true);
+        let mut frame =
+            build_opensearch_can_match_response_message(147, OPENSEARCH_3_7_0_TRANSPORT, &response)
+                .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected can-match response message");
+        };
+        assert_eq!(
+            read_opensearch_can_match_response_message(&message).unwrap(),
+            response
+        );
+
+        let response = OpenSearchCanMatchResponseWire::new(false);
+        let mut frame =
+            build_opensearch_can_match_response_message(148, OPENSEARCH_3_7_0_TRANSPORT, &response)
+                .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected negative can-match response message");
+        };
+        assert_eq!(
+            read_opensearch_can_match_response_message(&message).unwrap(),
+            response
+        );
+
+        let unsupported = OpenSearchCanMatchResponseWire {
+            can_match: true,
+            estimated_min_and_max_present: true,
+        };
+        let mut output = StreamOutput::new();
+        assert!(matches!(
+            unsupported.write(&mut output),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "can-match estimated min/max response",
+                ..
+            })
+        ));
+
+        let mut body = StreamOutput::new();
+        body.write_bool(true);
+        body.write_bool(true);
+        assert!(matches!(
+            OpenSearchCanMatchResponseWire::read(body.freeze()),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "can-match estimated min/max response",
                 ..
             })
         ));

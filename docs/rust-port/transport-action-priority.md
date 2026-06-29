@@ -2433,7 +2433,21 @@ The search phase transport boundary covers:
 - DFS, query-id, scroll query/query-fetch, fetch-id, fetch-id-scroll, and
   can-match remain fail-closed because their OpenSearch handlers require
   phase-specific request wire objects, reader-context execution, query rewrite,
-  and phase result rendering that are not yet native Rust adapters.
+  and native phase execution that are not yet Rust adapters;
+- the bounded `SearchService.CanMatchResponse` wire is implemented for
+  `canMatch` plus absent `estimatedMinAndMax`, matching `SearchPhaseResult`
+  writing no prefix fields and `CanMatchResponse.writeTo(...)` writing the
+  boolean followed by an optional `MinAndMax`; present `MinAndMax` remains
+  rejected until Lucene sort-value generic encoding is mapped.
+
+Current can-match response wire microbenchmark:
+
+```text
+cargo run -p os-transport --release --bin can-match-response-wire-benchmark
+can_match_response_encode iterations=400000 elapsed_ms=61.235 ops_per_second=6532254.64 nanos_per_op=153.09
+can_match_response_decode iterations=400000 elapsed_ms=68.224 ops_per_second=5863071.71 nanos_per_op=170.56
+can_match_response_wire_bottleneck_ops_per_second=5863071.71
+```
 
 The explain boundary covers:
 
