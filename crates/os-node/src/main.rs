@@ -13996,6 +13996,9 @@ fn search_request_pit_id_is_invalid(
 fn search_request_pit_context_is_missing(
     request: &os_transport::action::OpenSearchSearchRequestWire,
 ) -> bool {
+    if search_request_allows_partial_results(request) {
+        return search_request_pit_context_is_unavailable_for_partial(request);
+    }
     let Some(pit_id) = search_request_pit_id(request) else {
         return false;
     };
@@ -14011,6 +14014,32 @@ fn search_request_pit_context_is_missing(
         remove_transport_pit_if_indices_missing(&mut contexts, pit_id).is_some()
     };
     !pit_context_exists || first_missing_transport_reader_context_id_from_pit_id(pit_id).is_some()
+}
+
+fn search_request_pit_context_is_unavailable_for_partial(
+    request: &os_transport::action::OpenSearchSearchRequestWire,
+) -> bool {
+    let Some(pit_id) = search_request_pit_id(request) else {
+        return false;
+    };
+    if os_transport::action::OpenSearchSearchContextIdWire::decode(pit_id).is_err() {
+        return false;
+    }
+    let pit_context_exists = {
+        let mut contexts = dev_transport_pit_bindings()
+            .contexts
+            .lock()
+            .expect("dev transport PIT contexts lock poisoned");
+        prune_expired_transport_pits(&mut contexts, now_epoch_ms());
+        remove_transport_pit_if_indices_missing(&mut contexts, pit_id).is_some()
+    };
+    pit_context_exists && !transport_pit_has_available_reader_context(pit_id)
+}
+
+fn search_request_allows_partial_results(
+    request: &os_transport::action::OpenSearchSearchRequestWire,
+) -> bool {
+    request.allow_partial_search_results.unwrap_or(true)
 }
 
 fn build_search_request_invalid_pit_id_error_response(
@@ -15055,13 +15084,22 @@ fn local_transport_search_response_from_request(
         os_transport::action::OpenSearchSearchContextIdWire::decode(pit_id).ok()
     });
     let total_shards =
-        transport_pit_total_primary_shards(dev_transport_pit_bindings(), &resolved_indices).max(1)
-            as i32;
+        transport_search_total_shards(point_in_time_id.as_deref(), &resolved_indices).max(1);
+    let pit_missing_reader_contexts = point_in_time_id
+        .as_deref()
+        .map(transport_pit_missing_reader_contexts)
+        .unwrap_or_default();
+    let successful_shards = total_shards
+        .saturating_sub(pit_missing_reader_contexts.len() as i32)
+        .max(0);
+    let shard_failures =
+        transport_pit_missing_reader_context_failures(&pit_missing_reader_contexts);
     if timed_out_before_execution {
         return os_transport::action::OpenSearchSearchResponseWire {
             timed_out: true,
             total_shards,
-            successful_shards: total_shards,
+            successful_shards,
+            shard_failures,
             took_millis: 0,
             point_in_time_id,
             ..os_transport::action::OpenSearchSearchResponseWire::empty_with_total_hits(0)
@@ -15234,7 +15272,8 @@ fn local_transport_search_response_from_request(
             documents.values().map(AsRef::as_ref),
         ),
         total_shards,
-        successful_shards: total_shards,
+        successful_shards,
+        shard_failures,
         terminated_early: terminated_early.then_some(true),
         took_millis: 1,
         point_in_time_id,
@@ -16114,7 +16153,10 @@ fn transport_search_documents_for_request(
         .as_ref()
         .and_then(|source| source.point_in_time.as_ref());
     if let Some(pit) = pit {
-        if first_missing_transport_reader_context_id_from_pit_id(&pit.id).is_some() {
+        if first_missing_transport_reader_context_id_from_pit_id(&pit.id).is_some()
+            && (!search_request_allows_partial_results(request)
+                || !transport_pit_has_available_reader_context(&pit.id))
+        {
             return None;
         }
         let now_millis = now_epoch_ms();
@@ -16209,13 +16251,32 @@ fn transport_search_pit_context_exists_for_request(
     let pit_context_exists =
         remove_transport_pit_if_indices_missing(&mut contexts, &pit.id).is_some();
     drop(contexts);
-    pit_context_exists && first_missing_transport_reader_context_id_from_pit_id(&pit.id).is_none()
+    if !pit_context_exists {
+        return false;
+    }
+    first_missing_transport_reader_context_id_from_pit_id(&pit.id).is_none()
+        || (search_request_allows_partial_results(request)
+            && transport_pit_has_available_reader_context(&pit.id))
 }
 
 fn first_missing_transport_reader_context_id_from_pit_id(
     pit_id: &str,
 ) -> Option<os_transport::action::OpenSearchShardSearchContextIdWire> {
-    let context_id = os_transport::action::OpenSearchSearchContextIdWire::decode(pit_id).ok()?;
+    transport_pit_missing_reader_contexts(pit_id)
+        .into_iter()
+        .map(|(_, context)| context.search_context_id)
+        .next()
+}
+
+fn transport_pit_missing_reader_contexts(
+    pit_id: &str,
+) -> Vec<(
+    os_transport::action::OpenSearchShardIdWire,
+    os_transport::action::OpenSearchSearchContextIdForNodeWire,
+)> {
+    let Ok(context_id) = os_transport::action::OpenSearchSearchContextIdWire::decode(pit_id) else {
+        return Vec::new();
+    };
     let bindings = dev_transport_pit_bindings();
     let mut reader_contexts = bindings
         .reader_contexts
@@ -16224,12 +16285,71 @@ fn first_missing_transport_reader_context_id_from_pit_id(
     prune_expired_transport_reader_contexts(&mut reader_contexts, now_epoch_ms());
     context_id
         .shards
-        .values()
-        .map(|context| &context.search_context_id)
-        .find(|context_id| {
-            reader_context_lookup_key_for_request(&reader_contexts, context_id).is_none()
+        .into_iter()
+        .filter(|(_, context)| {
+            reader_context_lookup_key_for_request(&reader_contexts, &context.search_context_id)
+                .is_none()
         })
-        .cloned()
+        .collect()
+}
+
+fn transport_pit_has_available_reader_context(pit_id: &str) -> bool {
+    let Ok(context_id) = os_transport::action::OpenSearchSearchContextIdWire::decode(pit_id) else {
+        return false;
+    };
+    let bindings = dev_transport_pit_bindings();
+    let mut reader_contexts = bindings
+        .reader_contexts
+        .lock()
+        .expect("dev transport reader contexts lock poisoned");
+    prune_expired_transport_reader_contexts(&mut reader_contexts, now_epoch_ms());
+    context_id.shards.values().any(|context| {
+        reader_context_lookup_key_for_request(&reader_contexts, &context.search_context_id)
+            .is_some()
+    })
+}
+
+fn transport_search_total_shards(pit_id: Option<&str>, resolved_indices: &[String]) -> i32 {
+    pit_id
+        .and_then(|pit_id| os_transport::action::OpenSearchSearchContextIdWire::decode(pit_id).ok())
+        .map(|context_id| context_id.shards.len() as i32)
+        .unwrap_or_else(|| {
+            transport_pit_total_primary_shards(dev_transport_pit_bindings(), resolved_indices)
+                as i32
+        })
+}
+
+fn transport_pit_missing_reader_context_failures(
+    missing_contexts: &[(
+        os_transport::action::OpenSearchShardIdWire,
+        os_transport::action::OpenSearchSearchContextIdForNodeWire,
+    )],
+) -> Vec<os_transport::action::OpenSearchShardSearchFailureWire> {
+    missing_contexts
+        .iter()
+        .map(|(shard_id, context)| {
+            let reason = format!(
+                "No search context found for id [{}]",
+                context.search_context_id.id
+            );
+            os_transport::action::OpenSearchShardSearchFailureWire {
+                shard_target: Some(os_transport::action::OpenSearchSearchShardTargetWire {
+                    node_id: Some(context.node.clone()),
+                    index: shard_id.index_name.clone(),
+                    index_uuid: shard_id.index_uuid.clone(),
+                    shard_id: shard_id.shard_id,
+                    cluster_alias: context.cluster_alias.clone(),
+                }),
+                reason: reason.clone(),
+                status: "INTERNAL_SERVER_ERROR".to_string(),
+                cause: Some(os_transport::error::TransportError {
+                    class_name: "java.lang.IllegalArgumentException".to_string(),
+                    message: Some(reason),
+                    cause: None,
+                }),
+            }
+        })
+        .collect()
 }
 
 fn transport_search_pit_request_indices_match_actual(
@@ -34831,6 +34951,217 @@ mod tests {
     }
 
     #[test]
+    fn search_transport_route_returns_partial_pit_response_when_reader_context_is_missing() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        let bindings = dev_transport_pit_bindings();
+        bindings
+            .contexts
+            .lock()
+            .expect("dev transport PIT contexts lock poisoned")
+            .clear();
+        bindings
+            .reader_contexts
+            .lock()
+            .expect("dev transport reader contexts lock poisoned")
+            .clear();
+        bindings
+            .created_indices
+            .lock()
+            .expect("dev transport created indices lock poisoned")
+            .clear();
+        *bindings
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned") = serde_json::json!({
+            "indices": {
+                "logs-partial-pit": {
+                    "settings": {
+                        "index": {
+                            "number_of_shards": "2"
+                        }
+                    }
+                }
+            }
+        });
+        bindings
+            .created_indices
+            .lock()
+            .expect("dev transport created indices lock poisoned")
+            .insert("logs-partial-pit".to_string());
+
+        let present_context_id = os_transport::action::OpenSearchShardSearchContextIdWire::new(
+            "partial-pit-session",
+            800,
+        );
+        let missing_context_id = os_transport::action::OpenSearchShardSearchContextIdWire::new(
+            "partial-pit-session",
+            801,
+        );
+        let pit_id = os_transport::action::OpenSearchSearchContextIdWire::new(BTreeMap::from([
+            (
+                os_transport::action::OpenSearchShardIdWire {
+                    index_name: "logs-partial-pit".to_string(),
+                    index_uuid: "uuid-logs-partial-pit".to_string(),
+                    shard_id: 0,
+                },
+                os_transport::action::OpenSearchSearchContextIdForNodeWire {
+                    node: "steel-node-a".to_string(),
+                    cluster_alias: None,
+                    search_context_id: present_context_id.clone(),
+                },
+            ),
+            (
+                os_transport::action::OpenSearchShardIdWire {
+                    index_name: "logs-partial-pit".to_string(),
+                    index_uuid: "uuid-logs-partial-pit".to_string(),
+                    shard_id: 1,
+                },
+                os_transport::action::OpenSearchSearchContextIdForNodeWire {
+                    node: "steel-node-b".to_string(),
+                    cluster_alias: None,
+                    search_context_id: missing_context_id,
+                },
+            ),
+        ]))
+        .encode(OPENSEARCH_3_7_0_TRANSPORT)
+        .unwrap();
+        let document: Arc<StoredDocument> = StoredDocument {
+            source: serde_json::json!({ "status": "available-shard" }),
+            version: 1,
+            seq_no: 1,
+            primary_term: 1,
+            routing: None,
+            refreshed: true,
+        }
+        .into();
+        bindings
+            .contexts
+            .lock()
+            .expect("dev transport PIT contexts lock poisoned")
+            .insert(
+                pit_id.clone(),
+                PitContext {
+                    indices: vec!["logs-partial-pit".to_string()],
+                    documents: Arc::new(BTreeMap::from([(
+                        "logs-partial-pit:doc-1:".to_string(),
+                        Arc::clone(&document),
+                    )])),
+                    keep_alive_millis: 60_000,
+                    expires_at_millis: transport_pit_expires_at_millis(now_epoch_ms(), 60_000),
+                    creation_time_millis: now_epoch_ms(),
+                },
+            );
+        bindings
+            .reader_contexts
+            .lock()
+            .expect("dev transport reader contexts lock poisoned")
+            .insert(
+                reader_context_key(&present_context_id),
+                DevTransportReaderContext {
+                    shard_id: os_transport::action::OpenSearchShardIdWire {
+                        index_name: "logs-partial-pit".to_string(),
+                        index_uuid: "uuid-logs-partial-pit".to_string(),
+                        shard_id: 0,
+                    },
+                    documents: Arc::new(BTreeMap::from([(
+                        "logs-partial-pit:doc-1:".to_string(),
+                        document,
+                    )])),
+                    keep_alive_millis: 60_000,
+                    expires_at_millis: transport_pit_expires_at_millis(now_epoch_ms(), 60_000),
+                    pit_id: Some(pit_id.clone()),
+                    creation_time_millis: Some(now_epoch_ms() as i64),
+                },
+            );
+
+        let partial_request = os_transport::action::OpenSearchSearchRequestWire {
+            source: Some(os_transport::action::OpenSearchSearchSourceBuilderWire {
+                point_in_time: Some(os_transport::action::OpenSearchPointInTimeBuilderWire {
+                    id: pit_id.clone(),
+                    keep_alive: Some(os_transport::action::TimeValueWire::minutes(1)),
+                }),
+                ..os_transport::action::OpenSearchSearchSourceBuilderWire::default()
+            }),
+            indices_options:
+                os_transport::action::OpenSearchIndicesOptionsWire::point_in_time_search_prepared(),
+            ccs_minimize_roundtrips: false,
+            ..os_transport::action::OpenSearchSearchRequestWire::default()
+        };
+        let partial_frame = os_transport::action::build_opensearch_search_request_message(
+            327,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &partial_request,
+        )
+        .unwrap();
+        assert!(!search_request_has_missing_pit_context(&partial_frame[6..]));
+        assert!(search_request_supports_local_execution_subset(
+            &partial_frame[6..]
+        ));
+        let partial_response = build_local_search_response(
+            327,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &partial_frame[6..],
+        );
+        let mut frame = BytesMut::from(&partial_response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected partial PIT search response message");
+        };
+        let partial_response =
+            os_transport::action::read_opensearch_search_response_message(&message).unwrap();
+        assert_eq!(partial_response.total_shards, 2);
+        assert_eq!(partial_response.successful_shards, 1);
+        assert_eq!(partial_response.shard_failures.len(), 1);
+        assert_eq!(partial_response.skipped_shards, 0);
+        assert_eq!(partial_response.hits.len(), 1);
+        assert!(partial_response.shard_failures[0]
+            .reason
+            .contains("No search context found for id [801]"));
+
+        let strict_request = os_transport::action::OpenSearchSearchRequestWire {
+            allow_partial_search_results: Some(false),
+            ..partial_request
+        };
+        let strict_frame = os_transport::action::build_opensearch_search_request_message(
+            328,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &strict_request,
+        )
+        .unwrap();
+        assert!(search_request_has_missing_pit_context(&strict_frame[6..]));
+        assert!(!search_request_supports_local_execution_subset(
+            &strict_frame[6..]
+        ));
+        let strict_response = build_search_missing_pit_context_error_response(
+            328,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &strict_frame[6..],
+        );
+        let mut frame = BytesMut::from(&strict_response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected strict PIT search error response frame");
+        };
+        assert_eq!(message.request_id, 328);
+        assert!(message.status.is_error());
+        let error = os_transport::error::TransportError::read(message.body.freeze())
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            error.class_name,
+            "org.opensearch.search.SearchContextMissingException"
+        );
+    }
+
+    #[test]
     fn search_transport_route_empty_session_pit_matches_numeric_reader_like_opensearch() {
         let _lock = dev_transport_pit_test_lock()
             .lock()
@@ -35185,7 +35516,6 @@ mod tests {
         )
         .unwrap();
         assert!(!search_request_has_invalid_pit_id(&frame[6..]));
-        assert!(search_request_has_missing_pit_context(&frame[6..]));
         assert!(search_request_exceeds_local_pit_keep_alive_limit(
             &frame[6..]
         ));
@@ -35223,9 +35553,6 @@ mod tests {
             &request,
         )
         .unwrap();
-        assert!(stream_search_request_has_missing_pit_context(
-            &stream_frame[6..]
-        ));
         let stream_response = build_stream_search_missing_pit_context_error_response(
             316,
             OPENSEARCH_3_7_0_TRANSPORT.id() as u32,

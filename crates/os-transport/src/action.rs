@@ -29714,10 +29714,10 @@ impl OpenSearchSearchRequestWire {
                 reason: "pre-filter shard selection requires can-match phase semantics",
             });
         }
-        if self.allow_partial_search_results.is_some() {
+        if self.allow_partial_search_results.is_some() && !has_point_in_time {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "search request allow partial search results",
-                reason: "partial-result handling requires search failure aggregation semantics",
+                reason: "partial-result handling is only mapped for point-in-time search",
             });
         }
         if self.local_cluster_alias.is_some() {
