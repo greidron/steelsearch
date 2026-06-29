@@ -1897,8 +1897,8 @@ pub fn classify_opensearch_transport_action(
         },
         NODES_RELOAD_SECURE_SETTINGS_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
-            disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "reload-secure-settings transport execution requires keystore reload, transport TLS password safety, reloadable extension hooks, and node response rendering",
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "reload-secure-settings transport adapter validates the bounded local no-password request and returns an OpenSearch-shaped local node response with no reload exception",
         },
         PUT_REPOSITORY_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -5055,7 +5055,7 @@ impl NodesReloadSecureSettingsRequestWire {
         Ok(request)
     }
 
-    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+    pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
         if matches!(self.node_ids.as_ref(), Some(node_ids) if !node_ids.is_empty()) {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "reload secure settings node filter",
@@ -5074,10 +5074,128 @@ impl NodesReloadSecureSettingsRequestWire {
                 reason: "secure settings password handling requires transport TLS safety and keystore reload semantics",
             });
         }
+        Ok(())
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        self.validate_supported_subset()?;
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "reload secure settings execution",
-            reason: "reload-secure-settings transport execution requires keystore reload, reloadable extension hooks, and node response rendering",
+            reason: "use validate_supported_subset for the implemented local no-password adapter",
         })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NodesReloadSecureSettingsResponseWire {
+    pub cluster_name: String,
+    pub nodes: Vec<NodeReloadSecureSettingsResponseWire>,
+    pub failures: Vec<FailedNodeExceptionWire>,
+}
+
+impl NodesReloadSecureSettingsResponseWire {
+    pub fn local_no_exception(cluster_name: String, node: OpenSearchDiscoveryNodeWire) -> Self {
+        Self {
+            cluster_name,
+            nodes: vec![NodeReloadSecureSettingsResponseWire {
+                node,
+                reload_exception_present: false,
+            }],
+            failures: Vec::new(),
+        }
+    }
+
+    pub fn write(&self, output: &mut StreamOutput) -> Result<(), TransportActionWireError> {
+        self.validate_supported_subset()?;
+        output.write_string(&self.cluster_name);
+        output.write_vint(self.nodes.len() as i32);
+        for node in &self.nodes {
+            node.write(output)?;
+        }
+        output.write_vint(self.failures.len() as i32);
+        for failure in &self.failures {
+            failure.write(output)?;
+        }
+        Ok(())
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let cluster_name = input.read_string()?;
+        let node_count = read_len(&mut input)?;
+        let mut nodes = Vec::with_capacity(node_count);
+        for _ in 0..node_count {
+            nodes.push(NodeReloadSecureSettingsResponseWire::read(&mut input)?);
+        }
+        let failure_count = read_len(&mut input)?;
+        let mut failures = Vec::with_capacity(failure_count);
+        for _ in 0..failure_count {
+            failures.push(FailedNodeExceptionWire::read(&mut input)?);
+        }
+        require_no_trailing_bytes(&input)?;
+        let response = Self {
+            cluster_name,
+            nodes,
+            failures,
+        };
+        response.validate_supported_subset()?;
+        Ok(response)
+    }
+
+    pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
+        if self.cluster_name.is_empty() {
+            return Err(TransportActionWireError::MissingRequiredField {
+                field: "reload secure settings response cluster name",
+            });
+        }
+        for node in &self.nodes {
+            node.validate_supported_subset()?;
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NodeReloadSecureSettingsResponseWire {
+    pub node: OpenSearchDiscoveryNodeWire,
+    pub reload_exception_present: bool,
+}
+
+impl NodeReloadSecureSettingsResponseWire {
+    fn write(&self, output: &mut StreamOutput) -> Result<(), TransportActionWireError> {
+        self.validate_supported_subset()?;
+        self.node.write(output);
+        output.write_bool(self.reload_exception_present);
+        Ok(())
+    }
+
+    fn read(input: &mut StreamInput) -> Result<Self, TransportActionWireError> {
+        let node = OpenSearchDiscoveryNodeWire::read(input)?;
+        let reload_exception_present = input.read_bool()?;
+        if reload_exception_present {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "reload secure settings node exception",
+                reason:
+                    "reload-secure-settings node exception payloads are not decoded by this adapter",
+            });
+        }
+        let response = Self {
+            node,
+            reload_exception_present,
+        };
+        response.validate_supported_subset()?;
+        Ok(response)
+    }
+
+    fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
+        self.node.validate_supported_subset()?;
+        if self.reload_exception_present {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "reload secure settings node exception",
+                reason: "reload-secure-settings node exception payloads require OpenSearch exception wire rendering",
+            });
+        }
+        Ok(())
     }
 }
 
@@ -6402,6 +6520,36 @@ pub fn read_nodes_reload_secure_settings_request_message(
         });
     }
     NodesReloadSecureSettingsRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_nodes_reload_secure_settings_response_message(
+    request_id: i64,
+    version: Version,
+    response: &NodesReloadSecureSettingsResponseWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    response.write(&mut body)?;
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::response(),
+        version,
+        variable_header: BytesMut::from(&ResponseVariableHeader::default().to_bytes()[..]),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_nodes_reload_secure_settings_response_message(
+    message: &TransportMessage,
+) -> Result<NodesReloadSecureSettingsResponseWire, TransportActionWireError> {
+    if !message.status.is_response() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "response",
+            actual: message.status.bits(),
+        });
+    }
+    let _header = ResponseVariableHeader::read(message.variable_header.clone().freeze())?;
+    NodesReloadSecureSettingsResponseWire::read(message.body.clone().freeze())
 }
 
 pub fn build_nodes_usage_request_message(
@@ -55346,7 +55494,7 @@ mod tests {
     }
 
     #[test]
-    fn nodes_reload_secure_settings_request_wire_round_trips_and_rejects_execution_boundary() {
+    fn nodes_reload_secure_settings_request_wire_round_trips_and_validates_default_subset() {
         let request = NodesReloadSecureSettingsRequestWire {
             parent_task_node: "node-admin".to_string(),
             parent_task_id: Some(31),
@@ -55357,6 +55505,7 @@ mod tests {
 
         let decoded = NodesReloadSecureSettingsRequestWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, request);
+        decoded.validate_supported_subset().unwrap();
         assert!(matches!(
             decoded.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
@@ -55373,7 +55522,7 @@ mod tests {
             ..NodesReloadSecureSettingsRequestWire::default()
         };
         assert!(matches!(
-            node_filter.reject_unsupported_execution(),
+            node_filter.validate_supported_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "reload secure settings node filter",
                 ..
@@ -55385,7 +55534,7 @@ mod tests {
             ..NodesReloadSecureSettingsRequestWire::default()
         };
         assert!(matches!(
-            timeout.reject_unsupported_execution(),
+            timeout.validate_supported_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "reload secure settings timeout",
                 ..
@@ -55397,7 +55546,7 @@ mod tests {
             ..NodesReloadSecureSettingsRequestWire::default()
         };
         assert!(matches!(
-            password.reject_unsupported_execution(),
+            password.validate_supported_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "reload secure settings password",
                 ..
@@ -55422,7 +55571,37 @@ mod tests {
     }
 
     #[test]
-    fn nodes_reload_secure_settings_transport_messages_bind_rejected_action_frame() {
+    fn nodes_reload_secure_settings_response_wire_round_trips_local_no_exception_subset() {
+        let response = NodesReloadSecureSettingsResponseWire::local_no_exception(
+            "steel-dev".to_string(),
+            test_discovery_node_wire(),
+        );
+        let mut output = StreamOutput::new();
+        response.write(&mut output).unwrap();
+
+        assert_eq!(
+            NodesReloadSecureSettingsResponseWire::read(output.freeze()).unwrap(),
+            response
+        );
+
+        let with_exception = NodesReloadSecureSettingsResponseWire {
+            nodes: vec![NodeReloadSecureSettingsResponseWire {
+                node: test_discovery_node_wire(),
+                reload_exception_present: true,
+            }],
+            ..response
+        };
+        assert!(matches!(
+            with_exception.validate_supported_subset(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "reload secure settings node exception",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn nodes_reload_secure_settings_transport_messages_bind_supported_action_frame_and_response() {
         let request = NodesReloadSecureSettingsRequestWire::default();
         let mut frame = build_nodes_reload_secure_settings_request_message(
             31,
@@ -55437,15 +55616,34 @@ mod tests {
             read_nodes_reload_secure_settings_request_message(&message).unwrap(),
             request
         );
-        assert!(matches!(
-            read_nodes_reload_secure_settings_request_message(&message)
+        assert_eq!(
+            classify_opensearch_transport_request_message(&message)
                 .unwrap()
-                .reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "reload secure settings execution",
-                ..
-            })
-        ));
+                .disposition,
+            OpenSearchTransportActionDisposition::Implemented
+        );
+        read_nodes_reload_secure_settings_request_message(&message)
+            .unwrap()
+            .validate_supported_subset()
+            .unwrap();
+
+        let response = NodesReloadSecureSettingsResponseWire::local_no_exception(
+            "steel-dev".to_string(),
+            test_discovery_node_wire(),
+        );
+        let mut frame = build_nodes_reload_secure_settings_response_message(
+            31,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &response,
+        )
+        .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected reload secure settings response message");
+        };
+        assert_eq!(
+            read_nodes_reload_secure_settings_response_message(&message).unwrap(),
+            response
+        );
     }
 
     #[test]

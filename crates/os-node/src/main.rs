@@ -1514,6 +1514,36 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end_at_ms,
         )?;
     } else if is_request
+        && normalized_action_hint == Some("cluster:admin/nodes/reload_secure_settings")
+        && nodes_reload_secure_settings_request_supports_local_no_password_subset(&body)
+    {
+        let response = build_nodes_reload_secure_settings_response(
+            request_id,
+            header_version_id,
+            transport_identity,
+        );
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("cluster:admin/nodes/reload_secure_settings"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request
         && normalized_action_hint == Some("cluster:admin/ingest/pipeline/put")
         && put_pipeline_request_supports_manifest_execution_subset(&body)
     {
@@ -7377,6 +7407,36 @@ fn build_prune_file_cache_response(
     )
     .map(|frame| frame.to_vec())
     .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
+}
+
+fn build_nodes_reload_secure_settings_response(
+    request_id: i64,
+    header_version_id: u32,
+    transport_identity: &DevTransportIdentity,
+) -> Vec<u8> {
+    os_transport::action::build_nodes_reload_secure_settings_response_message(
+        request_id,
+        Version::from_id(header_version_id as i32),
+        &os_transport::action::NodesReloadSecureSettingsResponseWire::local_no_exception(
+            transport_identity.cluster_name.clone(),
+            discovery_node_wire_from_identity(transport_identity),
+        ),
+    )
+    .map(|frame| frame.to_vec())
+    .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
+}
+
+fn nodes_reload_secure_settings_request_supports_local_no_password_subset(body: &[u8]) -> bool {
+    decode_nodes_reload_secure_settings_request_from_transport_body(body)
+        .as_ref()
+        .is_some_and(|request| request.validate_supported_subset().is_ok())
+}
+
+fn decode_nodes_reload_secure_settings_request_from_transport_body(
+    body: &[u8],
+) -> Option<os_transport::action::NodesReloadSecureSettingsRequestWire> {
+    let message = decode_transport_message_from_body(body)?;
+    os_transport::action::read_nodes_reload_secure_settings_request_message(&message).ok()
 }
 
 fn prune_file_cache_request_supports_default_subset(body: &[u8]) -> bool {
@@ -24340,6 +24400,15 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
                 transport_identity,
             ))
         }
+        Some("cluster:admin/nodes/reload_secure_settings")
+            if nodes_reload_secure_settings_request_supports_local_no_password_subset(body) =>
+        {
+            Some(build_nodes_reload_secure_settings_response(
+                request_id,
+                header_version_id,
+                transport_identity,
+            ))
+        }
         Some("cluster:admin/ingest/pipeline/get")
             if get_pipeline_request_supports_empty_subset(body) =>
         {
@@ -30496,6 +30565,76 @@ mod tests {
         assert!(!response.nodes[0].rest_actions_present);
         assert!(!response.nodes[0].aggregations_present);
         assert!(response.failures.is_empty());
+    }
+
+    #[test]
+    fn reload_secure_settings_transport_route_builds_local_no_exception_response() {
+        let transport_identity = DevTransportIdentity {
+            cluster_name: "steelsearch-dev".to_string(),
+            node_name: "steel-node".to_string(),
+            node_id: "steel-node-id".to_string(),
+            ephemeral_id: "steel-node-ephemeral".to_string(),
+            transport_address: "127.0.0.1:9300".parse().unwrap(),
+            attributes: Vec::new(),
+            roles: vec!["cluster_manager".to_string(), "data".to_string()],
+            seed_peer_identity: None,
+            seed_peer_identities: Vec::new(),
+            coordination_state: Arc::new(Mutex::new(DevTransportCoordinationState::default())),
+            remote_transport_queue_gate: Arc::new(RemoteTransportQueueGate::new(1, 1000)),
+            task_queue_state: None,
+        };
+        let request = os_transport::action::NodesReloadSecureSettingsRequestWire::default();
+        let frame = os_transport::action::build_nodes_reload_secure_settings_request_message(
+            224,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(
+            nodes_reload_secure_settings_request_supports_local_no_password_subset(&frame[6..])
+        );
+
+        let response = build_nodes_reload_secure_settings_response(
+            224,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &transport_identity,
+        );
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected reload secure settings response message");
+        };
+
+        assert_eq!(message.request_id, 224);
+        assert!(!message.status.is_request());
+        let response =
+            os_transport::action::read_nodes_reload_secure_settings_response_message(&message)
+                .unwrap();
+        assert_eq!(response.cluster_name, "steelsearch-dev");
+        assert_eq!(response.nodes.len(), 1);
+        assert_eq!(response.nodes[0].node.id, "steel-node-id");
+        assert!(!response.nodes[0].reload_exception_present);
+        assert!(response.failures.is_empty());
+
+        let password_request = os_transport::action::NodesReloadSecureSettingsRequestWire {
+            secure_settings_password: Some(Bytes::from_static(b"secret")),
+            ..os_transport::action::NodesReloadSecureSettingsRequestWire::default()
+        };
+        let password_frame =
+            os_transport::action::build_nodes_reload_secure_settings_request_message(
+                225,
+                OPENSEARCH_3_7_0_TRANSPORT,
+                &password_request,
+            )
+            .unwrap();
+        assert!(
+            !nodes_reload_secure_settings_request_supports_local_no_password_subset(
+                &password_frame[6..]
+            )
+        );
     }
 
     #[test]

@@ -249,8 +249,8 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `cluster:monitor/allocation/explain` (implemented bounded no-unassigned-shards error subset)
 - `cluster:admin/settings/update` (implemented bounded manifest-backed settings mutation subset)
 - `cluster:admin/reroute` (rejected fail-closed)
-- `cluster:admin/filecache/prune` (rejected fail-closed)
-- `cluster:admin/nodes/reload_secure_settings` (rejected fail-closed)
+- `cluster:admin/filecache/prune` (implemented local no-cache response subset)
+- `cluster:admin/nodes/reload_secure_settings` (implemented local no-password reload response subset)
 - `cluster:admin/repository/put` (rejected fail-closed)
 - `cluster:admin/repository/get` (implemented empty repository metadata subset)
 - `cluster:admin/repository/delete` (implemented manifest-backed metadata mutation subset)
@@ -582,28 +582,24 @@ The cluster-reroute boundary covers:
   cluster-manager timeout, custom acknowledgement timeout, dry-run execution,
   explanation rendering, retry-failed execution, and reroute execution.
 
-The prune-file-cache boundary covers:
+The prune-file-cache adapter covers:
 
 - OpenSearch `PruneFileCacheRequest` parent task, node id selector array,
   optional concrete node payload marker, and optional timeout at the wire
   decode/build layer;
-- explicit fail-closed classification for `cluster:admin/filecache/prune`
-  until warm-node file cache pruning, node response collection, and aggregate
-  response rendering are implemented;
-- explicit rejection for concrete node payloads, node filters, timeout, and
-  prune-file-cache execution.
+- implemented transport classification for the bounded default request,
+  returning an OpenSearch-shaped local no-cache nodes response;
+- explicit rejection for concrete node payloads, node filters, and timeout.
 
-The reload-secure-settings boundary covers:
+The reload-secure-settings adapter covers:
 
 - OpenSearch `NodesReloadSecureSettingsRequest` parent task, nullable node id
   selector array, concrete node payload marker, optional timeout, and optional
   secure-settings password bytes at the wire decode/build layer;
-- explicit fail-closed classification for
-  `cluster:admin/nodes/reload_secure_settings` until keystore reload,
-  transport TLS password safety, reloadable extension hooks, node response
-  collection, and aggregate response rendering are implemented;
-- explicit rejection for concrete node payloads, node filters, timeout,
-  password payloads, and reload-secure-settings execution.
+- implemented transport classification for the bounded local no-password request,
+  returning an OpenSearch-shaped local node response with no reload exception;
+- explicit rejection for concrete node payloads, node filters, timeout, and
+  password payloads.
 
 The put-repository boundary covers:
 
