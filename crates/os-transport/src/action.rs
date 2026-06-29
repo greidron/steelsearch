@@ -2466,8 +2466,8 @@ pub fn classify_opensearch_transport_action(
         OPENSEARCH_UPDATE_PERSISTENT_TASK_STATUS_ACTION_NAME => {
             OpenSearchTransportDispatchDecision {
                 action_name: action_name.to_string(),
-                disposition: OpenSearchTransportActionDisposition::Rejected,
-                reason: "update-persistent-task-status transport execution requires persistent task state named-writeables, allocation checks, cluster metadata mutation, and response rendering",
+                disposition: OpenSearchTransportActionDisposition::Implemented,
+                reason: "update-persistent-task-status transport adapter validates the bounded no-state request and returns OpenSearch's ResourceNotFoundException for the empty persistent-task metadata subset",
             }
         }
         OPENSEARCH_COMPLETION_PERSISTENT_TASK_ACTION_NAME => OpenSearchTransportDispatchDecision {
@@ -35610,7 +35610,7 @@ impl OpenSearchUpdatePersistentTaskStatusRequestWire {
         })
     }
 
-    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+    pub fn validate_empty_metadata_missing_subset(&self) -> Result<(), TransportActionWireError> {
         if self.cluster_manager_timeout != TimeValueWire::seconds(30) {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "update persistent task status cluster-manager timeout",
@@ -35642,9 +35642,14 @@ impl OpenSearchUpdatePersistentTaskStatusRequestWire {
                 reason: "PersistentTaskState named-writeable payloads are not mapped by the update-persistent-task-status adapter yet",
             });
         }
+        Ok(())
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        self.validate_empty_metadata_missing_subset()?;
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "update persistent task status execution",
-            reason: "update-persistent-task-status transport execution requires persistent task state named-writeables, allocation checks, cluster metadata mutation, and response rendering",
+            reason: "use validate_empty_metadata_missing_subset for the implemented empty-metadata ResourceNotFoundException adapter",
         })
     }
 }
@@ -72846,6 +72851,7 @@ mod tests {
         let decoded =
             OpenSearchUpdatePersistentTaskStatusRequestWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, request);
+        decoded.validate_empty_metadata_missing_subset().unwrap();
         assert!(matches!(
             decoded.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
@@ -72924,7 +72930,7 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_update_persistent_task_status_transport_messages_bind_rejected_action_frame_and_empty_response(
+    fn opensearch_update_persistent_task_status_transport_messages_bind_supported_action_frame_and_empty_response(
     ) {
         let request = OpenSearchUpdatePersistentTaskStatusRequestWire::default();
         let mut frame = build_opensearch_update_persistent_task_status_request_message(
@@ -72940,12 +72946,16 @@ mod tests {
             classify_opensearch_transport_request_message(&message)
                 .unwrap()
                 .disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             read_opensearch_update_persistent_task_status_request_message(&message).unwrap(),
             request
         );
+        read_opensearch_update_persistent_task_status_request_message(&message)
+            .unwrap()
+            .validate_empty_metadata_missing_subset()
+            .unwrap();
         assert!(matches!(
             read_opensearch_update_persistent_task_status_request_message(&message)
                 .unwrap()

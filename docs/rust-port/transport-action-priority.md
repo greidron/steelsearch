@@ -305,9 +305,9 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `views:data/read/list` (implemented empty view-name list subset)
 - `views:data/read/search` (rejected fail-closed)
 - `cluster:admin/persistent/start` (rejected fail-closed)
-- `cluster:admin/persistent/update_status` (rejected fail-closed)
+- `cluster:admin/persistent/update_status` (implemented empty-metadata missing-task error subset)
 - `cluster:admin/persistent/completion` (implemented empty-metadata missing-task error subset)
-- `cluster:admin/persistent/remove` (rejected fail-closed)
+- `cluster:admin/persistent/remove` (implemented empty-metadata missing-task error subset)
 - `indices:admin/seq_no/add_retention_lease` (rejected fail-closed)
 - `indices:admin/seq_no/renew_retention_lease` (rejected fail-closed)
 - `indices:admin/seq_no/remove_retention_lease` (rejected fail-closed)
@@ -2147,7 +2147,7 @@ The start-persistent-task boundary covers:
   task ids/names, params-name mismatches, start-persistent-task execution, and
   persistent-task response rendering.
 
-The update-persistent-task-status boundary covers:
+The update-persistent-task-status adapter covers:
 
 - OpenSearch `UpdatePersistentTaskStatusAction.Request` parent task,
   cluster-manager timeout, task id, allocation id, and absent optional
@@ -2155,13 +2155,12 @@ The update-persistent-task-status boundary covers:
 - reuse of OpenSearch `PersistentTaskResponse` decode/build for the empty
   optional task payload shape, with concrete task payloads rejected until
   persistent task params/state/metadata named-writeables are mapped;
-- explicit fail-closed classification for
-  `cluster:admin/persistent/update_status` until persistent task state
-  named-writeables, allocation checks, cluster metadata mutation, and response
-  rendering are implemented;
+- implemented classification for `cluster:admin/persistent/update_status` in
+  the empty persistent-task metadata subset, returning OpenSearch's
+  `ResourceNotFoundException` when the task/allocation pair is missing;
 - explicit rejection for custom cluster-manager timeouts, missing or oversized
-  task ids, missing allocation ids, state payloads, update-persistent-task-
-  status execution, and persistent-task response rendering.
+  task ids, missing allocation ids, state payloads, and concrete
+  persistent-task response payloads.
 
 The completion-persistent-task adapter covers:
 
@@ -5415,7 +5414,7 @@ task/params strings make it heavier than the adjacent view-admin boundaries;
 future performance-sensitive work is params named-writeable decode, cluster
 metadata mutation, task assignment, and response rendering.
 
-Current update-persistent-task-status reject wire microbenchmark:
+Previous update-persistent-task-status reject wire microbenchmark:
 
 ```text
 cargo run -p os-transport --release --bin update-persistent-task-status-reject-wire-benchmark
@@ -5426,13 +5425,12 @@ update_persistent_task_status_empty_response_decode iterations=400000 elapsed_ms
 update_persistent_task_status_reject_wire_bottleneck_ops_per_second=1286288.70
 ```
 
-The current update-persistent-task-status fail-closed boundary bottleneck is
-request encode. This path carries the ClusterManagerNode envelope, task id,
-allocation id, and absent state marker before rejecting at admission. At
-roughly 1.29M ops/s in the latest local release run, it is lighter than the
-start-persistent-task boundary because it avoids the task-name/params-name
-strings; future performance-sensitive work is state named-writeable decode,
-allocation checks, cluster metadata mutation, and response rendering.
+The previous update-persistent-task-status fail-closed boundary bottleneck was
+request encode. The implemented empty-metadata missing-task subset now validates
+the same ClusterManagerNode envelope, task id, allocation id, and absent state
+marker before rendering the OpenSearch-shaped missing-task error. Future
+performance-sensitive work is state named-writeable decode, allocation checks,
+cluster metadata mutation, and concrete response rendering.
 
 Previous completion-persistent-task reject wire microbenchmark:
 

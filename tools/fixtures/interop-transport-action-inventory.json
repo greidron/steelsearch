@@ -1152,8 +1152,8 @@
       "transport_action": "UpdatePersistentTaskStatusAction.TransportAction",
       "request_wire_type": "UpdatePersistentTaskStatusAction.Request",
       "response_wire_type": "PersistentTaskResponse",
-      "disposition": "rejected",
-      "reason": "Update-persistent-task-status transport execution requires persistent task state named-writeables, allocation checks, cluster metadata mutation, and response rendering"
+      "disposition": "implemented",
+      "reason": "Update-persistent-task-status transport adapter validates the bounded no-state request and returns OpenSearch's ResourceNotFoundException for the empty persistent-task metadata subset"
     },
     {
       "action_name": "cluster:admin/persistent/completion",
