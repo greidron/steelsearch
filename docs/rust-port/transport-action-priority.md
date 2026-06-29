@@ -177,15 +177,15 @@ The source-derived transport inventory currently has 160 rows:
 
 | Status | Count | Meaning |
 | --- | ---: | --- |
-| `implemented` | 148 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
-| `partial` | 12 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
+| `implemented` | 149 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
+| `partial` | 11 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
 | `planned` | 0 | No source-derived transport action remains unclassified. |
 
-The k-NN plugin action sweep is complete at the boundary layer. Three of 12
+The k-NN plugin action sweep is complete at the boundary layer. Four of 12
 registrations from
 `/home/ubuntu/k-NN/src/main/java/org/opensearch/knn/plugin/KNNPlugin.java`
 lines 348-359 are now represented as `implemented` rows for bounded local-node
-stats, warmup, and clear-cache subsets; the remaining k-NN actions stay `partial` with
+stats, warmup, clear-cache, and remove-model-from-cache subsets; the remaining k-NN actions stay `partial` with
 request/response wire coverage and fail-closed admission. This is not a claim
 that the remaining k-NN transport actions execute their full OpenSearch
 semantics yet; it means unsupported transport execution is explicit and
@@ -1124,15 +1124,15 @@ The remove-model-from-cache boundary covers:
 
 - OpenSearch k-NN `RemoveModelFromCacheRequest` parent task, nullable node id
   selectors, optional timeout, and model id at the wire decode/build layer;
-- OpenSearch k-NN `RemoveModelFromCacheResponse` cluster name with empty node
-  responses and empty node failures at the wire decode/build layer;
-- explicit fail-closed classification for
-  `cluster:admin/knn_remove_model_from_cache_action` until BaseNodes fanout,
-  per-node model cache eviction, failure aggregation, and response rendering
-  are implemented;
+- OpenSearch k-NN `RemoveModelFromCacheResponse` cluster name, local
+  `RemoveModelFromCacheNodeResponse` DiscoveryNode payload, and empty node
+  failures at the wire decode/build layer;
+- implemented classification for the bounded local-node subset: no node-id
+  routing filter, no custom timeout, local model-cache eviction from shared
+  runtime state, and OpenSearch BaseNodesResponse rendering with one local node
+  response and zero failures;
 - explicit rejection for blank model ids, node-scoped routing, timeout
-  semantics, non-empty node responses, non-empty node failures, blank response
-  cluster names, response rendering, and remove-model-from-cache execution.
+  semantics, non-empty node failures, and blank response cluster names.
 
 The search-model boundary covers:
 

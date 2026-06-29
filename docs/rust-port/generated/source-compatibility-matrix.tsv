@@ -544,7 +544,7 @@ transport_action	partial	action	GetModelAction.INSTANCE	GetModelTransportAction.
 transport_action	partial	action	DeleteModelAction.INSTANCE	DeleteModelTransportAction.class	/home/ubuntu/k-NN/src/main/java/org/opensearch/knn/plugin/KNNPlugin.java	353
 transport_action	partial	action	TrainingJobRouterAction.INSTANCE	TrainingJobRouterTransportAction.class	/home/ubuntu/k-NN/src/main/java/org/opensearch/knn/plugin/KNNPlugin.java	354
 transport_action	partial	action	TrainingModelAction.INSTANCE	TrainingModelTransportAction.class	/home/ubuntu/k-NN/src/main/java/org/opensearch/knn/plugin/KNNPlugin.java	355
-transport_action	partial	action	RemoveModelFromCacheAction.INSTANCE	RemoveModelFromCacheTransportAction.class	/home/ubuntu/k-NN/src/main/java/org/opensearch/knn/plugin/KNNPlugin.java	356
+transport_action	implemented	action	RemoveModelFromCacheAction.INSTANCE	RemoveModelFromCacheTransportAction.class	/home/ubuntu/k-NN/src/main/java/org/opensearch/knn/plugin/KNNPlugin.java	356
 transport_action	partial	action	SearchModelAction.INSTANCE	SearchModelTransportAction.class	/home/ubuntu/k-NN/src/main/java/org/opensearch/knn/plugin/KNNPlugin.java	357
 transport_action	partial	action	UpdateModelGraveyardAction.INSTANCE	UpdateModelGraveyardTransportAction.class	/home/ubuntu/k-NN/src/main/java/org/opensearch/knn/plugin/KNNPlugin.java	358
 transport_action	implemented	action	ClearCacheAction.INSTANCE	ClearCacheTransportAction.class	/home/ubuntu/k-NN/src/main/java/org/opensearch/knn/plugin/KNNPlugin.java	359
