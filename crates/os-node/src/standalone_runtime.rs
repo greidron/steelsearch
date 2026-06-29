@@ -7494,8 +7494,13 @@ impl SteelNode {
                 let next_index = new_index.map(ToOwned::to_owned).unwrap_or_else(|| {
                     Self::data_stream_backing_index_name(target, next_generation)
                 });
-                let condition_results =
-                    rollover_condition_results(&request_body, self.index_document_count(&old_index));
+                let condition_results = match rollover_condition_results(
+                    &request_body,
+                    self.index_document_count(&old_index),
+                ) {
+                    Ok(condition_results) => condition_results,
+                    Err(response) => return response,
+                };
                 let conditions_met = rollover_conditions_met(&condition_results);
                 if dry_run {
                     return RestResponse::json(
@@ -7575,7 +7580,10 @@ impl SteelNode {
             .map(ToOwned::to_owned)
             .unwrap_or_else(|| Self::next_rollover_index_name(&old_index));
         let condition_results =
-            rollover_condition_results(&request_body, self.index_document_count(&old_index));
+            match rollover_condition_results(&request_body, self.index_document_count(&old_index)) {
+                Ok(condition_results) => condition_results,
+                Err(response) => return response,
+            };
         let conditions_met = rollover_conditions_met(&condition_results);
         if dry_run {
             return RestResponse::json(
@@ -36096,17 +36104,39 @@ fn query_param_is_true(raw: Option<&String>) -> bool {
     matches!(raw.map(String::as_str), Some("true") | Some("1"))
 }
 
-fn rollover_condition_results(body: &Value, document_count: usize) -> Value {
-    let Some(max_docs) = body
-        .get("conditions")
-        .and_then(|conditions| conditions.get("max_docs"))
-        .and_then(Value::as_u64)
-    else {
-        return serde_json::json!({});
+fn rollover_condition_results(body: &Value, document_count: usize) -> Result<Value, RestResponse> {
+    let Some(raw_conditions) = body.get("conditions") else {
+        return Ok(serde_json::json!({}));
     };
-    serde_json::json!({
+    let Some(conditions) = raw_conditions.as_object() else {
+        return Err(RestResponse::opensearch_error(
+            400,
+            "x_content_parse_exception",
+            "[rollover] failed to parse field [conditions]",
+        ));
+    };
+    for condition in conditions.keys() {
+        if condition != "max_docs" {
+            return Err(RestResponse::opensearch_error(
+                400,
+                "x_content_parse_exception",
+                format!("[conditions] unknown field [{condition}]"),
+            ));
+        }
+    }
+    let Some(max_docs_value) = conditions.get("max_docs") else {
+        return Ok(serde_json::json!({}));
+    };
+    let Some(max_docs) = max_docs_value.as_u64() else {
+        return Err(RestResponse::opensearch_error(
+            400,
+            "illegal_argument_exception",
+            "invalid token for [max_docs]",
+        ));
+    };
+    Ok(serde_json::json!({
         format!("[max_docs: {max_docs}]"): (document_count as u64) >= max_docs
-    })
+    }))
 }
 
 fn rollover_conditions_met(condition_results: &Value) -> bool {
@@ -37350,6 +37380,65 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             manifest["indices"]["logs-condition-met-000002"]["aliases"]["logs-condition-met-write"]
                 ["is_write_index"],
             Value::Bool(true)
+        );
+    }
+
+    #[test]
+    fn rollover_unknown_condition_fails_without_mutating_alias_target() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        let create = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/logs-unknown-condition-000001")
+                .with_json_body(serde_json::json!({})),
+        );
+        assert_eq!(create.status, 200);
+
+        let alias = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Put,
+                "/logs-unknown-condition-000001/_alias/logs-unknown-condition-write",
+            )
+            .with_json_body(serde_json::json!({
+                "is_write_index": true
+            })),
+        );
+        assert_eq!(alias.status, 200);
+
+        let response = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/logs-unknown-condition-write/_rollover/logs-unknown-condition-000002",
+            )
+            .with_json_body(serde_json::json!({
+                "conditions": {
+                    "min_docs": 1
+                }
+            })),
+        );
+        assert_eq!(response.status, 400);
+        assert_eq!(response.body["error"]["type"], "x_content_parse_exception");
+        assert!(
+            response.body["error"]["reason"]
+                .as_str()
+                .unwrap_or_default()
+                .contains("unknown field [min_docs]")
+        );
+
+        let manifest = node
+            .metadata_manifest_state
+            .lock()
+            .expect("metadata manifest state lock poisoned");
+        assert_eq!(
+            manifest["indices"]["logs-unknown-condition-000001"]["aliases"]
+                ["logs-unknown-condition-write"]["is_write_index"],
+            Value::Bool(true)
+        );
+        assert!(
+            manifest["indices"].get("logs-unknown-condition-000002").is_none(),
+            "unknown rollover condition must not create the candidate index"
         );
     }
 

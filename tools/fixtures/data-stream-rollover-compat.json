@@ -420,6 +420,53 @@
       ]
     },
     {
+      "name": "rollover_alias_named_unknown_condition_failure",
+      "method": "POST",
+      "path": "/rollover-unknown-condition-write/_rollover/rollover-unknown-condition-logs-000002",
+      "setup": [
+        {
+          "method": "DELETE",
+          "path": "/rollover-unknown-condition-logs-000001,rollover-unknown-condition-logs-000002?ignore_unavailable=true"
+        },
+        {
+          "method": "PUT",
+          "path": "/rollover-unknown-condition-logs-000001",
+          "body": {
+            "aliases": {
+              "rollover-unknown-condition-write": {
+                "is_write_index": true
+              }
+            }
+          }
+        }
+      ],
+      "body": {
+        "conditions": {
+          "min_docs": 1
+        }
+      },
+      "steelsearch_compare": {
+        "expected_status": 400,
+        "body_paths_present": [
+          "error.type",
+          "error.reason",
+          "status"
+        ]
+      },
+      "opensearch_compare": {
+        "expected_status": 400,
+        "body_paths_present": [
+          "error.type",
+          "error.reason",
+          "status"
+        ]
+      },
+      "body_paths_equal": [
+        "error.type",
+        "status"
+      ]
+    },
+    {
       "name": "delete_data_stream_happy_path",
       "method": "DELETE",
       "path": "/_data_stream/rollover-ds",
