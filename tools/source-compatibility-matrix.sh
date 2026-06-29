@@ -215,11 +215,8 @@ action_status() {
 
   if [[ "${source}" == "${KNN_ROOT}"/* ]]; then
     case "${action}" in
-      KNNStatsAction.INSTANCE|KNNWarmupAction.INSTANCE|UpdateModelMetadataAction.INSTANCE|TrainingJobRouteDecisionInfoAction.INSTANCE|GetModelAction.INSTANCE|DeleteModelAction.INSTANCE|RemoveModelFromCacheAction.INSTANCE|SearchModelAction.INSTANCE|UpdateModelGraveyardAction.INSTANCE|ClearCacheAction.INSTANCE)
+      KNNStatsAction.INSTANCE|KNNWarmupAction.INSTANCE|UpdateModelMetadataAction.INSTANCE|TrainingJobRouteDecisionInfoAction.INSTANCE|GetModelAction.INSTANCE|DeleteModelAction.INSTANCE|TrainingJobRouterAction.INSTANCE|TrainingModelAction.INSTANCE|RemoveModelFromCacheAction.INSTANCE|SearchModelAction.INSTANCE|UpdateModelGraveyardAction.INSTANCE|ClearCacheAction.INSTANCE)
         echo "implemented"
-        ;;
-      TrainingJobRouterAction.INSTANCE|TrainingModelAction.INSTANCE)
-        echo "partial"
         ;;
       *)
         echo "planned"

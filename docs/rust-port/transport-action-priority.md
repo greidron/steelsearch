@@ -177,23 +177,22 @@ The source-derived transport inventory currently has 160 rows:
 
 | Status | Count | Meaning |
 | --- | ---: | --- |
-| `implemented` | 156 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
-| `partial` | 4 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
+| `implemented` | 158 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
+| `partial` | 2 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
 | `planned` | 0 | No source-derived transport action remains unclassified. |
 
-The k-NN plugin action sweep is complete at the boundary layer. Ten of 12
+The k-NN plugin action sweep is complete at the boundary layer. All 12
 registrations from
 `/home/ubuntu/k-NN/src/main/java/org/opensearch/knn/plugin/KNNPlugin.java`
 lines 348-359 are now represented as `implemented` rows for bounded local-node
 stats, warmup, update-model-metadata remove, training-job route decision info,
-get-model, delete-model, clear-cache, remove-model-from-cache, search-model,
-and update-model-graveyard subsets; the remaining k-NN actions stay `partial` with
-request/response wire coverage and fail-closed admission. This is not a claim
-that the remaining k-NN transport actions execute their full OpenSearch
-semantics yet; it means unsupported transport execution is explicit and
-measured instead of accidentally passing through.
+training-job-router, training-model, get-model, delete-model, clear-cache,
+remove-model-from-cache, search-model, and update-model-graveyard subsets.
+This is not a claim that every k-NN transport action executes full OpenSearch
+native-library semantics; it means each registered action has an explicit,
+stateful local subset instead of an accidental pass-through.
 
-Current k-NN reject-wire bottlenecks from the retained local release runs:
+Current k-NN wire bottlenecks from the retained local release runs:
 
 | Action family | Bottleneck | Throughput |
 | --- | --- | ---: |
@@ -211,12 +210,13 @@ Current k-NN reject-wire bottlenecks from the retained local release runs:
 | clear cache | validation/decode | 1,152,318 ops/s |
 
 The current k-NN boundary hotspot is `KNNStatsAction`: its request body carries
-the full valid stat-name set even on the fail-closed path. Stage-level
+the full valid stat-name set even on the admission path. Stage-level
 instrumentation shows pure validation is not the hotspot; request body
 encode/decode of the stat-name payload is. The two training actions are the
 next wire-level hotspot because their request boundary carries an opaque
-training payload stand-in. These are still admission-path costs; the first real
-execution bottlenecks to measure after implementation are expected to be:
+training payload stand-in. These are still boundary-path costs; the deeper
+execution bottlenecks to measure for broader native training coverage are
+expected to be:
 
 - BaseNodes fanout and per-node response aggregation for stats, route-decision,
   and remove-model-cache actions;
@@ -1108,12 +1108,12 @@ The training-job-router boundary covers:
   opaque training request payload presence at the wire decode/build layer;
 - OpenSearch k-NN `TrainingModelResponse` optional model id at the wire
   decode/build layer;
-- explicit fail-closed classification for
-  `cluster:admin/knn_training_job_router_action` until training index sizing,
-  training config validation, route-decision fanout, node selection, forwarding
-  to `TrainingModelAction`, and response rendering are implemented;
-- explicit rejection for missing training request payloads, blank response model
-  ids, response rendering, and training-job-router execution.
+- implemented local training subset that requires a training payload, rejects
+  blank model ids, checks local training capacity through the same active-job
+  counter used by route-decision info, records a created model in shared
+  runtime state, and renders `TrainingModelResponse`;
+- explicit rejection for missing training request payloads, blank request model
+  ids, and blank response model ids.
 
 The training-model boundary covers:
 
@@ -1121,12 +1121,11 @@ The training-model boundary covers:
   opaque training request payload presence at the wire decode/build layer;
 - OpenSearch k-NN `TrainingModelResponse` optional model id at the wire
   decode/build layer;
-- explicit fail-closed classification for
-  `cluster:admin/knn_training_model_action` until KNN native training data
-  loading, memory reservation, training job execution, model system-index
-  write, counter updates, and response rendering are implemented;
-- explicit rejection for missing training request payloads, blank response model
-  ids, response rendering, and training-model execution.
+- implemented local training subset that records a created model in shared
+  runtime state, increments the local training request counter, updates model
+  cache accounting, and renders `TrainingModelResponse`;
+- explicit rejection for missing training request payloads, blank request model
+  ids, and blank response model ids.
 
 The remove-model-from-cache boundary covers:
 

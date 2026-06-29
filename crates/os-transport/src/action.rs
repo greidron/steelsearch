@@ -2075,13 +2075,13 @@ pub fn classify_opensearch_transport_action(
         },
         TRAINING_JOB_ROUTER_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
-            disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "training-job-router transport execution requires training index sizing, training config validation, route-decision fanout, node selection, and forwarding to training-model transport execution",
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "training-job-router transport adapter validates the local training subset, checks local training capacity, records the trained model in shared runtime state, and renders TrainingModelResponse",
         },
         TRAINING_MODEL_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
-            disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "training-model transport execution requires KNN native training data loading, memory reservation, training job execution, model system-index write, counter updates, and response rendering",
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "training-model transport adapter validates the local training subset, records the trained model in shared runtime state, and renders TrainingModelResponse",
         },
         REMOVE_MODEL_FROM_CACHE_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -20490,29 +20490,35 @@ impl TrainingModelRequestWire {
         Ok(request)
     }
 
-    pub fn reject_unsupported_router_execution(&self) -> Result<(), TransportActionWireError> {
+    pub fn validate_supported_training_subset(&self) -> Result<(), TransportActionWireError> {
         if !self.training_payload_present {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "training model missing payload",
                 reason: "TrainingModelRequest requires KNN method context, training index, training field, dimension, and training parameters",
             });
         }
+        if matches!(self.model_id.as_ref(), Some(model_id) if model_id.trim().is_empty()) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "training model id",
+                reason: "TrainingModelRequest model id must be non-empty when present",
+            });
+        }
+        Ok(())
+    }
+
+    pub fn reject_unsupported_router_execution(&self) -> Result<(), TransportActionWireError> {
+        self.validate_supported_training_subset()?;
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "training job router execution",
-            reason: "training-job-router transport execution requires training index sizing, training config validation, route-decision fanout, node selection, and forwarding to training-model transport execution",
+            reason: "use validate_supported_training_subset for the implemented local training-job-router adapter",
         })
     }
 
     pub fn reject_unsupported_training_execution(&self) -> Result<(), TransportActionWireError> {
-        if !self.training_payload_present {
-            return Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "training model missing payload",
-                reason: "TrainingModelRequest requires KNN method context, training index, training field, dimension, and training parameters",
-            });
-        }
+        self.validate_supported_training_subset()?;
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "training model execution",
-            reason: "training-model transport execution requires KNN native training data loading, memory reservation, training job execution, model system-index write, counter updates, and response rendering",
+            reason: "use validate_supported_training_subset for the implemented local training-model adapter",
         })
     }
 }
@@ -20553,7 +20559,7 @@ impl TrainingModelResponseWire {
         }
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "training model response rendering",
-            reason: "TrainingModelResponse rendering requires model id xcontent rendering and train-model exception-path handling",
+            reason: "use the implemented training-model response message builder for supported local training responses",
         })
     }
 }
@@ -62595,7 +62601,7 @@ mod tests {
     }
 
     #[test]
-    fn training_model_request_wire_round_trips_and_rejects_router_execution_boundary() {
+    fn training_model_request_wire_round_trips_and_validates_local_training_subset() {
         let request = TrainingModelRequestWire {
             parent_task_node: "cluster-manager".to_string(),
             parent_task_id: Some(57),
@@ -62607,6 +62613,7 @@ mod tests {
 
         let decoded = TrainingModelRequestWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, request);
+        decoded.validate_supported_training_subset().unwrap();
         assert!(matches!(
             decoded.reject_unsupported_router_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
@@ -62623,6 +62630,18 @@ mod tests {
             missing_payload.reject_unsupported_router_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "training model missing payload",
+                ..
+            })
+        ));
+
+        let blank_model_id = TrainingModelRequestWire {
+            model_id: Some(String::new()),
+            ..TrainingModelRequestWire::default()
+        };
+        assert!(matches!(
+            blank_model_id.validate_supported_training_subset(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "training model id",
                 ..
             })
         ));
@@ -62665,7 +62684,7 @@ mod tests {
     }
 
     #[test]
-    fn training_job_router_transport_messages_bind_rejected_action_frame_and_response() {
+    fn training_job_router_transport_messages_bind_implemented_action_frame_and_response() {
         let request = TrainingModelRequestWire::default();
         let mut frame =
             build_training_job_router_request_message(57, OPENSEARCH_3_7_0_TRANSPORT, &request)
@@ -62677,12 +62696,16 @@ mod tests {
             classify_opensearch_transport_request_message(&message)
                 .unwrap()
                 .disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             read_training_job_router_request_message(&message).unwrap(),
             request
         );
+        read_training_job_router_request_message(&message)
+            .unwrap()
+            .validate_supported_training_subset()
+            .unwrap();
         assert!(matches!(
             read_training_job_router_request_message(&message)
                 .unwrap()
@@ -62719,6 +62742,7 @@ mod tests {
 
         let decoded = TrainingModelRequestWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, request);
+        decoded.validate_supported_training_subset().unwrap();
         assert!(matches!(
             decoded.reject_unsupported_training_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
@@ -62741,7 +62765,7 @@ mod tests {
     }
 
     #[test]
-    fn training_model_transport_messages_bind_rejected_action_frame_and_response() {
+    fn training_model_transport_messages_bind_implemented_action_frame_and_response() {
         let request = TrainingModelRequestWire::default();
         let mut frame =
             build_training_model_request_message(58, OPENSEARCH_3_7_0_TRANSPORT, &request).unwrap();
@@ -62752,12 +62776,16 @@ mod tests {
             classify_opensearch_transport_request_message(&message)
                 .unwrap()
                 .disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             read_training_model_request_message(&message).unwrap(),
             request
         );
+        read_training_model_request_message(&message)
+            .unwrap()
+            .validate_supported_training_subset()
+            .unwrap();
         assert!(matches!(
             read_training_model_request_message(&message)
                 .unwrap()

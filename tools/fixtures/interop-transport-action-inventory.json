@@ -405,8 +405,8 @@
       "transport_action": "TrainingJobRouterTransportAction",
       "request_wire_type": "TrainingModelRequest",
       "response_wire_type": "TrainingModelResponse",
-      "disposition": "rejected",
-      "reason": "Training-job-router transport execution requires training index sizing, training config validation, route-decision fanout, node selection, and forwarding to training-model transport execution"
+      "disposition": "implemented",
+      "reason": "Training-job-router transport adapter validates the local training subset, checks local training capacity, records the trained model in shared runtime state, and renders TrainingModelResponse"
     },
     {
       "action_name": "cluster:admin/knn_training_model_action",
@@ -414,8 +414,8 @@
       "transport_action": "TrainingModelTransportAction",
       "request_wire_type": "TrainingModelRequest",
       "response_wire_type": "TrainingModelResponse",
-      "disposition": "rejected",
-      "reason": "Training-model transport execution requires KNN native training data loading, memory reservation, training job execution, model system-index write, counter updates, and response rendering"
+      "disposition": "implemented",
+      "reason": "Training-model transport adapter validates the local training subset, records the trained model in shared runtime state, and renders TrainingModelResponse"
     },
     {
       "action_name": "cluster:admin/knn_remove_model_from_cache_action",
