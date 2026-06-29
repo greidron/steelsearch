@@ -256,7 +256,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `cluster:admin/repository/delete` (implemented manifest-backed metadata mutation subset)
 - `cluster:admin/repository/verify` (implemented manifest-backed local node verification subset)
 - `cluster:admin/repository/_cleanup` (implemented manifest-backed zero cleanup-result subset)
-- `cluster:admin/snapshot/get` (rejected fail-closed)
+- `cluster:admin/snapshot/get` (implemented manifest-backed zero-snapshot subset)
 - `cluster:admin/snapshot/delete` (rejected fail-closed)
 - `cluster:admin/snapshot/create` (rejected fail-closed)
 - `cluster:admin/snapshot/clone` (rejected fail-closed)
@@ -662,12 +662,16 @@ The get-snapshots boundary covers:
 - OpenSearch `GetSnapshotsRequest` parent task, cluster-manager timeout,
   repository name, snapshot selector array, `ignoreUnavailable`, and `verbose`
   flags at the wire decode/build layer;
-- explicit fail-closed classification for `cluster:admin/snapshot/get` until
-  repository snapshot metadata resolution, current snapshot resolution, and
-  snapshot response rendering are implemented;
+- OpenSearch `GetSnapshotsResponse` snapshot-list framing at the wire
+  decode/build layer for the zero-snapshot result subset;
+- implemented classification for the bounded default-selector
+  `cluster:admin/snapshot/get` subset with manifest-backed repository admission
+  and OpenSearch-shaped zero-snapshot response rendering;
 - explicit rejection for custom cluster-manager timeout, blank repository names,
   snapshot selectors, `ignoreUnavailable`, non-verbose response mode, and
-  get-snapshots execution.
+  local repositories that already have snapshot records. Broader snapshot info
+  loading and current-snapshot resolution remain outside this local transport
+  subset.
 
 The delete-snapshot boundary covers:
 
@@ -3244,23 +3248,25 @@ is not a material transport bottleneck; the first performance-sensitive work is
 broader repository cleanup coordination and repository blob
 cleanup/accounting beyond the local zero-result subset.
 
-Current get-snapshots reject wire microbenchmark:
+Current get-snapshots wire microbenchmark:
 
 ```text
-cargo run -p os-transport --release --bin get-snapshots-reject-wire-benchmark
-get_snapshots_reject_request_encode iterations=400000 elapsed_ms=227.563 ops_per_second=1757758.57 nanos_per_op=568.91
-get_snapshots_reject_request_decode iterations=400000 elapsed_ms=222.596 ops_per_second=1796978.69 nanos_per_op=556.49
-get_snapshots_reject_validation iterations=400000 elapsed_ms=237.968 ops_per_second=1680897.17 nanos_per_op=594.92
-get_snapshots_reject_wire_bottleneck_ops_per_second=1680897.17
+cargo run -q -p os-transport --release --bin get-snapshots-wire-benchmark
+get_snapshots_request_encode iterations=400000 elapsed_ms=220.761 ops_per_second=1811916.86 nanos_per_op=551.90
+get_snapshots_request_decode iterations=400000 elapsed_ms=225.709 ops_per_second=1772197.10 nanos_per_op=564.27
+get_snapshots_request_validate iterations=400000 elapsed_ms=227.289 ops_per_second=1759876.91 nanos_per_op=568.22
+get_snapshots_response_encode iterations=400000 elapsed_ms=86.495 ops_per_second=4624554.66 nanos_per_op=216.24
+get_snapshots_response_decode iterations=400000 elapsed_ms=90.705 ops_per_second=4409899.45 nanos_per_op=226.76
+get_snapshots_wire_bottleneck_ops_per_second=1759876.91
 ```
 
-The current get-snapshots fail-closed boundary bottleneck is request
-validation. The payload includes the cluster-manager request envelope,
-repository name, empty snapshot selector array, `ignoreUnavailable`, and
-`verbose` before admission rejects execution. At roughly 1.68M ops/s in the
-latest local release run, this boundary is not a material transport bottleneck;
-the first performance-sensitive work is repository data loading, current
-snapshot resolution, snapshot info loading, and response rendering.
+The current get-snapshots transport boundary bottleneck is request validation.
+The payload includes the cluster-manager request envelope, repository name,
+empty snapshot selector array, `ignoreUnavailable`, `verbose`, and the
+zero-snapshot response framing. At roughly 1.76M ops/s in the latest local
+release run, this boundary is not a material transport bottleneck; the first
+performance-sensitive work is repository data loading, current snapshot
+resolution, and snapshot info loading.
 
 Current delete-snapshot reject wire microbenchmark:
 

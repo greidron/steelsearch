@@ -1728,6 +1728,32 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end,
             &mut connection_end_at_ms,
         )?;
+    } else if is_request
+        && normalized_action_hint == Some("cluster:admin/snapshot/get")
+        && get_snapshots_request_supports_manifest_execution_subset(&body)
+    {
+        let response = build_get_snapshots_response(request_id, header_version_id, &body);
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("cluster:admin/snapshot/get"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
     } else if is_request && normalized_action_hint == Some("indices:admin/aliases/get") {
         let response = build_get_aliases_response(request_id, header_version_id, &body);
         response_frame = summarize_transport_response_frame_for_action(
@@ -6029,6 +6055,61 @@ fn snapshot_repository_supports_local_cleanup_in_manifest(repository: &str) -> b
         .and_then(|metadata| metadata.get("type"))
         .and_then(Value::as_str)
         == Some("fs")
+}
+
+fn build_get_snapshots_response(request_id: i64, header_version_id: u32, body: &[u8]) -> Vec<u8> {
+    let Some(request) = decode_get_snapshots_request_from_transport_body(body) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    if !get_snapshots_request_matches_manifest_subset(&request) {
+        return build_empty_transport_response(request_id, header_version_id);
+    }
+    let response = os_transport::action::GetSnapshotsResponseWire::zero();
+    os_transport::action::build_get_snapshots_response_message(
+        request_id,
+        Version::from_id(header_version_id as i32),
+        &response,
+    )
+    .map(|frame| frame.to_vec())
+    .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
+}
+
+fn get_snapshots_request_supports_manifest_execution_subset(body: &[u8]) -> bool {
+    decode_get_snapshots_request_from_transport_body(body)
+        .is_some_and(|request| get_snapshots_request_matches_manifest_subset(&request))
+}
+
+fn decode_get_snapshots_request_from_transport_body(
+    body: &[u8],
+) -> Option<os_transport::action::GetSnapshotsRequestWire> {
+    let message = decode_transport_message_from_body(body)?;
+    os_transport::action::read_get_snapshots_request_message(&message).ok()
+}
+
+fn get_snapshots_request_matches_manifest_subset(
+    request: &os_transport::action::GetSnapshotsRequestWire,
+) -> bool {
+    request.validate_supported_execution_subset().is_ok()
+        && snapshot_repository_exists_in_manifest(&request.repository)
+        && snapshot_repository_has_no_manifest_snapshots(&request.repository)
+}
+
+fn snapshot_repository_has_no_manifest_snapshots(repository: &str) -> bool {
+    let bindings = dev_transport_pit_bindings();
+    let manifest = bindings
+        .metadata_manifest
+        .lock()
+        .expect("dev transport metadata manifest lock poisoned");
+    let Some(snapshots) = manifest.get("snapshots") else {
+        return true;
+    };
+    match snapshots.get(repository) {
+        None => true,
+        Some(Value::Array(items)) => items.is_empty(),
+        Some(Value::Object(items)) => items.is_empty(),
+        Some(Value::Null) => true,
+        Some(_) => false,
+    }
 }
 
 fn build_empty_get_pipeline_response(
@@ -18475,6 +18556,15 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
                 body,
             ))
         }
+        Some("cluster:admin/snapshot/get")
+            if get_snapshots_request_supports_manifest_execution_subset(body) =>
+        {
+            Some(build_get_snapshots_response(
+                request_id,
+                header_version_id,
+                body,
+            ))
+        }
         Some("indices:admin/aliases/get") => Some(build_get_aliases_response(
             request_id,
             header_version_id,
@@ -23896,6 +23986,105 @@ mod tests {
         )
         .unwrap();
         assert!(!cleanup_repository_request_supports_manifest_execution_subset(&frame[6..]));
+    }
+
+    #[test]
+    fn get_snapshots_transport_route_returns_zero_snapshot_response_for_empty_manifest_repository()
+    {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        let bindings = dev_transport_pit_bindings();
+        {
+            let mut manifest = bindings
+                .metadata_manifest
+                .lock()
+                .expect("dev transport metadata manifest lock poisoned");
+            *manifest = serde_json::json!({
+                "snapshot_repositories": {
+                    "repo-snapshots": {
+                        "type": "fs",
+                        "settings": {
+                            "location": "/tmp/repo-snapshots"
+                        }
+                    }
+                },
+                "snapshots": {
+                    "repo-snapshots": []
+                }
+            });
+        }
+
+        let request = os_transport::action::GetSnapshotsRequestWire {
+            repository: "repo-snapshots".to_string(),
+            ..os_transport::action::GetSnapshotsRequestWire::default()
+        };
+        let frame = os_transport::action::build_get_snapshots_request_message(
+            86,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(get_snapshots_request_supports_manifest_execution_subset(
+            &frame[6..]
+        ));
+
+        let response =
+            build_get_snapshots_response(86, OPENSEARCH_3_7_0_TRANSPORT.id() as u32, &frame[6..]);
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected get snapshots response message");
+        };
+        assert_eq!(message.request_id, 86);
+        let response = os_transport::action::read_get_snapshots_response_message(&message).unwrap();
+        assert_eq!(response.snapshot_count, 0);
+    }
+
+    #[test]
+    fn get_snapshots_transport_route_excludes_manifest_repositories_with_snapshot_records() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        let bindings = dev_transport_pit_bindings();
+        {
+            let mut manifest = bindings
+                .metadata_manifest
+                .lock()
+                .expect("dev transport metadata manifest lock poisoned");
+            *manifest = serde_json::json!({
+                "snapshot_repositories": {
+                    "repo-snapshots": {
+                        "type": "fs",
+                        "settings": {
+                            "location": "/tmp/repo-snapshots"
+                        }
+                    }
+                },
+                "snapshots": {
+                    "repo-snapshots": [
+                        {"snapshot": "snapshot-a"}
+                    ]
+                }
+            });
+        }
+
+        let request = os_transport::action::GetSnapshotsRequestWire {
+            repository: "repo-snapshots".to_string(),
+            ..os_transport::action::GetSnapshotsRequestWire::default()
+        };
+        let frame = os_transport::action::build_get_snapshots_request_message(
+            87,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(!get_snapshots_request_supports_manifest_execution_subset(
+            &frame[6..]
+        ));
     }
 
     #[test]

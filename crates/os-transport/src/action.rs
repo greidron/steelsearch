@@ -1833,8 +1833,8 @@ pub fn classify_opensearch_transport_action(
         },
         GET_SNAPSHOTS_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
-            disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "get-snapshots transport execution requires repository snapshot metadata resolution and snapshot response rendering",
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "get-snapshots transport adapter validates the bounded default selector subset and renders an OpenSearch-shaped zero-snapshot response for local manifest repositories",
         },
         DELETE_SNAPSHOT_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -6809,6 +6809,36 @@ pub fn read_get_snapshots_request_message(
         });
     }
     GetSnapshotsRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_get_snapshots_response_message(
+    request_id: i64,
+    version: Version,
+    response: &GetSnapshotsResponseWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    response.write(&mut body)?;
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::response(),
+        version,
+        variable_header: BytesMut::from(&ResponseVariableHeader::default().to_bytes()[..]),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_get_snapshots_response_message(
+    message: &TransportMessage,
+) -> Result<GetSnapshotsResponseWire, TransportActionWireError> {
+    if !message.status.is_response() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "response",
+            actual: message.status.bits(),
+        });
+    }
+    let _header = ResponseVariableHeader::read(message.variable_header.clone().freeze())?;
+    GetSnapshotsResponseWire::read(message.body.clone().freeze())
 }
 
 pub fn build_delete_snapshot_request_message(
@@ -14816,7 +14846,7 @@ impl GetSnapshotsRequestWire {
         Ok(request)
     }
 
-    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+    pub fn validate_supported_execution_subset(&self) -> Result<(), TransportActionWireError> {
         if self.cluster_manager_timeout != TimeValueWire::seconds(30) {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "get snapshots cluster-manager timeout",
@@ -14848,10 +14878,57 @@ impl GetSnapshotsRequestWire {
                 reason: "non-verbose snapshot responses require basic snapshot info rendering",
             });
         }
+        Ok(())
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        self.validate_supported_execution_subset()?;
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "get snapshots execution",
-            reason: "get-snapshots transport execution requires repository snapshot metadata resolution and snapshot response rendering",
+            reason: "get-snapshots transport execution is handled by the manifest-backed zero-snapshot local adapter",
         })
+    }
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct GetSnapshotsResponseWire {
+    pub snapshot_count: usize,
+}
+
+impl GetSnapshotsResponseWire {
+    pub fn zero() -> Self {
+        Self { snapshot_count: 0 }
+    }
+
+    pub fn write(&self, output: &mut StreamOutput) -> Result<(), TransportActionWireError> {
+        self.validate_supported_subset()?;
+        output.write_vint(self.snapshot_count as i32);
+        Ok(())
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let snapshot_count = read_len(&mut input)?;
+        if snapshot_count != 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get snapshots response entries",
+                reason:
+                    "SnapshotInfo response entries require full snapshot metadata stream decoding",
+            });
+        }
+        require_no_trailing_bytes(&input)?;
+        Ok(Self { snapshot_count })
+    }
+
+    pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
+        if self.snapshot_count != 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get snapshots response entries",
+                reason:
+                    "SnapshotInfo response entries require full snapshot metadata stream encoding",
+            });
+        }
+        Ok(())
     }
 }
 
@@ -54085,7 +54162,7 @@ mod tests {
     }
 
     #[test]
-    fn get_snapshots_request_wire_round_trips_and_rejects_execution_boundary() {
+    fn get_snapshots_request_wire_round_trips_and_validates_supported_subset() {
         let request = GetSnapshotsRequestWire {
             parent_task_node: "cluster-manager".to_string(),
             parent_task_id: Some(36),
@@ -54096,6 +54173,7 @@ mod tests {
 
         let decoded = GetSnapshotsRequestWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, request);
+        decoded.validate_supported_execution_subset().unwrap();
         assert!(matches!(
             decoded.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
@@ -54112,7 +54190,7 @@ mod tests {
             ..GetSnapshotsRequestWire::default()
         };
         assert!(matches!(
-            cluster_manager_timeout.reject_unsupported_execution(),
+            cluster_manager_timeout.validate_supported_execution_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "get snapshots cluster-manager timeout",
                 ..
@@ -54124,7 +54202,7 @@ mod tests {
             ..GetSnapshotsRequestWire::default()
         };
         assert!(matches!(
-            missing_repository.reject_unsupported_execution(),
+            missing_repository.validate_supported_execution_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "get snapshots missing repository",
                 ..
@@ -54136,7 +54214,7 @@ mod tests {
             ..GetSnapshotsRequestWire::default()
         };
         assert!(matches!(
-            selector.reject_unsupported_execution(),
+            selector.validate_supported_execution_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "get snapshots selector",
                 ..
@@ -54148,7 +54226,7 @@ mod tests {
             ..GetSnapshotsRequestWire::default()
         };
         assert!(matches!(
-            ignore_unavailable.reject_unsupported_execution(),
+            ignore_unavailable.validate_supported_execution_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "get snapshots ignore unavailable",
                 ..
@@ -54160,7 +54238,7 @@ mod tests {
             ..GetSnapshotsRequestWire::default()
         };
         assert!(matches!(
-            non_verbose.reject_unsupported_execution(),
+            non_verbose.validate_supported_execution_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "get snapshots non-verbose",
                 ..
@@ -54169,7 +54247,7 @@ mod tests {
     }
 
     #[test]
-    fn get_snapshots_transport_messages_bind_rejected_action_frame() {
+    fn get_snapshots_transport_messages_bind_supported_action_frame() {
         let request = GetSnapshotsRequestWire::default();
         let mut frame =
             build_get_snapshots_request_message(36, OPENSEARCH_3_7_0_TRANSPORT, &request).unwrap();
@@ -54180,12 +54258,52 @@ mod tests {
             read_get_snapshots_request_message(&message).unwrap(),
             request
         );
+        assert_eq!(
+            classify_opensearch_transport_action(GET_SNAPSHOTS_ACTION_NAME).disposition,
+            OpenSearchTransportActionDisposition::Implemented
+        );
+        read_get_snapshots_request_message(&message)
+            .unwrap()
+            .validate_supported_execution_subset()
+            .unwrap();
         assert!(matches!(
             read_get_snapshots_request_message(&message)
                 .unwrap()
                 .reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "get snapshots execution",
+                ..
+            })
+        ));
+
+        let response = GetSnapshotsResponseWire::zero();
+        let mut frame =
+            build_get_snapshots_response_message(36, OPENSEARCH_3_7_0_TRANSPORT, &response)
+                .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected get snapshots response message");
+        };
+        assert_eq!(
+            read_get_snapshots_response_message(&message).unwrap(),
+            response
+        );
+        assert!(matches!(
+            read_get_snapshots_request_message(&message).unwrap_err(),
+            TransportActionWireError::UnexpectedMessageStatus {
+                expected: "request",
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn get_snapshots_response_rejects_snapshot_entries_until_snapshot_info_wire_is_supported() {
+        let mut non_zero = StreamOutput::new();
+        non_zero.write_vint(1);
+        assert!(matches!(
+            GetSnapshotsResponseWire::read(non_zero.freeze()),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "get snapshots response entries",
                 ..
             })
         ));

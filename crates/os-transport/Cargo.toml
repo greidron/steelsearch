@@ -96,8 +96,8 @@ name = "cleanup-repository-wire-benchmark"
 path = "benchmarks/cleanup_repository_wire.rs"
 
 [[bin]]
-name = "get-snapshots-reject-wire-benchmark"
-path = "benchmarks/get_snapshots_reject_wire.rs"
+name = "get-snapshots-wire-benchmark"
+path = "benchmarks/get_snapshots_wire.rs"
 
 [[bin]]
 name = "delete-snapshot-reject-wire-benchmark"
