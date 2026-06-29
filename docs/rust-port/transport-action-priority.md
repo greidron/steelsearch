@@ -177,17 +177,17 @@ The source-derived transport inventory currently has 160 rows:
 
 | Status | Count | Meaning |
 | --- | ---: | --- |
-| `implemented` | 154 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
-| `partial` | 6 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
+| `implemented` | 155 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
+| `partial` | 5 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
 | `planned` | 0 | No source-derived transport action remains unclassified. |
 
-The k-NN plugin action sweep is complete at the boundary layer. Nine of 12
+The k-NN plugin action sweep is complete at the boundary layer. Ten of 12
 registrations from
 `/home/ubuntu/k-NN/src/main/java/org/opensearch/knn/plugin/KNNPlugin.java`
 lines 348-359 are now represented as `implemented` rows for bounded local-node
 stats, warmup, update-model-metadata remove, training-job route decision info,
-get-model, delete-model, clear-cache, remove-model-from-cache, and
-update-model-graveyard subsets; the remaining k-NN actions stay `partial` with
+get-model, delete-model, clear-cache, remove-model-from-cache, search-model,
+and update-model-graveyard subsets; the remaining k-NN actions stay `partial` with
 request/response wire coverage and fail-closed admission. This is not a claim
 that the remaining k-NN transport actions execute their full OpenSearch
 semantics yet; it means unsupported transport execution is explicit and
@@ -1144,15 +1144,15 @@ The search-model boundary covers:
 
 - OpenSearch k-NN `SearchModelAction` request frames carrying OpenSearch core
   `SearchRequest` at the wire decode/build layer;
-- OpenSearch k-NN `SearchModelAction` response frames carrying opaque
-  `SearchResponse` payload presence at the wire decode/build layer;
-- explicit fail-closed classification for
-  `cluster:admin/knn_search_model_action` until model system-index search
-  request mapping, `SearchRequest` source parsing, `ModelDao` search
-  delegation, `SearchResponse` decoding, and response rendering are
-  implemented;
-- explicit rejection for unsupported search request shapes, opaque
-  `SearchResponse` payloads, response rendering, and search-model execution.
+- OpenSearch k-NN `SearchModelAction` response frames carrying the same
+  supported `SearchResponse` wire subset as the implemented local search
+  transport path;
+- implemented classification for `cluster:admin/knn_search_model_action`
+  when the embedded `SearchRequest` matches the local search execution
+  subset, including local document-store hit rendering through
+  `OpenSearchSearchResponseWire`;
+- explicit rejection for unsupported search request shapes outside the local
+  search execution subset.
 
 The update-model-graveyard boundary covers:
 

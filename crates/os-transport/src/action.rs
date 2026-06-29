@@ -2090,8 +2090,8 @@ pub fn classify_opensearch_transport_action(
         },
         SEARCH_MODEL_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
-            disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "search-model transport execution requires model system-index search request mapping, SearchRequest source parsing, ModelDao search delegation, SearchResponse decoding, and response rendering",
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "search-model transport adapter reuses the implemented SearchRequest local execution subset and renders OpenSearch SearchResponse wire frames for model index searches",
         },
         UPDATE_MODEL_GRAVEYARD_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -9263,7 +9263,7 @@ pub fn build_search_model_response_message(
     response: &SearchModelResponseWire,
 ) -> Result<BytesMut, TransportActionWireError> {
     let mut body = StreamOutput::new();
-    response.write(&mut body);
+    response.write(&mut body, version)?;
     let message = TransportMessage {
         request_id,
         status: TransportStatus::response(),
@@ -9283,7 +9283,7 @@ pub fn read_search_model_response_message(
             actual: message.status.bits(),
         });
     }
-    SearchModelResponseWire::read(message.body.clone().freeze())
+    SearchModelResponseWire::read(message.body.clone().freeze(), message.version)
 }
 
 pub fn build_update_model_graveyard_request_message(
@@ -20759,52 +20759,51 @@ impl SearchModelRequestWire {
     }
 
     pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
-        self.search.validate_supported_shape()?;
+        self.validate_supported_execution_subset()?;
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "search model execution",
-            reason: "search-model transport execution requires model system-index search request mapping, SearchRequest source parsing, ModelDao search delegation, SearchResponse decoding, and response rendering",
+            reason: "use validate_supported_execution_subset for the implemented local search-model adapter",
         })
+    }
+
+    pub fn validate_supported_execution_subset(&self) -> Result<(), TransportActionWireError> {
+        self.search.validate_supported_execution_subset()
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Default)]
+#[derive(Clone, Debug)]
 pub struct SearchModelResponseWire {
-    pub search_response_payload_present: bool,
+    pub search: OpenSearchSearchResponseWire,
+}
+
+impl Default for SearchModelResponseWire {
+    fn default() -> Self {
+        Self {
+            search: OpenSearchSearchResponseWire::default(),
+        }
+    }
 }
 
 impl SearchModelResponseWire {
-    pub fn write(&self, output: &mut StreamOutput) {
-        if self.search_response_payload_present {
-            output.write_string("opaque-search-response");
-        }
+    pub fn write(
+        &self,
+        output: &mut StreamOutput,
+        version: Version,
+    ) -> Result<(), TransportActionWireError> {
+        self.search.write(output, version)
     }
 
-    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
-        let mut input = StreamInput::new(bytes);
-        let remaining = input.remaining();
-        let search_response_payload_present = if remaining > 0 {
-            let _ = input.read_bytes(remaining)?;
-            true
-        } else {
-            false
-        };
-        let response = Self {
-            search_response_payload_present,
-        };
-        require_no_trailing_bytes(&input)?;
-        Ok(response)
+    pub fn read(bytes: Bytes, version: Version) -> Result<Self, TransportActionWireError> {
+        Ok(Self {
+            search: OpenSearchSearchResponseWire::read(bytes, version)?,
+        })
     }
 
     pub fn reject_unsupported_rendering(&self) -> Result<(), TransportActionWireError> {
-        if self.search_response_payload_present {
-            return Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "search model response payload",
-                reason: "SearchResponse decoding requires OpenSearch search hit, aggregation, suggest, shard failure, and reduce metadata mapping",
-            });
-        }
+        self.search.validate_supported_subset()?;
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "search model response rendering",
-            reason: "search-model response rendering requires SearchResponse decoding and xcontent rendering",
+            reason: "use validate_supported_subset on the embedded SearchResponse for the implemented search-model response renderer",
         })
     }
 }
@@ -62902,7 +62901,7 @@ mod tests {
     }
 
     #[test]
-    fn search_model_request_wire_round_trips_and_rejects_execution_boundary() {
+    fn search_model_request_wire_round_trips_and_validates_local_subset() {
         let request = SearchModelRequestWire {
             search: OpenSearchSearchRequestWire {
                 parent_task_node: "cluster-manager".to_string(),
@@ -62915,6 +62914,7 @@ mod tests {
 
         let decoded = SearchModelRequestWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, request);
+        decoded.validate_supported_execution_subset().unwrap();
         assert!(matches!(
             decoded.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
@@ -62930,7 +62930,7 @@ mod tests {
             },
         };
         assert!(matches!(
-            index_scoped.reject_unsupported_execution(),
+            index_scoped.validate_supported_execution_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "search request index filter",
                 ..
@@ -62939,15 +62939,23 @@ mod tests {
     }
 
     #[test]
-    fn search_model_response_wire_round_trips_and_rejects_unsupported_shapes() {
+    fn search_model_response_wire_round_trips_search_response_payload() {
         let response = SearchModelResponseWire {
-            search_response_payload_present: false,
+            search: OpenSearchSearchResponseWire::empty_with_total_hits(3),
         };
         let mut output = StreamOutput::new();
-        response.write(&mut output);
+        response
+            .write(&mut output, OPENSEARCH_3_7_0_TRANSPORT)
+            .unwrap();
 
-        let decoded = SearchModelResponseWire::read(output.freeze()).unwrap();
-        assert_eq!(decoded, response);
+        let decoded =
+            SearchModelResponseWire::read(output.freeze(), OPENSEARCH_3_7_0_TRANSPORT).unwrap();
+        assert_eq!(decoded.search.total_hits, response.search.total_hits);
+        assert_eq!(
+            decoded.search.total_hits_relation,
+            response.search.total_hits_relation
+        );
+        assert_eq!(decoded.search.hits.len(), response.search.hits.len());
         assert!(matches!(
             decoded.reject_unsupported_rendering(),
             Err(TransportActionWireError::UnsupportedWireShape {
@@ -62955,25 +62963,10 @@ mod tests {
                 ..
             })
         ));
-
-        let opaque_response = SearchModelResponseWire {
-            search_response_payload_present: true,
-        };
-        let mut output = StreamOutput::new();
-        opaque_response.write(&mut output);
-        let decoded = SearchModelResponseWire::read(output.freeze()).unwrap();
-        assert_eq!(decoded, opaque_response);
-        assert!(matches!(
-            decoded.reject_unsupported_rendering(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "search model response payload",
-                ..
-            })
-        ));
     }
 
     #[test]
-    fn search_model_transport_messages_bind_rejected_action_frame_and_response() {
+    fn search_model_transport_messages_bind_implemented_action_frame_and_response() {
         let request = SearchModelRequestWire::default();
         let mut frame =
             build_search_model_request_message(60, OPENSEARCH_3_7_0_TRANSPORT, &request).unwrap();
@@ -62984,12 +62977,16 @@ mod tests {
             classify_opensearch_transport_request_message(&message)
                 .unwrap()
                 .disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             read_search_model_request_message(&message).unwrap(),
             request
         );
+        read_search_model_request_message(&message)
+            .unwrap()
+            .validate_supported_execution_subset()
+            .unwrap();
         assert!(matches!(
             read_search_model_request_message(&message)
                 .unwrap()
@@ -63004,16 +63001,17 @@ mod tests {
             Err(TransportActionWireError::UnexpectedAction { .. })
         ));
 
-        let response = SearchModelResponseWire::default();
+        let response = SearchModelResponseWire {
+            search: OpenSearchSearchResponseWire::empty_with_total_hits(2),
+        };
         let mut frame =
             build_search_model_response_message(60, OPENSEARCH_3_7_0_TRANSPORT, &response).unwrap();
         let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
             panic!("expected search model response message");
         };
-        assert_eq!(
-            read_search_model_response_message(&message).unwrap(),
-            response
-        );
+        let decoded = read_search_model_response_message(&message).unwrap();
+        assert_eq!(decoded.search.total_hits, response.search.total_hits);
+        assert_eq!(decoded.search.hits.len(), response.search.hits.len());
     }
 
     #[test]

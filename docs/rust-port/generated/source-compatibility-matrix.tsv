@@ -545,7 +545,7 @@ transport_action	implemented	action	DeleteModelAction.INSTANCE	DeleteModelTransp
 transport_action	partial	action	TrainingJobRouterAction.INSTANCE	TrainingJobRouterTransportAction.class	/home/ubuntu/k-NN/src/main/java/org/opensearch/knn/plugin/KNNPlugin.java	354
 transport_action	partial	action	TrainingModelAction.INSTANCE	TrainingModelTransportAction.class	/home/ubuntu/k-NN/src/main/java/org/opensearch/knn/plugin/KNNPlugin.java	355
 transport_action	implemented	action	RemoveModelFromCacheAction.INSTANCE	RemoveModelFromCacheTransportAction.class	/home/ubuntu/k-NN/src/main/java/org/opensearch/knn/plugin/KNNPlugin.java	356
-transport_action	partial	action	SearchModelAction.INSTANCE	SearchModelTransportAction.class	/home/ubuntu/k-NN/src/main/java/org/opensearch/knn/plugin/KNNPlugin.java	357
+transport_action	implemented	action	SearchModelAction.INSTANCE	SearchModelTransportAction.class	/home/ubuntu/k-NN/src/main/java/org/opensearch/knn/plugin/KNNPlugin.java	357
 transport_action	implemented	action	UpdateModelGraveyardAction.INSTANCE	UpdateModelGraveyardTransportAction.class	/home/ubuntu/k-NN/src/main/java/org/opensearch/knn/plugin/KNNPlugin.java	358
 transport_action	implemented	action	ClearCacheAction.INSTANCE	ClearCacheTransportAction.class	/home/ubuntu/k-NN/src/main/java/org/opensearch/knn/plugin/KNNPlugin.java	359
 search_registration	implemented	aggregation	new AggregationSpec(AvgAggregationBuilder.NAME, AvgAggregationBuilder::new, AvgAggregationBuilder.PARSER).addResultReader( InternalAvg::new ).setAggregatorRegistrar(AvgAggregationBuilder::registerAggregators), builder		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	406

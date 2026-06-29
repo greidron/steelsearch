@@ -4437,6 +4437,32 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end_at_ms,
         )?;
     } else if is_request
+        && normalized_action_hint == Some("cluster:admin/knn_search_model_action")
+        && search_model_request_supports_local_execution_subset(&body)
+    {
+        let response = build_local_search_model_response(request_id, header_version_id, &body);
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("cluster:admin/knn_search_model_action"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request
         && normalized_action_hint == Some("indices:data/read/search/stream")
         && stream_search_request_has_invalid_pit_id(&body)
     {
@@ -17324,6 +17350,29 @@ fn build_local_search_response(request_id: i64, header_version_id: u32, body: &[
     build_search_response_from_request(request_id, header_version_id, &request)
 }
 
+fn build_local_search_model_response(
+    request_id: i64,
+    header_version_id: u32,
+    body: &[u8],
+) -> Vec<u8> {
+    let Some(request) = decode_search_model_request_from_transport_body(body) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    if request.validate_supported_execution_subset().is_err() {
+        return build_empty_transport_response(request_id, header_version_id);
+    }
+    let response = os_transport::action::SearchModelResponseWire {
+        search: local_transport_search_response_from_request(&request.search),
+    };
+    os_transport::action::build_search_model_response_message(
+        request_id,
+        Version::from_id(header_version_id as i32),
+        &response,
+    )
+    .map(|frame| frame.to_vec())
+    .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
+}
+
 fn build_search_response_from_request(
     request_id: i64,
     header_version_id: u32,
@@ -17343,6 +17392,12 @@ fn search_request_supports_local_execution_subset(body: &[u8]) -> bool {
     decode_search_request_from_transport_body(body)
         .as_ref()
         .is_some_and(search_request_matches_local_execution_subset)
+}
+
+fn search_model_request_supports_local_execution_subset(body: &[u8]) -> bool {
+    decode_search_model_request_from_transport_body(body)
+        .as_ref()
+        .is_some_and(|request| search_request_matches_local_execution_subset(&request.search))
 }
 
 fn search_request_has_invalid_pit_id(body: &[u8]) -> bool {
@@ -17376,6 +17431,13 @@ fn decode_search_request_from_transport_body(
 ) -> Option<os_transport::action::OpenSearchSearchRequestWire> {
     let message = decode_transport_message_from_body(body)?;
     os_transport::action::read_opensearch_search_request_message(&message).ok()
+}
+
+fn decode_search_model_request_from_transport_body(
+    body: &[u8],
+) -> Option<os_transport::action::SearchModelRequestWire> {
+    let message = decode_transport_message_from_body(body)?;
+    os_transport::action::read_search_model_request_message(&message).ok()
 }
 
 fn build_search_invalid_pit_id_error_response(
@@ -28025,6 +28087,15 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
             if search_request_supports_local_execution_subset(body) =>
         {
             Some(build_local_search_response(
+                request_id,
+                header_version_id,
+                body,
+            ))
+        }
+        Some("cluster:admin/knn_search_model_action")
+            if search_model_request_supports_local_execution_subset(body) =>
+        {
+            Some(build_local_search_model_response(
                 request_id,
                 header_version_id,
                 body,
@@ -40653,6 +40724,127 @@ mod tests {
                 true,
                 None,
             )])
+        );
+    }
+
+    #[test]
+    fn search_model_transport_route_reuses_local_search_response_subset() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        dev_transport_pit_bindings()
+            .created_indices
+            .lock()
+            .expect("dev transport created indices lock poisoned")
+            .clear();
+        dev_transport_pit_bindings()
+            .documents
+            .lock()
+            .expect("dev transport documents lock poisoned")
+            .clear();
+        *dev_transport_pit_bindings()
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned") = serde_json::json!({
+            "indices": {
+                "models-search-transport": {
+                    "settings": {
+                        "index": {
+                            "number_of_shards": "1"
+                        }
+                    }
+                }
+            }
+        });
+        dev_transport_pit_bindings()
+            .created_indices
+            .lock()
+            .expect("dev transport created indices lock poisoned")
+            .insert("models-search-transport".to_string());
+        {
+            let mut documents = dev_transport_pit_bindings()
+                .documents
+                .lock()
+                .expect("dev transport documents lock poisoned");
+            documents.insert(
+                "models-search-transport:model-1:".to_string(),
+                StoredDocument {
+                    source: serde_json::json!({ "state": "created", "dimension": 3 }),
+                    version: 1,
+                    seq_no: 1,
+                    primary_term: 1,
+                    routing: None,
+                    refreshed: true,
+                }
+                .into(),
+            );
+            documents.insert(
+                "models-search-transport:model-2:".to_string(),
+                StoredDocument {
+                    source: serde_json::json!({ "state": "failed", "dimension": 4 }),
+                    version: 1,
+                    seq_no: 2,
+                    primary_term: 1,
+                    routing: None,
+                    refreshed: true,
+                }
+                .into(),
+            );
+        }
+
+        let request = os_transport::action::SearchModelRequestWire {
+            search: os_transport::action::OpenSearchSearchRequestWire {
+                source: Some(os_transport::action::OpenSearchSearchSourceBuilderWire {
+                    query: Some(os_transport::action::OpenSearchQueryBuilderWire::Term(
+                        os_transport::action::OpenSearchTermQueryBuilderWire {
+                            boost: 1.0,
+                            query_name: None,
+                            field_name: "state".to_string(),
+                            value: serde_json::json!("created"),
+                            case_insensitive: false,
+                        },
+                    )),
+                    fetch_source: Some(os_transport::action::OpenSearchFetchSourceContextWire {
+                        fetch_source: true,
+                        includes: vec!["state".to_string()],
+                        excludes: Vec::new(),
+                    }),
+                    ..os_transport::action::OpenSearchSearchSourceBuilderWire::default()
+                }),
+                ..os_transport::action::OpenSearchSearchRequestWire::default()
+            },
+        };
+        let frame = os_transport::action::build_search_model_request_message(
+            305,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(search_model_request_supports_local_execution_subset(
+            &frame[6..]
+        ));
+
+        let response = build_local_search_model_response(
+            305,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &frame[6..],
+        );
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected search model response message");
+        };
+        let response = os_transport::action::read_search_model_response_message(&message)
+            .expect("search model response");
+        assert_eq!(response.search.total_hits, Some(1));
+        assert_eq!(response.search.hits.len(), 1);
+        assert_eq!(response.search.hits[0].id.as_deref(), Some("model-1"));
+        assert_eq!(
+            response.search.hits[0].source.as_ref(),
+            Some(&serde_json::json!({ "state": "created" }))
         );
     }
 

@@ -432,8 +432,8 @@
       "transport_action": "SearchModelTransportAction",
       "request_wire_type": "SearchRequest",
       "response_wire_type": "SearchResponse",
-      "disposition": "rejected",
-      "reason": "Search-model transport execution requires model system-index search request mapping, SearchRequest source parsing, ModelDao search delegation, SearchResponse decoding, and response rendering"
+      "disposition": "implemented",
+      "reason": "Search-model transport adapter reuses the implemented SearchRequest local execution subset and renders OpenSearch SearchResponse wire frames for model index searches"
     },
     {
       "action_name": "cluster:admin/knn_update_model_graveyard_action",
