@@ -596,6 +596,10 @@ name = "clear-scroll-wire-benchmark"
 path = "benchmarks/clear_scroll_wire.rs"
 
 [[bin]]
+name = "free-scroll-context-wire-benchmark"
+path = "benchmarks/free_scroll_context_wire.rs"
+
+[[bin]]
 name = "explain-reject-wire-benchmark"
 path = "benchmarks/explain_reject_wire.rs"
 

@@ -112,6 +112,8 @@ pub const OPENSEARCH_STREAM_SEARCH_ACTION_NAME: &str = "indices:data/read/search
 pub const OPENSEARCH_MULTI_SEARCH_ACTION_NAME: &str = "indices:data/read/msearch";
 pub const OPENSEARCH_SEARCH_SCROLL_ACTION_NAME: &str = "indices:data/read/scroll";
 pub const OPENSEARCH_CLEAR_SCROLL_ACTION_NAME: &str = "indices:data/read/scroll/clear";
+pub const OPENSEARCH_FREE_SCROLL_CONTEXT_ACTION_NAME: &str =
+    "indices:data/read/search[free_context/scroll]";
 pub const OPENSEARCH_EXPLAIN_ACTION_NAME: &str = "indices:data/read/explain";
 pub const OPENSEARCH_CREATE_PIT_ACTION_NAME: &str = "indices:data/read/point_in_time/create";
 pub const OPENSEARCH_DELETE_PIT_ACTION_NAME: &str = "indices:data/read/point_in_time/delete";
@@ -762,6 +764,15 @@ pub const OPENSEARCH_PRIORITY_TRANSPORT_ACTIONS: &[OpenSearchPriorityTransportAc
         response_wire_type: "ClearScrollResponse",
         adapter_stage: "search-scroll",
         next_step: "map scroll id invalidation onto Rust search context lifecycle",
+    },
+    OpenSearchPriorityTransportActionSpec {
+        action_name: OPENSEARCH_FREE_SCROLL_CONTEXT_ACTION_NAME,
+        action_type: "ScrollFreeContextRequest",
+        transport_action: "SearchTransportService",
+        request_wire_type: "ScrollFreeContextRequest",
+        response_wire_type: "SearchFreeContextResponse",
+        adapter_stage: "search-scroll",
+        next_step: "map scroll free-context requests onto Rust scroll context lifecycle",
     },
     OpenSearchPriorityTransportActionSpec {
         action_name: OPENSEARCH_EXPLAIN_ACTION_NAME,
@@ -2420,6 +2431,11 @@ pub fn classify_opensearch_transport_action(
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Implemented,
             reason: "clear-scroll transport adapter invalidates local scroll contexts for _all and explicit scroll ids",
+        },
+        OPENSEARCH_FREE_SCROLL_CONTEXT_ACTION_NAME => OpenSearchTransportDispatchDecision {
+            action_name: action_name.to_string(),
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "free-scroll-context transport adapter invalidates one local scroll context and renders OpenSearch SearchFreeContextResponse wire",
         },
         OPENSEARCH_EXPLAIN_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -13785,6 +13801,73 @@ pub fn read_opensearch_clear_scroll_response_message(
         });
     }
     OpenSearchClearScrollResponseWire::read(message.body.clone().freeze())
+}
+
+pub fn build_opensearch_free_scroll_context_request_message(
+    request_id: i64,
+    version: Version,
+    request: &OpenSearchFreeScrollContextRequestWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    request.write(&mut body)?;
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::request(),
+        version,
+        variable_header: BytesMut::from(
+            &RequestVariableHeader::new(OPENSEARCH_FREE_SCROLL_CONTEXT_ACTION_NAME).to_bytes()[..],
+        ),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_free_scroll_context_request_message(
+    message: &TransportMessage,
+) -> Result<OpenSearchFreeScrollContextRequestWire, TransportActionWireError> {
+    if !message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "request",
+            actual: message.status.bits(),
+        });
+    }
+    let header = RequestVariableHeader::read(message.variable_header.clone().freeze())?;
+    if header.action != OPENSEARCH_FREE_SCROLL_CONTEXT_ACTION_NAME {
+        return Err(TransportActionWireError::UnexpectedAction {
+            expected: OPENSEARCH_FREE_SCROLL_CONTEXT_ACTION_NAME,
+            actual: header.action,
+        });
+    }
+    OpenSearchFreeScrollContextRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_opensearch_free_search_context_response_message(
+    request_id: i64,
+    version: Version,
+    response: &OpenSearchFreeSearchContextResponseWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    response.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::response(),
+        version,
+        variable_header: BytesMut::new(),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_free_search_context_response_message(
+    message: &TransportMessage,
+) -> Result<OpenSearchFreeSearchContextResponseWire, TransportActionWireError> {
+    if message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "response",
+            actual: message.status.bits(),
+        });
+    }
+    OpenSearchFreeSearchContextResponseWire::read(message.body.clone().freeze())
 }
 
 pub fn build_opensearch_explain_request_message(
@@ -37556,6 +37639,77 @@ impl OpenSearchCreateReaderContextResponseWire {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchFreeScrollContextRequestWire {
+    pub parent_task_node: String,
+    pub parent_task_id: Option<i64>,
+    pub context_id: OpenSearchShardSearchContextIdWire,
+}
+
+impl OpenSearchFreeScrollContextRequestWire {
+    pub fn new(context_id: OpenSearchShardSearchContextIdWire) -> Self {
+        Self {
+            parent_task_node: String::new(),
+            parent_task_id: None,
+            context_id,
+        }
+    }
+
+    pub fn write(&self, output: &mut StreamOutput) -> Result<(), TransportActionWireError> {
+        self.validate_supported_subset()?;
+        write_parent_task_id(output, &self.parent_task_node, self.parent_task_id);
+        self.context_id.write(output)?;
+        Ok(())
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
+        let request = Self {
+            parent_task_node,
+            parent_task_id,
+            context_id: OpenSearchShardSearchContextIdWire::read(&mut input)?,
+        };
+        require_no_trailing_bytes(&input)?;
+        request.validate_supported_subset()?;
+        Ok(request)
+    }
+
+    pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
+        self.context_id.validate_supported_subset()
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchFreeSearchContextResponseWire {
+    pub freed: bool,
+}
+
+impl OpenSearchFreeSearchContextResponseWire {
+    pub fn new(freed: bool) -> Self {
+        Self { freed }
+    }
+
+    pub fn write(&self, output: &mut StreamOutput) {
+        output.write_bool(self.freed);
+        output.write_bool(self.freed);
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let freed = input.read_bool()?;
+        let repeated = input.read_bool()?;
+        require_no_trailing_bytes(&input)?;
+        if repeated != freed {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search free context response",
+                reason: "OpenSearch SearchFreeContextResponse writes the freed flag twice with matching values",
+            });
+        }
+        Ok(Self { freed })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OpenSearchUpdateReaderContextRequestWire {
     pub parent_task_node: String,
     pub parent_task_id: Option<i64>,
@@ -47683,6 +47837,15 @@ mod tests {
                     next_step: "map scroll id invalidation onto Rust search context lifecycle",
                 },
                 OpenSearchPriorityTransportActionSpec {
+                    action_name: "indices:data/read/search[free_context/scroll]",
+                    action_type: "ScrollFreeContextRequest",
+                    transport_action: "SearchTransportService",
+                    request_wire_type: "ScrollFreeContextRequest",
+                    response_wire_type: "SearchFreeContextResponse",
+                    adapter_stage: "search-scroll",
+                    next_step: "map scroll free-context requests onto Rust scroll context lifecycle",
+                },
+                OpenSearchPriorityTransportActionSpec {
                     action_name: "indices:data/read/explain",
                     action_type: "ExplainAction",
                     transport_action: "TransportExplainAction",
@@ -48572,7 +48735,7 @@ mod tests {
         );
         assert_eq!(
             classify_opensearch_transport_action(PUT_REPOSITORY_ACTION_NAME).disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             classify_opensearch_transport_action(NODES_USAGE_ACTION_NAME).disposition,
@@ -48627,23 +48790,23 @@ mod tests {
         );
         assert_eq!(
             classify_opensearch_transport_action(DELETE_REPOSITORY_ACTION_NAME).disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             classify_opensearch_transport_action(VERIFY_REPOSITORY_ACTION_NAME).disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             classify_opensearch_transport_action(CLEANUP_REPOSITORY_ACTION_NAME).disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             classify_opensearch_transport_action(GET_SNAPSHOTS_ACTION_NAME).disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             classify_opensearch_transport_action(DELETE_SNAPSHOT_ACTION_NAME).disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             classify_opensearch_transport_action(MAIN_ACTION_NAME).disposition,
@@ -48675,6 +48838,11 @@ mod tests {
         );
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_CLEAR_SCROLL_ACTION_NAME).disposition,
+            OpenSearchTransportActionDisposition::Implemented
+        );
+        assert_eq!(
+            classify_opensearch_transport_action(OPENSEARCH_FREE_SCROLL_CONTEXT_ACTION_NAME)
+                .disposition,
             OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
@@ -48760,17 +48928,17 @@ mod tests {
         );
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_PUT_MAPPING_ACTION_NAME).disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_AUTO_PUT_MAPPING_ACTION_NAME)
                 .disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_INDICES_ALIASES_ACTION_NAME)
                 .disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_UPDATE_SETTINGS_ACTION_NAME)
@@ -48779,19 +48947,19 @@ mod tests {
         );
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_SCALE_INDEX_ACTION_NAME).disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_ANALYZE_ACTION_NAME).disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_CREATE_INDEX_ACTION_NAME).disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_AUTO_CREATE_ACTION_NAME).disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_PUT_STORED_SCRIPT_ACTION_NAME)
@@ -48846,20 +49014,20 @@ mod tests {
         );
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_DELETE_INDEX_ACTION_NAME).disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_OPEN_INDEX_ACTION_NAME).disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_CLOSE_INDEX_ACTION_NAME).disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_ADD_INDEX_BLOCK_ACTION_NAME)
                 .disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_GET_INDEX_ACTION_NAME).disposition,
@@ -48923,7 +49091,7 @@ mod tests {
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_SIMULATE_INDEX_TEMPLATE_ACTION_NAME)
                 .disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_SIMULATE_TEMPLATE_ACTION_NAME)
@@ -48953,7 +49121,7 @@ mod tests {
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_UPGRADE_SETTINGS_ACTION_NAME)
                 .disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_CLEAR_INDICES_CACHE_ACTION_NAME)
@@ -49144,12 +49312,17 @@ mod tests {
                 || spec.action_name == OPENSEARCH_CREATE_READER_CONTEXT_ACTION_NAME
                 || spec.action_name == OPENSEARCH_UPDATE_READER_CONTEXT_ACTION_NAME
                 || spec.action_name == OPENSEARCH_FREE_PIT_CONTEXT_ACTION_NAME
+                || spec.action_name == OPENSEARCH_FREE_SCROLL_CONTEXT_ACTION_NAME
                 || spec.action_name == OPENSEARCH_CLEAR_SCROLL_ACTION_NAME
                 || spec.action_name == OPENSEARCH_GET_ALIASES_ACTION_NAME
                 || spec.action_name == OPENSEARCH_GET_SETTINGS_ACTION_NAME
                 || spec.action_name == OPENSEARCH_FIELD_CAPABILITIES_ACTION_NAME
                 || spec.action_name == OPENSEARCH_GET_INDEX_ACTION_NAME
                 || spec.action_name == OPENSEARCH_INDICES_EXISTS_ACTION_NAME
+                || spec.action_name == OPENSEARCH_PUT_MAPPING_ACTION_NAME
+                || spec.action_name == OPENSEARCH_AUTO_PUT_MAPPING_ACTION_NAME
+                || spec.action_name == OPENSEARCH_INDICES_ALIASES_ACTION_NAME
+                || spec.action_name == OPENSEARCH_UPDATE_SETTINGS_ACTION_NAME
                 || spec.action_name == OPENSEARCH_GET_INDEX_TEMPLATES_ACTION_NAME
                 || spec.action_name == OPENSEARCH_PUT_INDEX_TEMPLATE_ACTION_NAME
                 || spec.action_name == OPENSEARCH_DELETE_INDEX_TEMPLATE_ACTION_NAME
@@ -49168,6 +49341,15 @@ mod tests {
                 || spec.action_name == OPENSEARCH_GET_PIPELINE_ACTION_NAME
                 || spec.action_name == OPENSEARCH_DELETE_PIPELINE_ACTION_NAME
                 || spec.action_name == OPENSEARCH_SIMULATE_PIPELINE_ACTION_NAME
+                || spec.action_name == OPENSEARCH_SCALE_INDEX_ACTION_NAME
+                || spec.action_name == OPENSEARCH_ANALYZE_ACTION_NAME
+                || spec.action_name == OPENSEARCH_CREATE_INDEX_ACTION_NAME
+                || spec.action_name == OPENSEARCH_AUTO_CREATE_ACTION_NAME
+                || spec.action_name == OPENSEARCH_DELETE_INDEX_ACTION_NAME
+                || spec.action_name == OPENSEARCH_OPEN_INDEX_ACTION_NAME
+                || spec.action_name == OPENSEARCH_CLOSE_INDEX_ACTION_NAME
+                || spec.action_name == OPENSEARCH_ADD_INDEX_BLOCK_ACTION_NAME
+                || spec.action_name == OPENSEARCH_SIMULATE_INDEX_TEMPLATE_ACTION_NAME
                 || spec.action_name == OPENSEARCH_SEARCH_ACTION_NAME
                 || spec.action_name == OPENSEARCH_STREAM_SEARCH_ACTION_NAME
                 || spec.action_name == OPENSEARCH_MULTI_SEARCH_ACTION_NAME
@@ -49179,6 +49361,7 @@ mod tests {
                 || spec.action_name == OPENSEARCH_FORCE_MERGE_ACTION_NAME
                 || spec.action_name == OPENSEARCH_UPGRADE_ACTION_NAME
                 || spec.action_name == OPENSEARCH_UPGRADE_STATUS_ACTION_NAME
+                || spec.action_name == OPENSEARCH_UPGRADE_SETTINGS_ACTION_NAME
                 || spec.action_name == OPENSEARCH_CREATE_DATA_STREAM_ACTION_NAME
                 || spec.action_name == OPENSEARCH_DELETE_DATA_STREAM_ACTION_NAME
                 || spec.action_name == OPENSEARCH_RESOLVE_INDEX_ACTION_NAME
@@ -49194,23 +49377,9 @@ mod tests {
             }
             if spec.action_name == OPENSEARCH_TERM_VECTORS_ACTION_NAME
                 || spec.action_name == OPENSEARCH_MULTI_TERM_VECTORS_ACTION_NAME
-                || spec.action_name == OPENSEARCH_PUT_MAPPING_ACTION_NAME
-                || spec.action_name == OPENSEARCH_AUTO_PUT_MAPPING_ACTION_NAME
-                || spec.action_name == OPENSEARCH_INDICES_ALIASES_ACTION_NAME
-                || spec.action_name == OPENSEARCH_UPDATE_SETTINGS_ACTION_NAME
-                || spec.action_name == OPENSEARCH_SCALE_INDEX_ACTION_NAME
-                || spec.action_name == OPENSEARCH_ANALYZE_ACTION_NAME
-                || spec.action_name == OPENSEARCH_CREATE_INDEX_ACTION_NAME
-                || spec.action_name == OPENSEARCH_AUTO_CREATE_ACTION_NAME
                 || spec.action_name == OPENSEARCH_RESIZE_ACTION_NAME
                 || spec.action_name == OPENSEARCH_ROLLOVER_ACTION_NAME
-                || spec.action_name == OPENSEARCH_DELETE_INDEX_ACTION_NAME
-                || spec.action_name == OPENSEARCH_OPEN_INDEX_ACTION_NAME
-                || spec.action_name == OPENSEARCH_CLOSE_INDEX_ACTION_NAME
-                || spec.action_name == OPENSEARCH_ADD_INDEX_BLOCK_ACTION_NAME
-                || spec.action_name == OPENSEARCH_SIMULATE_INDEX_TEMPLATE_ACTION_NAME
                 || spec.action_name == OPENSEARCH_SIMULATE_TEMPLATE_ACTION_NAME
-                || spec.action_name == OPENSEARCH_UPGRADE_SETTINGS_ACTION_NAME
                 || spec.action_name == OPENSEARCH_CREATE_VIEW_ACTION_NAME
                 || spec.action_name == OPENSEARCH_DELETE_VIEW_ACTION_NAME
                 || spec.action_name == OPENSEARCH_GET_VIEW_ACTION_NAME
@@ -77693,6 +77862,76 @@ mod tests {
             read_opensearch_free_pit_context_request_message(&message).unwrap(),
             empty_strings_request
         );
+    }
+
+    #[test]
+    fn opensearch_free_scroll_context_transport_message_round_trips() {
+        let request = OpenSearchFreeScrollContextRequestWire::new(
+            OpenSearchShardSearchContextIdWire::new("scroll-session", 42),
+        );
+        let mut frame = build_opensearch_free_scroll_context_request_message(
+            63,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected free-scroll-context request message");
+        };
+        assert_eq!(
+            read_opensearch_free_scroll_context_request_message(&message).unwrap(),
+            request
+        );
+        assert!(matches!(
+            read_opensearch_clear_scroll_request_message(&message).unwrap_err(),
+            TransportActionWireError::UnexpectedAction {
+                expected: OPENSEARCH_CLEAR_SCROLL_ACTION_NAME,
+                ..
+            }
+        ));
+
+        let empty_session_request = OpenSearchFreeScrollContextRequestWire::new(
+            OpenSearchShardSearchContextIdWire::new("", 43),
+        );
+        let mut frame = build_opensearch_free_scroll_context_request_message(
+            64,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &empty_session_request,
+        )
+        .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected empty-session free-scroll-context request message");
+        };
+        assert_eq!(
+            read_opensearch_free_scroll_context_request_message(&message).unwrap(),
+            empty_session_request
+        );
+
+        let response = OpenSearchFreeSearchContextResponseWire::new(true);
+        let mut frame = build_opensearch_free_search_context_response_message(
+            63,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &response,
+        )
+        .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected free-search-context response message");
+        };
+        assert_eq!(
+            read_opensearch_free_search_context_response_message(&message).unwrap(),
+            response
+        );
+
+        let mut mismatched = StreamOutput::new();
+        mismatched.write_bool(true);
+        mismatched.write_bool(false);
+        assert!(matches!(
+            OpenSearchFreeSearchContextResponseWire::read(mismatched.freeze()),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search free context response",
+                ..
+            })
+        ));
     }
 
     #[test]
