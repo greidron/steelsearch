@@ -3523,21 +3523,25 @@ fn multi_daemon_transport_create_pit_binds_reader_contexts_to_target_node() {
     let mut observed_nodes = BTreeSet::new();
     for (index, transport_port) in transport_ports.iter().copied().enumerate() {
         let expected_node = format!("steel-node-pit-{}", index + 1);
-        let doc_id = format!("doc-{}", index + 1);
-        let index_doc = http_response(
-            http_ports[index],
-            "PUT",
-            &format!("/pit-transport-multi-it/_doc/{doc_id}"),
-            Some(
-                format!(
-                    r#"{{"status":"before-pit","ordinal":{},"node":"{}"}}"#,
-                    index + 1,
-                    expected_node
-                )
-                .as_bytes(),
-            ),
-        );
-        assert_eq!(index_doc["status"], 201, "{index_doc}");
+        let doc_ids = (1..=3)
+            .map(|ordinal| format!("node-{}-doc-{ordinal}", index + 1))
+            .collect::<Vec<_>>();
+        for (ordinal, doc_id) in doc_ids.iter().enumerate() {
+            let index_doc = http_response(
+                http_ports[index],
+                "PUT",
+                &format!("/pit-transport-multi-it/_doc/{doc_id}"),
+                Some(
+                    format!(
+                        r#"{{"status":"before-pit","ordinal":{},"node":"{}"}}"#,
+                        ordinal + 1,
+                        expected_node
+                    )
+                    .as_bytes(),
+                ),
+            );
+            assert_eq!(index_doc["status"], 201, "{index_doc}");
+        }
         let refresh_before_pit = http_response(
             http_ports[index],
             "POST",
@@ -3601,12 +3605,11 @@ fn multi_daemon_transport_create_pit_binds_reader_contexts_to_target_node() {
         let update_doc = http_response(
             http_ports[index],
             "PUT",
-            &format!("/pit-transport-multi-it/_doc/{doc_id}"),
+            &format!("/pit-transport-multi-it/_doc/{}", doc_ids[0]),
             Some(
                 format!(
                     r#"{{"status":"after-pit","ordinal":{},"node":"{}"}}"#,
-                    index + 1,
-                    expected_node
+                    1, expected_node
                 )
                 .as_bytes(),
             ),
@@ -3622,10 +3625,18 @@ fn multi_daemon_transport_create_pit_binds_reader_contexts_to_target_node() {
 
         let pit_search_request = os_transport::action::OpenSearchSearchRequestWire {
             source: Some(os_transport::action::OpenSearchSearchSourceBuilderWire {
+                size: 2,
                 point_in_time: Some(os_transport::action::OpenSearchPointInTimeBuilderWire {
                     id: pit_response.pit_id.clone(),
                     keep_alive: Some(os_transport::action::TimeValueWire::minutes(2)),
                 }),
+                sorts: Some(vec![
+                    os_transport::action::OpenSearchSortBuilderWire::ShardDoc(
+                        os_transport::action::OpenSearchShardDocSortBuilderWire {
+                            order: os_transport::action::OpenSearchSortOrderWire::Asc,
+                        },
+                    ),
+                ]),
                 ..os_transport::action::OpenSearchSearchSourceBuilderWire::default()
             }),
             indices_options:
@@ -3648,9 +3659,16 @@ fn multi_daemon_transport_create_pit_binds_reader_contexts_to_target_node() {
             pit_search.point_in_time_id.as_deref(),
             Some(pit_response.pit_id.as_str())
         );
-        assert_eq!(pit_search.total_hits, Some(1));
-        assert_eq!(pit_search.hits.len(), 1);
-        assert_eq!(pit_search.hits[0].id.as_deref(), Some(doc_id.as_str()));
+        assert_eq!(pit_search.total_hits, Some(3));
+        assert_eq!(pit_search.hits.len(), 2);
+        assert_eq!(
+            pit_search
+                .hits
+                .iter()
+                .map(|hit| hit.id.as_deref().unwrap())
+                .collect::<Vec<_>>(),
+            vec![doc_ids[0].as_str(), doc_ids[1].as_str()]
+        );
         assert_eq!(
             pit_search.hits[0]
                 .source
@@ -3658,25 +3676,131 @@ fn multi_daemon_transport_create_pit_binds_reader_contexts_to_target_node() {
                 .and_then(|source| source.get("status")),
             Some(&serde_json::json!("before-pit"))
         );
+        assert_eq!(pit_search.hits[0].sort_values, vec![serde_json::json!(0)]);
+        assert_eq!(pit_search.hits[1].sort_values, vec![serde_json::json!(1)]);
 
-        let delete_request = os_transport::action::OpenSearchDeletePitRequestWire {
-            pit_ids: vec![pit_response.pit_id.clone()],
-            ..os_transport::action::OpenSearchDeletePitRequestWire::default()
+        let search_after_request = os_transport::action::OpenSearchSearchRequestWire {
+            source: Some(os_transport::action::OpenSearchSearchSourceBuilderWire {
+                size: 2,
+                search_after: Some(pit_search.hits[1].sort_values.clone()),
+                point_in_time: Some(os_transport::action::OpenSearchPointInTimeBuilderWire {
+                    id: pit_response.pit_id.clone(),
+                    keep_alive: Some(os_transport::action::TimeValueWire::minutes(2)),
+                }),
+                sorts: Some(vec![
+                    os_transport::action::OpenSearchSortBuilderWire::ShardDoc(
+                        os_transport::action::OpenSearchShardDocSortBuilderWire {
+                            order: os_transport::action::OpenSearchSortOrderWire::Asc,
+                        },
+                    ),
+                ]),
+                ..os_transport::action::OpenSearchSearchSourceBuilderWire::default()
+            }),
+            indices_options:
+                os_transport::action::OpenSearchIndicesOptionsWire::point_in_time_search_prepared(),
+            ccs_minimize_roundtrips: false,
+            ..os_transport::action::OpenSearchSearchRequestWire::default()
         };
-        let delete_frame = os_transport::action::build_opensearch_delete_pit_request_message(
-            400 + index as i64,
+        let search_after_frame = os_transport::action::build_opensearch_search_request_message(
+            360 + index as i64,
             OPENSEARCH_3_7_0_TRANSPORT,
-            &delete_request,
+            &search_after_request,
         )
         .unwrap();
-        let delete_response =
-            send_transport_request_and_decode_response(transport_port, &delete_frame);
-        let deleted_pits =
-            os_transport::action::read_opensearch_delete_pit_response_message(&delete_response)
+        let search_after_response =
+            send_transport_request_and_decode_response(transport_port, &search_after_frame);
+        let search_after_page =
+            os_transport::action::read_opensearch_search_response_message(&search_after_response)
                 .unwrap();
-        assert_eq!(deleted_pits.results.len(), 1);
-        assert_eq!(deleted_pits.results[0].pit_id, pit_response.pit_id);
-        assert!(deleted_pits.results[0].successful);
+        assert_eq!(
+            search_after_page.point_in_time_id.as_deref(),
+            Some(pit_response.pit_id.as_str())
+        );
+        assert_eq!(search_after_page.total_hits, Some(1));
+        assert_eq!(search_after_page.hits.len(), 1);
+        assert_eq!(
+            search_after_page.hits[0].id.as_deref(),
+            Some(doc_ids[2].as_str())
+        );
+        assert_eq!(
+            search_after_page.hits[0].sort_values,
+            vec![serde_json::json!(2)]
+        );
+
+        let extended_list_frame =
+            os_transport::action::build_opensearch_get_all_pits_request_message(
+                370 + index as i64,
+                OPENSEARCH_3_7_0_TRANSPORT,
+                &list_request,
+            )
+            .unwrap();
+        let extended_list_response =
+            send_transport_request_and_decode_response(transport_port, &extended_list_frame);
+        let extended_list = os_transport::action::read_opensearch_get_all_pits_response_message(
+            &extended_list_response,
+        )
+        .unwrap();
+        let extended_info = extended_list
+            .nodes
+            .iter()
+            .flat_map(|node| node.pit_infos.iter())
+            .find(|pit_info| pit_info.pit_id == pit_response.pit_id)
+            .expect("PIT should still be listed after search keep_alive extension");
+        assert!(
+            extended_info.keep_alive_millis >= 120_000,
+            "PIT keep_alive should be extended by search request: {extended_info:?}"
+        );
+
+        if index == 0 {
+            let free_request = os_transport::action::OpenSearchFreePitContextRequestWire {
+                parent_task_node: String::new(),
+                parent_task_id: None,
+                context_ids: context_id
+                    .shards
+                    .values()
+                    .map(|search_context| {
+                        os_transport::action::OpenSearchPitSearchContextIdForNodeWire {
+                            pit_id: pit_response.pit_id.clone(),
+                            search_context: search_context.clone(),
+                        }
+                    })
+                    .collect(),
+            };
+            let free_frame =
+                os_transport::action::build_opensearch_free_pit_context_request_message(
+                    400 + index as i64,
+                    OPENSEARCH_3_7_0_TRANSPORT,
+                    &free_request,
+                )
+                .unwrap();
+            let free_response =
+                send_transport_request_and_decode_response(transport_port, &free_frame);
+            let freed_pits =
+                os_transport::action::read_opensearch_delete_pit_response_message(&free_response)
+                    .unwrap();
+            assert_eq!(freed_pits.results.len(), 1);
+            assert_eq!(freed_pits.results[0].pit_id, pit_response.pit_id);
+            assert!(freed_pits.results[0].successful);
+        } else {
+            let delete_request = os_transport::action::OpenSearchDeletePitRequestWire {
+                pit_ids: vec![pit_response.pit_id.clone()],
+                ..os_transport::action::OpenSearchDeletePitRequestWire::default()
+            };
+            let delete_frame = os_transport::action::build_opensearch_delete_pit_request_message(
+                400 + index as i64,
+                OPENSEARCH_3_7_0_TRANSPORT,
+                &delete_request,
+            )
+            .unwrap();
+            let delete_response =
+                send_transport_request_and_decode_response(transport_port, &delete_frame);
+            let deleted_pits =
+                os_transport::action::read_opensearch_delete_pit_response_message(&delete_response)
+                    .unwrap();
+            assert_eq!(deleted_pits.results.len(), 1);
+            assert_eq!(deleted_pits.results[0].pit_id, pit_response.pit_id);
+            assert!(deleted_pits.results[0].successful);
+        }
 
         let post_delete_list_frame =
             os_transport::action::build_opensearch_get_all_pits_request_message(
