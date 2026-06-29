@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import unittest
 from pathlib import Path
 
@@ -17,6 +18,47 @@ SPEC.loader.exec_module(search_compat)
 
 
 class SearchCompatRunnerTests(unittest.TestCase):
+    def test_required_fixture_keeps_pit_lifecycle_coverage(self) -> None:
+        fixture_path = Path(__file__).with_name("fixtures") / "search-compat.json"
+        fixture = json.loads(fixture_path.read_text(encoding="utf-8"))
+        cases = {case["name"]: case for case in fixture["cases"]}
+
+        required_cases = {
+            "pit_open_search",
+            "pit_search",
+            "pit_list_search",
+            "pit_clear_search",
+            "pit_search_after_close_missing_context",
+            "pit_shard_doc_search_after_search",
+            "pit_snapshot_after_update_delete_search",
+            "msearch_pit_snapshot_after_update_delete_search",
+        }
+        self.assertTrue(
+            required_cases <= set(cases),
+            f"missing required PIT cases: {sorted(required_cases - set(cases))}",
+        )
+        for name in required_cases:
+            self.assertTrue(
+                search_compat.case_touches_point_in_time(cases[name]),
+                f"{name} must be detected as PIT stateful coverage",
+            )
+
+        snapshot_steps = {
+            step["name"]
+            for step in cases["pit_snapshot_after_update_delete_search"]["steps"]
+        }
+        self.assertTrue(
+            {
+                "pit-open",
+                "update-doc-2",
+                "delete-doc-1",
+                "index-doc-3-after-pit",
+                "live-search-after-mutation",
+                "pit-search",
+            }
+            <= snapshot_steps
+        )
+
     def test_case_touches_point_in_time_detects_paths_extracts_and_bodies(self) -> None:
         self.assertTrue(
             search_compat.case_touches_point_in_time(
