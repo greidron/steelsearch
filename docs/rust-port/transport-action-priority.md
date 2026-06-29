@@ -262,6 +262,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `cluster:admin/snapshot/clone` (implemented manifest-backed snapshot clone subset)
 - `cluster:admin/snapshot/restore` (rejected fail-closed)
 - `cluster:admin/snapshot/status` (rejected fail-closed)
+- `cluster:internal/extensions` (implemented no-op extension manager subset)
 - `cluster:admin/routing/awareness/weights/put` (rejected fail-closed)
 - `cluster:admin/routing/awareness/weights/get` (implemented manifest-backed
   weighted-routing metadata subset)
@@ -782,12 +783,14 @@ The extension-proxy boundary covers:
   decode/build layer;
 - OpenSearch `ExtensionActionResponse` length-prefixed raw response bytes at
   the wire decode/build layer;
-- explicit fail-closed classification for `cluster:internal/extensions` until
-  extension manager routing, protobuf `ExtensionTransportMessage` parsing,
-  extension transport dispatch, and byte response rendering are implemented;
+- implemented classification for `cluster:internal/extensions` in the
+  OpenSearch `NoopExtensionsManager` subset, decoding the protobuf
+  `ExtensionTransportMessage` action/request-bytes payload and returning the
+  empty byte response that OpenSearch's no-op manager returns when extensions
+  are disabled;
 - explicit rejection for empty or oversized extension request payloads,
-  oversized response payloads, extension-proxy execution, and response
-  rendering.
+  invalid protobuf payloads, blank actions, oversized response payloads, and
+  real extension manager routing/dispatch outside the no-op manager subset.
 
 The decommission boundary covers:
 

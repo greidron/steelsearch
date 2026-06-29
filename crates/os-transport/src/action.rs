@@ -1982,8 +1982,8 @@ pub fn classify_opensearch_transport_action(
         },
         EXTENSION_PROXY_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
-            disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "extension-proxy transport execution requires extension manager routing, protobuf ExtensionTransportMessage parsing, extension transport dispatch, and byte response rendering",
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "extension-proxy transport adapter decodes ExtensionTransportMessage protobuf payloads and returns OpenSearch NoopExtensionsManager-shaped empty byte responses",
         },
         DECOMMISSION_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -17094,7 +17094,9 @@ impl ExtensionProxyRequestWire {
         Ok(request)
     }
 
-    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+    pub fn validate_noop_extension_manager_subset(
+        &self,
+    ) -> Result<ExtensionTransportMessageWire, TransportActionWireError> {
         if self.extension_transport_message.is_empty() {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "extension proxy empty transport message",
@@ -17107,11 +17109,88 @@ impl ExtensionProxyRequestWire {
                 reason: "extension proxy payloads are bounded to 1 MiB by the Rust boundary",
             });
         }
+        let message =
+            ExtensionTransportMessageWire::read(self.extension_transport_message.clone())?;
+        if message.action.trim().is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "extension proxy empty action",
+                reason: "ExtensionTransportMessage action must not be blank",
+            });
+        }
+        if message.request_bytes.len() > 1024 * 1024 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "extension proxy request bytes length",
+                reason: "extension proxy request bytes are bounded to 1 MiB by the Rust boundary",
+            });
+        }
+        Ok(message)
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        self.validate_noop_extension_manager_subset()?;
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "extension proxy execution",
             reason: "extension-proxy transport execution requires extension manager routing, protobuf ExtensionTransportMessage parsing, extension transport dispatch, and byte response rendering",
         })
     }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ExtensionTransportMessageWire {
+    pub action: String,
+    pub request_bytes: Bytes,
+}
+
+impl ExtensionTransportMessageWire {
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let mut action = None;
+        let mut request_bytes = Bytes::new();
+        while input.remaining() > 0 {
+            match input.read_byte()? {
+                0x0a => {
+                    let value = read_protobuf_bytes(&mut input, "extension transport action")?;
+                    action = Some(String::from_utf8(value.to_vec()).map_err(|_| {
+                        TransportActionWireError::UnsupportedWireShape {
+                            shape: "extension transport action",
+                            reason: "ExtensionTransportMessage action must be valid UTF-8",
+                        }
+                    })?);
+                }
+                0x12 => {
+                    request_bytes =
+                        read_protobuf_bytes(&mut input, "extension transport request bytes")?;
+                }
+                _ => {
+                    return Err(TransportActionWireError::UnsupportedWireShape {
+                        shape: "extension transport message field",
+                        reason: "ExtensionTransportMessage contains a field outside the action/requestBytes subset",
+                    });
+                }
+            }
+        }
+        Ok(Self {
+            action: action.ok_or(TransportActionWireError::UnsupportedWireShape {
+                shape: "extension transport action",
+                reason: "ExtensionTransportMessage action is required",
+            })?,
+            request_bytes,
+        })
+    }
+}
+
+fn read_protobuf_bytes(
+    input: &mut StreamInput,
+    shape: &'static str,
+) -> Result<Bytes, TransportActionWireError> {
+    let len = input.read_vint()?;
+    if len < 0 {
+        return Err(TransportActionWireError::UnsupportedWireShape {
+            shape,
+            reason: "protobuf length-delimited field length cannot be negative",
+        });
+    }
+    Ok(input.read_bytes(len as usize)?)
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -17145,6 +17224,16 @@ impl ExtensionProxyResponseWire {
             reason:
                 "ExtensionActionResponse rendering requires extension transport execution semantics",
         })
+    }
+
+    pub fn validate_noop_extension_manager_subset(&self) -> Result<(), TransportActionWireError> {
+        if self.response_bytes.len() > 1024 * 1024 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "extension proxy response length",
+                reason: "extension proxy responses are bounded to 1 MiB by the Rust boundary",
+            });
+        }
+        Ok(())
     }
 }
 
@@ -58687,6 +58776,13 @@ mod tests {
 
         let decoded = ExtensionProxyRequestWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, request);
+        assert_eq!(
+            decoded.validate_noop_extension_manager_subset().unwrap(),
+            ExtensionTransportMessageWire {
+                action: "steelsearch.extension.echo".to_string(),
+                request_bytes: Bytes::from_static(b"payload"),
+            }
+        );
         assert!(matches!(
             decoded.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
@@ -58722,6 +58818,45 @@ mod tests {
             })
         ));
 
+        let mut missing_action_payload = StreamOutput::new();
+        missing_action_payload.write_byte(0x12);
+        write_protobuf_bytes(&mut missing_action_payload, b"payload");
+        let missing_action = ExtensionProxyRequestWire {
+            extension_transport_message: missing_action_payload.freeze(),
+            ..ExtensionProxyRequestWire::default()
+        };
+        assert!(matches!(
+            missing_action.validate_noop_extension_manager_subset(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "extension transport action",
+                ..
+            })
+        ));
+
+        let blank_action = ExtensionProxyRequestWire {
+            extension_transport_message: build_extension_transport_message_bytes(" ", b"payload"),
+            ..ExtensionProxyRequestWire::default()
+        };
+        assert!(matches!(
+            blank_action.validate_noop_extension_manager_subset(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "extension proxy empty action",
+                ..
+            })
+        ));
+
+        let unknown_field = ExtensionProxyRequestWire {
+            extension_transport_message: Bytes::from_static(&[0x18, 0x01]),
+            ..ExtensionProxyRequestWire::default()
+        };
+        assert!(matches!(
+            unknown_field.validate_noop_extension_manager_subset(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "extension transport message field",
+                ..
+            })
+        ));
+
         let mut output = StreamOutput::new();
         ExtensionProxyRequestWire::default().write(&mut output);
         output.write_byte(0);
@@ -58741,6 +58876,7 @@ mod tests {
 
         let decoded = ExtensionProxyResponseWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, response);
+        decoded.validate_noop_extension_manager_subset().unwrap();
         assert!(matches!(
             decoded.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
@@ -58762,7 +58898,7 @@ mod tests {
     }
 
     #[test]
-    fn extension_proxy_transport_messages_bind_rejected_action_frame_and_byte_response() {
+    fn extension_proxy_transport_messages_bind_supported_action_frame_and_byte_response() {
         let request = ExtensionProxyRequestWire::default();
         let mut frame =
             build_extension_proxy_request_message(38, OPENSEARCH_3_7_0_TRANSPORT, &request)
@@ -58774,12 +58910,16 @@ mod tests {
             classify_opensearch_transport_request_message(&message)
                 .unwrap()
                 .disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             read_extension_proxy_request_message(&message).unwrap(),
             request
         );
+        read_extension_proxy_request_message(&message)
+            .unwrap()
+            .validate_noop_extension_manager_subset()
+            .unwrap();
         assert!(matches!(
             read_extension_proxy_request_message(&message)
                 .unwrap()

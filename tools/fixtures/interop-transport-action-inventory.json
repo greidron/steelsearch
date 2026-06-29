@@ -234,8 +234,8 @@
       "transport_action": "ExtensionProxyTransportAction",
       "request_wire_type": "ExtensionActionRequest",
       "response_wire_type": "ExtensionActionResponse",
-      "disposition": "rejected",
-      "reason": "Extension-proxy transport execution requires extension manager routing, protobuf ExtensionTransportMessage parsing, extension transport dispatch, and byte response rendering"
+      "disposition": "implemented",
+      "reason": "Extension-proxy transport adapter decodes ExtensionTransportMessage protobuf payloads and returns OpenSearch NoopExtensionsManager-shaped empty byte responses"
     },
     {
       "action_name": "cluster:admin/decommission/awareness/put",
