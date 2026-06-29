@@ -1783,8 +1783,8 @@ pub fn classify_opensearch_transport_action(
         },
         PUT_REPOSITORY_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
-            disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "put-repository transport execution requires repository metadata mutation and verification semantics",
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "put-repository transport adapter validates the bounded repository metadata subset, records local manifest repository metadata, and renders an OpenSearch-shaped acknowledgement",
         },
         LIST_TASKS_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -6500,6 +6500,35 @@ pub fn read_put_repository_request_message(
         });
     }
     PutRepositoryRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_put_repository_response_message(
+    request_id: i64,
+    version: Version,
+    response: &AcknowledgedResponseWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    response.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::response(),
+        version,
+        variable_header: BytesMut::new(),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_put_repository_response_message(
+    message: &TransportMessage,
+) -> Result<AcknowledgedResponseWire, TransportActionWireError> {
+    if message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "response",
+            actual: message.status.bits(),
+        });
+    }
+    AcknowledgedResponseWire::read(message.body.clone().freeze())
 }
 
 pub fn build_get_repositories_request_message(
@@ -14374,7 +14403,7 @@ impl PutRepositoryRequestWire {
         Ok(request)
     }
 
-    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+    pub fn validate_supported_execution_subset(&self) -> Result<(), TransportActionWireError> {
         if self.cluster_manager_timeout != TimeValueWire::seconds(30) {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "put repository cluster-manager timeout",
@@ -14399,12 +14428,6 @@ impl PutRepositoryRequestWire {
                 reason: "OpenSearch put-repository requests require a repository type",
             });
         }
-        if !self.settings.is_empty() {
-            return Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "put repository settings",
-                reason: "repository settings require repository metadata mapping and validation semantics",
-            });
-        }
         if !self.verify {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "put repository verification flag",
@@ -14418,9 +14441,15 @@ impl PutRepositoryRequestWire {
                 reason: "repository crypto settings require repository encryption metadata mapping",
             });
         }
+        Ok(())
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        self.validate_supported_execution_subset()?;
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "put repository execution",
-            reason: "put-repository transport execution requires repository metadata mutation and acknowledgement rendering",
+            reason:
+                "put-repository transport execution is handled by the manifest-backed local adapter",
         })
     }
 }
@@ -53722,7 +53751,7 @@ mod tests {
     }
 
     #[test]
-    fn put_repository_request_wire_round_trips_and_rejects_execution_boundary() {
+    fn put_repository_request_wire_round_trips_and_validates_supported_subset() {
         let mut settings = BTreeMap::new();
         settings.insert("location".to_string(), "/tmp/repo".to_string());
         let request = PutRepositoryRequestWire {
@@ -53736,13 +53765,7 @@ mod tests {
 
         let decoded = PutRepositoryRequestWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, request);
-        assert!(matches!(
-            decoded.reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "put repository settings",
-                ..
-            })
-        ));
+        decoded.validate_supported_execution_subset().unwrap();
     }
 
     #[test]
@@ -53828,7 +53851,7 @@ mod tests {
     }
 
     #[test]
-    fn put_repository_transport_messages_bind_rejected_action_frame() {
+    fn put_repository_transport_messages_bind_supported_action_frame() {
         let request = PutRepositoryRequestWire::default();
         let mut frame =
             build_put_repository_request_message(35, OPENSEARCH_3_7_0_TRANSPORT, &request).unwrap();
@@ -53839,6 +53862,14 @@ mod tests {
             read_put_repository_request_message(&message).unwrap(),
             request
         );
+        assert_eq!(
+            classify_opensearch_transport_action(PUT_REPOSITORY_ACTION_NAME).disposition,
+            OpenSearchTransportActionDisposition::Implemented
+        );
+        read_put_repository_request_message(&message)
+            .unwrap()
+            .validate_supported_execution_subset()
+            .unwrap();
         assert!(matches!(
             read_put_repository_request_message(&message)
                 .unwrap()
@@ -53847,6 +53878,25 @@ mod tests {
                 shape: "put repository execution",
                 ..
             })
+        ));
+
+        let response = AcknowledgedResponseWire { acknowledged: true };
+        let mut frame =
+            build_put_repository_response_message(35, OPENSEARCH_3_7_0_TRANSPORT, &response)
+                .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected put repository response message");
+        };
+        assert_eq!(
+            read_put_repository_response_message(&message).unwrap(),
+            response
+        );
+        assert!(matches!(
+            read_put_repository_request_message(&message).unwrap_err(),
+            TransportActionWireError::UnexpectedMessageStatus {
+                expected: "request",
+                ..
+            }
         ));
     }
 

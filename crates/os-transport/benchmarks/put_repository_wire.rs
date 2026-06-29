@@ -1,7 +1,8 @@
 use os_core::OPENSEARCH_3_7_0_TRANSPORT;
 use os_transport::action::{
-    build_put_repository_request_message, read_put_repository_request_message,
-    PutRepositoryRequestWire,
+    build_put_repository_request_message, build_put_repository_response_message,
+    read_put_repository_request_message, read_put_repository_response_message,
+    AcknowledgedResponseWire, PutRepositoryRequestWire,
 };
 use os_transport::frame::{decode_frame, DecodedFrame};
 use std::hint::black_box;
@@ -11,8 +12,9 @@ const ITERATIONS: usize = 400_000;
 
 fn main() {
     let request = PutRepositoryRequestWire::default();
+    let response = AcknowledgedResponseWire { acknowledged: true };
 
-    let request_encode = measure("put_repository_reject_request_encode", ITERATIONS, || {
+    let request_encode = measure("put_repository_request_encode", ITERATIONS, || {
         let frame = build_put_repository_request_message(
             35,
             OPENSEARCH_3_7_0_TRANSPORT,
@@ -26,7 +28,7 @@ fn main() {
         build_put_repository_request_message(35, OPENSEARCH_3_7_0_TRANSPORT, &request)
             .expect("put repository request encode should succeed");
 
-    let request_decode = measure("put_repository_reject_request_decode", ITERATIONS, || {
+    let request_decode = measure("put_repository_request_decode", ITERATIONS, || {
         let mut frame = black_box(request_frame.clone());
         let message = decode_message(&mut frame);
         let decoded = read_put_repository_request_message(black_box(&message))
@@ -34,22 +36,45 @@ fn main() {
         black_box(decoded);
     });
 
-    let reject_validate = measure("put_repository_reject_validation", ITERATIONS, || {
+    let request_validate = measure("put_repository_request_validate", ITERATIONS, || {
         let mut frame = black_box(request_frame.clone());
         let message = decode_message(&mut frame);
         let decoded = read_put_repository_request_message(black_box(&message))
             .expect("put repository request decode");
-        let err = decoded
-            .reject_unsupported_execution()
-            .expect_err("put repository execution should reject");
-        black_box(err);
+        decoded
+            .validate_supported_execution_subset()
+            .expect("put repository request should validate");
+    });
+
+    let response_encode = measure("put_repository_response_encode", ITERATIONS, || {
+        let frame = build_put_repository_response_message(
+            35,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            black_box(&response),
+        )
+        .expect("put repository response encode should succeed");
+        black_box(frame);
+    });
+
+    let response_frame =
+        build_put_repository_response_message(35, OPENSEARCH_3_7_0_TRANSPORT, &response)
+            .expect("put repository response encode should succeed");
+
+    let response_decode = measure("put_repository_response_decode", ITERATIONS, || {
+        let mut frame = black_box(response_frame.clone());
+        let message = decode_message(&mut frame);
+        let decoded = read_put_repository_response_message(black_box(&message))
+            .expect("put repository response decode");
+        black_box(decoded);
     });
 
     let combined_ops_per_second = request_encode
         .ops_per_second
         .min(request_decode.ops_per_second)
-        .min(reject_validate.ops_per_second);
-    println!("put_repository_reject_wire_bottleneck_ops_per_second={combined_ops_per_second:.2}");
+        .min(request_validate.ops_per_second)
+        .min(response_encode.ops_per_second)
+        .min(response_decode.ops_per_second);
+    println!("put_repository_wire_bottleneck_ops_per_second={combined_ops_per_second:.2}");
 }
 
 #[derive(Clone, Copy)]

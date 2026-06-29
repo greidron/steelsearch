@@ -177,8 +177,8 @@ The source-derived transport inventory currently has 160 rows:
 
 | Status | Count | Meaning |
 | --- | ---: | --- |
-| `implemented` | 110 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
-| `partial` | 50 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
+| `implemented` | 111 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
+| `partial` | 49 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
 | `planned` | 0 | No source-derived transport action remains unclassified. |
 
 The k-NN plugin action sweep is complete at the boundary layer. All 12
@@ -597,12 +597,16 @@ The put-repository boundary covers:
   acknowledgement timeout, repository name, repository type, repository
   settings map, verify flag, and optional crypto settings at the wire
   decode/build layer;
-- explicit fail-closed classification for `cluster:admin/repository/put` until
-  repository metadata mutation, repository verification, and acknowledgement
-  response rendering are implemented;
+- OpenSearch `AcknowledgedResponse` decode/build for the put-repository
+  response path;
+- implemented classification for `cluster:admin/repository/put` when the
+  request uses default timeouts, nonblank repository name/type, `verify=true`,
+  no crypto settings, and string settings that can be recorded in the local
+  metadata manifest;
+- manifest-backed repository metadata upsert with `type`, `settings`, and
+  `verified=false`, while preserving existing snapshot records;
 - explicit rejection for custom cluster-manager timeout, custom acknowledgement
-  timeout, blank name, blank type, settings payloads, disabled verification,
-  crypto settings, and put-repository execution.
+  timeout, blank name, blank type, disabled verification, and crypto settings.
 
 The get-repositories boundary covers:
 
@@ -3045,20 +3049,22 @@ transport bottleneck; the first performance-sensitive work is keystore reload,
 transport TLS password safety checks, reloadable extension hook execution, and
 node response aggregation.
 
-Current put-repository reject wire microbenchmark:
+Current put-repository wire microbenchmark:
 
 ```text
-cargo run -p os-transport --release --bin put-repository-reject-wire-benchmark
-put_repository_reject_request_encode iterations=400000 elapsed_ms=216.799 ops_per_second=1845030.30 nanos_per_op=542.00
-put_repository_reject_request_decode iterations=400000 elapsed_ms=286.576 ops_per_second=1395788.60 nanos_per_op=716.44
-put_repository_reject_validation iterations=400000 elapsed_ms=272.723 ops_per_second=1466689.77 nanos_per_op=681.81
-put_repository_reject_wire_bottleneck_ops_per_second=1395788.60
+cargo run -p os-transport --release --bin put-repository-wire-benchmark
+put_repository_request_encode iterations=400000 elapsed_ms=214.049 ops_per_second=1868727.47 nanos_per_op=535.12
+put_repository_request_decode iterations=400000 elapsed_ms=254.796 ops_per_second=1569885.87 nanos_per_op=636.99
+put_repository_request_validate iterations=400000 elapsed_ms=261.688 ops_per_second=1528536.07 nanos_per_op=654.22
+put_repository_response_encode iterations=400000 elapsed_ms=48.620 ops_per_second=8227062.99 nanos_per_op=121.55
+put_repository_response_decode iterations=400000 elapsed_ms=54.421 ops_per_second=7350136.23 nanos_per_op=136.05
+put_repository_wire_bottleneck_ops_per_second=1528536.07
 ```
 
-The current put-repository fail-closed boundary bottleneck is request decode.
+The current put-repository transport subset bottleneck is request validation.
 The payload includes the acknowledged cluster-manager request envelope,
 repository name/type, OpenSearch settings map, verify flag, and crypto-settings
-optional marker before admission rejects execution. At roughly 1.40M ops/s in
+optional marker plus acknowledged response shape. At roughly 1.53M ops/s in
 the latest local release run, this boundary is not a material transport
 bottleneck; the first performance-sensitive work is repository metadata
 validation, cluster-state publication, repository verification, and

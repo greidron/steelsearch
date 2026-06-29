@@ -23,7 +23,7 @@ partial	ClusterRerouteAction.INSTANCE	TransportClusterRerouteAction.class	/home/
 implemented	ClusterSearchShardsAction.INSTANCE	TransportClusterSearchShardsAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	678
 implemented	PendingClusterTasksAction.INSTANCE	TransportPendingClusterTasksAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	679
 partial	PruneFileCacheAction.INSTANCE	TransportPruneFileCacheAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	680
-partial	PutRepositoryAction.INSTANCE	TransportPutRepositoryAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	681
+implemented	PutRepositoryAction.INSTANCE	TransportPutRepositoryAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	681
 implemented	GetRepositoriesAction.INSTANCE	TransportGetRepositoriesAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	682
 implemented	DeleteRepositoryAction.INSTANCE	TransportDeleteRepositoryAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	683
 implemented	VerifyRepositoryAction.INSTANCE	TransportVerifyRepositoryAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	684
