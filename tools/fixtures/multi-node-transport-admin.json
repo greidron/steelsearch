@@ -246,6 +246,32 @@
       }
     },
     {
+      "name": "node_b_search_node_a_pit_after_close",
+      "target": "node_b",
+      "method": "POST",
+      "path": "/_search",
+      "body": {
+        "pit": {
+          "id": "${node_a_open_pit.response.body.pit_id}",
+          "keep_alive": "1m"
+        },
+        "query": {
+          "match_all": {}
+        }
+      },
+      "compare": {
+        "expected_status": 404,
+        "body_paths_present": [
+          "error.type",
+          "error.reason",
+          "status"
+        ],
+        "body_paths_equal": {
+          "status": 404
+        }
+      }
+    },
+    {
       "name": "node_a_list_pits_after_node_b_close",
       "target": "node_a",
       "method": "GET",
