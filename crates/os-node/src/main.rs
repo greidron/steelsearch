@@ -49,7 +49,7 @@ static SHUTDOWN_REQUESTED: AtomicBool = AtomicBool::new(false);
 static TRANSPORT_REQUEST_SEQUENCE: AtomicI64 = AtomicI64::new(10_000);
 static DEV_TRANSPORT_PIT_BINDINGS: OnceLock<DevTransportPitBindings> = OnceLock::new();
 static DEV_TRANSPORT_SCROLL_BINDINGS: OnceLock<DevTransportScrollBindings> = OnceLock::new();
-static DEV_TRANSPORT_SHARED_RUNTIME_STATE_PATH: OnceLock<PathBuf> = OnceLock::new();
+static DEV_TRANSPORT_SHARED_RUNTIME_STATE_PATH: OnceLock<Mutex<Option<PathBuf>>> = OnceLock::new();
 const TRANSPORT_PIT_EXPIRY_REAPER_GRACE_MILLIS: u64 = 60_000;
 const DEV_TRANSPORT_MAX_OPEN_PIT_CONTEXTS: usize = 300;
 const DEV_TRANSPORT_MAX_PIT_KEEP_ALIVE_MILLIS: i64 = 86_400_000;
@@ -166,12 +166,17 @@ fn dev_transport_scroll_bindings() -> &'static DevTransportScrollBindings {
     })
 }
 
-fn dev_transport_shared_runtime_state_path() -> Option<&'static PathBuf> {
-    DEV_TRANSPORT_SHARED_RUNTIME_STATE_PATH.get()
+fn dev_transport_shared_runtime_state_path() -> Option<PathBuf> {
+    DEV_TRANSPORT_SHARED_RUNTIME_STATE_PATH
+        .get()
+        .and_then(|path| path.lock().ok().and_then(|path| path.clone()))
 }
 
 fn bind_dev_transport_shared_runtime_state_path(path: PathBuf) {
-    let _ = DEV_TRANSPORT_SHARED_RUNTIME_STATE_PATH.set(path);
+    let cell = DEV_TRANSPORT_SHARED_RUNTIME_STATE_PATH.get_or_init(|| Mutex::new(None));
+    *cell
+        .lock()
+        .expect("dev transport shared runtime state path lock poisoned") = Some(path);
 }
 
 fn bind_dev_transport_pit_store(
@@ -3934,6 +3939,32 @@ fn handle_transport_seed_connection<S: TransportConnection>(
         response_frame = summarize_transport_response_frame_for_action(
             &response,
             Some("cluster:admin/knn_stats_action"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request
+        && normalized_action_hint == Some("cluster:admin/clear_cache_action")
+        && clear_cache_request_supports_local_subset(&body)
+    {
+        let response = build_clear_cache_response(request_id, header_version_id, &body);
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("cluster:admin/clear_cache_action"),
         );
         stream.write_all(&response)?;
         stream.flush()?;
@@ -14893,9 +14924,39 @@ fn build_knn_stats_response(
     .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
 }
 
+fn build_clear_cache_response(request_id: i64, header_version_id: u32, body: &[u8]) -> Vec<u8> {
+    let Some(request) = decode_clear_cache_request_from_transport_body(body) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    let Some(total_shards) = clear_cache_request_local_total_shards(&request) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    if !clear_transport_knn_cache_state() {
+        return build_empty_transport_response(request_id, header_version_id);
+    }
+    let response = os_transport::action::ClearCacheResponseWire {
+        total_shards,
+        successful_shards: total_shards,
+        failed_shards: 0,
+        shard_failure_count: 0,
+    };
+    os_transport::action::build_clear_cache_response_message(
+        request_id,
+        Version::from_id(header_version_id as i32),
+        &response,
+    )
+    .map(|frame| frame.to_vec())
+    .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
+}
+
 fn knn_stats_request_supports_local_subset(body: &[u8]) -> bool {
     decode_knn_stats_request_from_transport_body(body)
         .is_some_and(|request| knn_stats_request_matches_local_subset(&request))
+}
+
+fn clear_cache_request_supports_local_subset(body: &[u8]) -> bool {
+    decode_clear_cache_request_from_transport_body(body)
+        .is_some_and(|request| clear_cache_request_local_total_shards(&request).is_some())
 }
 
 fn decode_knn_stats_request_from_transport_body(
@@ -14905,18 +14966,95 @@ fn decode_knn_stats_request_from_transport_body(
     os_transport::action::read_knn_stats_request_message(&message).ok()
 }
 
+fn decode_clear_cache_request_from_transport_body(
+    body: &[u8],
+) -> Option<os_transport::action::ClearCacheRequestWire> {
+    let message = decode_transport_message_from_body(body)?;
+    os_transport::action::read_clear_cache_request_message(&message).ok()
+}
+
 fn knn_stats_request_matches_local_subset(
     request: &os_transport::action::KnnStatsRequestWire,
 ) -> bool {
     request.validate_supported_execution_subset().is_ok()
 }
 
+fn clear_cache_request_local_total_shards(
+    request: &os_transport::action::ClearCacheRequestWire,
+) -> Option<i32> {
+    request.validate_supported_execution_subset().ok()?;
+    let indices = request.indices.as_ref()?;
+    let bindings = dev_transport_pit_bindings();
+    let manifest = bindings
+        .metadata_manifest
+        .lock()
+        .expect("dev transport metadata manifest lock poisoned");
+    let mut total_shards = 0_i32;
+    for index in indices {
+        let index_body = manifest["indices"].as_object()?.get(index)?;
+        if !transport_manifest_index_is_knn_enabled(index_body) {
+            return None;
+        }
+        let shard_count = transport_manifest_primary_shard_count(index_body)?;
+        total_shards = total_shards.checked_add(shard_count)?;
+    }
+    Some(total_shards.max(1))
+}
+
 fn load_transport_knn_operational_state() -> Option<KnnOperationalState> {
+    load_transport_shared_runtime_state()?.knn_operational_state
+}
+
+fn load_transport_shared_runtime_state() -> Option<SharedRuntimeState> {
     let path = dev_transport_shared_runtime_state_path()?;
     let bytes = std::fs::read(path).ok()?;
-    serde_json::from_slice::<SharedRuntimeState>(&bytes)
-        .ok()?
+    serde_json::from_slice::<SharedRuntimeState>(&bytes).ok()
+}
+
+fn persist_transport_shared_runtime_state(state: &SharedRuntimeState) -> bool {
+    let Some(path) = dev_transport_shared_runtime_state_path() else {
+        return false;
+    };
+    if let Some(parent) = path.parent() {
+        if std::fs::create_dir_all(parent).is_err() {
+            return false;
+        }
+    }
+    let Ok(bytes) = serde_json::to_vec_pretty(state) else {
+        return false;
+    };
+    let temp_path = path.with_extension("tmp");
+    std::fs::write(&temp_path, bytes)
+        .and_then(|_| std::fs::rename(&temp_path, &path))
+        .is_ok()
+}
+
+fn clear_transport_knn_cache_state() -> bool {
+    let mut state = load_transport_shared_runtime_state().unwrap_or_default();
+    let current = state
         .knn_operational_state
+        .get_or_insert_with(KnnOperationalState::default);
+    current.clear_cache_requests += 1;
+    current.graph_count = 0;
+    current.warmed_index_count = 0;
+    current.cache_entry_count = 0;
+    current.native_memory_used_bytes = 0;
+    current.model_cache_used_bytes = 0;
+    current.quantization_cache_used_bytes = 0;
+    persist_transport_shared_runtime_state(&state)
+}
+
+fn transport_manifest_index_is_knn_enabled(index_body: &Value) -> bool {
+    manifest_index_setting_bool(index_body, "index.knn") == Some(true)
+        || manifest_index_setting_bool(index_body, "knn") == Some(true)
+}
+
+fn transport_manifest_primary_shard_count(index_body: &Value) -> Option<i32> {
+    index_body["settings"]["index"]["number_of_shards"]
+        .as_str()
+        .or_else(|| index_body["settings"]["number_of_shards"].as_str())
+        .and_then(|value| value.parse::<i32>().ok())
+        .filter(|value| *value > 0)
 }
 
 fn knn_stats_requested_names(
@@ -27110,6 +27248,15 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
                 transport_identity,
             ))
         }
+        Some("cluster:admin/clear_cache_action")
+            if clear_cache_request_supports_local_subset(body) =>
+        {
+            Some(build_clear_cache_response(
+                request_id,
+                header_version_id,
+                body,
+            ))
+        }
         Some("indices:admin/_tier/get")
             if get_tiering_status_request_supports_no_active_migration_subset(body) =>
         {
@@ -31933,6 +32080,135 @@ mod tests {
             response.cluster_stats["circuit_breaker_triggered"],
             serde_json::json!(false)
         );
+        let _ = fs::remove_file(shared_state_path);
+    }
+
+    #[test]
+    fn clear_cache_transport_route_resets_local_knn_runtime_cache_state() {
+        struct RecordingTransportConnection {
+            writes: Vec<u8>,
+        }
+
+        impl std::io::Read for RecordingTransportConnection {
+            fn read(&mut self, _buf: &mut [u8]) -> std::io::Result<usize> {
+                Ok(0)
+            }
+        }
+
+        impl std::io::Write for RecordingTransportConnection {
+            fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+                self.writes.extend_from_slice(buf);
+                Ok(buf.len())
+            }
+
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+
+        impl TransportConnection for RecordingTransportConnection {
+            fn set_read_timeout(&self, _duration: Option<Duration>) -> std::io::Result<()> {
+                Ok(())
+            }
+
+            fn peer_addr(&self) -> std::io::Result<SocketAddr> {
+                "127.0.0.1:9300"
+                    .parse()
+                    .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidInput, error))
+            }
+        }
+
+        *dev_transport_pit_bindings()
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned") = serde_json::json!({
+            "indices": {
+                "knn-cache-index": {
+                    "settings": {
+                        "index": {
+                            "knn": "true",
+                            "number_of_shards": "3"
+                        }
+                    }
+                }
+            }
+        });
+        let shared_state_path = unique_test_path("clear-cache-transport-shared-runtime.json");
+        let mut runtime_state = SharedRuntimeState::default();
+        runtime_state.knn_operational_state = Some(KnnOperationalState {
+            graph_count: 7,
+            warmed_index_count: 1,
+            cache_entry_count: 3,
+            native_memory_used_bytes: 8192,
+            model_cache_used_bytes: 4096,
+            quantization_cache_used_bytes: 2048,
+            clear_cache_requests: 2,
+            ..KnnOperationalState::default()
+        });
+        fs::write(
+            &shared_state_path,
+            serde_json::to_vec_pretty(&runtime_state).unwrap(),
+        )
+        .unwrap();
+        bind_dev_transport_shared_runtime_state_path(shared_state_path.clone());
+
+        let request = os_transport::action::ClearCacheRequestWire {
+            indices: Some(vec!["knn-cache-index".to_string()]),
+            ..os_transport::action::ClearCacheRequestWire::default()
+        };
+        let frame = os_transport::action::build_clear_cache_request_message(
+            79,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(clear_cache_request_supports_local_subset(&frame[6..]));
+        let transport_identity = DevTransportIdentity {
+            cluster_name: "steelsearch-dev".to_string(),
+            node_name: "steel-node".to_string(),
+            node_id: "steel-node-id".to_string(),
+            ephemeral_id: "steel-node-ephemeral".to_string(),
+            transport_address: "127.0.0.1:9300".parse().unwrap(),
+            attributes: Vec::new(),
+            roles: vec!["cluster_manager".to_string(), "data".to_string()],
+            seed_peer_identity: None,
+            seed_peer_identities: Vec::new(),
+            coordination_state: Arc::new(Mutex::new(DevTransportCoordinationState::default())),
+            remote_transport_queue_gate: Arc::new(RemoteTransportQueueGate::new(1, 1000)),
+            task_queue_state: None,
+        };
+        let mut stream = RecordingTransportConnection { writes: Vec::new() };
+
+        let handled = handle_subsequent_transport_request(
+            &mut stream,
+            &frame[6..],
+            &transport_identity,
+            None,
+        )
+        .unwrap();
+
+        assert!(handled);
+        let mut response_frame = BytesMut::from(&stream.writes[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut response_frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected clear cache response message");
+        };
+        let response = os_transport::action::read_clear_cache_response_message(&message).unwrap();
+        assert_eq!(response.total_shards, 3);
+        assert_eq!(response.successful_shards, 3);
+        assert_eq!(response.failed_shards, 0);
+        let persisted: SharedRuntimeState =
+            serde_json::from_slice(&fs::read(&shared_state_path).unwrap()).unwrap();
+        let state = persisted.knn_operational_state.expect("knn state");
+        assert_eq!(state.clear_cache_requests, 3);
+        assert_eq!(state.graph_count, 0);
+        assert_eq!(state.cache_entry_count, 0);
+        assert_eq!(state.native_memory_used_bytes, 0);
+        assert_eq!(state.model_cache_used_bytes, 0);
+        assert_eq!(state.quantization_cache_used_bytes, 0);
         let _ = fs::remove_file(shared_state_path);
     }
 

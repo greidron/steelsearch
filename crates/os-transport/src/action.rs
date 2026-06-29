@@ -2100,8 +2100,8 @@ pub fn classify_opensearch_transport_action(
         },
         CLEAR_CACHE_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
-            disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "clear-cache transport execution requires index resolution, KNN index validation, broadcast shard selection, per-shard KNN cache eviction, shard failure aggregation, and response rendering",
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "clear-cache transport adapter validates concrete local KNN indices, mutates shared runtime cache state, and renders an OpenSearch broadcast response with local shard counters",
         },
         SNAPSHOTS_STATUS_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -19744,6 +19744,14 @@ impl KnnWarmupRequestWire {
     }
 
     pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        self.validate_supported_execution_subset()?;
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "clear cache execution",
+            reason: "use validate_supported_execution_subset for the implemented local KNN clear-cache adapter",
+        })
+    }
+
+    pub fn validate_supported_execution_subset(&self) -> Result<(), TransportActionWireError> {
         if self
             .indices
             .as_ref()
@@ -20774,6 +20782,14 @@ impl ClearCacheRequestWire {
     }
 
     pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        self.validate_supported_execution_subset()?;
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "clear cache execution",
+            reason: "use validate_supported_execution_subset for the implemented local KNN clear-cache adapter",
+        })
+    }
+
+    pub fn validate_supported_execution_subset(&self) -> Result<(), TransportActionWireError> {
         if self
             .indices
             .as_ref()
@@ -20801,10 +20817,7 @@ impl ClearCacheRequestWire {
                 reason: "custom clear-cache index resolution options require OpenSearch index expression resolution semantics",
             });
         }
-        Err(TransportActionWireError::UnsupportedWireShape {
-            shape: "clear cache execution",
-            reason: "clear-cache transport execution requires index resolution, KNN index validation, broadcast shard selection, per-shard KNN cache eviction, shard failure aggregation, and response rendering",
-        })
+        Ok(())
     }
 }
 
@@ -20862,10 +20875,7 @@ impl ClearCacheResponseWire {
                 reason: "clear-cache shard failure rendering is not implemented",
             });
         }
-        Err(TransportActionWireError::UnsupportedWireShape {
-            shape: "clear cache response rendering",
-            reason: "ClearCacheResponse rendering requires broadcast shard execution and shard result aggregation",
-        })
+        Ok(())
     }
 }
 
@@ -62950,7 +62960,7 @@ mod tests {
     }
 
     #[test]
-    fn clear_cache_request_wire_round_trips_and_rejects_execution_boundary() {
+    fn clear_cache_request_wire_round_trips_and_validates_local_subset() {
         let request = ClearCacheRequestWire {
             parent_task_node: "cluster-manager".to_string(),
             parent_task_id: Some(62),
@@ -62962,6 +62972,7 @@ mod tests {
 
         let decoded = ClearCacheRequestWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, request);
+        decoded.validate_supported_execution_subset().unwrap();
         assert!(matches!(
             decoded.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
@@ -62996,7 +63007,7 @@ mod tests {
     }
 
     #[test]
-    fn clear_cache_response_wire_round_trips_and_rejects_unsupported_shapes() {
+    fn clear_cache_response_wire_round_trips_and_validates_success_rendering() {
         let response = ClearCacheResponseWire {
             total_shards: 2,
             successful_shards: 2,
@@ -63008,13 +63019,7 @@ mod tests {
 
         let decoded = ClearCacheResponseWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, response);
-        assert!(matches!(
-            decoded.reject_unsupported_rendering(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "clear cache response rendering",
-                ..
-            })
-        ));
+        decoded.reject_unsupported_rendering().unwrap();
 
         let mut failure_count = StreamOutput::new();
         failure_count.write_vint(1);
@@ -63043,7 +63048,7 @@ mod tests {
     }
 
     #[test]
-    fn clear_cache_transport_messages_bind_rejected_action_frame_and_response() {
+    fn clear_cache_transport_messages_bind_implemented_action_frame_and_response() {
         let request = ClearCacheRequestWire::default();
         let mut frame =
             build_clear_cache_request_message(62, OPENSEARCH_3_7_0_TRANSPORT, &request).unwrap();
@@ -63054,18 +63059,13 @@ mod tests {
             classify_opensearch_transport_request_message(&message)
                 .unwrap()
                 .disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(read_clear_cache_request_message(&message).unwrap(), request);
-        assert!(matches!(
-            read_clear_cache_request_message(&message)
-                .unwrap()
-                .reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "clear cache execution",
-                ..
-            })
-        ));
+        read_clear_cache_request_message(&message)
+            .unwrap()
+            .validate_supported_execution_subset()
+            .unwrap();
         assert!(matches!(
             read_knn_warmup_request_message(&message),
             Err(TransportActionWireError::UnexpectedAction { .. })

@@ -450,8 +450,8 @@
       "transport_action": "ClearCacheTransportAction",
       "request_wire_type": "ClearCacheRequest",
       "response_wire_type": "ClearCacheResponse",
-      "disposition": "rejected",
-      "reason": "Clear-cache transport execution requires index resolution, KNN index validation, broadcast shard selection, per-shard KNN cache eviction, shard failure aggregation, and response rendering"
+      "disposition": "implemented",
+      "reason": "Clear-cache transport adapter validates concrete local KNN indices, mutates shared runtime cache state, and renders an OpenSearch broadcast response with local shard counters"
     },
     {
       "action_name": "cluster:admin/routing/awareness/weights/put",

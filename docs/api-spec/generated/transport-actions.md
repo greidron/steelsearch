@@ -175,7 +175,7 @@ Columns:
 | partial | `RemoveModelFromCacheAction.INSTANCE` | `RemoveModelFromCacheTransportAction.class` | Transport action used by vector-search or model-serving plugin flows. | Steelsearch exposes this surface, but the behavior is narrower than OpenSearch. | Transport parity remains incomplete. | `KNNPlugin.java` | 356 |
 | partial | `SearchModelAction.INSTANCE` | `SearchModelTransportAction.class` | Transport action used by search or search-adjacent features. | Steelsearch exposes this surface, but the behavior is narrower than OpenSearch. | Transport parity remains incomplete. | `KNNPlugin.java` | 357 |
 | partial | `UpdateModelGraveyardAction.INSTANCE` | `UpdateModelGraveyardTransportAction.class` | Transport action used by write-path or document lifecycle features. | Steelsearch exposes this surface, but the behavior is narrower than OpenSearch. | Transport parity remains incomplete. | `KNNPlugin.java` | 358 |
-| partial | `ClearCacheAction.INSTANCE` | `ClearCacheTransportAction.class` | Transport action used by vector-search or model-serving plugin flows. | Steelsearch exposes this surface, but the behavior is narrower than OpenSearch. | Transport parity remains incomplete. | `KNNPlugin.java` | 359 |
+| implemented | `ClearCacheAction.INSTANCE` | `ClearCacheTransportAction.class` | Transport action used by vector-search or model-serving plugin flows. | Steelsearch exposes this surface with the main supported behavior present. | Transport parity remains incomplete. | `KNNPlugin.java` | 359 |
 
 ## snapshot-migration-interop
 
