@@ -63,7 +63,7 @@
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::update_settings_request_and_response_wire_round_trip",
-      "response_evidence": "crates/os-node/tests/dev_cluster_daemons.rs::daemon_transport_cluster_update_settings_empty_request_returns_acknowledged"
+      "response_evidence": "crates/os-node/tests/dev_cluster_daemons.rs::daemon_transport_cluster_update_settings_returns_applied_settings"
     },
     {
       "action_name": "cluster:admin/filecache/prune",

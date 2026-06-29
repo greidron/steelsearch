@@ -1921,7 +1921,7 @@ pub fn classify_opensearch_transport_action(
         CLUSTER_UPDATE_SETTINGS_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Implemented,
-            reason: "cluster settings update transport adapter acknowledges the empty no-op request subset while non-empty mutations remain bounded by runtime admission",
+            reason: "cluster settings update transport adapter validates bounded settings maps, applies them to the Rust manifest, and returns an OpenSearch acknowledged response",
         },
         CLUSTER_REROUTE_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -14939,7 +14939,7 @@ impl ClusterUpdateSettingsRequestWire {
         Ok(request)
     }
 
-    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+    pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
         if self.cluster_manager_timeout != TimeValueWire::seconds(30) {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "cluster update settings cluster-manager timeout",
@@ -14952,21 +14952,25 @@ impl ClusterUpdateSettingsRequestWire {
                 reason: "custom acknowledgement timeout is not admitted through transport settings mutation",
             });
         }
-        if !self.transient_settings.is_empty() {
+        if self
+            .transient_settings
+            .keys()
+            .chain(self.persistent_settings.keys())
+            .any(|key| key.trim().is_empty())
+        {
             return Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "cluster update settings transient settings",
-                reason: "transient cluster-settings mutation is not admitted through transport",
+                shape: "cluster update settings key",
+                reason: "cluster setting keys must be non-empty",
             });
         }
-        if !self.persistent_settings.is_empty() {
-            return Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "cluster update settings persistent settings",
-                reason: "persistent cluster-settings mutation is not admitted through transport",
-            });
-        }
+        Ok(())
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        self.validate_supported_subset()?;
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "cluster update settings execution",
-            reason: "cluster settings mutation is not admitted through transport",
+            reason: "use validate_supported_subset for the implemented manifest-backed cluster update settings adapter",
         })
     }
 }
@@ -54819,8 +54823,9 @@ mod tests {
     }
 
     #[test]
-    fn update_settings_request_rejects_unsupported_transport_execution() {
+    fn update_settings_request_validates_manifest_subset_and_rejects_custom_timeouts() {
         let default_request = ClusterUpdateSettingsRequestWire::default();
+        default_request.validate_supported_subset().unwrap();
         assert!(matches!(
             default_request.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
@@ -54834,7 +54839,7 @@ mod tests {
             ..ClusterUpdateSettingsRequestWire::default()
         };
         assert!(matches!(
-            cluster_manager_timeout.reject_unsupported_execution(),
+            cluster_manager_timeout.validate_supported_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "cluster update settings cluster-manager timeout",
                 ..
@@ -54846,7 +54851,7 @@ mod tests {
             ..ClusterUpdateSettingsRequestWire::default()
         };
         assert!(matches!(
-            ack_timeout.reject_unsupported_execution(),
+            ack_timeout.validate_supported_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "cluster update settings ack timeout",
                 ..
@@ -54860,13 +54865,7 @@ mod tests {
             )]),
             ..ClusterUpdateSettingsRequestWire::default()
         };
-        assert!(matches!(
-            transient_settings.reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "cluster update settings transient settings",
-                ..
-            })
-        ));
+        transient_settings.validate_supported_subset().unwrap();
 
         let persistent_settings = ClusterUpdateSettingsRequestWire {
             persistent_settings: BTreeMap::from([(
@@ -54875,10 +54874,16 @@ mod tests {
             )]),
             ..ClusterUpdateSettingsRequestWire::default()
         };
+        persistent_settings.validate_supported_subset().unwrap();
+
+        let blank_key = ClusterUpdateSettingsRequestWire {
+            persistent_settings: BTreeMap::from([(" ".to_string(), "1000".to_string())]),
+            ..ClusterUpdateSettingsRequestWire::default()
+        };
         assert!(matches!(
-            persistent_settings.reject_unsupported_execution(),
+            blank_key.validate_supported_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "cluster update settings persistent settings",
+                shape: "cluster update settings key",
                 ..
             })
         ));
@@ -55451,8 +55456,18 @@ mod tests {
     }
 
     #[test]
-    fn update_settings_transport_messages_bind_rejected_action_frame() {
-        let request = ClusterUpdateSettingsRequestWire::default();
+    fn update_settings_transport_messages_bind_supported_action_frame_and_response() {
+        let request = ClusterUpdateSettingsRequestWire {
+            transient_settings: BTreeMap::from([(
+                "cluster.routing.allocation.enable".to_string(),
+                "all".to_string(),
+            )]),
+            persistent_settings: BTreeMap::from([(
+                "cluster.max_shards_per_node".to_string(),
+                "1000".to_string(),
+            )]),
+            ..ClusterUpdateSettingsRequestWire::default()
+        };
         let mut frame =
             build_cluster_update_settings_request_message(32, OPENSEARCH_3_7_0_TRANSPORT, &request)
                 .unwrap();
@@ -55463,17 +55478,16 @@ mod tests {
             read_cluster_update_settings_request_message(&message).unwrap(),
             request
         );
-        assert!(matches!(
-            read_cluster_update_settings_request_message(&message)
-                .unwrap()
-                .reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "cluster update settings execution",
-                ..
-            })
-        ));
+        read_cluster_update_settings_request_message(&message)
+            .unwrap()
+            .validate_supported_subset()
+            .unwrap();
 
-        let response = ClusterUpdateSettingsResponseWire::empty_acknowledged();
+        let response = ClusterUpdateSettingsResponseWire {
+            acknowledged: true,
+            transient_settings: request.transient_settings,
+            persistent_settings: request.persistent_settings,
+        };
         let mut frame = build_cluster_update_settings_response_message(
             32,
             OPENSEARCH_3_7_0_TRANSPORT,

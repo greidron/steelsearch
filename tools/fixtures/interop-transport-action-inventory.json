@@ -531,8 +531,8 @@
       "transport_action": "TransportClusterUpdateSettingsAction",
       "request_wire_type": "ClusterUpdateSettingsRequest",
       "response_wire_type": "ClusterUpdateSettingsResponse",
-      "disposition": "rejected",
-      "reason": "Cluster settings mutation is not admitted through transport"
+      "disposition": "implemented",
+      "reason": "Cluster-update-settings transport adapter applies bounded persistent and transient settings to the Rust manifest and returns an OpenSearch-shaped acknowledged response"
     },
     {
       "action_name": "cluster:admin/reroute",

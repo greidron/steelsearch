@@ -1153,9 +1153,9 @@ fn handle_transport_seed_connection<S: TransportConnection>(
         )?;
     } else if is_request
         && normalized_action_hint == Some("cluster:admin/settings/update")
-        && cluster_update_settings_request_supports_empty_ack_subset(&body)
+        && cluster_update_settings_request_supports_manifest_subset(&body)
     {
-        let response = build_empty_cluster_update_settings_response(request_id, header_version_id);
+        let response = build_cluster_update_settings_response(request_id, header_version_id, &body);
         response_frame = summarize_transport_response_frame_for_action(
             &response,
             Some("cluster:admin/settings/update"),
@@ -20491,14 +20491,10 @@ fn cluster_allocation_explain_request_supports_no_unassigned_error_subset(body: 
         && !request.include_disk_info
 }
 
-fn cluster_update_settings_request_supports_empty_ack_subset(body: &[u8]) -> bool {
-    let Some(request) = decode_cluster_update_settings_request_from_transport_body(body) else {
-        return false;
-    };
-    request.cluster_manager_timeout == os_transport::action::TimeValueWire::seconds(30)
-        && request.ack_timeout == os_transport::action::TimeValueWire::seconds(30)
-        && request.transient_settings.is_empty()
-        && request.persistent_settings.is_empty()
+fn cluster_update_settings_request_supports_manifest_subset(body: &[u8]) -> bool {
+    decode_cluster_update_settings_request_from_transport_body(body)
+        .as_ref()
+        .is_some_and(|request| request.validate_supported_subset().is_ok())
 }
 
 fn decode_cluster_state_request_from_transport_body(
@@ -20532,17 +20528,84 @@ fn build_cluster_allocation_explain_no_unassigned_error_response(
     build_transport_error_response_frame(request_id, header_version_id, output.freeze().to_vec())
 }
 
-fn build_empty_cluster_update_settings_response(
+fn build_cluster_update_settings_response(
     request_id: i64,
     header_version_id: u32,
+    body: &[u8],
 ) -> Vec<u8> {
+    let Some(request) = decode_cluster_update_settings_request_from_transport_body(body) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    if request.validate_supported_subset().is_err() {
+        return build_empty_transport_response(request_id, header_version_id);
+    }
+    if !apply_cluster_update_settings_to_metadata_manifest(&request) {
+        return build_empty_transport_response(request_id, header_version_id);
+    }
     os_transport::action::build_cluster_update_settings_response_message(
         request_id,
         Version::from_id(header_version_id as i32),
-        &os_transport::action::ClusterUpdateSettingsResponseWire::empty_acknowledged(),
+        &os_transport::action::ClusterUpdateSettingsResponseWire {
+            acknowledged: true,
+            transient_settings: request.transient_settings,
+            persistent_settings: request.persistent_settings,
+        },
     )
     .map(|frame| frame.to_vec())
     .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
+}
+
+fn apply_cluster_update_settings_to_metadata_manifest(
+    request: &os_transport::action::ClusterUpdateSettingsRequestWire,
+) -> bool {
+    let mut manifest = dev_transport_pit_bindings()
+        .metadata_manifest
+        .lock()
+        .expect("dev transport metadata manifest lock poisoned");
+    if !manifest.is_object() {
+        *manifest = serde_json::json!({});
+    }
+    let Some(root) = manifest.as_object_mut() else {
+        return false;
+    };
+    let cluster_settings = root
+        .entry("cluster_settings")
+        .or_insert_with(|| serde_json::json!({}));
+    if !cluster_settings.is_object() {
+        *cluster_settings = serde_json::json!({});
+    }
+    let Some(cluster_settings) = cluster_settings.as_object_mut() else {
+        return false;
+    };
+    merge_transport_cluster_settings_section(
+        cluster_settings,
+        "persistent",
+        &request.persistent_settings,
+    ) && merge_transport_cluster_settings_section(
+        cluster_settings,
+        "transient",
+        &request.transient_settings,
+    )
+}
+
+fn merge_transport_cluster_settings_section(
+    cluster_settings: &mut serde_json::Map<String, Value>,
+    section_name: &str,
+    settings: &BTreeMap<String, String>,
+) -> bool {
+    let section = cluster_settings
+        .entry(section_name.to_string())
+        .or_insert_with(|| serde_json::json!({}));
+    if !section.is_object() {
+        *section = serde_json::json!({});
+    }
+    let Some(section) = section.as_object_mut() else {
+        return false;
+    };
+    for (key, value) in settings {
+        section.insert(key.clone(), serde_json::json!(value));
+    }
+    true
 }
 
 fn dev_transport_created_indices_empty() -> bool {
@@ -21539,11 +21602,12 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
             )
         }
         Some("cluster:admin/settings/update")
-            if cluster_update_settings_request_supports_empty_ack_subset(body) =>
+            if cluster_update_settings_request_supports_manifest_subset(body) =>
         {
-            Some(build_empty_cluster_update_settings_response(
+            Some(build_cluster_update_settings_response(
                 request_id,
                 header_version_id,
+                body,
             ))
         }
         Some("internal:monitor/term") => Some(build_get_term_version_response(

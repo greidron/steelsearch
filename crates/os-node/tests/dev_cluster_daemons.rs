@@ -3425,7 +3425,7 @@ fn daemon_transport_allocation_explain_empty_state_matches_opensearch_error() {
 }
 
 #[test]
-fn daemon_transport_cluster_update_settings_empty_request_returns_acknowledged() {
+fn daemon_transport_cluster_update_settings_returns_applied_settings() {
     let binary = os_node_binary();
     let root = unique_work_dir();
     fs::create_dir_all(root.join("data")).unwrap();
@@ -3456,7 +3456,17 @@ fn daemon_transport_cluster_update_settings_empty_request_returns_acknowledged()
         children: vec![child],
     };
 
-    let request = os_transport::action::ClusterUpdateSettingsRequestWire::default();
+    let request = os_transport::action::ClusterUpdateSettingsRequestWire {
+        transient_settings: BTreeMap::from([(
+            "cluster.info.update.interval".to_string(),
+            "45s".to_string(),
+        )]),
+        persistent_settings: BTreeMap::from([(
+            "cluster.routing.allocation.enable".to_string(),
+            "all".to_string(),
+        )]),
+        ..os_transport::action::ClusterUpdateSettingsRequestWire::default()
+    };
     let frame = os_transport::action::build_cluster_update_settings_request_message(
         94,
         OPENSEARCH_3_7_0_TRANSPORT,
@@ -3469,8 +3479,18 @@ fn daemon_transport_cluster_update_settings_empty_request_returns_acknowledged()
 
     assert_eq!(response.request_id, 94);
     assert_eq!(update_settings.acknowledged, true);
-    assert!(update_settings.transient_settings.is_empty());
-    assert!(update_settings.persistent_settings.is_empty());
+    assert_eq!(
+        update_settings
+            .transient_settings
+            .get("cluster.info.update.interval"),
+        Some(&"45s".to_string())
+    );
+    assert_eq!(
+        update_settings
+            .persistent_settings
+            .get("cluster.routing.allocation.enable"),
+        Some(&"all".to_string())
+    );
 
     let _ = fs::remove_dir_all(root);
 }
