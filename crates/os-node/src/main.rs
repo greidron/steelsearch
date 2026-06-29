@@ -16527,10 +16527,15 @@ fn free_transport_reader_contexts_for_free_pit_request(
         .context_ids
         .iter()
         .map(|context| {
+            let search_context_id = &context.search_context.search_context_id;
+            let reader_key = if search_context_id.session_id.is_empty() {
+                reader_context_key_by_numeric_id(&reader_contexts, search_context_id.id)
+            } else {
+                let key = reader_context_key(search_context_id);
+                reader_contexts.contains_key(&key).then_some(key)
+            };
             let pit_id = reader_contexts
-                .remove(&reader_context_key(
-                    &context.search_context.search_context_id,
-                ))
+                .remove(&reader_key.unwrap_or_else(|| reader_context_key(search_context_id)))
                 .and_then(|reader_context| reader_context.pit_id)
                 .unwrap_or_else(|| context.pit_id.clone());
             os_transport::action::OpenSearchDeletePitInfoWire::new(true, pit_id)
@@ -35162,6 +35167,133 @@ mod tests {
             .expect("dev transport PIT contexts lock poisoned");
         assert!(!contexts.contains_key(stored_pit_id));
         assert!(contexts.contains_key(requested_pit_id));
+    }
+
+    #[test]
+    fn free_pit_context_transport_route_empty_session_matches_numeric_id_like_opensearch() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        let bindings = dev_transport_pit_bindings();
+        bindings
+            .contexts
+            .lock()
+            .expect("dev transport PIT contexts lock poisoned")
+            .clear();
+        bindings
+            .reader_contexts
+            .lock()
+            .expect("dev transport reader contexts lock poisoned")
+            .clear();
+
+        let stored_context_id = os_transport::action::OpenSearchShardSearchContextIdWire::new(
+            "stored-free-session",
+            17,
+        );
+        let request_context_id =
+            os_transport::action::OpenSearchShardSearchContextIdWire::new("", 17);
+        let stored_pit_id = "stored-empty-session-free-pit";
+        bindings
+            .contexts
+            .lock()
+            .expect("dev transport PIT contexts lock poisoned")
+            .insert(
+                stored_pit_id.to_string(),
+                PitContext {
+                    indices: vec!["logs-free-empty-session".to_string()],
+                    documents: Arc::new(BTreeMap::new()),
+                    keep_alive_millis: 60_000,
+                    expires_at_millis: now_epoch_ms() + 60_000,
+                    creation_time_millis: now_epoch_ms(),
+                },
+            );
+        bindings
+            .reader_contexts
+            .lock()
+            .expect("dev transport reader contexts lock poisoned")
+            .insert(
+                reader_context_key(&stored_context_id),
+                DevTransportReaderContext {
+                    shard_id: os_transport::action::OpenSearchShardIdWire {
+                        index_name: "logs-free-empty-session".to_string(),
+                        index_uuid: "uuid-free-empty-session".to_string(),
+                        shard_id: 0,
+                    },
+                    documents: Arc::new(BTreeMap::new()),
+                    keep_alive_millis: 60_000,
+                    expires_at_millis: now_epoch_ms() + 60_000,
+                    pit_id: Some(stored_pit_id.to_string()),
+                    creation_time_millis: Some(u128_to_i64_saturating(now_epoch_ms())),
+                },
+            );
+        let transport_identity = DevTransportIdentity {
+            cluster_name: "steelsearch-dev".to_string(),
+            node_name: "steel-node".to_string(),
+            node_id: "steel-node-id".to_string(),
+            ephemeral_id: "steel-node-ephemeral".to_string(),
+            transport_address: "127.0.0.1:9300".parse().unwrap(),
+            attributes: Vec::new(),
+            roles: vec!["cluster_manager".to_string(), "data".to_string()],
+            seed_peer_identity: None,
+            seed_peer_identities: Vec::new(),
+            coordination_state: Arc::new(Mutex::new(DevTransportCoordinationState::default())),
+            remote_transport_queue_gate: Arc::new(RemoteTransportQueueGate::new(1, 1000)),
+            task_queue_state: None,
+        };
+        let request = os_transport::action::OpenSearchFreePitContextRequestWire {
+            parent_task_node: String::new(),
+            parent_task_id: None,
+            context_ids: vec![
+                os_transport::action::OpenSearchPitSearchContextIdForNodeWire {
+                    pit_id: "requested-empty-session-free-pit".to_string(),
+                    search_context: os_transport::action::OpenSearchSearchContextIdForNodeWire {
+                        node: "steel-node-id".to_string(),
+                        cluster_alias: None,
+                        search_context_id: request_context_id,
+                    },
+                },
+            ],
+        };
+        let frame = os_transport::action::build_opensearch_free_pit_context_request_message(
+            322,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(free_pit_context_request_supports_local_subset(
+            &frame[6..],
+            &transport_identity
+        ));
+
+        let response = build_local_free_pit_context_response(
+            322,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &frame[6..],
+            &transport_identity,
+        );
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected empty-session free-PIT-context response");
+        };
+        let response =
+            os_transport::action::read_opensearch_delete_pit_response_message(&message).unwrap();
+        assert_eq!(response.results.len(), 1);
+        assert_eq!(response.results[0].pit_id, stored_pit_id);
+        assert!(response.results[0].successful);
+        assert!(bindings
+            .reader_contexts
+            .lock()
+            .expect("dev transport reader contexts lock poisoned")
+            .is_empty());
+        assert!(!bindings
+            .contexts
+            .lock()
+            .expect("dev transport PIT contexts lock poisoned")
+            .contains_key(stored_pit_id));
     }
 
     #[test]
