@@ -2591,7 +2591,7 @@ pub fn classify_opensearch_transport_action(
         OPENSEARCH_QUERY_CAN_MATCH_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Implemented,
-            reason: "can-match transport execution implements the source-free local shard subset with bounded ShardSearchRequest decode and CanMatchResponse rendering",
+            reason: "can-match transport execution implements the bounded local shard subset with null, match_all, and match_none source query semantics",
         },
         OPENSEARCH_EXPLAIN_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -29576,14 +29576,29 @@ impl Default for OpenSearchSearchSourceBuilderWire {
 impl OpenSearchSearchSourceBuilderWire {
     fn validate_can_match_local_subset(&self) -> Result<(), TransportActionWireError> {
         self.validate_supported_wire_subset()?;
-        let expected = OpenSearchSearchSourceBuilderWire {
-            query: self.query.clone(),
-            ..OpenSearchSearchSourceBuilderWire::default()
-        };
-        if self != &expected {
+        if self.sorts.is_some() {
             return Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "shard search request source",
-                reason: "bounded can-match source execution currently supports only default SearchSourceBuilder fields plus match_all or match_none query",
+                shape: "shard search request source sorts",
+                reason: "bounded can-match source execution does not encode OpenSearch CanMatchResponse estimatedMinAndMax yet",
+            });
+        }
+        if self.search_after.is_some() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "shard search request source search_after",
+                reason: "bounded can-match source execution does not map OpenSearch search_after min/max pruning yet",
+            });
+        }
+        if self.point_in_time.is_some() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "shard search request source point in time",
+                reason:
+                    "can-match point-in-time requests require reader-context transport execution",
+            });
+        }
+        if self.slice.is_some() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "shard search request source slice",
+                reason: "bounded can-match source execution does not map slice shard pruning yet",
             });
         }
         match &self.query {
@@ -76935,9 +76950,42 @@ mod tests {
         assert_eq!(decoded, match_none_source_request);
         assert_eq!(decoded.can_match_local_subset_result().unwrap(), false);
 
+        let inert_source_request = OpenSearchShardSearchRequestWire {
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                from: 5,
+                size: 25,
+                explain: Some(false),
+                min_score: Some(0.5),
+                terminate_after: 100,
+                timeout: Some(TimeValueWire::seconds(2)),
+                track_scores: true,
+                version: Some(true),
+                seq_no_and_primary_term: Some(false),
+                track_total_hits_up_to: Some(10_000),
+                profile: true,
+                include_named_queries_score: Some(false),
+                search_pipeline: Some("can-match-pipeline".to_string()),
+                verbose_pipeline: true,
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchShardSearchRequestWire::default()
+        };
+        let mut frame = build_opensearch_can_match_request_message(
+            153,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &inert_source_request,
+        )
+        .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected inert-source can-match request message");
+        };
+        let decoded = read_opensearch_can_match_request_message(&message).unwrap();
+        assert_eq!(decoded, inert_source_request);
+        assert_eq!(decoded.can_match_local_subset_result().unwrap(), true);
+
         let source_request = OpenSearchShardSearchRequestWire {
             source: Some(OpenSearchSearchSourceBuilderWire {
-                from: 1,
+                search_after: Some(vec![json!(1)]),
                 ..OpenSearchSearchSourceBuilderWire::default()
             }),
             ..OpenSearchShardSearchRequestWire::default()
@@ -76946,7 +76994,7 @@ mod tests {
         assert!(matches!(
             source_request.write(&mut output, OPENSEARCH_3_7_0_TRANSPORT),
             Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "shard search request source",
+                shape: "shard search request source search_after",
                 ..
             })
         ));

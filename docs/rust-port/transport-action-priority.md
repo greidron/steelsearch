@@ -2438,10 +2438,12 @@ The search phase transport boundary covers:
   requests, covering parent task, `ShardId`, search type, shard count, empty
   `AliasFilter`, boost, `nowInMillis`, request cache, network-time counters,
   cluster alias, partial-results flag, routings, preference, `OriginalIndices`,
-  and a default `SearchSourceBuilder` carrying no query, `match_all`, or
-  `match_none`; scroll, non-default source options, bottom sort values, reader
-  context, and keep-alive remain rejected until the corresponding native
-  can-match execution pieces are mapped;
+  and bounded `SearchSourceBuilder` payloads carrying no query, `match_all`,
+  or `match_none`; inert source options such as `from`, `size`, `explain`,
+  `min_score`, timeout, tracking, profiling, and fetch-shape fields are allowed,
+  while scroll, source PIT, slice, sort/search_after min-max pruning, bottom
+  sort values, reader context, and keep-alive remain rejected until the
+  corresponding native can-match execution pieces are mapped;
 - the local can-match transport route executes the bounded subset by returning
   `canMatch=true` for null-query/default source and `match_all`, or
   `canMatch=false` for `match_none`, with absent `estimatedMinAndMax`; this
@@ -2459,11 +2461,11 @@ Current can-match response wire microbenchmark:
 
 ```text
 cargo run -q -p os-transport --release --bin can-match-response-wire-benchmark
-can_match_request_encode iterations=400000 elapsed_ms=393.832 ops_per_second=1015661.88 nanos_per_op=984.58
-can_match_request_decode iterations=400000 elapsed_ms=426.061 ops_per_second=938832.28 nanos_per_op=1065.15
-can_match_response_encode iterations=400000 elapsed_ms=49.219 ops_per_second=8127016.00 nanos_per_op=123.05
-can_match_response_decode iterations=400000 elapsed_ms=50.851 ops_per_second=7866104.27 nanos_per_op=127.13
-can_match_wire_bottleneck_ops_per_second=938832.28
+can_match_request_encode iterations=400000 elapsed_ms=448.227 ops_per_second=892404.93 nanos_per_op=1120.57
+can_match_request_decode iterations=400000 elapsed_ms=598.730 ops_per_second=668081.09 nanos_per_op=1496.82
+can_match_response_encode iterations=400000 elapsed_ms=49.962 ops_per_second=8006004.98 nanos_per_op=124.91
+can_match_response_decode iterations=400000 elapsed_ms=51.842 ops_per_second=7715698.87 nanos_per_op=129.61
+can_match_wire_bottleneck_ops_per_second=668081.09
 ```
 
 The explain boundary covers:
