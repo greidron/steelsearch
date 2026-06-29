@@ -4412,6 +4412,63 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end_at_ms,
         )?;
     } else if is_request
+        && normalized_action_hint == Some("indices:data/read/search[phase/fetch/id/scroll]")
+        && fetch_id_scroll_request_has_missing_context(&body)
+    {
+        let response = build_fetch_id_scroll_missing_context_error_response(
+            request_id,
+            header_version_id,
+            &body,
+        );
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("indices:data/read/search[phase/fetch/id/scroll]"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request
+        && normalized_action_hint == Some("indices:data/read/search[phase/fetch/id/scroll]")
+        && fetch_id_scroll_request_supports_local_execution_subset(&body)
+    {
+        let response =
+            build_local_fetch_id_scroll_phase_response(request_id, header_version_id, &body);
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("indices:data/read/search[phase/fetch/id/scroll]"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request
         && normalized_action_hint == Some("indices:data/read/search[can_match]")
         && can_match_request_exceeds_local_reader_keep_alive_limit(&body)
     {
@@ -18658,6 +18715,39 @@ fn build_fetch_id_missing_reader_context_error_response(
     build_missing_search_context_error_response(request_id, header_version_id, &request.context_id)
 }
 
+fn fetch_id_scroll_request_has_missing_context(body: &[u8]) -> bool {
+    decode_fetch_id_scroll_request_from_transport_body(body)
+        .filter(|request| request.validate_supported_subset().is_ok())
+        .is_some_and(|request| !scroll_context_exists(&request.context_id))
+}
+
+fn fetch_id_scroll_request_supports_local_execution_subset(body: &[u8]) -> bool {
+    decode_fetch_id_scroll_request_from_transport_body(body)
+        .filter(|request| request.validate_supported_subset().is_ok())
+        .is_some_and(|request| scroll_context_exists(&request.context_id))
+}
+
+fn scroll_context_exists(
+    context_id: &os_transport::action::OpenSearchShardSearchContextIdWire,
+) -> bool {
+    let contexts = dev_transport_scroll_bindings()
+        .contexts
+        .lock()
+        .expect("dev transport scroll contexts lock poisoned");
+    transport_scroll_context_lookup_key_for_request(&contexts, context_id).is_some()
+}
+
+fn build_fetch_id_scroll_missing_context_error_response(
+    request_id: i64,
+    header_version_id: u32,
+    body: &[u8],
+) -> Vec<u8> {
+    let Some(request) = decode_fetch_id_scroll_request_from_transport_body(body) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    build_missing_search_context_error_response(request_id, header_version_id, &request.context_id)
+}
+
 fn build_local_fetch_id_phase_response(
     request_id: i64,
     header_version_id: u32,
@@ -18686,6 +18776,60 @@ fn build_local_fetch_id_phase_response(
     )
     .map(|frame| frame.to_vec())
     .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
+}
+
+fn build_local_fetch_id_scroll_phase_response(
+    request_id: i64,
+    header_version_id: u32,
+    body: &[u8],
+) -> Vec<u8> {
+    let Some(request) = decode_fetch_id_scroll_request_from_transport_body(body) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    if !fetch_id_scroll_request_supports_local_execution_subset(body) {
+        return build_empty_transport_response(request_id, header_version_id);
+    }
+    let Some(context) = scroll_context_for_fetch_id_scroll_request(&request) else {
+        return build_missing_search_context_error_response(
+            request_id,
+            header_version_id,
+            &request.context_id,
+        );
+    };
+    let hits = fetch_id_scroll_hits_for_context(&request, &context);
+    let response =
+        os_transport::action::OpenSearchFetchSearchResultWire::new(request.context_id, hits);
+    os_transport::action::build_opensearch_fetch_id_phase_response_message(
+        request_id,
+        Version::from_id(header_version_id as i32),
+        &response,
+    )
+    .map(|frame| frame.to_vec())
+    .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
+}
+
+fn scroll_context_for_fetch_id_scroll_request(
+    request: &os_transport::action::OpenSearchShardFetchRequestWire,
+) -> Option<ScrollContext> {
+    let contexts = dev_transport_scroll_bindings()
+        .contexts
+        .lock()
+        .expect("dev transport scroll contexts lock poisoned");
+    let key = transport_scroll_context_lookup_key_for_request(&contexts, &request.context_id)?;
+    contexts.get(&key).cloned()
+}
+
+fn fetch_id_scroll_hits_for_context(
+    request: &os_transport::action::OpenSearchShardFetchRequestWire,
+    context: &ScrollContext,
+) -> Vec<os_transport::action::OpenSearchSearchHitWire> {
+    request
+        .doc_ids
+        .iter()
+        .filter_map(|doc_id| usize::try_from(*doc_id).ok())
+        .filter_map(|doc_id| context.remaining_hits.get(doc_id))
+        .map(transport_scroll_hit_from_rest_hit)
+        .collect()
 }
 
 fn reader_context_for_fetch_id_request(
@@ -18792,6 +18936,13 @@ fn decode_fetch_id_request_from_transport_body(
 ) -> Option<os_transport::action::OpenSearchShardFetchSearchRequestWire> {
     let message = decode_transport_message_from_body(body)?;
     os_transport::action::read_opensearch_fetch_id_phase_request_message(&message).ok()
+}
+
+fn decode_fetch_id_scroll_request_from_transport_body(
+    body: &[u8],
+) -> Option<os_transport::action::OpenSearchShardFetchRequestWire> {
+    let message = decode_transport_message_from_body(body)?;
+    os_transport::action::read_opensearch_fetch_id_scroll_phase_request_message(&message).ok()
 }
 
 fn can_match_request_context_admitted(
@@ -24208,6 +24359,24 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
             if fetch_id_request_supports_local_execution_subset(body) =>
         {
             Some(build_local_fetch_id_phase_response(
+                request_id,
+                header_version_id,
+                body,
+            ))
+        }
+        Some("indices:data/read/search[phase/fetch/id/scroll]")
+            if fetch_id_scroll_request_has_missing_context(body) =>
+        {
+            Some(build_fetch_id_scroll_missing_context_error_response(
+                request_id,
+                header_version_id,
+                body,
+            ))
+        }
+        Some("indices:data/read/search[phase/fetch/id/scroll]")
+            if fetch_id_scroll_request_supports_local_execution_subset(body) =>
+        {
+            Some(build_local_fetch_id_scroll_phase_response(
                 request_id,
                 header_version_id,
                 body,
@@ -43490,6 +43659,139 @@ mod tests {
                 .and_then(|source| source.get("message"))
                 .and_then(Value::as_str),
             Some("steel")
+        );
+    }
+
+    #[test]
+    fn fetch_id_scroll_phase_route_rejects_missing_context_like_opensearch() {
+        let _lock = dev_transport_scroll_test_lock()
+            .lock()
+            .expect("dev transport scroll test lock poisoned");
+        dev_transport_scroll_bindings()
+            .contexts
+            .lock()
+            .expect("dev transport scroll contexts lock poisoned")
+            .clear();
+        let context_id =
+            os_transport::action::OpenSearchShardSearchContextIdWire::new("missing-scroll", 81);
+        let request =
+            os_transport::action::OpenSearchShardFetchRequestWire::empty(context_id.clone());
+        let frame = os_transport::action::build_opensearch_fetch_id_scroll_phase_request_message(
+            354,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(fetch_id_scroll_request_has_missing_context(&frame[6..]));
+
+        let response = build_fetch_id_scroll_missing_context_error_response(
+            354,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &frame[6..],
+        );
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected fetch-id-scroll missing-context error response frame");
+        };
+        assert_eq!(message.request_id, 354);
+        assert!(message.status.is_error());
+        let error = os_transport::error::TransportError::read(message.body.freeze())
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            error.class_name,
+            "org.opensearch.search.SearchContextMissingException"
+        );
+        assert_eq!(
+            error.message.as_deref(),
+            Some("No search context found for id [81]")
+        );
+    }
+
+    #[test]
+    fn fetch_id_scroll_phase_route_returns_hit_for_doc_id_context() {
+        let _lock = dev_transport_scroll_test_lock()
+            .lock()
+            .expect("dev transport scroll test lock poisoned");
+        dev_transport_scroll_bindings()
+            .contexts
+            .lock()
+            .expect("dev transport scroll contexts lock poisoned")
+            .clear();
+        let context_id = os_transport::action::OpenSearchShardSearchContextIdWire::new("", 82);
+        dev_transport_scroll_bindings()
+            .contexts
+            .lock()
+            .expect("dev transport scroll contexts lock poisoned")
+            .insert(
+                "stored-scroll-session:82".to_string(),
+                ScrollContext {
+                    remaining_hits: vec![
+                        serde_json::json!({
+                            "_index": "logs-fetch-scroll",
+                            "_id": "doc-1",
+                            "_score": 1.0,
+                            "_source": { "message": "first" }
+                        }),
+                        serde_json::json!({
+                            "_index": "logs-fetch-scroll",
+                            "_id": "doc-2",
+                            "_score": 2.0,
+                            "_source": { "message": "second" }
+                        }),
+                    ],
+                    page_size: 10,
+                    total_hits: 2,
+                },
+            );
+        let request = os_transport::action::OpenSearchShardFetchRequestWire {
+            parent_task_node: String::new(),
+            parent_task_id: None,
+            context_id: context_id.clone(),
+            doc_ids: vec![1],
+        };
+        let frame = os_transport::action::build_opensearch_fetch_id_scroll_phase_request_message(
+            355,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(fetch_id_scroll_request_supports_local_execution_subset(
+            &frame[6..]
+        ));
+
+        let response = build_local_fetch_id_scroll_phase_response(
+            355,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &frame[6..],
+        );
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected fetch-id-scroll response frame");
+        };
+        assert_eq!(message.request_id, 355);
+        assert!(!message.status.is_error());
+        let response =
+            os_transport::action::read_opensearch_fetch_id_phase_response_message(&message)
+                .unwrap();
+        assert_eq!(response.context_id, context_id);
+        assert_eq!(response.hits.hits.len(), 1);
+        assert_eq!(response.hits.hits[0].id.as_deref(), Some("doc-2"));
+        assert_eq!(
+            response.hits.hits[0]
+                .source
+                .as_ref()
+                .and_then(|source| source.get("message"))
+                .and_then(Value::as_str),
+            Some("second")
         );
     }
 

@@ -14187,6 +14187,44 @@ pub fn read_opensearch_fetch_id_phase_request_message(
     )
 }
 
+pub fn build_opensearch_fetch_id_scroll_phase_request_message(
+    request_id: i64,
+    version: Version,
+    request: &OpenSearchShardFetchRequestWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    request.write(&mut body)?;
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::request(),
+        version,
+        variable_header: BytesMut::from(
+            &RequestVariableHeader::new(OPENSEARCH_FETCH_ID_SCROLL_PHASE_ACTION_NAME).to_bytes()[..],
+        ),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_fetch_id_scroll_phase_request_message(
+    message: &TransportMessage,
+) -> Result<OpenSearchShardFetchRequestWire, TransportActionWireError> {
+    if !message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "request",
+            actual: message.status.bits(),
+        });
+    }
+    let header = RequestVariableHeader::read(message.variable_header.clone().freeze())?;
+    if header.action != OPENSEARCH_FETCH_ID_SCROLL_PHASE_ACTION_NAME {
+        return Err(TransportActionWireError::UnexpectedAction {
+            expected: OPENSEARCH_FETCH_ID_SCROLL_PHASE_ACTION_NAME,
+            actual: header.action,
+        });
+    }
+    OpenSearchShardFetchRequestWire::read(message.body.clone().freeze())
+}
+
 pub fn build_opensearch_dfs_phase_response_message(
     request_id: i64,
     version: Version,
@@ -39404,6 +39442,78 @@ impl OpenSearchShardFetchSearchRequestWire {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "fetch phase doc ids",
                 reason: "fetch-id phase doc ids must be non-negative",
+            });
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct OpenSearchShardFetchRequestWire {
+    pub parent_task_node: String,
+    pub parent_task_id: Option<i64>,
+    pub context_id: OpenSearchShardSearchContextIdWire,
+    pub doc_ids: Vec<i32>,
+}
+
+impl OpenSearchShardFetchRequestWire {
+    pub fn empty(context_id: OpenSearchShardSearchContextIdWire) -> Self {
+        Self {
+            parent_task_node: String::new(),
+            parent_task_id: None,
+            context_id,
+            doc_ids: Vec::new(),
+        }
+    }
+
+    pub fn write(&self, output: &mut StreamOutput) -> Result<(), TransportActionWireError> {
+        self.validate_supported_subset()?;
+        write_parent_task_id(output, &self.parent_task_node, self.parent_task_id);
+        self.context_id.write(output)?;
+        output.write_vint(self.doc_ids.len() as i32);
+        for doc_id in &self.doc_ids {
+            output.write_vint(*doc_id);
+        }
+        output.write_byte(0);
+        Ok(())
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
+        let context_id = OpenSearchShardSearchContextIdWire::read(&mut input)?;
+        let doc_id_count = input.read_vint()?;
+        if doc_id_count < 0 {
+            return Err(StreamInputError::NegativeLength(doc_id_count).into());
+        }
+        let mut doc_ids = Vec::with_capacity(doc_id_count as usize);
+        for _ in 0..doc_id_count {
+            doc_ids.push(input.read_vint()?);
+        }
+        let last_emitted_doc_flag = input.read_byte()?;
+        if last_emitted_doc_flag != 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "fetch scroll phase last emitted doc",
+                reason: "fetch-id-scroll phase bounded subset only supports null lastEmittedDoc",
+            });
+        }
+        require_no_trailing_bytes(&input)?;
+        let request = Self {
+            parent_task_node,
+            parent_task_id,
+            context_id,
+            doc_ids,
+        };
+        request.validate_supported_subset()?;
+        Ok(request)
+    }
+
+    pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
+        self.context_id.validate_supported_subset()?;
+        if self.doc_ids.iter().any(|doc_id| *doc_id < 0) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "fetch scroll phase doc ids",
+                reason: "fetch-id-scroll phase doc ids must be non-negative",
             });
         }
         Ok(())
@@ -81063,6 +81173,36 @@ mod tests {
             read_opensearch_fetch_id_phase_request_message(&message).unwrap(),
             non_empty_request
         );
+    }
+
+    #[test]
+    fn opensearch_fetch_id_scroll_phase_transport_request_round_trips() {
+        let request = OpenSearchShardFetchRequestWire {
+            parent_task_node: String::new(),
+            parent_task_id: None,
+            context_id: OpenSearchShardSearchContextIdWire::new("fetch-scroll-session", 72),
+            doc_ids: vec![0, 2],
+        };
+        let mut frame = build_opensearch_fetch_id_scroll_phase_request_message(
+            72,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected fetch-id-scroll phase request message");
+        };
+        assert_eq!(
+            read_opensearch_fetch_id_scroll_phase_request_message(&message).unwrap(),
+            request
+        );
+        assert!(matches!(
+            read_opensearch_fetch_id_phase_request_message(&message).unwrap_err(),
+            TransportActionWireError::UnexpectedAction {
+                expected: OPENSEARCH_FETCH_ID_PHASE_ACTION_NAME,
+                ..
+            }
+        ));
     }
 
     #[test]
