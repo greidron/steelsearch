@@ -1433,6 +1433,34 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end_at_ms,
         )?;
     } else if is_request
+        && retention_lease_request_has_missing_shard_or_index(normalized_action_hint, &body)
+    {
+        let response = build_retention_lease_missing_shard_or_index_error_response(
+            request_id,
+            header_version_id,
+            normalized_action_hint,
+            &body,
+        );
+        response_frame =
+            summarize_transport_response_frame_for_action(&response, normalized_action_hint);
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request
         && normalized_action_hint == Some("cluster:admin/persistent/remove")
         && remove_persistent_task_request_supports_empty_metadata_missing_subset(&body)
     {
@@ -8569,6 +8597,81 @@ fn update_ingestion_state_missing_concrete_index(
             transport_ingestion_state_index_is_concrete(index) && !transport_index_exists(index)
         })
         .cloned()
+}
+
+fn build_retention_lease_missing_shard_or_index_error_response(
+    request_id: i64,
+    header_version_id: u32,
+    action_hint: Option<&str>,
+    body: &[u8],
+) -> Vec<u8> {
+    let Some(shard_id) = retention_lease_request_shard_id(action_hint, body) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    match create_reader_context_shard_admission(dev_transport_pit_bindings(), &shard_id) {
+        CreateReaderContextShardAdmission::MissingIndex => {
+            build_create_reader_context_index_not_found_error_response(
+                request_id,
+                header_version_id,
+                &shard_id,
+            )
+        }
+        CreateReaderContextShardAdmission::MissingShard => {
+            build_create_reader_context_shard_not_found_error_response(
+                request_id,
+                header_version_id,
+                &shard_id,
+            )
+        }
+        CreateReaderContextShardAdmission::Accepted => {
+            build_empty_transport_response(request_id, header_version_id)
+        }
+    }
+}
+
+fn retention_lease_request_has_missing_shard_or_index(
+    action_hint: Option<&str>,
+    body: &[u8],
+) -> bool {
+    retention_lease_request_shard_id(action_hint, body).is_some_and(|shard_id| {
+        create_reader_context_shard_admission(dev_transport_pit_bindings(), &shard_id)
+            != CreateReaderContextShardAdmission::Accepted
+    })
+}
+
+fn retention_lease_request_shard_id(
+    action_hint: Option<&str>,
+    body: &[u8],
+) -> Option<os_transport::action::OpenSearchShardIdWire> {
+    let message = decode_transport_message_from_body(body)?;
+    match action_hint {
+        Some("indices:admin/seq_no/add_retention_lease") => {
+            let request =
+                os_transport::action::read_opensearch_add_retention_lease_request_message(&message)
+                    .ok()?;
+            request.validate_single_shard_resolution_subset().ok()?;
+            Some(request.shard_id)
+        }
+        Some("indices:admin/seq_no/renew_retention_lease") => {
+            let request =
+                os_transport::action::read_opensearch_renew_retention_lease_request_message(
+                    &message,
+                )
+                .ok()?;
+            request.validate_single_shard_resolution_subset().ok()?;
+            Some(request.shard_id)
+        }
+        Some("indices:admin/seq_no/remove_retention_lease") => {
+            let request =
+                os_transport::action::read_opensearch_remove_retention_lease_request_message(
+                    &message,
+                )
+                .ok()?;
+            request.validate_single_shard_resolution_subset().ok()?;
+            Some(request.shard_id)
+        }
+        _ => None,
+    }
 }
 
 fn build_get_ingestion_state_index_not_found_error_response(
@@ -24887,6 +24990,18 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
             Some(build_update_ingestion_state_index_not_found_error_response(
                 request_id,
                 header_version_id,
+                body,
+            ))
+        }
+        Some("indices:admin/seq_no/add_retention_lease")
+        | Some("indices:admin/seq_no/renew_retention_lease")
+        | Some("indices:admin/seq_no/remove_retention_lease")
+            if retention_lease_request_has_missing_shard_or_index(normalized_action_hint, body) =>
+        {
+            Some(build_retention_lease_missing_shard_or_index_error_response(
+                request_id,
+                header_version_id,
+                normalized_action_hint,
                 body,
             ))
         }
@@ -53408,6 +53523,150 @@ mod tests {
         assert!(
             !update_ingestion_state_request_supports_missing_index_subset(&divergent_frame[6..])
         );
+    }
+
+    #[test]
+    fn retention_lease_transport_routes_report_missing_shard_or_index_like_opensearch() {
+        let missing_shard_id = os_transport::action::OpenSearchShardIdWire {
+            index_name: "missing-retention-index".to_string(),
+            index_uuid: "uuid-missing-retention-index".to_string(),
+            shard_id: 0,
+        };
+        let add_request = os_transport::action::OpenSearchAddRetentionLeaseRequestWire {
+            index: Some(missing_shard_id.index_name.clone()),
+            shard_id: missing_shard_id.clone(),
+            ..os_transport::action::OpenSearchAddRetentionLeaseRequestWire::default()
+        };
+        let add_frame = os_transport::action::build_opensearch_add_retention_lease_request_message(
+            105,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &add_request,
+        )
+        .unwrap();
+        let add_body = add_frame[6..].to_vec();
+        assert!(retention_lease_request_has_missing_shard_or_index(
+            Some("indices:admin/seq_no/add_retention_lease"),
+            &add_body
+        ));
+
+        let response = build_retention_lease_missing_shard_or_index_error_response(
+            105,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            Some("indices:admin/seq_no/add_retention_lease"),
+            &add_body,
+        );
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected add retention lease index-not-found response message");
+        };
+        assert_eq!(message.request_id, 105);
+        assert!(message.status.is_error());
+        let error = os_transport::error::TransportError::read(message.body.freeze())
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            error.class_name,
+            "org.opensearch.index.IndexNotFoundException"
+        );
+        assert_eq!(
+            error.message.as_deref(),
+            Some("no such index [missing-retention-index]")
+        );
+
+        dev_transport_pit_bindings()
+            .created_indices
+            .lock()
+            .expect("created indices lock poisoned")
+            .insert("retention-existing-index".to_string());
+        let missing_shard = os_transport::action::OpenSearchShardIdWire {
+            index_name: "retention-existing-index".to_string(),
+            index_uuid: "_na_".to_string(),
+            shard_id: 3,
+        };
+        let renew_request = os_transport::action::OpenSearchRenewRetentionLeaseRequestWire {
+            index: Some(missing_shard.index_name.clone()),
+            shard_id: missing_shard.clone(),
+            ..os_transport::action::OpenSearchRenewRetentionLeaseRequestWire::default()
+        };
+        let renew_frame =
+            os_transport::action::build_opensearch_renew_retention_lease_request_message(
+                106,
+                OPENSEARCH_3_7_0_TRANSPORT,
+                &renew_request,
+            )
+            .unwrap();
+        let renew_body = renew_frame[6..].to_vec();
+        assert!(retention_lease_request_has_missing_shard_or_index(
+            Some("indices:admin/seq_no/renew_retention_lease"),
+            &renew_body
+        ));
+
+        let response = build_retention_lease_missing_shard_or_index_error_response(
+            106,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            Some("indices:admin/seq_no/renew_retention_lease"),
+            &renew_body,
+        );
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected renew retention lease shard-not-found response message");
+        };
+        assert_eq!(message.request_id, 106);
+        assert!(message.status.is_error());
+        let error = os_transport::error::TransportError::read(message.body.freeze())
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            error.class_name,
+            "org.opensearch.index.shard.ShardNotFoundException"
+        );
+        assert_eq!(error.message.as_deref(), Some("no such shard"));
+
+        let remove_request = os_transport::action::OpenSearchRemoveRetentionLeaseRequestWire {
+            index: Some(missing_shard_id.index_name.clone()),
+            shard_id: missing_shard_id,
+            ..os_transport::action::OpenSearchRemoveRetentionLeaseRequestWire::default()
+        };
+        let remove_frame =
+            os_transport::action::build_opensearch_remove_retention_lease_request_message(
+                107,
+                OPENSEARCH_3_7_0_TRANSPORT,
+                &remove_request,
+            )
+            .unwrap();
+        assert!(retention_lease_request_has_missing_shard_or_index(
+            Some("indices:admin/seq_no/remove_retention_lease"),
+            &remove_frame[6..]
+        ));
+
+        let accepted_request = os_transport::action::OpenSearchRenewRetentionLeaseRequestWire {
+            index: Some("retention-existing-index".to_string()),
+            shard_id: os_transport::action::OpenSearchShardIdWire {
+                index_name: "retention-existing-index".to_string(),
+                index_uuid: "_na_".to_string(),
+                shard_id: 0,
+            },
+            ..os_transport::action::OpenSearchRenewRetentionLeaseRequestWire::default()
+        };
+        let accepted_frame =
+            os_transport::action::build_opensearch_renew_retention_lease_request_message(
+                108,
+                OPENSEARCH_3_7_0_TRANSPORT,
+                &accepted_request,
+            )
+            .unwrap();
+        assert!(!retention_lease_request_has_missing_shard_or_index(
+            Some("indices:admin/seq_no/renew_retention_lease"),
+            &accepted_frame[6..]
+        ));
     }
 
     #[test]

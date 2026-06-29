@@ -308,9 +308,9 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `cluster:admin/persistent/update_status` (implemented empty-metadata missing-task error subset)
 - `cluster:admin/persistent/completion` (implemented empty-metadata missing-task error subset)
 - `cluster:admin/persistent/remove` (implemented empty-metadata missing-task error subset)
-- `indices:admin/seq_no/add_retention_lease` (rejected fail-closed)
-- `indices:admin/seq_no/renew_retention_lease` (rejected fail-closed)
-- `indices:admin/seq_no/remove_retention_lease` (rejected fail-closed)
+- `indices:admin/seq_no/add_retention_lease` (implemented missing-shard resolution subset)
+- `indices:admin/seq_no/renew_retention_lease` (implemented missing-shard resolution subset)
+- `indices:admin/seq_no/remove_retention_lease` (implemented missing-shard resolution subset)
 - `cluster:admin/indices/dangling/list` (implemented empty dangling-index subset)
 - `cluster:admin/indices/dangling/import` (implemented empty-state missing dangling-index subset)
 - `cluster:admin/indices/dangling/delete` (implemented empty-state missing dangling-index subset)
@@ -2199,10 +2199,10 @@ The add-retention-lease boundary covers:
   decode/build layer;
 - OpenSearch `RetentionLeaseActions.Response` decode/build as an empty
   `ActionResponse` body;
-- explicit fail-closed classification for
-  `indices:admin/seq_no/add_retention_lease` until shard routing, primary
-  operation permit acquisition, retention lease mutation, sync, and response
-  rendering are implemented;
+- implemented classification for `indices:admin/seq_no/add_retention_lease` in
+  the manifest missing-shard subset, returning OpenSearch's
+  `IndexNotFoundException` or `ShardNotFoundException` before primary operation
+  permit acquisition;
 - explicit rejection for shard/index mismatches, missing or oversized lease
   ids, invalid retaining sequence numbers, missing sources, add-retention-lease
   execution, and non-empty retention lease responses.
@@ -2215,10 +2215,10 @@ The renew-retention-lease boundary covers:
   decode/build layer;
 - OpenSearch `RetentionLeaseActions.Response` decode/build as an empty
   `ActionResponse` body;
-- explicit fail-closed classification for
-  `indices:admin/seq_no/renew_retention_lease` until shard routing, primary
-  operation permit acquisition, retention lease renewal, and response
-  rendering are implemented;
+- implemented classification for `indices:admin/seq_no/renew_retention_lease`
+  in the manifest missing-shard subset, returning OpenSearch's
+  `IndexNotFoundException` or `ShardNotFoundException` before primary operation
+  permit acquisition;
 - explicit rejection for shard/index mismatches, missing or oversized lease
   ids, invalid retaining sequence numbers, missing sources,
   renew-retention-lease execution, and non-empty retention lease responses.
@@ -2230,10 +2230,10 @@ The remove-retention-lease boundary covers:
   `ShardId`, and lease id at the wire decode/build layer;
 - OpenSearch `RetentionLeaseActions.Response` decode/build as an empty
   `ActionResponse` body;
-- explicit fail-closed classification for
-  `indices:admin/seq_no/remove_retention_lease` until shard routing, primary
-  operation permit acquisition, retention lease removal, sync, and response
-  rendering are implemented;
+- implemented classification for `indices:admin/seq_no/remove_retention_lease`
+  in the manifest missing-shard subset, returning OpenSearch's
+  `IndexNotFoundException` or `ShardNotFoundException` before primary operation
+  permit acquisition;
 - explicit rejection for shard/index mismatches, missing or oversized lease
   ids, remove-retention-lease execution, and non-empty retention lease
   responses.
@@ -5473,7 +5473,7 @@ encode. The implemented empty-metadata missing-task subset now uses the same
 ClusterManagerNode envelope and task id validation before rendering the
 OpenSearch-shaped missing-task error response.
 
-Current add-retention-lease reject wire microbenchmark:
+Previous add-retention-lease reject wire microbenchmark:
 
 ```text
 cargo run -p os-transport --release --bin add-retention-lease-reject-wire-benchmark
@@ -5484,16 +5484,15 @@ add_retention_lease_empty_response_decode iterations=400000 elapsed_ms=36.076 op
 add_retention_lease_reject_wire_bottleneck_ops_per_second=609001.47
 ```
 
-The current add-retention-lease fail-closed boundary bottleneck is request
-encode. This path carries the `SingleShardRequest` envelope, explicit
-`ShardId`, lease id, retaining sequence number, and source before rejecting at
-admission. At roughly 609K ops/s in the latest local release run, it is heavier
-than the adjacent persistent-task admin boundaries because it serializes more
-index/shard and lease metadata; future performance-sensitive work is shard
-routing, primary operation permit acquisition, retention lease mutation, sync,
-and response rendering.
+The previous add-retention-lease fail-closed boundary bottleneck was request
+encode. The implemented missing-shard subset still carries the
+`SingleShardRequest` envelope, explicit `ShardId`, lease id, retaining sequence
+number, and source, then resolves the index/shard against the Rust manifest
+before rendering OpenSearch-shaped index/shard resolution exceptions. Future
+performance-sensitive work is successful shard routing, primary operation
+permit acquisition, retention lease mutation, sync, and response rendering.
 
-Current renew-retention-lease reject wire microbenchmark:
+Previous renew-retention-lease reject wire microbenchmark:
 
 ```text
 cargo run -p os-transport --release --bin renew-retention-lease-reject-wire-benchmark
@@ -5504,15 +5503,15 @@ renew_retention_lease_empty_response_decode iterations=400000 elapsed_ms=36.711 
 renew_retention_lease_reject_wire_bottleneck_ops_per_second=592080.58
 ```
 
-The current renew-retention-lease fail-closed boundary bottleneck is validation
-and reject construction. This path carries the same `SingleShardRequest`
-envelope, explicit `ShardId`, lease id, retaining sequence number, and source
-as add-retention-lease, then performs shard/index and lease-shape checks before
-rejecting at admission. At roughly 592K ops/s in the latest local release run,
-future performance-sensitive work is shard routing, primary operation permit
-acquisition, retention lease renewal, and response rendering.
+The previous renew-retention-lease fail-closed boundary bottleneck was
+validation and reject construction. The implemented missing-shard subset still
+carries the same `SingleShardRequest` envelope, explicit `ShardId`, lease id,
+retaining sequence number, and source as add-retention-lease, then performs
+shard/index and lease-shape checks before manifest index/shard resolution.
+Future performance-sensitive work is successful shard routing, primary
+operation permit acquisition, retention lease renewal, and response rendering.
 
-Current remove-retention-lease reject wire microbenchmark:
+Previous remove-retention-lease reject wire microbenchmark:
 
 ```text
 cargo run -p os-transport --release --bin remove-retention-lease-reject-wire-benchmark
@@ -5523,13 +5522,13 @@ remove_retention_lease_empty_response_decode iterations=400000 elapsed_ms=40.883
 remove_retention_lease_reject_wire_bottleneck_ops_per_second=407954.79
 ```
 
-The current remove-retention-lease fail-closed boundary bottleneck is request
-decode. This path carries the `SingleShardRequest` envelope, explicit
-`ShardId`, and lease id before rejecting at admission. At roughly 408K ops/s in
-the latest local release run, it is currently slower than add/renew in this
-microbenchmark despite the smaller payload; future performance-sensitive work
-is shard routing, primary operation permit acquisition, retention lease
-removal, sync, and response rendering.
+The previous remove-retention-lease fail-closed boundary bottleneck was request
+decode. The implemented missing-shard subset carries the `SingleShardRequest`
+envelope, explicit `ShardId`, and lease id, then resolves the index/shard
+against the Rust manifest before rendering OpenSearch-shaped index/shard
+resolution exceptions. Future performance-sensitive work is successful shard
+routing, primary operation permit acquisition, retention lease removal, sync,
+and response rendering.
 
 Current list-dangling-indices supported-subset wire microbenchmark:
 

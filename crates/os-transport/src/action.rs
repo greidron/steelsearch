@@ -2482,18 +2482,18 @@ pub fn classify_opensearch_transport_action(
         },
         OPENSEARCH_ADD_RETENTION_LEASE_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
-            disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "add-retention-lease transport execution requires shard routing, primary operation permit acquisition, retention lease mutation, sync, and response rendering",
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "add-retention-lease transport adapter validates the single-shard request and returns OpenSearch's index/shard resolution exceptions for the manifest missing-shard subset",
         },
         OPENSEARCH_RENEW_RETENTION_LEASE_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
-            disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "renew-retention-lease transport execution requires shard routing, primary operation permit acquisition, retention lease renewal, and response rendering",
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "renew-retention-lease transport adapter validates the single-shard request and returns OpenSearch's index/shard resolution exceptions for the manifest missing-shard subset",
         },
         OPENSEARCH_REMOVE_RETENTION_LEASE_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
-            disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "remove-retention-lease transport execution requires shard routing, primary operation permit acquisition, retention lease removal, sync, and response rendering",
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "remove-retention-lease transport adapter validates the single-shard request and returns OpenSearch's index/shard resolution exceptions for the manifest missing-shard subset",
         },
         OPENSEARCH_LIST_DANGLING_INDICES_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -35963,7 +35963,7 @@ impl OpenSearchAddRetentionLeaseRequestWire {
         })
     }
 
-    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+    pub fn validate_single_shard_resolution_subset(&self) -> Result<(), TransportActionWireError> {
         self.shard_id
             .validate_supported_shape("add retention lease shard id")?;
         if let Some(internal_shard_id) = &self.internal_shard_id {
@@ -36007,6 +36007,11 @@ impl OpenSearchAddRetentionLeaseRequestWire {
                 reason: "OpenSearch add-retention-lease requests require a source",
             });
         }
+        Ok(())
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        self.validate_single_shard_resolution_subset()?;
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "add retention lease execution",
             reason: "add-retention-lease transport execution requires shard routing, primary operation permit acquisition, retention lease mutation, sync, and response rendering",
@@ -36075,7 +36080,7 @@ impl OpenSearchRenewRetentionLeaseRequestWire {
         })
     }
 
-    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+    pub fn validate_single_shard_resolution_subset(&self) -> Result<(), TransportActionWireError> {
         self.shard_id
             .validate_supported_shape("renew retention lease shard id")?;
         if let Some(internal_shard_id) = &self.internal_shard_id {
@@ -36120,6 +36125,11 @@ impl OpenSearchRenewRetentionLeaseRequestWire {
                 reason: "OpenSearch renew-retention-lease requests require a source",
             });
         }
+        Ok(())
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        self.validate_single_shard_resolution_subset()?;
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "renew retention lease execution",
             reason: "renew-retention-lease transport execution requires shard routing, primary operation permit acquisition, retention lease renewal, and response rendering",
@@ -36178,7 +36188,7 @@ impl OpenSearchRemoveRetentionLeaseRequestWire {
         })
     }
 
-    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+    pub fn validate_single_shard_resolution_subset(&self) -> Result<(), TransportActionWireError> {
         self.shard_id
             .validate_supported_shape("remove retention lease shard id")?;
         if let Some(internal_shard_id) = &self.internal_shard_id {
@@ -36211,6 +36221,11 @@ impl OpenSearchRemoveRetentionLeaseRequestWire {
                 reason: "OpenSearch remove-retention-lease ids are bounded to 256 bytes by the Rust boundary",
             });
         }
+        Ok(())
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        self.validate_single_shard_resolution_subset()?;
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "remove retention lease execution",
             reason: "remove-retention-lease transport execution requires shard routing, primary operation permit acquisition, retention lease removal, sync, and response rendering",
@@ -73334,6 +73349,7 @@ mod tests {
 
         let decoded = OpenSearchAddRetentionLeaseRequestWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, request);
+        decoded.validate_single_shard_resolution_subset().unwrap();
         assert!(matches!(
             decoded.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
@@ -73403,7 +73419,7 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_add_retention_lease_transport_messages_bind_rejected_action_frame_and_empty_response(
+    fn opensearch_add_retention_lease_transport_messages_bind_supported_action_frame_and_empty_response(
     ) {
         let request = OpenSearchAddRetentionLeaseRequestWire::default();
         let mut frame = build_opensearch_add_retention_lease_request_message(
@@ -73419,12 +73435,16 @@ mod tests {
             classify_opensearch_transport_request_message(&message)
                 .unwrap()
                 .disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             read_opensearch_add_retention_lease_request_message(&message).unwrap(),
             request
         );
+        read_opensearch_add_retention_lease_request_message(&message)
+            .unwrap()
+            .validate_single_shard_resolution_subset()
+            .unwrap();
         assert!(matches!(
             read_opensearch_add_retention_lease_request_message(&message)
                 .unwrap()
@@ -73483,6 +73503,7 @@ mod tests {
 
         let decoded = OpenSearchRenewRetentionLeaseRequestWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, request);
+        decoded.validate_single_shard_resolution_subset().unwrap();
         assert!(matches!(
             decoded.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
@@ -73552,7 +73573,7 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_renew_retention_lease_transport_messages_bind_rejected_action_frame_and_empty_response(
+    fn opensearch_renew_retention_lease_transport_messages_bind_supported_action_frame_and_empty_response(
     ) {
         let request = OpenSearchRenewRetentionLeaseRequestWire::default();
         let mut frame = build_opensearch_renew_retention_lease_request_message(
@@ -73568,12 +73589,16 @@ mod tests {
             classify_opensearch_transport_request_message(&message)
                 .unwrap()
                 .disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             read_opensearch_renew_retention_lease_request_message(&message).unwrap(),
             request
         );
+        read_opensearch_renew_retention_lease_request_message(&message)
+            .unwrap()
+            .validate_single_shard_resolution_subset()
+            .unwrap();
         assert!(matches!(
             read_opensearch_renew_retention_lease_request_message(&message)
                 .unwrap()
@@ -73623,6 +73648,7 @@ mod tests {
 
         let decoded = OpenSearchRemoveRetentionLeaseRequestWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, request);
+        decoded.validate_single_shard_resolution_subset().unwrap();
         assert!(matches!(
             decoded.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
@@ -73680,7 +73706,7 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_remove_retention_lease_transport_messages_bind_rejected_action_frame_and_empty_response(
+    fn opensearch_remove_retention_lease_transport_messages_bind_supported_action_frame_and_empty_response(
     ) {
         let request = OpenSearchRemoveRetentionLeaseRequestWire::default();
         let mut frame = build_opensearch_remove_retention_lease_request_message(
@@ -73696,12 +73722,16 @@ mod tests {
             classify_opensearch_transport_request_message(&message)
                 .unwrap()
                 .disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             read_opensearch_remove_retention_lease_request_message(&message).unwrap(),
             request
         );
+        read_opensearch_remove_retention_lease_request_message(&message)
+            .unwrap()
+            .validate_single_shard_resolution_subset()
+            .unwrap();
         assert!(matches!(
             read_opensearch_remove_retention_lease_request_message(&message)
                 .unwrap()
