@@ -3468,6 +3468,36 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end_at_ms,
         )?;
     } else if is_request
+        && normalized_action_hint == Some("indices:admin/_tier/get")
+        && get_tiering_status_request_supports_no_active_migration_subset(&body)
+    {
+        let response = build_get_tiering_status_no_active_migration_response(
+            request_id,
+            header_version_id,
+            &body,
+        );
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("indices:admin/_tier/get"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request
         && normalized_action_hint == Some("cluster:monitor/_remotestore/stats")
         && remote_store_stats_request_supports_empty_subset(&body)
     {
@@ -13145,6 +13175,42 @@ fn list_tiering_status_request_matches_empty_subset(
             .target_tier
             .as_deref()
             .map_or(true, |target_tier| matches!(target_tier, "HOT" | "WARM"))
+}
+
+fn build_get_tiering_status_no_active_migration_response(
+    request_id: i64,
+    header_version_id: u32,
+    body: &[u8],
+) -> Vec<u8> {
+    let Some(request) = decode_get_tiering_status_request_from_transport_body(body) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    let reason = format!("Index [{}] has no active migrations", request.index);
+    let mut output = StreamOutput::new();
+    os_transport::error::write_illegal_argument_exception(&mut output, Some(&reason));
+    build_transport_error_response_frame(request_id, header_version_id, output.freeze().to_vec())
+}
+
+fn get_tiering_status_request_supports_no_active_migration_subset(body: &[u8]) -> bool {
+    decode_get_tiering_status_request_from_transport_body(body).is_some_and(|request| {
+        get_tiering_status_request_matches_no_active_migration_subset(&request)
+    })
+}
+
+fn decode_get_tiering_status_request_from_transport_body(
+    body: &[u8],
+) -> Option<os_transport::action::GetTieringStatusRequestWire> {
+    let message = decode_transport_message_from_body(body)?;
+    os_transport::action::read_get_tiering_status_request_message(&message).ok()
+}
+
+fn get_tiering_status_request_matches_no_active_migration_subset(
+    request: &os_transport::action::GetTieringStatusRequestWire,
+) -> bool {
+    request.cluster_manager_timeout == os_transport::action::TimeValueWire::seconds(30)
+        && !request.local
+        && !request.index.trim().is_empty()
+        && transport_index_exists(&request.index)
 }
 
 #[cfg(test)]
@@ -24901,6 +24967,15 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
                 header_version_id,
             ))
         }
+        Some("indices:admin/_tier/get")
+            if get_tiering_status_request_supports_no_active_migration_subset(body) =>
+        {
+            Some(build_get_tiering_status_no_active_migration_response(
+                request_id,
+                header_version_id,
+                body,
+            ))
+        }
         Some("indices:data/read/search") if search_request_has_invalid_pit_id(body) => Some(
             build_search_invalid_pit_id_error_response(request_id, header_version_id, body),
         ),
@@ -35442,6 +35517,69 @@ mod tests {
         assert_eq!(
             response,
             os_transport::action::ListTieringStatusResponseWire::default()
+        );
+    }
+
+    #[test]
+    fn get_tiering_status_transport_route_returns_no_active_migrations_error() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        dev_transport_pit_bindings()
+            .created_indices
+            .lock()
+            .expect("dev transport created indices lock poisoned")
+            .clear();
+        *dev_transport_pit_bindings()
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned") = serde_json::json!({
+            "indices": {
+                "logs-tiering": {
+                    "settings": {
+                        "index": {
+                            "number_of_shards": "1"
+                        }
+                    }
+                }
+            }
+        });
+
+        let request = os_transport::action::GetTieringStatusRequestWire {
+            index: "logs-tiering".to_string(),
+            detailed: true,
+            ..os_transport::action::GetTieringStatusRequestWire::default()
+        };
+        let frame = os_transport::action::build_get_tiering_status_request_message(
+            100,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(get_tiering_status_request_supports_no_active_migration_subset(&frame[6..]));
+
+        let response = build_get_tiering_status_no_active_migration_response(
+            100,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &frame[6..],
+        );
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected get tiering status error response message");
+        };
+        assert_eq!(message.request_id, 100);
+        assert!(message.status.is_error());
+        let error = os_transport::error::TransportError::read(message.body.freeze())
+            .unwrap()
+            .unwrap();
+        assert_eq!(error.class_name, "java.lang.IllegalArgumentException");
+        assert_eq!(
+            error.message.as_deref(),
+            Some("Index [logs-tiering] has no active migrations")
         );
     }
 

@@ -982,13 +982,15 @@ The get-tiering-status boundary covers:
 - OpenSearch `GetTieringStatusResponse` single `TieringStatus` base fields for
   index name, state, source tier, target tier, start time, and optional
   shard-level status marker at the wire decode/build layer;
-- explicit fail-closed classification for `indices:admin/_tier/get` until
-  metadata read block checks, index resolution, tiering-state lookup, migration
-  service lookup, optional shard-level detail collection, and response rendering
-  are implemented;
+- implemented classification for `indices:admin/_tier/get` when the request
+  uses the default timeout, `local=false`, and a non-empty manifest-backed
+  index name, returning OpenSearch's
+  `IllegalArgumentException("Index [...] has no active migrations")` for the
+  current no-active-tiering-operation state;
 - explicit rejection for custom cluster-manager timeout, local reads, blank
-  index names, get-tiering-status execution, single-status response rendering,
-  blank response index names, and shard-level status rendering.
+  index names, missing local indices, active tiering aggregation, single-status
+  response rendering, blank response index names, and shard-level status
+  rendering.
 
 The knn-stats boundary covers:
 

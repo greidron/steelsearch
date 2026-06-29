@@ -342,8 +342,8 @@
       "transport_action": "TransportGetTieringStatusAction",
       "request_wire_type": "GetTieringStatusRequest",
       "response_wire_type": "GetTieringStatusResponse",
-      "disposition": "rejected",
-      "reason": "Get-tiering-status transport execution requires metadata read block checks, index resolution, tiering-state lookup, migration service lookup, optional shard-level detail collection, and response rendering"
+      "disposition": "implemented",
+      "reason": "Get-tiering-status transport adapter validates default read requests and returns OpenSearch's no-active-migrations error for manifest-backed local indices without active tiering operations"
     },
     {
       "action_name": "cluster:admin/knn_stats_action",

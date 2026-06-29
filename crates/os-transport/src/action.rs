@@ -2042,8 +2042,8 @@ pub fn classify_opensearch_transport_action(
         },
         GET_TIERING_STATUS_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
-            disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "get-tiering-status transport execution requires metadata read block checks, index resolution, tiering-state lookup, migration service lookup, optional shard-level detail collection, and response rendering",
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "get-tiering-status transport adapter validates default read requests and returns OpenSearch's no-active-migrations error for manifest-backed local indices without active tiering operations",
         },
         KNN_STATS_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -18967,10 +18967,7 @@ impl GetTieringStatusRequestWire {
                 reason: "OpenSearch get-tiering-status requests require an index name",
             });
         }
-        Err(TransportActionWireError::UnsupportedWireShape {
-            shape: "get tiering status execution",
-            reason: "get-tiering-status transport execution requires metadata read block checks, index resolution, tiering-state lookup, migration service lookup, optional shard-level detail collection, and response rendering",
-        })
+        Ok(())
     }
 }
 
@@ -51602,6 +51599,10 @@ mod tests {
             classify_opensearch_transport_action(LIST_TIERING_STATUS_ACTION_NAME).disposition,
             OpenSearchTransportActionDisposition::Implemented
         );
+        assert_eq!(
+            classify_opensearch_transport_action(GET_TIERING_STATUS_ACTION_NAME).disposition,
+            OpenSearchTransportActionDisposition::Implemented
+        );
     }
 
     #[test]
@@ -51695,6 +51696,7 @@ mod tests {
                 || spec.action_name == OPENSEARCH_IMPORT_DANGLING_INDEX_ACTION_NAME
                 || spec.action_name == OPENSEARCH_DELETE_DANGLING_INDEX_ACTION_NAME
                 || spec.action_name == LIST_TIERING_STATUS_ACTION_NAME
+                || spec.action_name == GET_TIERING_STATUS_ACTION_NAME
                 || spec.action_name == GET_DECOMMISSION_STATE_ACTION_NAME
             {
                 assert_eq!(
@@ -60579,7 +60581,7 @@ mod tests {
     }
 
     #[test]
-    fn get_tiering_status_request_wire_round_trips_and_rejects_execution_boundary() {
+    fn get_tiering_status_request_wire_round_trips_and_validates_supported_subset() {
         let request = GetTieringStatusRequestWire {
             parent_task_node: "cluster-manager".to_string(),
             parent_task_id: Some(50),
@@ -60592,13 +60594,7 @@ mod tests {
 
         let decoded = GetTieringStatusRequestWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, request);
-        assert!(matches!(
-            decoded.reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "get tiering status execution",
-                ..
-            })
-        ));
+        decoded.reject_unsupported_execution().unwrap();
     }
 
     #[test]
@@ -60701,7 +60697,7 @@ mod tests {
     }
 
     #[test]
-    fn get_tiering_status_transport_messages_bind_rejected_action_frame_and_response() {
+    fn get_tiering_status_transport_messages_bind_supported_action_frame_and_response() {
         let request = GetTieringStatusRequestWire::default();
         let mut frame =
             build_get_tiering_status_request_message(50, OPENSEARCH_3_7_0_TRANSPORT, &request)
@@ -60713,21 +60709,16 @@ mod tests {
             classify_opensearch_transport_request_message(&message)
                 .unwrap()
                 .disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             read_get_tiering_status_request_message(&message).unwrap(),
             request
         );
-        assert!(matches!(
-            read_get_tiering_status_request_message(&message)
-                .unwrap()
-                .reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "get tiering status execution",
-                ..
-            })
-        ));
+        read_get_tiering_status_request_message(&message)
+            .unwrap()
+            .reject_unsupported_execution()
+            .unwrap();
 
         let response = GetTieringStatusResponseWire::default();
         let mut frame =
