@@ -1121,6 +1121,36 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end,
             &mut connection_end_at_ms,
         )?;
+    } else if is_request
+        && normalized_action_hint == Some("cluster:monitor/allocation/explain")
+        && cluster_allocation_explain_request_supports_no_unassigned_error_subset(&body)
+        && dev_transport_created_indices_empty()
+    {
+        let response = build_cluster_allocation_explain_no_unassigned_error_response(
+            request_id,
+            header_version_id,
+        );
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("cluster:monitor/allocation/explain[n]"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
     } else if is_request && normalized_action_hint == Some("internal:monitor/term") {
         let response =
             build_get_term_version_response(request_id, header_version_id, transport_identity);
@@ -20147,11 +20177,49 @@ fn cluster_state_request_supports_local_subset(body: &[u8]) -> bool {
     decode_cluster_state_request_from_transport_body(body).is_some()
 }
 
+fn cluster_allocation_explain_request_supports_no_unassigned_error_subset(body: &[u8]) -> bool {
+    let Some(request) = decode_cluster_allocation_explain_request_from_transport_body(body) else {
+        return false;
+    };
+    request.cluster_manager_timeout == os_transport::action::TimeValueWire::seconds(30)
+        && request.index.is_none()
+        && request.shard.is_none()
+        && request.primary.is_none()
+        && request.current_node.is_none()
+        && !request.include_yes_decisions
+        && !request.include_disk_info
+}
+
 fn decode_cluster_state_request_from_transport_body(
     body: &[u8],
 ) -> Option<os_transport::action::ClusterStateRequestWire> {
     let message = decode_transport_message_from_body(body)?;
     os_transport::action::read_cluster_state_request_message(&message).ok()
+}
+
+fn decode_cluster_allocation_explain_request_from_transport_body(
+    body: &[u8],
+) -> Option<os_transport::action::ClusterAllocationExplainRequestWire> {
+    let message = decode_transport_message_from_body(body)?;
+    os_transport::action::read_cluster_allocation_explain_request_message(&message).ok()
+}
+
+fn build_cluster_allocation_explain_no_unassigned_error_response(
+    request_id: i64,
+    header_version_id: u32,
+) -> Vec<u8> {
+    let reason = "unable to find any unassigned shards to explain [ClusterAllocationExplainRequest[useAnyUnassignedShard=true,includeYesDecisions?=false]";
+    let mut output = StreamOutput::new();
+    os_transport::error::write_illegal_argument_exception(&mut output, Some(reason));
+    build_transport_error_response_frame(request_id, header_version_id, output.freeze().to_vec())
+}
+
+fn dev_transport_created_indices_empty() -> bool {
+    dev_transport_pit_bindings()
+        .created_indices
+        .lock()
+        .expect("dev transport created indices lock poisoned")
+        .is_empty()
 }
 
 fn local_cluster_state_response_from_request(
@@ -21130,6 +21198,17 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
         Some("cluster:monitor/state") if cluster_state_request_supports_local_subset(body) => Some(
             build_cluster_state_response(request_id, header_version_id, transport_identity, body),
         ),
+        Some("cluster:monitor/allocation/explain")
+            if cluster_allocation_explain_request_supports_no_unassigned_error_subset(body)
+                && dev_transport_created_indices_empty() =>
+        {
+            Some(
+                build_cluster_allocation_explain_no_unassigned_error_response(
+                    request_id,
+                    header_version_id,
+                ),
+            )
+        }
         Some("internal:monitor/term") => Some(build_get_term_version_response(
             request_id,
             header_version_id,
@@ -26603,6 +26682,105 @@ mod tests {
         assert!(response.sections["routing_table"]["indices"]
             .get("logs-state")
             .is_some());
+    }
+
+    #[test]
+    fn cluster_allocation_explain_transport_route_returns_no_unassigned_error_for_empty_state() {
+        struct RecordingTransportConnection {
+            writes: Vec<u8>,
+        }
+
+        impl std::io::Read for RecordingTransportConnection {
+            fn read(&mut self, _buf: &mut [u8]) -> std::io::Result<usize> {
+                Ok(0)
+            }
+        }
+
+        impl std::io::Write for RecordingTransportConnection {
+            fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+                self.writes.extend_from_slice(buf);
+                Ok(buf.len())
+            }
+
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+
+        impl TransportConnection for RecordingTransportConnection {
+            fn set_read_timeout(&self, _duration: Option<Duration>) -> std::io::Result<()> {
+                Ok(())
+            }
+
+            fn peer_addr(&self) -> std::io::Result<SocketAddr> {
+                "127.0.0.1:9300"
+                    .parse()
+                    .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidInput, error))
+            }
+        }
+
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        dev_transport_pit_bindings()
+            .created_indices
+            .lock()
+            .expect("dev transport created indices lock poisoned")
+            .clear();
+
+        let request = os_transport::action::ClusterAllocationExplainRequestWire::default();
+        let frame = os_transport::action::build_cluster_allocation_explain_request_message(
+            82,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(
+            cluster_allocation_explain_request_supports_no_unassigned_error_subset(&frame[6..])
+        );
+        let transport_identity = DevTransportIdentity {
+            cluster_name: "steelsearch-dev".to_string(),
+            node_name: "steel-node".to_string(),
+            node_id: "steel-node-id".to_string(),
+            ephemeral_id: "steel-node-ephemeral".to_string(),
+            transport_address: "127.0.0.1:9300".parse().unwrap(),
+            attributes: Vec::new(),
+            roles: vec!["cluster_manager".to_string(), "data".to_string()],
+            seed_peer_identity: None,
+            seed_peer_identities: Vec::new(),
+            coordination_state: Arc::new(Mutex::new(DevTransportCoordinationState::default())),
+            remote_transport_queue_gate: Arc::new(RemoteTransportQueueGate::new(1, 1000)),
+            task_queue_state: None,
+        };
+        let mut stream = RecordingTransportConnection { writes: Vec::new() };
+
+        let response = handle_subsequent_transport_request(
+            &mut stream,
+            &frame[6..],
+            &transport_identity,
+            None,
+        )
+        .unwrap();
+
+        assert!(response);
+        let mut frame = BytesMut::from(&stream.writes[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected allocation explain error response message");
+        };
+        assert_eq!(message.request_id, 82);
+        assert!(message.status.is_error());
+        let error = os_transport::error::TransportError::read(message.body.freeze())
+            .unwrap()
+            .unwrap();
+        assert_eq!(error.class_name, "java.lang.IllegalArgumentException");
+        assert_eq!(
+            error.message.as_deref(),
+            Some("unable to find any unassigned shards to explain [ClusterAllocationExplainRequest[useAnyUnassignedShard=true,includeYesDecisions?=false]")
+        );
     }
 
     #[test]
