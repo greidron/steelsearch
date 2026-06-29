@@ -16511,7 +16511,18 @@ fn delete_pit_request_supports_local_lifecycle_subset(body: &[u8]) -> bool {
 fn delete_pit_request_matches_local_lifecycle_subset(
     request: &os_transport::action::OpenSearchDeletePitRequestWire,
 ) -> bool {
-    request.validate_supported_subset().is_ok() && ids_use_all_only_as_standalone(&request.pit_ids)
+    request.validate_supported_subset().is_ok()
+        && delete_pit_ids_match_local_lifecycle_subset(&request.pit_ids)
+}
+
+fn delete_pit_ids_match_local_lifecycle_subset(ids: &[String]) -> bool {
+    if ids.len() == 1 && ids.first().is_some_and(|id| id == "_all") {
+        return true;
+    }
+    !ids.iter().any(|id| id == "_all")
+        && ids
+            .iter()
+            .all(|id| os_transport::action::OpenSearchSearchContextIdWire::decode(id).is_ok())
 }
 
 fn ids_use_all_only_as_standalone(ids: &[String]) -> bool {
@@ -22914,6 +22925,31 @@ mod tests {
     fn dev_transport_pit_test_lock() -> &'static Mutex<()> {
         static LOCK: TestOnceLock<Mutex<()>> = TestOnceLock::new();
         LOCK.get_or_init(|| Mutex::new(()))
+    }
+
+    fn test_encoded_transport_pit_id(
+        index_name: &str,
+        index_uuid: &str,
+        node: &str,
+        session_id: &str,
+        context_id: i64,
+    ) -> String {
+        os_transport::action::OpenSearchSearchContextIdWire::new(BTreeMap::from([(
+            os_transport::action::OpenSearchShardIdWire {
+                index_name: index_name.to_string(),
+                index_uuid: index_uuid.to_string(),
+                shard_id: 0,
+            },
+            os_transport::action::OpenSearchSearchContextIdForNodeWire {
+                node: node.to_string(),
+                cluster_alias: None,
+                search_context_id: os_transport::action::OpenSearchShardSearchContextIdWire::new(
+                    session_id, context_id,
+                ),
+            },
+        )]))
+        .encode(OPENSEARCH_3_7_0_TRANSPORT)
+        .expect("test PIT id should encode")
     }
 
     fn minimal_daemon_config(data_path: PathBuf) -> DaemonConfig {
@@ -37418,7 +37454,7 @@ mod tests {
     }
 
     #[test]
-    fn delete_pit_transport_route_accepts_explicit_id_subset() {
+    fn delete_pit_transport_route_accepts_valid_encoded_missing_id_subset() {
         let _lock = dev_transport_pit_test_lock()
             .lock()
             .expect("dev transport PIT test lock poisoned");
@@ -37427,8 +37463,15 @@ mod tests {
             .lock()
             .expect("dev transport PIT contexts lock poisoned")
             .clear();
+        let pit_id = test_encoded_transport_pit_id(
+            "logs-delete-missing",
+            "uuid-logs-delete-missing",
+            "steel-node-id",
+            "missing-reader-session",
+            94,
+        );
         let request = os_transport::action::OpenSearchDeletePitRequestWire {
-            pit_ids: vec!["pit-context".to_string()],
+            pit_ids: vec![pit_id.clone()],
             ..os_transport::action::OpenSearchDeletePitRequestWire::default()
         };
         let frame = os_transport::action::build_opensearch_delete_pit_request_message(
@@ -37457,12 +37500,12 @@ mod tests {
         let response =
             os_transport::action::read_opensearch_delete_pit_response_message(&message).unwrap();
         assert_eq!(response.results.len(), 1);
-        assert_eq!(response.results[0].pit_id, "pit-context");
+        assert_eq!(response.results[0].pit_id, pit_id);
         assert!(response.results[0].successful);
     }
 
     #[test]
-    fn delete_pit_transport_route_round_trips_empty_id_entries_like_wire() {
+    fn delete_pit_transport_route_rejects_malformed_explicit_id_at_execution_boundary() {
         let _lock = dev_transport_pit_test_lock()
             .lock()
             .expect("dev transport PIT test lock poisoned");
@@ -37481,7 +37524,7 @@ mod tests {
             &request,
         )
         .unwrap();
-        assert!(delete_pit_request_supports_local_lifecycle_subset(
+        assert!(!delete_pit_request_supports_local_lifecycle_subset(
             &frame[6..]
         ));
 
@@ -37498,11 +37541,7 @@ mod tests {
         else {
             panic!("expected delete-PIT response message");
         };
-        let response =
-            os_transport::action::read_opensearch_delete_pit_response_message(&message).unwrap();
-        assert_eq!(response.results.len(), 1);
-        assert_eq!(response.results[0].pit_id, "");
-        assert!(response.results[0].successful);
+        assert!(message.body.is_empty());
     }
 
     #[test]
@@ -37572,8 +37611,15 @@ mod tests {
             .lock()
             .expect("dev transport PIT contexts lock poisoned")
             .clear();
+        let pit_id = test_encoded_transport_pit_id(
+            "logs-delete-dedupe-missing",
+            "uuid-logs-delete-dedupe-missing",
+            "steel-node-id",
+            "dedupe-missing-reader-session",
+            201,
+        );
         let request = os_transport::action::OpenSearchDeletePitRequestWire {
-            pit_ids: vec!["pit-missing".to_string(), "pit-missing".to_string()],
+            pit_ids: vec![pit_id.clone(), pit_id.clone()],
             ..os_transport::action::OpenSearchDeletePitRequestWire::default()
         };
         let frame = os_transport::action::build_opensearch_delete_pit_request_message(
@@ -37602,7 +37648,7 @@ mod tests {
         let response =
             os_transport::action::read_opensearch_delete_pit_response_message(&message).unwrap();
         assert_eq!(response.results.len(), 1);
-        assert_eq!(response.results[0].pit_id, "pit-missing");
+        assert_eq!(response.results[0].pit_id, pit_id);
         assert!(response.results[0].successful);
     }
 
