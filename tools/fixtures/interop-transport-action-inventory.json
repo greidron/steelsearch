@@ -117,8 +117,8 @@
       "transport_action": "TransportPruneFileCacheAction",
       "request_wire_type": "PruneFileCacheRequest",
       "response_wire_type": "PruneFileCacheResponse",
-      "disposition": "rejected",
-      "reason": "Prune-file-cache transport execution requires warm-node file cache pruning and response rendering"
+      "disposition": "implemented",
+      "reason": "Prune-file-cache transport adapter validates the bounded default request and returns an OpenSearch-shaped local no-cache nodes response"
     },
     {
       "action_name": "cluster:admin/nodes/reload_secure_settings",

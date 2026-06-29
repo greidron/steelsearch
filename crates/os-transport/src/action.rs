@@ -1890,8 +1890,8 @@ pub fn classify_opensearch_transport_action(
         },
         PRUNE_FILE_CACHE_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
-            disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "prune-file-cache transport execution requires warm-node file cache pruning and response rendering",
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "prune-file-cache transport adapter validates the bounded default request and returns an OpenSearch-shaped local no-cache nodes response",
         },
         NODES_RELOAD_SECURE_SETTINGS_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -4852,7 +4852,7 @@ impl PruneFileCacheRequestWire {
         Ok(request)
     }
 
-    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+    pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
         if !self.node_ids.is_empty() {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "prune file cache node filter",
@@ -4866,10 +4866,127 @@ impl PruneFileCacheRequestWire {
                     "prune-file-cache timeout semantics require transport nodes action execution",
             });
         }
+        Ok(())
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        self.validate_supported_subset()?;
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "prune file cache execution",
-            reason: "prune-file-cache transport execution requires warm-node file cache pruning and response rendering",
+            reason:
+                "use validate_supported_subset for the implemented default prune-file-cache adapter",
         })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PruneFileCacheResponseWire {
+    pub cluster_name: String,
+    pub nodes: Vec<NodePruneFileCacheResponseWire>,
+    pub failures: Vec<FailedNodeExceptionWire>,
+}
+
+impl PruneFileCacheResponseWire {
+    pub fn local_no_cache(cluster_name: String, node: OpenSearchDiscoveryNodeWire) -> Self {
+        Self {
+            cluster_name,
+            nodes: vec![NodePruneFileCacheResponseWire {
+                node,
+                pruned_bytes: 0,
+                cache_capacity: 0,
+            }],
+            failures: Vec::new(),
+        }
+    }
+
+    pub fn write(&self, output: &mut StreamOutput) -> Result<(), TransportActionWireError> {
+        self.validate_supported_subset()?;
+        output.write_string(&self.cluster_name);
+        output.write_vint(self.nodes.len() as i32);
+        for node in &self.nodes {
+            node.write(output)?;
+        }
+        output.write_vint(self.failures.len() as i32);
+        for failure in &self.failures {
+            failure.write(output)?;
+        }
+        Ok(())
+    }
+
+    pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let cluster_name = input.read_string()?;
+        let node_count = read_len(&mut input)?;
+        let mut nodes = Vec::with_capacity(node_count);
+        for _ in 0..node_count {
+            nodes.push(NodePruneFileCacheResponseWire::read(&mut input)?);
+        }
+        let failure_count = read_len(&mut input)?;
+        let mut failures = Vec::with_capacity(failure_count);
+        for _ in 0..failure_count {
+            failures.push(FailedNodeExceptionWire::read(&mut input)?);
+        }
+        require_no_trailing_bytes(&input)?;
+        let response = Self {
+            cluster_name,
+            nodes,
+            failures,
+        };
+        response.validate_supported_subset()?;
+        Ok(response)
+    }
+
+    pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
+        if self.cluster_name.is_empty() {
+            return Err(TransportActionWireError::MissingRequiredField {
+                field: "prune file cache response cluster name",
+            });
+        }
+        for node in &self.nodes {
+            node.validate_supported_subset()?;
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NodePruneFileCacheResponseWire {
+    pub node: OpenSearchDiscoveryNodeWire,
+    pub pruned_bytes: i64,
+    pub cache_capacity: i64,
+}
+
+impl NodePruneFileCacheResponseWire {
+    fn write(&self, output: &mut StreamOutput) -> Result<(), TransportActionWireError> {
+        self.validate_supported_subset()?;
+        self.node.write(output);
+        output.write_i64(self.pruned_bytes);
+        output.write_i64(self.cache_capacity);
+        Ok(())
+    }
+
+    fn read(input: &mut StreamInput) -> Result<Self, TransportActionWireError> {
+        let node = OpenSearchDiscoveryNodeWire::read(input)?;
+        let pruned_bytes = input.read_i64()?;
+        let cache_capacity = input.read_i64()?;
+        let response = Self {
+            node,
+            pruned_bytes,
+            cache_capacity,
+        };
+        response.validate_supported_subset()?;
+        Ok(response)
+    }
+
+    fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
+        self.node.validate_supported_subset()?;
+        if self.pruned_bytes < 0 || self.cache_capacity < 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "prune file cache node counters",
+                reason: "prune-file-cache node counters must be non-negative",
+            });
+        }
+        Ok(())
     }
 }
 
@@ -6215,6 +6332,36 @@ pub fn read_prune_file_cache_request_message(
         });
     }
     PruneFileCacheRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_prune_file_cache_response_message(
+    request_id: i64,
+    version: Version,
+    response: &PruneFileCacheResponseWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    response.write(&mut body)?;
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::response(),
+        version,
+        variable_header: BytesMut::from(&ResponseVariableHeader::default().to_bytes()[..]),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_prune_file_cache_response_message(
+    message: &TransportMessage,
+) -> Result<PruneFileCacheResponseWire, TransportActionWireError> {
+    if !message.status.is_response() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "response",
+            actual: message.status.bits(),
+        });
+    }
+    let _header = ResponseVariableHeader::read(message.variable_header.clone().freeze())?;
+    PruneFileCacheResponseWire::read(message.body.clone().freeze())
 }
 
 pub fn build_nodes_reload_secure_settings_request_message(
@@ -49810,7 +49957,7 @@ mod tests {
         );
         assert_eq!(
             classify_opensearch_transport_action(PRUNE_FILE_CACHE_ACTION_NAME).disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             classify_opensearch_transport_action(NODES_RELOAD_SECURE_SETTINGS_ACTION_NAME)
@@ -54020,7 +54167,7 @@ mod tests {
     }
 
     #[test]
-    fn prune_file_cache_request_wire_round_trips_and_rejects_execution_boundary() {
+    fn prune_file_cache_request_wire_round_trips_and_validates_default_subset() {
         let request = PruneFileCacheRequestWire {
             parent_task_node: "cluster-manager".to_string(),
             parent_task_id: Some(30),
@@ -54031,6 +54178,7 @@ mod tests {
 
         let decoded = PruneFileCacheRequestWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, request);
+        decoded.validate_supported_subset().unwrap();
         assert!(matches!(
             decoded.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
@@ -54047,7 +54195,7 @@ mod tests {
             ..PruneFileCacheRequestWire::default()
         };
         assert!(matches!(
-            node_filter.reject_unsupported_execution(),
+            node_filter.validate_supported_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "prune file cache node filter",
                 ..
@@ -54059,7 +54207,7 @@ mod tests {
             ..PruneFileCacheRequestWire::default()
         };
         assert!(matches!(
-            timeout.reject_unsupported_execution(),
+            timeout.validate_supported_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "prune file cache timeout",
                 ..
@@ -54084,7 +54232,38 @@ mod tests {
     }
 
     #[test]
-    fn prune_file_cache_transport_messages_bind_rejected_action_frame() {
+    fn prune_file_cache_response_wire_round_trips_local_no_cache_subset() {
+        let response = PruneFileCacheResponseWire::local_no_cache(
+            "steel-dev".to_string(),
+            test_discovery_node_wire(),
+        );
+        let mut output = StreamOutput::new();
+        response.write(&mut output).unwrap();
+
+        assert_eq!(
+            PruneFileCacheResponseWire::read(output.freeze()).unwrap(),
+            response
+        );
+
+        let negative = PruneFileCacheResponseWire {
+            nodes: vec![NodePruneFileCacheResponseWire {
+                node: test_discovery_node_wire(),
+                pruned_bytes: -1,
+                cache_capacity: 0,
+            }],
+            ..response
+        };
+        assert!(matches!(
+            negative.validate_supported_subset(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "prune file cache node counters",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn prune_file_cache_transport_messages_bind_supported_action_frame_and_response() {
         let request = PruneFileCacheRequestWire::default();
         let mut frame =
             build_prune_file_cache_request_message(30, OPENSEARCH_3_7_0_TRANSPORT, &request)
@@ -54096,15 +54275,31 @@ mod tests {
             read_prune_file_cache_request_message(&message).unwrap(),
             request
         );
-        assert!(matches!(
-            read_prune_file_cache_request_message(&message)
+        assert_eq!(
+            classify_opensearch_transport_request_message(&message)
                 .unwrap()
-                .reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "prune file cache execution",
-                ..
-            })
-        ));
+                .disposition,
+            OpenSearchTransportActionDisposition::Implemented
+        );
+        read_prune_file_cache_request_message(&message)
+            .unwrap()
+            .validate_supported_subset()
+            .unwrap();
+
+        let response = PruneFileCacheResponseWire::local_no_cache(
+            "steel-dev".to_string(),
+            test_discovery_node_wire(),
+        );
+        let mut frame =
+            build_prune_file_cache_response_message(30, OPENSEARCH_3_7_0_TRANSPORT, &response)
+                .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected prune file cache response message");
+        };
+        assert_eq!(
+            read_prune_file_cache_response_message(&message).unwrap(),
+            response
+        );
     }
 
     #[test]

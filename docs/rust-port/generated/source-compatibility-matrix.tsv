@@ -411,7 +411,7 @@ transport_action	partial	action	ClusterUpdateSettingsAction.INSTANCE	TransportCl
 transport_action	partial	action	ClusterRerouteAction.INSTANCE	TransportClusterRerouteAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	677
 transport_action	implemented	action	ClusterSearchShardsAction.INSTANCE	TransportClusterSearchShardsAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	678
 transport_action	implemented	action	PendingClusterTasksAction.INSTANCE	TransportPendingClusterTasksAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	679
-transport_action	partial	action	PruneFileCacheAction.INSTANCE	TransportPruneFileCacheAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	680
+transport_action	implemented	action	PruneFileCacheAction.INSTANCE	TransportPruneFileCacheAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	680
 transport_action	implemented	action	PutRepositoryAction.INSTANCE	TransportPutRepositoryAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	681
 transport_action	implemented	action	GetRepositoriesAction.INSTANCE	TransportGetRepositoriesAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	682
 transport_action	implemented	action	DeleteRepositoryAction.INSTANCE	TransportDeleteRepositoryAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	683

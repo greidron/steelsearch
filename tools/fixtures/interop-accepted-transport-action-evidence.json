@@ -66,6 +66,13 @@
       "response_evidence": "crates/os-node/tests/dev_cluster_daemons.rs::daemon_transport_cluster_update_settings_empty_request_returns_acknowledged"
     },
     {
+      "action_name": "cluster:admin/filecache/prune",
+      "disposition": "implemented",
+      "evidence_kind": "live_probe",
+      "request_evidence": "crates/os-transport/src/action.rs::prune_file_cache_transport_messages_bind_supported_action_frame_and_response",
+      "response_evidence": "crates/os-node/tests/dev_cluster_daemons.rs::daemon_transport_prune_file_cache_returns_local_no_cache_response"
+    },
+    {
       "action_name": "cluster:admin/routing/awareness/weights/put",
       "disposition": "implemented",
       "evidence_kind": "live_probe",

@@ -3476,6 +3476,67 @@ fn daemon_transport_cluster_update_settings_empty_request_returns_acknowledged()
 }
 
 #[test]
+fn daemon_transport_prune_file_cache_returns_local_no_cache_response() {
+    let binary = os_node_binary();
+    let root = unique_work_dir();
+    fs::create_dir_all(root.join("data")).unwrap();
+    let transport_port = free_port();
+
+    let mut child = Command::new(&binary)
+        .arg("--http.host")
+        .arg("127.0.0.1")
+        .arg("--http.port")
+        .arg("0")
+        .arg("--transport.host")
+        .arg("127.0.0.1")
+        .arg("--transport.port")
+        .arg(transport_port.to_string())
+        .arg("--node.id")
+        .arg("steel-node-prune-cache")
+        .arg("--node.name")
+        .arg("steel-node-prune-cache")
+        .arg("--cluster.name")
+        .arg("steel-dev-prune-cache-transport")
+        .arg("--path.data")
+        .arg(root.join("data"))
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+
+    let stderr = child.stderr.take().unwrap();
+    let mut reader = BufReader::new(stderr);
+    let _http_port = read_reported_http_port(&mut reader);
+    let _guard = ChildGuard {
+        children: vec![child],
+    };
+
+    let request = os_transport::action::PruneFileCacheRequestWire::default();
+    let frame = os_transport::action::build_prune_file_cache_request_message(
+        99,
+        OPENSEARCH_3_7_0_TRANSPORT,
+        &request,
+    )
+    .unwrap();
+    let response = send_transport_request_and_decode_response(transport_port, &frame);
+    let prune_response =
+        os_transport::action::read_prune_file_cache_response_message(&response).unwrap();
+
+    assert_eq!(response.request_id, 99);
+    assert_eq!(
+        prune_response.cluster_name,
+        "steel-dev-prune-cache-transport"
+    );
+    assert!(prune_response.failures.is_empty());
+    assert_eq!(prune_response.nodes.len(), 1);
+    assert_eq!(prune_response.nodes[0].node.id, "steel-node-prune-cache");
+    assert_eq!(prune_response.nodes[0].pruned_bytes, 0);
+    assert_eq!(prune_response.nodes[0].cache_capacity, 0);
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
 fn daemon_transport_put_and_delete_weighted_routing_updates_get_response() {
     let binary = os_node_binary();
     let root = unique_work_dir();

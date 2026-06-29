@@ -1480,6 +1480,33 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end_at_ms,
         )?;
     } else if is_request
+        && normalized_action_hint == Some("cluster:admin/filecache/prune")
+        && prune_file_cache_request_supports_default_subset(&body)
+    {
+        let response =
+            build_prune_file_cache_response(request_id, header_version_id, transport_identity);
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("cluster:admin/filecache/prune"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request
         && normalized_action_hint == Some("cluster:admin/ingest/pipeline/put")
         && put_pipeline_request_supports_manifest_execution_subset(&body)
     {
@@ -6701,6 +6728,36 @@ fn nodes_usage_response_from_identity(
             now_epoch_ms() as i64,
         ),
     )
+}
+
+fn build_prune_file_cache_response(
+    request_id: i64,
+    header_version_id: u32,
+    transport_identity: &DevTransportIdentity,
+) -> Vec<u8> {
+    os_transport::action::build_prune_file_cache_response_message(
+        request_id,
+        Version::from_id(header_version_id as i32),
+        &os_transport::action::PruneFileCacheResponseWire::local_no_cache(
+            transport_identity.cluster_name.clone(),
+            discovery_node_wire_from_identity(transport_identity),
+        ),
+    )
+    .map(|frame| frame.to_vec())
+    .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
+}
+
+fn prune_file_cache_request_supports_default_subset(body: &[u8]) -> bool {
+    decode_prune_file_cache_request_from_transport_body(body)
+        .as_ref()
+        .is_some_and(|request| request.validate_supported_subset().is_ok())
+}
+
+fn decode_prune_file_cache_request_from_transport_body(
+    body: &[u8],
+) -> Option<os_transport::action::PruneFileCacheRequestWire> {
+    let message = decode_transport_message_from_body(body)?;
+    os_transport::action::read_prune_file_cache_request_message(&message).ok()
 }
 
 fn build_empty_get_repositories_response(request_id: i64, header_version_id: u32) -> Vec<u8> {
@@ -21550,6 +21607,15 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
             header_version_id,
             transport_identity,
         )),
+        Some("cluster:admin/filecache/prune")
+            if prune_file_cache_request_supports_default_subset(body) =>
+        {
+            Some(build_prune_file_cache_response(
+                request_id,
+                header_version_id,
+                transport_identity,
+            ))
+        }
         Some("cluster:admin/ingest/pipeline/get")
             if get_pipeline_request_supports_empty_subset(body) =>
         {
