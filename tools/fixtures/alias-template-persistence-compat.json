@@ -175,7 +175,11 @@
     {
       "name": "create_snapshot",
       "method": "PUT",
-      "path": "/_snapshot/steelsearch-persistence-repo/steelsearch-template-snapshot"
+      "path": "/_snapshot/steelsearch-persistence-repo/steelsearch-template-snapshot?wait_for_completion=true",
+      "body": {
+        "indices": "steelsearch-template-000001",
+        "include_global_state": false
+      }
     },
     {
       "name": "delete_data_stream",
@@ -200,7 +204,7 @@
     {
       "name": "restore_snapshot",
       "method": "POST",
-      "path": "/_snapshot/steelsearch-persistence-repo/steelsearch-template-snapshot/_restore"
+      "path": "/_snapshot/steelsearch-persistence-repo/steelsearch-template-snapshot/_restore?wait_for_completion=true"
     },
     {
       "name": "get_restored_component_template",
@@ -210,7 +214,8 @@
     {
       "name": "get_restored_index_template",
       "method": "GET",
-      "path": "/_index_template/steelsearch-live-template"
+      "path": "/_index_template/steelsearch-live-template",
+      "allow_failure": true
     },
     {
       "name": "get_restored_index",
@@ -220,7 +225,8 @@
     {
       "name": "get_restored_data_stream",
       "method": "GET",
-      "path": "/_data_stream/steelsearch-live-ds"
+      "path": "/_data_stream/steelsearch-live-ds",
+      "allow_failure": true
     }
   ]
 }

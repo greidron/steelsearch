@@ -29,6 +29,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--opensearch-url", default=os.environ.get("OPENSEARCH_URL"))
     parser.add_argument("--fixture", default=str(DEFAULT_FIXTURE))
     parser.add_argument("--output", default=os.environ.get("ALIAS_TEMPLATE_COMPAT_REPORT", str(DEFAULT_OUTPUT)))
+    parser.add_argument("--snapshot-repository-base-dir", default=os.environ.get("SNAPSHOT_REPOSITORY_BASE_DIR"))
     parser.add_argument("--timeout", type=float, default=30.0)
     parser.add_argument("--no-reset", action="store_true", help="do not delete fixture resources before running")
     return parser.parse_args()
@@ -90,6 +91,7 @@ def run_target(
     fixture: dict[str, Any],
     timeout: float,
     reset: bool,
+    snapshot_repository_base_dir: str | None,
 ) -> dict[str, Any]:
     responses: dict[str, Any] = {}
     failures: list[dict[str, Any]] = []
@@ -99,12 +101,44 @@ def run_target(
             response = request_json(base_url, request, timeout)
             cleanup[request["path"]] = response
 
+    setup: dict[str, Any] = {}
+    if snapshot_repository_base_dir:
+        repository_location = Path(snapshot_repository_base_dir) / f"{name}-steelsearch-persistence-repo"
+        repository_location.mkdir(parents=True, exist_ok=True)
+        setup_request = {
+            "name": "register_snapshot_repository",
+            "method": "PUT",
+            "path": "/_snapshot/steelsearch-persistence-repo",
+            "body": {
+                "type": "fs",
+                "settings": {
+                    "location": str(repository_location),
+                    "compress": True,
+                },
+            },
+        }
+        setup_response = request_json(base_url, setup_request, timeout)
+        setup[setup_request["name"]] = setup_response
+        status = setup_response.get("status")
+        if not isinstance(status, int) or status < 200 or status >= 300:
+            failures.append(
+                {
+                    "request": setup_request["name"],
+                    "status": status,
+                    "error": setup_response.get("error"),
+                    "body": setup_response.get("body"),
+                }
+            )
+
     for request in fixture["requests"]:
         try:
             response = request_json(base_url, request, timeout)
             responses[request["name"]] = response
             status = response.get("status")
-            if not isinstance(status, int) or status < 200 or status >= 300:
+            if (
+                not request.get("allow_failure")
+                and (not isinstance(status, int) or status < 200 or status >= 300)
+            ):
                 failures.append(
                     {
                         "request": request["name"],
@@ -120,6 +154,7 @@ def run_target(
         "name": name,
         "url": base_url,
         "cleanup": cleanup,
+        "setup": setup,
         "failures": failures,
         "responses": responses,
         "stable": stable_fields(responses, fixture),
@@ -247,12 +282,26 @@ def main() -> int:
         "targets": {},
         "mismatches": [],
     }
-    steelsearch = run_target("steelsearch", args.steelsearch_url, fixture, args.timeout, reset)
+    steelsearch = run_target(
+        "steelsearch",
+        args.steelsearch_url,
+        fixture,
+        args.timeout,
+        reset,
+        args.snapshot_repository_base_dir,
+    )
     report["targets"]["steelsearch"] = steelsearch
 
     opensearch = None
     if args.opensearch_url:
-        opensearch = run_target("opensearch", args.opensearch_url, fixture, args.timeout, reset)
+        opensearch = run_target(
+            "opensearch",
+            args.opensearch_url,
+            fixture,
+            args.timeout,
+            reset,
+            args.snapshot_repository_base_dir,
+        )
         report["targets"]["opensearch"] = opensearch
 
     report["mismatches"] = compare_stable(steelsearch, opensearch)

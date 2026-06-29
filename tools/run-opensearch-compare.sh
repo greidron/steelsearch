@@ -94,17 +94,6 @@ if [[ "${RUN_HTTP_LOAD_COMPARISON:-0}" == "1" ]]; then
     --output "${LOAD_COMPARISON_REPORT}"
 fi
 
-if [[ "${RUN_ALIAS_TEMPLATE_PERSISTENCE_COMPARISON:-0}" == "1" ]]; then
-  if [[ -z "${STEELSEARCH_URL:-}" || -z "${OPENSEARCH_URL:-}" ]]; then
-    echo "RUN_ALIAS_TEMPLATE_PERSISTENCE_COMPARISON=1 requires STEELSEARCH_URL and OPENSEARCH_URL to point at running endpoints" >&2
-    exit 2
-  fi
-  python3 "${ROOT}/tools/alias_template_persistence_compat.py" \
-    --steelsearch-url "${STEELSEARCH_URL%/}" \
-    --opensearch-url "${OPENSEARCH_URL%/}" \
-    --output "${COMPARE_DIR}/alias-template-persistence-report.json"
-fi
-
 if [[ "${RUN_NATIVE_ROUTE_COVERAGE:-0}" == "1" ]]; then
   if [[ -z "${STEELSEARCH_NATIVE_ROUTE_OBSERVATIONS:-}" ]]; then
     STEELSEARCH_NATIVE_ROUTE_OBSERVATIONS="${COMPARE_DIR}/native-route-observations.json"
@@ -148,7 +137,7 @@ if [[ "${RUN_HTTP_LOAD_COMPARISON:-0}" == "1" ]]; then
   echo "load comparison report: ${LOAD_COMPARISON_REPORT}"
 fi
 if [[ "${RUN_ALIAS_TEMPLATE_PERSISTENCE_COMPARISON:-0}" == "1" ]]; then
-  echo "alias/template persistence report: ${COMPARE_DIR}/alias-template-persistence-report.json"
+  echo "alias/template persistence report: ${ALIAS_TEMPLATE_PERSISTENCE_REPORT:-${COMPARE_DIR}/alias-template-persistence-report.json}"
 fi
 if [[ "${RUN_NATIVE_ROUTE_COVERAGE:-0}" == "1" ]]; then
   echo "native route fixture coverage report: ${NATIVE_ROUTE_FIXTURE_COVERAGE_REPORT}"

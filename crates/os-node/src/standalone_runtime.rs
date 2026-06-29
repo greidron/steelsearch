@@ -5917,6 +5917,8 @@ impl SteelNode {
             &manifest["indices"],
             &matched,
         );
+        let mut body = body;
+        stringify_opensearch_setting_number_readbacks(&mut body);
         RestResponse::json(200, body)
     }
 
@@ -7829,7 +7831,11 @@ impl SteelNode {
         let Some(snapshot_record) = self.load_snapshot_record(repository, snapshot) else {
             return build_missing_snapshot_restore_response(repository, snapshot);
         };
-        let body = serde_json::from_slice::<Value>(&request.body).unwrap_or(Value::Null);
+        let body = if request.body.is_empty() {
+            serde_json::json!({})
+        } else {
+            serde_json::from_slice::<Value>(&request.body).unwrap_or(Value::Null)
+        };
         if let Some(parameter) = extract_snapshot_restore_unknown_parameter(&body) {
             return RestResponse::opensearch_error(
                 400,
@@ -12005,9 +12011,11 @@ impl SteelNode {
             .into_iter()
             .flat_map(|templates| templates.iter())
             .map(|(name, template)| {
+                let mut component_template = template["component_template"].clone();
+                stringify_opensearch_setting_number_readbacks(&mut component_template);
                 serde_json::json!({
                     "name": name,
-                    "component_template": template["component_template"].clone()
+                    "component_template": component_template
                 })
             })
             .collect::<Vec<_>>();
@@ -12022,9 +12030,11 @@ impl SteelNode {
             .into_iter()
             .flat_map(|templates| templates.iter())
             .map(|(name, template)| {
+                let mut index_template = template["index_template"].clone();
+                stringify_opensearch_setting_number_readbacks(&mut index_template);
                 serde_json::json!({
                     "name": name,
-                    "index_template": template["index_template"].clone()
+                    "index_template": index_template
                 })
             })
             .collect::<Vec<_>>();
@@ -23026,6 +23036,32 @@ fn normalize_search_source_scalar_body_options(body: &mut Value) -> Option<RestR
         }
     }
     None
+}
+
+fn stringify_opensearch_setting_number_readbacks(value: &mut Value) {
+    match value {
+        Value::Object(object) => {
+            for (key, child) in object.iter_mut() {
+                if matches!(key.as_str(), "number_of_shards" | "number_of_replicas") {
+                    if let Some(number) = child.as_u64() {
+                        *child = Value::String(number.to_string());
+                        continue;
+                    }
+                    if let Some(number) = child.as_i64() {
+                        *child = Value::String(number.to_string());
+                        continue;
+                    }
+                }
+                stringify_opensearch_setting_number_readbacks(child);
+            }
+        }
+        Value::Array(values) => {
+            for child in values {
+                stringify_opensearch_setting_number_readbacks(child);
+            }
+        }
+        _ => {}
+    }
 }
 
 fn parse_opensearch_boolean_body_value(value: &Value) -> Result<Option<bool>, RestResponse> {
@@ -36547,11 +36583,11 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert!(index_body["aliases"]["logs-template-read"].is_object());
         assert_eq!(
             index_body["settings"]["index"]["number_of_replicas"],
-            Value::from(0)
+            Value::String("0".to_string())
         );
         assert_eq!(
             index_body["settings"]["index"]["number_of_shards"],
-            Value::from(1)
+            Value::String("1".to_string())
         );
     }
 

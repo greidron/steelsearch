@@ -28,6 +28,7 @@ VECTOR_SEARCH_COMPAT_REPORT="${VECTOR_SEARCH_COMPAT_REPORT:-${REHEARSAL_DIR}/vec
 KNN_PLUGIN_COMPAT_REPORT="${KNN_PLUGIN_COMPAT_REPORT:-${REHEARSAL_DIR}/knn-plugin-compat-report.json}"
 ML_MODEL_SURFACE_COMPAT_REPORT="${ML_MODEL_SURFACE_COMPAT_REPORT:-${REHEARSAL_DIR}/ml-model-surface-compat-report.json}"
 MULTI_NODE_TRANSPORT_ADMIN_REPORT="${MULTI_NODE_TRANSPORT_ADMIN_REPORT:-${REHEARSAL_DIR}/multi-node-transport-admin-report.json}"
+ALIAS_TEMPLATE_PERSISTENCE_REPORT="${ALIAS_TEMPLATE_PERSISTENCE_REPORT:-${REHEARSAL_DIR}/alias-template-persistence-report.json}"
 STEELSEARCH_READINESS_REPORT="${STEELSEARCH_READINESS_REPORT:-${REHEARSAL_DIR}/steelsearch-readiness.json}"
 STEELSEARCH_BENCHMARK_REPORT="${STEELSEARCH_BENCHMARK_REPORT:-${REHEARSAL_DIR}/deterministic-baselines.jsonl}"
 STEELSEARCH_LOAD_REPORT="${STEELSEARCH_LOAD_REPORT:-${REHEARSAL_DIR}/http-load-baseline.json}"
@@ -561,6 +562,20 @@ PY
   export STEELSEARCH_NODE_B_URL="${STEELSEARCH_NODE_B_URL:-${cluster_urls[1]}}"
 fi
 
+if [[ "${PHASE_A_COMPARE_SCOPE}" != "transport-admin" ]]; then
+  if [[ -n "${OPENSEARCH_URL:-}" ]]; then
+    SNAPSHOT_REPOSITORY_BASE_DIR="$(absolute_path "${SNAPSHOT_REPOSITORY_BASE_DIR:-${OPENSEARCH_ROOT:-/home/ubuntu/OpenSearch}/build/testclusters/runTask-0/repo}")"
+    export SNAPSHOT_REPOSITORY_BASE_DIR
+  else
+    OPENSEARCH_WORK_DIR="$(absolute_path "${OPENSEARCH_WORK_DIR:-${REHEARSAL_DIR}/opensearch}")"
+    export OPENSEARCH_WORK_DIR
+    OPENSEARCH_REPO_DIR="$(absolute_path "${OPENSEARCH_REPO_DIR:-${OPENSEARCH_WORK_DIR}/repo}")"
+    export OPENSEARCH_REPO_DIR
+    SNAPSHOT_REPOSITORY_BASE_DIR="$(absolute_path "${SNAPSHOT_REPOSITORY_BASE_DIR:-${OPENSEARCH_REPO_DIR}}")"
+    export SNAPSHOT_REPOSITORY_BASE_DIR
+  fi
+fi
+
 if [[ "${PHASE_A_COMPARE_SCOPE}" != "transport-admin" && -n "${STEELSEARCH_URL:-}" ]]; then
   STEELSEARCH_URL="${STEELSEARCH_URL%/}"
   echo "Using existing Steelsearch endpoint: ${STEELSEARCH_URL}" >&2
@@ -587,19 +602,12 @@ fi
 
 if [[ "${PHASE_A_COMPARE_SCOPE}" != "transport-admin" && -n "${OPENSEARCH_URL:-}" ]]; then
   OPENSEARCH_URL="${OPENSEARCH_URL%/}"
-  export SNAPSHOT_REPOSITORY_BASE_DIR="${SNAPSHOT_REPOSITORY_BASE_DIR:-${OPENSEARCH_ROOT:-/home/ubuntu/OpenSearch}/build/testclusters/runTask-0/repo}"
   echo "Using existing OpenSearch endpoint: ${OPENSEARCH_URL}" >&2
 elif [[ "${PHASE_A_COMPARE_SCOPE}" != "transport-admin" ]]; then
   OPENSEARCH_HTTP_HOST="${OPENSEARCH_HTTP_HOST:-127.0.0.1}"
   OPENSEARCH_HTTP_PORT="${OPENSEARCH_HTTP_PORT:-9200}"
   OPENSEARCH_URL="http://${OPENSEARCH_HTTP_HOST}:${OPENSEARCH_HTTP_PORT}"
   export OPENSEARCH_HTTP_HOST OPENSEARCH_HTTP_PORT
-  OPENSEARCH_WORK_DIR="$(absolute_path "${OPENSEARCH_WORK_DIR:-${REHEARSAL_DIR}/opensearch}")"
-  export OPENSEARCH_WORK_DIR
-  OPENSEARCH_REPO_DIR="$(absolute_path "${OPENSEARCH_REPO_DIR:-${OPENSEARCH_WORK_DIR}/repo}")"
-  export OPENSEARCH_REPO_DIR
-  SNAPSHOT_REPOSITORY_BASE_DIR="$(absolute_path "${SNAPSHOT_REPOSITORY_BASE_DIR:-${OPENSEARCH_REPO_DIR}}")"
-  export SNAPSHOT_REPOSITORY_BASE_DIR
   rm -rf "${OPENSEARCH_WORK_DIR}"
   echo "Starting OpenSearch at ${OPENSEARCH_URL}" >&2
   if [[ "${PHASE_A_COMPARE_SCOPE}" == "vector-ml" ]]; then
@@ -769,6 +777,12 @@ if [[ "${RUN_MULTI_NODE_TRANSPORT_ADMIN_INTEGRATION:-0}" == "1" ]]; then
     --node-b-url "${STEELSEARCH_NODE_B_URL}" \
     --output "${MULTI_NODE_TRANSPORT_ADMIN_REPORT}"
 fi
+if [[ "${RUN_ALIAS_TEMPLATE_PERSISTENCE_COMPARISON:-0}" == "1" ]]; then
+  python3 "${ROOT}/tools/alias_template_persistence_compat.py" \
+    --steelsearch-url "${STEELSEARCH_URL}" \
+    --opensearch-url "${OPENSEARCH_URL}" \
+    --output "${ALIAS_TEMPLATE_PERSISTENCE_REPORT}"
+fi
 if [[ "${RUN_SEARCH_COMPAT}" == "1" ]]; then
   compat_args=(--report "${REPORT_PATH}" --wait --timeout "${SEARCH_COMPAT_TIMEOUT:-10}")
   if [[ -n "${SEARCH_COMPAT_FIXTURE:-}" ]]; then
@@ -854,6 +868,9 @@ if [[ "${RUN_ML_MODEL_SURFACE_COMPAT:-0}" == "1" ]]; then
 fi
 if [[ "${RUN_MULTI_NODE_TRANSPORT_ADMIN_INTEGRATION:-0}" == "1" ]]; then
   echo "multi-node transport/admin integration report: ${MULTI_NODE_TRANSPORT_ADMIN_REPORT}"
+fi
+if [[ "${RUN_ALIAS_TEMPLATE_PERSISTENCE_COMPARISON:-0}" == "1" ]]; then
+  echo "alias/template persistence report: ${ALIAS_TEMPLATE_PERSISTENCE_REPORT}"
 fi
 if [[ "${PHASE_A_COMPARE_SCOPE}" != "search" && "${PHASE_A_COMPARE_SCOPE}" != "snapshot-migration" && "${PHASE_A_COMPARE_SCOPE}" != "vector-ml" && "${PHASE_A_COMPARE_SCOPE}" != "transport-admin" ]]; then
   echo "migration validation report: ${VALIDATION_REPORT_PATH}"
