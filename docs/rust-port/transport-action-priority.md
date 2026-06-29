@@ -2438,12 +2438,13 @@ The search phase transport boundary covers:
   requests, covering parent task, `ShardId`, search type, shard count, bounded
   `AliasFilter` payloads carrying no query, `match_all`, `match_none`, or bool
   queries composed from that bounded subset, plus selected wrapper queries whose
-  deciding child query is in that subset, boost, `nowInMillis`, request cache,
+  deciding child query is in that subset, plus empty `ids`/`terms` leaf rewrite,
+  boost, `nowInMillis`, request cache,
   network-time counters, cluster alias, partial-results flag, routings,
   preference, `OriginalIndices`, and bounded `SearchSourceBuilder` payloads
   carrying no query, `match_all`, `match_none`, bool queries composed from that
   bounded subset, or selected wrapper queries whose deciding child query is in
-  that subset;
+  that subset, plus empty `ids`/`terms` leaf rewrite;
   inert source options such as `from`, `size`, `explain`,
   `min_score`, timeout, tracking, profiling, and fetch-shape fields are allowed,
   while scroll, source PIT, slice, sort/search_after min-max pruning, bottom
@@ -2456,8 +2457,9 @@ The search phase transport boundary covers:
   query to `match_none` through mandatory `must`/`filter` clauses or should-only
   all-`match_none` clauses, or when `constant_score`, `boosting`,
   `function_score`, or `script_score` rewrite through their deciding child to
-  `match_none`, with absent `estimatedMinAndMax`; this follows the OpenSearch
-  `SearchService.canMatch` boundary before reader-context, refresh-pending,
+  `match_none`, or when `ids`/`terms` have no values, with absent
+  `estimatedMinAndMax`; this follows the OpenSearch `SearchService.canMatch`
+  boundary before reader-context, refresh-pending, mapping-aware field rewrite,
   search-after, or min/max pruning effects are introduced. Local execution first
   verifies the addressed index/shard through the same bounded shard admission
   used by PIT reader-context creation;
@@ -2471,11 +2473,11 @@ Current can-match response wire microbenchmark:
 
 ```text
 cargo run -q -p os-transport --release --bin can-match-response-wire-benchmark
-can_match_request_encode iterations=400000 elapsed_ms=412.653 ops_per_second=969338.27 nanos_per_op=1031.63
-can_match_request_decode iterations=400000 elapsed_ms=439.014 ops_per_second=911131.95 nanos_per_op=1097.54
-can_match_response_encode iterations=400000 elapsed_ms=48.920 ops_per_second=8176679.40 nanos_per_op=122.30
-can_match_response_decode iterations=400000 elapsed_ms=51.709 ops_per_second=7735627.80 nanos_per_op=129.27
-can_match_wire_bottleneck_ops_per_second=911131.95
+can_match_request_encode iterations=400000 elapsed_ms=658.345 ops_per_second=607584.58 nanos_per_op=1645.86
+can_match_request_decode iterations=400000 elapsed_ms=462.111 ops_per_second=865593.64 nanos_per_op=1155.28
+can_match_response_encode iterations=400000 elapsed_ms=53.894 ops_per_second=7421948.93 nanos_per_op=134.74
+can_match_response_decode iterations=400000 elapsed_ms=78.990 ops_per_second=5063933.17 nanos_per_op=197.47
+can_match_wire_bottleneck_ops_per_second=607584.58
 ```
 
 The explain boundary covers:
