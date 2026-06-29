@@ -1422,8 +1422,8 @@
       "transport_action": "TransportMultiTermVectorsAction",
       "request_wire_type": "MultiTermVectorsRequest",
       "response_wire_type": "MultiTermVectorsResponse",
-      "disposition": "rejected",
-      "reason": "Multi term-vectors transport execution requires per-item shard routing, realtime/non-realtime reads, analyzer selection, term statistics generation, and response rendering"
+      "disposition": "implemented",
+      "reason": "Multi term-vectors transport adapter validates bounded nested term-vectors requests and returns OpenSearch-shaped per-item IndexNotFoundException failures for the manifest all-missing-index subset"
     },
     {
       "action_name": "indices:data/read/mget",

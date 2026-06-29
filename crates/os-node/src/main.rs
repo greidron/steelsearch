@@ -1486,6 +1486,31 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end_at_ms,
         )?;
     } else if is_request
+        && normalized_action_hint == Some("indices:data/read/mtv")
+        && multi_term_vectors_request_supports_all_missing_index_subset(&body)
+    {
+        let response =
+            build_multi_term_vectors_missing_index_response(request_id, header_version_id, &body);
+        response_frame =
+            summarize_transport_response_frame_for_action(&response, Some("indices:data/read/mtv"));
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request
         && normalized_action_hint == Some("cluster:admin/persistent/remove")
         && remove_persistent_task_request_supports_empty_metadata_missing_subset(&body)
     {
@@ -8741,6 +8766,59 @@ fn term_vectors_missing_concrete_index(
     } else {
         None
     }
+}
+
+fn build_multi_term_vectors_missing_index_response(
+    request_id: i64,
+    header_version_id: u32,
+    body: &[u8],
+) -> Vec<u8> {
+    let Some(request) = decode_multi_term_vectors_request_from_transport_body(body) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    if !multi_term_vectors_request_all_missing_concrete_indices(&request) {
+        return build_empty_transport_response(request_id, header_version_id);
+    }
+    let mut output = StreamOutput::new();
+    output.write_vint(request.requests.len() as i32);
+    for request in &request.requests {
+        let Some(index) = request.index.as_deref() else {
+            return build_empty_transport_response(request_id, header_version_id);
+        };
+        output.write_bool(true);
+        output.write_string(index);
+        output.write_string(&request.id);
+        os_transport::error::write_index_not_found_exception(&mut output, index);
+    }
+    build_transport_response_frame(request_id, header_version_id, output.freeze().to_vec())
+}
+
+fn multi_term_vectors_request_supports_all_missing_index_subset(body: &[u8]) -> bool {
+    let Some(request) = decode_multi_term_vectors_request_from_transport_body(body) else {
+        return false;
+    };
+    multi_term_vectors_request_all_missing_concrete_indices(&request)
+}
+
+fn decode_multi_term_vectors_request_from_transport_body(
+    body: &[u8],
+) -> Option<os_transport::action::OpenSearchMultiTermVectorsRequestWire> {
+    let message = decode_transport_message_from_body(body)?;
+    let request =
+        os_transport::action::read_opensearch_multi_term_vectors_request_message(&message).ok()?;
+    request.validate_missing_index_resolution_subset().ok()?;
+    Some(request)
+}
+
+fn multi_term_vectors_request_all_missing_concrete_indices(
+    request: &os_transport::action::OpenSearchMultiTermVectorsRequestWire,
+) -> bool {
+    !request.requests.is_empty()
+        && request.requests.iter().all(|request| {
+            request.index.as_ref().is_some_and(|index| {
+                transport_ingestion_state_index_is_concrete(index) && !transport_index_exists(index)
+            })
+        })
 }
 
 fn build_get_ingestion_state_index_not_found_error_response(
@@ -25078,6 +25156,15 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
             if term_vectors_request_supports_missing_index_subset(body) =>
         {
             Some(build_term_vectors_index_not_found_error_response(
+                request_id,
+                header_version_id,
+                body,
+            ))
+        }
+        Some("indices:data/read/mtv")
+            if multi_term_vectors_request_supports_all_missing_index_subset(body) =>
+        {
+            Some(build_multi_term_vectors_missing_index_response(
                 request_id,
                 header_version_id,
                 body,
@@ -53818,6 +53905,106 @@ mod tests {
         assert!(!term_vectors_request_supports_missing_index_subset(
             &routed_frame[6..]
         ));
+    }
+
+    #[test]
+    fn multi_term_vectors_transport_route_reports_missing_indices_like_opensearch() {
+        let request = os_transport::action::OpenSearchMultiTermVectorsRequestWire::new(vec![
+            os_transport::action::OpenSearchTermVectorsRequestWire::new(
+                "missing-mtv-a".to_string(),
+                "doc-1".to_string(),
+            ),
+            os_transport::action::OpenSearchTermVectorsRequestWire::new(
+                "missing-mtv-b".to_string(),
+                "doc-2".to_string(),
+            ),
+        ]);
+        let request_frame =
+            os_transport::action::build_opensearch_multi_term_vectors_request_message(
+                112,
+                OPENSEARCH_3_7_0_TRANSPORT,
+                &request,
+            )
+            .unwrap();
+        let request_body = request_frame[6..].to_vec();
+        assert!(multi_term_vectors_request_supports_all_missing_index_subset(&request_body));
+
+        let response = build_multi_term_vectors_missing_index_response(
+            112,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &request_body,
+        );
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected multi term vectors response message");
+        };
+        assert_eq!(message.request_id, 112);
+        assert!(!message.status.is_error());
+        let mut input = StreamInput::new(message.body.freeze());
+        assert_eq!(input.read_vint().unwrap(), 2);
+        assert!(input.read_bool().unwrap());
+        assert_eq!(input.read_string().unwrap(), "missing-mtv-a");
+        assert_eq!(input.read_string().unwrap(), "doc-1");
+        assert!(input.read_bool().unwrap());
+        assert_eq!(input.read_vint().unwrap(), 0);
+        assert_eq!(input.read_vint().unwrap(), 16);
+        assert_eq!(
+            input.read_optional_string().unwrap().as_deref(),
+            Some("no such index [missing-mtv-a]")
+        );
+
+        let bindings = dev_transport_pit_bindings();
+        let mut created_indices = bindings
+            .created_indices
+            .lock()
+            .expect("created indices lock");
+        created_indices.insert("mtv-existing-index".to_string());
+        drop(created_indices);
+        let mixed_request = os_transport::action::OpenSearchMultiTermVectorsRequestWire::new(vec![
+            os_transport::action::OpenSearchTermVectorsRequestWire::new(
+                "missing-mtv-a".to_string(),
+                "doc-1".to_string(),
+            ),
+            os_transport::action::OpenSearchTermVectorsRequestWire::new(
+                "mtv-existing-index".to_string(),
+                "doc-2".to_string(),
+            ),
+        ]);
+        let mixed_frame =
+            os_transport::action::build_opensearch_multi_term_vectors_request_message(
+                113,
+                OPENSEARCH_3_7_0_TRANSPORT,
+                &mixed_request,
+            )
+            .unwrap();
+        assert!(!multi_term_vectors_request_supports_all_missing_index_subset(&mixed_frame[6..]));
+        bindings
+            .created_indices
+            .lock()
+            .expect("created indices lock")
+            .remove("mtv-existing-index");
+
+        let wildcard_request =
+            os_transport::action::OpenSearchMultiTermVectorsRequestWire::new(vec![
+                os_transport::action::OpenSearchTermVectorsRequestWire::new(
+                    "missing-*".to_string(),
+                    "doc-1".to_string(),
+                ),
+            ]);
+        let wildcard_frame =
+            os_transport::action::build_opensearch_multi_term_vectors_request_message(
+                114,
+                OPENSEARCH_3_7_0_TRANSPORT,
+                &wildcard_request,
+            )
+            .unwrap();
+        assert!(
+            !multi_term_vectors_request_supports_all_missing_index_subset(&wildcard_frame[6..])
+        );
     }
 
     #[test]

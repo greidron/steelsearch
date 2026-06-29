@@ -361,7 +361,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `cluster:admin/ingest/pipeline/simulate` (implemented empty-doc simulation subset)
 - `indices:admin/refresh`
 - `indices:data/read/tv` (implemented missing-index subset)
-- `indices:data/read/mtv` (rejected fail-closed)
+- `indices:data/read/mtv` (implemented all-missing-index subset)
 - `indices:admin/flush` (implemented bounded global default subset)
 - `indices:admin/forcemerge` (implemented bounded global default subset)
 - `indices:admin/upgrade` (implemented bounded global default subset)
@@ -3011,12 +3011,14 @@ The multi term-vectors boundary covers:
 - nested term-vectors item decoding with the same request envelope, id/doc,
   routing/preference, flags, selected fields, analyzer map, filter settings,
   realtime, and versioning markers as the single term-vectors boundary;
-- explicit fail-closed classification for `indices:data/read/mtv` until
-  per-item shard routing, realtime/non-realtime visibility, analyzer
-  selection, term statistics generation, item failure handling, and aggregate
-  response rendering are implemented against Rust shard state;
+- implemented classification for `indices:data/read/mtv` in the manifest
+  all-missing-index subset, returning OpenSearch-shaped per-item
+  `IndexNotFoundException` failures before shard grouping or term-vector
+  generation;
 - explicit rejection for empty request batches, top-level preference, any
-  unsupported nested term-vectors item shape, and multi term-vectors execution.
+  unsupported nested term-vectors item shape, mixed existing/missing index
+  execution, successful shard execution, and successful item response
+  rendering.
 
 The get adapter covers:
 
@@ -5977,7 +5979,7 @@ manifest-backed index resolution. The remaining performance-sensitive work is
 successful shard routing, postings/term-vector generation, analyzer lookup,
 term statistics collection, and response rendering.
 
-Current multi term-vectors reject wire microbenchmark:
+Previous multi term-vectors reject wire microbenchmark:
 
 ```text
 cargo run -p os-transport --release --bin multi-term-vectors-reject-wire-benchmark
@@ -5987,11 +5989,14 @@ multi_term_vectors_reject_validation iterations=300000 elapsed_ms=350.007 ops_pe
 multi_term_vectors_reject_wire_bottleneck_ops_per_second=803853.09
 ```
 
-The current multi term-vectors fail-closed boundary bottleneck is request
+The previous multi term-vectors fail-closed boundary bottleneck was request
 encode for a two-item batch. The benchmark writes the parent request envelope,
 top-level preference marker, collection length, and two nested term-vectors
-request envelopes before rejecting aggregate execution. At roughly 0.80M ops/s
-in the latest local release run, the remaining performance-sensitive work is
+request envelopes before rejecting aggregate execution. The implemented
+all-missing-index subset now validates the parent request and nested
+term-vectors request shapes, resolves all concrete item indices against the
+manifest, and renders per-item failure responses. The remaining
+performance-sensitive work is
 per-item shard grouping, item-level term-vector generation, item failure
 handling, and aggregate response rendering.
 

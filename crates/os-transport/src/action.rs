@@ -2647,8 +2647,8 @@ pub fn classify_opensearch_transport_action(
         },
         OPENSEARCH_MULTI_TERM_VECTORS_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
-            disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "multi term-vectors transport execution requires per-item shard routing, realtime/non-realtime reads, analyzer selection, term statistics generation, and response rendering",
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "multi term-vectors transport adapter validates bounded nested term-vectors requests and returns OpenSearch-shaped per-item IndexNotFoundException failures for the manifest all-missing-index subset",
         },
         OPENSEARCH_MULTI_GET_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -42980,7 +42980,7 @@ impl OpenSearchMultiTermVectorsRequestWire {
         })
     }
 
-    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+    pub fn validate_missing_index_resolution_subset(&self) -> Result<(), TransportActionWireError> {
         if self.requests.is_empty() {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "multi term vectors requests",
@@ -42994,15 +42994,13 @@ impl OpenSearchMultiTermVectorsRequestWire {
             });
         }
         for request in &self.requests {
-            match request.reject_unsupported_execution() {
-                Err(TransportActionWireError::UnsupportedWireShape {
-                    shape: "term vectors execution",
-                    ..
-                }) => {}
-                Err(err) => return Err(err),
-                Ok(()) => {}
-            }
+            request.validate_missing_index_resolution_subset()?;
         }
+        Ok(())
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        self.validate_missing_index_resolution_subset()?;
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "multi term vectors execution",
             reason: "multi term-vectors transport execution requires per-item shard routing, term-vector generation, and item response rendering",
@@ -52320,6 +52318,7 @@ mod tests {
         let decoded = OpenSearchMultiTermVectorsRequestWire::read(output.freeze()).unwrap();
 
         assert_eq!(decoded, request);
+        decoded.validate_missing_index_resolution_subset().unwrap();
         assert!(matches!(
             decoded.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
@@ -52373,7 +52372,7 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_multi_term_vectors_transport_messages_bind_rejected_action_frame() {
+    fn opensearch_multi_term_vectors_transport_messages_bind_supported_action_frame() {
         let request = OpenSearchMultiTermVectorsRequestWire::new(vec![
             OpenSearchTermVectorsRequestWire::new("logs-000001".into(), "doc-1".into()),
             OpenSearchTermVectorsRequestWire::new("logs-000001".into(), "doc-2".into()),
@@ -52394,12 +52393,16 @@ mod tests {
             classify_opensearch_transport_request_message(&message)
                 .unwrap()
                 .disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             read_opensearch_multi_term_vectors_request_message(&message).unwrap(),
             request
         );
+        read_opensearch_multi_term_vectors_request_message(&message)
+            .unwrap()
+            .validate_missing_index_resolution_subset()
+            .unwrap();
         assert!(matches!(
             read_opensearch_multi_term_vectors_request_message(&message)
                 .unwrap()
