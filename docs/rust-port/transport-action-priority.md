@@ -177,16 +177,16 @@ The source-derived transport inventory currently has 160 rows:
 
 | Status | Count | Meaning |
 | --- | ---: | --- |
-| `implemented` | 151 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
-| `partial` | 9 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
+| `implemented` | 152 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
+| `partial` | 8 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
 | `planned` | 0 | No source-derived transport action remains unclassified. |
 
-The k-NN plugin action sweep is complete at the boundary layer. Six of 12
+The k-NN plugin action sweep is complete at the boundary layer. Seven of 12
 registrations from
 `/home/ubuntu/k-NN/src/main/java/org/opensearch/knn/plugin/KNNPlugin.java`
 lines 348-359 are now represented as `implemented` rows for bounded local-node
-stats, warmup, training-job route decision info, get-model, clear-cache, and
-remove-model-from-cache subsets; the remaining k-NN actions stay `partial` with
+stats, warmup, training-job route decision info, get-model, delete-model,
+clear-cache, and remove-model-from-cache subsets; the remaining k-NN actions stay `partial` with
 request/response wire coverage and fail-closed admission. This is not a claim
 that the remaining k-NN transport actions execute their full OpenSearch
 semantics yet; it means unsupported transport execution is explicit and
@@ -1091,13 +1091,13 @@ The delete-model boundary covers:
   decode/build layer;
 - OpenSearch k-NN `DeleteModelResponse` model id, result, and optional error
   message at the wire decode/build layer;
-- explicit fail-closed classification for
-  `cluster:admin/knn_delete_model_action` until model id validation, model
-  system-index delete, model cache/graveyard coordination, exception-path
-  behavior, and response rendering are implemented;
+- implemented classification for the bounded local model deletion subset:
+  non-empty model id, existing shared-runtime model state, persisted deletion,
+  cache byte reset when the last local model is removed, and success response
+  rendering;
 - explicit rejection for blank model ids, blank response model ids, blank
-  response results, deprecated embedded error-message responses, response
-  rendering, and delete-model execution.
+  response results, deprecated embedded error-message responses, and unresolved
+  local model ids.
 
 The training-job-router boundary covers:
 

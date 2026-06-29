@@ -396,8 +396,8 @@
       "transport_action": "DeleteModelTransportAction",
       "request_wire_type": "DeleteModelRequest",
       "response_wire_type": "DeleteModelResponse",
-      "disposition": "rejected",
-      "reason": "Delete-model transport execution requires model id validation, model system-index delete, model cache/graveyard coordination, and response rendering"
+      "disposition": "implemented",
+      "reason": "Delete-model transport adapter validates a local model id, removes the model from shared runtime state, and renders the OpenSearch deleted response payload"
     },
     {
       "action_name": "cluster:admin/knn_training_job_router_action",

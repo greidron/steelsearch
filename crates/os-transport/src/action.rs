@@ -2070,8 +2070,8 @@ pub fn classify_opensearch_transport_action(
         },
         DELETE_MODEL_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
-            disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "delete-model transport execution requires model id validation, model system-index delete, model cache/graveyard coordination, and response rendering",
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "delete-model transport adapter validates a local model id, removes the model from shared runtime state, and renders the OpenSearch deleted response payload",
         },
         TRAINING_JOB_ROUTER_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -20324,16 +20324,22 @@ impl DeleteModelRequestWire {
     }
 
     pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        self.validate_supported_execution_subset()?;
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "delete model execution",
+            reason:
+                "use validate_supported_execution_subset for the implemented local delete-model adapter",
+        })
+    }
+
+    pub fn validate_supported_execution_subset(&self) -> Result<(), TransportActionWireError> {
         if self.model_id.trim().is_empty() {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "delete model model id",
                 reason: "OpenSearch delete-model requests require a non-empty model id",
             });
         }
-        Err(TransportActionWireError::UnsupportedWireShape {
-            shape: "delete model execution",
-            reason: "delete-model transport execution requires model id validation, model system-index delete, model cache/graveyard coordination, and response rendering",
-        })
+        Ok(())
     }
 }
 
@@ -20373,6 +20379,10 @@ impl DeleteModelResponseWire {
     }
 
     pub fn reject_unsupported_rendering(&self) -> Result<(), TransportActionWireError> {
+        self.validate_supported_rendering_subset()
+    }
+
+    pub fn validate_supported_rendering_subset(&self) -> Result<(), TransportActionWireError> {
         if self.model_id.trim().is_empty() {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "delete model response model id",
@@ -20391,10 +20401,7 @@ impl DeleteModelResponseWire {
                 reason: "OpenSearch delete-model failures should be returned as exceptions rather than embedded response errors",
             });
         }
-        Err(TransportActionWireError::UnsupportedWireShape {
-            shape: "delete model response rendering",
-            reason: "DeleteModelResponse rendering requires model id/result xcontent rendering and exception-path handling",
-        })
+        Ok(())
     }
 }
 
@@ -62419,7 +62426,7 @@ mod tests {
     }
 
     #[test]
-    fn delete_model_request_wire_round_trips_and_rejects_execution_boundary() {
+    fn delete_model_request_wire_round_trips_and_validates_local_subset() {
         let request = DeleteModelRequestWire {
             parent_task_node: "cluster-manager".to_string(),
             parent_task_id: Some(56),
@@ -62430,6 +62437,7 @@ mod tests {
 
         let decoded = DeleteModelRequestWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, request);
+        decoded.validate_supported_execution_subset().unwrap();
         assert!(matches!(
             decoded.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
@@ -62443,7 +62451,7 @@ mod tests {
             ..DeleteModelRequestWire::default()
         };
         assert!(matches!(
-            missing_model_id.reject_unsupported_execution(),
+            missing_model_id.validate_supported_execution_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "delete model model id",
                 ..
@@ -62460,7 +62468,7 @@ mod tests {
     }
 
     #[test]
-    fn delete_model_response_wire_round_trips_and_rejects_unsupported_shapes() {
+    fn delete_model_response_wire_round_trips_supported_deleted_payload() {
         let response = DeleteModelResponseWire {
             model_id: "model-a".to_string(),
             result: "deleted".to_string(),
@@ -62471,20 +62479,14 @@ mod tests {
 
         let decoded = DeleteModelResponseWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, response);
-        assert!(matches!(
-            decoded.reject_unsupported_rendering(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "delete model response rendering",
-                ..
-            })
-        ));
+        decoded.reject_unsupported_rendering().unwrap();
 
         let blank_model_id = DeleteModelResponseWire {
             model_id: String::new(),
             ..DeleteModelResponseWire::default()
         };
         assert!(matches!(
-            blank_model_id.reject_unsupported_rendering(),
+            blank_model_id.validate_supported_rendering_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "delete model response model id",
                 ..
@@ -62496,7 +62498,7 @@ mod tests {
             ..DeleteModelResponseWire::default()
         };
         assert!(matches!(
-            blank_result.reject_unsupported_rendering(),
+            blank_result.validate_supported_rendering_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "delete model response result",
                 ..
@@ -62508,7 +62510,7 @@ mod tests {
             ..DeleteModelResponseWire::default()
         };
         assert!(matches!(
-            error_message.reject_unsupported_rendering(),
+            error_message.validate_supported_rendering_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "delete model response error message",
                 ..
@@ -62517,7 +62519,7 @@ mod tests {
     }
 
     #[test]
-    fn delete_model_transport_messages_bind_rejected_action_frame_and_response() {
+    fn delete_model_transport_messages_bind_implemented_action_frame_and_response() {
         let request = DeleteModelRequestWire::default();
         let mut frame =
             build_delete_model_request_message(56, OPENSEARCH_3_7_0_TRANSPORT, &request).unwrap();
@@ -62528,7 +62530,7 @@ mod tests {
             classify_opensearch_transport_request_message(&message)
                 .unwrap()
                 .disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             read_delete_model_request_message(&message).unwrap(),
