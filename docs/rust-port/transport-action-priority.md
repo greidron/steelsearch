@@ -360,7 +360,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `cluster:admin/ingest/pipeline/delete` (implemented manifest-backed metadata-write subset)
 - `cluster:admin/ingest/pipeline/simulate` (implemented empty-doc simulation subset)
 - `indices:admin/refresh`
-- `indices:data/read/tv` (rejected fail-closed)
+- `indices:data/read/tv` (implemented missing-index subset)
 - `indices:data/read/mtv` (rejected fail-closed)
 - `indices:admin/flush` (implemented bounded global default subset)
 - `indices:admin/forcemerge` (implemented bounded global default subset)
@@ -2994,10 +2994,10 @@ The term-vectors boundary covers:
   fields collection, per-field analyzer generic string map, filter-settings
   marker, realtime flag, internal version type, and match-any version at the
   wire decode/build layer;
-- explicit fail-closed classification for `indices:data/read/tv` until shard
-  routing, realtime/non-realtime visibility, analyzer selection, term
-  statistics generation, and response rendering are implemented against Rust
-  shard state;
+- implemented classification for `indices:data/read/tv` in the manifest
+  missing-index subset, returning OpenSearch's `IndexNotFoundException` for
+  missing concrete index selectors before shard routing or term-vector
+  generation;
 - explicit rejection for explicit shard ids, missing index, missing id/doc,
   artificial documents, routing, preference, custom flags, selected fields,
   per-field analyzers, filter settings, non-realtime reads, versioned reads,
@@ -5958,7 +5958,7 @@ HTTP search/write/refresh benchmark paths. Re-run the command above after each
 get transport adapter change that affects request/response framing or source
 materialization.
 
-Current term-vectors reject wire microbenchmark:
+Previous term-vectors reject wire microbenchmark:
 
 ```text
 cargo run -p os-transport --release --bin term-vectors-reject-wire-benchmark
@@ -5968,14 +5968,14 @@ term_vectors_reject_validation iterations=400000 elapsed_ms=281.866 ops_per_seco
 term_vectors_reject_wire_bottleneck_ops_per_second=1342308.16
 ```
 
-The current term-vectors fail-closed boundary bottleneck is request encode. The
-default benchmark writes the single-shard request envelope, optional index,
-document id, absent doc/routing/preference markers, default flags, empty
-selected fields, absent analyzer/filter settings, realtime flag, and default
-versioning before rejecting execution. At roughly 1.34M ops/s in the latest
-local release run, the remaining performance-sensitive work is shard routing,
-postings/term-vector generation, analyzer lookup, term statistics collection,
-and response rendering.
+The previous term-vectors fail-closed boundary bottleneck was request encode.
+The implemented missing-index subset still writes and validates the single-shard
+request envelope, optional concrete index, document id, absent
+doc/routing/preference markers, default flags, empty selected fields, absent
+analyzer/filter settings, realtime flag, and default versioning before
+manifest-backed index resolution. The remaining performance-sensitive work is
+successful shard routing, postings/term-vector generation, analyzer lookup,
+term statistics collection, and response rendering.
 
 Current multi term-vectors reject wire microbenchmark:
 

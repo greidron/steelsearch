@@ -2642,8 +2642,8 @@ pub fn classify_opensearch_transport_action(
         },
         OPENSEARCH_TERM_VECTORS_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
-            disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "term-vectors transport execution requires shard routing, realtime/non-realtime reads, analyzer selection, term statistics generation, and response rendering",
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "term-vectors transport adapter validates concrete index selectors and returns OpenSearch's IndexNotFoundException for the manifest missing-index subset",
         },
         OPENSEARCH_MULTI_TERM_VECTORS_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -42829,7 +42829,7 @@ impl OpenSearchTermVectorsRequestWire {
         Ok(request)
     }
 
-    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+    pub fn validate_missing_index_resolution_subset(&self) -> Result<(), TransportActionWireError> {
         if self.internal_shard_id_present {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "term vectors internal shard id",
@@ -42914,6 +42914,11 @@ impl OpenSearchTermVectorsRequestWire {
                 reason: "versioned term-vectors require OpenSearch version resolution semantics",
             });
         }
+        Ok(())
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        self.validate_missing_index_resolution_subset()?;
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "term vectors execution",
             reason: "term-vectors transport execution requires shard term-vector generation and response rendering",
@@ -52113,6 +52118,7 @@ mod tests {
         let decoded = OpenSearchTermVectorsRequestWire::read(output.freeze()).unwrap();
 
         assert_eq!(decoded, request);
+        decoded.validate_missing_index_resolution_subset().unwrap();
         assert!(matches!(
             decoded.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
@@ -52261,7 +52267,7 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_term_vectors_transport_messages_bind_rejected_action_frame() {
+    fn opensearch_term_vectors_transport_messages_bind_supported_action_frame() {
         let request = OpenSearchTermVectorsRequestWire::new("logs-000001".into(), "doc-1".into());
         let mut frame =
             build_opensearch_term_vectors_request_message(22, OPENSEARCH_3_7_0_TRANSPORT, &request)
@@ -52276,12 +52282,16 @@ mod tests {
             classify_opensearch_transport_request_message(&message)
                 .unwrap()
                 .disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             read_opensearch_term_vectors_request_message(&message).unwrap(),
             request
         );
+        read_opensearch_term_vectors_request_message(&message)
+            .unwrap()
+            .validate_missing_index_resolution_subset()
+            .unwrap();
         assert!(matches!(
             read_opensearch_term_vectors_request_message(&message)
                 .unwrap()

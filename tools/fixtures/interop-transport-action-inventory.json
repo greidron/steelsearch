@@ -1413,8 +1413,8 @@
       "transport_action": "TransportTermVectorsAction",
       "request_wire_type": "TermVectorsRequest",
       "response_wire_type": "TermVectorsResponse",
-      "disposition": "rejected",
-      "reason": "Term-vectors transport execution requires shard routing, realtime/non-realtime reads, analyzer selection, term statistics generation, and response rendering"
+      "disposition": "implemented",
+      "reason": "Term-vectors transport adapter validates concrete index selectors and returns OpenSearch's IndexNotFoundException for the manifest missing-index subset"
     },
     {
       "action_name": "indices:data/read/mtv",
