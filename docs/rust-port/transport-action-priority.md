@@ -965,12 +965,14 @@ The list-tiering-status boundary covers:
 - OpenSearch `ListTieringStatusResponse` tiering status count and per-status
   base fields for index name, state, source tier, target tier, start time, and
   optional shard-level status marker at the wire decode/build layer;
-- explicit fail-closed classification for `cluster:admin/_tier/all` until
-  metadata read block checks, target tier mapping, migration service lookup,
-  tiering status aggregation, and response rendering are implemented;
+- implemented classification for `cluster:admin/_tier/all` when the request
+  uses the default timeout, `local=false`, and no target tier or a valid
+  `HOT`/`WARM` target tier, returning OpenSearch's empty tiering-status list
+  for the current no-active-tiering-operation state;
 - explicit rejection for custom cluster-manager timeout, local reads, invalid
   target tier values, non-empty tiering status response rendering, blank status
-  index names, shard-level status rendering, and negative response counts.
+  index names, shard-level status rendering, active tiering aggregation, and
+  negative response counts.
 
 The get-tiering-status boundary covers:
 

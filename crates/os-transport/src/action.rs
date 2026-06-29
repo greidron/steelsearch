@@ -2037,8 +2037,8 @@ pub fn classify_opensearch_transport_action(
         },
         LIST_TIERING_STATUS_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
-            disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "list-tiering-status transport execution requires metadata read block checks, tiering target mapping, migration service lookup, tiering status aggregation, and response rendering",
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "list-tiering-status transport adapter validates default read requests and returns OpenSearch's empty tiering-status list when no local tiering operation is active",
         },
         GET_TIERING_STATUS_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -18782,10 +18782,7 @@ impl ListTieringStatusRequestWire {
                 });
             }
         }
-        Err(TransportActionWireError::UnsupportedWireShape {
-            shape: "list tiering status execution",
-            reason: "list-tiering-status transport execution requires metadata read block checks, tiering target mapping, migration service lookup, tiering status aggregation, and response rendering",
-        })
+        Ok(())
     }
 }
 
@@ -51601,6 +51598,10 @@ mod tests {
             classify_opensearch_transport_action(RESTORE_REMOTE_STORE_ACTION_NAME).disposition,
             OpenSearchTransportActionDisposition::Rejected
         );
+        assert_eq!(
+            classify_opensearch_transport_action(LIST_TIERING_STATUS_ACTION_NAME).disposition,
+            OpenSearchTransportActionDisposition::Implemented
+        );
     }
 
     #[test]
@@ -51693,6 +51694,7 @@ mod tests {
                 || spec.action_name == OPENSEARCH_RESOLVE_INDEX_ACTION_NAME
                 || spec.action_name == OPENSEARCH_IMPORT_DANGLING_INDEX_ACTION_NAME
                 || spec.action_name == OPENSEARCH_DELETE_DANGLING_INDEX_ACTION_NAME
+                || spec.action_name == LIST_TIERING_STATUS_ACTION_NAME
                 || spec.action_name == GET_DECOMMISSION_STATE_ACTION_NAME
             {
                 assert_eq!(
@@ -60414,7 +60416,7 @@ mod tests {
     }
 
     #[test]
-    fn list_tiering_status_request_wire_round_trips_and_rejects_execution_boundary() {
+    fn list_tiering_status_request_wire_round_trips_and_validates_supported_subset() {
         let request = ListTieringStatusRequestWire {
             parent_task_node: "cluster-manager".to_string(),
             parent_task_id: Some(49),
@@ -60426,13 +60428,7 @@ mod tests {
 
         let decoded = ListTieringStatusRequestWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, request);
-        assert!(matches!(
-            decoded.reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "list tiering status execution",
-                ..
-            })
-        ));
+        decoded.reject_unsupported_execution().unwrap();
     }
 
     #[test]
@@ -60546,7 +60542,7 @@ mod tests {
     }
 
     #[test]
-    fn list_tiering_status_transport_messages_bind_rejected_action_frame_and_response() {
+    fn list_tiering_status_transport_messages_bind_supported_action_frame_and_response() {
         let request = ListTieringStatusRequestWire::default();
         let mut frame =
             build_list_tiering_status_request_message(49, OPENSEARCH_3_7_0_TRANSPORT, &request)
@@ -60558,21 +60554,16 @@ mod tests {
             classify_opensearch_transport_request_message(&message)
                 .unwrap()
                 .disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             read_list_tiering_status_request_message(&message).unwrap(),
             request
         );
-        assert!(matches!(
-            read_list_tiering_status_request_message(&message)
-                .unwrap()
-                .reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "list tiering status execution",
-                ..
-            })
-        ));
+        read_list_tiering_status_request_message(&message)
+            .unwrap()
+            .reject_unsupported_execution()
+            .unwrap();
 
         let response = ListTieringStatusResponseWire::default();
         let mut frame =

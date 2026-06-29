@@ -3442,6 +3442,32 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end_at_ms,
         )?;
     } else if is_request
+        && normalized_action_hint == Some("cluster:admin/_tier/all")
+        && list_tiering_status_request_supports_empty_subset(&body)
+    {
+        let response = build_empty_list_tiering_status_response(request_id, header_version_id);
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("cluster:admin/_tier/all"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request
         && normalized_action_hint == Some("cluster:monitor/_remotestore/stats")
         && remote_store_stats_request_supports_empty_subset(&body)
     {
@@ -13086,6 +13112,39 @@ fn delete_dangling_index_request_matches_empty_state_missing_subset(
         && request.ack_timeout == os_transport::action::TimeValueWire::seconds(30)
         && !request.index_uuid.trim().is_empty()
         && request.index_uuid.len() <= 512
+}
+
+fn build_empty_list_tiering_status_response(request_id: i64, header_version_id: u32) -> Vec<u8> {
+    os_transport::action::build_list_tiering_status_response_message(
+        request_id,
+        Version::from_id(header_version_id as i32),
+        &os_transport::action::ListTieringStatusResponseWire::default(),
+    )
+    .map(|frame| frame.to_vec())
+    .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
+}
+
+fn list_tiering_status_request_supports_empty_subset(body: &[u8]) -> bool {
+    decode_list_tiering_status_request_from_transport_body(body)
+        .is_some_and(|request| list_tiering_status_request_matches_empty_subset(&request))
+}
+
+fn decode_list_tiering_status_request_from_transport_body(
+    body: &[u8],
+) -> Option<os_transport::action::ListTieringStatusRequestWire> {
+    let message = decode_transport_message_from_body(body)?;
+    os_transport::action::read_list_tiering_status_request_message(&message).ok()
+}
+
+fn list_tiering_status_request_matches_empty_subset(
+    request: &os_transport::action::ListTieringStatusRequestWire,
+) -> bool {
+    request.cluster_manager_timeout == os_transport::action::TimeValueWire::seconds(30)
+        && !request.local
+        && request
+            .target_tier
+            .as_deref()
+            .map_or(true, |target_tier| matches!(target_tier, "HOT" | "WARM"))
 }
 
 #[cfg(test)]
@@ -24834,6 +24893,14 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
                 body,
             ))
         }
+        Some("cluster:admin/_tier/all")
+            if list_tiering_status_request_supports_empty_subset(body) =>
+        {
+            Some(build_empty_list_tiering_status_response(
+                request_id,
+                header_version_id,
+            ))
+        }
         Some("indices:data/read/search") if search_request_has_invalid_pit_id(body) => Some(
             build_search_invalid_pit_id_error_response(request_id, header_version_id, body),
         ),
@@ -35339,6 +35406,42 @@ mod tests {
         assert_eq!(
             error.message.as_deref(),
             Some("No dangling index found for UUID [dangling-uuid]")
+        );
+    }
+
+    #[test]
+    fn list_tiering_status_transport_route_builds_empty_response() {
+        let request = os_transport::action::ListTieringStatusRequestWire {
+            target_tier: Some("WARM".to_string()),
+            ..os_transport::action::ListTieringStatusRequestWire::default()
+        };
+        let frame = os_transport::action::build_list_tiering_status_request_message(
+            99,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(list_tiering_status_request_supports_empty_subset(
+            &frame[6..]
+        ));
+
+        let response =
+            build_empty_list_tiering_status_response(99, OPENSEARCH_3_7_0_TRANSPORT.id() as u32);
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected list tiering status response message");
+        };
+        assert_eq!(message.request_id, 99);
+        assert!(!message.status.is_request());
+        let response =
+            os_transport::action::read_list_tiering_status_response_message(&message).unwrap();
+        assert_eq!(
+            response,
+            os_transport::action::ListTieringStatusResponseWire::default()
         );
     }
 

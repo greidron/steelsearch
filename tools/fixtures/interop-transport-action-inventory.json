@@ -333,8 +333,8 @@
       "transport_action": "TransportListTieringStatusAction",
       "request_wire_type": "ListTieringStatusRequest",
       "response_wire_type": "ListTieringStatusResponse",
-      "disposition": "rejected",
-      "reason": "List-tiering-status transport execution requires metadata read block checks, tiering target mapping, migration service lookup, tiering status aggregation, and response rendering"
+      "disposition": "implemented",
+      "reason": "List-tiering-status transport adapter validates default read requests and returns OpenSearch's empty tiering-status list when no local tiering operation is active"
     },
     {
       "action_name": "indices:admin/_tier/get",
