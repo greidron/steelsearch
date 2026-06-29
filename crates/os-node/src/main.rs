@@ -16722,15 +16722,15 @@ fn local_pit_segment_shards_for_request(
     let selected_pit_ids = if request.pit_ids.len() == 1 && request.pit_ids[0] == "_all" {
         contexts.keys().cloned().collect::<Vec<_>>()
     } else {
+        let mut seen_ids = BTreeSet::new();
         request
             .pit_ids
             .iter()
+            .filter(|pit_id| seen_ids.insert((*pit_id).clone()))
             .cloned()
-            .collect::<BTreeSet<_>>()
-            .into_iter()
             .collect::<Vec<_>>()
     };
-    let mut shards = BTreeMap::new();
+    let mut shards = Vec::new();
     for pit_id in selected_pit_ids {
         if let Ok(search_context_id) =
             os_transport::action::OpenSearchSearchContextIdWire::decode(&pit_id)
@@ -16740,7 +16740,7 @@ fn local_pit_segment_shards_for_request(
                     && context.search_context_id.id >= 0
                     && context.node == transport_identity.node_id
                 {
-                    shards.insert((shard_id.index_name.clone(), shard_id.shard_id), shard_id);
+                    shards.push(shard_id);
                 }
             }
             continue;
@@ -16755,11 +16755,11 @@ fn local_pit_segment_shards_for_request(
                     index_uuid: transport_pit_index_uuid(bindings, index),
                     shard_id: shard_id as i32,
                 };
-                shards.insert((shard_id.index_name.clone(), shard_id.shard_id), shard_id);
+                shards.push(shard_id);
             }
         }
     }
-    shards.into_values().collect()
+    shards
 }
 
 fn build_pit_segments_node_response(
@@ -38405,6 +38405,142 @@ mod tests {
             .lock()
             .expect("dev transport PIT contexts lock poisoned")
             .remove(pit_id);
+    }
+
+    #[test]
+    fn pit_segments_transport_route_preserves_explicit_pit_order_like_opensearch() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        let bindings = dev_transport_pit_bindings();
+        bindings
+            .created_indices
+            .lock()
+            .expect("dev transport created indices lock poisoned")
+            .extend([
+                "logs-pit-order-a".to_string(),
+                "logs-pit-order-z".to_string(),
+            ]);
+        *bindings
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned") = serde_json::json!({
+            "indices": {
+                "logs-pit-order-a": {
+                    "settings": { "index": { "number_of_shards": "1" } }
+                },
+                "logs-pit-order-z": {
+                    "settings": { "index": { "number_of_shards": "1" } }
+                }
+            }
+        });
+        {
+            let mut contexts = bindings
+                .contexts
+                .lock()
+                .expect("dev transport PIT contexts lock poisoned");
+            contexts.clear();
+            contexts.insert(
+                "pit-order-a".to_string(),
+                PitContext {
+                    indices: vec!["logs-pit-order-a".to_string()],
+                    documents: Arc::new(BTreeMap::new()),
+                    keep_alive_millis: 60_000,
+                    expires_at_millis: now_epoch_ms() + 60_000,
+                    creation_time_millis: now_epoch_ms(),
+                },
+            );
+            contexts.insert(
+                "pit-order-z".to_string(),
+                PitContext {
+                    indices: vec!["logs-pit-order-z".to_string()],
+                    documents: Arc::new(BTreeMap::new()),
+                    keep_alive_millis: 60_000,
+                    expires_at_millis: now_epoch_ms() + 60_000,
+                    creation_time_millis: now_epoch_ms(),
+                },
+            );
+        }
+        let transport_identity = DevTransportIdentity {
+            cluster_name: "steelsearch-dev".to_string(),
+            node_name: "steel-node".to_string(),
+            node_id: "steel-node-id".to_string(),
+            ephemeral_id: "steel-node-ephemeral".to_string(),
+            transport_address: "127.0.0.1:9300".parse().unwrap(),
+            attributes: Vec::new(),
+            roles: vec!["cluster_manager".to_string(), "data".to_string()],
+            seed_peer_identity: None,
+            seed_peer_identities: Vec::new(),
+            coordination_state: Arc::new(Mutex::new(DevTransportCoordinationState::default())),
+            remote_transport_queue_gate: Arc::new(RemoteTransportQueueGate::new(1, 1000)),
+            task_queue_state: None,
+        };
+        let request = os_transport::action::OpenSearchPitSegmentsRequestWire {
+            pit_ids: vec![
+                "pit-order-z".to_string(),
+                "pit-order-z".to_string(),
+                "pit-order-a".to_string(),
+            ],
+            ..os_transport::action::OpenSearchPitSegmentsRequestWire::default()
+        };
+        let frame = os_transport::action::build_opensearch_pit_segments_request_message(
+            102,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(pit_segments_request_supports_local_subset(&frame[6..]));
+        let response = build_local_pit_segments_node_response(
+            102,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &transport_identity,
+            &frame[6..],
+        );
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected ordered PIT segments node response message");
+        };
+        let mut input = StreamInput::new(message.body.freeze());
+        assert_eq!(input.read_string().unwrap(), "steel-node-id");
+        assert_eq!(input.read_vint().unwrap(), 2);
+        assert_eq!(input.read_vint().unwrap(), 2);
+        let mut indices = Vec::new();
+        for _ in 0..2 {
+            assert!(input.read_bool().unwrap());
+            indices.push(input.read_string().unwrap());
+            assert_eq!(input.read_string().unwrap(), "_na_");
+            assert_eq!(input.read_vint().unwrap(), 0);
+            assert_eq!(
+                input.read_optional_string().unwrap().as_deref(),
+                Some("steel-node-id")
+            );
+            assert_eq!(input.read_optional_string().unwrap(), None);
+            assert!(input.read_bool().unwrap());
+            assert!(!input.read_bool().unwrap());
+            assert_eq!(input.read_byte().unwrap(), 3);
+            assert!(!input.read_bool().unwrap());
+            assert!(!input.read_bool().unwrap());
+            assert_eq!(input.read_vint().unwrap(), 0);
+        }
+        assert!(!input.read_bool().unwrap());
+        assert_eq!(
+            indices,
+            vec![
+                "logs-pit-order-z".to_string(),
+                "logs-pit-order-a".to_string()
+            ]
+        );
+        assert_eq!(input.remaining(), 0);
+
+        bindings
+            .contexts
+            .lock()
+            .expect("dev transport PIT contexts lock poisoned")
+            .clear();
     }
 
     #[test]
