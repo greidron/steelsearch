@@ -369,8 +369,8 @@
       "transport_action": "UpdateModelMetadataTransportAction",
       "request_wire_type": "UpdateModelMetadataRequest",
       "response_wire_type": "AcknowledgedResponse",
-      "disposition": "rejected",
-      "reason": "Update-model-metadata transport execution requires model metadata validation, model system-index custom metadata mutation, cluster-state publication, and acknowledgement rendering"
+      "disposition": "implemented",
+      "reason": "Update-model-metadata transport adapter validates the local remove-metadata subset, removes local runtime model metadata when present, and renders OpenSearch AcknowledgedResponse"
     },
     {
       "action_name": "cluster:admin/knn_training_job_route_decision_info_action",

@@ -4016,6 +4016,32 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end_at_ms,
         )?;
     } else if is_request
+        && normalized_action_hint == Some("cluster:admin/knn_update_model_metadata_action")
+        && update_model_metadata_request_supports_local_subset(&body)
+    {
+        let response = build_update_model_metadata_response(request_id, header_version_id, &body);
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("cluster:admin/knn_update_model_metadata_action"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request
         && normalized_action_hint == Some("cluster:admin/knn_get_model_action")
         && get_model_request_supports_local_subset(&body)
     {
@@ -15183,6 +15209,26 @@ fn build_training_job_route_decision_info_response(
     .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
 }
 
+fn build_update_model_metadata_response(
+    request_id: i64,
+    header_version_id: u32,
+    body: &[u8],
+) -> Vec<u8> {
+    let Some(request) = decode_update_model_metadata_request_from_transport_body(body) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    if !local_transport_update_model_metadata(&request) {
+        return build_empty_transport_response(request_id, header_version_id);
+    }
+    os_transport::action::build_update_model_metadata_response_message(
+        request_id,
+        Version::from_id(header_version_id as i32),
+        &os_transport::action::AcknowledgedResponseWire { acknowledged: true },
+    )
+    .map(|frame| frame.to_vec())
+    .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
+}
+
 fn build_get_model_response(request_id: i64, header_version_id: u32, body: &[u8]) -> Vec<u8> {
     let Some(request) = decode_get_model_request_from_transport_body(body) else {
         return build_empty_transport_response(request_id, header_version_id);
@@ -15241,6 +15287,11 @@ fn training_job_route_decision_info_request_supports_local_subset(body: &[u8]) -
     )
 }
 
+fn update_model_metadata_request_supports_local_subset(body: &[u8]) -> bool {
+    decode_update_model_metadata_request_from_transport_body(body)
+        .is_some_and(|request| request.validate_supported_execution_subset().is_ok())
+}
+
 fn get_model_request_supports_local_subset(body: &[u8]) -> bool {
     decode_get_model_request_from_transport_body(body)
         .is_some_and(|request| local_transport_get_model_response(&request).is_some())
@@ -15284,6 +15335,13 @@ fn decode_training_job_route_decision_info_request_from_transport_body(
 ) -> Option<os_transport::action::TrainingJobRouteDecisionInfoRequestWire> {
     let message = decode_transport_message_from_body(body)?;
     os_transport::action::read_training_job_route_decision_info_request_message(&message).ok()
+}
+
+fn decode_update_model_metadata_request_from_transport_body(
+    body: &[u8],
+) -> Option<os_transport::action::UpdateModelMetadataRequestWire> {
+    let message = decode_transport_message_from_body(body)?;
+    os_transport::action::read_update_model_metadata_request_message(&message).ok()
 }
 
 fn decode_get_model_request_from_transport_body(
@@ -15340,6 +15398,17 @@ fn delete_model_request_matches_local_subset(
     request.validate_supported_execution_subset().is_ok()
         && load_transport_knn_operational_state()
             .is_some_and(|state| state.trained_models.contains_key(&request.model_id))
+}
+
+fn update_transport_knn_model_metadata_remove_state(model_id: &str) -> bool {
+    let mut state = load_transport_shared_runtime_state().unwrap_or_default();
+    if let Some(current) = state.knn_operational_state.as_mut() {
+        current.trained_models.remove(model_id);
+        if current.trained_models.is_empty() {
+            current.model_cache_used_bytes = 0;
+        }
+    }
+    persist_transport_shared_runtime_state(&state)
 }
 
 fn local_knn_indices_total_shards(
@@ -15509,6 +15578,13 @@ fn local_transport_get_model_response(
         model_blob: None,
         model_id: model.model_id.clone(),
     })
+}
+
+fn local_transport_update_model_metadata(
+    request: &os_transport::action::UpdateModelMetadataRequestWire,
+) -> bool {
+    request.validate_supported_execution_subset().is_ok()
+        && update_transport_knn_model_metadata_remove_state(&request.model_id)
 }
 
 fn local_transport_delete_model_response(
@@ -27748,6 +27824,15 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
                 transport_identity,
             ))
         }
+        Some("cluster:admin/knn_update_model_metadata_action")
+            if update_model_metadata_request_supports_local_subset(body) =>
+        {
+            Some(build_update_model_metadata_response(
+                request_id,
+                header_version_id,
+                body,
+            ))
+        }
         Some("cluster:admin/knn_get_model_action")
             if get_model_request_supports_local_subset(body) =>
         {
@@ -32723,6 +32808,128 @@ mod tests {
         assert_eq!(response.nodes.len(), 1);
         assert_eq!(response.nodes[0].node.id, "steel-node-id");
         assert_eq!(response.nodes[0].training_job_count, 1);
+        let _ = fs::remove_file(shared_state_path);
+    }
+
+    #[test]
+    fn update_model_metadata_transport_route_removes_local_runtime_model_metadata() {
+        struct RecordingTransportConnection {
+            writes: Vec<u8>,
+        }
+
+        impl std::io::Read for RecordingTransportConnection {
+            fn read(&mut self, _buf: &mut [u8]) -> std::io::Result<usize> {
+                Ok(0)
+            }
+        }
+
+        impl std::io::Write for RecordingTransportConnection {
+            fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+                self.writes.extend_from_slice(buf);
+                Ok(buf.len())
+            }
+
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+
+        impl TransportConnection for RecordingTransportConnection {
+            fn set_read_timeout(&self, _duration: Option<Duration>) -> std::io::Result<()> {
+                Ok(())
+            }
+
+            fn peer_addr(&self) -> std::io::Result<SocketAddr> {
+                "127.0.0.1:9300"
+                    .parse()
+                    .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidInput, error))
+            }
+        }
+
+        let shared_state_path = unique_test_path("update-model-metadata-transport-runtime.json");
+        let mut runtime_state = SharedRuntimeState::default();
+        let mut knn_state = KnnOperationalState {
+            model_cache_used_bytes: 32,
+            ..KnnOperationalState::default()
+        };
+        knn_state.trained_models.insert(
+            "model-a".to_string(),
+            os_node::standalone_runtime::KnnModelState {
+                model_id: "model-a".to_string(),
+                training_index: "vectors".to_string(),
+                dimension: 3,
+                description: "transport update metadata model".to_string(),
+                method: serde_json::json!({"name": "hnsw", "engine": "lucene"}),
+                state: "failed".to_string(),
+                task_id: "task-a".to_string(),
+                transport_action: "cluster:admin/knn_training_model_action".to_string(),
+            },
+        );
+        runtime_state.knn_operational_state = Some(knn_state);
+        fs::write(
+            &shared_state_path,
+            serde_json::to_vec_pretty(&runtime_state).unwrap(),
+        )
+        .unwrap();
+        bind_dev_transport_shared_runtime_state_path(shared_state_path.clone());
+
+        let request = os_transport::action::UpdateModelMetadataRequestWire {
+            model_id: "model-a".to_string(),
+            remove_request: true,
+            model_metadata_present: false,
+            ..os_transport::action::UpdateModelMetadataRequestWire::default()
+        };
+        let frame = os_transport::action::build_update_model_metadata_request_message(
+            85,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(update_model_metadata_request_supports_local_subset(
+            &frame[6..]
+        ));
+        let transport_identity = DevTransportIdentity {
+            cluster_name: "steelsearch-dev".to_string(),
+            node_name: "steel-node".to_string(),
+            node_id: "steel-node-id".to_string(),
+            ephemeral_id: "steel-node-ephemeral".to_string(),
+            transport_address: "127.0.0.1:9300".parse().unwrap(),
+            attributes: Vec::new(),
+            roles: vec!["cluster_manager".to_string(), "data".to_string()],
+            seed_peer_identity: None,
+            seed_peer_identities: Vec::new(),
+            coordination_state: Arc::new(Mutex::new(DevTransportCoordinationState::default())),
+            remote_transport_queue_gate: Arc::new(RemoteTransportQueueGate::new(1, 1000)),
+            task_queue_state: None,
+        };
+        let mut stream = RecordingTransportConnection { writes: Vec::new() };
+
+        let handled = handle_subsequent_transport_request(
+            &mut stream,
+            &frame[6..],
+            &transport_identity,
+            None,
+        )
+        .unwrap();
+
+        assert!(handled);
+        let mut response_frame = BytesMut::from(&stream.writes[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut response_frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected update model metadata response message");
+        };
+        let response =
+            os_transport::action::read_update_model_metadata_response_message(&message).unwrap();
+        assert!(response.acknowledged);
+        let runtime_state =
+            serde_json::from_slice::<SharedRuntimeState>(&fs::read(&shared_state_path).unwrap())
+                .unwrap();
+        let knn_state = runtime_state.knn_operational_state.unwrap();
+        assert!(!knn_state.trained_models.contains_key("model-a"));
+        assert_eq!(knn_state.model_cache_used_bytes, 0);
         let _ = fs::remove_file(shared_state_path);
     }
 

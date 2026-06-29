@@ -2055,8 +2055,8 @@ pub fn classify_opensearch_transport_action(
         },
         UPDATE_MODEL_METADATA_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
-            disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "update-model-metadata transport execution requires model metadata validation, model system-index custom metadata mutation, cluster-state publication, and acknowledgement rendering",
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "update-model-metadata transport adapter validates the local remove-metadata subset, removes local runtime model metadata when present, and renders OpenSearch AcknowledgedResponse",
         },
         TRAINING_JOB_ROUTE_DECISION_INFO_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -19917,6 +19917,15 @@ impl UpdateModelMetadataRequestWire {
     }
 
     pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        self.validate_supported_execution_subset()?;
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "update model metadata execution",
+            reason:
+                "use validate_supported_execution_subset for the implemented local remove-metadata adapter",
+        })
+    }
+
+    pub fn validate_supported_execution_subset(&self) -> Result<(), TransportActionWireError> {
         if self.cluster_manager_timeout != TimeValueWire::seconds(30) {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "update model metadata cluster-manager timeout",
@@ -19947,10 +19956,14 @@ impl UpdateModelMetadataRequestWire {
                 reason: "KNN ModelMetadata parsing and rendering is not implemented",
             });
         }
-        Err(TransportActionWireError::UnsupportedWireShape {
-            shape: "update model metadata execution",
-            reason: "update-model-metadata transport execution requires model metadata validation, model system-index custom metadata mutation, cluster-state publication, and acknowledgement rendering",
-        })
+        if !self.remove_request {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "update model metadata add request",
+                reason:
+                    "local update-model-metadata transport currently supports remove requests only",
+            });
+        }
+        Ok(())
     }
 }
 
@@ -61992,7 +62005,7 @@ mod tests {
     }
 
     #[test]
-    fn update_model_metadata_request_wire_round_trips_and_rejects_execution_boundary() {
+    fn update_model_metadata_request_wire_round_trips_and_validates_remove_subset() {
         let request = UpdateModelMetadataRequestWire {
             parent_task_node: "cluster-manager".to_string(),
             parent_task_id: Some(53),
@@ -62005,6 +62018,7 @@ mod tests {
 
         let decoded = UpdateModelMetadataRequestWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, request);
+        decoded.validate_supported_execution_subset().unwrap();
         assert!(matches!(
             decoded.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
@@ -62021,7 +62035,7 @@ mod tests {
             ..UpdateModelMetadataRequestWire::default()
         };
         assert!(matches!(
-            cluster_manager_timeout.reject_unsupported_execution(),
+            cluster_manager_timeout.validate_supported_execution_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "update model metadata cluster-manager timeout",
                 ..
@@ -62033,7 +62047,7 @@ mod tests {
             ..UpdateModelMetadataRequestWire::default()
         };
         assert!(matches!(
-            ack_timeout.reject_unsupported_execution(),
+            ack_timeout.validate_supported_execution_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "update model metadata ack timeout",
                 ..
@@ -62045,7 +62059,7 @@ mod tests {
             ..UpdateModelMetadataRequestWire::default()
         };
         assert!(matches!(
-            missing_model_id.reject_unsupported_execution(),
+            missing_model_id.validate_supported_execution_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "update model metadata model id",
                 ..
@@ -62058,7 +62072,7 @@ mod tests {
             ..UpdateModelMetadataRequestWire::default()
         };
         assert!(matches!(
-            missing_metadata.reject_unsupported_execution(),
+            missing_metadata.validate_supported_execution_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "update model metadata missing metadata",
                 ..
@@ -62075,7 +62089,7 @@ mod tests {
         let decoded = UpdateModelMetadataRequestWire::read(output.freeze()).unwrap();
         assert!(decoded.model_metadata_present);
         assert!(matches!(
-            decoded.reject_unsupported_execution(),
+            decoded.validate_supported_execution_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "update model metadata model metadata",
                 ..
@@ -62092,7 +62106,7 @@ mod tests {
     }
 
     #[test]
-    fn update_model_metadata_transport_messages_bind_rejected_action_frame_and_response() {
+    fn update_model_metadata_transport_messages_bind_implemented_action_frame_and_response() {
         let request = UpdateModelMetadataRequestWire::default();
         let mut frame =
             build_update_model_metadata_request_message(53, OPENSEARCH_3_7_0_TRANSPORT, &request)
@@ -62104,7 +62118,7 @@ mod tests {
             classify_opensearch_transport_request_message(&message)
                 .unwrap()
                 .disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             read_update_model_metadata_request_message(&message).unwrap(),

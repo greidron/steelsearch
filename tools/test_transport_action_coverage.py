@@ -116,12 +116,12 @@ class TransportActionCoverageTests(unittest.TestCase):
             payload = json.loads(output.read_text(encoding="utf-8"))
             self.assertEqual(result, 0)
             self.assertEqual(payload["summary"]["transport_action_count"], 160)
-            self.assertEqual(payload["summary"]["implemented_action_count"], 152)
-            self.assertEqual(payload["summary"]["partial_action_count"], 8)
+            self.assertEqual(payload["summary"]["implemented_action_count"], 153)
+            self.assertEqual(payload["summary"]["partial_action_count"], 7)
             self.assertEqual(payload["summary"]["planned_action_count"], 0)
             self.assertEqual(len(payload["actions"]), 160)
-            self.assertEqual(len(payload["implemented_actions"]), 152)
-            self.assertEqual(len(payload["partial_actions"]), 8)
+            self.assertEqual(len(payload["implemented_actions"]), 153)
+            self.assertEqual(len(payload["partial_actions"]), 7)
             self.assertEqual(payload["planned_actions"], [])
 
     def test_locally_handled_transport_actions_are_implemented_in_source_tsv(self):
@@ -173,6 +173,7 @@ class TransportActionCoverageTests(unittest.TestCase):
             "SearchViewAction.INSTANCE",
             "KNNStatsAction.INSTANCE",
             "KNNWarmupAction.INSTANCE",
+            "UpdateModelMetadataAction.INSTANCE",
             "TrainingJobRouteDecisionInfoAction.INSTANCE",
             "GetModelAction.INSTANCE",
             "DeleteModelAction.INSTANCE",
