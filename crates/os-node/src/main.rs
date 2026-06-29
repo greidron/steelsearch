@@ -1688,6 +1688,32 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end_at_ms,
         )?;
     } else if is_request
+        && normalized_action_hint == Some("cluster:admin/routing/awareness/weights/put")
+        && put_weighted_routing_request_supports_manifest_subset(&body)
+    {
+        let response = build_put_weighted_routing_response(request_id, header_version_id, &body);
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("cluster:admin/routing/awareness/weights/put"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request
         && normalized_action_hint == Some("cluster:admin/decommission/awareness/get")
         && get_decommission_state_request_supports_manifest_subset(&body)
     {
@@ -8003,11 +8029,95 @@ fn get_weighted_routing_request_supports_manifest_subset(body: &[u8]) -> bool {
         .is_some_and(|request| request.validate_supported_execution_subset().is_ok())
 }
 
+fn build_put_weighted_routing_response(
+    request_id: i64,
+    header_version_id: u32,
+    body: &[u8],
+) -> Vec<u8> {
+    let Some(request) = decode_put_weighted_routing_request_from_transport_body(body) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    if request.validate_supported_execution_subset().is_err() {
+        return build_empty_transport_response(request_id, header_version_id);
+    }
+    if !put_weighted_routing_into_metadata_manifest(
+        &mut dev_transport_pit_bindings()
+            .metadata_manifest
+            .lock()
+            .expect("metadata manifest lock poisoned"),
+        &request,
+    ) {
+        return build_empty_transport_response(request_id, header_version_id);
+    }
+    os_transport::action::build_cluster_put_weighted_routing_response_message(
+        request_id,
+        Version::from_id(header_version_id as i32),
+        &os_transport::action::AcknowledgedResponseWire { acknowledged: true },
+    )
+    .map(|frame| frame.to_vec())
+    .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
+}
+
+fn put_weighted_routing_request_supports_manifest_subset(body: &[u8]) -> bool {
+    decode_put_weighted_routing_request_from_transport_body(body)
+        .as_ref()
+        .is_some_and(|request| request.validate_supported_execution_subset().is_ok())
+}
+
 fn decode_get_weighted_routing_request_from_transport_body(
     body: &[u8],
 ) -> Option<os_transport::action::ClusterGetWeightedRoutingRequestWire> {
     let message = decode_transport_message_from_body(body)?;
     os_transport::action::read_cluster_get_weighted_routing_request_message(&message).ok()
+}
+
+fn decode_put_weighted_routing_request_from_transport_body(
+    body: &[u8],
+) -> Option<os_transport::action::ClusterPutWeightedRoutingRequestWire> {
+    let message = decode_transport_message_from_body(body)?;
+    os_transport::action::read_cluster_put_weighted_routing_request_message(&message).ok()
+}
+
+fn put_weighted_routing_into_metadata_manifest(
+    metadata_manifest: &mut Value,
+    request: &os_transport::action::ClusterPutWeightedRoutingRequestWire,
+) -> bool {
+    if !metadata_manifest.is_object() {
+        *metadata_manifest = serde_json::json!({});
+    }
+    let Some(root) = metadata_manifest.as_object_mut() else {
+        return false;
+    };
+    let cluster_admin_state = root
+        .entry("cluster_admin_state")
+        .or_insert_with(|| serde_json::json!({}));
+    if !cluster_admin_state.is_object() {
+        *cluster_admin_state = serde_json::json!({});
+    }
+    let Some(cluster_admin_state) = cluster_admin_state.as_object_mut() else {
+        return false;
+    };
+    cluster_admin_state.insert(
+        "weighted_routing_version".to_string(),
+        serde_json::json!(request.version + 1),
+    );
+    let weighted_routing = cluster_admin_state
+        .entry("weighted_routing")
+        .or_insert_with(|| serde_json::json!({}));
+    if !weighted_routing.is_object() {
+        *weighted_routing = serde_json::json!({});
+    }
+    let Some(weighted_routing) = weighted_routing.as_object_mut() else {
+        return false;
+    };
+    weighted_routing.insert(
+        request.attribute_name.clone(),
+        serde_json::json!({
+            "weights": &request.weights,
+            "discovered_cluster_manager": true
+        }),
+    );
+    true
 }
 
 fn get_weighted_routing_response_from_metadata_manifest(
@@ -21410,6 +21520,15 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
             if get_weighted_routing_request_supports_manifest_subset(body) =>
         {
             Some(build_get_weighted_routing_response(
+                request_id,
+                header_version_id,
+                body,
+            ))
+        }
+        Some("cluster:admin/routing/awareness/weights/put")
+            if put_weighted_routing_request_supports_manifest_subset(body) =>
+        {
+            Some(build_put_weighted_routing_response(
                 request_id,
                 header_version_id,
                 body,

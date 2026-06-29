@@ -3476,6 +3476,82 @@ fn daemon_transport_cluster_update_settings_empty_request_returns_acknowledged()
 }
 
 #[test]
+fn daemon_transport_put_weighted_routing_updates_get_response() {
+    let binary = os_node_binary();
+    let root = unique_work_dir();
+    fs::create_dir_all(root.join("data")).unwrap();
+    let transport_port = free_port();
+
+    let mut child = Command::new(&binary)
+        .arg("--http.host")
+        .arg("127.0.0.1")
+        .arg("--http.port")
+        .arg("0")
+        .arg("--transport.host")
+        .arg("127.0.0.1")
+        .arg("--transport.port")
+        .arg(transport_port.to_string())
+        .arg("--cluster.name")
+        .arg("steel-dev-weighted-routing-transport")
+        .arg("--path.data")
+        .arg(root.join("data"))
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+
+    let stderr = child.stderr.take().unwrap();
+    let mut reader = BufReader::new(stderr);
+    let _http_port = read_reported_http_port(&mut reader);
+    let _guard = ChildGuard {
+        children: vec![child],
+    };
+
+    let put_request = os_transport::action::ClusterPutWeightedRoutingRequestWire {
+        attribute_name: "zone".to_string(),
+        weights: BTreeMap::from([("zone-a".to_string(), 1.0), ("zone-b".to_string(), 0.5)]),
+        version: 3,
+        ..os_transport::action::ClusterPutWeightedRoutingRequestWire::default()
+    };
+    let put_frame = os_transport::action::build_cluster_put_weighted_routing_request_message(
+        95,
+        OPENSEARCH_3_7_0_TRANSPORT,
+        &put_request,
+    )
+    .unwrap();
+    let put_response = send_transport_request_and_decode_response(transport_port, &put_frame);
+    let put_ack =
+        os_transport::action::read_cluster_put_weighted_routing_response_message(&put_response)
+            .unwrap();
+    assert_eq!(put_response.request_id, 95);
+    assert_eq!(put_ack.acknowledged, true);
+
+    let get_request = os_transport::action::ClusterGetWeightedRoutingRequestWire {
+        awareness_attribute: "zone".to_string(),
+        ..os_transport::action::ClusterGetWeightedRoutingRequestWire::default()
+    };
+    let get_frame = os_transport::action::build_cluster_get_weighted_routing_request_message(
+        96,
+        OPENSEARCH_3_7_0_TRANSPORT,
+        &get_request,
+    )
+    .unwrap();
+    let get_response = send_transport_request_and_decode_response(transport_port, &get_frame);
+    let weighted =
+        os_transport::action::read_cluster_get_weighted_routing_response_message(&get_response)
+            .unwrap();
+
+    assert_eq!(get_response.request_id, 96);
+    assert_eq!(weighted.attribute_name.as_deref(), Some("zone"));
+    assert_eq!(weighted.version, Some(4));
+    assert_eq!(weighted.discovered_cluster_manager, Some(true));
+    assert_eq!(weighted.weights.get("zone-a"), Some(&1.0));
+    assert_eq!(weighted.weights.get("zone-b"), Some(&0.5));
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
 fn daemon_point_in_time_contexts_do_not_survive_restart() {
     let binary = os_node_binary();
     let root = unique_work_dir();

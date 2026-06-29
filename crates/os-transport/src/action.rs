@@ -2110,8 +2110,8 @@ pub fn classify_opensearch_transport_action(
         },
         CLUSTER_ADD_WEIGHTED_ROUTING_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
-            disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "add-weighted-routing transport execution requires weighted routing metadata mutation and acknowledgement rendering",
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "add-weighted-routing transport adapter validates weighted routing metadata, mutates the Rust manifest, and returns an OpenSearch acknowledged response",
         },
         CLUSTER_GET_WEIGHTED_ROUTING_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -9199,6 +9199,36 @@ pub fn read_cluster_put_weighted_routing_request_message(
         });
     }
     ClusterPutWeightedRoutingRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_cluster_put_weighted_routing_response_message(
+    request_id: i64,
+    version: Version,
+    response: &AcknowledgedResponseWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    response.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::response(),
+        version,
+        variable_header: BytesMut::from(&ResponseVariableHeader::default().to_bytes()[..]),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_cluster_put_weighted_routing_response_message(
+    message: &TransportMessage,
+) -> Result<AcknowledgedResponseWire, TransportActionWireError> {
+    if !message.status.is_response() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "response",
+            actual: message.status.bits(),
+        });
+    }
+    let _header = ResponseVariableHeader::read(message.variable_header.clone().freeze())?;
+    AcknowledgedResponseWire::read(message.body.clone().freeze())
 }
 
 pub fn build_cluster_get_weighted_routing_request_message(
@@ -20083,7 +20113,7 @@ impl ClusterPutWeightedRoutingRequestWire {
         Ok(request)
     }
 
-    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+    pub fn validate_supported_execution_subset(&self) -> Result<(), TransportActionWireError> {
         if self.cluster_manager_timeout != TimeValueWire::seconds(30) {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "put weighted routing cluster-manager timeout",
@@ -20127,9 +20157,14 @@ impl ClusterPutWeightedRoutingRequestWire {
                 reason: "OpenSearch put-weighted-routing validation rejects more than half of values with zero weight",
             });
         }
+        Ok(())
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        self.validate_supported_execution_subset()?;
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "put weighted routing execution",
-            reason: "put-weighted-routing transport execution requires weighted routing metadata mutation and acknowledgement rendering",
+            reason: "use validate_supported_execution_subset for the implemented manifest-backed put-weighted-routing adapter",
         })
     }
 }
@@ -61291,7 +61326,8 @@ mod tests {
     }
 
     #[test]
-    fn cluster_put_weighted_routing_transport_messages_bind_rejected_action_frame() {
+    fn cluster_put_weighted_routing_transport_messages_bind_supported_action_frame_and_ack_response(
+    ) {
         let request = valid_cluster_put_weighted_routing_request();
         let mut frame = build_cluster_put_weighted_routing_request_message(
             37,
@@ -61306,15 +61342,31 @@ mod tests {
             read_cluster_put_weighted_routing_request_message(&message).unwrap(),
             request
         );
-        assert!(matches!(
-            read_cluster_put_weighted_routing_request_message(&message)
+        assert_eq!(
+            classify_opensearch_transport_request_message(&message)
                 .unwrap()
-                .reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "put weighted routing execution",
-                ..
-            })
-        ));
+                .disposition,
+            OpenSearchTransportActionDisposition::Implemented
+        );
+        read_cluster_put_weighted_routing_request_message(&message)
+            .unwrap()
+            .validate_supported_execution_subset()
+            .unwrap();
+
+        let response = AcknowledgedResponseWire { acknowledged: true };
+        let mut frame = build_cluster_put_weighted_routing_response_message(
+            37,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &response,
+        )
+        .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected put weighted routing response message");
+        };
+        assert_eq!(
+            read_cluster_put_weighted_routing_response_message(&message).unwrap(),
+            response
+        );
     }
 
     #[test]
