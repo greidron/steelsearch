@@ -42,7 +42,7 @@ implemented	CatShardsAction.INSTANCE	TransportCatShardsAction.class	/home/ubuntu
 implemented	IndicesSegmentsAction.INSTANCE	TransportIndicesSegmentsAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	698
 implemented	IndicesShardStoresAction.INSTANCE	TransportIndicesShardStoresAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	699
 implemented	CreateIndexAction.INSTANCE	TransportCreateIndexAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	700
-partial	ResizeAction.INSTANCE	TransportResizeAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	701
+implemented	ResizeAction.INSTANCE	TransportResizeAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	701
 implemented	RolloverAction.INSTANCE	TransportRolloverAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	702
 implemented	DeleteIndexAction.INSTANCE	TransportDeleteIndexAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	703
 implemented	GetIndexAction.INSTANCE	TransportGetIndexAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	704

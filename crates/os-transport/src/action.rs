@@ -26,9 +26,7 @@ use std::io::Write;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use thiserror::Error;
 
-use crate::error::{
-    read_exception, TransportError, TransportErrorDecodeError, TransportErrorSearchContextId,
-};
+use crate::error::{read_exception, TransportError, TransportErrorDecodeError};
 use crate::frame::encode_message;
 use crate::variable_header::{RequestVariableHeader, ResponseVariableHeader};
 use crate::TransportMessage;
@@ -2222,8 +2220,8 @@ pub fn classify_opensearch_transport_action(
         },
         OPENSEARCH_RESIZE_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
-            disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "resize transport execution requires source index metadata validation, target index metadata mutation, shard allocation, and response rendering",
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "resize transport adapter validates the bounded shrink subset, creates target manifest index metadata from the source, and renders an OpenSearch-shaped resize response",
         },
         OPENSEARCH_ROLLOVER_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -11219,6 +11217,35 @@ pub fn read_opensearch_resize_request_message(
         });
     }
     OpenSearchResizeRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_opensearch_resize_response_message(
+    request_id: i64,
+    version: Version,
+    response: &OpenSearchCreateIndexResponseWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    response.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::response(),
+        version,
+        variable_header: BytesMut::new(),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_resize_response_message(
+    message: &TransportMessage,
+) -> Result<OpenSearchCreateIndexResponseWire, TransportActionWireError> {
+    if message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "response",
+            actual: message.status.bits(),
+        });
+    }
+    OpenSearchCreateIndexResponseWire::read(message.body.clone().freeze())
 }
 
 pub fn build_opensearch_rollover_request_message(
@@ -25063,7 +25090,7 @@ impl OpenSearchResizeRequestWire {
         Ok(request)
     }
 
-    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+    pub fn validate_supported_execution_subset(&self) -> Result<(), TransportActionWireError> {
         if self.cluster_manager_timeout != TimeValueWire::seconds(30) {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "resize cluster-manager timeout",
@@ -25101,17 +25128,16 @@ impl OpenSearchResizeRequestWire {
                     "max_shard_size requires shrink planning against source index store statistics",
             });
         }
-        match self.target_index_request.reject_unsupported_execution() {
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "create index execution",
-                ..
-            }) => {}
-            Err(err) => return Err(err),
-            Ok(()) => unreachable!("create-index boundary always rejects execution"),
-        }
+        self.target_index_request
+            .validate_supported_execution_subset()?;
+        Ok(())
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        self.validate_supported_execution_subset()?;
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "resize execution",
-            reason: "resize transport execution requires source index metadata validation, target index metadata mutation, shard allocation, and response rendering",
+            reason: "use validate_supported_execution_subset for the implemented manifest-backed shrink adapter",
         })
     }
 }
@@ -49929,6 +49955,7 @@ fn require_no_trailing_bytes(input: &StreamInput) -> Result<(), TransportActionW
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::error::TransportErrorSearchContextId;
     use crate::frame::{decode_frame, DecodedFrame};
     use os_core::OPENSEARCH_3_7_0_TRANSPORT;
     use os_engine::{
@@ -51823,7 +51850,7 @@ mod tests {
         );
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_RESIZE_ACTION_NAME).disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             classify_opensearch_transport_action(OPENSEARCH_ROLLOVER_ACTION_NAME).disposition,
@@ -52170,6 +52197,7 @@ mod tests {
                 || spec.action_name == OPENSEARCH_SIMULATE_PIPELINE_ACTION_NAME
                 || spec.action_name == OPENSEARCH_SCALE_INDEX_ACTION_NAME
                 || spec.action_name == OPENSEARCH_ANALYZE_ACTION_NAME
+                || spec.action_name == OPENSEARCH_RESIZE_ACTION_NAME
                 || spec.action_name == OPENSEARCH_CREATE_INDEX_ACTION_NAME
                 || spec.action_name == OPENSEARCH_AUTO_CREATE_ACTION_NAME
                 || spec.action_name == OPENSEARCH_ROLLOVER_ACTION_NAME
@@ -52211,7 +52239,6 @@ mod tests {
             }
             if spec.action_name == OPENSEARCH_TERM_VECTORS_ACTION_NAME
                 || spec.action_name == OPENSEARCH_MULTI_TERM_VECTORS_ACTION_NAME
-                || spec.action_name == OPENSEARCH_RESIZE_ACTION_NAME
                 || spec.action_name == OPENSEARCH_SIMULATE_TEMPLATE_ACTION_NAME
                 || spec.action_name == OPENSEARCH_CREATE_VIEW_ACTION_NAME
                 || spec.action_name == OPENSEARCH_DELETE_VIEW_ACTION_NAME
@@ -67138,7 +67165,7 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_resize_request_wire_round_trips_and_rejects_execution_boundary() {
+    fn opensearch_resize_request_wire_round_trips_supported_manifest_subset() {
         let request = OpenSearchResizeRequestWire::default();
         let mut output = StreamOutput::new();
         request.write(&mut output);
@@ -67147,6 +67174,7 @@ mod tests {
         assert_eq!(decoded, request);
         assert_eq!(decoded.source_index, "logs-000001");
         assert_eq!(decoded.target_index_request.index, "logs-shrunk");
+        decoded.validate_supported_execution_subset().unwrap();
         assert!(matches!(
             decoded.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
@@ -67284,7 +67312,7 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_resize_transport_messages_bind_rejected_action_frame() {
+    fn opensearch_resize_transport_messages_bind_supported_action_frame_and_response() {
         let request = OpenSearchResizeRequestWire::default();
         let mut frame =
             build_opensearch_resize_request_message(68, OPENSEARCH_3_7_0_TRANSPORT, &request)
@@ -67296,15 +67324,28 @@ mod tests {
             read_opensearch_resize_request_message(&message).unwrap(),
             request
         );
-        assert!(matches!(
-            read_opensearch_resize_request_message(&message)
+        read_opensearch_resize_request_message(&message)
+            .unwrap()
+            .validate_supported_execution_subset()
+            .unwrap();
+        assert_eq!(
+            classify_opensearch_transport_request_message(&message)
                 .unwrap()
-                .reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "resize execution",
-                ..
-            })
-        ));
+                .disposition,
+            OpenSearchTransportActionDisposition::Implemented
+        );
+
+        let response = OpenSearchCreateIndexResponseWire::success("logs-shrunk");
+        let mut frame =
+            build_opensearch_resize_response_message(68, OPENSEARCH_3_7_0_TRANSPORT, &response)
+                .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected resize response message");
+        };
+        assert_eq!(
+            read_opensearch_resize_response_message(&message).unwrap(),
+            response
+        );
     }
 
     #[test]

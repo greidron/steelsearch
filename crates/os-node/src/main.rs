@@ -4,7 +4,6 @@ use os_cluster_state::{
     read_cluster_state_header, read_cluster_state_tail_prefix, read_discovery_nodes_prefix,
     read_metadata_prefix, read_publication_cluster_state_diff, read_routing_table_prefix,
     ClusterState, ClusterStateRequest, ClusterStateResponsePrefix, ShardRoutingState,
-    ShardRoutingStatePrefix,
 };
 use os_core::version::{Version, OPENSEARCH_3_7_0, OPENSEARCH_3_7_0_TRANSPORT};
 use os_node::standalone_runtime::{
@@ -2833,6 +2832,30 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &response,
             Some("indices:admin/rollover"),
         );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request
+        && normalized_action_hint == Some("indices:admin/resize")
+        && resize_request_supports_manifest_subset(&body)
+    {
+        let response = build_resize_response(request_id, header_version_id, &body);
+        response_frame =
+            summarize_transport_response_frame_for_action(&response, Some("indices:admin/resize"));
         stream.write_all(&response)?;
         stream.flush()?;
         response_frame_sent_at_ms = Some(unix_time_ms());
@@ -12141,6 +12164,28 @@ fn build_rollover_response(request_id: i64, header_version_id: u32, body: &[u8])
     .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
 }
 
+fn build_resize_response(request_id: i64, header_version_id: u32, body: &[u8]) -> Vec<u8> {
+    let Some(request) = decode_resize_request_from_transport_body(body) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    if !resize_request_matches_manifest_subset(&request) {
+        return build_empty_transport_response(request_id, header_version_id);
+    }
+    if !apply_transport_resize_to_manifest(&request) {
+        return build_empty_transport_response(request_id, header_version_id);
+    }
+    let response = os_transport::action::OpenSearchCreateIndexResponseWire::success(
+        &request.target_index_request.index,
+    );
+    os_transport::action::build_opensearch_resize_response_message(
+        request_id,
+        Version::from_id(header_version_id as i32),
+        &response,
+    )
+    .map(|frame| frame.to_vec())
+    .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
+}
+
 fn build_delete_index_response(request_id: i64, header_version_id: u32, body: &[u8]) -> Vec<u8> {
     let Some(request) = decode_delete_index_request_from_transport_body(body) else {
         return build_empty_transport_response(request_id, header_version_id);
@@ -12253,6 +12298,11 @@ fn rollover_request_supports_manifest_subset(body: &[u8]) -> bool {
         .is_some_and(|request| rollover_request_matches_manifest_subset(&request).is_some())
 }
 
+fn resize_request_supports_manifest_subset(body: &[u8]) -> bool {
+    decode_resize_request_from_transport_body(body)
+        .is_some_and(|request| resize_request_matches_manifest_subset(&request))
+}
+
 fn create_index_request_matches_manifest_subset(
     request: &os_transport::action::OpenSearchCreateIndexRequestWire,
 ) -> bool {
@@ -12290,6 +12340,16 @@ fn rollover_request_matches_manifest_subset(
         return None;
     }
     Some((old_index, new_index))
+}
+
+fn resize_request_matches_manifest_subset(
+    request: &os_transport::action::OpenSearchResizeRequestWire,
+) -> bool {
+    request.validate_supported_execution_subset().is_ok()
+        && transport_delete_index_name_is_concrete(&request.source_index)
+        && transport_create_index_name_is_valid(&request.target_index_request.index)
+        && transport_resize_source_is_manifest_shrink_ready(&request.source_index)
+        && !transport_index_exists(&request.target_index_request.index)
 }
 
 fn delete_index_request_matches_manifest_subset(
@@ -12366,6 +12426,13 @@ fn decode_rollover_request_from_transport_body(
     os_transport::action::read_opensearch_rollover_request_message(&message).ok()
 }
 
+fn decode_resize_request_from_transport_body(
+    body: &[u8],
+) -> Option<os_transport::action::OpenSearchResizeRequestWire> {
+    let message = decode_transport_message_from_body(body)?;
+    os_transport::action::read_opensearch_resize_request_message(&message).ok()
+}
+
 fn decode_delete_index_request_from_transport_body(
     body: &[u8],
 ) -> Option<os_transport::action::OpenSearchDeleteIndexRequestWire> {
@@ -12432,6 +12499,38 @@ fn transport_index_exists(index: &str) -> bool {
         .expect("dev transport metadata manifest lock poisoned")["indices"]
         .as_object()
         .is_some_and(|indices| indices.contains_key(index))
+}
+
+fn transport_resize_source_is_manifest_shrink_ready(index: &str) -> bool {
+    let bindings = dev_transport_pit_bindings();
+    let manifest = bindings
+        .metadata_manifest
+        .lock()
+        .expect("dev transport metadata manifest lock poisoned");
+    let Some(source) = manifest["indices"]
+        .as_object()
+        .and_then(|indices| indices.get(index))
+    else {
+        return false;
+    };
+    manifest_index_setting_bool(source, "index.blocks.write") == Some(true)
+        || manifest_index_setting_bool(source, "blocks.write") == Some(true)
+        || manifest_index_setting_bool(source, "index.blocks.read_only") == Some(true)
+}
+
+fn manifest_index_setting_bool(index_metadata: &Value, key: &str) -> Option<bool> {
+    index_metadata
+        .pointer(&format!("/settings/{}", key.replace('.', "/")))
+        .or_else(|| {
+            index_metadata
+                .get("settings")
+                .and_then(|settings| settings.get(key))
+        })
+        .and_then(|value| match value {
+            Value::Bool(value) => Some(*value),
+            Value::String(value) => value.parse::<bool>().ok(),
+            _ => None,
+        })
 }
 
 fn manifest_rollover_write_index(alias: &str) -> Option<String> {
@@ -12608,6 +12707,96 @@ fn apply_transport_rollover_to_manifest(
         .expect("dev transport created indices lock poisoned")
         .insert(new_index.to_string());
     true
+}
+
+fn apply_transport_resize_to_manifest(
+    request: &os_transport::action::OpenSearchResizeRequestWire,
+) -> bool {
+    let bindings = dev_transport_pit_bindings();
+    let mut manifest = bindings
+        .metadata_manifest
+        .lock()
+        .expect("dev transport metadata manifest lock poisoned");
+    let Some(indices) = manifest["indices"].as_object_mut() else {
+        return false;
+    };
+    let source_index = &request.source_index;
+    let target_index = &request.target_index_request.index;
+    if !indices.contains_key(source_index) || indices.contains_key(target_index) {
+        return false;
+    }
+    let Some(source_metadata) = indices.get(source_index).cloned() else {
+        return false;
+    };
+    if !transport_resize_source_metadata_is_shrink_ready(&source_metadata) {
+        return false;
+    }
+    let mut target_metadata = serde_json::json!({
+        "settings": source_metadata
+            .get("settings")
+            .cloned()
+            .unwrap_or_else(|| serde_json::json!({})),
+        "mappings": source_metadata
+            .get("mappings")
+            .cloned()
+            .unwrap_or_else(|| serde_json::json!({})),
+        "aliases": {},
+        "state": "open",
+        "resize_source": source_index,
+        "resize_type": "shrink"
+    });
+    ensure_manifest_index_settings_object(&mut target_metadata);
+    target_metadata["settings"]["index"]["number_of_shards"] = serde_json::json!("1");
+    target_metadata["settings"]["index"]["resize"]["source"]["name"] =
+        serde_json::json!(source_index);
+    indices.insert(target_index.clone(), target_metadata);
+    drop(manifest);
+    bindings
+        .created_indices
+        .lock()
+        .expect("dev transport created indices lock poisoned")
+        .insert(target_index.clone());
+    true
+}
+
+fn transport_resize_source_metadata_is_shrink_ready(index_metadata: &Value) -> bool {
+    manifest_index_setting_bool(index_metadata, "index.blocks.write") == Some(true)
+        || manifest_index_setting_bool(index_metadata, "blocks.write") == Some(true)
+        || manifest_index_setting_bool(index_metadata, "index.blocks.read_only") == Some(true)
+}
+
+fn ensure_manifest_index_settings_object(index_metadata: &mut Value) {
+    if !index_metadata.is_object() {
+        *index_metadata = serde_json::json!({});
+    }
+    if index_metadata
+        .get("settings")
+        .and_then(Value::as_object)
+        .is_none()
+    {
+        index_metadata["settings"] = serde_json::json!({});
+    }
+    if index_metadata["settings"]
+        .get("index")
+        .and_then(Value::as_object)
+        .is_none()
+    {
+        index_metadata["settings"]["index"] = serde_json::json!({});
+    }
+    if index_metadata["settings"]["index"]
+        .get("resize")
+        .and_then(Value::as_object)
+        .is_none()
+    {
+        index_metadata["settings"]["index"]["resize"] = serde_json::json!({});
+    }
+    if index_metadata["settings"]["index"]["resize"]
+        .get("source")
+        .and_then(Value::as_object)
+        .is_none()
+    {
+        index_metadata["settings"]["index"]["resize"]["source"] = serde_json::json!({});
+    }
 }
 
 fn ensure_alias_metadata_object(metadata: &mut Value) {
@@ -26233,6 +26422,9 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
         Some("indices:admin/rollover") if rollover_request_supports_manifest_subset(body) => {
             Some(build_rollover_response(request_id, header_version_id, body))
         }
+        Some("indices:admin/resize") if resize_request_supports_manifest_subset(body) => {
+            Some(build_resize_response(request_id, header_version_id, body))
+        }
         Some("indices:admin/auto_create") if auto_create_request_supports_manifest_subset(body) => {
             Some(build_auto_create_response(
                 request_id,
@@ -34289,6 +34481,180 @@ mod tests {
             }
         });
         assert!(!rollover_request_supports_manifest_subset(&frame[6..]));
+    }
+
+    #[test]
+    fn resize_transport_route_creates_shrink_target_manifest_metadata() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        let bindings = dev_transport_pit_bindings();
+        bindings
+            .created_indices
+            .lock()
+            .expect("dev transport created indices lock poisoned")
+            .clear();
+        *bindings
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned") = serde_json::json!({
+            "indices": {
+                "logs-000001": {
+                    "settings": {
+                        "index": {
+                            "blocks": {
+                                "write": "true"
+                            },
+                            "number_of_shards": "4",
+                            "number_of_replicas": "1"
+                        }
+                    },
+                    "mappings": {
+                        "properties": {
+                            "message": {
+                                "type": "text"
+                            }
+                        }
+                    },
+                    "aliases": {
+                        "logs-read": {}
+                    },
+                    "state": "open"
+                }
+            }
+        });
+
+        let request = os_transport::action::OpenSearchResizeRequestWire {
+            source_index: "logs-000001".to_string(),
+            target_index_request: os_transport::action::OpenSearchCreateIndexRequestWire {
+                index: "logs-shrunk".to_string(),
+                ..os_transport::action::OpenSearchCreateIndexRequestWire::default()
+            },
+            ..os_transport::action::OpenSearchResizeRequestWire::default()
+        };
+        let frame = os_transport::action::build_opensearch_resize_request_message(
+            94,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(resize_request_supports_manifest_subset(&frame[6..]));
+
+        let response =
+            build_resize_response(94, OPENSEARCH_3_7_0_TRANSPORT.id() as u32, &frame[6..]);
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected resize response message");
+        };
+        let response =
+            os_transport::action::read_opensearch_resize_response_message(&message).unwrap();
+        assert_eq!(response.index, "logs-shrunk");
+        assert!(response.acknowledged);
+        assert!(response.shards_acknowledged);
+
+        let manifest = bindings
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned");
+        assert_eq!(
+            manifest["indices"]["logs-shrunk"]["settings"]["index"]["number_of_shards"],
+            "1"
+        );
+        assert_eq!(
+            manifest["indices"]["logs-shrunk"]["settings"]["index"]["number_of_replicas"],
+            "1"
+        );
+        assert_eq!(
+            manifest["indices"]["logs-shrunk"]["settings"]["index"]["resize"]["source"]["name"],
+            "logs-000001"
+        );
+        assert_eq!(
+            manifest["indices"]["logs-shrunk"]["mappings"]["properties"]["message"]["type"],
+            "text"
+        );
+        assert!(manifest["indices"]["logs-shrunk"]["aliases"]
+            .as_object()
+            .is_some_and(serde_json::Map::is_empty));
+        assert!(bindings
+            .created_indices
+            .lock()
+            .expect("dev transport created indices lock poisoned")
+            .contains("logs-shrunk"));
+    }
+
+    #[test]
+    fn resize_transport_route_rejects_unblocked_source_or_existing_target() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        let bindings = dev_transport_pit_bindings();
+        bindings
+            .created_indices
+            .lock()
+            .expect("dev transport created indices lock poisoned")
+            .clear();
+        *bindings
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned") = serde_json::json!({
+            "indices": {
+                "logs-000001": {
+                    "settings": {
+                        "index": {
+                            "number_of_shards": "4"
+                        }
+                    },
+                    "mappings": {},
+                    "aliases": {}
+                }
+            }
+        });
+
+        let request = os_transport::action::OpenSearchResizeRequestWire {
+            source_index: "logs-000001".to_string(),
+            target_index_request: os_transport::action::OpenSearchCreateIndexRequestWire {
+                index: "logs-shrunk".to_string(),
+                ..os_transport::action::OpenSearchCreateIndexRequestWire::default()
+            },
+            ..os_transport::action::OpenSearchResizeRequestWire::default()
+        };
+        let frame = os_transport::action::build_opensearch_resize_request_message(
+            95,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(!resize_request_supports_manifest_subset(&frame[6..]));
+
+        *bindings
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned") = serde_json::json!({
+            "indices": {
+                "logs-000001": {
+                    "settings": {
+                        "index": {
+                            "blocks": {
+                                "write": true
+                            },
+                            "number_of_shards": "4"
+                        }
+                    },
+                    "mappings": {},
+                    "aliases": {}
+                },
+                "logs-shrunk": {
+                    "settings": {},
+                    "mappings": {},
+                    "aliases": {}
+                }
+            }
+        });
+        assert!(!resize_request_supports_manifest_subset(&frame[6..]));
     }
 
     #[test]

@@ -729,8 +729,8 @@
       "transport_action": "TransportResizeAction",
       "request_wire_type": "ResizeRequest",
       "response_wire_type": "ResizeResponse",
-      "disposition": "rejected",
-      "reason": "Resize transport execution requires source index metadata validation, target index metadata mutation, shard allocation, and response rendering"
+      "disposition": "implemented",
+      "reason": "Resize transport adapter validates the bounded shrink subset, creates target manifest index metadata from the source, and renders an OpenSearch-shaped resize response"
     },
     {
       "action_name": "indices:admin/rollover",

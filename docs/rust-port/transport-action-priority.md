@@ -1526,13 +1526,16 @@ The resize boundary covers:
   acknowledgement timeout, nested `CreateIndexRequest`, source index,
   `ResizeType`, `copySettings`, and optional `ByteSizeValue` `maxShardSize` at
   the OpenSearch 3.x wire decode/build layer;
-- explicit fail-closed classification for `indices:admin/resize` until source
-  index metadata validation, target index metadata mutation, shard allocation,
-  and resize response rendering are implemented;
+- implemented classification for the bounded shrink subset: default timeouts,
+  concrete manifest source index, valid absent target index, write-blocked
+  source metadata, default `copySettings=true`, no `maxShardSize`, empty target
+  create-index settings/mappings/aliases, target manifest metadata creation,
+  and OpenSearch-shaped `ResizeResponse` rendering via the create-index
+  response wire format;
 - explicit rejection for custom cluster-manager timeouts, custom
   acknowledgement timeouts, missing source indices, split/clone resize types,
   non-default `copySettings`, `maxShardSize`, unsupported nested target
-  create-index shapes, and resize execution.
+  create-index shapes, unblocked sources, and existing target indices.
 
 The rollover boundary covers:
 
