@@ -1134,8 +1134,8 @@
       "transport_action": "SearchViewAction.TransportAction",
       "request_wire_type": "SearchViewAction.Request",
       "response_wire_type": "SearchResponse",
-      "disposition": "rejected",
-      "reason": "Search-view transport execution requires view lookup, target index resolution, search execution, and search response rendering"
+      "disposition": "implemented",
+      "reason": "Search-view transport adapter looks up manifest-backed views, injects view targets into bounded SearchRequest execution, and renders SearchResponse wire"
     },
     {
       "action_name": "cluster:admin/persistent/start",

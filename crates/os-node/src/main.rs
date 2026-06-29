@@ -3250,6 +3250,32 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end,
             &mut connection_end_at_ms,
         )?;
+    } else if is_request
+        && normalized_action_hint == Some("views:data/read/search")
+        && search_view_request_supports_manifest_subset(&body)
+    {
+        let response = build_search_view_response(request_id, header_version_id, &body);
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("views:data/read/search"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
     } else if is_request && normalized_action_hint == Some("views:data/read/list") {
         let response = build_list_view_names_response(request_id, header_version_id, &body);
         response_frame =
@@ -11959,6 +11985,16 @@ fn build_delete_view_response(request_id: i64, header_version_id: u32, body: &[u
     .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
 }
 
+fn build_search_view_response(request_id: i64, header_version_id: u32, body: &[u8]) -> Vec<u8> {
+    let Some(request) = search_view_request_from_transport_body_with_view_targets(body) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    if !search_view_targeted_request_matches_local_execution_subset(&request) {
+        return build_empty_transport_response(request_id, header_version_id);
+    }
+    build_search_response_from_request(request_id, header_version_id, &request)
+}
+
 fn build_get_view_transport_response(
     request_id: i64,
     header_version_id: u32,
@@ -12034,6 +12070,13 @@ fn delete_view_request_supports_manifest_subset(body: &[u8]) -> bool {
     })
 }
 
+fn search_view_request_supports_manifest_subset(body: &[u8]) -> bool {
+    search_view_request_from_transport_body_with_view_targets(body).is_some_and(|request| {
+        request.scroll.is_none()
+            && search_view_targeted_request_matches_local_execution_subset(&request)
+    })
+}
+
 fn create_view_request_is_valid(
     request: &os_transport::action::OpenSearchCreateViewRequestWire,
 ) -> bool {
@@ -12072,6 +12115,41 @@ fn view_wire_from_create_view_request(
             .map(|target| target.index_pattern.clone())
             .collect(),
     }
+}
+
+fn search_view_request_from_transport_body_with_view_targets(
+    body: &[u8],
+) -> Option<os_transport::action::OpenSearchSearchRequestWire> {
+    let request = decode_search_view_request_from_transport_body(body)?;
+    if request.view.trim().is_empty() || request.view.len() > 64 || request.search.scroll.is_some()
+    {
+        return None;
+    }
+    if request
+        .search
+        .validate_supported_execution_subset()
+        .is_err()
+    {
+        return None;
+    }
+    let view = manifest_view(
+        &dev_transport_pit_bindings()
+            .metadata_manifest
+            .lock()
+            .expect("metadata manifest lock poisoned"),
+        &request.view,
+    )?;
+    let mut search = request.search;
+    search.indices = view.targets;
+    Some(search)
+}
+
+fn search_view_targeted_request_matches_local_execution_subset(
+    request: &os_transport::action::OpenSearchSearchRequestWire,
+) -> bool {
+    transport_search_pit_keep_alive_within_limit(request)
+        && transport_search_pit_context_exists_for_request(request)
+        && transport_search_indices(dev_transport_pit_bindings(), request).is_some()
 }
 
 fn manifest_view_names(metadata_manifest: &Value) -> Vec<String> {
@@ -12170,6 +12248,13 @@ fn decode_delete_view_request_from_transport_body(
 ) -> Option<os_transport::action::OpenSearchDeleteViewRequestWire> {
     let message = decode_transport_message_from_body(body)?;
     os_transport::action::read_opensearch_delete_view_request_message(&message).ok()
+}
+
+fn decode_search_view_request_from_transport_body(
+    body: &[u8],
+) -> Option<os_transport::action::OpenSearchSearchViewRequestWire> {
+    let message = decode_transport_message_from_body(body)?;
+    os_transport::action::read_opensearch_search_view_request_message(&message).ok()
 }
 
 fn decode_list_view_names_request_from_transport_body(
@@ -13728,7 +13813,15 @@ fn build_local_search_response(request_id: i64, header_version_id: u32, body: &[
     if request.validate_supported_execution_subset().is_err() {
         return build_empty_transport_response(request_id, header_version_id);
     }
-    let response = local_transport_search_response_from_request(&request);
+    build_search_response_from_request(request_id, header_version_id, &request)
+}
+
+fn build_search_response_from_request(
+    request_id: i64,
+    header_version_id: u32,
+    request: &os_transport::action::OpenSearchSearchRequestWire,
+) -> Vec<u8> {
+    let response = local_transport_search_response_from_request(request);
     os_transport::action::build_opensearch_search_response_message(
         request_id,
         Version::from_id(header_version_id as i32),
@@ -16058,15 +16151,28 @@ fn transport_search_documents_for_request(
         ));
     }
     let bindings = dev_transport_pit_bindings();
+    let resolved_indices = transport_search_indices(bindings, request)?;
     let documents = transport_live_document_snapshot(bindings);
-    let resolved_indices = bindings
-        .created_indices
-        .lock()
-        .expect("dev transport created indices lock poisoned")
-        .iter()
-        .cloned()
-        .collect::<Vec<_>>();
     Some((documents, resolved_indices, None))
+}
+
+fn transport_search_indices(
+    bindings: &DevTransportPitBindings,
+    request: &os_transport::action::OpenSearchSearchRequestWire,
+) -> Option<Vec<String>> {
+    transport_pit_indices(
+        bindings,
+        &os_transport::action::OpenSearchCreatePitRequestWire {
+            parent_task_node: request.parent_task_node.clone(),
+            parent_task_id: request.parent_task_id,
+            indices: request.indices.clone(),
+            indices_options: request.indices_options.clone(),
+            routing: request.routing.clone(),
+            preference: request.preference.clone(),
+            keep_alive: os_transport::action::TimeValueWire::minutes(1),
+            allow_partial_pit_creation: Some(true),
+        },
+    )
 }
 
 fn transport_search_pit_keep_alive_within_limit(
@@ -23301,6 +23407,13 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
             if delete_view_request_supports_manifest_subset(body) =>
         {
             Some(build_delete_view_response(
+                request_id,
+                header_version_id,
+                body,
+            ))
+        }
+        Some("views:data/read/search") if search_view_request_supports_manifest_subset(body) => {
+            Some(build_search_view_response(
                 request_id,
                 header_version_id,
                 body,
@@ -33266,10 +33379,9 @@ mod tests {
         let create_request = os_transport::action::OpenSearchCreateViewRequestWire {
             name: "transport-view-lifecycle".to_string(),
             description: "initial view".to_string(),
-            targets: vec![
-                os_transport::action::OpenSearchCreateViewTargetWire::new("logs-*"),
-                os_transport::action::OpenSearchCreateViewTargetWire::new("metrics-*"),
-            ],
+            targets: vec![os_transport::action::OpenSearchCreateViewTargetWire::new(
+                "logs-view-*",
+            )],
             ..os_transport::action::OpenSearchCreateViewRequestWire::default()
         };
         let create_frame = os_transport::action::build_opensearch_create_view_request_message(
@@ -33298,10 +33410,72 @@ mod tests {
             os_transport::action::read_opensearch_create_view_response_message(&message).unwrap();
         assert_eq!(created.view.name, "transport-view-lifecycle");
         assert_eq!(created.view.description.as_deref(), Some("initial view"));
-        assert_eq!(
-            created.view.targets,
-            vec!["logs-*".to_string(), "metrics-*".to_string()]
+        assert_eq!(created.view.targets, vec!["logs-view-*".to_string()]);
+
+        ensure_local_transport_index_registered("logs-view-000001");
+        ensure_local_transport_index_registered("metrics-view-000001");
+        {
+            let mut documents = dev_transport_pit_bindings()
+                .documents
+                .lock()
+                .expect("dev transport documents lock poisoned");
+            documents.insert(
+                "logs-view-000001:doc-logs:".to_string(),
+                StoredDocument {
+                    source: serde_json::json!({ "kind": "logs" }),
+                    version: 1,
+                    seq_no: 1,
+                    primary_term: 1,
+                    routing: None,
+                    refreshed: true,
+                }
+                .into(),
+            );
+            documents.insert(
+                "metrics-view-000001:doc-metrics:".to_string(),
+                StoredDocument {
+                    source: serde_json::json!({ "kind": "metrics" }),
+                    version: 1,
+                    seq_no: 1,
+                    primary_term: 1,
+                    routing: None,
+                    refreshed: true,
+                }
+                .into(),
+            );
+        }
+
+        let search_view_request = os_transport::action::OpenSearchSearchViewRequestWire {
+            view: "transport-view-lifecycle".to_string(),
+            search: os_transport::action::OpenSearchSearchRequestWire::default(),
+        };
+        let search_view_frame = os_transport::action::build_opensearch_search_view_request_message(
+            95,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &search_view_request,
+        )
+        .unwrap();
+        assert!(search_view_request_supports_manifest_subset(
+            &search_view_frame[6..]
+        ));
+        let response = build_search_view_response(
+            95,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &search_view_frame[6..],
         );
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected search view response message");
+        };
+        let searched =
+            os_transport::action::read_opensearch_search_response_message(&message).unwrap();
+        assert_eq!(searched.total_hits, Some(1), "{searched:?}");
+        assert_eq!(searched.hits.len(), 1, "{searched:?}");
+        assert_eq!(searched.hits[0].id.as_deref(), Some("doc-logs"));
 
         let list_request = os_transport::action::OpenSearchListViewNamesRequestWire;
         let list_frame = os_transport::action::build_opensearch_list_view_names_request_message(
