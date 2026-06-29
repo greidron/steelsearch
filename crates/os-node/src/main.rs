@@ -113,6 +113,7 @@ struct DevTransportCoordinationState {
 struct DevTransportReaderContext {
     shard_id: os_transport::action::OpenSearchShardIdWire,
     documents: Arc<DocumentMap>,
+    keep_alive_millis: u64,
     expires_at_millis: u128,
     pit_id: Option<String>,
     creation_time_millis: Option<i64>,
@@ -11143,6 +11144,7 @@ fn build_local_create_pit_response_for_node(
             bindings,
             &pit_id,
             &documents,
+            keep_alive_millis_u64,
             expires_at_millis,
             now_millis,
             now_millis,
@@ -11685,6 +11687,7 @@ fn register_reader_contexts_for_created_transport_pit(
     bindings: &DevTransportPitBindings,
     pit_id: &str,
     documents: &Arc<DocumentMap>,
+    keep_alive_millis: u64,
     expires_at_millis: u128,
     creation_time_millis: u128,
     now_millis: u128,
@@ -11704,6 +11707,7 @@ fn register_reader_contexts_for_created_transport_pit(
             DevTransportReaderContext {
                 shard_id,
                 documents: Arc::clone(documents),
+                keep_alive_millis,
                 expires_at_millis,
                 pit_id: Some(pit_id.to_string()),
                 creation_time_millis: Some(u128_to_i64_saturating(creation_time_millis)),
@@ -13897,6 +13901,7 @@ fn transport_search_documents_for_request(
                     transport_pit_expires_at_millis(now_millis, effective_keep_alive);
                 extend_transport_reader_contexts_for_pit_id(
                     &pit.id,
+                    effective_keep_alive,
                     context.expires_at_millis,
                     now_millis,
                 );
@@ -16102,6 +16107,7 @@ fn build_local_create_reader_context_response(
                 std::slice::from_ref(&request.shard_id.index_name),
                 None,
             ),
+            keep_alive_millis,
             expires_at_millis: transport_pit_expires_at_millis(now_millis, keep_alive_millis),
             pit_id: None,
             creation_time_millis: None,
@@ -16335,6 +16341,7 @@ fn upsert_transport_pit_context_from_reader_update(
             return false;
         }
         reader_context.expires_at_millis = reader_context.expires_at_millis.max(expires_at_millis);
+        reader_context.keep_alive_millis = reader_context.keep_alive_millis.max(keep_alive_millis);
         reader_context.pit_id = Some(request.pit_id.clone());
         reader_context.creation_time_millis = Some(creation_time_millis);
         reader_context.clone()
@@ -17306,6 +17313,7 @@ fn remove_transport_reader_contexts_for_pit_id(pit_id: &str) {
 
 fn extend_transport_reader_contexts_for_pit_id(
     pit_id: &str,
+    keep_alive_millis: u64,
     expires_at_millis: u128,
     now_millis: u128,
 ) {
@@ -17327,6 +17335,7 @@ fn extend_transport_reader_contexts_for_pit_id(
     prune_expired_transport_reader_contexts(&mut reader_contexts, now_millis);
     for context_key in context_keys {
         if let Some(context) = reader_contexts.get_mut(&context_key) {
+            context.keep_alive_millis = context.keep_alive_millis.max(keep_alive_millis);
             context.expires_at_millis = context.expires_at_millis.max(expires_at_millis);
         }
     }
@@ -17357,17 +17366,11 @@ fn get_all_transport_pits_response(
             .filter_map(|reader_context| {
                 let pit_id = reader_context.pit_id.as_ref()?;
                 let creation_time_millis = reader_context.creation_time_millis?;
-                let keep_alive_millis = pit_contexts
-                    .get(pit_id)
-                    .map(|context| context.keep_alive_millis)
-                    .unwrap_or_else(|| {
-                        u64::try_from(reader_context.expires_at_millis.saturating_sub(now_millis))
-                            .unwrap_or(u64::MAX)
-                    });
+                pit_contexts.get(pit_id)?;
                 Some(os_transport::action::OpenSearchListPitInfoWire::new(
                     pit_id.clone(),
                     creation_time_millis,
-                    u64_to_i64_saturating(keep_alive_millis),
+                    u64_to_i64_saturating(reader_context.keep_alive_millis),
                 ))
             })
             .collect::<Vec<_>>()
@@ -30163,6 +30166,7 @@ mod tests {
                         "logs-search-pit-transport:doc-1:".to_string(),
                         before_doc.clone(),
                     )])),
+                    keep_alive_millis: 60_000,
                     expires_at_millis: transport_pit_expires_at_millis(now_epoch_ms(), 60_000),
                     pit_id: Some(pit_id.clone()),
                     creation_time_millis: Some(now_epoch_ms() as i64),
@@ -34790,6 +34794,7 @@ mod tests {
                         shard_id: 0,
                     },
                     documents: Arc::new(BTreeMap::new()),
+                    keep_alive_millis: 60_000,
                     expires_at_millis: now_epoch_ms() + 60_000,
                     pit_id: Some(encoded_pit_id.clone()),
                     creation_time_millis: Some(u128_to_i64_saturating(now_epoch_ms())),
@@ -34868,6 +34873,7 @@ mod tests {
                         shard_id: 0,
                     },
                     documents: Arc::new(BTreeMap::new()),
+                    keep_alive_millis: 60_000,
                     expires_at_millis: now_epoch_ms() + 60_000,
                     pit_id: Some("orphan-pit".to_string()),
                     creation_time_millis: Some(u128_to_i64_saturating(now_epoch_ms())),
@@ -35066,6 +35072,7 @@ mod tests {
                         shard_id: 0,
                     },
                     documents: Arc::new(BTreeMap::new()),
+                    keep_alive_millis: 60_000,
                     expires_at_millis: now_epoch_ms() + 60_000,
                     pit_id: Some(stored_pit_id.to_string()),
                     creation_time_millis: Some(u128_to_i64_saturating(now_epoch_ms())),
@@ -35195,6 +35202,7 @@ mod tests {
                         shard_id: 0,
                     },
                     documents: Arc::new(BTreeMap::new()),
+                    keep_alive_millis: 60_000,
                     expires_at_millis: now_epoch_ms() + 60_000,
                     pit_id: Some(pit_id.to_string()),
                     creation_time_millis: Some(u128_to_i64_saturating(now_epoch_ms())),
@@ -35625,6 +35633,7 @@ mod tests {
                             shard_id: 0,
                         },
                         documents: Arc::new(BTreeMap::new()),
+                        keep_alive_millis: 60_000,
                         expires_at_millis: now_epoch_ms() + 60_000,
                         pit_id: None,
                         creation_time_millis: None,
@@ -35740,6 +35749,7 @@ mod tests {
                             shard_id: 0,
                         },
                         documents: Arc::new(BTreeMap::new()),
+                        keep_alive_millis: 60_000,
                         expires_at_millis: expired_at,
                         pit_id: None,
                         creation_time_millis: None,
@@ -35898,6 +35908,7 @@ mod tests {
                         shard_id: 0,
                     },
                     documents: Arc::new(BTreeMap::new()),
+                    keep_alive_millis: 60_000,
                     expires_at_millis: now_epoch_ms().saturating_sub(1),
                     pit_id: None,
                     creation_time_millis: None,
@@ -35983,6 +35994,7 @@ mod tests {
                         shard_id: 0,
                     },
                     documents: Arc::new(BTreeMap::new()),
+                    keep_alive_millis: 60_000,
                     expires_at_millis: initial_expires_at,
                     pit_id: None,
                     creation_time_millis: None,
@@ -36075,6 +36087,7 @@ mod tests {
                         shard_id: 0,
                     },
                     documents: Arc::new(BTreeMap::new()),
+                    keep_alive_millis: 60_000,
                     expires_at_millis: now_epoch_ms() + 60_000,
                     pit_id: None,
                     creation_time_millis: None,
@@ -36162,6 +36175,7 @@ mod tests {
                         shard_id: 0,
                     },
                     documents: Arc::new(BTreeMap::new()),
+                    keep_alive_millis: 60_000,
                     expires_at_millis: now_epoch_ms() + 60_000,
                     pit_id: None,
                     creation_time_millis: None,
@@ -36300,6 +36314,7 @@ mod tests {
                         shard_id: 0,
                     },
                     documents: Arc::new(BTreeMap::new()),
+                    keep_alive_millis: 60_000,
                     expires_at_millis: now_epoch_ms() + 60_000,
                     pit_id: None,
                     creation_time_millis: None,
@@ -36558,6 +36573,7 @@ mod tests {
                         shard_id: 0,
                     },
                     documents: Arc::new(BTreeMap::new()),
+                    keep_alive_millis: 60_000,
                     expires_at_millis: now_epoch_ms() + 60_000,
                     pit_id: None,
                     creation_time_millis: None,
@@ -38576,6 +38592,7 @@ mod tests {
                         shard_id: 0,
                     },
                     documents: Arc::new(BTreeMap::new()),
+                    keep_alive_millis: 60_000,
                     expires_at_millis: now + 60_000,
                     pit_id: Some("pit-live-a".to_string()),
                     creation_time_millis: Some(u128_to_i64_saturating(now - 1_000)),
@@ -38590,6 +38607,7 @@ mod tests {
                         shard_id: 1,
                     },
                     documents: Arc::new(BTreeMap::new()),
+                    keep_alive_millis: 120_000,
                     expires_at_millis: now + 120_000,
                     pit_id: Some("pit-live-a".to_string()),
                     creation_time_millis: Some(u128_to_i64_saturating(now - 500)),
@@ -38629,7 +38647,7 @@ mod tests {
                 os_transport::action::OpenSearchListPitInfoWire::new(
                     "pit-live-a",
                     u128_to_i64_saturating(now - 500),
-                    60_000
+                    120_000
                 ),
             ]
         );
@@ -38727,6 +38745,7 @@ mod tests {
                         shard_id: 0,
                     },
                     documents: Arc::new(BTreeMap::new()),
+                    keep_alive_millis: 60_000,
                     expires_at_millis: now + 60_000,
                     pit_id: Some(live_pit_id.to_string()),
                     creation_time_millis: Some(u128_to_i64_saturating(now)),
@@ -38741,6 +38760,7 @@ mod tests {
                         shard_id: 0,
                     },
                     documents: Arc::new(BTreeMap::new()),
+                    keep_alive_millis: 60_000,
                     expires_at_millis: now + 60_000,
                     pit_id: Some(deleted_pit_id.to_string()),
                     creation_time_millis: Some(u128_to_i64_saturating(now)),
@@ -38755,6 +38775,7 @@ mod tests {
                         shard_id: 0,
                     },
                     documents: Arc::new(BTreeMap::new()),
+                    keep_alive_millis: 60_000,
                     expires_at_millis: now + 60_000,
                     pit_id: Some(closed_pit_id.to_string()),
                     creation_time_millis: Some(u128_to_i64_saturating(now)),
