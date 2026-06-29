@@ -323,7 +323,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `indices:data/read/search[clear_scroll_contexts]` (implemented local clear-all-scroll-context lifecycle subset)
 - `indices:data/read/search[phase/query]` (implemented bounded query-phase gateway subset)
 - `indices:data/read/search[phase/dfs]` (rejected fail-closed)
-- `indices:data/read/search[phase/query/id]` (rejected fail-closed)
+- `indices:data/read/search[phase/query/id]` (rejected except decoded missing-context error path)
 - `indices:data/read/search[phase/query/scroll]` (rejected fail-closed)
 - `indices:data/read/search[phase/query+fetch/scroll]` (rejected fail-closed)
 - `indices:data/read/search[phase/fetch/id/scroll]` (rejected fail-closed)

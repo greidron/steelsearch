@@ -2568,7 +2568,7 @@ pub fn classify_opensearch_transport_action(
         OPENSEARCH_QUERY_ID_PHASE_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "query-id phase transport execution requires QuerySearchRequest decode, reader-context lookup, and QuerySearchResult rendering",
+            reason: "query-id phase transport adapter decodes QuerySearchRequest and returns OpenSearch SearchContextMissingException for missing reader contexts, but successful QuerySearchResult rendering is not mapped yet",
         },
         OPENSEARCH_QUERY_SCROLL_PHASE_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -14059,6 +14059,47 @@ pub fn read_opensearch_can_match_request_message(
         });
     }
     OpenSearchShardSearchRequestWire::read_for_version(
+        message.body.clone().freeze(),
+        message.version,
+    )
+}
+
+pub fn build_opensearch_query_id_request_message(
+    request_id: i64,
+    version: Version,
+    request: &OpenSearchQuerySearchRequestWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    request.write(&mut body, version)?;
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::request(),
+        version,
+        variable_header: BytesMut::from(
+            &RequestVariableHeader::new(OPENSEARCH_QUERY_ID_PHASE_ACTION_NAME).to_bytes()[..],
+        ),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_query_id_request_message(
+    message: &TransportMessage,
+) -> Result<OpenSearchQuerySearchRequestWire, TransportActionWireError> {
+    if !message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "request",
+            actual: message.status.bits(),
+        });
+    }
+    let header = RequestVariableHeader::read(message.variable_header.clone().freeze())?;
+    if header.action != OPENSEARCH_QUERY_ID_PHASE_ACTION_NAME {
+        return Err(TransportActionWireError::UnexpectedAction {
+            expected: OPENSEARCH_QUERY_ID_PHASE_ACTION_NAME,
+            actual: header.action,
+        });
+    }
+    OpenSearchQuerySearchRequestWire::read_for_version(
         message.body.clone().freeze(),
         message.version,
     )
@@ -38727,6 +38768,221 @@ impl OpenSearchFreeScrollContextRequestWire {
 
     pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
         self.context_id.validate_supported_subset()
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchAggregatedDfsTermStatisticsWire {
+    pub field: String,
+    pub term: Bytes,
+    pub stats_term: Bytes,
+    pub doc_freq: i64,
+    pub total_term_freq_plus_one: i64,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchAggregatedDfsFieldStatisticsWire {
+    pub field: String,
+    pub max_doc: i64,
+    pub doc_count: i64,
+    pub sum_total_term_freq: i64,
+    pub sum_doc_freq: i64,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchAggregatedDfsWire {
+    pub term_statistics: Vec<OpenSearchAggregatedDfsTermStatisticsWire>,
+    pub field_statistics: Vec<OpenSearchAggregatedDfsFieldStatisticsWire>,
+    pub max_doc: i64,
+}
+
+impl OpenSearchAggregatedDfsWire {
+    pub fn empty(max_doc: i64) -> Self {
+        Self {
+            term_statistics: Vec::new(),
+            field_statistics: Vec::new(),
+            max_doc,
+        }
+    }
+
+    fn write(&self, output: &mut StreamOutput) -> Result<(), TransportActionWireError> {
+        self.validate_supported_subset()?;
+        output.write_vint(self.term_statistics.len() as i32);
+        for stats in &self.term_statistics {
+            output.write_string(&stats.field);
+            output.write_bytes_reference(&stats.term);
+            output.write_bytes_reference(&stats.stats_term);
+            output.write_vlong(stats.doc_freq);
+            output.write_vlong(stats.total_term_freq_plus_one);
+        }
+        output.write_vint(self.field_statistics.len() as i32);
+        for stats in &self.field_statistics {
+            output.write_string(&stats.field);
+            output.write_vlong(stats.max_doc);
+            output.write_vlong(stats.doc_count);
+            output.write_vlong(stats.sum_total_term_freq);
+            output.write_vlong(stats.sum_doc_freq);
+        }
+        output.write_vlong(self.max_doc);
+        Ok(())
+    }
+
+    fn read(input: &mut StreamInput) -> Result<Self, TransportActionWireError> {
+        let term_count = input.read_vint()?;
+        if term_count < 0 {
+            return Err(StreamInputError::NegativeLength(term_count).into());
+        }
+        let mut term_statistics = Vec::with_capacity(term_count as usize);
+        for _ in 0..term_count {
+            term_statistics.push(OpenSearchAggregatedDfsTermStatisticsWire {
+                field: input.read_string()?,
+                term: input.read_bytes_reference()?,
+                stats_term: input.read_bytes_reference()?,
+                doc_freq: input.read_vlong()?,
+                total_term_freq_plus_one: input.read_vlong()?,
+            });
+        }
+
+        let field_count = input.read_vint()?;
+        if field_count < 0 {
+            return Err(StreamInputError::NegativeLength(field_count).into());
+        }
+        let mut field_statistics = Vec::with_capacity(field_count as usize);
+        for _ in 0..field_count {
+            field_statistics.push(OpenSearchAggregatedDfsFieldStatisticsWire {
+                field: input.read_string()?,
+                max_doc: input.read_vlong()?,
+                doc_count: input.read_vlong()?,
+                sum_total_term_freq: input.read_vlong()?,
+                sum_doc_freq: input.read_vlong()?,
+            });
+        }
+
+        let dfs = Self {
+            term_statistics,
+            field_statistics,
+            max_doc: input.read_vlong()?,
+        };
+        dfs.validate_supported_subset()?;
+        Ok(dfs)
+    }
+
+    fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
+        for stats in &self.term_statistics {
+            if stats.doc_freq < 0 || stats.total_term_freq_plus_one < 0 {
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "aggregated dfs term statistics",
+                    reason: "OpenSearch AggregatedDfs term statistics are encoded as non-negative VLong values",
+                });
+            }
+        }
+        for stats in &self.field_statistics {
+            if stats.max_doc < 0
+                || stats.doc_count < 0
+                || stats.sum_total_term_freq < 0
+                || stats.sum_doc_freq < 0
+            {
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "aggregated dfs field statistics",
+                    reason: "OpenSearch AggregatedDfs field statistics are encoded as non-negative VLong values",
+                });
+            }
+        }
+        if self.max_doc < 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "aggregated dfs max doc",
+                reason: "OpenSearch AggregatedDfs maxDoc is encoded as a non-negative VLong value",
+            });
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct OpenSearchQuerySearchRequestWire {
+    pub parent_task_node: String,
+    pub parent_task_id: Option<i64>,
+    pub context_id: OpenSearchShardSearchContextIdWire,
+    pub dfs: OpenSearchAggregatedDfsWire,
+    pub original_indices: OpenSearchOriginalIndicesWire,
+    pub shard_search_request: Option<OpenSearchShardSearchRequestWire>,
+}
+
+impl OpenSearchQuerySearchRequestWire {
+    pub fn new(
+        context_id: OpenSearchShardSearchContextIdWire,
+        dfs: OpenSearchAggregatedDfsWire,
+        original_indices: OpenSearchOriginalIndicesWire,
+        shard_search_request: Option<OpenSearchShardSearchRequestWire>,
+    ) -> Self {
+        Self {
+            parent_task_node: String::new(),
+            parent_task_id: None,
+            context_id,
+            dfs,
+            original_indices,
+            shard_search_request,
+        }
+    }
+
+    pub fn write(
+        &self,
+        output: &mut StreamOutput,
+        version: Version,
+    ) -> Result<(), TransportActionWireError> {
+        self.validate_supported_subset()?;
+        write_parent_task_id(output, &self.parent_task_node, self.parent_task_id);
+        self.context_id.write(output)?;
+        self.dfs.write(output)?;
+        self.original_indices.write(output);
+        if let Some(request) = &self.shard_search_request {
+            output.write_bool(true);
+            request.write(output, version)?;
+        } else {
+            output.write_bool(false);
+        }
+        Ok(())
+    }
+
+    pub fn read_for_version(
+        bytes: Bytes,
+        version: Version,
+    ) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
+        let context_id = OpenSearchShardSearchContextIdWire::read(&mut input)?;
+        let dfs = OpenSearchAggregatedDfsWire::read(&mut input)?;
+        let original_indices = OpenSearchOriginalIndicesWire::read(&mut input)?;
+        let shard_search_request = if input.read_bool()? {
+            let remaining = input.remaining();
+            Some(OpenSearchShardSearchRequestWire::read_for_version(
+                input.read_bytes(remaining)?,
+                version,
+            )?)
+        } else {
+            None
+        };
+        require_no_trailing_bytes(&input)?;
+        let request = Self {
+            parent_task_node,
+            parent_task_id,
+            context_id,
+            dfs,
+            original_indices,
+            shard_search_request,
+        };
+        request.validate_supported_subset()?;
+        Ok(request)
+    }
+
+    pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
+        self.context_id.validate_supported_subset()?;
+        self.dfs.validate_supported_subset()?;
+        self.original_indices.validate_supported_subset()?;
+        if let Some(request) = &self.shard_search_request {
+            request.validate_supported_subset()?;
+        }
+        Ok(())
     }
 }
 
@@ -80170,6 +80426,75 @@ mod tests {
         assert_eq!(
             read_opensearch_free_context_request_message(&message).unwrap(),
             null_indices_request
+        );
+    }
+
+    #[test]
+    fn opensearch_query_id_request_transport_message_round_trips_dfs_and_context() {
+        let request = OpenSearchQuerySearchRequestWire::new(
+            OpenSearchShardSearchContextIdWire::new("query-session", 46),
+            OpenSearchAggregatedDfsWire {
+                term_statistics: vec![OpenSearchAggregatedDfsTermStatisticsWire {
+                    field: "message".to_string(),
+                    term: Bytes::from_static(b"steel"),
+                    stats_term: Bytes::from_static(b"steel"),
+                    doc_freq: 3,
+                    total_term_freq_plus_one: 8,
+                }],
+                field_statistics: vec![OpenSearchAggregatedDfsFieldStatisticsWire {
+                    field: "message".to_string(),
+                    max_doc: 10,
+                    doc_count: 7,
+                    sum_total_term_freq: 21,
+                    sum_doc_freq: 13,
+                }],
+                max_doc: 10,
+            },
+            OpenSearchOriginalIndicesWire::new(
+                Some(vec!["logs-*".to_string()]),
+                OpenSearchIndicesOptionsWire::strict_expand_open_forbid_closed_ignore_throttled(),
+            ),
+            None,
+        );
+        let mut frame =
+            build_opensearch_query_id_request_message(67, OPENSEARCH_3_7_0_TRANSPORT, &request)
+                .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected query-id request message");
+        };
+        assert_eq!(
+            read_opensearch_query_id_request_message(&message).unwrap(),
+            request
+        );
+        assert!(matches!(
+            read_opensearch_can_match_request_message(&message).unwrap_err(),
+            TransportActionWireError::UnexpectedAction {
+                expected: OPENSEARCH_QUERY_CAN_MATCH_ACTION_NAME,
+                ..
+            }
+        ));
+
+        let empty_dfs_request = OpenSearchQuerySearchRequestWire::new(
+            OpenSearchShardSearchContextIdWire::new("", 47),
+            OpenSearchAggregatedDfsWire::empty(0),
+            OpenSearchOriginalIndicesWire::new(
+                None,
+                OpenSearchIndicesOptionsWire::strict_expand_open(),
+            ),
+            None,
+        );
+        let mut frame = build_opensearch_query_id_request_message(
+            68,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &empty_dfs_request,
+        )
+        .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected empty-dfs query-id request message");
+        };
+        assert_eq!(
+            read_opensearch_query_id_request_message(&message).unwrap(),
+            empty_dfs_request
         );
     }
 
