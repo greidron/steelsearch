@@ -4,6 +4,7 @@ use os_transport::action::{
 };
 use serde::Deserialize;
 use std::collections::{BTreeMap, BTreeSet};
+use std::path::PathBuf;
 
 #[derive(Debug, Deserialize)]
 struct ActionInventory {
@@ -30,6 +31,32 @@ struct EvidenceAction {
     evidence_kind: String,
     request_evidence: String,
     response_evidence: String,
+}
+
+fn repo_root() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(|path| path.parent())
+        .expect("workspace root")
+        .to_path_buf()
+}
+
+fn assert_evidence_symbol_exists(action_name: &str, field: &str, evidence: &str) {
+    let Some((path, symbol)) = evidence.split_once("::") else {
+        panic!("{action_name}: {field} evidence must use path::symbol form: {evidence}");
+    };
+    let source_path = repo_root().join(path);
+    let source = std::fs::read_to_string(&source_path).unwrap_or_else(|error| {
+        panic!(
+            "{action_name}: {field} evidence source {} is not readable: {error}",
+            source_path.display()
+        )
+    });
+    assert!(
+        source.contains(symbol),
+        "{action_name}: {field} evidence symbol {symbol} missing from {}",
+        source_path.display()
+    );
 }
 
 #[test]
@@ -76,10 +103,20 @@ fn interop_accepted_transport_action_evidence_covers_every_implemented_action() 
             "missing request evidence for {}",
             action.action_name
         );
+        assert_evidence_symbol_exists(
+            &action.action_name,
+            "request_evidence",
+            &action.request_evidence,
+        );
         assert!(
             !action.response_evidence.is_empty(),
             "missing response evidence for {}",
             action.action_name
+        );
+        assert_evidence_symbol_exists(
+            &action.action_name,
+            "response_evidence",
+            &action.response_evidence,
         );
         assert!(
             seen.insert(action.action_name.clone()),
