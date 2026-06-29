@@ -1882,8 +1882,8 @@ pub fn classify_opensearch_transport_action(
         },
         CLUSTER_ALLOCATION_EXPLAIN_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
-            disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "cluster-allocation-explain transport execution requires shard routing allocation decision rendering",
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "cluster-allocation-explain transport adapter decodes the default any-unassigned-shard request and renders OpenSearch's no-unassigned-shards IllegalArgumentException for the empty local routing subset",
         },
         PENDING_CLUSTER_TASKS_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -51064,7 +51064,7 @@ mod tests {
         assert_eq!(
             classify_opensearch_transport_action(CLUSTER_ALLOCATION_EXPLAIN_ACTION_NAME)
                 .disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             classify_opensearch_transport_action(CLUSTER_UPDATE_SETTINGS_ACTION_NAME).disposition,

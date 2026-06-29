@@ -246,7 +246,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `cluster:monitor/nodes/hot_threads` (implemented local diagnostic text subset)
 - `cluster:admin/voting_config/add_exclusions` (implemented node_names subset)
 - `cluster:admin/voting_config/clear_exclusions` (implemented no-wait subset)
-- `cluster:monitor/allocation/explain` (rejected fail-closed)
+- `cluster:monitor/allocation/explain` (implemented bounded no-unassigned-shards error subset)
 - `cluster:admin/settings/update` (implemented bounded manifest-backed settings mutation subset)
 - `cluster:admin/reroute` (rejected fail-closed)
 - `cluster:admin/filecache/prune` (rejected fail-closed)
@@ -550,9 +550,9 @@ The cluster-allocation-explain boundary covers:
   cluster-manager timeout, optional index, optional shard id, optional primary
   flag, optional current node, include-yes-decisions flag, and include-disk-info
   flag at the wire decode/build layer;
-- explicit fail-closed classification for
-  `cluster:monitor/allocation/explain` until shard routing allocation decision
-  rendering is implemented;
+- implemented bounded execution for the default any-unassigned-shard request
+  against an empty local routing subset, rendering OpenSearch's
+  no-unassigned-shards `IllegalArgumentException` response;
 - explicit rejection for custom cluster-manager timeout, partial shard selector,
   include-yes-decisions, include-disk-info, and cluster-allocation-explain
   execution.

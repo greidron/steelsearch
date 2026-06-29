@@ -402,7 +402,7 @@ transport_action	implemented	action	GetTaskAction.INSTANCE	TransportGetTaskActio
 transport_action	implemented	action	CancelTasksAction.INSTANCE	TransportCancelTasksAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	667
 transport_action	implemented	action	AddVotingConfigExclusionsAction.INSTANCE	TransportAddVotingConfigExclusionsAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	669
 transport_action	implemented	action	ClearVotingConfigExclusionsAction.INSTANCE	TransportClearVotingConfigExclusionsAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	670
-transport_action	partial	action	ClusterAllocationExplainAction.INSTANCE	TransportClusterAllocationExplainAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	671
+transport_action	implemented	action	ClusterAllocationExplainAction.INSTANCE	TransportClusterAllocationExplainAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	671
 transport_action	implemented	action	ClusterStatsAction.INSTANCE	TransportClusterStatsAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	672
 transport_action	implemented	action	ClusterStateAction.INSTANCE	TransportClusterStateAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	673
 transport_action	implemented	action	GetTermVersionAction.INSTANCE	TransportGetTermVersionAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	674

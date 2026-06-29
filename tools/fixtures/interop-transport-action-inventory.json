@@ -522,8 +522,8 @@
       "transport_action": "TransportClusterAllocationExplainAction",
       "request_wire_type": "ClusterAllocationExplainRequest",
       "response_wire_type": "ClusterAllocationExplainResponse",
-      "disposition": "rejected",
-      "reason": "Cluster-allocation-explain transport execution requires shard routing allocation decision rendering"
+      "disposition": "implemented",
+      "reason": "Cluster-allocation-explain transport adapter decodes the default any-unassigned-shard request and renders OpenSearch's no-unassigned-shards IllegalArgumentException for the empty local routing subset"
     },
     {
       "action_name": "cluster:admin/settings/update",
