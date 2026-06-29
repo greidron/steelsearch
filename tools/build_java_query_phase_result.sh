@@ -5,7 +5,7 @@ OPENSEARCH_ROOT=${OPENSEARCH_ROOT:-/home/ubuntu/OpenSearch}
 DISTRO_ROOT="${OPENSEARCH_ROOT}/distribution/archives/linux-arm64-tar/build/install/opensearch-3.7.0-SNAPSHOT"
 LIB_CP="${DISTRO_ROOT}/lib/*"
 CACHE_DIR="${TMPDIR:-/tmp}/steelsearch-java-response-cache"
-CLASS_NAME="BuildQueryPhaseResult"
+CLASS_NAME="BuildQueryPhaseResultV2"
 JAVA_FILE="${CACHE_DIR}/${CLASS_NAME}.java"
 CLASS_FILE="${CACHE_DIR}/${CLASS_NAME}.class"
 
@@ -14,6 +14,8 @@ index_name=""
 index_uuid=""
 shard_id=""
 total_hits=""
+context_session_id="steelsearch-phase-query"
+context_id="1"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -22,6 +24,8 @@ while [[ $# -gt 0 ]]; do
     --index-uuid) index_uuid="$2"; shift 2 ;;
     --shard-id) shard_id="$2"; shift 2 ;;
     --total-hits) total_hits="$2"; shift 2 ;;
+    --context-session-id) context_session_id="$2"; shift 2 ;;
+    --context-id) context_id="$2"; shift 2 ;;
     *)
       echo "unknown arg: $1" >&2
       exit 2
@@ -52,7 +56,7 @@ import org.opensearch.core.common.bytes.BytesReference;
 import org.opensearch.core.index.Index;
 import org.opensearch.core.index.shard.ShardId;
 
-public class BuildQueryPhaseResult {
+public class BuildQueryPhaseResultV2 {
     private static String hex(byte[] bytes, int offset, int length) {
         StringBuilder sb = new StringBuilder(length * 2);
         for (int i = offset; i < offset + length; i++) {
@@ -74,12 +78,24 @@ public class BuildQueryPhaseResult {
                 case "--index-uuid": indexUuid = args[i + 1]; break;
                 case "--shard-id": shardId = Integer.parseInt(args[i + 1]); break;
                 case "--total-hits": totalHits = Long.parseLong(args[i + 1]); break;
+                case "--context-session-id": break;
+                case "--context-id": break;
                 default: throw new IllegalArgumentException("unknown arg " + args[i]);
             }
         }
 
+        String contextSessionId = "steelsearch-phase-query";
+        long contextId = 1L;
+        for (int i = 0; i < args.length; i += 2) {
+            switch (args[i]) {
+                case "--context-session-id": contextSessionId = args[i + 1]; break;
+                case "--context-id": contextId = Long.parseLong(args[i + 1]); break;
+                default: break;
+            }
+        }
+
         QuerySearchResult querySearchResult = new QuerySearchResult(
-            new ShardSearchContextId("steelsearch-phase-query", 1L),
+            new ShardSearchContextId(contextSessionId, contextId),
             new SearchShardTarget(localNodeId, new ShardId(new Index(indexName, indexUuid), shardId), null, OriginalIndices.NONE),
             null
         );
@@ -104,4 +120,6 @@ java -cp "${LIB_CP}:${CACHE_DIR}" "${CLASS_NAME}" \
   --index-name "${index_name}" \
   --index-uuid "${index_uuid}" \
   --shard-id "${shard_id}" \
-  --total-hits "${total_hits}"
+  --total-hits "${total_hits}" \
+  --context-session-id "${context_session_id}" \
+  --context-id "${context_id}"

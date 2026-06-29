@@ -4325,6 +4325,37 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end_at_ms,
         )?;
     } else if is_request
+        && normalized_action_hint == Some("indices:data/read/search[phase/query/id]")
+        && query_id_request_supports_local_execution_subset(&body)
+    {
+        let response = build_local_query_id_phase_response(
+            request_id,
+            header_version_id,
+            &body,
+            transport_identity,
+        );
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("indices:data/read/search[phase/query/id]"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request
         && normalized_action_hint == Some("indices:data/read/search[can_match]")
         && can_match_request_exceeds_local_reader_keep_alive_limit(&body)
     {
@@ -6463,10 +6494,12 @@ fn build_java_query_phase_result_body(
     index_name: &str,
     index_uuid: &str,
     shard_id: i32,
+    context_id: &os_transport::action::OpenSearchShardSearchContextIdWire,
     total_hits: i64,
 ) -> Option<Vec<u8>> {
+    let script_path = workspace_tool_script_path("tools/build_java_query_phase_result.sh")?;
     let output = Command::new("bash")
-        .arg("tools/build_java_query_phase_result.sh")
+        .arg(script_path)
         .arg("--local-node-id")
         .arg(&transport_identity.node_id)
         .arg("--index-name")
@@ -6477,6 +6510,10 @@ fn build_java_query_phase_result_body(
         .arg(shard_id.to_string())
         .arg("--total-hits")
         .arg(total_hits.to_string())
+        .arg("--context-session-id")
+        .arg(&context_id.session_id)
+        .arg("--context-id")
+        .arg(context_id.id.to_string())
         .output()
         .ok()?;
     if !output.status.success() {
@@ -6694,10 +6731,16 @@ fn maybe_build_query_phase_response(
             &cached_assignment.index_name,
             &index_uuid,
             cached_assignment.shard_id,
+            &os_transport::action::OpenSearchShardSearchContextIdWire::new(
+                "steelsearch-phase-query",
+                1,
+            ),
             total_hits,
         )?;
-        return Some(build_transport_frame_from_body(
-            &rewrite_transport_body_request_id(&body, request_id),
+        return Some(build_transport_response_frame(
+            request_id,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            body,
         ));
     }
 
@@ -18426,6 +18469,88 @@ fn build_query_id_missing_reader_context_error_response(
     build_missing_search_context_error_response(request_id, header_version_id, &request.context_id)
 }
 
+fn query_id_request_supports_local_execution_subset(body: &[u8]) -> bool {
+    let Some(request) = decode_query_id_request_from_transport_body(body) else {
+        return false;
+    };
+    if request.validate_supported_subset().is_err()
+        || !request.dfs.term_statistics.is_empty()
+        || !request.dfs.field_statistics.is_empty()
+    {
+        return false;
+    }
+    let Some(reader_context) = reader_context_for_query_id_request(&request) else {
+        return false;
+    };
+    let Some(shard_search_request) = request.shard_search_request.as_ref() else {
+        return true;
+    };
+    reader_context.shard_id == shard_search_request.shard_id
+        && shard_search_request.reject_unsupported_execution().is_ok()
+        && dfs_phase_request_has_no_term_statistics(shard_search_request)
+}
+
+fn reader_context_for_query_id_request(
+    request: &os_transport::action::OpenSearchQuerySearchRequestWire,
+) -> Option<DevTransportReaderContext> {
+    let bindings = dev_transport_pit_bindings();
+    let mut reader_contexts = bindings
+        .reader_contexts
+        .lock()
+        .expect("dev transport reader contexts lock poisoned");
+    prune_expired_transport_reader_contexts(&mut reader_contexts, now_epoch_ms());
+    let key = reader_context_lookup_key_for_request(&reader_contexts, &request.context_id)?;
+    reader_contexts.get(&key).cloned()
+}
+
+fn query_id_total_hits_for_reader_context(
+    request: &os_transport::action::OpenSearchQuerySearchRequestWire,
+    reader_context: &DevTransportReaderContext,
+) -> i64 {
+    let query = request
+        .shard_search_request
+        .as_ref()
+        .and_then(|request| request.source.as_ref())
+        .and_then(|source| source.query.as_ref());
+    match query {
+        Some(os_transport::action::OpenSearchQueryBuilderWire::MatchNone(_)) => 0,
+        _ => i64::try_from(reader_context.documents.len()).unwrap_or(i64::MAX),
+    }
+}
+
+fn build_local_query_id_phase_response(
+    request_id: i64,
+    header_version_id: u32,
+    body: &[u8],
+    transport_identity: &DevTransportIdentity,
+) -> Vec<u8> {
+    let Some(request) = decode_query_id_request_from_transport_body(body) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    let Some(reader_context) = reader_context_for_query_id_request(&request) else {
+        return build_missing_search_context_error_response(
+            request_id,
+            header_version_id,
+            &request.context_id,
+        );
+    };
+    if !query_id_request_supports_local_execution_subset(body) {
+        return build_empty_transport_response(request_id, header_version_id);
+    }
+    let total_hits = query_id_total_hits_for_reader_context(&request, &reader_context);
+    let Some(payload) = build_java_query_phase_result_body(
+        transport_identity,
+        &reader_context.shard_id.index_name,
+        &reader_context.shard_id.index_uuid,
+        reader_context.shard_id.shard_id,
+        &request.context_id,
+        total_hits,
+    ) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    build_transport_response_frame(request_id, header_version_id, payload)
+}
+
 fn build_can_match_reader_keep_alive_too_large_error_response(
     request_id: i64,
     header_version_id: u32,
@@ -23854,6 +23979,16 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
                 request_id,
                 header_version_id,
                 body,
+            ))
+        }
+        Some("indices:data/read/search[phase/query/id]")
+            if query_id_request_supports_local_execution_subset(body) =>
+        {
+            Some(build_local_query_id_phase_response(
+                request_id,
+                header_version_id,
+                body,
+                transport_identity,
             ))
         }
         Some("indices:data/read/search[can_match]")
@@ -42768,6 +42903,146 @@ mod tests {
             .expect("dfs phase should register a reader context");
         assert_eq!(reader_context.shard_id, request.shard_id);
         assert_eq!(reader_context.documents.len(), 1);
+    }
+
+    #[test]
+    fn query_id_phase_route_returns_query_result_for_dfs_reader_context() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        let bindings = dev_transport_pit_bindings();
+        bindings
+            .reader_contexts
+            .lock()
+            .expect("dev transport reader contexts lock poisoned")
+            .clear();
+        bindings
+            .documents
+            .lock()
+            .expect("dev transport documents lock poisoned")
+            .clear();
+        bindings
+            .created_indices
+            .lock()
+            .expect("dev transport created indices lock poisoned")
+            .clear();
+        bindings
+            .created_indices
+            .lock()
+            .expect("dev transport created indices lock poisoned")
+            .insert("logs-query-id-route".to_string());
+        bindings
+            .documents
+            .lock()
+            .expect("dev transport documents lock poisoned")
+            .insert(
+                "logs-query-id-route:doc-1:".to_string(),
+                StoredDocument {
+                    source: serde_json::json!({"message":"steel"}),
+                    version: 1,
+                    seq_no: 0,
+                    primary_term: 1,
+                    routing: None,
+                    refreshed: true,
+                }
+                .into(),
+            );
+        let transport_identity = DevTransportIdentity {
+            cluster_name: "steelsearch-dev".to_string(),
+            node_name: "steel-node".to_string(),
+            node_id: "steel-node-id".to_string(),
+            ephemeral_id: "steel-node-ephemeral".to_string(),
+            transport_address: "127.0.0.1:9300".parse().unwrap(),
+            attributes: Vec::new(),
+            roles: vec!["cluster_manager".to_string(), "data".to_string()],
+            seed_peer_identity: None,
+            seed_peer_identities: Vec::new(),
+            coordination_state: Arc::new(Mutex::new(DevTransportCoordinationState::default())),
+            remote_transport_queue_gate: Arc::new(RemoteTransportQueueGate::new(1, 1000)),
+            task_queue_state: None,
+        };
+        let shard_request = os_transport::action::OpenSearchShardSearchRequestWire {
+            shard_id: os_transport::action::OpenSearchShardIdWire {
+                index_name: "logs-query-id-route".to_string(),
+                index_uuid: "uuid-logs-query-id-route".to_string(),
+                shard_id: 0,
+            },
+            source: Some(os_transport::action::OpenSearchSearchSourceBuilderWire {
+                query: Some(os_transport::action::OpenSearchQueryBuilderWire::MatchAll(
+                    os_transport::action::OpenSearchMatchAllQueryBuilderWire::default(),
+                )),
+                ..os_transport::action::OpenSearchSearchSourceBuilderWire::default()
+            }),
+            original_indices: os_transport::action::OpenSearchOriginalIndicesWire::new(
+                Some(vec!["logs-query-id-route".to_string()]),
+                os_transport::action::OpenSearchIndicesOptionsWire::strict_expand_open_forbid_closed_ignore_throttled(),
+            ),
+            ..os_transport::action::OpenSearchShardSearchRequestWire::default()
+        };
+        let dfs_frame = os_transport::action::build_opensearch_dfs_phase_request_message(
+            349,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &shard_request,
+        )
+        .unwrap();
+        let dfs_response = build_local_dfs_phase_response(
+            349,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &dfs_frame[6..],
+        );
+        let mut dfs_frame = BytesMut::from(&dfs_response[..]);
+        let os_transport::frame::DecodedFrame::Message(dfs_message) =
+            os_transport::frame::decode_frame(&mut dfs_frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected dfs phase response frame");
+        };
+        let dfs_response =
+            os_transport::action::read_opensearch_dfs_phase_response_message(&dfs_message).unwrap();
+        let query_id_request = os_transport::action::OpenSearchQuerySearchRequestWire::new(
+            dfs_response.context_id.clone(),
+            os_transport::action::OpenSearchAggregatedDfsWire::empty(i64::from(
+                dfs_response.max_doc,
+            )),
+            shard_request.original_indices.clone(),
+            Some(shard_request),
+        );
+        let query_id_frame = os_transport::action::build_opensearch_query_id_request_message(
+            350,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &query_id_request,
+        )
+        .unwrap();
+        assert!(query_id_request_supports_local_execution_subset(
+            &query_id_frame[6..]
+        ));
+
+        let query_id_response = build_local_query_id_phase_response(
+            350,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &query_id_frame[6..],
+            &transport_identity,
+        );
+        let mut query_id_frame = BytesMut::from(&query_id_response[..]);
+        let os_transport::frame::DecodedFrame::Message(query_id_message) =
+            os_transport::frame::decode_frame(&mut query_id_frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected query-id phase response frame");
+        };
+        assert_eq!(query_id_message.request_id, 350);
+        assert!(!query_id_message.status.is_error());
+        assert!(!query_id_message.status.is_request());
+        assert!(
+            !query_id_message.body.is_empty(),
+            "query-id phase should return a QuerySearchResult payload"
+        );
+        assert_eq!(
+            query_id_message.body[0], 0,
+            "QuerySearchResult payload should be non-null"
+        );
     }
 
     #[test]
