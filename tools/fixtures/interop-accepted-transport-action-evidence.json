@@ -320,16 +320,16 @@
     {
       "action_name": "cluster:monitor/nodes/info",
       "disposition": "implemented",
-      "evidence_kind": "wire_round_trip",
+      "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::nodes_info_transport_messages_bind_supported_action_frame",
-      "response_evidence": "crates/os-transport/src/action.rs::nodes_info_transport_messages_bind_supported_action_frame"
+      "response_evidence": "crates/os-node/src/main.rs::nodes_info_transport_route_builds_java_shaped_local_node_response"
     },
     {
       "action_name": "cluster:monitor/nodes/stats",
       "disposition": "implemented",
-      "evidence_kind": "wire_round_trip",
+      "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::nodes_stats_transport_messages_bind_supported_action_frame",
-      "response_evidence": "crates/os-transport/src/action.rs::nodes_stats_transport_messages_bind_supported_action_frame"
+      "response_evidence": "crates/os-node/src/main.rs::nodes_stats_transport_route_builds_java_shaped_local_node_response"
     },
     {
       "action_name": "cluster:monitor/wlm/stats",
@@ -341,16 +341,16 @@
     {
       "action_name": "cluster:monitor/_remotestore/stats",
       "disposition": "implemented",
-      "evidence_kind": "wire_round_trip",
+      "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::remote_store_stats_transport_messages_bind_supported_action_frame_and_response",
-      "response_evidence": "crates/os-transport/src/action.rs::remote_store_stats_transport_messages_bind_supported_action_frame_and_response"
+      "response_evidence": "crates/os-node/src/main.rs::remote_store_stats_transport_route_builds_opensearch_shaped_empty_response"
     },
     {
       "action_name": "cluster:admin/remote_store/metadata",
       "disposition": "implemented",
-      "evidence_kind": "wire_round_trip",
+      "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::remote_store_metadata_transport_messages_bind_supported_action_frame_and_response",
-      "response_evidence": "crates/os-transport/src/action.rs::remote_store_metadata_transport_messages_bind_supported_action_frame_and_response"
+      "response_evidence": "crates/os-node/src/main.rs::remote_store_metadata_transport_route_builds_opensearch_shaped_empty_response"
     },
     {
       "action_name": "cluster:monitor/nodes/usage",
@@ -460,9 +460,9 @@
     {
       "action_name": "indices:monitor/recovery",
       "disposition": "implemented",
-      "evidence_kind": "wire_round_trip",
+      "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_recovery_transport_messages_bind_supported_action_frame",
-      "response_evidence": "crates/os-transport/src/action.rs::opensearch_recovery_transport_messages_bind_supported_action_frame"
+      "response_evidence": "crates/os-node/src/main.rs::recovery_transport_route_builds_opensearch_shaped_empty_node_response"
     },
     {
       "action_name": "indices:monitor/segments",
@@ -537,16 +537,16 @@
     {
       "action_name": "indices:data/read/search/stream",
       "disposition": "implemented",
-      "evidence_kind": "wire_round_trip",
+      "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_stream_search_transport_messages_bind_rejected_action_frame",
-      "response_evidence": "crates/os-transport/src/action.rs::opensearch_search_response_transport_message_round_trips_default_subset"
+      "response_evidence": "crates/os-node/src/main.rs::search_transport_route_returns_local_match_all_and_term_hits"
     },
     {
       "action_name": "indices:data/read/msearch",
       "disposition": "implemented",
-      "evidence_kind": "wire_round_trip",
+      "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_multi_search_transport_messages_bind_rejected_action_frame",
-      "response_evidence": "crates/os-transport/src/action.rs::opensearch_multi_search_response_transport_message_round_trips_success_items"
+      "response_evidence": "crates/os-node/src/main.rs::search_transport_route_returns_local_match_all_and_term_hits"
     },
     {
       "action_name": "indices:data/read/scroll",
@@ -614,9 +614,9 @@
     {
       "action_name": "indices:monitor/stats",
       "disposition": "implemented",
-      "evidence_kind": "wire_round_trip",
+      "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_indices_stats_transport_messages_bind_supported_action_frame",
-      "response_evidence": "crates/os-transport/src/action.rs::opensearch_indices_stats_transport_messages_bind_supported_action_frame"
+      "response_evidence": "crates/os-node/src/main.rs::indices_stats_transport_route_builds_opensearch_shaped_empty_node_response"
     },
     {
       "action_name": "indices:monitor/segment_replication",

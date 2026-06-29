@@ -5759,6 +5759,19 @@ fn decode_hex_bytes(hex: &str) -> Option<Vec<u8>> {
     Some(bytes)
 }
 
+fn workspace_tool_script_path(relative_script_path: &str) -> Option<PathBuf> {
+    let mut directory = env::current_dir().ok()?;
+    loop {
+        let candidate = directory.join(relative_script_path);
+        if candidate.exists() {
+            return Some(candidate);
+        }
+        if !directory.pop() {
+            return None;
+        }
+    }
+}
+
 fn build_java_start_recovery_request_payload(
     assignment: &PublishedReplicaAssignment,
     cluster_state: &ClusterState,
@@ -20083,9 +20096,7 @@ fn build_empty_nodes_stats_response(
     header_version_id: u32,
     transport_identity: &DevTransportIdentity,
 ) -> Vec<u8> {
-    let script_path = env::current_dir()
-        .ok()
-        .map(|cwd| cwd.join("tools/build_java_nodes_stats_response.sh"));
+    let script_path = workspace_tool_script_path("tools/build_java_nodes_stats_response.sh");
     if let Some(script_path) = script_path {
         if let Ok(output) = Command::new("bash")
             .arg(script_path)
@@ -20421,9 +20432,7 @@ fn build_nodes_info_response(
     header_version_id: u32,
     transport_identity: &DevTransportIdentity,
 ) -> Vec<u8> {
-    let script_path = env::current_dir()
-        .ok()
-        .map(|cwd| cwd.join("tools/build_java_nodes_info_response.sh"));
+    let script_path = workspace_tool_script_path("tools/build_java_nodes_info_response.sh");
     if let Some(script_path) = script_path {
         if let Ok(output) = Command::new("bash")
             .arg(script_path)
@@ -27079,6 +27088,92 @@ mod tests {
         assert_eq!(response.nodes[0].node.id, "steel-node-id");
         assert_eq!(response.nodes[0].workload_group_count, 0);
         assert!(response.failures.is_empty());
+    }
+
+    #[test]
+    fn nodes_stats_transport_route_builds_java_shaped_local_node_response() {
+        let transport_identity = DevTransportIdentity {
+            cluster_name: "steelsearch-dev".to_string(),
+            node_name: "steel-node".to_string(),
+            node_id: "steel-node-id".to_string(),
+            ephemeral_id: "steel-node-ephemeral".to_string(),
+            transport_address: "127.0.0.1:9300".parse().unwrap(),
+            attributes: Vec::new(),
+            roles: vec!["cluster_manager".to_string(), "data".to_string()],
+            seed_peer_identity: None,
+            seed_peer_identities: Vec::new(),
+            coordination_state: Arc::new(Mutex::new(DevTransportCoordinationState::default())),
+            remote_transport_queue_gate: Arc::new(RemoteTransportQueueGate::new(1, 1000)),
+            task_queue_state: None,
+        };
+        let response = build_empty_nodes_stats_response(
+            221,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &transport_identity,
+        );
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected nodes stats response message");
+        };
+
+        assert_eq!(message.request_id, 221);
+        assert!(!message.status.is_request());
+        assert!(!message.body.is_empty());
+        assert!(message
+            .body
+            .windows(b"steel-node-id".len())
+            .any(|window| window == b"steel-node-id"));
+        assert!(message
+            .body
+            .windows(b"steel-node".len())
+            .any(|window| window == b"steel-node"));
+    }
+
+    #[test]
+    fn nodes_info_transport_route_builds_java_shaped_local_node_response() {
+        let transport_identity = DevTransportIdentity {
+            cluster_name: "steelsearch-dev".to_string(),
+            node_name: "steel-node".to_string(),
+            node_id: "steel-node-id".to_string(),
+            ephemeral_id: "steel-node-ephemeral".to_string(),
+            transport_address: "127.0.0.1:9300".parse().unwrap(),
+            attributes: Vec::new(),
+            roles: vec!["cluster_manager".to_string(), "data".to_string()],
+            seed_peer_identity: None,
+            seed_peer_identities: Vec::new(),
+            coordination_state: Arc::new(Mutex::new(DevTransportCoordinationState::default())),
+            remote_transport_queue_gate: Arc::new(RemoteTransportQueueGate::new(1, 1000)),
+            task_queue_state: None,
+        };
+        let response = build_nodes_info_response(
+            222,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &transport_identity,
+        );
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected nodes info response message");
+        };
+
+        assert_eq!(message.request_id, 222);
+        assert!(!message.status.is_request());
+        assert!(!message.body.is_empty());
+        assert!(message
+            .body
+            .windows(b"steel-node-id".len())
+            .any(|window| window == b"steel-node-id"));
+        assert!(message
+            .body
+            .windows(b"steel-node".len())
+            .any(|window| window == b"steel-node"));
     }
 
     #[test]
@@ -44572,6 +44667,88 @@ mod tests {
         .unwrap();
         assert!(!pit_segments_request_supports_local_subset(&frame[6..]));
         assert!(pit_segments_request_has_invalid_pit_id(&frame[6..]));
+    }
+
+    #[test]
+    fn indices_stats_transport_route_builds_opensearch_shaped_empty_node_response() {
+        let transport_identity = DevTransportIdentity {
+            cluster_name: "steelsearch-dev".to_string(),
+            node_name: "steel-node".to_string(),
+            node_id: "steel-node-id".to_string(),
+            ephemeral_id: "steel-node-ephemeral".to_string(),
+            transport_address: "127.0.0.1:9300".parse().unwrap(),
+            attributes: Vec::new(),
+            roles: vec!["cluster_manager".to_string(), "data".to_string()],
+            seed_peer_identity: None,
+            seed_peer_identities: Vec::new(),
+            coordination_state: Arc::new(Mutex::new(DevTransportCoordinationState::default())),
+            remote_transport_queue_gate: Arc::new(RemoteTransportQueueGate::new(1, 1000)),
+            task_queue_state: None,
+        };
+        let response = build_empty_indices_stats_node_response(
+            85,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &transport_identity,
+        );
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected indices stats node response message");
+        };
+
+        assert_eq!(message.request_id, 85);
+        assert!(!message.status.is_request());
+        let mut input = StreamInput::new(message.body.freeze());
+        assert_eq!(input.read_string().unwrap(), "steel-node-id");
+        assert_eq!(input.read_vint().unwrap(), 0);
+        assert_eq!(input.read_vint().unwrap(), 0);
+        assert!(input.read_bool().unwrap());
+        assert_eq!(input.read_vint().unwrap(), 0);
+        assert_eq!(input.remaining(), 0);
+    }
+
+    #[test]
+    fn recovery_transport_route_builds_opensearch_shaped_empty_node_response() {
+        let transport_identity = DevTransportIdentity {
+            cluster_name: "steelsearch-dev".to_string(),
+            node_name: "steel-node".to_string(),
+            node_id: "steel-node-id".to_string(),
+            ephemeral_id: "steel-node-ephemeral".to_string(),
+            transport_address: "127.0.0.1:9300".parse().unwrap(),
+            attributes: Vec::new(),
+            roles: vec!["cluster_manager".to_string(), "data".to_string()],
+            seed_peer_identity: None,
+            seed_peer_identities: Vec::new(),
+            coordination_state: Arc::new(Mutex::new(DevTransportCoordinationState::default())),
+            remote_transport_queue_gate: Arc::new(RemoteTransportQueueGate::new(1, 1000)),
+            task_queue_state: None,
+        };
+        let response = build_empty_indices_recovery_node_response(
+            86,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &transport_identity,
+        );
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected recovery node response message");
+        };
+
+        assert_eq!(message.request_id, 86);
+        assert!(!message.status.is_request());
+        let mut input = StreamInput::new(message.body.freeze());
+        assert_eq!(input.read_string().unwrap(), "steel-node-id");
+        assert_eq!(input.read_vint().unwrap(), 0);
+        assert_eq!(input.read_vint().unwrap(), 0);
+        assert!(input.read_bool().unwrap());
+        assert_eq!(input.read_vint().unwrap(), 0);
+        assert_eq!(input.remaining(), 0);
     }
 
     #[test]
