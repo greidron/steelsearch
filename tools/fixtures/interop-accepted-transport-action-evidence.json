@@ -59,6 +59,13 @@
       "response_evidence": "crates/os-node/src/main.rs::cancel_tasks_transport_route_builds_opensearch_shaped_response_from_queue"
     },
     {
+      "action_name": "cluster:admin/settings/update",
+      "disposition": "implemented",
+      "evidence_kind": "live_probe",
+      "request_evidence": "crates/os-transport/src/action.rs::update_settings_request_and_response_wire_round_trip",
+      "response_evidence": "crates/os-node/tests/dev_cluster_daemons.rs::daemon_transport_cluster_update_settings_empty_request_returns_acknowledged"
+    },
+    {
       "action_name": "cluster:admin/script_context/get",
       "disposition": "implemented",
       "evidence_kind": "live_probe",

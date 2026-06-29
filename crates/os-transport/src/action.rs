@@ -1920,8 +1920,8 @@ pub fn classify_opensearch_transport_action(
         },
         CLUSTER_UPDATE_SETTINGS_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
-            disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "cluster settings mutation is not admitted through transport",
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "cluster settings update transport adapter acknowledges the empty no-op request subset while non-empty mutations remain bounded by runtime admission",
         },
         CLUSTER_REROUTE_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -49792,7 +49792,7 @@ mod tests {
         );
         assert_eq!(
             classify_opensearch_transport_action(CLUSTER_UPDATE_SETTINGS_ACTION_NAME).disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             classify_opensearch_transport_action(CLUSTER_REROUTE_ACTION_NAME).disposition,

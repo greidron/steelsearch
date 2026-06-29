@@ -1151,6 +1151,32 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end,
             &mut connection_end_at_ms,
         )?;
+    } else if is_request
+        && normalized_action_hint == Some("cluster:admin/settings/update")
+        && cluster_update_settings_request_supports_empty_ack_subset(&body)
+    {
+        let response = build_empty_cluster_update_settings_response(request_id, header_version_id);
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("cluster:admin/settings/update"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
     } else if is_request && normalized_action_hint == Some("internal:monitor/term") {
         let response =
             build_get_term_version_response(request_id, header_version_id, transport_identity);
@@ -20201,6 +20227,16 @@ fn cluster_allocation_explain_request_supports_no_unassigned_error_subset(body: 
         && !request.include_disk_info
 }
 
+fn cluster_update_settings_request_supports_empty_ack_subset(body: &[u8]) -> bool {
+    let Some(request) = decode_cluster_update_settings_request_from_transport_body(body) else {
+        return false;
+    };
+    request.cluster_manager_timeout == os_transport::action::TimeValueWire::seconds(30)
+        && request.ack_timeout == os_transport::action::TimeValueWire::seconds(30)
+        && request.transient_settings.is_empty()
+        && request.persistent_settings.is_empty()
+}
+
 fn decode_cluster_state_request_from_transport_body(
     body: &[u8],
 ) -> Option<os_transport::action::ClusterStateRequestWire> {
@@ -20215,6 +20251,13 @@ fn decode_cluster_allocation_explain_request_from_transport_body(
     os_transport::action::read_cluster_allocation_explain_request_message(&message).ok()
 }
 
+fn decode_cluster_update_settings_request_from_transport_body(
+    body: &[u8],
+) -> Option<os_transport::action::ClusterUpdateSettingsRequestWire> {
+    let message = decode_transport_message_from_body(body)?;
+    os_transport::action::read_cluster_update_settings_request_message(&message).ok()
+}
+
 fn build_cluster_allocation_explain_no_unassigned_error_response(
     request_id: i64,
     header_version_id: u32,
@@ -20223,6 +20266,19 @@ fn build_cluster_allocation_explain_no_unassigned_error_response(
     let mut output = StreamOutput::new();
     os_transport::error::write_illegal_argument_exception(&mut output, Some(reason));
     build_transport_error_response_frame(request_id, header_version_id, output.freeze().to_vec())
+}
+
+fn build_empty_cluster_update_settings_response(
+    request_id: i64,
+    header_version_id: u32,
+) -> Vec<u8> {
+    os_transport::action::build_cluster_update_settings_response_message(
+        request_id,
+        Version::from_id(header_version_id as i32),
+        &os_transport::action::ClusterUpdateSettingsResponseWire::empty_acknowledged(),
+    )
+    .map(|frame| frame.to_vec())
+    .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
 }
 
 fn dev_transport_created_indices_empty() -> bool {
@@ -21217,6 +21273,14 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
                     header_version_id,
                 ),
             )
+        }
+        Some("cluster:admin/settings/update")
+            if cluster_update_settings_request_supports_empty_ack_subset(body) =>
+        {
+            Some(build_empty_cluster_update_settings_response(
+                request_id,
+                header_version_id,
+            ))
         }
         Some("internal:monitor/term") => Some(build_get_term_version_response(
             request_id,

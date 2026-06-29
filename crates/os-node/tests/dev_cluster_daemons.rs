@@ -3425,6 +3425,57 @@ fn daemon_transport_allocation_explain_empty_state_matches_opensearch_error() {
 }
 
 #[test]
+fn daemon_transport_cluster_update_settings_empty_request_returns_acknowledged() {
+    let binary = os_node_binary();
+    let root = unique_work_dir();
+    fs::create_dir_all(root.join("data")).unwrap();
+    let transport_port = free_port();
+
+    let mut child = Command::new(&binary)
+        .arg("--http.host")
+        .arg("127.0.0.1")
+        .arg("--http.port")
+        .arg("0")
+        .arg("--transport.host")
+        .arg("127.0.0.1")
+        .arg("--transport.port")
+        .arg(transport_port.to_string())
+        .arg("--cluster.name")
+        .arg("steel-dev-cluster-update-settings-transport")
+        .arg("--path.data")
+        .arg(root.join("data"))
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+
+    let stderr = child.stderr.take().unwrap();
+    let mut reader = BufReader::new(stderr);
+    let _http_port = read_reported_http_port(&mut reader);
+    let _guard = ChildGuard {
+        children: vec![child],
+    };
+
+    let request = os_transport::action::ClusterUpdateSettingsRequestWire::default();
+    let frame = os_transport::action::build_cluster_update_settings_request_message(
+        94,
+        OPENSEARCH_3_7_0_TRANSPORT,
+        &request,
+    )
+    .unwrap();
+    let response = send_transport_request_and_decode_response(transport_port, &frame);
+    let update_settings =
+        os_transport::action::read_cluster_update_settings_response_message(&response).unwrap();
+
+    assert_eq!(response.request_id, 94);
+    assert_eq!(update_settings.acknowledged, true);
+    assert!(update_settings.transient_settings.is_empty());
+    assert!(update_settings.persistent_settings.is_empty());
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
 fn daemon_point_in_time_contexts_do_not_survive_restart() {
     let binary = os_node_binary();
     let root = unique_work_dir();
