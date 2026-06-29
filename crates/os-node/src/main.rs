@@ -18957,15 +18957,44 @@ fn release_update_reader_context_if_present(body: &[u8]) {
         return;
     };
     let bindings = dev_transport_pit_bindings();
+    let released_pit_id = {
+        let mut reader_contexts = bindings
+            .reader_contexts
+            .lock()
+            .expect("dev transport reader contexts lock poisoned");
+        prune_expired_transport_reader_contexts(&mut reader_contexts, now_epoch_ms());
+        if let Some(reader_context_key) =
+            reader_context_lookup_key_for_request(&reader_contexts, &request.search_context_id)
+        {
+            reader_contexts
+                .remove(&reader_context_key)
+                .and_then(|reader_context| reader_context.pit_id)
+        } else {
+            None
+        }
+    };
+    if let Some(pit_id) = released_pit_id {
+        remove_transport_pit_context_without_reader_contexts(&pit_id);
+    }
+}
+
+fn remove_transport_pit_context_without_reader_contexts(pit_id: &str) {
+    let bindings = dev_transport_pit_bindings();
     let mut reader_contexts = bindings
         .reader_contexts
         .lock()
         .expect("dev transport reader contexts lock poisoned");
     prune_expired_transport_reader_contexts(&mut reader_contexts, now_epoch_ms());
-    if let Some(reader_context_key) =
-        reader_context_lookup_key_for_request(&reader_contexts, &request.search_context_id)
-    {
-        reader_contexts.remove(&reader_context_key);
+    let has_reader_context = reader_contexts
+        .values()
+        .any(|context| context.pit_id.as_deref() == Some(pit_id));
+    drop(reader_contexts);
+    if !has_reader_context {
+        bindings
+            .contexts
+            .lock()
+            .expect("dev transport PIT contexts lock poisoned")
+            .remove(pit_id);
     }
 }
 
@@ -43205,7 +43234,7 @@ mod tests {
             .contexts
             .lock()
             .expect("dev transport PIT contexts lock poisoned");
-        assert!(contexts.contains_key("transport-pit-reader-set-once"));
+        assert!(!contexts.contains_key("transport-pit-reader-set-once"));
         assert!(!contexts.contains_key("transport-pit-reader-set-once-retry"));
     }
 
