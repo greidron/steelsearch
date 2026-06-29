@@ -16524,9 +16524,6 @@ fn build_local_update_reader_context_response(
     if request.keep_alive_millis > DEV_TRANSPORT_MAX_PIT_KEEP_ALIVE_MILLIS {
         return build_empty_transport_response(request_id, header_version_id);
     }
-    if request.pit_id.is_empty() {
-        return build_empty_transport_response(request_id, header_version_id);
-    }
     if !reader_context_exists(&request.search_context_id) {
         return build_update_reader_context_missing_context_error_response(
             request_id,
@@ -16560,7 +16557,6 @@ fn build_local_update_reader_context_response(
 fn update_reader_context_request_supports_local_subset(body: &[u8]) -> bool {
     decode_update_reader_context_request_from_transport_body(body)
         .filter(|request| request.keep_alive_millis <= DEV_TRANSPORT_MAX_PIT_KEEP_ALIVE_MILLIS)
-        .filter(|request| !request.pit_id.is_empty())
         .filter(|request| reader_context_available_for_update(&request.search_context_id))
         .and_then(|request| request.validate_supported_subset().ok())
         .is_some()
@@ -16576,7 +16572,6 @@ fn update_reader_context_request_has_missing_context(body: &[u8]) -> bool {
     decode_update_reader_context_request_from_transport_body(body)
         .filter(|request| request.validate_supported_subset().is_ok())
         .filter(|request| request.keep_alive_millis <= DEV_TRANSPORT_MAX_PIT_KEEP_ALIVE_MILLIS)
-        .filter(|request| !request.pit_id.is_empty())
         .is_some_and(|request| !reader_context_exists(&request.search_context_id))
 }
 
@@ -16584,7 +16579,6 @@ fn update_reader_context_request_has_assigned_context(body: &[u8]) -> bool {
     decode_update_reader_context_request_from_transport_body(body)
         .filter(|request| request.validate_supported_subset().is_ok())
         .filter(|request| request.keep_alive_millis <= DEV_TRANSPORT_MAX_PIT_KEEP_ALIVE_MILLIS)
-        .filter(|request| !request.pit_id.is_empty())
         .is_some_and(|request| {
             reader_context_exists(&request.search_context_id)
                 && !reader_context_available_for_update(&request.search_context_id)
@@ -37141,7 +37135,7 @@ mod tests {
     }
 
     #[test]
-    fn update_reader_context_transport_route_rejects_empty_pit_id_at_execution_boundary() {
+    fn update_reader_context_transport_route_accepts_empty_pit_id_like_opensearch() {
         let _lock = dev_transport_pit_test_lock()
             .lock()
             .expect("dev transport PIT test lock poisoned");
@@ -37195,7 +37189,7 @@ mod tests {
             &request,
         )
         .unwrap();
-        assert!(!update_reader_context_request_supports_local_subset(
+        assert!(update_reader_context_request_supports_local_subset(
             &frame[6..]
         ));
 
@@ -37210,20 +37204,29 @@ mod tests {
                 .unwrap()
                 .unwrap()
         else {
-            panic!("expected empty-pit-id update-reader-context fallback response frame");
+            panic!("expected empty-pit-id update-reader-context response frame");
         };
         assert_eq!(message.request_id, 324);
-        assert!(message.body.is_empty());
+        let response =
+            os_transport::action::read_opensearch_update_reader_context_response_message(&message)
+                .unwrap();
+        assert_eq!(response.pit_id, "");
+        assert_eq!(response.creation_time_millis, 1_700_000_000_000);
+        assert_eq!(response.keep_alive_millis, 120_000);
         assert!(bindings
             .contexts
             .lock()
             .expect("dev transport PIT contexts lock poisoned")
-            .is_empty());
-        bindings
+            .contains_key(""));
+        let reader_contexts = bindings
             .reader_contexts
             .lock()
-            .expect("dev transport reader contexts lock poisoned")
-            .clear();
+            .expect("dev transport reader contexts lock poisoned");
+        let reader_context = reader_contexts
+            .get(&reader_context_key(&request.search_context_id))
+            .expect("reader context should remain after empty PIT id update");
+        assert_eq!(reader_context.pit_id.as_deref(), Some(""));
+        assert_eq!(reader_context.creation_time_millis, Some(1_700_000_000_000));
     }
 
     #[test]
