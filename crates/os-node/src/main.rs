@@ -1373,6 +1373,36 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end_at_ms,
         )?;
     } else if is_request
+        && normalized_action_hint == Some("indices:admin/ingestion/resume")
+        && resume_ingestion_request_supports_missing_index_subset(&body)
+    {
+        let response = build_resume_ingestion_index_not_found_error_response(
+            request_id,
+            header_version_id,
+            &body,
+        );
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("indices:admin/ingestion/resume"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request
         && normalized_action_hint == Some("cluster:admin/persistent/remove")
         && remove_persistent_task_request_supports_empty_metadata_missing_subset(&body)
     {
@@ -8409,6 +8439,52 @@ fn decode_pause_ingestion_request_from_transport_body(
 
 fn pause_ingestion_missing_concrete_index(
     request: &os_transport::action::PauseIngestionRequestWire,
+) -> Option<String> {
+    request
+        .indices
+        .iter()
+        .find(|index| {
+            transport_ingestion_state_index_is_concrete(index) && !transport_index_exists(index)
+        })
+        .cloned()
+}
+
+fn build_resume_ingestion_index_not_found_error_response(
+    request_id: i64,
+    header_version_id: u32,
+    body: &[u8],
+) -> Vec<u8> {
+    let Some(request) = decode_resume_ingestion_request_from_transport_body(body) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    if request.validate_missing_index_resolution_subset().is_err() {
+        return build_empty_transport_response(request_id, header_version_id);
+    }
+    let Some(index) = resume_ingestion_missing_concrete_index(&request) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    let mut output = StreamOutput::new();
+    os_transport::error::write_index_not_found_exception(&mut output, &index);
+    build_transport_error_response_frame(request_id, header_version_id, output.freeze().to_vec())
+}
+
+fn resume_ingestion_request_supports_missing_index_subset(body: &[u8]) -> bool {
+    let Some(request) = decode_resume_ingestion_request_from_transport_body(body) else {
+        return false;
+    };
+    request.validate_missing_index_resolution_subset().is_ok()
+        && resume_ingestion_missing_concrete_index(&request).is_some()
+}
+
+fn decode_resume_ingestion_request_from_transport_body(
+    body: &[u8],
+) -> Option<os_transport::action::ResumeIngestionRequestWire> {
+    let message = decode_transport_message_from_body(body)?;
+    os_transport::action::read_resume_ingestion_request_message(&message).ok()
+}
+
+fn resume_ingestion_missing_concrete_index(
+    request: &os_transport::action::ResumeIngestionRequestWire,
 ) -> Option<String> {
     request
         .indices
@@ -24715,6 +24791,15 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
             if pause_ingestion_request_supports_missing_index_subset(body) =>
         {
             Some(build_pause_ingestion_index_not_found_error_response(
+                request_id,
+                header_version_id,
+                body,
+            ))
+        }
+        Some("indices:admin/ingestion/resume")
+            if resume_ingestion_request_supports_missing_index_subset(body) =>
+        {
+            Some(build_resume_ingestion_index_not_found_error_response(
                 request_id,
                 header_version_id,
                 body,
@@ -53066,6 +53151,83 @@ mod tests {
         .unwrap();
         assert!(!pause_ingestion_request_supports_missing_index_subset(
             &wildcard_frame[6..]
+        ));
+    }
+
+    #[test]
+    fn resume_ingestion_transport_route_reports_missing_index_like_opensearch() {
+        let request = os_transport::action::ResumeIngestionRequestWire {
+            indices: vec!["missing-resume-index".to_string()],
+            ..os_transport::action::ResumeIngestionRequestWire::default()
+        };
+        let request_frame = os_transport::action::build_resume_ingestion_request_message(
+            98,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        let request_body = request_frame[6..].to_vec();
+        assert!(resume_ingestion_request_supports_missing_index_subset(
+            &request_body
+        ));
+
+        let response = build_resume_ingestion_index_not_found_error_response(
+            98,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &request_body,
+        );
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected resume ingestion index-not-found response message");
+        };
+        assert_eq!(message.request_id, 98);
+        assert!(message.status.is_error());
+        let error = os_transport::error::TransportError::read(message.body.freeze())
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            error.class_name,
+            "org.opensearch.index.IndexNotFoundException"
+        );
+        assert_eq!(
+            error.message.as_deref(),
+            Some("no such index [missing-resume-index]")
+        );
+
+        let wildcard_request = os_transport::action::ResumeIngestionRequestWire {
+            indices: vec!["missing-*".to_string()],
+            ..request.clone()
+        };
+        let wildcard_frame = os_transport::action::build_resume_ingestion_request_message(
+            99,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &wildcard_request,
+        )
+        .unwrap();
+        assert!(!resume_ingestion_request_supports_missing_index_subset(
+            &wildcard_frame[6..]
+        ));
+
+        let reset_request = os_transport::action::ResumeIngestionRequestWire {
+            reset_settings: vec![os_transport::action::ResumeIngestionResetSettingsWire {
+                shard: 0,
+                mode: os_transport::action::ResumeIngestionResetModeWire::Offset,
+                value: "42".to_string(),
+            }],
+            ..request
+        };
+        let reset_frame = os_transport::action::build_resume_ingestion_request_message(
+            100,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &reset_request,
+        )
+        .unwrap();
+        assert!(!resume_ingestion_request_supports_missing_index_subset(
+            &reset_frame[6..]
         ));
     }
 

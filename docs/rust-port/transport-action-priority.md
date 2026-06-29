@@ -889,7 +889,7 @@ The pause-ingestion adapter covers:
   rendering, response error rendering, negative failure counts, and negative
   shard ids.
 
-The resume-ingestion boundary covers:
+The resume-ingestion adapter covers:
 
 - OpenSearch `ResumeIngestionRequest` parent task, cluster-manager timeout,
   acknowledgement timeout, index selector array, strict-expand-open
@@ -899,10 +899,10 @@ The resume-ingestion boundary covers:
 - OpenSearch `ResumeIngestionResponse` acknowledgement bit, shard failure
   array, error string, and shard acknowledgement bit at the wire decode/build
   layer;
-- explicit fail-closed classification for `indices:admin/ingestion/resume`
-  until destructive-index guard checks, index resolution, optional shard pointer
-  reset, ingestion poller state mutation, shard acknowledgement aggregation,
-  and response rendering are implemented;
+- implemented classification for `indices:admin/ingestion/resume` in the
+  manifest missing-index subset, returning OpenSearch's
+  `IndexNotFoundException` for missing concrete index selectors before optional
+  shard pointer reset or ingestion poller state mutation;
 - explicit rejection for custom cluster-manager timeout, custom
   acknowledgement timeout, missing indices, blank index selectors, custom
   index resolution options, invalid reset settings, resume-ingestion execution,
@@ -3776,7 +3776,7 @@ performance-sensitive work is successful destructive-index guard checks,
 ingestion poller state mutation, shard acknowledgement aggregation, and response
 rendering.
 
-Current resume-ingestion reject wire microbenchmark:
+Previous resume-ingestion reject wire microbenchmark:
 
 ```text
 cargo run -p os-transport --release --bin resume-ingestion-reject-wire-benchmark
@@ -3787,13 +3787,13 @@ resume_ingestion_response_decode iterations=400000 elapsed_ms=65.078 ops_per_sec
 resume_ingestion_reject_wire_bottleneck_ops_per_second=1301957.12
 ```
 
-The current resume-ingestion fail-closed boundary bottleneck is request encode.
-The payload includes the acknowledged cluster-manager request envelope, index
-selector array, strict-expand-open index options, and empty reset-settings array
-before admission rejects execution. At roughly 1.30M ops/s in the latest local
-release run, this boundary is not a material transport bottleneck; the first
-performance-sensitive work is destructive-index guard checks, index resolution,
-optional shard pointer reset, ingestion poller state mutation, shard
+The previous resume-ingestion fail-closed boundary bottleneck was request
+encode. The implemented missing-index subset validates the acknowledged
+cluster-manager request envelope, index selector array, strict-expand-open index
+options, and reset-free shape, then resolves concrete selectors against the Rust
+manifest before rendering the OpenSearch-shaped `IndexNotFoundException`. The
+remaining performance-sensitive work is successful destructive-index guard
+checks, optional shard pointer reset, ingestion poller state mutation, shard
 acknowledgement aggregation, and response rendering.
 
 Previous get-ingestion-state reject wire microbenchmark:

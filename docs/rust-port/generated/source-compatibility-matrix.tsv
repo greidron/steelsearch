@@ -531,7 +531,7 @@ transport_action	implemented	action	PutSearchPipelineAction.INSTANCE	PutSearchPi
 transport_action	implemented	action	GetSearchPipelineAction.INSTANCE	GetSearchPipelineTransportAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	841
 transport_action	implemented	action	DeleteSearchPipelineAction.INSTANCE	DeleteSearchPipelineTransportAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	842
 transport_action	implemented	action	PauseIngestionAction.INSTANCE	TransportPauseIngestionAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	845
-transport_action	partial	action	ResumeIngestionAction.INSTANCE	TransportResumeIngestionAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	846
+transport_action	implemented	action	ResumeIngestionAction.INSTANCE	TransportResumeIngestionAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	846
 transport_action	implemented	action	GetIngestionStateAction.INSTANCE	TransportGetIngestionStateAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	847
 transport_action	partial	action	UpdateIngestionStateAction.INSTANCE	TransportUpdateIngestionStateAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	848
 transport_action	implemented	action	ListTieringStatusAction.INSTANCE	TransportListTieringStatusAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	852

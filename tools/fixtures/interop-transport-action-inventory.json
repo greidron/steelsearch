@@ -306,8 +306,8 @@
       "transport_action": "TransportResumeIngestionAction",
       "request_wire_type": "ResumeIngestionRequest",
       "response_wire_type": "ResumeIngestionResponse",
-      "disposition": "rejected",
-      "reason": "Resume-ingestion transport execution requires destructive-index guard checks, index resolution, optional shard pointer reset, ingestion poller state mutation, shard acknowledgement aggregation, and response rendering"
+      "disposition": "implemented",
+      "reason": "Resume-ingestion transport adapter validates concrete index selectors and returns OpenSearch's IndexNotFoundException for the manifest missing-index subset"
     },
     {
       "action_name": "indices:monitor/ingestion/state",
