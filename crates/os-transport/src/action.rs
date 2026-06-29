@@ -37850,7 +37850,7 @@ impl OpenSearchGetAllPitsRequestWire {
     }
 }
 
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OpenSearchListPitInfoWire {
     pub pit_id: String,
     pub creation_time_millis: i64,

@@ -17293,11 +17293,14 @@ fn get_all_transport_pits_response(
             .lock()
             .expect("dev transport reader contexts lock poisoned");
         prune_expired_transport_reader_contexts(&mut reader_contexts, now_millis);
-        let mut seen_infos = BTreeSet::new();
+        let mut seen_pit_ids = BTreeSet::new();
         reader_contexts
             .values()
             .filter_map(|reader_context| {
                 let pit_id = reader_context.pit_id.as_ref()?;
+                if !seen_pit_ids.insert(pit_id.clone()) {
+                    return None;
+                }
                 let creation_time_millis = reader_context.creation_time_millis?;
                 let keep_alive_millis = pit_contexts
                     .get(pit_id)
@@ -17306,12 +17309,11 @@ fn get_all_transport_pits_response(
                         u64::try_from(reader_context.expires_at_millis.saturating_sub(now_millis))
                             .unwrap_or(u64::MAX)
                     });
-                let pit_info = os_transport::action::OpenSearchListPitInfoWire::new(
+                Some(os_transport::action::OpenSearchListPitInfoWire::new(
                     pit_id.clone(),
                     u128_to_i64_saturating(creation_time_millis),
                     u64_to_i64_saturating(keep_alive_millis),
-                );
-                seen_infos.insert(pit_info.clone()).then_some(pit_info)
+                ))
             })
             .collect::<Vec<_>>()
     };
@@ -38125,6 +38127,20 @@ mod tests {
                     expires_at_millis: now + 60_000,
                     pit_id: Some("pit-live-a".to_string()),
                     creation_time_millis: Some(now - 1_000),
+                },
+            );
+            reader_contexts.insert(
+                ("pit-live-a-reader-duplicate".to_string(), 2),
+                DevTransportReaderContext {
+                    shard_id: os_transport::action::OpenSearchShardIdWire {
+                        index_name: "logs-pit-000001".to_string(),
+                        index_uuid: "_na_".to_string(),
+                        shard_id: 1,
+                    },
+                    documents: Arc::new(BTreeMap::new()),
+                    expires_at_millis: now + 120_000,
+                    pit_id: Some("pit-live-a".to_string()),
+                    creation_time_millis: Some(now - 500),
                 },
             );
         }

@@ -2601,8 +2601,8 @@ The create-PIT boundary covers:
 - local transport get-all-PIT now renders `ListPitInfo` entries from active
   local PIT reader contexts instead of orphan PIT context store entries,
   matching OpenSearch `SearchService.getAllPITReaderContexts`; duplicate
-  reader entries are deduped by the `ListPitInfo` value in the local
-  single-node response.
+  reader entries are deduped by PIT id in the local single-node response,
+  matching `GetAllPitNodesResponse` aggregation.
 - local transport free-PIT-context admission now accepts only context ids that
   target the current Steelsearch node id/name, `_local`, or OpenSearch's empty
   raw-string wire shape, and rejects remote cluster aliases or nonlocal node
@@ -5524,15 +5524,15 @@ Current get-all-PITs wire microbenchmark:
 
 ```text
 cargo run -p os-transport --release --bin get-all-pits-wire-benchmark
-get_all_pits_request_encode iterations=400000 elapsed_ms=246.167 ops_per_second=1624910.19 nanos_per_op=615.42
-get_all_pits_request_decode iterations=400000 elapsed_ms=235.099 ops_per_second=1701410.42 nanos_per_op=587.75
-get_all_pits_request_validate iterations=400000 elapsed_ms=235.534 ops_per_second=1698271.57 nanos_per_op=588.83
-get_all_pits_response_encode iterations=400000 elapsed_ms=744.648 ops_per_second=537166.72 nanos_per_op=1861.62
-get_all_pits_response_decode iterations=400000 elapsed_ms=739.873 ops_per_second=540633.09 nanos_per_op=1849.68
-get_all_pits_wire_bottleneck_ops_per_second=537166.72
+get_all_pits_request_encode iterations=400000 elapsed_ms=224.458 ops_per_second=1782068.18 nanos_per_op=561.15
+get_all_pits_request_decode iterations=400000 elapsed_ms=224.548 ops_per_second=1781352.96 nanos_per_op=561.37
+get_all_pits_request_validate iterations=400000 elapsed_ms=223.874 ops_per_second=1786718.53 nanos_per_op=559.69
+get_all_pits_response_encode iterations=400000 elapsed_ms=734.179 ops_per_second=544826.51 nanos_per_op=1835.45
+get_all_pits_response_decode iterations=400000 elapsed_ms=740.194 ops_per_second=540399.16 nanos_per_op=1850.48
+get_all_pits_wire_bottleneck_ops_per_second=540399.16
 ```
 
-The current get-all-PITs wire subset bottleneck is non-empty response encode
+The current get-all-PITs wire subset bottleneck is non-empty response decode
 with one `DiscoveryNode` and two `ListPitInfo` entries. The first performance
 point to inspect before expanding execution is avoiding repeated node metadata
 serialization and minimizing lock hold time around shared PIT context listing.
