@@ -91,6 +91,38 @@
       "reason": "Node stats forwarding is safe observer behavior."
     },
     {
+      "surface": "GET /_nodes/usage",
+      "kind": "rest",
+      "family": "cluster-read",
+      "backing": "cluster:monitor/nodes/usage",
+      "disposition": "implemented",
+      "reason": "Node-usage forwarding is a read-only observer surface and uses discovery-node fanout planning."
+    },
+    {
+      "surface": "cluster:monitor/nodes/usage",
+      "kind": "transport",
+      "family": "cluster-read",
+      "backing": "TransportNodesUsageAction",
+      "disposition": "implemented",
+      "reason": "Node-usage transport adapter is available for the bounded local node usage subset."
+    },
+    {
+      "surface": "GET /_nodes/hot_threads",
+      "kind": "rest",
+      "family": "cluster-read",
+      "backing": "cluster:monitor/nodes/hot_threads",
+      "disposition": "implemented",
+      "reason": "Node hot-threads forwarding is a read-only observer surface and uses discovery-node fanout planning."
+    },
+    {
+      "surface": "cluster:monitor/nodes/hot_threads",
+      "kind": "transport",
+      "family": "cluster-read",
+      "backing": "TransportNodesHotThreadsAction",
+      "disposition": "implemented",
+      "reason": "Node hot-threads transport adapter is available for the bounded local text response subset."
+    },
+    {
       "surface": "GET /_cluster/stats",
       "kind": "rest",
       "family": "cluster-read",
