@@ -220,8 +220,8 @@ name = "clear-cache-reject-wire-benchmark"
 path = "benchmarks/clear_cache_reject_wire.rs"
 
 [[bin]]
-name = "snapshots-status-reject-wire-benchmark"
-path = "benchmarks/snapshots_status_reject_wire.rs"
+name = "snapshots-status-wire-benchmark"
+path = "benchmarks/snapshots_status_wire.rs"
 
 [[bin]]
 name = "add-weighted-routing-reject-wire-benchmark"

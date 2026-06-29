@@ -1781,6 +1781,32 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end_at_ms,
         )?;
     } else if is_request
+        && normalized_action_hint == Some("cluster:admin/snapshot/status")
+        && snapshots_status_request_supports_manifest_empty_subset(&body)
+    {
+        let response = build_snapshots_status_response(request_id, header_version_id, &body);
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("cluster:admin/snapshot/status"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request
         && normalized_action_hint == Some("cluster:admin/snapshot/create")
         && create_snapshot_request_supports_manifest_execution_subset(&body)
     {
@@ -6287,6 +6313,47 @@ fn snapshot_repository_has_no_manifest_snapshots(repository: &str) -> bool {
         Some(Value::Null) => true,
         Some(_) => false,
     }
+}
+
+fn build_snapshots_status_response(
+    request_id: i64,
+    header_version_id: u32,
+    body: &[u8],
+) -> Vec<u8> {
+    let Some(request) = decode_snapshots_status_request_from_transport_body(body) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    if !snapshots_status_request_matches_manifest_empty_subset(&request) {
+        return build_empty_transport_response(request_id, header_version_id);
+    }
+    os_transport::action::build_snapshots_status_response_message(
+        request_id,
+        Version::from_id(header_version_id as i32),
+        &os_transport::action::SnapshotsStatusResponseWire::empty(),
+    )
+    .map(|frame| frame.to_vec())
+    .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
+}
+
+fn snapshots_status_request_supports_manifest_empty_subset(body: &[u8]) -> bool {
+    decode_snapshots_status_request_from_transport_body(body)
+        .is_some_and(|request| snapshots_status_request_matches_manifest_empty_subset(&request))
+}
+
+fn decode_snapshots_status_request_from_transport_body(
+    body: &[u8],
+) -> Option<os_transport::action::SnapshotsStatusRequestWire> {
+    let message = decode_transport_message_from_body(body)?;
+    os_transport::action::read_snapshots_status_request_message(&message).ok()
+}
+
+fn snapshots_status_request_matches_manifest_empty_subset(
+    request: &os_transport::action::SnapshotsStatusRequestWire,
+) -> bool {
+    request.validate_supported_execution_subset().is_ok()
+        && request.repository != "_all"
+        && snapshot_repository_exists_in_manifest(&request.repository)
+        && snapshot_repository_has_no_manifest_snapshots(&request.repository)
 }
 
 fn build_create_snapshot_response(request_id: i64, header_version_id: u32, body: &[u8]) -> Vec<u8> {
@@ -19132,6 +19199,15 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
                 body,
             ))
         }
+        Some("cluster:admin/snapshot/status")
+            if snapshots_status_request_supports_manifest_empty_subset(body) =>
+        {
+            Some(build_snapshots_status_response(
+                request_id,
+                header_version_id,
+                body,
+            ))
+        }
         Some("cluster:admin/snapshot/create")
             if create_snapshot_request_supports_manifest_execution_subset(body) =>
         {
@@ -24740,6 +24816,106 @@ mod tests {
         )
         .unwrap();
         assert!(!get_snapshots_request_supports_manifest_execution_subset(
+            &frame[6..]
+        ));
+    }
+
+    #[test]
+    fn snapshots_status_transport_route_returns_empty_status_for_empty_manifest_repository() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        let bindings = dev_transport_pit_bindings();
+        {
+            let mut manifest = bindings
+                .metadata_manifest
+                .lock()
+                .expect("dev transport metadata manifest lock poisoned");
+            *manifest = serde_json::json!({
+                "snapshot_repositories": {
+                    "repo-status": {
+                        "type": "fs",
+                        "settings": {
+                            "location": "/tmp/repo-status"
+                        }
+                    }
+                },
+                "snapshots": {
+                    "repo-status": {}
+                }
+            });
+        }
+
+        let request = os_transport::action::SnapshotsStatusRequestWire {
+            repository: "repo-status".to_string(),
+            ..os_transport::action::SnapshotsStatusRequestWire::default()
+        };
+        let frame = os_transport::action::build_snapshots_status_request_message(
+            88,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(snapshots_status_request_supports_manifest_empty_subset(
+            &frame[6..]
+        ));
+
+        let response = build_snapshots_status_response(
+            88,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &frame[6..],
+        );
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected snapshots status response message");
+        };
+        assert_eq!(message.request_id, 88);
+        let response =
+            os_transport::action::read_snapshots_status_response_message(&message).unwrap();
+        assert_eq!(response.snapshot_count, 0);
+    }
+
+    #[test]
+    fn snapshots_status_transport_route_excludes_non_empty_manifest_repository() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        let bindings = dev_transport_pit_bindings();
+        {
+            let mut manifest = bindings
+                .metadata_manifest
+                .lock()
+                .expect("dev transport metadata manifest lock poisoned");
+            *manifest = serde_json::json!({
+                "snapshot_repositories": {
+                    "repo-status": {
+                        "type": "fs",
+                        "settings": {}
+                    }
+                },
+                "snapshots": {
+                    "repo-status": {
+                        "snapshot-a": {"snapshot": "snapshot-a", "state": "SUCCESS"}
+                    }
+                }
+            });
+        }
+
+        let request = os_transport::action::SnapshotsStatusRequestWire {
+            repository: "repo-status".to_string(),
+            ..os_transport::action::SnapshotsStatusRequestWire::default()
+        };
+        let frame = os_transport::action::build_snapshots_status_request_message(
+            89,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(!snapshots_status_request_supports_manifest_empty_subset(
             &frame[6..]
         ));
     }

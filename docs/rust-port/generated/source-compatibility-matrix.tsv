@@ -422,7 +422,7 @@ transport_action	implemented	action	DeleteSnapshotAction.INSTANCE	TransportDelet
 transport_action	implemented	action	CreateSnapshotAction.INSTANCE	TransportCreateSnapshotAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	688
 transport_action	implemented	action	CloneSnapshotAction.INSTANCE	TransportCloneSnapshotAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	689
 transport_action	partial	action	RestoreSnapshotAction.INSTANCE	TransportRestoreSnapshotAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	690
-transport_action	partial	action	SnapshotsStatusAction.INSTANCE	TransportSnapshotsStatusAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	691
+transport_action	implemented	action	SnapshotsStatusAction.INSTANCE	TransportSnapshotsStatusAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	691
 transport_action	partial	action	ClusterAddWeightedRoutingAction.INSTANCE	TransportAddWeightedRoutingAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	693
 transport_action	implemented	action	ClusterGetWeightedRoutingAction.INSTANCE	TransportGetWeightedRoutingAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	694
 transport_action	partial	action	ClusterDeleteWeightedRoutingAction.INSTANCE	TransportDeleteWeightedRoutingAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	695

@@ -177,8 +177,8 @@ The source-derived transport inventory currently has 160 rows:
 
 | Status | Count | Meaning |
 | --- | ---: | --- |
-| `implemented` | 111 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
-| `partial` | 49 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
+| `implemented` | 112 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
+| `partial` | 48 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
 | `planned` | 0 | No source-derived transport action remains unclassified. |
 
 The k-NN plugin action sweep is complete at the boundary layer. All 12
@@ -1150,12 +1150,15 @@ The snapshots-status boundary covers:
 - OpenSearch 3.7 `SnapshotsStatusRequest` parent task, cluster-manager
   timeout, repository name, snapshot selector array, `ignoreUnavailable`, and
   optional index selector array at the wire decode/build layer;
-- explicit fail-closed classification for `cluster:admin/snapshot/status`
-  until current snapshot status, repository snapshot status, node shard status,
-  and response rendering are implemented;
+- OpenSearch-shaped `SnapshotsStatusResponse` empty-list response rendering and
+  decode coverage;
+- implemented `cluster:admin/snapshot/status` transport handling when the
+  request names one exact non-`_all` repository that exists in the local
+  manifest and has no recorded snapshots;
 - explicit rejection for custom cluster-manager timeout, blank repository
   names, blank snapshot selectors, snapshot selectors, `ignoreUnavailable`,
-  blank index selectors, index selectors, and snapshots-status execution.
+  blank index selectors, index selectors, `_all` repository execution, missing
+  local repositories, and non-empty local snapshot records.
 
 The add-weighted-routing boundary covers:
 
@@ -3883,23 +3886,25 @@ training request wire paths; the first performance-sensitive work is index
 resolution, KNN index validation, broadcast shard selection, per-shard KNN cache
 eviction, shard failure aggregation, and response rendering.
 
-Current snapshots-status reject wire microbenchmark:
+Current snapshots-status wire microbenchmark:
 
 ```text
-cargo run -p os-transport --release --bin snapshots-status-reject-wire-benchmark
-snapshots_status_reject_request_encode iterations=400000 elapsed_ms=239.090 ops_per_second=1673009.84 nanos_per_op=597.73
-snapshots_status_reject_request_decode iterations=400000 elapsed_ms=233.764 ops_per_second=1711128.08 nanos_per_op=584.41
-snapshots_status_reject_validation iterations=400000 elapsed_ms=240.149 ops_per_second=1665629.71 nanos_per_op=600.37
-snapshots_status_reject_wire_bottleneck_ops_per_second=1665629.71
+cargo run -p os-transport --release --bin snapshots-status-wire-benchmark
+snapshots_status_request_encode iterations=400000 elapsed_ms=242.989 ops_per_second=1646162.66 nanos_per_op=607.47
+snapshots_status_request_decode iterations=400000 elapsed_ms=233.672 ops_per_second=1711801.27 nanos_per_op=584.18
+snapshots_status_request_validate iterations=400000 elapsed_ms=240.230 ops_per_second=1665073.98 nanos_per_op=600.57
+snapshots_status_response_encode iterations=400000 elapsed_ms=51.292 ops_per_second=7798546.54 nanos_per_op=128.23
+snapshots_status_response_decode iterations=400000 elapsed_ms=56.278 ops_per_second=7107525.63 nanos_per_op=140.70
+snapshots_status_wire_bottleneck_ops_per_second=1646162.66
 ```
 
-The current snapshots-status fail-closed boundary bottleneck is request
-validation. The payload includes the cluster-manager request envelope,
-repository name, snapshot selector array, `ignoreUnavailable`, and optional
-index selector array before admission rejects execution. At roughly 1.67M
-ops/s in the latest local release run, this boundary is not a material
-transport bottleneck; the first performance-sensitive work is current snapshot
-resolution, repository snapshot status loading, node shard status collection,
+The current snapshots-status transport boundary bottleneck is request encode.
+The payload includes the cluster-manager request envelope, repository name,
+empty snapshot selector array, `ignoreUnavailable`, optional index selector
+marker, and empty response list rendering. At roughly 1.65M bottleneck ops/s in
+the latest local release run, this boundary is not a material transport
+bottleneck; the first performance-sensitive work is current snapshot
+resolution, non-empty repository snapshot status loading, node shard collection,
 index filtering, and response rendering.
 
 Current add-weighted-routing reject wire microbenchmark:
