@@ -2799,11 +2799,12 @@ The create-PIT boundary covers:
   response preserves each active reader entry, while OpenSearch's top-level
   `GetAllPitNodesResponse` aggregation remains the layer that collapses PIT ids
   for REST rendering.
-- local transport PIT search admission now requires every shard reader context
-  referenced by the encoded OpenSearch PIT id to exist in the local reader
-  context store before using the aggregate PIT snapshot. This matches
-  OpenSearch's shard-level `SearchContextMissingException` behavior when a PIT
-  id is still decodable but a reader context has expired or been freed.
+- local transport PIT search now follows OpenSearch partial-result handling for
+  decoded PIT ids with missing shard reader contexts: the default
+  `allow_partial_search_results=true` path returns the available snapshot hits
+  with failed shard entries whose cause is a serialized
+  `SearchContextMissingException`, while `allow_partial_search_results=false`
+  rejects the request with the missing-context error.
 - local transport PIT search keep-alive extension and delete-PIT reader cleanup
   now use the same `SearchService.getReaderContext(...)` lookup semantics as
   update/free reader-context actions: empty shard-search session ids match the

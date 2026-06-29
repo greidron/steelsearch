@@ -7,6 +7,13 @@ pub struct TransportError {
     pub class_name: String,
     pub message: Option<String>,
     pub cause: Option<Box<TransportError>>,
+    pub search_context_id: Option<TransportErrorSearchContextId>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TransportErrorSearchContextId {
+    pub session_id: String,
+    pub id: i64,
 }
 
 impl TransportError {
@@ -254,6 +261,7 @@ fn read_jvm_exception(
         class_name: class_name.to_string(),
         message,
         cause,
+        search_context_id: None,
     })
 }
 
@@ -267,6 +275,7 @@ fn read_unknown_transport_exception(
         class_name: "org.opensearch.transport.UnknownTransportException".to_string(),
         message: Some(format!("unsupported transport exception key {key}")),
         cause: None,
+        search_context_id: None,
     };
 
     Ok(error)
@@ -283,6 +292,7 @@ fn read_opensearch_exception(
     skip_string_list_map(input)?;
     skip_string_list_map(input)?;
 
+    let mut search_context_id = None;
     match id {
         101 => {
             let _action = input.read_optional_string()?;
@@ -292,8 +302,12 @@ fn read_opensearch_exception(
             let _action = input.read_optional_string()?;
         }
         24 => {
-            let _context_id = input.read_i64()?;
-            let _session_id = input.read_string()?;
+            let context_id = input.read_i64()?;
+            let session_id = input.read_string()?;
+            search_context_id = Some(TransportErrorSearchContextId {
+                session_id,
+                id: context_id,
+            });
         }
         100 => {
             let _phase_name = input.read_optional_string()?;
@@ -306,6 +320,7 @@ fn read_opensearch_exception(
         class_name,
         message,
         cause,
+        search_context_id,
     })
 }
 
@@ -444,6 +459,7 @@ mod tests {
         assert_eq!(error.class_name, "java.lang.IllegalStateException");
         assert_eq!(error.message.as_deref(), Some("boom"));
         assert!(error.cause.is_none());
+        assert!(error.search_context_id.is_none());
     }
 
     #[test]
@@ -456,6 +472,7 @@ mod tests {
         assert_eq!(error.class_name, "java.lang.IllegalArgumentException");
         assert_eq!(error.message.as_deref(), Some("bad request"));
         assert!(error.cause.is_none());
+        assert!(error.search_context_id.is_none());
     }
 
     #[test]
@@ -506,6 +523,13 @@ mod tests {
             Some("No search context found for id [42]")
         );
         assert!(error.cause.is_none());
+        assert_eq!(
+            error.search_context_id,
+            Some(super::TransportErrorSearchContextId {
+                session_id: "session-a".to_string(),
+                id: 42,
+            })
+        );
     }
 
     #[test]
@@ -535,6 +559,13 @@ mod tests {
         assert_eq!(
             cause.message.as_deref(),
             Some("No search context found for id [77]")
+        );
+        assert_eq!(
+            cause.search_context_id,
+            Some(super::TransportErrorSearchContextId {
+                session_id: "scroll-session".to_string(),
+                id: 77,
+            })
         );
     }
 

@@ -26,7 +26,9 @@ use std::io::Write;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use thiserror::Error;
 
-use crate::error::{read_exception, TransportError, TransportErrorDecodeError};
+use crate::error::{
+    read_exception, TransportError, TransportErrorDecodeError, TransportErrorSearchContextId,
+};
 use crate::frame::encode_message;
 use crate::variable_header::{RequestVariableHeader, ResponseVariableHeader};
 use crate::TransportMessage;
@@ -37100,6 +37102,7 @@ impl OpenSearchShardSearchFailureWire {
                 class_name: "java.lang.IllegalArgumentException".to_string(),
                 message: Some(reason),
                 cause: None,
+                search_context_id: None,
             }),
         }
     }
@@ -40474,6 +40477,7 @@ impl FailedNodeExceptionWire {
                 class_name: "org.opensearch.ResourceNotFoundException".to_string(),
                 message: Some(reason),
                 cause: None,
+                search_context_id: None,
             }),
         }
     }
@@ -40486,6 +40490,7 @@ impl FailedNodeExceptionWire {
                 class_name: "java.lang.IllegalArgumentException".to_string(),
                 message: Some(reason),
                 cause: None,
+                search_context_id: None,
             }),
         }
     }
@@ -40689,6 +40694,23 @@ fn write_supported_exception(
             write_supported_exception(output, error.cause.as_deref())?;
             write_empty_stack_trace(output);
         }
+        "org.opensearch.search.SearchContextMissingException" => {
+            let Some(context_id) = error.search_context_id.as_ref() else {
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "failed node exception cause",
+                    reason: "SearchContextMissingException requires a ShardSearchContextId payload",
+                });
+            };
+            output.write_vint(0);
+            output.write_vint(24);
+            output.write_optional_string(error.message.as_deref());
+            write_supported_exception(output, error.cause.as_deref())?;
+            write_empty_stack_trace(output);
+            write_empty_string_list_map(output);
+            write_empty_string_list_map(output);
+            output.write_i64(context_id.id);
+            output.write_string(&context_id.session_id);
+        }
         _ => {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "failed node exception cause",
@@ -40708,6 +40730,15 @@ fn validate_supported_exception(
     };
     match error.class_name.as_str() {
         "org.opensearch.ResourceNotFoundException" | "java.lang.IllegalArgumentException" => {
+            validate_supported_exception(error.cause.as_deref(), shape)
+        }
+        "org.opensearch.search.SearchContextMissingException" => {
+            if error.search_context_id.is_none() {
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape,
+                    reason: "SearchContextMissingException requires a ShardSearchContextId payload",
+                });
+            }
             validate_supported_exception(error.cause.as_deref(), shape)
         }
         _ => Err(TransportActionWireError::UnsupportedWireShape {
@@ -78550,6 +78581,7 @@ mod tests {
                     class_name: "java.lang.IllegalArgumentException".to_string(),
                     message: Some("bad query".to_string()),
                     cause: None,
+                    search_context_id: None,
                 }),
             }],
             skipped_shards: 0,
@@ -78585,6 +78617,46 @@ mod tests {
         assert_eq!(decoded.phase_took, response.phase_took);
         assert_eq!(decoded.point_in_time_id, response.point_in_time_id);
         decoded.validate_supported_subset().unwrap();
+    }
+
+    #[test]
+    fn opensearch_search_response_wire_round_trips_search_context_missing_shard_failure() {
+        let reason = "No search context found for id [801]".to_string();
+        let response = OpenSearchSearchResponseWire {
+            total_shards: 2,
+            successful_shards: 1,
+            shard_failures: vec![OpenSearchShardSearchFailureWire {
+                shard_target: Some(OpenSearchSearchShardTargetWire {
+                    node_id: Some("steel-node-b".to_string()),
+                    index: "logs-partial-pit".to_string(),
+                    index_uuid: "uuid-logs-partial-pit".to_string(),
+                    shard_id: 1,
+                    cluster_alias: None,
+                }),
+                reason: reason.clone(),
+                status: "NOT_FOUND".to_string(),
+                cause: Some(TransportError {
+                    class_name: "org.opensearch.search.SearchContextMissingException".to_string(),
+                    message: Some(reason),
+                    cause: None,
+                    search_context_id: Some(TransportErrorSearchContextId {
+                        session_id: "partial-pit-session".to_string(),
+                        id: 801,
+                    }),
+                }),
+            }],
+            ..OpenSearchSearchResponseWire::empty_with_total_hits(0)
+        };
+        let mut output = StreamOutput::new();
+        response
+            .write(&mut output, OPENSEARCH_3_7_0_TRANSPORT)
+            .unwrap();
+
+        let decoded =
+            OpenSearchSearchResponseWire::read(output.freeze(), OPENSEARCH_3_7_0_TRANSPORT)
+                .unwrap();
+
+        assert_eq!(decoded.shard_failures, response.shard_failures);
     }
 
     #[test]

@@ -16341,11 +16341,15 @@ fn transport_pit_missing_reader_context_failures(
                     cluster_alias: context.cluster_alias.clone(),
                 }),
                 reason: reason.clone(),
-                status: "INTERNAL_SERVER_ERROR".to_string(),
+                status: "NOT_FOUND".to_string(),
                 cause: Some(os_transport::error::TransportError {
-                    class_name: "java.lang.IllegalArgumentException".to_string(),
+                    class_name: "org.opensearch.search.SearchContextMissingException".to_string(),
                     message: Some(reason),
                     cause: None,
+                    search_context_id: Some(os_transport::error::TransportErrorSearchContextId {
+                        session_id: context.search_context_id.session_id.clone(),
+                        id: context.search_context_id.id,
+                    }),
                 }),
             }
         })
@@ -35119,9 +35123,25 @@ mod tests {
         assert_eq!(partial_response.shard_failures.len(), 1);
         assert_eq!(partial_response.skipped_shards, 0);
         assert_eq!(partial_response.hits.len(), 1);
+        assert_eq!(partial_response.shard_failures[0].status, "NOT_FOUND");
         assert!(partial_response.shard_failures[0]
             .reason
             .contains("No search context found for id [801]"));
+        let partial_cause = partial_response.shard_failures[0]
+            .cause
+            .as_ref()
+            .expect("partial PIT shard failure cause");
+        assert_eq!(
+            partial_cause.class_name,
+            "org.opensearch.search.SearchContextMissingException"
+        );
+        assert_eq!(
+            partial_cause.search_context_id,
+            Some(os_transport::error::TransportErrorSearchContextId {
+                session_id: "partial-pit-session".to_string(),
+                id: 801,
+            })
+        );
 
         let strict_request = os_transport::action::OpenSearchSearchRequestWire {
             allow_partial_search_results: Some(false),
