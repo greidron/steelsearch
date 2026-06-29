@@ -2870,6 +2870,74 @@ impl ClusterStateResponseWire {
     }
 }
 
+pub fn build_cluster_state_request_message(
+    request_id: i64,
+    version: Version,
+    request: &ClusterStateRequestWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    request.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::request(),
+        version,
+        variable_header: BytesMut::from(
+            &RequestVariableHeader::new(CLUSTER_STATE_ACTION_NAME).to_bytes()[..],
+        ),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_cluster_state_request_message(
+    message: &TransportMessage,
+) -> Result<ClusterStateRequestWire, TransportActionWireError> {
+    if !message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "request",
+            actual: message.status.bits(),
+        });
+    }
+    let header = RequestVariableHeader::read(message.variable_header.clone().freeze())?;
+    if header.action != CLUSTER_STATE_ACTION_NAME {
+        return Err(TransportActionWireError::UnexpectedAction {
+            expected: CLUSTER_STATE_ACTION_NAME,
+            actual: header.action,
+        });
+    }
+    ClusterStateRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_cluster_state_response_message(
+    request_id: i64,
+    version: Version,
+    response: &ClusterStateResponseWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    response.write(&mut body)?;
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::response(),
+        version,
+        variable_header: BytesMut::from(&ResponseVariableHeader::default().to_bytes()[..]),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_cluster_state_response_message(
+    message: &TransportMessage,
+) -> Result<ClusterStateResponseWire, TransportActionWireError> {
+    if !message.status.is_response() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "response",
+            actual: message.status.bits(),
+        });
+    }
+    let _header = ResponseVariableHeader::read(message.variable_header.clone().freeze())?;
+    ClusterStateResponseWire::read(message.body.clone().freeze())
+}
+
 const OPENSEARCH_CLUSTER_HEALTH_STATUS_GREEN: u8 = 0;
 const OPENSEARCH_CLUSTER_HEALTH_STATUS_YELLOW: u8 = 1;
 const OPENSEARCH_CLUSTER_HEALTH_STATUS_RED: u8 = 2;
@@ -52530,6 +52598,59 @@ mod tests {
 
         assert_eq!(
             ClusterStateResponseWire::read(output.freeze()).unwrap(),
+            response
+        );
+    }
+
+    #[test]
+    fn cluster_state_transport_messages_bind_action_frames() {
+        let request = ClusterStateRequestWire {
+            local: true,
+            indices: vec!["logs-*".to_string()],
+            ..ClusterStateRequestWire::default()
+        };
+        let mut frame =
+            build_cluster_state_request_message(93, OPENSEARCH_3_7_0_TRANSPORT, &request).unwrap();
+        let message = match decode_frame(&mut frame).unwrap().unwrap() {
+            DecodedFrame::Message(message) => message,
+            DecodedFrame::Ping => panic!("expected message frame"),
+        };
+
+        assert_eq!(message.request_id, 93);
+        assert!(message.status.is_request());
+        assert_eq!(
+            classify_opensearch_transport_request_message(&message)
+                .unwrap()
+                .disposition,
+            OpenSearchTransportActionDisposition::Implemented
+        );
+        assert_eq!(
+            read_cluster_state_request_message(&message).unwrap(),
+            request
+        );
+
+        let response = ClusterStateResponseWire {
+            cluster_name: "steelsearch".to_string(),
+            cluster_uuid: "uuid-1".to_string(),
+            state_uuid: "state-1".to_string(),
+            version: 7,
+            sections: BTreeMap::from([(
+                "metadata".to_string(),
+                json!({"indices": {"logs-000001": {"state": "open"}}}),
+            )]),
+        };
+        let mut frame =
+            build_cluster_state_response_message(93, OPENSEARCH_3_7_0_TRANSPORT, &response)
+                .unwrap();
+        let message = match decode_frame(&mut frame).unwrap().unwrap() {
+            DecodedFrame::Message(message) => message,
+            DecodedFrame::Ping => panic!("expected message frame"),
+        };
+
+        assert_eq!(message.request_id, 93);
+        assert!(message.status.is_response());
+        assert_eq!(
+            read_cluster_state_response_message(&message).unwrap(),
             response
         );
     }

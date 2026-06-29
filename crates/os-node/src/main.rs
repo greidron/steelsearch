@@ -1094,6 +1094,33 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end,
             &mut connection_end_at_ms,
         )?;
+    } else if is_request
+        && normalized_action_hint == Some("cluster:monitor/state")
+        && cluster_state_request_supports_local_subset(&body)
+    {
+        let response =
+            build_cluster_state_response(request_id, header_version_id, transport_identity, &body);
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("cluster:monitor/state[n]"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
     } else if is_request && normalized_action_hint == Some("internal:monitor/term") {
         let response =
             build_get_term_version_response(request_id, header_version_id, transport_identity);
@@ -20097,6 +20124,181 @@ fn build_cluster_health_response(
     .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
 }
 
+fn build_cluster_state_response(
+    request_id: i64,
+    header_version_id: u32,
+    transport_identity: &DevTransportIdentity,
+    body: &[u8],
+) -> Vec<u8> {
+    let Some(request) = decode_cluster_state_request_from_transport_body(body) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    let response = local_cluster_state_response_from_request(transport_identity, &request);
+    os_transport::action::build_cluster_state_response_message(
+        request_id,
+        Version::from_id(header_version_id as i32),
+        &response,
+    )
+    .map(|frame| frame.to_vec())
+    .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
+}
+
+fn cluster_state_request_supports_local_subset(body: &[u8]) -> bool {
+    decode_cluster_state_request_from_transport_body(body).is_some()
+}
+
+fn decode_cluster_state_request_from_transport_body(
+    body: &[u8],
+) -> Option<os_transport::action::ClusterStateRequestWire> {
+    let message = decode_transport_message_from_body(body)?;
+    os_transport::action::read_cluster_state_request_message(&message).ok()
+}
+
+fn local_cluster_state_response_from_request(
+    transport_identity: &DevTransportIdentity,
+    request: &os_transport::action::ClusterStateRequestWire,
+) -> os_transport::action::ClusterStateResponseWire {
+    let coordination_state = transport_identity
+        .coordination_state
+        .lock()
+        .expect("dev transport coordination state lock poisoned");
+    let cached = coordination_state.cached_cluster_state.as_ref();
+    let version = cached
+        .map(|state| state.header.version)
+        .unwrap_or(coordination_state.last_accepted_version.max(1));
+    let state_uuid = cached
+        .map(|state| state.header.state_uuid.clone())
+        .unwrap_or_else(|| format!("{}-state", transport_identity.cluster_name));
+    let cluster_uuid = cached
+        .map(|state| state.metadata.cluster_uuid.clone())
+        .unwrap_or_else(|| "steelsearch-cluster-uuid".to_string());
+    drop(coordination_state);
+
+    let mut sections = BTreeMap::new();
+    if request.nodes {
+        sections.insert(
+            "nodes".to_string(),
+            serde_json::json!({
+                transport_identity.node_id.clone(): {
+                    "name": transport_identity.node_name,
+                    "ephemeral_id": transport_identity.ephemeral_id,
+                    "transport_address": transport_identity.transport_address.to_string(),
+                    "roles": transport_identity.roles,
+                    "attributes": transport_identity
+                        .attributes
+                        .iter()
+                        .cloned()
+                        .collect::<BTreeMap<_, _>>()
+                }
+            }),
+        );
+    }
+    if request.metadata {
+        sections.insert(
+            "metadata".to_string(),
+            cluster_state_metadata_section(request),
+        );
+    }
+    if request.routing_table {
+        sections.insert(
+            "routing_table".to_string(),
+            serde_json::json!({
+                "indices": cluster_state_routing_table_indices(request)
+            }),
+        );
+    }
+    if request.blocks {
+        sections.insert(
+            "blocks".to_string(),
+            serde_json::json!({
+                "global": {},
+                "indices": {}
+            }),
+        );
+    }
+    if request.customs {
+        sections.insert("customs".to_string(), serde_json::json!({}));
+    }
+
+    os_transport::action::ClusterStateResponseWire {
+        cluster_name: transport_identity.cluster_name.clone(),
+        cluster_uuid,
+        state_uuid,
+        version,
+        sections,
+    }
+}
+
+fn cluster_state_metadata_section(
+    request: &os_transport::action::ClusterStateRequestWire,
+) -> Value {
+    let manifest = dev_transport_pit_bindings()
+        .metadata_manifest
+        .lock()
+        .expect("dev transport metadata manifest lock poisoned");
+    let mut metadata = manifest.clone();
+    if metadata.get("indices").and_then(Value::as_object).is_none() {
+        metadata["indices"] = serde_json::json!({});
+    }
+    if !request.indices.is_empty() {
+        let filtered = metadata["indices"]
+            .as_object()
+            .map(|indices| {
+                indices
+                    .iter()
+                    .filter(|(name, _)| {
+                        request
+                            .indices
+                            .iter()
+                            .any(|pattern| cluster_state_index_pattern_matches(pattern, name))
+                    })
+                    .map(|(name, value)| (name.clone(), value.clone()))
+                    .collect::<serde_json::Map<_, _>>()
+            })
+            .unwrap_or_default();
+        metadata["indices"] = Value::Object(filtered);
+    }
+    metadata
+}
+
+fn cluster_state_routing_table_indices(
+    request: &os_transport::action::ClusterStateRequestWire,
+) -> Value {
+    let created_indices = dev_transport_pit_bindings()
+        .created_indices
+        .lock()
+        .expect("dev transport created indices lock poisoned");
+    let indices = created_indices
+        .iter()
+        .filter(|name| {
+            request.indices.is_empty()
+                || request
+                    .indices
+                    .iter()
+                    .any(|pattern| cluster_state_index_pattern_matches(pattern, name))
+        })
+        .map(|name| {
+            (
+                name.clone(),
+                serde_json::json!({
+                    "shards": {}
+                }),
+            )
+        })
+        .collect::<serde_json::Map<_, _>>();
+    Value::Object(indices)
+}
+
+fn cluster_state_index_pattern_matches(pattern: &str, index: &str) -> bool {
+    if pattern == "*" || pattern == "_all" {
+        return true;
+    }
+    if let Some(prefix) = pattern.strip_suffix('*') {
+        return index.starts_with(prefix);
+    }
+    pattern == index
+}
+
 fn cluster_health_request_supports_local_subset(body: &[u8]) -> bool {
     decode_cluster_health_request_from_transport_body(body)
         .and_then(|request| request.validate_supported_subset().ok())
@@ -20925,6 +21127,9 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
                 transport_identity,
             ))
         }
+        Some("cluster:monitor/state") if cluster_state_request_supports_local_subset(body) => Some(
+            build_cluster_state_response(request_id, header_version_id, transport_identity, body),
+        ),
         Some("internal:monitor/term") => Some(build_get_term_version_response(
             request_id,
             header_version_id,
@@ -26258,6 +26463,146 @@ mod tests {
         assert_eq!(response.number_of_nodes, 1);
         assert_eq!(response.number_of_data_nodes, 1);
         assert!(!response.timed_out);
+    }
+
+    #[test]
+    fn cluster_state_transport_route_builds_requested_local_sections() {
+        struct RecordingTransportConnection {
+            writes: Vec<u8>,
+        }
+
+        impl std::io::Read for RecordingTransportConnection {
+            fn read(&mut self, _buf: &mut [u8]) -> std::io::Result<usize> {
+                Ok(0)
+            }
+        }
+
+        impl std::io::Write for RecordingTransportConnection {
+            fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+                self.writes.extend_from_slice(buf);
+                Ok(buf.len())
+            }
+
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+
+        impl TransportConnection for RecordingTransportConnection {
+            fn set_read_timeout(&self, _duration: Option<Duration>) -> std::io::Result<()> {
+                Ok(())
+            }
+
+            fn peer_addr(&self) -> std::io::Result<SocketAddr> {
+                "127.0.0.1:9300"
+                    .parse()
+                    .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidInput, error))
+            }
+        }
+
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        let bindings = dev_transport_pit_bindings();
+        bindings
+            .created_indices
+            .lock()
+            .expect("dev transport created indices lock poisoned")
+            .clear();
+        bindings
+            .created_indices
+            .lock()
+            .expect("dev transport created indices lock poisoned")
+            .insert("logs-state".to_string());
+        *bindings
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned") = serde_json::json!({
+            "indices": {
+                "logs-state": {
+                    "state": "open",
+                    "settings": {},
+                    "mappings": {},
+                    "aliases": {}
+                },
+                "metrics-state": {
+                    "state": "open"
+                }
+            }
+        });
+
+        let request = os_transport::action::ClusterStateRequestWire {
+            blocks: false,
+            customs: false,
+            indices: vec!["logs-*".to_string()],
+            ..os_transport::action::ClusterStateRequestWire::default()
+        };
+        let frame = os_transport::action::build_cluster_state_request_message(
+            81,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(cluster_state_request_supports_local_subset(&frame[6..]));
+        let transport_identity = DevTransportIdentity {
+            cluster_name: "steelsearch-dev".to_string(),
+            node_name: "steel-node".to_string(),
+            node_id: "steel-node-id".to_string(),
+            ephemeral_id: "steel-node-ephemeral".to_string(),
+            transport_address: "127.0.0.1:9300".parse().unwrap(),
+            attributes: vec![("zone".to_string(), "test-a".to_string())],
+            roles: vec!["cluster_manager".to_string(), "data".to_string()],
+            seed_peer_identity: None,
+            seed_peer_identities: Vec::new(),
+            coordination_state: Arc::new(Mutex::new(DevTransportCoordinationState {
+                last_accepted_version: 11,
+                ..DevTransportCoordinationState::default()
+            })),
+            remote_transport_queue_gate: Arc::new(RemoteTransportQueueGate::new(1, 1000)),
+            task_queue_state: None,
+        };
+        let mut stream = RecordingTransportConnection { writes: Vec::new() };
+
+        let response = handle_subsequent_transport_request(
+            &mut stream,
+            &frame[6..],
+            &transport_identity,
+            None,
+        )
+        .unwrap();
+
+        assert!(response);
+        let mut frame = BytesMut::from(&stream.writes[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected cluster state response message");
+        };
+        assert_eq!(message.request_id, 81);
+        assert!(!message.status.is_request());
+        let response = os_transport::action::read_cluster_state_response_message(&message).unwrap();
+        assert_eq!(response.cluster_name, "steelsearch-dev");
+        assert_eq!(response.version, 11);
+        assert!(response.sections.contains_key("nodes"));
+        assert!(response.sections.contains_key("metadata"));
+        assert!(response.sections.contains_key("routing_table"));
+        assert!(!response.sections.contains_key("blocks"));
+        assert!(!response.sections.contains_key("customs"));
+        assert_eq!(
+            response.sections["nodes"]["steel-node-id"]["attributes"]["zone"],
+            serde_json::json!("test-a")
+        );
+        assert!(response.sections["metadata"]["indices"]
+            .get("logs-state")
+            .is_some());
+        assert!(response.sections["metadata"]["indices"]
+            .get("metrics-state")
+            .is_none());
+        assert!(response.sections["routing_table"]["indices"]
+            .get("logs-state")
+            .is_some());
     }
 
     #[test]

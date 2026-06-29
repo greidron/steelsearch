@@ -5,9 +5,9 @@
     {
       "action_name": "cluster:monitor/state",
       "disposition": "implemented",
-      "evidence_kind": "java_fixture",
-      "request_evidence": "crates/os-cluster-state/tests/java_fixtures.rs::java_cluster_state_transport_request_fixture_matches_rust_builder",
-      "response_evidence": "crates/os-cluster-state/tests/java_fixtures.rs::java_cluster_state_response_fixture_decodes_prefix"
+      "evidence_kind": "live_probe",
+      "request_evidence": "crates/os-transport/src/action.rs::cluster_state_transport_messages_bind_action_frames",
+      "response_evidence": "crates/os-node/src/main.rs::cluster_state_transport_route_builds_requested_local_sections"
     },
     {
       "action_name": "cluster:monitor/health",
