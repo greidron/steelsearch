@@ -19714,7 +19714,8 @@ fn delete_transport_pit_contexts_with_fanout(
     transport_identity: &DevTransportIdentity,
 ) -> os_transport::action::OpenSearchDeletePitResponseWire {
     if pit_ids.len() == 1 && pit_ids.first().is_some_and(|id| id == "_all") {
-        return delete_transport_pit_contexts(pit_ids);
+        let all_pit_ids = all_transport_pit_ids_for_delete(transport_identity);
+        return delete_transport_pit_contexts_with_fanout(&all_pit_ids, transport_identity);
     }
 
     let mut ordered_pit_ids = Vec::new();
@@ -19810,6 +19811,19 @@ fn delete_transport_pit_contexts_with_fanout(
         })
         .collect();
     os_transport::action::OpenSearchDeletePitResponseWire::with_results(results)
+}
+
+fn all_transport_pit_ids_for_delete(transport_identity: &DevTransportIdentity) -> Vec<String> {
+    let mut seen = BTreeSet::new();
+    get_all_transport_pits_response_for_request(
+        transport_identity,
+        &os_transport::action::OpenSearchGetAllPitsRequestWire::default(),
+    )
+    .nodes
+    .into_iter()
+    .flat_map(|node| node.pit_infos.into_iter().map(|pit| pit.pit_id))
+    .filter(|pit_id| seen.insert(pit_id.clone()))
+    .collect()
 }
 
 fn record_delete_pit_result(

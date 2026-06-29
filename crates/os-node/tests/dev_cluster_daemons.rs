@@ -4774,6 +4774,65 @@ fn multi_daemon_get_all_pits_fans_out_to_seed_peers() {
         "{post_free_list:?}"
     );
 
+    let create_all_delete_pit_frame =
+        os_transport::action::build_opensearch_create_pit_request_message(
+            617,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &create_pit_request,
+        )
+        .unwrap();
+    let create_all_delete_pit_response = send_transport_request_and_decode_response(
+        transport_ports[0],
+        &create_all_delete_pit_frame,
+    );
+    let all_delete_pit = os_transport::action::read_opensearch_create_pit_response_message(
+        &create_all_delete_pit_response,
+    )
+    .unwrap();
+    assert!(!all_delete_pit.pit_id.is_empty());
+
+    let delete_all_pits_request = os_transport::action::OpenSearchDeletePitRequestWire::default();
+    let delete_all_pits_frame = os_transport::action::build_opensearch_delete_pit_request_message(
+        618,
+        OPENSEARCH_3_7_0_TRANSPORT,
+        &delete_all_pits_request,
+    )
+    .unwrap();
+    let delete_all_pits_response =
+        send_transport_request_and_decode_response(transport_ports[1], &delete_all_pits_frame);
+    let deleted_all_pits = os_transport::action::read_opensearch_delete_pit_response_message(
+        &delete_all_pits_response,
+    )
+    .unwrap();
+    assert!(
+        deleted_all_pits
+            .results
+            .iter()
+            .any(|result| result.pit_id == all_delete_pit.pit_id && result.successful),
+        "{deleted_all_pits:?}"
+    );
+
+    let post_delete_all_list_frame =
+        os_transport::action::build_opensearch_get_all_pits_request_message(
+            619,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &default_list_request,
+        )
+        .unwrap();
+    let post_delete_all_list_response =
+        send_transport_request_and_decode_response(transport_ports[1], &post_delete_all_list_frame);
+    let post_delete_all_list = os_transport::action::read_opensearch_get_all_pits_response_message(
+        &post_delete_all_list_response,
+    )
+    .unwrap();
+    assert!(
+        !post_delete_all_list.nodes.iter().any(|node| node
+            .pit_infos
+            .iter()
+            .any(|pit| pit.pit_id == all_delete_pit.pit_id)),
+        "{post_delete_all_list:?}"
+    );
+
     let _ = fs::remove_dir_all(root);
 }
 
