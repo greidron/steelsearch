@@ -1848,8 +1848,8 @@ pub fn classify_opensearch_transport_action(
         },
         CLONE_SNAPSHOT_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
-            disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "clone-snapshot transport execution requires snapshot clone coordination and acknowledgement rendering",
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "clone-snapshot transport adapter validates the bounded exact-name subset, clones local manifest snapshot records, and renders an OpenSearch-shaped acknowledgement",
         },
         RESTORE_SNAPSHOT_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -7011,6 +7011,35 @@ pub fn read_clone_snapshot_request_message(
         });
     }
     CloneSnapshotRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_clone_snapshot_response_message(
+    request_id: i64,
+    version: Version,
+    response: &AcknowledgedResponseWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    response.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::response(),
+        version,
+        variable_header: BytesMut::new(),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_clone_snapshot_response_message(
+    message: &TransportMessage,
+) -> Result<AcknowledgedResponseWire, TransportActionWireError> {
+    if message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "response",
+            actual: message.status.bits(),
+        });
+    }
+    AcknowledgedResponseWire::read(message.body.clone().freeze())
 }
 
 pub fn build_restore_snapshot_request_message(
@@ -15348,7 +15377,7 @@ impl CloneSnapshotRequestWire {
         Ok(request)
     }
 
-    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+    pub fn validate_supported_execution_subset(&self) -> Result<(), TransportActionWireError> {
         if self.cluster_manager_timeout != TimeValueWire::seconds(30) {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "clone snapshot cluster-manager timeout",
@@ -15374,10 +15403,41 @@ impl CloneSnapshotRequestWire {
                 reason: "OpenSearch clone-snapshot requests require a target snapshot name",
             });
         }
+        if self.repository.contains('*')
+            || self.repository.contains('?')
+            || self.repository.contains(',')
+        {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "clone snapshot repository pattern",
+                reason: "repository wildcard and multi-name snapshot cloning requires repository pattern resolution semantics",
+            });
+        }
+        if self.source.contains('*') || self.source.contains('?') || self.source.contains(',') {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "clone snapshot source pattern",
+                reason: "source snapshot wildcard and multi-name cloning requires snapshot pattern resolution semantics",
+            });
+        }
+        if self.target.contains('*') || self.target.contains('?') || self.target.contains(',') {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "clone snapshot target pattern",
+                reason: "target snapshot wildcard and multi-name cloning requires snapshot pattern resolution semantics",
+            });
+        }
         if self.indices.is_empty() || self.indices.iter().any(|index| index.trim().is_empty()) {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "clone snapshot missing indices",
                 reason: "OpenSearch clone-snapshot requests require at least one index selector",
+            });
+        }
+        if self
+            .indices
+            .iter()
+            .any(|index| index.contains('*') || index.contains('?') || index.contains(','))
+        {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "clone snapshot index pattern",
+                reason: "clone snapshot index wildcard and multi-name selectors require index selection semantics",
             });
         }
         if self.indices_options != OpenSearchIndicesOptionsWire::strict_expand_hidden() {
@@ -15386,9 +15446,15 @@ impl CloneSnapshotRequestWire {
                 reason: "custom clone-snapshot indices options require OpenSearch index selection semantics",
             });
         }
+        Ok(())
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        self.validate_supported_execution_subset()?;
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "clone snapshot execution",
-            reason: "clone-snapshot transport execution requires snapshot clone coordination and acknowledgement rendering",
+            reason:
+                "clone-snapshot transport execution is handled by the manifest-backed local adapter",
         })
     }
 }
@@ -54851,7 +54917,7 @@ mod tests {
     }
 
     #[test]
-    fn clone_snapshot_request_wire_round_trips_and_rejects_execution_boundary() {
+    fn clone_snapshot_request_wire_round_trips_and_validates_supported_subset() {
         let request = CloneSnapshotRequestWire {
             parent_task_node: "cluster-manager".to_string(),
             parent_task_id: Some(36),
@@ -54866,13 +54932,7 @@ mod tests {
 
         let decoded = CloneSnapshotRequestWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, request);
-        assert!(matches!(
-            decoded.reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "clone snapshot execution",
-                ..
-            })
-        ));
+        decoded.validate_supported_execution_subset().unwrap();
     }
 
     #[test]
@@ -54882,7 +54942,7 @@ mod tests {
             ..CloneSnapshotRequestWire::default()
         };
         assert!(matches!(
-            cluster_manager_timeout.reject_unsupported_execution(),
+            cluster_manager_timeout.validate_supported_execution_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "clone snapshot cluster-manager timeout",
                 ..
@@ -54894,7 +54954,7 @@ mod tests {
             ..CloneSnapshotRequestWire::default()
         };
         assert!(matches!(
-            missing_repository.reject_unsupported_execution(),
+            missing_repository.validate_supported_execution_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "clone snapshot missing repository",
                 ..
@@ -54906,7 +54966,7 @@ mod tests {
             ..CloneSnapshotRequestWire::default()
         };
         assert!(matches!(
-            missing_source.reject_unsupported_execution(),
+            missing_source.validate_supported_execution_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "clone snapshot missing source",
                 ..
@@ -54918,19 +54978,61 @@ mod tests {
             ..CloneSnapshotRequestWire::default()
         };
         assert!(matches!(
-            missing_target.reject_unsupported_execution(),
+            missing_target.validate_supported_execution_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "clone snapshot missing target",
                 ..
             })
         ));
 
+        for repository in ["repo-*", "repo?", "repo-a,repo-b"] {
+            let request = CloneSnapshotRequestWire {
+                repository: repository.to_string(),
+                ..CloneSnapshotRequestWire::default()
+            };
+            assert!(matches!(
+                request.validate_supported_execution_subset(),
+                Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "clone snapshot repository pattern",
+                    ..
+                })
+            ));
+        }
+
+        for source in ["snap-*", "snap?", "snap-a,snap-b"] {
+            let request = CloneSnapshotRequestWire {
+                source: source.to_string(),
+                ..CloneSnapshotRequestWire::default()
+            };
+            assert!(matches!(
+                request.validate_supported_execution_subset(),
+                Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "clone snapshot source pattern",
+                    ..
+                })
+            ));
+        }
+
+        for target in ["snap-*", "snap?", "snap-a,snap-b"] {
+            let request = CloneSnapshotRequestWire {
+                target: target.to_string(),
+                ..CloneSnapshotRequestWire::default()
+            };
+            assert!(matches!(
+                request.validate_supported_execution_subset(),
+                Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "clone snapshot target pattern",
+                    ..
+                })
+            ));
+        }
+
         let empty_indices = CloneSnapshotRequestWire {
             indices: Vec::new(),
             ..CloneSnapshotRequestWire::default()
         };
         assert!(matches!(
-            empty_indices.reject_unsupported_execution(),
+            empty_indices.validate_supported_execution_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "clone snapshot missing indices",
                 ..
@@ -54942,19 +55044,33 @@ mod tests {
             ..CloneSnapshotRequestWire::default()
         };
         assert!(matches!(
-            blank_index.reject_unsupported_execution(),
+            blank_index.validate_supported_execution_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "clone snapshot missing indices",
                 ..
             })
         ));
 
+        for index in ["logs-*", "logs?", "logs-a,logs-b"] {
+            let request = CloneSnapshotRequestWire {
+                indices: vec![index.to_string()],
+                ..CloneSnapshotRequestWire::default()
+            };
+            assert!(matches!(
+                request.validate_supported_execution_subset(),
+                Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "clone snapshot index pattern",
+                    ..
+                })
+            ));
+        }
+
         let indices_options = CloneSnapshotRequestWire {
             indices_options: OpenSearchIndicesOptionsWire::strict_expand_open(),
             ..CloneSnapshotRequestWire::default()
         };
         assert!(matches!(
-            indices_options.reject_unsupported_execution(),
+            indices_options.validate_supported_execution_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "clone snapshot indices options",
                 ..
@@ -54963,7 +55079,7 @@ mod tests {
     }
 
     #[test]
-    fn clone_snapshot_transport_messages_bind_rejected_action_frame() {
+    fn clone_snapshot_transport_messages_bind_supported_action_frame() {
         let request = CloneSnapshotRequestWire::default();
         let mut frame =
             build_clone_snapshot_request_message(36, OPENSEARCH_3_7_0_TRANSPORT, &request).unwrap();
@@ -54974,14 +55090,32 @@ mod tests {
             read_clone_snapshot_request_message(&message).unwrap(),
             request
         );
+        assert_eq!(
+            classify_opensearch_transport_action(CLONE_SNAPSHOT_ACTION_NAME).disposition,
+            OpenSearchTransportActionDisposition::Implemented
+        );
+        read_clone_snapshot_request_message(&message)
+            .unwrap()
+            .validate_supported_execution_subset()
+            .unwrap();
+
+        let response = AcknowledgedResponseWire { acknowledged: true };
+        let mut frame =
+            build_clone_snapshot_response_message(36, OPENSEARCH_3_7_0_TRANSPORT, &response)
+                .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected clone snapshot response message");
+        };
+        assert_eq!(
+            read_clone_snapshot_response_message(&message).unwrap(),
+            response
+        );
         assert!(matches!(
-            read_clone_snapshot_request_message(&message)
-                .unwrap()
-                .reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "clone snapshot execution",
+            read_clone_snapshot_request_message(&message).unwrap_err(),
+            TransportActionWireError::UnexpectedMessageStatus {
+                expected: "request",
                 ..
-            })
+            }
         ));
     }
 

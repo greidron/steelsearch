@@ -1781,6 +1781,32 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end_at_ms,
         )?;
     } else if is_request
+        && normalized_action_hint == Some("cluster:admin/snapshot/clone")
+        && clone_snapshot_request_supports_manifest_execution_subset(&body)
+    {
+        let response = build_clone_snapshot_response(request_id, header_version_id, &body);
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("cluster:admin/snapshot/clone"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request
         && normalized_action_hint == Some("cluster:admin/snapshot/delete")
         && delete_snapshot_request_supports_manifest_execution_subset(&body)
     {
@@ -6276,6 +6302,149 @@ fn apply_transport_create_snapshot_to_manifest(
                 return false;
             }
             items.push(snapshot_record);
+            true
+        }
+        _ => false,
+    }
+}
+
+fn build_clone_snapshot_response(request_id: i64, header_version_id: u32, body: &[u8]) -> Vec<u8> {
+    let Some(request) = decode_clone_snapshot_request_from_transport_body(body) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    if !clone_snapshot_request_matches_manifest_subset(&request) {
+        return build_empty_transport_response(request_id, header_version_id);
+    }
+    if !apply_transport_clone_snapshot_to_manifest(&request) {
+        return build_empty_transport_response(request_id, header_version_id);
+    }
+    build_acknowledged_template_response(
+        request_id,
+        header_version_id,
+        os_transport::action::build_clone_snapshot_response_message,
+    )
+}
+
+fn clone_snapshot_request_supports_manifest_execution_subset(body: &[u8]) -> bool {
+    decode_clone_snapshot_request_from_transport_body(body)
+        .is_some_and(|request| clone_snapshot_request_matches_manifest_subset(&request))
+}
+
+fn decode_clone_snapshot_request_from_transport_body(
+    body: &[u8],
+) -> Option<os_transport::action::CloneSnapshotRequestWire> {
+    let message = decode_transport_message_from_body(body)?;
+    os_transport::action::read_clone_snapshot_request_message(&message).ok()
+}
+
+fn clone_snapshot_request_matches_manifest_subset(
+    request: &os_transport::action::CloneSnapshotRequestWire,
+) -> bool {
+    request.validate_supported_execution_subset().is_ok()
+        && snapshot_repository_exists_in_manifest(&request.repository)
+        && manifest_snapshot_record_exists_for_clone_source(&request.repository, &request.source)
+        && manifest_accepts_new_snapshot_record(&request.repository, &request.target)
+}
+
+fn manifest_snapshot_record_exists_for_clone_source(repository: &str, snapshot: &str) -> bool {
+    let bindings = dev_transport_pit_bindings();
+    let manifest = bindings
+        .metadata_manifest
+        .lock()
+        .expect("dev transport metadata manifest lock poisoned");
+    manifest
+        .get("snapshots")
+        .and_then(|value| value.get(repository))
+        .is_some_and(|repository_snapshots| {
+            manifest_snapshot_record_exists(repository_snapshots, snapshot)
+        })
+}
+
+fn apply_transport_clone_snapshot_to_manifest(
+    request: &os_transport::action::CloneSnapshotRequestWire,
+) -> bool {
+    let bindings = dev_transport_pit_bindings();
+    let mut manifest = bindings
+        .metadata_manifest
+        .lock()
+        .expect("dev transport metadata manifest lock poisoned");
+    if manifest["snapshot_repositories"]
+        .get(&request.repository)
+        .is_none()
+    {
+        return false;
+    }
+    let Some(repository_snapshots) = manifest
+        .get_mut("snapshots")
+        .and_then(Value::as_object_mut)
+        .and_then(|snapshots_by_repository| snapshots_by_repository.get_mut(&request.repository))
+    else {
+        return false;
+    };
+    match repository_snapshots {
+        Value::Object(items) => {
+            if items.contains_key(&request.target) {
+                return false;
+            }
+            let Some(source_record) = items.get(&request.source).cloned() else {
+                return false;
+            };
+            let mut target_record = source_record;
+            if let Some(target) = target_record.as_object_mut() {
+                target.insert(
+                    "snapshot".to_string(),
+                    Value::String(request.target.clone()),
+                );
+                target.insert("source".to_string(), Value::String(request.source.clone()));
+                target.insert(
+                    "indices".to_string(),
+                    Value::Array(
+                        request
+                            .indices
+                            .iter()
+                            .map(|index| Value::String(index.clone()))
+                            .collect(),
+                    ),
+                );
+            }
+            items.insert(request.target.clone(), target_record);
+            true
+        }
+        Value::Array(items) => {
+            if manifest_snapshot_array_contains(items, &request.target) {
+                return false;
+            }
+            let Some(source_record) = items
+                .iter()
+                .find(|item| {
+                    item.get("snapshot")
+                        .or_else(|| item.get("name"))
+                        .and_then(Value::as_str)
+                        == Some(request.source.as_str())
+                })
+                .cloned()
+            else {
+                return false;
+            };
+            let mut target_record = source_record;
+            if let Some(target) = target_record.as_object_mut() {
+                target.insert(
+                    "snapshot".to_string(),
+                    Value::String(request.target.clone()),
+                );
+                target.insert("source".to_string(), Value::String(request.source.clone()));
+                target.insert(
+                    "indices".to_string(),
+                    Value::Array(
+                        request
+                            .indices
+                            .iter()
+                            .map(|index| Value::String(index.clone()))
+                            .collect(),
+                    ),
+                );
+            }
+            items.push(target_record);
             true
         }
         _ => false,
@@ -18864,6 +19033,15 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
                 body,
             ))
         }
+        Some("cluster:admin/snapshot/clone")
+            if clone_snapshot_request_supports_manifest_execution_subset(body) =>
+        {
+            Some(build_clone_snapshot_response(
+                request_id,
+                header_version_id,
+                body,
+            ))
+        }
         Some("cluster:admin/snapshot/delete")
             if delete_snapshot_request_supports_manifest_execution_subset(body) =>
         {
@@ -24571,6 +24749,226 @@ mod tests {
         )
         .unwrap();
         assert!(!create_snapshot_request_supports_manifest_execution_subset(
+            &frame[6..]
+        ));
+    }
+
+    #[test]
+    fn clone_snapshot_transport_route_copies_object_manifest_snapshot_record() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        let bindings = dev_transport_pit_bindings();
+        {
+            let mut manifest = bindings
+                .metadata_manifest
+                .lock()
+                .expect("dev transport metadata manifest lock poisoned");
+            *manifest = serde_json::json!({
+                "snapshot_repositories": {
+                    "repo-snapshots": {
+                        "type": "fs",
+                        "settings": {
+                            "location": "/tmp/repo-snapshots"
+                        }
+                    }
+                },
+                "snapshots": {
+                    "repo-snapshots": {
+                        "snapshot-a": {
+                            "snapshot": "snapshot-a",
+                            "state": "SUCCESS",
+                            "indices": ["logs-000001", "logs-000002"]
+                        }
+                    }
+                }
+            });
+        }
+
+        let request = os_transport::action::CloneSnapshotRequestWire {
+            repository: "repo-snapshots".to_string(),
+            source: "snapshot-a".to_string(),
+            target: "snapshot-b".to_string(),
+            indices: vec!["logs-000001".to_string()],
+            ..os_transport::action::CloneSnapshotRequestWire::default()
+        };
+        let frame = os_transport::action::build_clone_snapshot_request_message(
+            90,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(clone_snapshot_request_supports_manifest_execution_subset(
+            &frame[6..]
+        ));
+
+        let response =
+            build_clone_snapshot_response(90, OPENSEARCH_3_7_0_TRANSPORT.id() as u32, &frame[6..]);
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected clone snapshot response message");
+        };
+        assert_eq!(message.request_id, 90);
+        let response =
+            os_transport::action::read_clone_snapshot_response_message(&message).unwrap();
+        assert!(response.acknowledged);
+
+        let manifest = bindings
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned");
+        assert_eq!(
+            manifest["snapshots"]["repo-snapshots"]["snapshot-b"]["snapshot"],
+            "snapshot-b"
+        );
+        assert_eq!(
+            manifest["snapshots"]["repo-snapshots"]["snapshot-b"]["source"],
+            "snapshot-a"
+        );
+        assert_eq!(
+            manifest["snapshots"]["repo-snapshots"]["snapshot-b"]["indices"][0],
+            "logs-000001"
+        );
+    }
+
+    #[test]
+    fn clone_snapshot_transport_route_copies_array_manifest_snapshot_record() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        let bindings = dev_transport_pit_bindings();
+        {
+            let mut manifest = bindings
+                .metadata_manifest
+                .lock()
+                .expect("dev transport metadata manifest lock poisoned");
+            *manifest = serde_json::json!({
+                "snapshot_repositories": {
+                    "repo-snapshots": {
+                        "type": "fs",
+                        "settings": {
+                            "location": "/tmp/repo-snapshots"
+                        }
+                    }
+                },
+                "snapshots": {
+                    "repo-snapshots": [
+                        {
+                            "snapshot": "snapshot-a",
+                            "state": "SUCCESS",
+                            "indices": ["logs-000001", "logs-000002"]
+                        }
+                    ]
+                }
+            });
+        }
+
+        let request = os_transport::action::CloneSnapshotRequestWire {
+            repository: "repo-snapshots".to_string(),
+            source: "snapshot-a".to_string(),
+            target: "snapshot-b".to_string(),
+            indices: vec!["logs-000002".to_string()],
+            ..os_transport::action::CloneSnapshotRequestWire::default()
+        };
+        let frame = os_transport::action::build_clone_snapshot_request_message(
+            91,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(clone_snapshot_request_supports_manifest_execution_subset(
+            &frame[6..]
+        ));
+
+        let response =
+            build_clone_snapshot_response(91, OPENSEARCH_3_7_0_TRANSPORT.id() as u32, &frame[6..]);
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected clone snapshot response message");
+        };
+        let response =
+            os_transport::action::read_clone_snapshot_response_message(&message).unwrap();
+        assert!(response.acknowledged);
+
+        let manifest = bindings
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned");
+        let snapshots = manifest["snapshots"]["repo-snapshots"].as_array().unwrap();
+        assert_eq!(snapshots.len(), 2);
+        assert_eq!(snapshots[1]["snapshot"], "snapshot-b");
+        assert_eq!(snapshots[1]["source"], "snapshot-a");
+        assert_eq!(snapshots[1]["indices"][0], "logs-000002");
+    }
+
+    #[test]
+    fn clone_snapshot_transport_route_excludes_missing_source_or_existing_target() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        let bindings = dev_transport_pit_bindings();
+        {
+            let mut manifest = bindings
+                .metadata_manifest
+                .lock()
+                .expect("dev transport metadata manifest lock poisoned");
+            *manifest = serde_json::json!({
+                "snapshot_repositories": {
+                    "repo-snapshots": {
+                        "type": "fs",
+                        "settings": {
+                            "location": "/tmp/repo-snapshots"
+                        }
+                    }
+                },
+                "snapshots": {
+                    "repo-snapshots": {
+                        "snapshot-a": {"snapshot": "snapshot-a", "state": "SUCCESS"},
+                        "snapshot-b": {"snapshot": "snapshot-b", "state": "SUCCESS"}
+                    }
+                }
+            });
+        }
+
+        let missing_source = os_transport::action::CloneSnapshotRequestWire {
+            repository: "repo-snapshots".to_string(),
+            source: "snapshot-missing".to_string(),
+            target: "snapshot-c".to_string(),
+            indices: vec!["logs-000001".to_string()],
+            ..os_transport::action::CloneSnapshotRequestWire::default()
+        };
+        let frame = os_transport::action::build_clone_snapshot_request_message(
+            92,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &missing_source,
+        )
+        .unwrap();
+        assert!(!clone_snapshot_request_supports_manifest_execution_subset(
+            &frame[6..]
+        ));
+
+        let existing_target = os_transport::action::CloneSnapshotRequestWire {
+            repository: "repo-snapshots".to_string(),
+            source: "snapshot-a".to_string(),
+            target: "snapshot-b".to_string(),
+            indices: vec!["logs-000001".to_string()],
+            ..os_transport::action::CloneSnapshotRequestWire::default()
+        };
+        let frame = os_transport::action::build_clone_snapshot_request_message(
+            93,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &existing_target,
+        )
+        .unwrap();
+        assert!(!clone_snapshot_request_supports_manifest_execution_subset(
             &frame[6..]
         ));
     }

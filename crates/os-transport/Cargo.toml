@@ -108,8 +108,8 @@ name = "create-snapshot-wire-benchmark"
 path = "benchmarks/create_snapshot_wire.rs"
 
 [[bin]]
-name = "clone-snapshot-reject-wire-benchmark"
-path = "benchmarks/clone_snapshot_reject_wire.rs"
+name = "clone-snapshot-wire-benchmark"
+path = "benchmarks/clone_snapshot_wire.rs"
 
 [[bin]]
 name = "restore-snapshot-reject-wire-benchmark"
