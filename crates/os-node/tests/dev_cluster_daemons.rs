@@ -3370,6 +3370,61 @@ fn daemon_transport_get_settings_reflects_rest_created_index_metadata() {
 }
 
 #[test]
+fn daemon_transport_allocation_explain_empty_state_matches_opensearch_error() {
+    let binary = os_node_binary();
+    let root = unique_work_dir();
+    fs::create_dir_all(root.join("data")).unwrap();
+    let transport_port = free_port();
+
+    let mut child = Command::new(&binary)
+        .arg("--http.host")
+        .arg("127.0.0.1")
+        .arg("--http.port")
+        .arg("0")
+        .arg("--transport.host")
+        .arg("127.0.0.1")
+        .arg("--transport.port")
+        .arg(transport_port.to_string())
+        .arg("--cluster.name")
+        .arg("steel-dev-allocation-explain-transport")
+        .arg("--path.data")
+        .arg(root.join("data"))
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+
+    let stderr = child.stderr.take().unwrap();
+    let mut reader = BufReader::new(stderr);
+    let _http_port = read_reported_http_port(&mut reader);
+    let _guard = ChildGuard {
+        children: vec![child],
+    };
+
+    let request = os_transport::action::ClusterAllocationExplainRequestWire::default();
+    let frame = os_transport::action::build_cluster_allocation_explain_request_message(
+        93,
+        OPENSEARCH_3_7_0_TRANSPORT,
+        &request,
+    )
+    .unwrap();
+    let response = send_transport_request_and_decode_response(transport_port, &frame);
+
+    assert_eq!(response.request_id, 93);
+    assert!(response.status.is_error());
+    let error = os_transport::error::TransportError::read(response.body.freeze())
+        .unwrap()
+        .unwrap();
+    assert_eq!(error.class_name, "java.lang.IllegalArgumentException");
+    assert_eq!(
+        error.message.as_deref(),
+        Some("unable to find any unassigned shards to explain [ClusterAllocationExplainRequest[useAnyUnassignedShard=true,includeYesDecisions?=false]")
+    );
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
 fn daemon_point_in_time_contexts_do_not_survive_restart() {
     let binary = os_node_binary();
     let root = unique_work_dir();
