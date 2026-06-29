@@ -37,7 +37,7 @@
       "request_wire_type": "ClusterStateRequest",
       "response_wire_type": "ClusterStateResponse",
       "disposition": "implemented",
-      "reason": "Cluster-state fetch and cache refresh are part of the initial Phase B observer baseline."
+      "reason": "Cluster-state observer transport adapter is available"
     },
     {
       "action_name": "cluster:monitor/health",
@@ -46,7 +46,7 @@
       "request_wire_type": "ClusterHealthRequest",
       "response_wire_type": "ClusterHealthResponse",
       "disposition": "implemented",
-      "reason": "Standalone cluster-level health request/response transport codec maps onto the Rust health semantic adapter."
+      "reason": "Cluster-health transport adapter is available for the standalone cluster-level subset"
     },
     {
       "action_name": "cluster:monitor/stats",
@@ -55,7 +55,7 @@
       "request_wire_type": "ClusterStatsRequest",
       "response_wire_type": "ClusterStatsResponse",
       "disposition": "implemented",
-      "reason": "Cluster-stats transport adapter renders a local empty ClusterStatsResponse for the default all-metrics subset."
+      "reason": "Cluster-stats transport adapter renders local empty ClusterStatsResponse wire for the default all-metrics subset"
     },
     {
       "action_name": "cluster:monitor/shards",
@@ -64,7 +64,7 @@
       "request_wire_type": "CatShardsRequest",
       "response_wire_type": "CatShardsResponse",
       "disposition": "implemented",
-      "reason": "Cat-shards transport adapter renders empty IndicesStatsResponse, empty DiscoveryNodes, and empty shard routing list for the default subset."
+      "reason": "Cat-shards transport adapter renders empty IndicesStatsResponse, empty DiscoveryNodes, and empty shard routing list for the default subset"
     },
     {
       "action_name": "cluster:monitor/nodes/info",
@@ -100,7 +100,7 @@
       "request_wire_type": "RemoteStoreStatsRequest",
       "response_wire_type": "RemoteStoreStatsResponse",
       "disposition": "implemented",
-      "reason": "Remote-store-stats transport adapter returns an OpenSearch-shaped empty broadcast response for the no-remote-store-shards subset."
+      "reason": "Remote-store-stats transport adapter returns an OpenSearch-shaped empty broadcast response for the no-remote-store-shards subset"
     },
     {
       "action_name": "cluster:admin/remote_store/metadata",
@@ -109,7 +109,7 @@
       "request_wire_type": "RemoteStoreMetadataRequest",
       "response_wire_type": "RemoteStoreMetadataResponse",
       "disposition": "implemented",
-      "reason": "Remote-store-metadata transport adapter returns an OpenSearch-shaped empty response for the no-remote-store-shards subset."
+      "reason": "Remote-store-metadata transport adapter returns an OpenSearch-shaped empty response for the no-remote-store-shards subset"
     },
     {
       "action_name": "cluster:admin/filecache/prune",
@@ -118,7 +118,7 @@
       "request_wire_type": "PruneFileCacheRequest",
       "response_wire_type": "PruneFileCacheResponse",
       "disposition": "rejected",
-      "reason": "Prune-file-cache transport execution requires warm-node file cache pruning and node response aggregation before Steelsearch can serve OpenSearch file cache prune semantics."
+      "reason": "Prune-file-cache transport execution requires warm-node file cache pruning and response rendering"
     },
     {
       "action_name": "cluster:admin/nodes/reload_secure_settings",
@@ -127,7 +127,7 @@
       "request_wire_type": "NodesReloadSecureSettingsRequest",
       "response_wire_type": "NodesReloadSecureSettingsResponse",
       "disposition": "rejected",
-      "reason": "Reload-secure-settings transport execution requires keystore reload, transport TLS password safety, reloadable extension hooks, and node response rendering before Steelsearch can serve OpenSearch secure settings reload semantics."
+      "reason": "Reload-secure-settings transport execution requires keystore reload, transport TLS password safety, reloadable extension hooks, and node response rendering"
     },
     {
       "action_name": "cluster:admin/repository/put",
@@ -135,8 +135,8 @@
       "transport_action": "TransportPutRepositoryAction",
       "request_wire_type": "PutRepositoryRequest",
       "response_wire_type": "AcknowledgedResponse",
-      "disposition": "rejected",
-      "reason": "Put-repository transport execution requires repository metadata mutation, verification, and acknowledgement rendering before Steelsearch can serve OpenSearch repository registration semantics."
+      "disposition": "implemented",
+      "reason": "Put-repository transport adapter validates the bounded repository metadata subset, records local manifest repository metadata, and renders an OpenSearch-shaped acknowledgement"
     },
     {
       "action_name": "cluster:admin/repository/delete",
@@ -144,8 +144,8 @@
       "transport_action": "TransportDeleteRepositoryAction",
       "request_wire_type": "DeleteRepositoryRequest",
       "response_wire_type": "AcknowledgedResponse",
-      "disposition": "rejected",
-      "reason": "Delete-repository transport execution requires repository metadata mutation and acknowledgement rendering before Steelsearch can serve OpenSearch repository deletion semantics."
+      "disposition": "implemented",
+      "reason": "Delete-repository transport adapter validates the bounded exact-name subset, removes local repository metadata, and renders an OpenSearch-shaped acknowledgement"
     },
     {
       "action_name": "cluster:admin/repository/verify",
@@ -153,8 +153,8 @@
       "transport_action": "TransportVerifyRepositoryAction",
       "request_wire_type": "VerifyRepositoryRequest",
       "response_wire_type": "VerifyRepositoryResponse",
-      "disposition": "rejected",
-      "reason": "Verify-repository transport execution requires repository verification and node response rendering before Steelsearch can serve OpenSearch repository verification semantics."
+      "disposition": "implemented",
+      "reason": "Verify-repository transport adapter validates the bounded exact-name subset and renders an OpenSearch-shaped local node verification response"
     },
     {
       "action_name": "cluster:admin/repository/_cleanup",
@@ -162,8 +162,8 @@
       "transport_action": "TransportCleanupRepositoryAction",
       "request_wire_type": "CleanupRepositoryRequest",
       "response_wire_type": "CleanupRepositoryResponse",
-      "disposition": "rejected",
-      "reason": "Cleanup-repository transport execution requires repository cleanup state coordination and cleanup result rendering before Steelsearch can serve OpenSearch repository cleanup semantics."
+      "disposition": "implemented",
+      "reason": "Cleanup-repository transport adapter validates the bounded exact-name subset and renders an OpenSearch-shaped zero cleanup result for local manifest repositories"
     },
     {
       "action_name": "cluster:admin/snapshot/get",
@@ -171,8 +171,8 @@
       "transport_action": "TransportGetSnapshotsAction",
       "request_wire_type": "GetSnapshotsRequest",
       "response_wire_type": "GetSnapshotsResponse",
-      "disposition": "rejected",
-      "reason": "Get-snapshots transport execution requires repository snapshot metadata resolution and snapshot response rendering before Steelsearch can serve OpenSearch snapshot listing semantics."
+      "disposition": "implemented",
+      "reason": "Get-snapshots transport adapter validates the bounded default selector subset and renders an OpenSearch-shaped zero-snapshot response for local manifest repositories"
     },
     {
       "action_name": "cluster:admin/snapshot/delete",
@@ -180,8 +180,8 @@
       "transport_action": "TransportDeleteSnapshotAction",
       "request_wire_type": "DeleteSnapshotRequest",
       "response_wire_type": "AcknowledgedResponse",
-      "disposition": "rejected",
-      "reason": "Delete-snapshot transport execution requires snapshot deletion coordination and acknowledgement rendering before Steelsearch can serve OpenSearch snapshot deletion semantics."
+      "disposition": "implemented",
+      "reason": "Delete-snapshot transport adapter validates the bounded exact-name subset, removes local manifest snapshot records, and renders an OpenSearch-shaped acknowledgement"
     },
     {
       "action_name": "cluster:admin/snapshot/create",
@@ -189,8 +189,8 @@
       "transport_action": "TransportCreateSnapshotAction",
       "request_wire_type": "CreateSnapshotRequest",
       "response_wire_type": "CreateSnapshotResponse",
-      "disposition": "rejected",
-      "reason": "Create-snapshot transport execution requires snapshot creation coordination and create-snapshot response rendering before Steelsearch can serve OpenSearch snapshot creation semantics."
+      "disposition": "implemented",
+      "reason": "Create-snapshot transport adapter validates the bounded default-option subset, records a local manifest snapshot, and renders an OpenSearch-shaped accepted response"
     },
     {
       "action_name": "cluster:admin/snapshot/clone",
@@ -198,8 +198,8 @@
       "transport_action": "TransportCloneSnapshotAction",
       "request_wire_type": "CloneSnapshotRequest",
       "response_wire_type": "AcknowledgedResponse",
-      "disposition": "rejected",
-      "reason": "Clone-snapshot transport execution requires snapshot clone coordination and acknowledgement rendering before Steelsearch can serve OpenSearch snapshot clone semantics."
+      "disposition": "implemented",
+      "reason": "Clone-snapshot transport adapter validates the bounded exact-name subset, clones local manifest snapshot records, and renders an OpenSearch-shaped acknowledgement"
     },
     {
       "action_name": "cluster:admin/snapshot/restore",
@@ -208,7 +208,7 @@
       "request_wire_type": "RestoreSnapshotRequest",
       "response_wire_type": "RestoreSnapshotResponse",
       "disposition": "rejected",
-      "reason": "Restore-snapshot transport execution requires snapshot restore coordination and restore response rendering before Steelsearch can serve OpenSearch snapshot restore semantics."
+      "reason": "Restore-snapshot transport execution requires snapshot restore coordination and restore response rendering"
     },
     {
       "action_name": "cluster:admin/snapshot/status",
@@ -216,8 +216,8 @@
       "transport_action": "TransportSnapshotsStatusAction",
       "request_wire_type": "SnapshotsStatusRequest",
       "response_wire_type": "SnapshotsStatusResponse",
-      "disposition": "rejected",
-      "reason": "Snapshots-status transport execution requires current snapshot and repository snapshot status rendering before Steelsearch can serve OpenSearch snapshot status semantics."
+      "disposition": "implemented",
+      "reason": "Snapshots-status transport adapter validates the bounded all-snapshots empty-status subset and renders an OpenSearch-shaped empty response"
     },
     {
       "action_name": "cluster:admin/remotestore/restore",
@@ -226,7 +226,7 @@
       "request_wire_type": "RestoreRemoteStoreRequest",
       "response_wire_type": "RestoreRemoteStoreResponse",
       "disposition": "rejected",
-      "reason": "Restore-remote-store transport execution requires remote-store restore service coordination, shard restore planning, completion listener, RestoreInfo decoding, and response rendering before Steelsearch can serve OpenSearch remote-store restore semantics."
+      "reason": "Restore-remote-store transport execution requires remote-store restore service coordination, shard restore planning, completion listener, RestoreInfo decoding, and response rendering"
     },
     {
       "action_name": "cluster:internal/extensions",
@@ -235,7 +235,7 @@
       "request_wire_type": "ExtensionActionRequest",
       "response_wire_type": "ExtensionActionResponse",
       "disposition": "rejected",
-      "reason": "Extension-proxy transport execution requires extension manager routing, protobuf ExtensionTransportMessage parsing, extension transport dispatch, and byte response rendering before Steelsearch can serve OpenSearch extension proxy semantics."
+      "reason": "Extension-proxy transport execution requires extension manager routing, protobuf ExtensionTransportMessage parsing, extension transport dispatch, and byte response rendering"
     },
     {
       "action_name": "cluster:admin/decommission/awareness/put",
@@ -244,7 +244,7 @@
       "request_wire_type": "DecommissionRequest",
       "response_wire_type": "DecommissionResponse",
       "disposition": "rejected",
-      "reason": "Decommission transport execution requires decommission metadata mutation, node draining coordination, cluster-state publication, and acknowledgement rendering before Steelsearch can serve OpenSearch decommission semantics."
+      "reason": "Decommission transport execution requires decommission metadata mutation, node draining coordination, cluster-state publication, and acknowledgement rendering"
     },
     {
       "action_name": "cluster:admin/decommission/awareness/get",
@@ -253,7 +253,7 @@
       "request_wire_type": "GetDecommissionStateRequest",
       "response_wire_type": "GetDecommissionStateResponse",
       "disposition": "implemented",
-      "reason": "Get-decommission-state transport adapter renders OpenSearch-shaped decommission metadata from the Rust manifest."
+      "reason": "Get-decommission-state transport adapter renders OpenSearch-shaped decommission metadata from the Rust manifest"
     },
     {
       "action_name": "cluster:admin/decommission/awareness/delete",
@@ -262,7 +262,7 @@
       "request_wire_type": "DeleteDecommissionStateRequest",
       "response_wire_type": "DeleteDecommissionStateResponse",
       "disposition": "implemented",
-      "reason": "Delete-decommission-state transport adapter removes Rust manifest decommission metadata and renders OpenSearch-shaped acknowledgement."
+      "reason": "Delete-decommission-state transport adapter removes Rust manifest decommission metadata and renders OpenSearch-shaped acknowledgement"
     },
     {
       "action_name": "cluster:admin/search/pipeline/put",
@@ -270,8 +270,8 @@
       "transport_action": "PutSearchPipelineTransportAction",
       "request_wire_type": "PutSearchPipelineRequest",
       "response_wire_type": "AcknowledgedResponse",
-      "disposition": "rejected",
-      "reason": "Put-search-pipeline transport execution requires search pipeline metadata mutation, pipeline source parsing and validation, node search pipeline capability lookup, cluster-state publication, and acknowledgement rendering before Steelsearch can serve OpenSearch search pipeline put semantics."
+      "disposition": "implemented",
+      "reason": "Put-search-pipeline transport adapter stores JSON search pipeline metadata in the Rust manifest and renders OpenSearch AcknowledgedResponse"
     },
     {
       "action_name": "cluster:admin/search/pipeline/get",
@@ -280,7 +280,7 @@
       "request_wire_type": "GetSearchPipelineRequest",
       "response_wire_type": "GetSearchPipelineResponse",
       "disposition": "implemented",
-      "reason": "Get-search-pipeline transport adapter renders OpenSearch-shaped search pipeline metadata from the Rust manifest."
+      "reason": "Get-search-pipeline transport adapter renders OpenSearch-shaped search pipeline metadata from the Rust manifest"
     },
     {
       "action_name": "cluster:admin/search/pipeline/delete",
@@ -289,7 +289,7 @@
       "request_wire_type": "DeleteSearchPipelineRequest",
       "response_wire_type": "AcknowledgedResponse",
       "disposition": "implemented",
-      "reason": "Delete-search-pipeline transport adapter removes matching Rust manifest search pipeline metadata and renders OpenSearch-shaped acknowledgement."
+      "reason": "Delete-search-pipeline transport adapter removes matching Rust manifest search pipeline metadata and renders OpenSearch-shaped acknowledgement"
     },
     {
       "action_name": "indices:admin/ingestion/pause",
@@ -298,7 +298,7 @@
       "request_wire_type": "PauseIngestionRequest",
       "response_wire_type": "PauseIngestionResponse",
       "disposition": "rejected",
-      "reason": "Pause-ingestion transport execution requires destructive-index guard checks, index resolution, ingestion poller state mutation, shard acknowledgement aggregation, and response rendering before Steelsearch can serve OpenSearch ingestion pause semantics."
+      "reason": "Pause-ingestion transport execution requires destructive-index guard checks, index resolution, ingestion poller state mutation, shard acknowledgement aggregation, and response rendering"
     },
     {
       "action_name": "indices:admin/ingestion/resume",
@@ -307,7 +307,7 @@
       "request_wire_type": "ResumeIngestionRequest",
       "response_wire_type": "ResumeIngestionResponse",
       "disposition": "rejected",
-      "reason": "Resume-ingestion transport execution requires destructive-index guard checks, index resolution, optional shard pointer reset, ingestion poller state mutation, shard acknowledgement aggregation, and response rendering before Steelsearch can serve OpenSearch ingestion resume semantics."
+      "reason": "Resume-ingestion transport execution requires destructive-index guard checks, index resolution, optional shard pointer reset, ingestion poller state mutation, shard acknowledgement aggregation, and response rendering"
     },
     {
       "action_name": "indices:monitor/ingestion/state",
@@ -316,7 +316,7 @@
       "request_wire_type": "GetIngestionStateRequest",
       "response_wire_type": "GetIngestionStateResponse",
       "disposition": "rejected",
-      "reason": "Get-ingestion-state transport execution requires broadcast shard selection, optional pagination, shard ingestion-state collection, shard failure aggregation, and response rendering before Steelsearch can serve OpenSearch ingestion state semantics."
+      "reason": "Get-ingestion-state transport execution requires broadcast shard selection, optional pagination, shard ingestion-state collection, shard failure aggregation, and response rendering"
     },
     {
       "action_name": "indices:admin/ingestion/updateState",
@@ -325,7 +325,7 @@
       "request_wire_type": "UpdateIngestionStateRequest",
       "response_wire_type": "UpdateIngestionStateResponse",
       "disposition": "rejected",
-      "reason": "Update-ingestion-state transport execution requires broadcast shard selection, metadata write block checks, shard pointer reset, ingestion paused-state mutation, shard failure aggregation, and response rendering before Steelsearch can serve OpenSearch ingestion state update semantics."
+      "reason": "Update-ingestion-state transport execution requires broadcast shard selection, metadata write block checks, shard pointer reset, ingestion paused-state mutation, shard failure aggregation, and response rendering"
     },
     {
       "action_name": "cluster:admin/_tier/all",
@@ -334,7 +334,7 @@
       "request_wire_type": "ListTieringStatusRequest",
       "response_wire_type": "ListTieringStatusResponse",
       "disposition": "rejected",
-      "reason": "List-tiering-status transport execution requires metadata read block checks, tiering target mapping, migration service lookup, tiering status aggregation, and response rendering before Steelsearch can serve OpenSearch tiering status list semantics."
+      "reason": "List-tiering-status transport execution requires metadata read block checks, tiering target mapping, migration service lookup, tiering status aggregation, and response rendering"
     },
     {
       "action_name": "indices:admin/_tier/get",
@@ -343,7 +343,7 @@
       "request_wire_type": "GetTieringStatusRequest",
       "response_wire_type": "GetTieringStatusResponse",
       "disposition": "rejected",
-      "reason": "Get-tiering-status transport execution requires metadata read block checks, index resolution, tiering-state lookup, migration service lookup, optional shard-level detail collection, and response rendering before Steelsearch can serve OpenSearch single-index tiering status semantics."
+      "reason": "Get-tiering-status transport execution requires metadata read block checks, index resolution, tiering-state lookup, migration service lookup, optional shard-level detail collection, and response rendering"
     },
     {
       "action_name": "cluster:admin/knn_stats_action",
@@ -352,7 +352,7 @@
       "request_wire_type": "KNNStatsRequest",
       "response_wire_type": "KNNStatsResponse",
       "disposition": "rejected",
-      "reason": "KNN-stats transport execution requires BaseNodes fanout, stat selection validation, node-level KNN stat collection, cluster-level KNN stat aggregation, failure aggregation, and response rendering before Steelsearch can serve OpenSearch k-NN stats semantics."
+      "reason": "Knn-stats transport execution requires BaseNodes fanout, stat selection validation, node-level KNN stat collection, cluster-level KNN stat aggregation, failure aggregation, and response rendering"
     },
     {
       "action_name": "cluster:admin/knn_warmup_action",
@@ -361,7 +361,7 @@
       "request_wire_type": "KNNWarmupRequest",
       "response_wire_type": "KNNWarmupResponse",
       "disposition": "rejected",
-      "reason": "KNN-warmup transport execution requires broadcast shard selection, metadata read block checks, per-shard KNN warmup, shard failure aggregation, and response rendering before Steelsearch can serve OpenSearch k-NN warmup semantics."
+      "reason": "Knn-warmup transport execution requires broadcast shard selection, metadata read block checks, per-shard KNN warmup, shard failure aggregation, and response rendering"
     },
     {
       "action_name": "cluster:admin/knn_update_model_metadata_action",
@@ -370,7 +370,7 @@
       "request_wire_type": "UpdateModelMetadataRequest",
       "response_wire_type": "AcknowledgedResponse",
       "disposition": "rejected",
-      "reason": "Update-model-metadata transport execution requires model metadata validation, model system-index custom metadata mutation, cluster-state publication, and acknowledgement rendering before Steelsearch can serve OpenSearch k-NN model metadata update semantics."
+      "reason": "Update-model-metadata transport execution requires model metadata validation, model system-index custom metadata mutation, cluster-state publication, and acknowledgement rendering"
     },
     {
       "action_name": "cluster:admin/knn_training_job_route_decision_info_action",
@@ -379,7 +379,7 @@
       "request_wire_type": "TrainingJobRouteDecisionInfoRequest",
       "response_wire_type": "TrainingJobRouteDecisionInfoResponse",
       "disposition": "rejected",
-      "reason": "Training-job-route-decision-info transport execution requires BaseNodes fanout, node-level training job count collection, failure aggregation, and response rendering before Steelsearch can serve OpenSearch k-NN training job route decision info semantics."
+      "reason": "Training-job-route-decision-info transport execution requires BaseNodes fanout, node-level training job count collection, failure aggregation, and response rendering"
     },
     {
       "action_name": "cluster:admin/knn_get_model_action",
@@ -388,7 +388,7 @@
       "request_wire_type": "GetModelRequest",
       "response_wire_type": "GetModelResponse",
       "disposition": "rejected",
-      "reason": "Get-model transport execution requires model system-index lookup, KNN ModelMetadata parsing, optional model blob handling, model id rendering, and response rendering before Steelsearch can serve OpenSearch k-NN get model semantics."
+      "reason": "Get-model transport execution requires model system-index lookup, Model wire parsing, model blob handling, and response rendering"
     },
     {
       "action_name": "cluster:admin/knn_delete_model_action",
@@ -397,7 +397,7 @@
       "request_wire_type": "DeleteModelRequest",
       "response_wire_type": "DeleteModelResponse",
       "disposition": "rejected",
-      "reason": "Delete-model transport execution requires model id validation, model system-index delete, model cache and graveyard coordination, and response rendering before Steelsearch can serve OpenSearch k-NN delete model semantics."
+      "reason": "Delete-model transport execution requires model id validation, model system-index delete, model cache/graveyard coordination, and response rendering"
     },
     {
       "action_name": "cluster:admin/knn_training_job_router_action",
@@ -406,7 +406,7 @@
       "request_wire_type": "TrainingModelRequest",
       "response_wire_type": "TrainingModelResponse",
       "disposition": "rejected",
-      "reason": "Training-job-router transport execution requires training index sizing, training config validation, route-decision fanout, node selection, and forwarding to training-model transport execution before Steelsearch can serve OpenSearch k-NN training job routing semantics."
+      "reason": "Training-job-router transport execution requires training index sizing, training config validation, route-decision fanout, node selection, and forwarding to training-model transport execution"
     },
     {
       "action_name": "cluster:admin/knn_training_model_action",
@@ -415,7 +415,7 @@
       "request_wire_type": "TrainingModelRequest",
       "response_wire_type": "TrainingModelResponse",
       "disposition": "rejected",
-      "reason": "Training-model transport execution requires KNN native training data loading, memory reservation, training job execution, model system-index write, counter updates, and response rendering before Steelsearch can serve OpenSearch k-NN model training semantics."
+      "reason": "Training-model transport execution requires KNN native training data loading, memory reservation, training job execution, model system-index write, counter updates, and response rendering"
     },
     {
       "action_name": "cluster:admin/knn_remove_model_from_cache_action",
@@ -424,7 +424,7 @@
       "request_wire_type": "RemoveModelFromCacheRequest",
       "response_wire_type": "RemoveModelFromCacheResponse",
       "disposition": "rejected",
-      "reason": "Remove-model-from-cache transport execution requires BaseNodes fanout, per-node model cache eviction, failure aggregation, and response rendering before Steelsearch can serve OpenSearch k-NN model cache eviction semantics."
+      "reason": "Remove-model-from-cache transport execution requires BaseNodes fanout, per-node model cache eviction, failure aggregation, and response rendering"
     },
     {
       "action_name": "cluster:admin/knn_search_model_action",
@@ -433,7 +433,7 @@
       "request_wire_type": "SearchRequest",
       "response_wire_type": "SearchResponse",
       "disposition": "rejected",
-      "reason": "Search-model transport execution requires model system-index search request mapping, SearchRequest source parsing, ModelDao search delegation, SearchResponse decoding, and response rendering before Steelsearch can serve OpenSearch k-NN model search semantics."
+      "reason": "Search-model transport execution requires model system-index search request mapping, SearchRequest source parsing, ModelDao search delegation, SearchResponse decoding, and response rendering"
     },
     {
       "action_name": "cluster:admin/knn_update_model_graveyard_action",
@@ -442,7 +442,7 @@
       "request_wire_type": "UpdateModelGraveyardRequest",
       "response_wire_type": "AcknowledgedResponse",
       "disposition": "rejected",
-      "reason": "Update-model-graveyard transport execution requires cluster-manager state update submission, model graveyard metadata mutation, model usage mapping scan, delete-model conflict handling, cluster-state publication, and acknowledgement rendering before Steelsearch can serve OpenSearch k-NN model graveyard semantics."
+      "reason": "Update-model-graveyard transport execution requires cluster-manager state update submission, model graveyard metadata mutation, model usage mapping scan, delete-model conflict handling, cluster-state publication, and acknowledgement rendering"
     },
     {
       "action_name": "cluster:admin/clear_cache_action",
@@ -451,7 +451,7 @@
       "request_wire_type": "ClearCacheRequest",
       "response_wire_type": "ClearCacheResponse",
       "disposition": "rejected",
-      "reason": "Clear-cache transport execution requires index resolution, KNN index validation, broadcast shard selection, per-shard KNN cache eviction, shard failure aggregation, and response rendering before Steelsearch can serve OpenSearch k-NN clear cache semantics."
+      "reason": "Clear-cache transport execution requires index resolution, KNN index validation, broadcast shard selection, per-shard KNN cache eviction, shard failure aggregation, and response rendering"
     },
     {
       "action_name": "cluster:admin/routing/awareness/weights/put",
@@ -460,7 +460,7 @@
       "request_wire_type": "ClusterPutWeightedRoutingRequest",
       "response_wire_type": "ClusterPutWeightedRoutingResponse",
       "disposition": "rejected",
-      "reason": "Add-weighted-routing transport execution requires weighted routing metadata mutation and acknowledgement rendering before Steelsearch can serve OpenSearch weighted routing put semantics."
+      "reason": "Add-weighted-routing transport execution requires weighted routing metadata mutation and acknowledgement rendering"
     },
     {
       "action_name": "cluster:admin/routing/awareness/weights/get",
@@ -469,7 +469,7 @@
       "request_wire_type": "ClusterGetWeightedRoutingRequest",
       "response_wire_type": "ClusterGetWeightedRoutingResponse",
       "disposition": "implemented",
-      "reason": "Get-weighted-routing transport adapter renders OpenSearch-shaped weighted routing metadata from the Rust manifest."
+      "reason": "Get-weighted-routing transport adapter renders OpenSearch-shaped weighted routing metadata from the Rust manifest"
     },
     {
       "action_name": "cluster:admin/routing/awareness/weights/delete",
@@ -478,7 +478,7 @@
       "request_wire_type": "ClusterDeleteWeightedRoutingRequest",
       "response_wire_type": "ClusterDeleteWeightedRoutingResponse",
       "disposition": "rejected",
-      "reason": "Delete-weighted-routing transport execution requires weighted routing metadata deletion and acknowledgement rendering before Steelsearch can serve OpenSearch weighted routing delete semantics."
+      "reason": "Delete-weighted-routing transport execution requires weighted routing metadata deletion and acknowledgement rendering"
     },
     {
       "action_name": "cluster:monitor/nodes/usage",
@@ -505,7 +505,7 @@
       "request_wire_type": "AddVotingConfigExclusionsRequest",
       "response_wire_type": "AddVotingConfigExclusionsResponse",
       "disposition": "implemented",
-      "reason": "Add-voting-config-exclusions transport adapter mutates local coordination exclusions for the node_names, node_ids, and node_descriptions subset."
+      "reason": "Add-voting-config-exclusions transport adapter mutates local coordination exclusions for the node_names, node_ids, and node_descriptions subset"
     },
     {
       "action_name": "cluster:admin/voting_config/clear_exclusions",
@@ -514,7 +514,7 @@
       "request_wire_type": "ClearVotingConfigExclusionsRequest",
       "response_wire_type": "ClearVotingConfigExclusionsResponse",
       "disposition": "implemented",
-      "reason": "Clear-voting-config-exclusions transport adapter clears local coordination exclusions for the no-wait subset."
+      "reason": "Clear-voting-config-exclusions transport adapter clears local coordination exclusions for the no-wait subset"
     },
     {
       "action_name": "cluster:monitor/allocation/explain",
@@ -523,7 +523,7 @@
       "request_wire_type": "ClusterAllocationExplainRequest",
       "response_wire_type": "ClusterAllocationExplainResponse",
       "disposition": "rejected",
-      "reason": "Cluster-allocation-explain transport execution requires shard routing allocation decision rendering before Steelsearch can serve OpenSearch allocation explanation semantics."
+      "reason": "Cluster-allocation-explain transport execution requires shard routing allocation decision rendering"
     },
     {
       "action_name": "cluster:admin/settings/update",
@@ -532,7 +532,7 @@
       "request_wire_type": "ClusterUpdateSettingsRequest",
       "response_wire_type": "ClusterUpdateSettingsResponse",
       "disposition": "rejected",
-      "reason": "Cluster-settings transport mutation is not admitted before Steelsearch maps cluster-manager update, acknowledgement, and publication semantics."
+      "reason": "Cluster settings mutation is not admitted through transport"
     },
     {
       "action_name": "cluster:admin/reroute",
@@ -541,7 +541,7 @@
       "request_wire_type": "ClusterRerouteRequest",
       "response_wire_type": "ClusterRerouteResponse",
       "disposition": "rejected",
-      "reason": "Cluster-reroute transport execution requires allocation command decoding, routing mutation, acknowledgement, and response rendering before Steelsearch can serve OpenSearch reroute semantics."
+      "reason": "Cluster reroute transport execution requires allocation command and publication semantics"
     },
     {
       "action_name": "cluster:admin/repository/get",
@@ -559,7 +559,7 @@
       "request_wire_type": "GetMappingsRequest",
       "response_wire_type": "GetMappingsResponse",
       "disposition": "implemented",
-      "reason": "Get-mappings transport adapter returns an OpenSearch-shaped empty mappings response for the default all-indices request"
+      "reason": "Get-mappings transport adapter renders OpenSearch-shaped empty mapping entries from the local metadata manifest for the default all-indices request"
     },
     {
       "action_name": "indices:admin/mappings/fields/get",
@@ -568,7 +568,7 @@
       "request_wire_type": "GetFieldMappingsRequest",
       "response_wire_type": "GetFieldMappingsResponse",
       "disposition": "implemented",
-      "reason": "Get-field-mappings transport adapter returns an OpenSearch-shaped empty field mappings response for the default all-indices request"
+      "reason": "Get-field-mappings transport adapter renders OpenSearch-shaped empty field-mapping entries from the local metadata manifest for the default all-indices/no-fields request"
     },
     {
       "action_name": "indices:admin/mapping/put",
@@ -576,8 +576,8 @@
       "transport_action": "TransportPutMappingAction",
       "request_wire_type": "PutMappingRequest",
       "response_wire_type": "AcknowledgedResponse",
-      "disposition": "rejected",
-      "reason": "Put-mapping transport execution requires mapping validation, metadata mutation, and ack rendering before Steelsearch can serve OpenSearch mapping update semantics."
+      "disposition": "implemented",
+      "reason": "Put-mapping transport adapter resolves manifest indices, merges supported mapping metadata, and renders acknowledged responses"
     },
     {
       "action_name": "indices:admin/mapping/auto_put",
@@ -585,8 +585,8 @@
       "transport_action": "TransportAutoPutMappingAction",
       "request_wire_type": "PutMappingRequest",
       "response_wire_type": "AcknowledgedResponse",
-      "disposition": "rejected",
-      "reason": "Auto-put-mapping transport execution requires concrete-index mapping validation, metadata mutation, and ack rendering before Steelsearch can serve OpenSearch automatic mapping update semantics."
+      "disposition": "implemented",
+      "reason": "Auto-put-mapping transport adapter routes concrete-index mapping updates through the manifest mapping merger and renders acknowledged responses"
     },
     {
       "action_name": "indices:admin/aliases",
@@ -594,8 +594,8 @@
       "transport_action": "TransportIndicesAliasesAction",
       "request_wire_type": "IndicesAliasesRequest",
       "response_wire_type": "AcknowledgedResponse",
-      "disposition": "rejected",
-      "reason": "Indices-aliases transport execution requires alias metadata mutation, index deletion sub-actions, and ack rendering before Steelsearch can serve OpenSearch alias update semantics."
+      "disposition": "implemented",
+      "reason": "Indices-aliases transport adapter resolves manifest indices, mutates supported alias add/remove metadata, and renders acknowledged responses"
     },
     {
       "action_name": "indices:admin/settings/update",
@@ -603,8 +603,8 @@
       "transport_action": "TransportUpdateSettingsAction",
       "request_wire_type": "UpdateSettingsRequest",
       "response_wire_type": "AcknowledgedResponse",
-      "disposition": "rejected",
-      "reason": "Index update-settings transport execution requires index resolution, settings validation, metadata mutation, and ack rendering before Steelsearch can serve OpenSearch index setting update semantics."
+      "disposition": "implemented",
+      "reason": "Index update-settings transport adapter resolves manifest indices, mutates local index settings, and renders acknowledged responses"
     },
     {
       "action_name": "indices:admin/scale/search_only",
@@ -612,8 +612,8 @@
       "transport_action": "TransportScaleIndexAction",
       "request_wire_type": "ScaleIndexRequest",
       "response_wire_type": "AcknowledgedResponse",
-      "disposition": "rejected",
-      "reason": "Scale-index transport execution requires search-only state validation, shard sync coordination, metadata mutation, and ack rendering before Steelsearch can serve OpenSearch search-only scale semantics."
+      "disposition": "implemented",
+      "reason": "Scale-index transport adapter accepts default-option scale-down requests, marks manifest-backed indices search-only, and renders acknowledged responses"
     },
     {
       "action_name": "indices:admin/analyze",
@@ -621,8 +621,8 @@
       "transport_action": "TransportAnalyzeAction",
       "request_wire_type": "AnalyzeAction.Request",
       "response_wire_type": "AnalyzeAction.Response",
-      "disposition": "rejected",
-      "reason": "Analyze transport execution requires analyzer resolution, token generation, and response rendering before Steelsearch can serve OpenSearch analysis semantics."
+      "disposition": "implemented",
+      "reason": "Analyze transport adapter renders the bounded default/standard analyzer token response subset"
     },
     {
       "action_name": "indices:admin/create",
@@ -630,8 +630,8 @@
       "transport_action": "TransportCreateIndexAction",
       "request_wire_type": "CreateIndexRequest",
       "response_wire_type": "CreateIndexResponse",
-      "disposition": "rejected",
-      "reason": "Create-index transport execution requires index metadata mutation, shard allocation, and response rendering before Steelsearch can serve OpenSearch index creation semantics."
+      "disposition": "implemented",
+      "reason": "Create-index transport adapter mutates manifest-backed index metadata for the default request subset and renders CreateIndexResponse"
     },
     {
       "action_name": "indices:admin/auto_create",
@@ -639,8 +639,8 @@
       "transport_action": "AutoCreateAction.TransportAction",
       "request_wire_type": "CreateIndexRequest",
       "response_wire_type": "CreateIndexResponse",
-      "disposition": "rejected",
-      "reason": "Auto-create transport execution requires auto-create index/data-stream resolution, cluster-manager metadata mutation, active-shards wait, and response rendering before Steelsearch can serve OpenSearch auto-create semantics."
+      "disposition": "implemented",
+      "reason": "Auto-create transport adapter mutates manifest-backed index metadata for the default request subset and renders CreateIndexResponse"
     },
     {
       "action_name": "cluster:admin/script/put",
@@ -648,8 +648,8 @@
       "transport_action": "TransportPutStoredScriptAction",
       "request_wire_type": "PutStoredScriptRequest",
       "response_wire_type": "AcknowledgedResponse",
-      "disposition": "rejected",
-      "reason": "Put-stored-script transport execution requires script source parsing, context validation, cluster metadata mutation, and ack rendering before Steelsearch can serve OpenSearch stored script semantics."
+      "disposition": "implemented",
+      "reason": "Put-stored-script transport adapter stores Rust stored-script metadata and renders OpenSearch AcknowledgedResponse"
     },
     {
       "action_name": "cluster:admin/script/get",
@@ -658,7 +658,7 @@
       "request_wire_type": "GetStoredScriptRequest",
       "response_wire_type": "GetStoredScriptResponse",
       "disposition": "implemented",
-      "reason": "Get-stored-script transport adapter renders found/not-found responses from Rust stored-script metadata."
+      "reason": "Get-stored-script transport adapter renders found/not-found responses from Rust stored-script metadata"
     },
     {
       "action_name": "cluster:admin/script/delete",
@@ -666,8 +666,8 @@
       "transport_action": "TransportDeleteStoredScriptAction",
       "request_wire_type": "DeleteStoredScriptRequest",
       "response_wire_type": "AcknowledgedResponse",
-      "disposition": "rejected",
-      "reason": "Delete-stored-script transport execution requires script metadata mutation, delete throttling, and ack rendering before Steelsearch can serve OpenSearch stored script delete semantics."
+      "disposition": "implemented",
+      "reason": "Delete-stored-script transport adapter removes Rust stored-script metadata and renders OpenSearch AcknowledgedResponse"
     },
     {
       "action_name": "cluster:admin/script_context/get",
@@ -676,7 +676,7 @@
       "request_wire_type": "GetScriptContextRequest",
       "response_wire_type": "GetScriptContextResponse",
       "disposition": "implemented",
-      "reason": "Get-script-context transport adapter renders the Rust-supported script context catalog."
+      "reason": "Get-script-context transport adapter renders the Rust-supported script context catalog"
     },
     {
       "action_name": "cluster:admin/script_language/get",
@@ -685,7 +685,7 @@
       "request_wire_type": "GetScriptLanguageRequest",
       "response_wire_type": "GetScriptLanguageResponse",
       "disposition": "implemented",
-      "reason": "Get-script-language transport adapter renders the Rust-supported script language/type/context catalog."
+      "reason": "Get-script-language transport adapter renders the Rust-supported script language/type/context catalog"
     },
     {
       "action_name": "cluster:admin/ingest/pipeline/put",
@@ -693,8 +693,8 @@
       "transport_action": "PutPipelineTransportAction",
       "request_wire_type": "PutPipelineRequest",
       "response_wire_type": "AcknowledgedResponse",
-      "disposition": "rejected",
-      "reason": "Put-pipeline transport execution requires ingest pipeline validation, processor availability, cluster metadata mutation, throttling, and ack rendering before Steelsearch can serve OpenSearch ingest pipeline put semantics."
+      "disposition": "implemented",
+      "reason": "Put-pipeline transport adapter stores JSON ingest pipeline metadata in the Rust manifest and renders OpenSearch AcknowledgedResponse"
     },
     {
       "action_name": "cluster:admin/ingest/pipeline/get",
@@ -703,7 +703,7 @@
       "request_wire_type": "GetPipelineRequest",
       "response_wire_type": "GetPipelineResponse",
       "disposition": "implemented",
-      "reason": "Get-pipeline transport adapter renders OpenSearch-shaped ingest pipeline metadata from the Rust manifest."
+      "reason": "Get-pipeline transport adapter renders OpenSearch-shaped ingest pipeline metadata from the Rust manifest"
     },
     {
       "action_name": "cluster:admin/ingest/pipeline/delete",
@@ -711,8 +711,8 @@
       "transport_action": "DeletePipelineTransportAction",
       "request_wire_type": "DeletePipelineRequest",
       "response_wire_type": "AcknowledgedResponse",
-      "disposition": "rejected",
-      "reason": "Delete-pipeline transport execution requires ingest pipeline wildcard deletion, missing-pipeline handling, cluster metadata mutation, throttling, and ack rendering before Steelsearch can serve OpenSearch ingest pipeline delete semantics."
+      "disposition": "implemented",
+      "reason": "Delete-pipeline transport adapter removes manifest-backed ingest pipeline metadata and renders OpenSearch AcknowledgedResponse"
     },
     {
       "action_name": "cluster:admin/ingest/pipeline/simulate",
@@ -720,8 +720,8 @@
       "transport_action": "SimulatePipelineTransportAction",
       "request_wire_type": "SimulatePipelineRequest",
       "response_wire_type": "SimulatePipelineResponse",
-      "disposition": "rejected",
-      "reason": "Simulate-pipeline transport execution requires ingest pipeline source parsing, processor execution, verbose result capture, and response rendering before Steelsearch can serve OpenSearch ingest pipeline simulate semantics."
+      "disposition": "implemented",
+      "reason": "Simulate-pipeline transport adapter renders OpenSearch empty-result responses for the JSON empty-doc subset"
     },
     {
       "action_name": "indices:admin/resize",
@@ -730,7 +730,7 @@
       "request_wire_type": "ResizeRequest",
       "response_wire_type": "ResizeResponse",
       "disposition": "rejected",
-      "reason": "Resize transport execution requires source index metadata validation, target index metadata mutation, shard allocation, and response rendering before Steelsearch can serve OpenSearch index resize semantics."
+      "reason": "Resize transport execution requires source index metadata validation, target index metadata mutation, shard allocation, and response rendering"
     },
     {
       "action_name": "indices:admin/rollover",
@@ -739,7 +739,7 @@
       "request_wire_type": "RolloverRequest",
       "response_wire_type": "RolloverResponse",
       "disposition": "rejected",
-      "reason": "Rollover transport execution requires alias or data-stream metadata validation, condition evaluation, index creation, and response rendering before Steelsearch can serve OpenSearch rollover semantics."
+      "reason": "Rollover transport execution requires alias or data-stream metadata validation, condition evaluation, index creation, and response rendering"
     },
     {
       "action_name": "indices:admin/delete",
@@ -747,8 +747,8 @@
       "transport_action": "TransportDeleteIndexAction",
       "request_wire_type": "DeleteIndexRequest",
       "response_wire_type": "AcknowledgedResponse",
-      "disposition": "rejected",
-      "reason": "Delete-index transport execution requires index metadata mutation, shard cleanup, and ack rendering before Steelsearch can serve OpenSearch index deletion semantics."
+      "disposition": "implemented",
+      "reason": "Delete-index transport adapter removes manifest-backed index metadata for concrete default-option requests and renders AcknowledgedResponse"
     },
     {
       "action_name": "indices:admin/open",
@@ -756,8 +756,8 @@
       "transport_action": "TransportOpenIndexAction",
       "request_wire_type": "OpenIndexRequest",
       "response_wire_type": "OpenIndexResponse",
-      "disposition": "rejected",
-      "reason": "Open-index transport execution requires index metadata mutation, shard allocation, and shards-ack rendering before Steelsearch can serve OpenSearch index opening semantics."
+      "disposition": "implemented",
+      "reason": "Open-index transport adapter mutates manifest-backed concrete index state for default-option requests and renders OpenIndexResponse"
     },
     {
       "action_name": "indices:admin/close",
@@ -765,8 +765,8 @@
       "transport_action": "TransportCloseIndexAction",
       "request_wire_type": "CloseIndexRequest",
       "response_wire_type": "CloseIndexResponse",
-      "disposition": "rejected",
-      "reason": "Close-index transport execution requires index metadata mutation, shard state transition, and close response rendering before Steelsearch can serve OpenSearch index closing semantics."
+      "disposition": "implemented",
+      "reason": "Close-index transport adapter mutates manifest-backed concrete index state for default-option requests and renders CloseIndexResponse"
     },
     {
       "action_name": "indices:admin/block/add",
@@ -774,8 +774,8 @@
       "transport_action": "TransportAddIndexBlockAction",
       "request_wire_type": "AddIndexBlockRequest",
       "response_wire_type": "AddIndexBlockResponse",
-      "disposition": "rejected",
-      "reason": "Add-index-block transport execution requires index block metadata mutation and response rendering before Steelsearch can serve OpenSearch index block semantics."
+      "disposition": "implemented",
+      "reason": "Add-index-block transport adapter mutates manifest-backed concrete index block settings for default-option requests and renders AddIndexBlockResponse"
     },
     {
       "action_name": "indices:admin/get",
@@ -784,7 +784,7 @@
       "request_wire_type": "GetIndexRequest",
       "response_wire_type": "GetIndexResponse",
       "disposition": "implemented",
-      "reason": "Get-index transport execution is served for default all-index metadata reads with settings, mappings, aliases, data-stream, and context response rendering."
+      "reason": "Metadata-backed get-index transport adapter supports default all-index settings, mappings, aliases, data-stream, and context response rendering"
     },
     {
       "action_name": "indices:admin/exists",
@@ -793,7 +793,7 @@
       "request_wire_type": "IndicesExistsRequest",
       "response_wire_type": "IndicesExistsResponse",
       "disposition": "implemented",
-      "reason": "Indices-exists transport execution is served for default index, alias, and wildcard existence checks from Steelsearch metadata."
+      "reason": "Metadata-backed indices-exists transport adapter supports default index, alias, and wildcard existence checks"
     },
     {
       "action_name": "indices:admin/template/get",
@@ -802,7 +802,7 @@
       "request_wire_type": "GetIndexTemplatesRequest",
       "response_wire_type": "GetIndexTemplatesResponse",
       "disposition": "implemented",
-      "reason": "Get-index-templates transport execution is served for default all-template legacy metadata reads from Steelsearch metadata."
+      "reason": "Metadata-backed get-index-templates transport adapter supports default all-template legacy metadata response rendering"
     },
     {
       "action_name": "indices:admin/template/put",
@@ -811,7 +811,7 @@
       "request_wire_type": "PutIndexTemplateRequest",
       "response_wire_type": "AcknowledgedResponse",
       "disposition": "implemented",
-      "reason": "Put-index-template transport adapter upserts the supported manifest-backed legacy template metadata subset and renders OpenSearch AcknowledgedResponse."
+      "reason": "Put-index-template transport adapter upserts the supported manifest-backed legacy template metadata subset and renders OpenSearch AcknowledgedResponse"
     },
     {
       "action_name": "indices:admin/template/delete",
@@ -820,7 +820,7 @@
       "request_wire_type": "DeleteIndexTemplateRequest",
       "response_wire_type": "AcknowledgedResponse",
       "disposition": "implemented",
-      "reason": "Delete-index-template transport adapter removes manifest-backed legacy template metadata and renders OpenSearch AcknowledgedResponse."
+      "reason": "Delete-index-template transport adapter removes manifest-backed legacy template metadata and renders OpenSearch AcknowledgedResponse"
     },
     {
       "action_name": "cluster:admin/component_template/put",
@@ -829,7 +829,7 @@
       "request_wire_type": "PutComponentTemplateAction.Request",
       "response_wire_type": "AcknowledgedResponse",
       "disposition": "implemented",
-      "reason": "Put-component-template transport adapter upserts the supported manifest-backed component template metadata subset and renders OpenSearch AcknowledgedResponse."
+      "reason": "Put-component-template transport adapter upserts the supported manifest-backed component template metadata subset and renders OpenSearch AcknowledgedResponse"
     },
     {
       "action_name": "cluster:admin/component_template/get",
@@ -838,7 +838,7 @@
       "request_wire_type": "GetComponentTemplateAction.Request",
       "response_wire_type": "GetComponentTemplateAction.Response",
       "disposition": "implemented",
-      "reason": "Get-component-template transport adapter renders OpenSearch-shaped settings-only component template metadata from the Rust manifest."
+      "reason": "Get-component-template transport adapter renders OpenSearch-shaped settings-only component template metadata from the Rust manifest"
     },
     {
       "action_name": "cluster:admin/component_template/delete",
@@ -847,7 +847,7 @@
       "request_wire_type": "DeleteComponentTemplateAction.Request",
       "response_wire_type": "AcknowledgedResponse",
       "disposition": "implemented",
-      "reason": "Delete-component-template transport adapter removes manifest-backed component template metadata and renders OpenSearch AcknowledgedResponse."
+      "reason": "Delete-component-template transport adapter removes manifest-backed component template metadata and renders OpenSearch AcknowledgedResponse"
     },
     {
       "action_name": "indices:admin/index_template/put",
@@ -855,8 +855,8 @@
       "transport_action": "TransportPutComposableIndexTemplateAction",
       "request_wire_type": "PutComposableIndexTemplateAction.Request",
       "response_wire_type": "AcknowledgedResponse",
-      "disposition": "rejected",
-      "reason": "Put-composable-index-template transport execution requires composable index-template validation, metadata mutation, and ack rendering before Steelsearch can serve OpenSearch composable index-template writes."
+      "disposition": "implemented",
+      "reason": "Put-composable-index-template transport adapter mutates manifest-backed composable index template metadata and renders OpenSearch AcknowledgedResponse"
     },
     {
       "action_name": "indices:admin/index_template/get",
@@ -865,7 +865,7 @@
       "request_wire_type": "GetComposableIndexTemplateAction.Request",
       "response_wire_type": "GetComposableIndexTemplateAction.Response",
       "disposition": "implemented",
-      "reason": "Get-composable-index-template transport adapter renders OpenSearch-shaped settings-only composable index template metadata from the Rust manifest."
+      "reason": "Get-composable-index-template transport adapter renders OpenSearch-shaped settings-only composable index template metadata from the Rust manifest"
     },
     {
       "action_name": "indices:admin/index_template/delete",
@@ -874,7 +874,7 @@
       "request_wire_type": "DeleteComposableIndexTemplateAction.Request",
       "response_wire_type": "AcknowledgedResponse",
       "disposition": "implemented",
-      "reason": "Delete-composable-index-template transport adapter removes manifest-backed composable index template metadata and renders OpenSearch AcknowledgedResponse."
+      "reason": "Delete-composable-index-template transport adapter removes manifest-backed composable index template metadata and renders OpenSearch AcknowledgedResponse"
     },
     {
       "action_name": "indices:admin/index_template/simulate_index",
@@ -882,8 +882,8 @@
       "transport_action": "TransportSimulateIndexTemplateAction",
       "request_wire_type": "SimulateIndexTemplateRequest",
       "response_wire_type": "SimulateIndexTemplateResponse",
-      "disposition": "rejected",
-      "reason": "Simulate-index-template transport execution requires composable template resolution and simulated metadata response rendering before Steelsearch can serve OpenSearch index-template simulation."
+      "disposition": "implemented",
+      "reason": "Simulate-index-template transport adapter renders the OpenSearch no-match response when no manifest composable template matches the requested index"
     },
     {
       "action_name": "indices:admin/index_template/simulate",
@@ -892,7 +892,7 @@
       "request_wire_type": "SimulateTemplateAction.Request",
       "response_wire_type": "SimulateIndexTemplateResponse",
       "disposition": "rejected",
-      "reason": "Simulate-template transport execution requires named or inline composable template resolution and simulated metadata response rendering before Steelsearch can serve OpenSearch template simulation."
+      "reason": "Simulate-template transport execution requires named or inline composable template resolution and simulated metadata response rendering"
     },
     {
       "action_name": "indices:admin/validate/query",
@@ -901,7 +901,7 @@
       "request_wire_type": "ValidateQueryRequest",
       "response_wire_type": "ValidateQueryResponse",
       "disposition": "implemented",
-      "reason": "validate-query transport adapter validates the bounded match_all subset and renders OpenSearch-shaped shard counters"
+      "reason": "Validate-query transport adapter validates the bounded match_all subset and renders OpenSearch-shaped shard counters"
     },
     {
       "action_name": "indices:admin/flush",
@@ -910,7 +910,7 @@
       "request_wire_type": "FlushRequest",
       "response_wire_type": "FlushResponse",
       "disposition": "implemented",
-      "reason": "flush transport adapter validates the bounded global default subset and renders OpenSearch-shaped shard counters"
+      "reason": "Flush transport adapter validates the bounded global default subset and renders OpenSearch-shaped shard counters"
     },
     {
       "action_name": "indices:admin/forcemerge",
@@ -919,7 +919,7 @@
       "request_wire_type": "ForceMergeRequest",
       "response_wire_type": "ForceMergeResponse",
       "disposition": "implemented",
-      "reason": "force-merge transport adapter validates the bounded global default subset and renders OpenSearch-shaped shard counters"
+      "reason": "Force-merge transport adapter validates the bounded global default subset and renders OpenSearch-shaped shard counters"
     },
     {
       "action_name": "indices:admin/upgrade",
@@ -928,7 +928,7 @@
       "request_wire_type": "UpgradeRequest",
       "response_wire_type": "UpgradeResponse",
       "disposition": "implemented",
-      "reason": "upgrade transport adapter validates the bounded global default subset and renders OpenSearch-shaped shard counters with an empty upgraded-indices map"
+      "reason": "Upgrade transport adapter validates the bounded global default subset and renders OpenSearch-shaped shard counters with an empty upgraded-indices map"
     },
     {
       "action_name": "indices:monitor/upgrade",
@@ -937,7 +937,7 @@
       "request_wire_type": "UpgradeStatusRequest",
       "response_wire_type": "UpgradeStatusResponse",
       "disposition": "implemented",
-      "reason": "upgrade-status transport adapter validates the bounded global default subset and renders OpenSearch-shaped shard counters with an empty shard-status array"
+      "reason": "Upgrade-status transport adapter validates the bounded global default subset and renders OpenSearch-shaped shard counters with an empty shard-status array"
     },
     {
       "action_name": "internal:indices/admin/upgrade",
@@ -945,8 +945,8 @@
       "transport_action": "TransportUpgradeSettingsAction",
       "request_wire_type": "UpgradeSettingsRequest",
       "response_wire_type": "AcknowledgedResponse",
-      "disposition": "rejected",
-      "reason": "Upgrade-settings transport execution requires index setting metadata mutation, cluster-manager publication, and acknowledgement rendering before Steelsearch can serve OpenSearch upgrade-settings semantics."
+      "disposition": "implemented",
+      "reason": "Upgrade-settings transport adapter validates the bounded concrete-index subset, mutates local index version settings, and renders an OpenSearch-shaped acknowledgement"
     },
     {
       "action_name": "indices:admin/cache/clear",
@@ -955,7 +955,7 @@
       "request_wire_type": "ClearIndicesCacheRequest",
       "response_wire_type": "ClearIndicesCacheResponse",
       "disposition": "implemented",
-      "reason": "clear-indices-cache transport adapter validates the bounded global default subset and renders OpenSearch-shaped shard counters"
+      "reason": "Clear-indices-cache transport adapter validates the bounded global default subset and renders OpenSearch-shaped shard counters"
     },
     {
       "action_name": "indices:admin/aliases/get",
@@ -964,7 +964,7 @@
       "request_wire_type": "GetAliasesRequest",
       "response_wire_type": "GetAliasesResponse",
       "disposition": "implemented",
-      "reason": "Get-aliases transport adapter returns an OpenSearch-shaped empty alias metadata response for the default all-aliases request"
+      "reason": "Get-aliases transport adapter renders OpenSearch-shaped empty alias-list entries from the local metadata manifest for the default all-indices/all-aliases request"
     },
     {
       "action_name": "indices:monitor/settings/get",
@@ -991,7 +991,7 @@
       "request_wire_type": "FieldCapabilitiesRequest",
       "response_wire_type": "FieldCapabilitiesResponse",
       "disposition": "implemented",
-      "reason": "field-capabilities transport adapter renders OpenSearch-shaped merged field capabilities responses from local mapping metadata and document source inference for the default all-indices request"
+      "reason": "Field-capabilities transport adapter renders OpenSearch-shaped merged field capabilities responses from local mapping metadata and document source inference for the default all-indices request"
     },
     {
       "action_name": "indices:monitor/recovery",
@@ -1009,7 +1009,7 @@
       "request_wire_type": "SegmentReplicationStatsRequest",
       "response_wire_type": "SegmentReplicationStatsResponse",
       "disposition": "implemented",
-      "reason": "Segment-replication-stats transport adapter returns an OpenSearch-shaped empty stats response for the default all-indices request."
+      "reason": "Segment-replication-stats transport adapter returns an OpenSearch-shaped empty stats response for the default all-indices request"
     },
     {
       "action_name": "indices:monitor/segments",
@@ -1045,7 +1045,7 @@
       "request_wire_type": "CreateDataStreamAction.Request",
       "response_wire_type": "AcknowledgedResponse",
       "disposition": "implemented",
-      "reason": "Create-data-stream transport adapter mutates manifest-backed data-stream metadata and renders OpenSearch AcknowledgedResponse."
+      "reason": "Create-data-stream transport adapter mutates manifest-backed data-stream metadata and renders OpenSearch AcknowledgedResponse"
     },
     {
       "action_name": "indices:admin/data_stream/delete",
@@ -1054,7 +1054,7 @@
       "request_wire_type": "DeleteDataStreamAction.Request",
       "response_wire_type": "AcknowledgedResponse",
       "disposition": "implemented",
-      "reason": "Delete-data-stream transport adapter removes manifest-backed data-stream metadata and backing indices and renders OpenSearch AcknowledgedResponse."
+      "reason": "Delete-data-stream transport adapter removes manifest-backed data-stream metadata and backing indices and renders OpenSearch AcknowledgedResponse"
     },
     {
       "action_name": "indices:admin/data_stream/get",
@@ -1081,7 +1081,7 @@
       "request_wire_type": "ResolveIndexAction.Request",
       "response_wire_type": "ResolveIndexAction.Response",
       "disposition": "implemented",
-      "reason": "Resolve-index transport adapter renders OpenSearch-shaped index abstraction metadata from the Rust manifest."
+      "reason": "Resolve-index transport adapter renders OpenSearch-shaped index abstraction metadata from the Rust manifest"
     },
     {
       "action_name": "cluster:admin/views/create",
@@ -1090,7 +1090,7 @@
       "request_wire_type": "CreateViewAction.Request",
       "response_wire_type": "GetViewAction.Response",
       "disposition": "rejected",
-      "reason": "Create-view transport execution requires view validation, target resolution, cluster metadata mutation, and view response rendering before Steelsearch can serve OpenSearch view creation semantics."
+      "reason": "Create-view transport execution requires view validation, target resolution, metadata mutation, and view response rendering"
     },
     {
       "action_name": "cluster:admin/views/delete",
@@ -1099,7 +1099,7 @@
       "request_wire_type": "DeleteViewAction.Request",
       "response_wire_type": "AcknowledgedResponse",
       "disposition": "rejected",
-      "reason": "Delete-view transport execution requires view lookup, cluster metadata deletion, and acknowledgement rendering before Steelsearch can serve OpenSearch view deletion semantics."
+      "reason": "Delete-view transport execution requires view lookup, metadata deletion, and acknowledgement rendering"
     },
     {
       "action_name": "views:data/read/get",
@@ -1108,7 +1108,7 @@
       "request_wire_type": "GetViewAction.Request",
       "response_wire_type": "GetViewAction.Response",
       "disposition": "rejected",
-      "reason": "Get-view transport execution requires view lookup and view response rendering before Steelsearch can serve OpenSearch view read semantics."
+      "reason": "Get-view transport execution requires view lookup and view response rendering"
     },
     {
       "action_name": "cluster:admin/views/update",
@@ -1117,7 +1117,7 @@
       "request_wire_type": "CreateViewAction.Request",
       "response_wire_type": "GetViewAction.Response",
       "disposition": "rejected",
-      "reason": "Update-view transport execution requires view validation, target resolution, cluster metadata mutation, and view response rendering before Steelsearch can serve OpenSearch view update semantics."
+      "reason": "Update-view transport execution requires view validation, target resolution, metadata mutation, and view response rendering"
     },
     {
       "action_name": "views:data/read/list",
@@ -1135,7 +1135,7 @@
       "request_wire_type": "SearchViewAction.Request",
       "response_wire_type": "SearchResponse",
       "disposition": "rejected",
-      "reason": "Search-view transport execution requires view lookup, target index resolution, search execution, and search response rendering before Steelsearch can serve OpenSearch view search semantics."
+      "reason": "Search-view transport execution requires view lookup, target index resolution, search execution, and search response rendering"
     },
     {
       "action_name": "cluster:admin/persistent/start",
@@ -1144,7 +1144,7 @@
       "request_wire_type": "StartPersistentTaskAction.Request",
       "response_wire_type": "PersistentTaskResponse",
       "disposition": "rejected",
-      "reason": "Start-persistent-task transport execution requires persistent task params named-writeables, cluster metadata mutation, assignment, and response rendering before Steelsearch can serve OpenSearch persistent task start semantics."
+      "reason": "Start-persistent-task transport execution requires persistent task params named-writeables, cluster metadata mutation, assignment, and response rendering"
     },
     {
       "action_name": "cluster:admin/persistent/update_status",
@@ -1153,7 +1153,7 @@
       "request_wire_type": "UpdatePersistentTaskStatusAction.Request",
       "response_wire_type": "PersistentTaskResponse",
       "disposition": "rejected",
-      "reason": "Update-persistent-task-status transport execution requires persistent task state named-writeables, allocation checks, cluster metadata mutation, and response rendering before Steelsearch can serve OpenSearch persistent task status semantics."
+      "reason": "Update-persistent-task-status transport execution requires persistent task state named-writeables, allocation checks, cluster metadata mutation, and response rendering"
     },
     {
       "action_name": "cluster:admin/persistent/completion",
@@ -1162,7 +1162,7 @@
       "request_wire_type": "CompletionPersistentTaskAction.Request",
       "response_wire_type": "PersistentTaskResponse",
       "disposition": "rejected",
-      "reason": "Completion-persistent-task transport execution requires exception decoding, allocation checks, cluster metadata mutation, restart/removal semantics, and response rendering before Steelsearch can serve OpenSearch persistent task completion semantics."
+      "reason": "Completion-persistent-task transport execution requires exception decoding, allocation checks, cluster metadata mutation, restart/removal semantics, and response rendering"
     },
     {
       "action_name": "cluster:admin/persistent/remove",
@@ -1171,7 +1171,7 @@
       "request_wire_type": "RemovePersistentTaskAction.Request",
       "response_wire_type": "PersistentTaskResponse",
       "disposition": "rejected",
-      "reason": "Remove-persistent-task transport execution requires persistent task lookup, cluster metadata removal, and response rendering before Steelsearch can serve OpenSearch persistent task removal semantics."
+      "reason": "Remove-persistent-task transport execution requires persistent task lookup, cluster metadata removal, and response rendering"
     },
     {
       "action_name": "indices:admin/seq_no/add_retention_lease",
@@ -1180,7 +1180,7 @@
       "request_wire_type": "RetentionLeaseActions.AddRequest",
       "response_wire_type": "RetentionLeaseActions.Response",
       "disposition": "rejected",
-      "reason": "Add-retention-lease transport execution requires shard routing, primary operation permit acquisition, retention lease mutation, sync, and response rendering before Steelsearch can serve OpenSearch retention lease add semantics."
+      "reason": "Add-retention-lease transport execution requires shard routing, primary operation permit acquisition, retention lease mutation, sync, and response rendering"
     },
     {
       "action_name": "indices:admin/seq_no/renew_retention_lease",
@@ -1189,7 +1189,7 @@
       "request_wire_type": "RetentionLeaseActions.RenewRequest",
       "response_wire_type": "RetentionLeaseActions.Response",
       "disposition": "rejected",
-      "reason": "Renew-retention-lease transport execution requires shard routing, primary operation permit acquisition, retention lease renewal, and response rendering before Steelsearch can serve OpenSearch retention lease renew semantics."
+      "reason": "Renew-retention-lease transport execution requires shard routing, primary operation permit acquisition, retention lease renewal, and response rendering"
     },
     {
       "action_name": "indices:admin/seq_no/remove_retention_lease",
@@ -1198,7 +1198,7 @@
       "request_wire_type": "RetentionLeaseActions.RemoveRequest",
       "response_wire_type": "RetentionLeaseActions.Response",
       "disposition": "rejected",
-      "reason": "Remove-retention-lease transport execution requires shard routing, primary operation permit acquisition, retention lease removal, sync, and response rendering before Steelsearch can serve OpenSearch retention lease remove semantics."
+      "reason": "Remove-retention-lease transport execution requires shard routing, primary operation permit acquisition, retention lease removal, sync, and response rendering"
     },
     {
       "action_name": "cluster:admin/indices/dangling/list",
@@ -1207,7 +1207,7 @@
       "request_wire_type": "ListDanglingIndicesRequest",
       "response_wire_type": "ListDanglingIndicesResponse",
       "disposition": "implemented",
-      "reason": "List-dangling-indices transport adapter returns an OpenSearch-shaped empty dangling-index response for the default all-nodes request."
+      "reason": "List-dangling-indices transport adapter returns an OpenSearch-shaped empty dangling-index response for the default all-nodes request"
     },
     {
       "action_name": "cluster:admin/indices/dangling/import",
@@ -1216,7 +1216,7 @@
       "request_wire_type": "ImportDanglingIndexRequest",
       "response_wire_type": "AcknowledgedResponse",
       "disposition": "rejected",
-      "reason": "Import-dangling-index transport execution requires dangling index lookup, accept-data-loss validation, allocation, cluster metadata mutation, and acknowledgement rendering before Steelsearch can serve OpenSearch dangling index import semantics."
+      "reason": "Import-dangling-index transport execution requires dangling index lookup, accept-data-loss validation, allocation, cluster metadata mutation, and acknowledgement rendering"
     },
     {
       "action_name": "cluster:admin/indices/dangling/delete",
@@ -1225,7 +1225,7 @@
       "request_wire_type": "DeleteDanglingIndexRequest",
       "response_wire_type": "AcknowledgedResponse",
       "disposition": "rejected",
-      "reason": "Delete-dangling-index transport execution requires dangling index lookup, accept-data-loss validation, index graveyard mutation, cluster metadata publication, and acknowledgement rendering before Steelsearch can serve OpenSearch dangling index delete semantics."
+      "reason": "Delete-dangling-index transport execution requires dangling index lookup, accept-data-loss validation, index graveyard mutation, cluster metadata publication, and acknowledgement rendering"
     },
     {
       "action_name": "cluster:admin/indices/dangling/find",
@@ -1243,7 +1243,7 @@
       "request_wire_type": "SearchRequest",
       "response_wire_type": "SearchResponse",
       "disposition": "implemented",
-      "reason": "search transport adapter executes the bounded root match-all/match-none/term subset against Steelsearch local document state and renders OpenSearch SearchResponse wire"
+      "reason": "Search transport adapter executes the bounded root match-all/match-none/term subset against Steelsearch local document state and renders OpenSearch SearchResponse wire"
     },
     {
       "action_name": "indices:data/read/search/stream",
@@ -1252,7 +1252,7 @@
       "request_wire_type": "SearchRequest",
       "response_wire_type": "SearchResponse",
       "disposition": "implemented",
-      "reason": "stream-search transport adapter executes the same bounded SearchRequest subset against local document state and renders OpenSearch SearchResponse wire"
+      "reason": "Stream-search transport adapter executes the same bounded SearchRequest subset against local document state and renders OpenSearch SearchResponse wire"
     },
     {
       "action_name": "indices:data/read/msearch",
@@ -1261,7 +1261,7 @@
       "request_wire_type": "MultiSearchRequest",
       "response_wire_type": "MultiSearchResponse",
       "disposition": "implemented",
-      "reason": "multi-search transport adapter executes supported sub-search requests in order and renders OpenSearch MultiSearchResponse success items"
+      "reason": "Multi-search transport adapter executes supported sub-search requests in order and renders OpenSearch MultiSearchResponse success items"
     },
     {
       "action_name": "indices:data/read/scroll",
@@ -1270,7 +1270,7 @@
       "request_wire_type": "SearchScrollRequest",
       "response_wire_type": "SearchResponse",
       "disposition": "implemented",
-      "reason": "search-scroll transport adapter advances local scroll contexts and renders OpenSearch SearchResponse wire pages"
+      "reason": "Search-scroll transport adapter advances local scroll contexts and renders OpenSearch SearchResponse wire pages"
     },
     {
       "action_name": "indices:data/read/scroll/clear",
@@ -1288,7 +1288,7 @@
       "request_wire_type": "ExplainRequest",
       "response_wire_type": "ExplainResponse",
       "disposition": "implemented",
-      "reason": "explain transport adapter evaluates the bounded match_all/match_none subset against local document state and renders OpenSearch ExplainResponse wire"
+      "reason": "Explain transport adapter evaluates the bounded match_all/match_none subset against local document state and renders OpenSearch ExplainResponse wire"
     },
     {
       "action_name": "indices:data/read/point_in_time/create",
@@ -1297,7 +1297,7 @@
       "request_wire_type": "CreatePitRequest",
       "response_wire_type": "CreatePitResponse",
       "disposition": "implemented",
-      "reason": "Create-pit transport adapter creates local PIT lifecycle contexts for the default all-indices request subset"
+      "reason": "Create-pit transport adapter resolves requested indices and routing onto local PIT lifecycle contexts and renders OpenSearch SearchContextId PIT ids"
     },
     {
       "action_name": "indices:data/read/point_in_time/delete",
@@ -1351,7 +1351,7 @@
       "request_wire_type": "PendingClusterTasksRequest",
       "response_wire_type": "PendingClusterTasksResponse",
       "disposition": "implemented",
-      "reason": "Pending-task observer reads are part of the initial Phase B baseline."
+      "reason": "Pending-tasks observer transport adapter is available"
     },
     {
       "action_name": "cluster:monitor/tasks/lists",
@@ -1360,7 +1360,7 @@
       "request_wire_type": "ListTasksRequest",
       "response_wire_type": "ListTasksResponse",
       "disposition": "implemented",
-      "reason": "Default empty list-tasks request/response transport codec maps onto the current no-active-task runtime contract."
+      "reason": "List-tasks transport adapter is available for the tracked task info subset"
     },
     {
       "action_name": "cluster:monitor/task/get",
@@ -1369,7 +1369,7 @@
       "request_wire_type": "GetTaskRequest",
       "response_wire_type": "GetTaskResponse",
       "disposition": "implemented",
-      "reason": "Get-task transport adapter serves tracked running task result payloads for explicit task ids."
+      "reason": "Get-task transport adapter is available for the tracked running task result subset"
     },
     {
       "action_name": "cluster:admin/tasks/cancel",
@@ -1378,7 +1378,7 @@
       "request_wire_type": "CancelTasksRequest",
       "response_wire_type": "CancelTasksResponse",
       "disposition": "implemented",
-      "reason": "Default cancel-tasks request with no active cancellable tasks maps onto the empty task response contract."
+      "reason": "Cancel-tasks transport adapter is available for the tracked cancellable task info subset"
     },
     {
       "action_name": "indices:admin/refresh",
@@ -1387,7 +1387,7 @@
       "request_wire_type": "RefreshRequest",
       "response_wire_type": "RefreshResponse",
       "disposition": "implemented",
-      "reason": "Refresh request/response transport codec maps onto the Rust refresh semantic adapter."
+      "reason": "Refresh transport adapter is available"
     },
     {
       "action_name": "indices:monitor/stats",
@@ -1405,7 +1405,7 @@
       "request_wire_type": "GetRequest",
       "response_wire_type": "GetResponse",
       "disposition": "implemented",
-      "reason": "Default single-document get request/response transport codec maps onto the Rust get semantic adapter."
+      "reason": "Get transport adapter is available for the default single-document subset"
     },
     {
       "action_name": "indices:data/read/tv",
@@ -1414,7 +1414,7 @@
       "request_wire_type": "TermVectorsRequest",
       "response_wire_type": "TermVectorsResponse",
       "disposition": "rejected",
-      "reason": "Term-vectors transport execution requires shard routing, realtime/non-realtime reads, analyzer selection, term statistics generation, and response rendering before Steelsearch can serve OpenSearch term-vectors semantics."
+      "reason": "Term-vectors transport execution requires shard routing, realtime/non-realtime reads, analyzer selection, term statistics generation, and response rendering"
     },
     {
       "action_name": "indices:data/read/mtv",
@@ -1423,7 +1423,7 @@
       "request_wire_type": "MultiTermVectorsRequest",
       "response_wire_type": "MultiTermVectorsResponse",
       "disposition": "rejected",
-      "reason": "Multi term-vectors transport execution requires per-item shard routing, realtime/non-realtime reads, analyzer selection, term statistics generation, and response rendering before Steelsearch can serve OpenSearch multi term-vectors semantics."
+      "reason": "Multi term-vectors transport execution requires per-item shard routing, realtime/non-realtime reads, analyzer selection, term statistics generation, and response rendering"
     },
     {
       "action_name": "indices:data/read/mget",
@@ -1432,7 +1432,7 @@
       "request_wire_type": "MultiGetRequest",
       "response_wire_type": "MultiGetResponse",
       "disposition": "implemented",
-      "reason": "Default multi-document get request/response transport codec maps onto batched Rust get semantic adapters."
+      "reason": "Multi-get transport adapter is available for the default document subset"
     },
     {
       "action_name": "indices:data/write/bulk",
@@ -1441,7 +1441,7 @@
       "request_wire_type": "BulkRequest",
       "response_wire_type": "BulkResponse",
       "disposition": "implemented",
-      "reason": "Bounded bulk index/delete request/response transport codec maps onto Rust bulk write semantic adapters."
+      "reason": "Bulk transport adapter is available for the bounded index/delete subset"
     },
     {
       "action_name": "indices:data/write/index",
@@ -1450,7 +1450,7 @@
       "request_wire_type": "IndexRequest",
       "response_wire_type": "IndexResponse",
       "disposition": "implemented",
-      "reason": "Default single-document JSON index request/response transport codec maps onto the Rust index semantic adapter."
+      "reason": "Index transport adapter is available for the default single-document subset"
     },
     {
       "action_name": "indices:data/write/update",
@@ -1459,7 +1459,7 @@
       "request_wire_type": "UpdateRequest",
       "response_wire_type": "UpdateResponse",
       "disposition": "implemented",
-      "reason": "Default doc-based update request/response transport codec maps onto the Rust update semantic adapter."
+      "reason": "Update transport adapter is available for the default doc-update subset"
     },
     {
       "action_name": "indices:data/write/delete",
@@ -1468,7 +1468,106 @@
       "request_wire_type": "DeleteRequest",
       "response_wire_type": "DeleteResponse",
       "disposition": "implemented",
-      "reason": "Default single-document delete request/response transport codec maps onto the Rust delete semantic adapter."
+      "reason": "Delete transport adapter is available for the default single-document subset"
+    },
+    {
+      "action_name": "indices:data/read/search[free_context/scroll]",
+      "action_type": "ScrollFreeContextRequest",
+      "transport_action": "SearchTransportService",
+      "request_wire_type": "ScrollFreeContextRequest",
+      "response_wire_type": "SearchFreeContextResponse",
+      "disposition": "implemented",
+      "reason": "Free-scroll-context transport adapter invalidates one local scroll context and renders OpenSearch SearchFreeContextResponse wire"
+    },
+    {
+      "action_name": "indices:data/read/search[free_context]",
+      "action_type": "SearchFreeContextRequest",
+      "transport_action": "SearchTransportService",
+      "request_wire_type": "SearchFreeContextRequest",
+      "response_wire_type": "SearchFreeContextResponse",
+      "disposition": "implemented",
+      "reason": "Search free-context transport adapter decodes OriginalIndices metadata, invalidates a local reader context, and renders OpenSearch SearchFreeContextResponse wire"
+    },
+    {
+      "action_name": "indices:data/read/search[clear_scroll_contexts]",
+      "action_type": "TransportRequest.Empty",
+      "transport_action": "SearchTransportService",
+      "request_wire_type": "TransportRequest.Empty",
+      "response_wire_type": "TransportResponse.Empty",
+      "disposition": "implemented",
+      "reason": "Clear-all-scroll-contexts transport adapter decodes an empty transport request, clears local scroll contexts, and renders TransportResponse.Empty"
+    },
+    {
+      "action_name": "indices:data/read/search[phase/dfs]",
+      "action_type": "ShardSearchRequest",
+      "transport_action": "SearchTransportService",
+      "request_wire_type": "ShardSearchRequest",
+      "response_wire_type": "DfsSearchResult",
+      "disposition": "rejected",
+      "reason": "DFS phase transport execution requires ShardSearchRequest decode, distributed term-stat collection, and DfsSearchResult rendering"
+    },
+    {
+      "action_name": "indices:data/read/search[phase/query]",
+      "action_type": "ShardSearchRequest",
+      "transport_action": "SearchTransportService",
+      "request_wire_type": "ShardSearchRequest",
+      "response_wire_type": "QuerySearchResult or QueryFetchSearchResult",
+      "disposition": "implemented",
+      "reason": "Query phase transport gateway admits bounded shard query-phase requests through the remote transport queue gate and returns cached or forwarded OpenSearch query-phase response bodies"
+    },
+    {
+      "action_name": "indices:data/read/search[phase/query/id]",
+      "action_type": "QuerySearchRequest",
+      "transport_action": "SearchTransportService",
+      "request_wire_type": "QuerySearchRequest",
+      "response_wire_type": "QuerySearchResult",
+      "disposition": "rejected",
+      "reason": "Query-id phase transport execution requires QuerySearchRequest decode, reader-context lookup, and QuerySearchResult rendering"
+    },
+    {
+      "action_name": "indices:data/read/search[phase/query/scroll]",
+      "action_type": "InternalScrollSearchRequest",
+      "transport_action": "SearchTransportService",
+      "request_wire_type": "InternalScrollSearchRequest",
+      "response_wire_type": "ScrollQuerySearchResult",
+      "disposition": "rejected",
+      "reason": "Query-scroll phase transport execution requires InternalScrollSearchRequest decode, scroll reader-context lookup, and ScrollQuerySearchResult rendering"
+    },
+    {
+      "action_name": "indices:data/read/search[phase/query+fetch/scroll]",
+      "action_type": "InternalScrollSearchRequest",
+      "transport_action": "SearchTransportService",
+      "request_wire_type": "InternalScrollSearchRequest",
+      "response_wire_type": "ScrollQueryFetchSearchResult",
+      "disposition": "rejected",
+      "reason": "Query-fetch-scroll phase transport execution requires InternalScrollSearchRequest decode, scroll fetch execution, and ScrollQueryFetchSearchResult rendering"
+    },
+    {
+      "action_name": "indices:data/read/search[phase/fetch/id/scroll]",
+      "action_type": "ShardFetchRequest",
+      "transport_action": "SearchTransportService",
+      "request_wire_type": "ShardFetchRequest",
+      "response_wire_type": "FetchSearchResult",
+      "disposition": "rejected",
+      "reason": "Fetch-id-scroll phase transport execution requires ShardFetchRequest decode, scroll reader-context fetch, and FetchSearchResult rendering"
+    },
+    {
+      "action_name": "indices:data/read/search[phase/fetch/id]",
+      "action_type": "ShardFetchSearchRequest",
+      "transport_action": "SearchTransportService",
+      "request_wire_type": "ShardFetchSearchRequest",
+      "response_wire_type": "FetchSearchResult",
+      "disposition": "rejected",
+      "reason": "Fetch-id phase transport execution requires ShardFetchSearchRequest decode, reader-context fetch, and FetchSearchResult rendering"
+    },
+    {
+      "action_name": "indices:data/read/search[can_match]",
+      "action_type": "ShardSearchRequest",
+      "transport_action": "SearchTransportService",
+      "request_wire_type": "ShardSearchRequest",
+      "response_wire_type": "SearchService.CanMatchResponse",
+      "disposition": "implemented",
+      "reason": "Can-match transport execution implements the bounded local shard subset with null, match_all, and match_none source query semantics"
     }
   ]
 }
