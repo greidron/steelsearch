@@ -4545,6 +4545,64 @@ fn multi_daemon_get_all_pits_fans_out_to_seed_peers() {
     );
     assert_eq!(refresh["status"], 200, "{refresh}");
 
+    let reader_shard = os_transport::action::OpenSearchShardIdWire {
+        index_name: "pit-transport-fanout-it".to_string(),
+        index_uuid: "_na_".to_string(),
+        shard_id: 0,
+    };
+    let create_reader_request = os_transport::action::OpenSearchCreateReaderContextRequestWire::new(
+        reader_shard.clone(),
+        os_transport::action::TimeValueWire::minutes(1),
+    );
+    let create_reader_frame =
+        os_transport::action::build_opensearch_create_reader_context_request_message(
+            609,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &create_reader_request,
+        )
+        .unwrap();
+    let create_reader_response =
+        send_transport_request_and_decode_response(transport_ports[0], &create_reader_frame);
+    let reader_response =
+        os_transport::action::read_opensearch_create_reader_context_response_message(
+            &create_reader_response,
+        )
+        .unwrap();
+    let update_pit_id =
+        os_transport::action::OpenSearchSearchContextIdWire::new(BTreeMap::from([(
+            reader_shard,
+            os_transport::action::OpenSearchSearchContextIdForNodeWire {
+                node: "steel-node-pit-fanout-1".to_string(),
+                cluster_alias: None,
+                search_context_id: reader_response.context_id.clone(),
+            },
+        )]))
+        .encode(OPENSEARCH_3_7_0_TRANSPORT)
+        .unwrap();
+    let update_reader_request = os_transport::action::OpenSearchUpdateReaderContextRequestWire {
+        parent_task_node: String::new(),
+        parent_task_id: None,
+        pit_id: update_pit_id.clone(),
+        keep_alive_millis: 120_000,
+        creation_time_millis: 1_700_000_000_000,
+        search_context_id: reader_response.context_id,
+    };
+    let update_reader_frame =
+        os_transport::action::build_opensearch_update_reader_context_request_message(
+            6091,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &update_reader_request,
+        )
+        .unwrap();
+    let update_reader_response =
+        send_transport_request_and_decode_response(transport_ports[1], &update_reader_frame);
+    let update_reader =
+        os_transport::action::read_opensearch_update_reader_context_response_message(
+            &update_reader_response,
+        )
+        .unwrap();
+    assert_eq!(update_reader.pit_id, update_pit_id);
+
     let create_pit_request = os_transport::action::OpenSearchCreatePitRequestWire {
         indices: vec!["pit-transport-fanout-it".to_string()],
         ..os_transport::action::OpenSearchCreatePitRequestWire::default()
@@ -4575,6 +4633,14 @@ fn multi_daemon_get_all_pits_fans_out_to_seed_peers() {
         os_transport::action::read_opensearch_get_all_pits_response_message(&default_list_response)
             .unwrap();
     assert_eq!(default_list.failures.len(), 0, "{default_list:?}");
+    assert!(
+        default_list
+            .nodes
+            .iter()
+            .any(|node| node.node.id == "steel-node-pit-fanout-1"
+                && node.pit_infos.iter().any(|pit| pit.pit_id == update_pit_id)),
+        "{default_list:?}"
+    );
     assert!(
         default_list
             .nodes

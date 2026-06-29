@@ -4626,7 +4626,7 @@ fn handle_transport_seed_connection<S: TransportConnection>(
         )?;
     } else if is_request
         && normalized_action_hint == Some("indices:data/read/search[update_context]")
-        && update_reader_context_request_has_missing_context(&body)
+        && update_reader_context_request_has_missing_context_for_identity(&body, transport_identity)
     {
         let response = build_update_reader_context_missing_context_error_response(
             request_id,
@@ -4686,10 +4686,14 @@ fn handle_transport_seed_connection<S: TransportConnection>(
         )?;
     } else if is_request
         && normalized_action_hint == Some("indices:data/read/search[update_context]")
-        && update_reader_context_request_supports_local_subset(&body)
+        && update_reader_context_request_supports_bounded_fanout_subset(&body, transport_identity)
     {
-        let response =
-            build_local_update_reader_context_response(request_id, header_version_id, &body);
+        let response = build_update_reader_context_response(
+            request_id,
+            header_version_id,
+            &body,
+            Some(transport_identity),
+        );
         response_frame = summarize_transport_response_frame_for_action(
             &response,
             Some("indices:data/read/search[update_context]"),
@@ -18167,9 +18171,37 @@ fn build_local_update_reader_context_response(
     header_version_id: u32,
     body: &[u8],
 ) -> Vec<u8> {
+    build_update_reader_context_response(request_id, header_version_id, body, None)
+}
+
+fn build_update_reader_context_response(
+    request_id: i64,
+    header_version_id: u32,
+    body: &[u8],
+    transport_identity: Option<&DevTransportIdentity>,
+) -> Vec<u8> {
     let Some(request) = decode_update_reader_context_request_from_transport_body(body) else {
         return build_empty_transport_response(request_id, header_version_id);
     };
+    if let Some(transport_identity) = transport_identity {
+        if !reader_context_exists(&request.search_context_id) {
+            if let Some(peer) = update_reader_context_target_peer(&request, transport_identity) {
+                return update_reader_context_on_peer(
+                    request_id,
+                    header_version_id,
+                    &peer,
+                    &request,
+                )
+                .unwrap_or_else(|_| {
+                    build_update_reader_context_missing_context_error_response(
+                        request_id,
+                        header_version_id,
+                        body,
+                    )
+                });
+            }
+        }
+    }
     if request.validate_supported_subset().is_err() {
         return build_empty_transport_response(request_id, header_version_id);
     }
@@ -18193,14 +18225,15 @@ fn build_local_update_reader_context_response(
     if !upsert_transport_pit_context_from_reader_update(&request) {
         return build_empty_transport_response(request_id, header_version_id);
     }
+    let update_response = os_transport::action::OpenSearchUpdateReaderContextResponseWire {
+        pit_id: request.pit_id,
+        creation_time_millis: request.creation_time_millis,
+        keep_alive_millis: request.keep_alive_millis,
+    };
     os_transport::action::build_opensearch_update_reader_context_response_message(
         request_id,
         Version::from_id(header_version_id as i32),
-        &os_transport::action::OpenSearchUpdateReaderContextResponseWire {
-            pit_id: request.pit_id,
-            creation_time_millis: request.creation_time_millis,
-            keep_alive_millis: request.keep_alive_millis,
-        },
+        &update_response,
     )
     .map(|frame| frame.to_vec())
     .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
@@ -18210,6 +18243,20 @@ fn update_reader_context_request_supports_local_subset(body: &[u8]) -> bool {
     decode_update_reader_context_request_from_transport_body(body)
         .filter(|request| request.keep_alive_millis <= DEV_TRANSPORT_MAX_PIT_KEEP_ALIVE_MILLIS)
         .filter(|request| reader_context_available_for_update(&request.search_context_id))
+        .and_then(|request| request.validate_supported_subset().ok())
+        .is_some()
+}
+
+fn update_reader_context_request_supports_bounded_fanout_subset(
+    body: &[u8],
+    transport_identity: &DevTransportIdentity,
+) -> bool {
+    decode_update_reader_context_request_from_transport_body(body)
+        .filter(|request| request.keep_alive_millis <= DEV_TRANSPORT_MAX_PIT_KEEP_ALIVE_MILLIS)
+        .filter(|request| {
+            reader_context_available_for_update(&request.search_context_id)
+                || update_reader_context_target_peer(request, transport_identity).is_some()
+        })
         .and_then(|request| request.validate_supported_subset().ok())
         .is_some()
 }
@@ -18227,6 +18274,19 @@ fn update_reader_context_request_has_missing_context(body: &[u8]) -> bool {
         .is_some_and(|request| !reader_context_exists(&request.search_context_id))
 }
 
+fn update_reader_context_request_has_missing_context_for_identity(
+    body: &[u8],
+    transport_identity: &DevTransportIdentity,
+) -> bool {
+    decode_update_reader_context_request_from_transport_body(body)
+        .filter(|request| request.validate_supported_subset().is_ok())
+        .filter(|request| request.keep_alive_millis <= DEV_TRANSPORT_MAX_PIT_KEEP_ALIVE_MILLIS)
+        .is_some_and(|request| {
+            !reader_context_exists(&request.search_context_id)
+                && update_reader_context_target_peer(&request, transport_identity).is_none()
+        })
+}
+
 fn update_reader_context_request_has_assigned_context(body: &[u8]) -> bool {
     decode_update_reader_context_request_from_transport_body(body)
         .filter(|request| request.validate_supported_subset().is_ok())
@@ -18235,6 +18295,63 @@ fn update_reader_context_request_has_assigned_context(body: &[u8]) -> bool {
             reader_context_exists(&request.search_context_id)
                 && !reader_context_available_for_update(&request.search_context_id)
         })
+}
+
+fn update_reader_context_target_peer(
+    request: &os_transport::action::OpenSearchUpdateReaderContextRequestWire,
+    transport_identity: &DevTransportIdentity,
+) -> Option<GetAllPitsPeerTarget> {
+    let context_id =
+        os_transport::action::OpenSearchSearchContextIdWire::decode(&request.pit_id).ok()?;
+    let target_node = context_id.shards.values().find_map(|context| {
+        (context.search_context_id == request.search_context_id).then(|| context.node.clone())
+    })?;
+    if target_node.is_empty()
+        || target_node == "_local"
+        || target_node == transport_identity.node_id
+        || target_node == transport_identity.node_name
+    {
+        return None;
+    }
+    get_all_pits_target_peers(
+        &os_transport::action::OpenSearchGetAllPitsRequestWire {
+            node_ids: Some(vec![target_node]),
+            ..os_transport::action::OpenSearchGetAllPitsRequestWire::default()
+        },
+        transport_identity,
+    )
+    .into_iter()
+    .next()
+}
+
+fn update_reader_context_on_peer(
+    request_id: i64,
+    _header_version_id: u32,
+    peer: &GetAllPitsPeerTarget,
+    request: &os_transport::action::OpenSearchUpdateReaderContextRequestWire,
+) -> Result<Vec<u8>, String> {
+    let target_transport_address = peer
+        .transport_address
+        .parse::<SocketAddr>()
+        .map_err(|error| format!("invalid transport address: {error}"))?;
+    let forwarded_request_id = TRANSPORT_REQUEST_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+    let frame = os_transport::action::build_opensearch_update_reader_context_request_message(
+        forwarded_request_id,
+        OPENSEARCH_3_7_0_TRANSPORT,
+        request,
+    )
+    .map_err(|error| format!("failed to encode request: {error}"))?;
+    let response_body = send_transport_request_and_capture_response_body(
+        target_transport_address,
+        forwarded_request_id,
+        &frame,
+        Duration::from_secs(5),
+    )
+    .map_err(|error| format!("transport request failed: {error}"))?
+    .ok_or_else(|| "transport request returned no response".to_string())?;
+    Ok(build_transport_frame_from_body(
+        &rewrite_transport_body_request_id(&response_body, request_id),
+    ))
 }
 
 fn build_update_reader_context_keep_alive_too_large_error_response(
@@ -19416,7 +19533,13 @@ fn build_local_get_all_pits_response(
     header_version_id: u32,
     transport_identity: &DevTransportIdentity,
 ) -> Vec<u8> {
-    build_get_all_pits_response(request_id, header_version_id, transport_identity, &[])
+    os_transport::action::build_opensearch_get_all_pits_response_message(
+        request_id,
+        Version::from_id(header_version_id as i32),
+        &get_all_transport_pits_response(transport_identity),
+    )
+    .map(|frame| frame.to_vec())
+    .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
 }
 
 fn build_get_all_pits_response(
@@ -22930,7 +23053,10 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
             )
         }
         Some("indices:data/read/search[update_context]")
-            if update_reader_context_request_has_missing_context(body) =>
+            if update_reader_context_request_has_missing_context_for_identity(
+                body,
+                transport_identity,
+            ) =>
         {
             Some(build_update_reader_context_missing_context_error_response(
                 request_id,
@@ -22948,12 +23074,16 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
             ))
         }
         Some("indices:data/read/search[update_context]")
-            if update_reader_context_request_supports_local_subset(body) =>
+            if update_reader_context_request_supports_bounded_fanout_subset(
+                body,
+                transport_identity,
+            ) =>
         {
-            Some(build_local_update_reader_context_response(
+            Some(build_update_reader_context_response(
                 request_id,
                 header_version_id,
                 body,
+                Some(transport_identity),
             ))
         }
         Some("indices:data/read/search[free_context/pit]")

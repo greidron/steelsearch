@@ -1333,7 +1333,7 @@
       "request_wire_type": "UpdatePitContextRequest",
       "response_wire_type": "UpdatePitContextResponse",
       "disposition": "implemented",
-      "reason": "Update-reader-context transport adapter records local PIT ids and keep-alive metadata and renders OpenSearch UpdatePitContextResponse wire"
+      "reason": "Update-reader-context transport adapter records PIT ids and keep-alive metadata locally or through bounded seed-peer fanout and renders OpenSearch UpdatePitContextResponse wire"
     },
     {
       "action_name": "indices:data/read/search[free_context/pit]",
