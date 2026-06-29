@@ -238,6 +238,59 @@
       ]
     },
     {
+      "name": "rollover_alias_named_dry_run",
+      "method": "POST",
+      "path": "/rollover-dry-write/_rollover/rollover-dry-logs-000002?dry_run=true",
+      "setup": [
+        {
+          "method": "DELETE",
+          "path": "/rollover-dry-logs-000001,rollover-dry-logs-000002?ignore_unavailable=true"
+        },
+        {
+          "method": "PUT",
+          "path": "/rollover-dry-logs-000001",
+          "body": {
+            "aliases": {
+              "rollover-dry-write": {
+                "is_write_index": true
+              }
+            }
+          }
+        }
+      ],
+      "extract": "rollover_summary",
+      "steelsearch_compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "old_index",
+          "new_index",
+          "rolled_over",
+          "acknowledged",
+          "shards_acknowledged",
+          "dry_run"
+        ]
+      },
+      "opensearch_compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "old_index",
+          "new_index",
+          "rolled_over",
+          "acknowledged",
+          "shards_acknowledged",
+          "dry_run"
+        ]
+      },
+      "body_paths_equal": [
+        "old_index",
+        "new_index",
+        "rolled_over",
+        "acknowledged",
+        "shards_acknowledged",
+        "dry_run"
+      ]
+    },
+    {
       "name": "delete_data_stream_happy_path",
       "method": "DELETE",
       "path": "/_data_stream/rollover-ds",

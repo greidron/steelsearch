@@ -3984,7 +3984,7 @@ impl SteelNode {
             {
                 return Some(response);
             }
-            return Some(self.handle_rollover_route(target, named));
+            return Some(self.handle_rollover_route(target, named, request));
         }
         if request.method == RestMethod::Get && request.path == "/_cat" {
             return Some(self.handle_cat_root_route());
@@ -7466,7 +7466,13 @@ impl SteelNode {
         format!("{prefix}{next:0width$}", width = digits.len())
     }
 
-    fn handle_rollover_route(&self, target: &str, new_index: Option<&str>) -> RestResponse {
+    fn handle_rollover_route(
+        &self,
+        target: &str,
+        new_index: Option<&str>,
+        request: &RestRequest,
+    ) -> RestResponse {
+        let dry_run = query_param_is_true(request.query_params.get("dry_run"));
         let mut manifest = self
             .metadata_manifest_state
             .lock()
@@ -7487,6 +7493,20 @@ impl SteelNode {
                 let next_index = new_index.map(ToOwned::to_owned).unwrap_or_else(|| {
                     Self::data_stream_backing_index_name(target, next_generation)
                 });
+                if dry_run {
+                    return RestResponse::json(
+                        200,
+                        serde_json::json!({
+                            "acknowledged": false,
+                            "shards_acknowledged": false,
+                            "old_index": old_index,
+                            "new_index": next_index,
+                            "rolled_over": false,
+                            "dry_run": true,
+                            "conditions": {}
+                        }),
+                    );
+                }
                 stream["generation"] = serde_json::json!(next_generation);
                 stream["indices"]
                     .as_array_mut()
@@ -7536,6 +7556,20 @@ impl SteelNode {
         let next_index = new_index
             .map(ToOwned::to_owned)
             .unwrap_or_else(|| Self::next_rollover_index_name(&old_index));
+        if dry_run {
+            return RestResponse::json(
+                200,
+                serde_json::json!({
+                    "acknowledged": false,
+                    "shards_acknowledged": false,
+                    "old_index": old_index,
+                    "new_index": next_index,
+                    "rolled_over": false,
+                    "dry_run": true,
+                    "conditions": {}
+                }),
+            );
+        }
         let mut next_manifest = manifest["indices"][&old_index].clone();
         if let Some(aliases) = next_manifest
             .get_mut("aliases")
@@ -37091,6 +37125,54 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             manifest["indices"]["logs-rollover-000123"]["aliases"]["logs-rollover-write"]
                 ["is_write_index"],
             Value::Bool(true)
+        );
+    }
+
+    #[test]
+    fn rollover_dry_run_returns_candidate_without_mutating_alias_target() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        let create = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/logs-dry-run-000001")
+                .with_json_body(serde_json::json!({})),
+        );
+        assert_eq!(create.status, 200);
+
+        let alias = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/logs-dry-run-000001/_alias/logs-dry-run-write")
+                .with_json_body(serde_json::json!({
+                    "is_write_index": true
+                })),
+        );
+        assert_eq!(alias.status, 200);
+
+        let dry_run = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/logs-dry-run-write/_rollover/logs-dry-run-000002?dry_run=true",
+        ));
+        assert_eq!(dry_run.status, 200);
+        assert_eq!(dry_run.body["old_index"], "logs-dry-run-000001");
+        assert_eq!(dry_run.body["new_index"], "logs-dry-run-000002");
+        assert_eq!(dry_run.body["dry_run"], Value::Bool(true));
+        assert_eq!(dry_run.body["rolled_over"], Value::Bool(false));
+        assert_eq!(dry_run.body["acknowledged"], Value::Bool(false));
+        assert_eq!(dry_run.body["shards_acknowledged"], Value::Bool(false));
+
+        let manifest = node
+            .metadata_manifest_state
+            .lock()
+            .expect("metadata manifest state lock poisoned");
+        assert_eq!(
+            manifest["indices"]["logs-dry-run-000001"]["aliases"]["logs-dry-run-write"]
+                ["is_write_index"],
+            Value::Bool(true)
+        );
+        assert!(
+            manifest["indices"].get("logs-dry-run-000002").is_none(),
+            "dry-run rollover must not create the candidate index"
         );
     }
 
