@@ -2633,6 +2633,11 @@ The create-PIT boundary covers:
   `ShardSearchContextId`, and update-PIT context request/response wire classes
   also round-trip raw strings without validation; local execution still rejects
   unknown reader contexts before mutating local PIT state.
+- local transport update-reader-context now follows OpenSearch
+  `SearchService.getReaderContext(...)` lookup semantics for shard-search
+  session ids: an empty session string can update the active local PIT reader
+  by numeric context id, while non-empty sessions require the exact local
+  `(session,id)` reader key and otherwise render `SearchContextMissingException`.
 - local transport get-all-PIT admission now accepts decoded `BaseNodesRequest`
   timeout values for the single-node subset, matching OpenSearch
   `TransportGetAllPitsAction` request shape while still restricting execution
@@ -5648,19 +5653,19 @@ Current PIT reader-context wire microbenchmark:
 
 ```text
 cargo run -q -p os-transport --release --bin pit-reader-context-wire-benchmark
-pit_reader_create_request_encode iterations=400000 elapsed_ms=342.047 ops_per_second=1169428.67 nanos_per_op=855.12
-pit_reader_create_request_decode iterations=400000 elapsed_ms=312.358 ops_per_second=1280582.50 nanos_per_op=780.89
-pit_reader_create_response_encode iterations=400000 elapsed_ms=116.416 ops_per_second=3435966.45 nanos_per_op=291.04
-pit_reader_create_response_decode iterations=400000 elapsed_ms=105.806 ops_per_second=3780508.48 nanos_per_op=264.51
-pit_reader_update_request_encode iterations=400000 elapsed_ms=351.947 ops_per_second=1136534.43 nanos_per_op=879.87
-pit_reader_update_request_decode iterations=400000 elapsed_ms=321.276 ops_per_second=1245036.60 nanos_per_op=803.19
-pit_reader_update_response_encode iterations=400000 elapsed_ms=116.528 ops_per_second=3432658.07 nanos_per_op=291.32
-pit_reader_update_response_decode iterations=400000 elapsed_ms=96.029 ops_per_second=4165400.52 nanos_per_op=240.07
-pit_reader_free_request_encode iterations=400000 elapsed_ms=405.733 ops_per_second=985869.90 nanos_per_op=1014.33
-pit_reader_free_request_decode iterations=400000 elapsed_ms=375.060 ops_per_second=1066495.23 nanos_per_op=937.65
-pit_reader_free_response_encode iterations=400000 elapsed_ms=99.877 ops_per_second=4004925.34 nanos_per_op=249.69
-pit_reader_free_response_decode iterations=400000 elapsed_ms=106.429 ops_per_second=3758365.72 nanos_per_op=266.07
-pit_reader_context_wire_bottleneck_ops_per_second=985869.90
+pit_reader_create_request_encode iterations=400000 elapsed_ms=343.170 ops_per_second=1165603.98 nanos_per_op=857.92
+pit_reader_create_request_decode iterations=400000 elapsed_ms=311.298 ops_per_second=1284942.30 nanos_per_op=778.25
+pit_reader_create_response_encode iterations=400000 elapsed_ms=116.693 ops_per_second=3427808.77 nanos_per_op=291.73
+pit_reader_create_response_decode iterations=400000 elapsed_ms=108.063 ops_per_second=3701554.68 nanos_per_op=270.16
+pit_reader_update_request_encode iterations=400000 elapsed_ms=352.041 ops_per_second=1136231.90 nanos_per_op=880.10
+pit_reader_update_request_decode iterations=400000 elapsed_ms=323.358 ops_per_second=1237018.04 nanos_per_op=808.40
+pit_reader_update_response_encode iterations=400000 elapsed_ms=116.459 ops_per_second=3434684.55 nanos_per_op=291.15
+pit_reader_update_response_decode iterations=400000 elapsed_ms=93.749 ops_per_second=4266708.22 nanos_per_op=234.37
+pit_reader_free_request_encode iterations=400000 elapsed_ms=406.514 ops_per_second=983977.00 nanos_per_op=1016.28
+pit_reader_free_request_decode iterations=400000 elapsed_ms=376.286 ops_per_second=1063020.42 nanos_per_op=940.72
+pit_reader_free_response_encode iterations=400000 elapsed_ms=100.289 ops_per_second=3988464.24 nanos_per_op=250.72
+pit_reader_free_response_decode iterations=400000 elapsed_ms=104.826 ops_per_second=3815864.98 nanos_per_op=262.06
+pit_reader_context_wire_bottleneck_ops_per_second=983977.00
 ```
 
 The current PIT reader-context wire bottleneck is free-PIT-context request

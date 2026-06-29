@@ -16701,7 +16701,7 @@ fn release_update_reader_context_if_present(body: &[u8]) {
         .expect("dev transport reader contexts lock poisoned");
     prune_expired_transport_reader_contexts(&mut reader_contexts, now_epoch_ms());
     if let Some(reader_context_key) =
-        reader_context_key_by_numeric_id(&reader_contexts, request.search_context_id.id)
+        reader_context_lookup_key_for_request(&reader_contexts, &request.search_context_id)
     {
         reader_contexts.remove(&reader_context_key);
     }
@@ -16727,7 +16727,7 @@ fn upsert_transport_pit_context_from_reader_update(
             .expect("dev transport reader contexts lock poisoned");
         prune_expired_transport_reader_contexts(&mut reader_contexts, now_millis);
         let Some(reader_context_key) =
-            reader_context_key_by_numeric_id(&reader_contexts, request.search_context_id.id)
+            reader_context_lookup_key_for_request(&reader_contexts, &request.search_context_id)
         else {
             return false;
         };
@@ -16865,7 +16865,7 @@ fn reader_context_exists(
         .lock()
         .expect("dev transport reader contexts lock poisoned");
     prune_expired_transport_reader_contexts(&mut reader_contexts, now_epoch_ms());
-    reader_context_key_by_numeric_id(&reader_contexts, context_id.id).is_some()
+    reader_context_lookup_key_for_request(&reader_contexts, context_id).is_some()
 }
 
 fn reader_context_available_for_update(
@@ -16878,13 +16878,25 @@ fn reader_context_available_for_update(
         .expect("dev transport reader contexts lock poisoned");
     prune_expired_transport_reader_contexts(&mut reader_contexts, now_epoch_ms());
     let Some(reader_context_key) =
-        reader_context_key_by_numeric_id(&reader_contexts, context_id.id)
+        reader_context_lookup_key_for_request(&reader_contexts, context_id)
     else {
         return false;
     };
     reader_contexts
         .get(&reader_context_key)
         .is_some_and(|context| context.pit_id.is_none() && context.creation_time_millis.is_none())
+}
+
+fn reader_context_lookup_key_for_request(
+    reader_contexts: &BTreeMap<(String, i64), DevTransportReaderContext>,
+    context_id: &os_transport::action::OpenSearchShardSearchContextIdWire,
+) -> Option<(String, i64)> {
+    if context_id.session_id.is_empty() {
+        reader_context_key_by_numeric_id(reader_contexts, context_id.id)
+    } else {
+        let key = reader_context_key(context_id);
+        reader_contexts.contains_key(&key).then_some(key)
+    }
 }
 
 fn reader_context_key_by_numeric_id(
@@ -36790,7 +36802,7 @@ mod tests {
     }
 
     #[test]
-    fn update_reader_context_transport_route_matches_by_numeric_id_like_opensearch() {
+    fn update_reader_context_transport_route_empty_session_matches_numeric_id_like_opensearch() {
         let _lock = dev_transport_pit_test_lock()
             .lock()
             .expect("dev transport PIT test lock poisoned");
@@ -36809,10 +36821,8 @@ mod tests {
             "stored-update-session",
             91,
         );
-        let request_context_id = os_transport::action::OpenSearchShardSearchContextIdWire::new(
-            "request-update-session",
-            91,
-        );
+        let request_context_id =
+            os_transport::action::OpenSearchShardSearchContextIdWire::new("", 91);
         bindings
             .reader_contexts
             .lock()
@@ -36873,12 +36883,119 @@ mod tests {
             .expect("dev transport reader contexts lock poisoned");
         let context = reader_contexts
             .get(&reader_context_key(&stored_context_id))
-            .expect("stored reader context should be updated by numeric id");
+            .expect("stored reader context should be updated by empty-session numeric id");
         assert_eq!(
             context.pit_id.as_deref(),
             Some("transport-pit-numeric-update")
         );
         assert_eq!(context.creation_time_millis, Some(1_700_000_000_001_i64));
+    }
+
+    #[test]
+    fn update_reader_context_transport_route_rejects_nonempty_session_mismatch_like_opensearch() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        let bindings = dev_transport_pit_bindings();
+        bindings
+            .contexts
+            .lock()
+            .expect("dev transport PIT contexts lock poisoned")
+            .clear();
+        bindings
+            .reader_contexts
+            .lock()
+            .expect("dev transport reader contexts lock poisoned")
+            .clear();
+        let stored_context_id = os_transport::action::OpenSearchShardSearchContextIdWire::new(
+            "stored-update-session",
+            92,
+        );
+        let request_context_id = os_transport::action::OpenSearchShardSearchContextIdWire::new(
+            "request-update-session",
+            92,
+        );
+        bindings
+            .reader_contexts
+            .lock()
+            .expect("dev transport reader contexts lock poisoned")
+            .insert(
+                reader_context_key(&stored_context_id),
+                DevTransportReaderContext {
+                    shard_id: os_transport::action::OpenSearchShardIdWire {
+                        index_name: "logs-reader-session-mismatch-update".to_string(),
+                        index_uuid: "uuid-reader-session-mismatch-update".to_string(),
+                        shard_id: 0,
+                    },
+                    documents: Arc::new(BTreeMap::new()),
+                    keep_alive_millis: 60_000,
+                    expires_at_millis: now_epoch_ms() + 60_000,
+                    pit_id: None,
+                    creation_time_millis: None,
+                },
+            );
+
+        let request = os_transport::action::OpenSearchUpdateReaderContextRequestWire {
+            parent_task_node: String::new(),
+            parent_task_id: None,
+            pit_id: "transport-pit-session-mismatch-update".to_string(),
+            keep_alive_millis: 120_000,
+            creation_time_millis: 1_700_000_000_002,
+            search_context_id: request_context_id,
+        };
+        let frame = os_transport::action::build_opensearch_update_reader_context_request_message(
+            327,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(!update_reader_context_request_supports_local_subset(
+            &frame[6..]
+        ));
+        assert!(update_reader_context_request_has_missing_context(
+            &frame[6..]
+        ));
+
+        let response = build_local_update_reader_context_response(
+            327,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &frame[6..],
+        );
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected session-mismatch update-reader-context missing-context response");
+        };
+        assert_eq!(message.request_id, 327);
+        assert!(message.status.is_error());
+        let error = os_transport::error::TransportError::read(message.body.freeze())
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            error.class_name,
+            "org.opensearch.search.SearchContextMissingException"
+        );
+        assert_eq!(
+            error.message.as_deref(),
+            Some("No search context found for id [92]")
+        );
+        let reader_contexts = bindings
+            .reader_contexts
+            .lock()
+            .expect("dev transport reader contexts lock poisoned");
+        let context = reader_contexts
+            .get(&reader_context_key(&stored_context_id))
+            .expect("stored reader context should remain after session mismatch");
+        assert!(context.pit_id.is_none());
+        assert!(context.creation_time_millis.is_none());
+        assert!(bindings
+            .contexts
+            .lock()
+            .expect("dev transport PIT contexts lock poisoned")
+            .is_empty());
     }
 
     #[test]
