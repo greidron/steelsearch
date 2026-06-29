@@ -9240,15 +9240,18 @@ impl SteelNode {
     }
 
     fn handle_count_route(&self, target: Option<&str>, request: &RestRequest) -> RestResponse {
-        let unsupported_query_params = request
-            .query_params
-            .keys()
-            .filter(|key| matches!(key.as_str(), "q" | "df" | "default_operator"))
-            .collect::<Vec<_>>();
-        if let Some(response) =
-            unrecognized_query_param_response_for_keys(request, &unsupported_query_params)
-        {
-            return response;
+        let has_body = !request.body.is_empty();
+        if has_body {
+            let unsupported_query_params = request
+                .query_params
+                .keys()
+                .filter(|key| matches!(key.as_str(), "q" | "df" | "default_operator"))
+                .collect::<Vec<_>>();
+            if let Some(response) =
+                unrecognized_query_param_response_for_keys(request, &unsupported_query_params)
+            {
+                return response;
+            }
         }
         let mut payload = if request.body.is_empty() {
             Value::Object(serde_json::Map::new())
@@ -49680,6 +49683,20 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             "request [/_count] contains unrecognized parameters: [df], [q]"
         );
 
+        let targeted_q_count = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/logs-count-*/_count?q=tenant:tenanta",
+        ));
+        assert_eq!(targeted_q_count.status, 200);
+        assert_eq!(targeted_q_count.body["count"], 1);
+
+        let targeted_q_count_with_df = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/metrics-count-*/_count?q=tenantb&df=tenant",
+        ));
+        assert_eq!(targeted_q_count_with_df.status, 200);
+        assert_eq!(targeted_q_count_with_df.body["count"], 1);
+
         let unsupported_q_count_analyzer = node.handle_rest_request(RestRequest::new(
             RestMethod::Get,
             "/_count?q=tenanta&analyzer=standard",
@@ -49687,7 +49704,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(unsupported_q_count_analyzer.status, 400);
         assert_eq!(
             unsupported_q_count_analyzer.body["error"]["reason"],
-            "request [/_count] contains unrecognized parameter: [q]"
+            "unsupported search option [analyzer]"
         );
 
         let empty_wildcard_count = node.handle_rest_request(
