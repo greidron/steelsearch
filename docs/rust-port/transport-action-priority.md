@@ -2426,10 +2426,10 @@ The create-PIT boundary covers:
   including the resolved index set, document snapshot, primary-shard count,
   keep-alive expiry bookkeeping, and read-all/delete visibility through the
   same lifecycle state;
-- REST and local transport create-PIT responses now return unpadded base64url
-  opaque PIT ids instead of the earlier `pit-N` debug-shaped ids, while storing
-  and resolving the same opaque id through list, search, delete, and segments
-  lifecycle paths;
+- REST create-PIT responses now return OpenSearch `SearchContextId`-shaped
+  base64url opaque PIT ids, and local transport create-PIT uses the same
+  `SearchContextId` wire model; legacy local opaque ids remain accepted for
+  existing tests and missing-context compatibility;
 - REST create-PIT, local transport create-PIT, and PIT-search keep-alive
   extension reject values above the OpenSearch default
   `point_in_time.max_keep_alive` of `24h`;
@@ -2475,9 +2475,9 @@ The create-PIT boundary covers:
 - OpenSearch `SearchContextId` wire support preserves alias-filter entries and
   their optional query payloads; local PIT search applies the decoded alias
   filter query through the same local query matcher used for the request query;
-- PIT searches reject malformed local opaque PIT ids with the OpenSearch
-  `invalid id` error while preserving missing-context handling for well-formed
-  local ids;
+- PIT searches reject malformed opaque PIT ids with the OpenSearch `invalid id`
+  error while preserving missing-context handling for well-formed
+  `SearchContextId` and legacy local ids;
 - delete-PIT REST parsing now rejects malformed JSON bodies with the
   OpenSearch `Failed to parse request body` illegal-argument response instead
   of falling through to an empty PIT id validation error;
@@ -5526,12 +5526,12 @@ Current create-PIT wire microbenchmark:
 
 ```text
 cargo run -p os-transport --release --bin create-pit-wire-benchmark
-create_pit_request_encode iterations=400000 elapsed_ms=282.549 ops_per_second=1415681.86 nanos_per_op=706.37
-create_pit_request_decode iterations=400000 elapsed_ms=264.046 ops_per_second=1514885.58 nanos_per_op=660.12
-create_pit_request_validate iterations=400000 elapsed_ms=264.766 ops_per_second=1510768.96 nanos_per_op=661.91
-create_pit_response_encode iterations=400000 elapsed_ms=124.121 ops_per_second=3222667.00 nanos_per_op=310.30
-create_pit_response_decode iterations=400000 elapsed_ms=104.947 ops_per_second=3811462.94 nanos_per_op=262.37
-create_pit_wire_bottleneck_ops_per_second=1415681.86
+create_pit_request_encode iterations=400000 elapsed_ms=282.640 ops_per_second=1415228.81 nanos_per_op=706.60
+create_pit_request_decode iterations=400000 elapsed_ms=266.453 ops_per_second=1501200.73 nanos_per_op=666.13
+create_pit_request_validate iterations=400000 elapsed_ms=266.615 ops_per_second=1500289.24 nanos_per_op=666.54
+create_pit_response_encode iterations=400000 elapsed_ms=123.950 ops_per_second=3227113.46 nanos_per_op=309.87
+create_pit_response_decode iterations=400000 elapsed_ms=104.441 ops_per_second=3829924.03 nanos_per_op=261.10
+create_pit_wire_bottleneck_ops_per_second=1415228.81
 ```
 
 The current create-PIT wire subset bottleneck is request encode. This path
@@ -5539,13 +5539,14 @@ carries the ActionRequest parent task, index target controls, keep-alive, and
 explicit partial-creation flag before admitting the local transport PIT
 lifecycle subset. Runtime create-PIT now also resolves index/alias/wildcard and
 data-stream targets with OpenSearch-style index option guards, applies routing
-filters, and captures the shared SteelNode document snapshot while accepting
-create-PIT preference and explicit partial-creation flags for the local
-all-success shard subset. The transport reader-context path is covered
-separately: create-reader-context allocates a local snapshot, update-reader-context
-attaches the final PIT id/creation time/keep-alive, PIT search reuses that
-snapshot and extends keep-alive, and free-PIT-context clears both reader and PIT
-context state. The first runtime performance point to inspect while expanding
+filters, captures the shared SteelNode document snapshot, and returns
+OpenSearch `SearchContextId`-shaped REST PIT ids using the same wire model while
+accepting create-PIT preference and explicit partial-creation flags for the
+local all-success shard subset. The transport reader-context path is covered
+separately: create-reader-context allocates a local snapshot,
+update-reader-context attaches the final PIT id/creation time/keep-alive, PIT
+search reuses that snapshot and extends keep-alive, and free-PIT-context clears
+both reader and PIT context state. The first runtime performance point to inspect while expanding
 the path is lock hold time and snapshot allocation around larger document sets.
 
 Current PIT reader-context wire microbenchmark:

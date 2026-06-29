@@ -11318,7 +11318,9 @@ impl SteelNode {
         }
         let mut next_id = self.next_pit_id.lock().expect("next pit id lock poisoned");
         *next_id += 1;
-        let pit_id = build_local_pit_id(*next_id);
+        let pit_id = self
+            .build_rest_search_context_pit_id(&resolved_indices, *next_id)
+            .unwrap_or_else(|| build_local_pit_id(*next_id));
         pit_contexts.insert(
             pit_id.clone(),
             PitContext {
@@ -11374,6 +11376,41 @@ impl SteelNode {
         Ok(context.clone())
     }
 
+    fn build_rest_search_context_pit_id(
+        &self,
+        resolved_indices: &[String],
+        sequence: u64,
+    ) -> Option<String> {
+        let mut shards = BTreeMap::new();
+        let mut ordinal = 0_i64;
+        for index in resolved_indices {
+            for shard_id in 0..self.index_primary_shard_count(index) {
+                ordinal += 1;
+                shards.insert(
+                    os_transport::action::OpenSearchShardIdWire {
+                        index_name: index.clone(),
+                        index_uuid: self.index_uuid(index),
+                        shard_id: shard_id as i32,
+                    },
+                    os_transport::action::OpenSearchSearchContextIdForNodeWire {
+                        node: self.info.name.clone(),
+                        cluster_alias: None,
+                        search_context_id:
+                            os_transport::action::OpenSearchShardSearchContextIdWire::new(
+                                format!("steelsearch-rest-pit-session-{sequence}"),
+                                (sequence as i64)
+                                    .saturating_mul(1_000_000)
+                                    .saturating_add(ordinal),
+                            ),
+                    },
+                );
+            }
+        }
+        os_transport::action::OpenSearchSearchContextIdWire::new(shards)
+            .encode(self.info.version)
+            .ok()
+    }
+
     fn remove_pit_context(&self, pit_id: &str) {
         self.pit_contexts
             .lock()
@@ -11387,6 +11424,18 @@ impl SteelNode {
             .expect("pit contexts lock poisoned")
             .get(pit_id)
             .and_then(|context| context.indices.first().cloned())
+    }
+
+    fn index_uuid(&self, index: &str) -> String {
+        let manifest = self
+            .metadata_manifest_state
+            .lock()
+            .expect("metadata manifest state lock poisoned");
+        manifest["indices"][index]["settings"]["index"]["uuid"]
+            .as_str()
+            .or_else(|| manifest["indices"][index]["settings"]["uuid"].as_str())
+            .unwrap_or("_na_")
+            .to_string()
     }
 
     fn handle_close_point_in_time_route(&self, request: &RestRequest) -> RestResponse {
@@ -23506,6 +23555,9 @@ fn validate_point_in_time_search_request(
 }
 
 fn pit_search_id_has_local_shape(pit_id: &str) -> bool {
+    if os_transport::action::OpenSearchSearchContextIdWire::decode(pit_id).is_ok() {
+        return true;
+    }
     let Some(decoded) = decode_base64_url_no_pad(pit_id) else {
         return false;
     };
@@ -35905,10 +35957,11 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             "PIT id should be an OpenSearch-shaped opaque id: {pit_id}"
         );
         assert!(
-            pit_id
-                .bytes()
-                .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_'),
-            "PIT id should use unpadded base64url characters: {pit_id}"
+            pit_id.bytes().all(|byte| byte.is_ascii_alphanumeric()
+                || byte == b'-'
+                || byte == b'_'
+                || byte == b'='),
+            "PIT id should use OpenSearch-compatible base64url characters: {pit_id}"
         );
         pit_id.to_string()
     }
@@ -54485,6 +54538,17 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(open_pit.status, 200);
         assert_eq!(open_pit.body["_shards"]["failed"], 0);
         let pit_id = open_pit.body["pit_id"].as_str().expect("pit id");
+        let decoded_pit_id = os_transport::action::OpenSearchSearchContextIdWire::decode(pit_id)
+            .expect("REST create PIT should return an OpenSearch SearchContextId-shaped id");
+        assert_eq!(
+            decoded_pit_id.actual_indices(),
+            vec!["test_pit".to_string()]
+        );
+        assert_eq!(decoded_pit_id.shards.len(), 1);
+        assert!(decoded_pit_id
+            .shards
+            .values()
+            .all(|context| context.node == "steel-node"));
 
         let pit_search = node.handle_rest_request(
             RestRequest::new(
