@@ -4435,6 +4435,182 @@ fn multi_daemon_transport_create_pit_binds_reader_contexts_to_target_node() {
 }
 
 #[test]
+fn multi_daemon_get_all_pits_fans_out_to_seed_peers() {
+    let binary = os_node_binary();
+    let root = unique_work_dir();
+    fs::create_dir_all(&root).unwrap();
+    let http_ports = [free_port(), free_port()];
+    let transport_ports = [free_port(), free_port()];
+    let seed_hosts = transport_ports
+        .iter()
+        .map(|port| format!("127.0.0.1:{port}"))
+        .collect::<Vec<_>>()
+        .join(",");
+    let manifest_paths = [root.join("peer-node-1.json"), root.join("peer-node-2.json")];
+    for index in 0..2 {
+        fs::write(
+            &manifest_paths[index],
+            format!(
+                r#"{{
+  "peer_identity_present": true,
+  "cluster_name": "steel-dev-pit-transport-fanout",
+  "discovery_node": {{
+    "name": "steel-node-pit-fanout-{}",
+    "id": "steel-node-pit-fanout-{}",
+    "ephemeral_id": "steel-node-pit-fanout-{}-ephemeral",
+    "host_name": "127.0.0.1",
+    "host_address": "127.0.0.1",
+    "http_address": "127.0.0.1:{}",
+    "transport_address": "127.0.0.1:{}",
+    "version_id": {},
+    "roles": ["cluster_manager", "data", "ingest"]
+  }}
+}}"#,
+                index + 1,
+                index + 1,
+                index + 1,
+                http_ports[index],
+                transport_ports[index],
+                OPENSEARCH_3_7_0_TRANSPORT.id()
+            ),
+        )
+        .unwrap();
+    }
+    let mut children = Vec::new();
+
+    for index in 0..2 {
+        let node_dir = root.join(format!("fanout-node-{}", index + 1));
+        fs::create_dir_all(node_dir.join("data")).unwrap();
+        fs::create_dir_all(node_dir.join("logs")).unwrap();
+        let stdout = fs::File::create(node_dir.join("logs/stdout.log")).unwrap();
+        let stderr = fs::File::create(node_dir.join("logs/stderr.log")).unwrap();
+        children.push(
+            Command::new(&binary)
+                .arg("--http.host")
+                .arg("127.0.0.1")
+                .arg("--http.port")
+                .arg(http_ports[index].to_string())
+                .arg("--transport.host")
+                .arg("127.0.0.1")
+                .arg("--transport.port")
+                .arg(transport_ports[index].to_string())
+                .arg("--node.id")
+                .arg(format!("steel-node-pit-fanout-{}", index + 1))
+                .arg("--node.name")
+                .arg(format!("steel-node-pit-fanout-{}", index + 1))
+                .arg("--cluster.name")
+                .arg("steel-dev-pit-transport-fanout")
+                .arg("--node.roles")
+                .arg("cluster_manager,data,ingest")
+                .arg("--discovery.seed_hosts")
+                .arg(&seed_hosts)
+                .arg("--interop.seed_peer_identity_manifest")
+                .arg(&manifest_paths[1 - index])
+                .arg("--path.data")
+                .arg(node_dir.join("data"))
+                .stdout(Stdio::from(stdout))
+                .stderr(Stdio::from(stderr))
+                .spawn()
+                .unwrap(),
+        );
+    }
+    let _guard = ChildGuard { children };
+
+    for port in http_ports {
+        let cluster = wait_json(port, "GET", "/_steelsearch/dev/cluster", None);
+        assert_eq!(cluster["cluster_name"], "steel-dev-pit-transport-fanout");
+        assert_eq!(cluster["number_of_nodes"], 2);
+        assert_eq!(cluster["formed"], true);
+    }
+
+    let create = wait_http_response(
+        http_ports[0],
+        "PUT",
+        "/pit-transport-fanout-it",
+        Some(br#"{"settings":{"number_of_shards":1,"number_of_replicas":0}}"#),
+    );
+    assert_eq!(create["status"], 200, "{create}");
+    let index_doc = http_response(
+        http_ports[0],
+        "PUT",
+        "/pit-transport-fanout-it/_doc/1",
+        Some(br#"{"status":"fanout-before-pit","ordinal":1}"#),
+    );
+    assert_eq!(index_doc["status"], 201, "{index_doc}");
+    let refresh = http_response(
+        http_ports[0],
+        "POST",
+        "/pit-transport-fanout-it/_refresh",
+        Some(b"{}"),
+    );
+    assert_eq!(refresh["status"], 200, "{refresh}");
+
+    let create_pit_request = os_transport::action::OpenSearchCreatePitRequestWire {
+        indices: vec!["pit-transport-fanout-it".to_string()],
+        ..os_transport::action::OpenSearchCreatePitRequestWire::default()
+    };
+    let create_pit_frame = os_transport::action::build_opensearch_create_pit_request_message(
+        610,
+        OPENSEARCH_3_7_0_TRANSPORT,
+        &create_pit_request,
+    )
+    .unwrap();
+    let create_pit_response =
+        send_transport_request_and_decode_response(transport_ports[0], &create_pit_frame);
+    let pit_response =
+        os_transport::action::read_opensearch_create_pit_response_message(&create_pit_response)
+            .unwrap();
+    assert!(!pit_response.pit_id.is_empty());
+
+    let default_list_request = os_transport::action::OpenSearchGetAllPitsRequestWire::default();
+    let default_list_frame = os_transport::action::build_opensearch_get_all_pits_request_message(
+        611,
+        OPENSEARCH_3_7_0_TRANSPORT,
+        &default_list_request,
+    )
+    .unwrap();
+    let default_list_response =
+        send_transport_request_and_decode_response(transport_ports[1], &default_list_frame);
+    let default_list =
+        os_transport::action::read_opensearch_get_all_pits_response_message(&default_list_response)
+            .unwrap();
+    assert_eq!(default_list.failures.len(), 0, "{default_list:?}");
+    assert!(
+        default_list
+            .nodes
+            .iter()
+            .any(|node| node.node.id == "steel-node-pit-fanout-1"
+                && node
+                    .pit_infos
+                    .iter()
+                    .any(|pit| pit.pit_id == pit_response.pit_id)),
+        "{default_list:?}"
+    );
+
+    let local_list_request = os_transport::action::OpenSearchGetAllPitsRequestWire {
+        node_ids: Some(vec!["_local".to_string()]),
+        ..os_transport::action::OpenSearchGetAllPitsRequestWire::default()
+    };
+    let local_list_frame = os_transport::action::build_opensearch_get_all_pits_request_message(
+        612,
+        OPENSEARCH_3_7_0_TRANSPORT,
+        &local_list_request,
+    )
+    .unwrap();
+    let local_list_response =
+        send_transport_request_and_decode_response(transport_ports[1], &local_list_frame);
+    let local_list =
+        os_transport::action::read_opensearch_get_all_pits_response_message(&local_list_response)
+            .unwrap();
+    assert!(!local_list.nodes.iter().any(|node| node
+        .pit_infos
+        .iter()
+        .any(|pit| pit.pit_id == pit_response.pit_id)));
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
 fn daemon_search_endpoint_preserves_result_shape_sorting_and_pagination() {
     let binary = os_node_binary();
     let root = unique_work_dir();

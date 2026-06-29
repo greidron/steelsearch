@@ -1315,7 +1315,7 @@
       "request_wire_type": "GetAllPitNodesRequest",
       "response_wire_type": "GetAllPitNodesResponse",
       "disposition": "implemented",
-      "reason": "Get-all-PITs transport wire adapter renders OpenSearch-shaped node responses with ListPitInfo entries"
+      "reason": "Get-all-PITs transport adapter renders OpenSearch-shaped node responses with ListPitInfo entries and bounded seed-peer fanout"
     },
     {
       "action_name": "indices:data/read/search[create_context]",

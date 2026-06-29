@@ -119,6 +119,13 @@ struct DevTransportReaderContext {
     creation_time_millis: Option<i64>,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct GetAllPitsPeerTarget {
+    node_id: String,
+    node_name: String,
+    transport_address: String,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum CreateReaderContextShardAdmission {
     Accepted,
@@ -4819,7 +4826,7 @@ fn handle_transport_seed_connection<S: TransportConnection>(
         && get_all_pits_request_supports_local_lifecycle_subset(&body, transport_identity)
     {
         let response =
-            build_local_get_all_pits_response(request_id, header_version_id, transport_identity);
+            build_get_all_pits_response(request_id, header_version_id, transport_identity, &body);
         response_frame = summarize_transport_response_frame_for_action(
             &response,
             Some("indices:data/read/point_in_time/readall"),
@@ -18677,31 +18684,39 @@ fn get_all_pits_request_supports_local_lifecycle_subset(
     let Some(request) = decode_get_all_pits_request_from_transport_body(body) else {
         return false;
     };
-    if request.validate_supported_subset().is_err()
-        || !get_all_pits_node_ids_match_local(request.node_ids.as_deref(), transport_identity)
-    {
-        return false;
-    }
-    match request.concrete_nodes.as_deref() {
-        None => true,
-        Some([node]) => node.id == transport_identity.node_id,
-        Some(_) => false,
-    }
+    request.validate_supported_subset().is_ok()
+        && get_all_pits_request_targets_known_nodes(&request, transport_identity)
 }
 
-fn get_all_pits_node_ids_match_local(
-    node_ids: Option<&[String]>,
+fn get_all_pits_request_targets_known_nodes(
+    request: &os_transport::action::OpenSearchGetAllPitsRequestWire,
     transport_identity: &DevTransportIdentity,
 ) -> bool {
-    match node_ids {
-        None => true,
-        Some(node_ids) => node_ids.iter().all(|node_id| {
+    request.node_ids.as_deref().map_or(true, |node_ids| {
+        node_ids.iter().all(|node_id| {
             node_id == "_all"
                 || node_id == "_local"
                 || node_id == &transport_identity.node_id
                 || node_id == &transport_identity.node_name
-        }),
-    }
+                || transport_identity.seed_peer_identities.iter().any(|peer| {
+                    node_id == &peer.discovery_node.id || node_id == &peer.discovery_node.name
+                })
+                || get_all_pits_cached_peer_targets(transport_identity)
+                    .iter()
+                    .any(|peer| node_id == &peer.node_id || node_id == &peer.node_name)
+        })
+    }) && request.concrete_nodes.as_deref().map_or(true, |nodes| {
+        nodes.iter().all(|node| {
+            node.id == transport_identity.node_id
+                || transport_identity
+                    .seed_peer_identities
+                    .iter()
+                    .any(|peer| peer.discovery_node.id == node.id)
+                || get_all_pits_cached_peer_targets(transport_identity)
+                    .iter()
+                    .any(|peer| peer.node_id == node.id)
+        })
+    })
 }
 
 fn clear_transport_scroll_contexts(
@@ -19288,10 +19303,22 @@ fn build_local_get_all_pits_response(
     header_version_id: u32,
     transport_identity: &DevTransportIdentity,
 ) -> Vec<u8> {
+    build_get_all_pits_response(request_id, header_version_id, transport_identity, &[])
+}
+
+fn build_get_all_pits_response(
+    request_id: i64,
+    header_version_id: u32,
+    transport_identity: &DevTransportIdentity,
+    body: &[u8],
+) -> Vec<u8> {
+    let response = decode_get_all_pits_request_from_transport_body(body)
+        .map(|request| get_all_transport_pits_response_for_request(transport_identity, &request))
+        .unwrap_or_else(|| get_all_transport_pits_response(transport_identity));
     os_transport::action::build_opensearch_get_all_pits_response_message(
         request_id,
         Version::from_id(header_version_id as i32),
-        &get_all_transport_pits_response(transport_identity),
+        &response,
     )
     .map(|frame| frame.to_vec())
     .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
@@ -19475,6 +19502,52 @@ fn extend_transport_reader_contexts_for_pit_id(
 fn get_all_transport_pits_response(
     transport_identity: &DevTransportIdentity,
 ) -> os_transport::action::OpenSearchGetAllPitsResponseWire {
+    get_all_transport_pits_response_for_request(
+        transport_identity,
+        &os_transport::action::OpenSearchGetAllPitsRequestWire::default(),
+    )
+}
+
+fn get_all_transport_pits_response_for_request(
+    transport_identity: &DevTransportIdentity,
+    request: &os_transport::action::OpenSearchGetAllPitsRequestWire,
+) -> os_transport::action::OpenSearchGetAllPitsResponseWire {
+    let mut nodes = Vec::new();
+    if get_all_pits_request_targets_local_node(request, transport_identity) {
+        if let Some(local_node) = local_get_all_pits_node_response(transport_identity) {
+            nodes.push(local_node);
+        }
+    }
+    let mut failures = Vec::new();
+    for peer in get_all_pits_target_peers(request, transport_identity) {
+        match get_all_pits_from_peer(&peer, request) {
+            Ok(peer_response) => {
+                nodes.extend(peer_response.nodes);
+                failures.extend(peer_response.failures);
+            }
+            Err(error) => {
+                failures.push(
+                    os_transport::action::FailedNodeExceptionWire::illegal_argument(
+                        peer.node_id.clone(),
+                        format!(
+                            "failed to list PIT contexts from node [{}]: {error}",
+                            peer.node_id
+                        ),
+                    ),
+                );
+            }
+        }
+    }
+    os_transport::action::OpenSearchGetAllPitsResponseWire::with_nodes_and_failures(
+        transport_identity.cluster_name.clone(),
+        nodes,
+        failures,
+    )
+}
+
+fn local_get_all_pits_node_response(
+    transport_identity: &DevTransportIdentity,
+) -> Option<os_transport::action::OpenSearchGetAllPitsNodeResponseWire> {
     let pit_infos = {
         let bindings = dev_transport_pit_bindings();
         let now_millis = now_epoch_ms();
@@ -19505,20 +19578,140 @@ fn get_all_transport_pits_response(
             .collect::<Vec<_>>()
     };
     if pit_infos.is_empty() {
-        os_transport::action::OpenSearchGetAllPitsResponseWire::empty(
-            transport_identity.cluster_name.clone(),
-        )
+        None
     } else {
-        os_transport::action::OpenSearchGetAllPitsResponseWire::with_nodes(
-            transport_identity.cluster_name.clone(),
-            vec![
-                os_transport::action::OpenSearchGetAllPitsNodeResponseWire::new(
-                    discovery_node_wire_from_identity(transport_identity),
-                    pit_infos,
-                ),
-            ],
+        Some(
+            os_transport::action::OpenSearchGetAllPitsNodeResponseWire::new(
+                discovery_node_wire_from_identity(transport_identity),
+                pit_infos,
+            ),
         )
     }
+}
+
+fn get_all_pits_request_targets_local_node(
+    request: &os_transport::action::OpenSearchGetAllPitsRequestWire,
+    transport_identity: &DevTransportIdentity,
+) -> bool {
+    let node_ids_match = request.node_ids.as_deref().map_or(true, |node_ids| {
+        node_ids.iter().any(|node_id| {
+            node_id == "_all"
+                || node_id == "_local"
+                || node_id == &transport_identity.node_id
+                || node_id == &transport_identity.node_name
+        })
+    });
+    let concrete_nodes_match = request.concrete_nodes.as_deref().map_or(true, |nodes| {
+        nodes
+            .iter()
+            .any(|node| node.id == transport_identity.node_id)
+    });
+    node_ids_match && concrete_nodes_match
+}
+
+fn get_all_pits_target_peers(
+    request: &os_transport::action::OpenSearchGetAllPitsRequestWire,
+    transport_identity: &DevTransportIdentity,
+) -> Vec<GetAllPitsPeerTarget> {
+    if request
+        .node_ids
+        .as_deref()
+        .is_some_and(|node_ids| node_ids.iter().any(|node_id| node_id == "_local"))
+    {
+        return Vec::new();
+    }
+    let mut seen = BTreeSet::new();
+    let mut peers = transport_identity
+        .seed_peer_identities
+        .iter()
+        .map(|peer| GetAllPitsPeerTarget {
+            node_id: peer.discovery_node.id.clone(),
+            node_name: peer.discovery_node.name.clone(),
+            transport_address: peer.discovery_node.transport_address.clone(),
+        })
+        .chain(get_all_pits_cached_peer_targets(transport_identity))
+        .filter(|peer| seen.insert(peer.node_id.clone()))
+        .collect::<Vec<_>>();
+    peers.retain(|peer| get_all_pits_request_targets_peer(request, peer));
+    peers
+}
+
+fn get_all_pits_cached_peer_targets(
+    transport_identity: &DevTransportIdentity,
+) -> Vec<GetAllPitsPeerTarget> {
+    transport_identity
+        .coordination_state
+        .lock()
+        .ok()
+        .and_then(|state| state.cached_cluster_state.clone())
+        .map(|cluster_state| {
+            cluster_state
+                .discovery_nodes
+                .nodes
+                .into_iter()
+                .filter(|node| node.id != transport_identity.node_id)
+                .map(|node| {
+                    let address = node.stream_address.as_ref().unwrap_or(&node.address);
+                    GetAllPitsPeerTarget {
+                        node_id: node.id,
+                        node_name: node.name,
+                        transport_address: format!("{}:{}", address.ip, address.port),
+                    }
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn get_all_pits_request_targets_peer(
+    request: &os_transport::action::OpenSearchGetAllPitsRequestWire,
+    peer: &GetAllPitsPeerTarget,
+) -> bool {
+    let node_ids_match = request.node_ids.as_deref().map_or(true, |node_ids| {
+        node_ids.iter().any(|node_id| {
+            node_id == "_all" || node_id == &peer.node_id || node_id == &peer.node_name
+        })
+    });
+    let concrete_nodes_match = request.concrete_nodes.as_deref().map_or(true, |nodes| {
+        nodes.iter().any(|node| node.id == peer.node_id)
+    });
+    node_ids_match && concrete_nodes_match
+}
+
+fn get_all_pits_from_peer(
+    peer: &GetAllPitsPeerTarget,
+    request: &os_transport::action::OpenSearchGetAllPitsRequestWire,
+) -> Result<os_transport::action::OpenSearchGetAllPitsResponseWire, String> {
+    let target_transport_address = peer
+        .transport_address
+        .parse::<SocketAddr>()
+        .map_err(|error| format!("invalid transport address: {error}"))?;
+    let forwarded_request = os_transport::action::OpenSearchGetAllPitsRequestWire {
+        parent_task_node: request.parent_task_node.clone(),
+        parent_task_id: request.parent_task_id,
+        node_ids: Some(vec!["_local".to_string()]),
+        concrete_nodes: None,
+        timeout: request.timeout.clone(),
+    };
+    let forwarded_request_id = TRANSPORT_REQUEST_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+    let frame = os_transport::action::build_opensearch_get_all_pits_request_message(
+        forwarded_request_id,
+        OPENSEARCH_3_7_0_TRANSPORT,
+        &forwarded_request,
+    )
+    .map_err(|error| format!("failed to encode request: {error}"))?;
+    let response_body = send_transport_request_and_capture_response_body(
+        target_transport_address,
+        forwarded_request_id,
+        &frame,
+        Duration::from_secs(5),
+    )
+    .map_err(|error| format!("transport request failed: {error}"))?
+    .ok_or_else(|| "transport request returned no response".to_string())?;
+    let response_message = decode_transport_message_from_body(&response_body)
+        .ok_or_else(|| "transport response frame was not decodable".to_string())?;
+    os_transport::action::read_opensearch_get_all_pits_response_message(&response_message)
+        .map_err(|error| format!("failed to decode response: {error}"))
 }
 
 fn build_nodes_hot_threads_response(
@@ -22690,10 +22883,11 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
         Some("indices:data/read/point_in_time/readall")
             if get_all_pits_request_supports_local_lifecycle_subset(body, transport_identity) =>
         {
-            Some(build_local_get_all_pits_response(
+            Some(build_get_all_pits_response(
                 request_id,
                 header_version_id,
                 transport_identity,
+                body,
             ))
         }
         Some("cluster:monitor/nodes/hot_threads") => Some(build_nodes_hot_threads_response(
