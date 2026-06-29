@@ -4412,6 +4412,33 @@ fn handle_transport_seed_connection<S: TransportConnection>(
         )?;
     } else if is_request
         && normalized_action_hint == Some("indices:monitor/point_in_time/segments")
+        && pit_segments_request_has_invalid_pit_id(&body)
+    {
+        let response =
+            build_pit_segments_invalid_pit_id_error_response(request_id, header_version_id, &body);
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("indices:monitor/point_in_time/segments[n]"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request
+        && normalized_action_hint == Some("indices:monitor/point_in_time/segments")
         && pit_segments_request_supports_local_subset(&body)
     {
         let response = build_local_pit_segments_node_response(
@@ -17068,6 +17095,12 @@ fn pit_segments_request_supports_local_subset(body: &[u8]) -> bool {
     request.validate_supported_subset().is_ok() && transport_pit_segment_ids_exist(&request)
 }
 
+fn pit_segments_request_has_invalid_pit_id(body: &[u8]) -> bool {
+    decode_pit_segments_request_from_transport_body(body)
+        .filter(|request| request.validate_supported_subset().is_ok())
+        .is_some_and(|request| pit_segments_request_first_invalid_pit_id(&request).is_some())
+}
+
 fn build_local_pit_segments_node_response(
     request_id: i64,
     header_version_id: u32,
@@ -17079,6 +17112,13 @@ fn build_local_pit_segments_node_response(
     };
     if request.validate_supported_subset().is_err() {
         return build_empty_transport_response(request_id, header_version_id);
+    }
+    if let Some(_) = pit_segments_request_first_invalid_pit_id(&request) {
+        return build_pit_segments_invalid_pit_id_error_response(
+            request_id,
+            header_version_id,
+            body,
+        );
     }
     if let Some(context_id) = missing_decodable_pit_segment_context_id(&request) {
         return build_missing_search_context_error_response(
@@ -17099,12 +17139,47 @@ fn build_local_pit_segments_node_response(
     )
 }
 
+fn pit_segments_request_first_invalid_pit_id(
+    request: &os_transport::action::OpenSearchPitSegmentsRequestWire,
+) -> Option<String> {
+    if request.pit_ids.len() == 1 && request.pit_ids[0] == "_all" {
+        return None;
+    }
+    let mut contexts = dev_transport_pit_bindings()
+        .contexts
+        .lock()
+        .expect("dev transport PIT contexts lock poisoned");
+    prune_expired_transport_pits(&mut contexts, now_epoch_ms());
+    prune_unavailable_transport_pits(&mut contexts);
+    request
+        .pit_ids
+        .iter()
+        .find(|pit_id| {
+            os_transport::action::OpenSearchSearchContextIdWire::decode(pit_id).is_err()
+                && !contexts.contains_key(*pit_id)
+        })
+        .cloned()
+}
+
+fn build_pit_segments_invalid_pit_id_error_response(
+    request_id: i64,
+    header_version_id: u32,
+    body: &[u8],
+) -> Vec<u8> {
+    let Some(request) = decode_pit_segments_request_from_transport_body(body) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    let pit_id = pit_segments_request_first_invalid_pit_id(&request).unwrap_or_default();
+    let reason = format!("invalid id: [{pit_id}]");
+    let mut output = StreamOutput::new();
+    os_transport::error::write_illegal_argument_exception(&mut output, Some(&reason));
+    build_transport_error_response_frame(request_id, header_version_id, output.freeze().to_vec())
+}
+
 fn transport_pit_segment_ids_exist(
     request: &os_transport::action::OpenSearchPitSegmentsRequestWire,
 ) -> bool {
-    if request.pit_ids.iter().any(|pit_id| pit_id.is_empty())
-        || !ids_use_all_only_as_standalone(&request.pit_ids)
-    {
+    if !ids_use_all_only_as_standalone(&request.pit_ids) {
         return false;
     }
     let mut contexts = dev_transport_pit_bindings()
@@ -17124,9 +17199,7 @@ fn transport_pit_segment_ids_exist(
 fn missing_decodable_pit_segment_context_id(
     request: &os_transport::action::OpenSearchPitSegmentsRequestWire,
 ) -> Option<os_transport::action::OpenSearchShardSearchContextIdWire> {
-    if request.pit_ids.iter().any(|pit_id| pit_id.is_empty())
-        || !ids_use_all_only_as_standalone(&request.pit_ids)
-    {
+    if !ids_use_all_only_as_standalone(&request.pit_ids) {
         return None;
     }
     let mut contexts = dev_transport_pit_bindings()
@@ -20464,6 +20537,15 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
             header_version_id,
             transport_identity,
         )),
+        Some("indices:monitor/point_in_time/segments")
+            if pit_segments_request_has_invalid_pit_id(body) =>
+        {
+            Some(build_pit_segments_invalid_pit_id_error_response(
+                request_id,
+                header_version_id,
+                body,
+            ))
+        }
         Some("indices:monitor/point_in_time/segments")
             if pit_segments_request_supports_local_subset(body) =>
         {
@@ -39768,6 +39850,7 @@ mod tests {
         )
         .unwrap();
         assert!(!pit_segments_request_supports_local_subset(&frame[6..]));
+        assert!(pit_segments_request_has_invalid_pit_id(&frame[6..]));
     }
 
     #[test]
@@ -40142,6 +40225,7 @@ mod tests {
             &unknown_request,
         )
         .unwrap();
+        assert!(pit_segments_request_has_invalid_pit_id(&unknown_frame[6..]));
         let unknown_response = build_local_pit_segments_node_response(
             99,
             OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
@@ -40154,10 +40238,18 @@ mod tests {
                 .unwrap()
                 .unwrap()
         else {
-            panic!("expected unknown PIT segments fallback response message");
+            panic!("expected unknown PIT segments invalid-id response message");
         };
         assert_eq!(message.request_id, 99);
-        assert_eq!(message.body.len(), 0);
+        assert!(message.status.is_error());
+        let error = os_transport::error::TransportError::read(message.body.freeze())
+            .unwrap()
+            .unwrap();
+        assert_eq!(error.class_name, "java.lang.IllegalArgumentException");
+        assert_eq!(
+            error.message.as_deref(),
+            Some("invalid id: [missing-pit-context]")
+        );
 
         dev_transport_pit_bindings()
             .contexts
@@ -40474,10 +40566,15 @@ mod tests {
                 .unwrap()
                 .unwrap()
         else {
-            panic!("expected mixed PIT segments fallback response message");
+            panic!("expected mixed PIT segments invalid-id response message");
         };
         assert_eq!(message.request_id, 200);
-        assert!(message.body.is_empty());
+        assert!(message.status.is_error());
+        let error = os_transport::error::TransportError::read(message.body.freeze())
+            .unwrap()
+            .unwrap();
+        assert_eq!(error.class_name, "java.lang.IllegalArgumentException");
+        assert_eq!(error.message.as_deref(), Some("invalid id: [_all]"));
         assert!(dev_transport_pit_bindings()
             .contexts
             .lock()
@@ -40486,7 +40583,7 @@ mod tests {
     }
 
     #[test]
-    fn pit_segments_transport_route_rejects_empty_id_at_local_execution_boundary() {
+    fn pit_segments_transport_route_rejects_empty_id_like_opensearch_decode() {
         let _lock = dev_transport_pit_test_lock()
             .lock()
             .expect("dev transport PIT test lock poisoned");
@@ -40520,6 +40617,7 @@ mod tests {
         )
         .unwrap();
         assert!(!pit_segments_request_supports_local_subset(&frame[6..]));
+        assert!(pit_segments_request_has_invalid_pit_id(&frame[6..]));
 
         let response = build_local_pit_segments_node_response(
             201,
@@ -40533,10 +40631,15 @@ mod tests {
                 .unwrap()
                 .unwrap()
         else {
-            panic!("expected empty PIT id segments fallback response message");
+            panic!("expected empty PIT id segments invalid-id response message");
         };
         assert_eq!(message.request_id, 201);
-        assert!(message.body.is_empty());
+        assert!(message.status.is_error());
+        let error = os_transport::error::TransportError::read(message.body.freeze())
+            .unwrap()
+            .unwrap();
+        assert_eq!(error.class_name, "java.lang.IllegalArgumentException");
+        assert_eq!(error.message.as_deref(), Some("invalid id: []"));
     }
 
     #[test]

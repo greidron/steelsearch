@@ -1942,9 +1942,11 @@ The PIT-segments boundary covers:
   `TransportPitSegmentsAction.shards()` `LinkedHashSet` routing semantics
   without collapsing distinct PIT ids that point at the same shard for the
   supported empty-metadata response subset;
-- explicit local runtime rejection for index filters, custom indices options,
-  empty PIT id entries, `_all` mixed with explicit ids, and unknown explicit PIT
-  ids that are not OpenSearch `SearchContextId` values;
+- explicit local runtime rejection for index filters and custom indices
+  options, plus OpenSearch-style `IllegalArgumentException` transport errors
+  for empty PIT id entries, `_all` mixed with explicit ids, and unknown
+  explicit PIT ids that are neither OpenSearch `SearchContextId` values nor
+  locally registered PIT context ids;
 - explicit local transport `SearchContextMissingException` rendering for
   decoded OpenSearch `SearchContextId` PIT-segments requests whose reader
   context is no longer present locally;
@@ -5671,12 +5673,12 @@ Current PIT-segments wire microbenchmark:
 
 ```text
 cargo run -p os-transport --release --bin pit-segments-wire-benchmark
-pit_segments_request_encode iterations=400000 elapsed_ms=269.784 ops_per_second=1482665.54 nanos_per_op=674.46
-pit_segments_request_decode iterations=400000 elapsed_ms=289.972 ops_per_second=1379443.30 nanos_per_op=724.93
-pit_segments_request_validate iterations=400000 elapsed_ms=293.932 ops_per_second=1360857.47 nanos_per_op=734.83
-pit_segments_response_encode iterations=400000 elapsed_ms=92.661 ops_per_second=4316818.57 nanos_per_op=231.65
-pit_segments_response_decode iterations=400000 elapsed_ms=96.962 ops_per_second=4125338.00 nanos_per_op=242.40
-pit_segments_wire_bottleneck_ops_per_second=1360857.47
+pit_segments_request_encode iterations=400000 elapsed_ms=275.177 ops_per_second=1453611.16 nanos_per_op=687.94
+pit_segments_request_decode iterations=400000 elapsed_ms=290.642 ops_per_second=1376262.36 nanos_per_op=726.61
+pit_segments_request_validate iterations=400000 elapsed_ms=292.400 ops_per_second=1367990.76 nanos_per_op=731.00
+pit_segments_response_encode iterations=400000 elapsed_ms=92.218 ops_per_second=4337567.27 nanos_per_op=230.54
+pit_segments_response_decode iterations=400000 elapsed_ms=96.167 ops_per_second=4159419.48 nanos_per_op=240.42
+pit_segments_wire_bottleneck_ops_per_second=1367990.76
 ```
 
 The current PIT-segments supported-subset boundary bottleneck is request
