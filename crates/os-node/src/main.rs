@@ -4356,6 +4356,62 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end_at_ms,
         )?;
     } else if is_request
+        && normalized_action_hint == Some("indices:data/read/search[phase/fetch/id]")
+        && fetch_id_request_has_missing_reader_context(&body)
+    {
+        let response = build_fetch_id_missing_reader_context_error_response(
+            request_id,
+            header_version_id,
+            &body,
+        );
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("indices:data/read/search[phase/fetch/id]"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request
+        && normalized_action_hint == Some("indices:data/read/search[phase/fetch/id]")
+        && fetch_id_request_supports_empty_local_execution_subset(&body)
+    {
+        let response = build_local_fetch_id_phase_response(request_id, header_version_id, &body);
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("indices:data/read/search[phase/fetch/id]"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request
         && normalized_action_hint == Some("indices:data/read/search[can_match]")
         && can_match_request_exceeds_local_reader_keep_alive_limit(&body)
     {
@@ -18551,6 +18607,51 @@ fn build_local_query_id_phase_response(
     build_transport_response_frame(request_id, header_version_id, payload)
 }
 
+fn fetch_id_request_has_missing_reader_context(body: &[u8]) -> bool {
+    decode_fetch_id_request_from_transport_body(body)
+        .filter(|request| request.validate_supported_subset().is_ok())
+        .is_some_and(|request| !reader_context_exists(&request.context_id))
+}
+
+fn fetch_id_request_supports_empty_local_execution_subset(body: &[u8]) -> bool {
+    decode_fetch_id_request_from_transport_body(body)
+        .filter(|request| request.validate_supported_subset().is_ok())
+        .filter(|request| request.doc_ids.is_empty())
+        .is_some_and(|request| reader_context_exists(&request.context_id))
+}
+
+fn build_fetch_id_missing_reader_context_error_response(
+    request_id: i64,
+    header_version_id: u32,
+    body: &[u8],
+) -> Vec<u8> {
+    let Some(request) = decode_fetch_id_request_from_transport_body(body) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    build_missing_search_context_error_response(request_id, header_version_id, &request.context_id)
+}
+
+fn build_local_fetch_id_phase_response(
+    request_id: i64,
+    header_version_id: u32,
+    body: &[u8],
+) -> Vec<u8> {
+    let Some(request) = decode_fetch_id_request_from_transport_body(body) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    if !fetch_id_request_supports_empty_local_execution_subset(body) {
+        return build_empty_transport_response(request_id, header_version_id);
+    }
+    let response = os_transport::action::OpenSearchFetchSearchResultWire::empty(request.context_id);
+    os_transport::action::build_opensearch_fetch_id_phase_response_message(
+        request_id,
+        Version::from_id(header_version_id as i32),
+        &response,
+    )
+    .map(|frame| frame.to_vec())
+    .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
+}
+
 fn build_can_match_reader_keep_alive_too_large_error_response(
     request_id: i64,
     header_version_id: u32,
@@ -18588,6 +18689,13 @@ fn decode_query_id_request_from_transport_body(
 ) -> Option<os_transport::action::OpenSearchQuerySearchRequestWire> {
     let message = decode_transport_message_from_body(body)?;
     os_transport::action::read_opensearch_query_id_request_message(&message).ok()
+}
+
+fn decode_fetch_id_request_from_transport_body(
+    body: &[u8],
+) -> Option<os_transport::action::OpenSearchShardFetchSearchRequestWire> {
+    let message = decode_transport_message_from_body(body)?;
+    os_transport::action::read_opensearch_fetch_id_phase_request_message(&message).ok()
 }
 
 fn can_match_request_context_admitted(
@@ -23989,6 +24097,24 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
                 header_version_id,
                 body,
                 transport_identity,
+            ))
+        }
+        Some("indices:data/read/search[phase/fetch/id]")
+            if fetch_id_request_has_missing_reader_context(body) =>
+        {
+            Some(build_fetch_id_missing_reader_context_error_response(
+                request_id,
+                header_version_id,
+                body,
+            ))
+        }
+        Some("indices:data/read/search[phase/fetch/id]")
+            if fetch_id_request_supports_empty_local_execution_subset(body) =>
+        {
+            Some(build_local_fetch_id_phase_response(
+                request_id,
+                header_version_id,
+                body,
             ))
         }
         Some("indices:data/read/search[can_match]")
@@ -43043,6 +43169,136 @@ mod tests {
             query_id_message.body[0], 0,
             "QuerySearchResult payload should be non-null"
         );
+    }
+
+    #[test]
+    fn fetch_id_phase_route_rejects_missing_context_like_opensearch() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        let bindings = dev_transport_pit_bindings();
+        bindings
+            .reader_contexts
+            .lock()
+            .expect("dev transport reader contexts lock poisoned")
+            .clear();
+        let context_id =
+            os_transport::action::OpenSearchShardSearchContextIdWire::new("missing-fetch", 71);
+        let request = os_transport::action::OpenSearchShardFetchSearchRequestWire::empty(
+            context_id.clone(),
+            os_transport::action::OpenSearchOriginalIndicesWire::new(
+                Some(vec!["logs-fetch-missing-reader".to_string()]),
+                os_transport::action::OpenSearchIndicesOptionsWire::strict_expand_open_forbid_closed_ignore_throttled(),
+            ),
+        );
+        let frame = os_transport::action::build_opensearch_fetch_id_phase_request_message(
+            351,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(fetch_id_request_has_missing_reader_context(&frame[6..]));
+
+        let response = build_fetch_id_missing_reader_context_error_response(
+            351,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &frame[6..],
+        );
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected fetch-id missing-context error response frame");
+        };
+        assert_eq!(message.request_id, 351);
+        assert!(message.status.is_error());
+        let error = os_transport::error::TransportError::read(message.body.freeze())
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            error.class_name,
+            "org.opensearch.search.SearchContextMissingException"
+        );
+        assert_eq!(
+            error.message.as_deref(),
+            Some("No search context found for id [71]")
+        );
+        assert_eq!(context_id.id, 71);
+    }
+
+    #[test]
+    fn fetch_id_phase_route_returns_empty_fetch_result_for_empty_doc_ids() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        let bindings = dev_transport_pit_bindings();
+        bindings
+            .reader_contexts
+            .lock()
+            .expect("dev transport reader contexts lock poisoned")
+            .clear();
+        let shard_id = os_transport::action::OpenSearchShardIdWire {
+            index_name: "logs-fetch-empty".to_string(),
+            index_uuid: "uuid-logs-fetch-empty".to_string(),
+            shard_id: 0,
+        };
+        let context_id =
+            os_transport::action::OpenSearchShardSearchContextIdWire::new("fetch-empty", 72);
+        bindings
+            .reader_contexts
+            .lock()
+            .expect("dev transport reader contexts lock poisoned")
+            .insert(
+                reader_context_key(&context_id),
+                DevTransportReaderContext {
+                    shard_id: shard_id.clone(),
+                    documents: Arc::new(BTreeMap::new()),
+                    keep_alive_millis: 60_000,
+                    expires_at_millis: now_epoch_ms().saturating_add(60_000),
+                    pit_id: None,
+                    creation_time_millis: None,
+                },
+            );
+        let request = os_transport::action::OpenSearchShardFetchSearchRequestWire::empty(
+            context_id.clone(),
+            os_transport::action::OpenSearchOriginalIndicesWire::new(
+                Some(vec!["logs-fetch-empty".to_string()]),
+                os_transport::action::OpenSearchIndicesOptionsWire::strict_expand_open_forbid_closed_ignore_throttled(),
+            ),
+        );
+        let frame = os_transport::action::build_opensearch_fetch_id_phase_request_message(
+            352,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(fetch_id_request_supports_empty_local_execution_subset(
+            &frame[6..]
+        ));
+
+        let response = build_local_fetch_id_phase_response(
+            352,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &frame[6..],
+        );
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected fetch-id phase response frame");
+        };
+        assert_eq!(message.request_id, 352);
+        assert!(!message.status.is_error());
+        let response =
+            os_transport::action::read_opensearch_fetch_id_phase_response_message(&message)
+                .unwrap();
+        assert_eq!(response.context_id, context_id);
+        assert!(response.hits.hits.is_empty());
+        assert_eq!(response.hits.total_hits, None);
     }
 
     #[test]

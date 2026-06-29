@@ -14146,6 +14146,47 @@ pub fn read_opensearch_query_id_request_message(
     )
 }
 
+pub fn build_opensearch_fetch_id_phase_request_message(
+    request_id: i64,
+    version: Version,
+    request: &OpenSearchShardFetchSearchRequestWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    request.write(&mut body, version)?;
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::request(),
+        version,
+        variable_header: BytesMut::from(
+            &RequestVariableHeader::new(OPENSEARCH_FETCH_ID_PHASE_ACTION_NAME).to_bytes()[..],
+        ),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_fetch_id_phase_request_message(
+    message: &TransportMessage,
+) -> Result<OpenSearchShardFetchSearchRequestWire, TransportActionWireError> {
+    if !message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "request",
+            actual: message.status.bits(),
+        });
+    }
+    let header = RequestVariableHeader::read(message.variable_header.clone().freeze())?;
+    if header.action != OPENSEARCH_FETCH_ID_PHASE_ACTION_NAME {
+        return Err(TransportActionWireError::UnexpectedAction {
+            expected: OPENSEARCH_FETCH_ID_PHASE_ACTION_NAME,
+            actual: header.action,
+        });
+    }
+    OpenSearchShardFetchSearchRequestWire::read_for_version(
+        message.body.clone().freeze(),
+        message.version,
+    )
+}
+
 pub fn build_opensearch_dfs_phase_response_message(
     request_id: i64,
     version: Version,
@@ -14173,6 +14214,38 @@ pub fn read_opensearch_dfs_phase_response_message(
         });
     }
     OpenSearchDfsSearchResultWire::read_for_version(message.body.clone().freeze(), message.version)
+}
+
+pub fn build_opensearch_fetch_id_phase_response_message(
+    request_id: i64,
+    version: Version,
+    response: &OpenSearchFetchSearchResultWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    response.write(&mut body, version)?;
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::response(),
+        version,
+        variable_header: BytesMut::new(),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_fetch_id_phase_response_message(
+    message: &TransportMessage,
+) -> Result<OpenSearchFetchSearchResultWire, TransportActionWireError> {
+    if message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "response",
+            actual: message.status.bits(),
+        });
+    }
+    OpenSearchFetchSearchResultWire::read_for_version(
+        message.body.clone().freeze(),
+        message.version,
+    )
 }
 
 pub fn build_opensearch_can_match_response_message(
@@ -39221,6 +39294,180 @@ impl OpenSearchQuerySearchRequestWire {
             request.validate_supported_subset()?;
         }
         Ok(())
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct OpenSearchShardFetchSearchRequestWire {
+    pub parent_task_node: String,
+    pub parent_task_id: Option<i64>,
+    pub context_id: OpenSearchShardSearchContextIdWire,
+    pub doc_ids: Vec<i32>,
+    pub original_indices: OpenSearchOriginalIndicesWire,
+}
+
+impl OpenSearchShardFetchSearchRequestWire {
+    pub fn empty(
+        context_id: OpenSearchShardSearchContextIdWire,
+        original_indices: OpenSearchOriginalIndicesWire,
+    ) -> Self {
+        Self {
+            parent_task_node: String::new(),
+            parent_task_id: None,
+            context_id,
+            doc_ids: Vec::new(),
+            original_indices,
+        }
+    }
+
+    pub fn write(
+        &self,
+        output: &mut StreamOutput,
+        _version: Version,
+    ) -> Result<(), TransportActionWireError> {
+        self.validate_supported_subset()?;
+        write_parent_task_id(output, &self.parent_task_node, self.parent_task_id);
+        self.context_id.write(output)?;
+        output.write_vint(self.doc_ids.len() as i32);
+        for doc_id in &self.doc_ids {
+            output.write_vint(*doc_id);
+        }
+        output.write_byte(0);
+        self.original_indices.write(output);
+        output.write_bool(false);
+        output.write_vint(0);
+        output.write_bool(false);
+        Ok(())
+    }
+
+    pub fn read_for_version(
+        bytes: Bytes,
+        _version: Version,
+    ) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
+        let context_id = OpenSearchShardSearchContextIdWire::read(&mut input)?;
+        let doc_id_count = input.read_vint()?;
+        if doc_id_count < 0 {
+            return Err(StreamInputError::NegativeLength(doc_id_count).into());
+        }
+        let mut doc_ids = Vec::with_capacity(doc_id_count as usize);
+        for _ in 0..doc_id_count {
+            doc_ids.push(input.read_vint()?);
+        }
+        let last_emitted_doc_flag = input.read_byte()?;
+        if last_emitted_doc_flag != 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "fetch phase last emitted doc",
+                reason: "fetch-id phase bounded subset only supports null lastEmittedDoc",
+            });
+        }
+        let original_indices = OpenSearchOriginalIndicesWire::read(&mut input)?;
+        if input.read_bool()? {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "fetch phase shard search request",
+                reason: "fetch-id phase bounded subset does not decode embedded ShardSearchRequest",
+            });
+        }
+        let rescore_doc_id_group_count = input.read_vint()?;
+        if rescore_doc_id_group_count < 0 {
+            return Err(StreamInputError::NegativeLength(rescore_doc_id_group_count).into());
+        }
+        if rescore_doc_id_group_count != 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "fetch phase rescore doc ids",
+                reason: "fetch-id phase bounded subset only supports empty RescoreDocIds",
+            });
+        }
+        if input.read_bool()? {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "fetch phase aggregated dfs",
+                reason: "fetch-id phase bounded subset only supports absent AggregatedDfs",
+            });
+        }
+        require_no_trailing_bytes(&input)?;
+        let request = Self {
+            parent_task_node,
+            parent_task_id,
+            context_id,
+            doc_ids,
+            original_indices,
+        };
+        request.validate_supported_subset()?;
+        Ok(request)
+    }
+
+    pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
+        self.context_id.validate_supported_subset()?;
+        self.original_indices.validate_supported_subset()?;
+        if !self.doc_ids.is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "fetch phase doc ids",
+                reason: "fetch-id phase bounded subset only supports empty doc id lists",
+            });
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct OpenSearchFetchSearchResultWire {
+    pub context_id: OpenSearchShardSearchContextIdWire,
+    pub hits: OpenSearchSearchHitsWire,
+}
+
+impl OpenSearchFetchSearchResultWire {
+    pub fn empty(context_id: OpenSearchShardSearchContextIdWire) -> Self {
+        Self {
+            context_id,
+            hits: OpenSearchSearchHitsWire {
+                total_hits: None,
+                total_hits_relation: 0,
+                max_score: 0.0,
+                hits: Vec::new(),
+                sort_fields: None,
+                collapse_field: None,
+                collapse_values: None,
+            },
+        }
+    }
+
+    pub fn write(
+        &self,
+        output: &mut StreamOutput,
+        version: Version,
+    ) -> Result<(), TransportActionWireError> {
+        self.validate_supported_subset()?;
+        self.context_id.write(output)?;
+        self.hits.write(output, version)?;
+        if version.on_or_after(Version::from_id(3_02_00_99)) {
+            output.write_bool(false);
+        }
+        Ok(())
+    }
+
+    pub fn read_for_version(
+        bytes: Bytes,
+        version: Version,
+    ) -> Result<Self, TransportActionWireError> {
+        let mut input = StreamInput::new(bytes);
+        let context_id = OpenSearchShardSearchContextIdWire::read(&mut input)?;
+        let hits = OpenSearchSearchHitsWire::read(&mut input, version)?;
+        if version.on_or_after(Version::from_id(3_02_00_99)) && input.read_bool()? {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "fetch phase profile results",
+                reason: "fetch-id phase bounded subset only supports absent ProfileShardResult",
+            });
+        }
+        require_no_trailing_bytes(&input)?;
+        let response = Self { context_id, hits };
+        response.validate_supported_subset()?;
+        Ok(response)
+    }
+
+    pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
+        self.context_id.validate_supported_subset()?;
+        self.hits.validate_supported_subset()
     }
 }
 
@@ -80733,6 +80980,56 @@ mod tests {
         assert_eq!(
             read_opensearch_query_id_request_message(&message).unwrap(),
             empty_dfs_request
+        );
+    }
+
+    #[test]
+    fn opensearch_fetch_id_phase_transport_messages_round_trip_empty_subset() {
+        let request = OpenSearchShardFetchSearchRequestWire::empty(
+            OpenSearchShardSearchContextIdWire::new("fetch-session", 70),
+            OpenSearchOriginalIndicesWire::new(
+                Some(vec!["logs-fetch".to_string()]),
+                OpenSearchIndicesOptionsWire::strict_expand_open_forbid_closed_ignore_throttled(),
+            ),
+        );
+        let mut frame = build_opensearch_fetch_id_phase_request_message(
+            70,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected fetch-id phase request message");
+        };
+        assert_eq!(
+            read_opensearch_fetch_id_phase_request_message(&message).unwrap(),
+            request
+        );
+        assert!(matches!(
+            read_opensearch_query_id_request_message(&message).unwrap_err(),
+            TransportActionWireError::UnexpectedAction {
+                expected: OPENSEARCH_QUERY_ID_PHASE_ACTION_NAME,
+                ..
+            }
+        ));
+
+        let response = OpenSearchFetchSearchResultWire::empty(
+            OpenSearchShardSearchContextIdWire::new("fetch-session", 70),
+        );
+        let mut frame = build_opensearch_fetch_id_phase_response_message(
+            70,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &response,
+        )
+        .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected fetch-id phase response message");
+        };
+        assert_eq!(message.request_id, 70);
+        assert!(!message.status.is_error());
+        assert_eq!(
+            read_opensearch_fetch_id_phase_response_message(&message).unwrap(),
+            response
         );
     }
 
