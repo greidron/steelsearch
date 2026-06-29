@@ -177,8 +177,8 @@ The source-derived transport inventory currently has 160 rows:
 
 | Status | Count | Meaning |
 | --- | ---: | --- |
-| `implemented` | 108 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
-| `partial` | 52 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
+| `implemented` | 109 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
+| `partial` | 51 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
 | `planned` | 0 | No source-derived transport action remains unclassified. |
 
 The k-NN plugin action sweep is complete at the boundary layer. All 12
@@ -258,7 +258,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `cluster:admin/repository/_cleanup` (implemented manifest-backed zero cleanup-result subset)
 - `cluster:admin/snapshot/get` (implemented manifest-backed zero-snapshot subset)
 - `cluster:admin/snapshot/delete` (implemented manifest-backed snapshot deletion subset)
-- `cluster:admin/snapshot/create` (rejected fail-closed)
+- `cluster:admin/snapshot/create` (implemented manifest-backed accepted snapshot subset)
 - `cluster:admin/snapshot/clone` (rejected fail-closed)
 - `cluster:admin/snapshot/restore` (rejected fail-closed)
 - `cluster:admin/snapshot/status` (rejected fail-closed)
@@ -694,13 +694,18 @@ The create-snapshot boundary covers:
   `IndicesOptions.strictExpandOpenHidden()` wire flags, settings map,
   `includeGlobalState`, `waitForCompletion`, `partial`, and generic user
   metadata presence at the wire decode/build layer;
-- explicit fail-closed classification for `cluster:admin/snapshot/create`
-  until snapshot creation coordination and create-snapshot response rendering
-  are implemented;
+- OpenSearch `CreateSnapshotResponse` decode/build for the accepted response
+  shape where optional `SnapshotInfo` is absent;
+- implemented classification for `cluster:admin/snapshot/create` when the
+  request uses default snapshot options, targets an exact local manifest
+  repository, and creates a non-duplicate local snapshot record;
+- manifest-backed local creation of object- and array-shaped snapshot records,
+  followed by an accepted transport response;
 - explicit rejection for custom cluster-manager timeout, blank snapshot names,
-  blank repository names, index selectors, custom indices options, custom
-  settings, disabled global state, wait-for-completion, partial snapshots,
-  user metadata, and create-snapshot execution.
+  blank repository names, repository/snapshot pattern selectors, index
+  selectors, custom indices options, custom settings, disabled global state,
+  wait-for-completion, partial snapshots, user metadata, missing local
+  repositories, and duplicate local snapshot records.
 
 The clone-snapshot boundary covers:
 
@@ -3291,25 +3296,26 @@ the latest local release run, this boundary is not a material transport
 bottleneck; the first performance-sensitive work is snapshot deletion
 coordination, repository data cleanup, and cluster-state publication.
 
-Current create-snapshot reject wire microbenchmark:
+Current create-snapshot wire microbenchmark:
 
 ```text
-cargo run -p os-transport --release --bin create-snapshot-reject-wire-benchmark
-create_snapshot_reject_request_encode iterations=400000 elapsed_ms=304.705 ops_per_second=1312745.33 nanos_per_op=761.76
-create_snapshot_reject_request_decode iterations=400000 elapsed_ms=300.166 ops_per_second=1332596.38 nanos_per_op=750.41
-create_snapshot_reject_validation iterations=400000 elapsed_ms=306.296 ops_per_second=1305925.59 nanos_per_op=765.74
-create_snapshot_reject_wire_bottleneck_ops_per_second=1305925.59
+cargo run -p os-transport --release --bin create-snapshot-wire-benchmark
+create_snapshot_request_encode iterations=400000 elapsed_ms=313.587 ops_per_second=1275563.24 nanos_per_op=783.97
+create_snapshot_request_decode iterations=400000 elapsed_ms=292.008 ops_per_second=1369823.45 nanos_per_op=730.02
+create_snapshot_request_validate iterations=400000 elapsed_ms=312.858 ops_per_second=1278537.30 nanos_per_op=782.14
+create_snapshot_response_encode iterations=400000 elapsed_ms=48.392 ops_per_second=8265831.97 nanos_per_op=120.98
+create_snapshot_response_decode iterations=400000 elapsed_ms=54.549 ops_per_second=7332834.92 nanos_per_op=136.37
+create_snapshot_wire_bottleneck_ops_per_second=1275563.24
 ```
 
-The current create-snapshot fail-closed boundary bottleneck is request
-validation. The payload includes the cluster-manager request envelope, snapshot
-name, repository name, empty index selector array, indices options, settings,
-global-state flags, partial/wait flags, and generic user metadata marker before
-admission rejects execution. At roughly 1.31M ops/s in the latest local release
-run, this boundary is not a material transport bottleneck; the first
-performance-sensitive work is snapshot creation coordination, repository write
-planning, shard snapshot execution, cluster-state publication, and
-create-snapshot response rendering.
+The current create-snapshot transport subset bottleneck is request encode. The
+payload includes the cluster-manager request envelope, snapshot name,
+repository name, empty index selector array, indices options, settings,
+global-state flags, partial/wait flags, generic user metadata marker, and
+accepted response shape. At roughly 1.28M ops/s in the latest local release run,
+this boundary is not a material transport bottleneck; the first
+performance-sensitive work is repository write planning, shard snapshot
+execution, and cluster-state publication.
 
 Current clone-snapshot reject wire microbenchmark:
 

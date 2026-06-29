@@ -30,7 +30,7 @@ implemented	VerifyRepositoryAction.INSTANCE	TransportVerifyRepositoryAction.clas
 implemented	CleanupRepositoryAction.INSTANCE	TransportCleanupRepositoryAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	685
 implemented	GetSnapshotsAction.INSTANCE	TransportGetSnapshotsAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	686
 implemented	DeleteSnapshotAction.INSTANCE	TransportDeleteSnapshotAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	687
-partial	CreateSnapshotAction.INSTANCE	TransportCreateSnapshotAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	688
+implemented	CreateSnapshotAction.INSTANCE	TransportCreateSnapshotAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	688
 partial	CloneSnapshotAction.INSTANCE	TransportCloneSnapshotAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	689
 partial	RestoreSnapshotAction.INSTANCE	TransportRestoreSnapshotAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	690
 partial	SnapshotsStatusAction.INSTANCE	TransportSnapshotsStatusAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	691
