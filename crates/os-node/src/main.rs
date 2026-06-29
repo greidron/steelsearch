@@ -1671,6 +1671,37 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end,
             &mut connection_end_at_ms,
         )?;
+    } else if is_request
+        && normalized_action_hint == Some("cluster:admin/repository/verify")
+        && verify_repository_request_supports_manifest_execution_subset(&body)
+    {
+        let response = build_verify_repository_response(
+            request_id,
+            header_version_id,
+            &body,
+            transport_identity,
+        );
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("cluster:admin/repository/verify"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
     } else if is_request && normalized_action_hint == Some("indices:admin/aliases/get") {
         let response = build_get_aliases_response(request_id, header_version_id, &body);
         response_frame = summarize_transport_response_frame_for_action(
@@ -5874,6 +5905,52 @@ fn apply_transport_delete_repository_to_manifest(repository: &str) -> bool {
         snapshots.remove(repository);
     }
     true
+}
+
+fn build_verify_repository_response(
+    request_id: i64,
+    header_version_id: u32,
+    body: &[u8],
+    transport_identity: &DevTransportIdentity,
+) -> Vec<u8> {
+    let Some(request) = decode_verify_repository_request_from_transport_body(body) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    if !verify_repository_request_matches_manifest_subset(&request) {
+        return build_empty_transport_response(request_id, header_version_id);
+    }
+    let response = os_transport::action::VerifyRepositoryResponseWire {
+        nodes: vec![os_transport::action::VerifyRepositoryNodeViewWire {
+            node_id: transport_identity.node_id.clone(),
+            name: transport_identity.node_name.clone(),
+        }],
+    };
+    os_transport::action::build_verify_repository_response_message(
+        request_id,
+        Version::from_id(header_version_id as i32),
+        &response,
+    )
+    .map(|frame| frame.to_vec())
+    .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
+}
+
+fn verify_repository_request_supports_manifest_execution_subset(body: &[u8]) -> bool {
+    decode_verify_repository_request_from_transport_body(body)
+        .is_some_and(|request| verify_repository_request_matches_manifest_subset(&request))
+}
+
+fn decode_verify_repository_request_from_transport_body(
+    body: &[u8],
+) -> Option<os_transport::action::VerifyRepositoryRequestWire> {
+    let message = decode_transport_message_from_body(body)?;
+    os_transport::action::read_verify_repository_request_message(&message).ok()
+}
+
+fn verify_repository_request_matches_manifest_subset(
+    request: &os_transport::action::VerifyRepositoryRequestWire,
+) -> bool {
+    request.validate_supported_execution_subset().is_ok()
+        && snapshot_repository_exists_in_manifest(&request.name)
 }
 
 fn build_empty_get_pipeline_response(
@@ -18301,6 +18378,16 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
                 body,
             ))
         }
+        Some("cluster:admin/repository/verify")
+            if verify_repository_request_supports_manifest_execution_subset(body) =>
+        {
+            Some(build_verify_repository_response(
+                request_id,
+                header_version_id,
+                body,
+                transport_identity,
+            ))
+        }
         Some("indices:admin/aliases/get") => Some(build_get_aliases_response(
             request_id,
             header_version_id,
@@ -23564,6 +23651,77 @@ mod tests {
             .get("repo-delete")
             .is_none());
         assert!(manifest["snapshots"].get("repo-delete").is_none());
+    }
+
+    #[test]
+    fn verify_repository_transport_route_returns_local_node_view() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        let bindings = dev_transport_pit_bindings();
+        {
+            let mut manifest = bindings
+                .metadata_manifest
+                .lock()
+                .expect("dev transport metadata manifest lock poisoned");
+            *manifest = serde_json::json!({
+                "snapshot_repositories": {
+                    "repo-verify": {
+                        "type": "fs",
+                        "settings": {
+                            "location": "/tmp/repo-verify"
+                        }
+                    }
+                }
+            });
+        }
+        let transport_identity = DevTransportIdentity {
+            cluster_name: "steelsearch-dev".to_string(),
+            node_name: "steel-node".to_string(),
+            node_id: "steel-node-id".to_string(),
+            ephemeral_id: "steel-node-ephemeral".to_string(),
+            transport_address: "127.0.0.1:9300".parse().unwrap(),
+            attributes: Vec::new(),
+            roles: vec!["cluster_manager".to_string(), "data".to_string()],
+            seed_peer_identity: None,
+            seed_peer_identities: Vec::new(),
+            coordination_state: Arc::new(Mutex::new(DevTransportCoordinationState::default())),
+            remote_transport_queue_gate: Arc::new(RemoteTransportQueueGate::new(1, 1000)),
+            task_queue_state: None,
+        };
+
+        let request = os_transport::action::VerifyRepositoryRequestWire {
+            name: "repo-verify".to_string(),
+            ..os_transport::action::VerifyRepositoryRequestWire::default()
+        };
+        let frame = os_transport::action::build_verify_repository_request_message(
+            83,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(verify_repository_request_supports_manifest_execution_subset(&frame[6..]));
+
+        let response = build_verify_repository_response(
+            83,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &frame[6..],
+            &transport_identity,
+        );
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected verify repository response message");
+        };
+        assert_eq!(message.request_id, 83);
+        let response =
+            os_transport::action::read_verify_repository_response_message(&message).unwrap();
+        assert_eq!(response.nodes.len(), 1);
+        assert_eq!(response.nodes[0].node_id, "steel-node-id");
+        assert_eq!(response.nodes[0].name, "steel-node");
     }
 
     #[test]

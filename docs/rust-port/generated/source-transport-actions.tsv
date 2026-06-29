@@ -26,7 +26,7 @@ partial	PruneFileCacheAction.INSTANCE	TransportPruneFileCacheAction.class	/home/
 partial	PutRepositoryAction.INSTANCE	TransportPutRepositoryAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	681
 implemented	GetRepositoriesAction.INSTANCE	TransportGetRepositoriesAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	682
 implemented	DeleteRepositoryAction.INSTANCE	TransportDeleteRepositoryAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	683
-partial	VerifyRepositoryAction.INSTANCE	TransportVerifyRepositoryAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	684
+implemented	VerifyRepositoryAction.INSTANCE	TransportVerifyRepositoryAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	684
 partial	CleanupRepositoryAction.INSTANCE	TransportCleanupRepositoryAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	685
 partial	GetSnapshotsAction.INSTANCE	TransportGetSnapshotsAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	686
 partial	DeleteSnapshotAction.INSTANCE	TransportDeleteSnapshotAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	687

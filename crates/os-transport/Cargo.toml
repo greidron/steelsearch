@@ -88,8 +88,8 @@ name = "delete-repository-wire-benchmark"
 path = "benchmarks/delete_repository_wire.rs"
 
 [[bin]]
-name = "verify-repository-reject-wire-benchmark"
-path = "benchmarks/verify_repository_reject_wire.rs"
+name = "verify-repository-wire-benchmark"
+path = "benchmarks/verify_repository_wire.rs"
 
 [[bin]]
 name = "cleanup-repository-reject-wire-benchmark"

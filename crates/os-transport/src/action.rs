@@ -1823,8 +1823,8 @@ pub fn classify_opensearch_transport_action(
         },
         VERIFY_REPOSITORY_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
-            disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "verify-repository transport execution requires repository verification and node response rendering",
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "verify-repository transport adapter validates the bounded exact-name subset and renders an OpenSearch-shaped local node verification response",
         },
         CLEANUP_REPOSITORY_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -14554,7 +14554,7 @@ impl VerifyRepositoryRequestWire {
         Ok(request)
     }
 
-    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+    pub fn validate_supported_execution_subset(&self) -> Result<(), TransportActionWireError> {
         if self.cluster_manager_timeout != TimeValueWire::seconds(30) {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "verify repository cluster-manager timeout",
@@ -14573,9 +14573,20 @@ impl VerifyRepositoryRequestWire {
                 reason: "OpenSearch verify-repository requests require a repository name",
             });
         }
+        if self.name.contains('*') || self.name.contains('?') || self.name.contains(',') {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "verify repository name pattern",
+                reason: "repository wildcard and multi-name verification requires repository pattern resolution semantics",
+            });
+        }
+        Ok(())
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        self.validate_supported_execution_subset()?;
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "verify repository execution",
-            reason: "verify-repository transport execution requires repository verification and node response rendering",
+            reason: "verify-repository transport execution is handled by the manifest-backed local adapter",
         })
     }
 }
@@ -53740,7 +53751,7 @@ mod tests {
     }
 
     #[test]
-    fn verify_repository_request_wire_round_trips_and_rejects_execution_boundary() {
+    fn verify_repository_request_wire_round_trips_and_validates_supported_subset() {
         let request = VerifyRepositoryRequestWire {
             parent_task_node: "cluster-manager".to_string(),
             parent_task_id: Some(36),
@@ -53751,6 +53762,7 @@ mod tests {
 
         let decoded = VerifyRepositoryRequestWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, request);
+        decoded.validate_supported_execution_subset().unwrap();
         assert!(matches!(
             decoded.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
@@ -53767,7 +53779,7 @@ mod tests {
             ..VerifyRepositoryRequestWire::default()
         };
         assert!(matches!(
-            cluster_manager_timeout.reject_unsupported_execution(),
+            cluster_manager_timeout.validate_supported_execution_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "verify repository cluster-manager timeout",
                 ..
@@ -53779,7 +53791,7 @@ mod tests {
             ..VerifyRepositoryRequestWire::default()
         };
         assert!(matches!(
-            ack_timeout.reject_unsupported_execution(),
+            ack_timeout.validate_supported_execution_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "verify repository ack timeout",
                 ..
@@ -53791,16 +53803,30 @@ mod tests {
             ..VerifyRepositoryRequestWire::default()
         };
         assert!(matches!(
-            missing_name.reject_unsupported_execution(),
+            missing_name.validate_supported_execution_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "verify repository missing name",
                 ..
             })
         ));
+
+        for name in ["repo-*", "repo?", "repo-a,repo-b"] {
+            let request = VerifyRepositoryRequestWire {
+                name: name.to_string(),
+                ..VerifyRepositoryRequestWire::default()
+            };
+            assert!(matches!(
+                request.validate_supported_execution_subset(),
+                Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "verify repository name pattern",
+                    ..
+                })
+            ));
+        }
     }
 
     #[test]
-    fn verify_repository_transport_messages_bind_rejected_action_frame() {
+    fn verify_repository_transport_messages_bind_supported_action_frame() {
         let request = VerifyRepositoryRequestWire::default();
         let mut frame =
             build_verify_repository_request_message(36, OPENSEARCH_3_7_0_TRANSPORT, &request)
@@ -53812,15 +53838,16 @@ mod tests {
             read_verify_repository_request_message(&message).unwrap(),
             request
         );
-        assert!(matches!(
-            read_verify_repository_request_message(&message)
+        assert_eq!(
+            classify_opensearch_transport_request_message(&message)
                 .unwrap()
-                .reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "verify repository execution",
-                ..
-            })
-        ));
+                .disposition,
+            OpenSearchTransportActionDisposition::Implemented
+        );
+        read_verify_repository_request_message(&message)
+            .unwrap()
+            .validate_supported_execution_subset()
+            .unwrap();
 
         let response = VerifyRepositoryResponseWire {
             nodes: vec![VerifyRepositoryNodeViewWire {
