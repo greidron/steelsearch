@@ -1702,6 +1702,32 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end,
             &mut connection_end_at_ms,
         )?;
+    } else if is_request
+        && normalized_action_hint == Some("cluster:admin/repository/_cleanup")
+        && cleanup_repository_request_supports_manifest_execution_subset(&body)
+    {
+        let response = build_cleanup_repository_response(request_id, header_version_id, &body);
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("cluster:admin/repository/_cleanup"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
     } else if is_request && normalized_action_hint == Some("indices:admin/aliases/get") {
         let response = build_get_aliases_response(request_id, header_version_id, &body);
         response_frame = summarize_transport_response_frame_for_action(
@@ -5951,6 +5977,58 @@ fn verify_repository_request_matches_manifest_subset(
 ) -> bool {
     request.validate_supported_execution_subset().is_ok()
         && snapshot_repository_exists_in_manifest(&request.name)
+}
+
+fn build_cleanup_repository_response(
+    request_id: i64,
+    header_version_id: u32,
+    body: &[u8],
+) -> Vec<u8> {
+    let Some(request) = decode_cleanup_repository_request_from_transport_body(body) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    if !cleanup_repository_request_matches_manifest_subset(&request) {
+        return build_empty_transport_response(request_id, header_version_id);
+    }
+    let response = os_transport::action::CleanupRepositoryResponseWire::zero();
+    os_transport::action::build_cleanup_repository_response_message(
+        request_id,
+        Version::from_id(header_version_id as i32),
+        &response,
+    )
+    .map(|frame| frame.to_vec())
+    .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
+}
+
+fn cleanup_repository_request_supports_manifest_execution_subset(body: &[u8]) -> bool {
+    decode_cleanup_repository_request_from_transport_body(body)
+        .is_some_and(|request| cleanup_repository_request_matches_manifest_subset(&request))
+}
+
+fn decode_cleanup_repository_request_from_transport_body(
+    body: &[u8],
+) -> Option<os_transport::action::CleanupRepositoryRequestWire> {
+    let message = decode_transport_message_from_body(body)?;
+    os_transport::action::read_cleanup_repository_request_message(&message).ok()
+}
+
+fn cleanup_repository_request_matches_manifest_subset(
+    request: &os_transport::action::CleanupRepositoryRequestWire,
+) -> bool {
+    request.validate_supported_execution_subset().is_ok()
+        && snapshot_repository_supports_local_cleanup_in_manifest(&request.repository)
+}
+
+fn snapshot_repository_supports_local_cleanup_in_manifest(repository: &str) -> bool {
+    dev_transport_pit_bindings()
+        .metadata_manifest
+        .lock()
+        .expect("dev transport metadata manifest lock poisoned")["snapshot_repositories"]
+        .get(repository)
+        .and_then(Value::as_object)
+        .and_then(|metadata| metadata.get("type"))
+        .and_then(Value::as_str)
+        == Some("fs")
 }
 
 fn build_empty_get_pipeline_response(
@@ -18388,6 +18466,15 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
                 transport_identity,
             ))
         }
+        Some("cluster:admin/repository/_cleanup")
+            if cleanup_repository_request_supports_manifest_execution_subset(body) =>
+        {
+            Some(build_cleanup_repository_response(
+                request_id,
+                header_version_id,
+                body,
+            ))
+        }
         Some("indices:admin/aliases/get") => Some(build_get_aliases_response(
             request_id,
             header_version_id,
@@ -23722,6 +23809,93 @@ mod tests {
         assert_eq!(response.nodes.len(), 1);
         assert_eq!(response.nodes[0].node_id, "steel-node-id");
         assert_eq!(response.nodes[0].name, "steel-node");
+    }
+
+    #[test]
+    fn cleanup_repository_transport_route_returns_zero_cleanup_result_for_fs_repository() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        let bindings = dev_transport_pit_bindings();
+        {
+            let mut manifest = bindings
+                .metadata_manifest
+                .lock()
+                .expect("dev transport metadata manifest lock poisoned");
+            *manifest = serde_json::json!({
+                "snapshot_repositories": {
+                    "repo-cleanup": {
+                        "type": "fs",
+                        "settings": {
+                            "location": "/tmp/repo-cleanup"
+                        }
+                    }
+                }
+            });
+        }
+
+        let request = os_transport::action::CleanupRepositoryRequestWire {
+            repository: "repo-cleanup".to_string(),
+        };
+        let frame = os_transport::action::build_cleanup_repository_request_message(
+            84,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(cleanup_repository_request_supports_manifest_execution_subset(&frame[6..]));
+
+        let response = build_cleanup_repository_response(
+            84,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &frame[6..],
+        );
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected cleanup repository response message");
+        };
+        assert_eq!(message.request_id, 84);
+        let response =
+            os_transport::action::read_cleanup_repository_response_message(&message).unwrap();
+        assert_eq!(response.bytes_deleted, 0);
+        assert_eq!(response.blobs_deleted, 0);
+    }
+
+    #[test]
+    fn cleanup_repository_transport_route_rejects_non_fs_manifest_repository() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        let bindings = dev_transport_pit_bindings();
+        {
+            let mut manifest = bindings
+                .metadata_manifest
+                .lock()
+                .expect("dev transport metadata manifest lock poisoned");
+            *manifest = serde_json::json!({
+                "snapshot_repositories": {
+                    "repo-cleanup": {
+                        "type": "url",
+                        "settings": {}
+                    }
+                }
+            });
+        }
+
+        let request = os_transport::action::CleanupRepositoryRequestWire {
+            repository: "repo-cleanup".to_string(),
+        };
+        let frame = os_transport::action::build_cleanup_repository_request_message(
+            85,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(!cleanup_repository_request_supports_manifest_execution_subset(&frame[6..]));
     }
 
     #[test]

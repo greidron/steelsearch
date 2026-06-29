@@ -253,9 +253,9 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `cluster:admin/nodes/reload_secure_settings` (rejected fail-closed)
 - `cluster:admin/repository/put` (rejected fail-closed)
 - `cluster:admin/repository/get` (implemented empty repository metadata subset)
-- `cluster:admin/repository/delete` (rejected fail-closed)
-- `cluster:admin/repository/verify` (rejected fail-closed)
-- `cluster:admin/repository/_cleanup` (rejected fail-closed)
+- `cluster:admin/repository/delete` (implemented manifest-backed metadata mutation subset)
+- `cluster:admin/repository/verify` (implemented manifest-backed local node verification subset)
+- `cluster:admin/repository/_cleanup` (implemented manifest-backed zero cleanup-result subset)
 - `cluster:admin/snapshot/get` (rejected fail-closed)
 - `cluster:admin/snapshot/delete` (rejected fail-closed)
 - `cluster:admin/snapshot/create` (rejected fail-closed)
@@ -649,11 +649,13 @@ The cleanup-repository boundary covers:
 - OpenSearch `CleanupRepositoryResponse` cleanup result counters at the wire
   decode/build layer, preserving the `RepositoryCleanupResult` stream order of
   deleted bytes followed by deleted blobs;
-- explicit fail-closed classification for `cluster:admin/repository/_cleanup`
-  until repository cleanup state coordination and cleanup result rendering are
-  implemented;
-- explicit rejection for blank repository names and cleanup-repository
-  execution.
+- implemented classification for the bounded exact-name
+  `cluster:admin/repository/_cleanup` subset with manifest-backed `fs`
+  repository admission and OpenSearch-shaped zero cleanup-result rendering;
+- explicit rejection for blank repository names, wildcard names, multi-name
+  selectors, missing local repositories, and local repository types without
+  cleanup support. Broader repository cleanup state coordination remains outside
+  this local transport subset.
 
 The get-snapshots boundary covers:
 
@@ -3222,23 +3224,25 @@ the one-node response shape. At roughly 1.68M ops/s in the latest local release
 run, this boundary is not a material transport bottleneck; the first
 performance-sensitive work is broader distributed repository verification.
 
-Current cleanup-repository reject wire microbenchmark:
+Current cleanup-repository wire microbenchmark:
 
 ```text
-cargo run -p os-transport --release --bin cleanup-repository-reject-wire-benchmark
-cleanup_repository_reject_request_encode iterations=400000 elapsed_ms=226.638 ops_per_second=1764926.59 nanos_per_op=566.60
-cleanup_repository_reject_request_decode iterations=400000 elapsed_ms=246.152 ops_per_second=1625012.81 nanos_per_op=615.38
-cleanup_repository_reject_validation iterations=400000 elapsed_ms=225.246 ops_per_second=1775839.75 nanos_per_op=563.11
-cleanup_repository_reject_wire_bottleneck_ops_per_second=1625012.81
+cargo run -q -p os-transport --release --bin cleanup-repository-wire-benchmark
+cleanup_repository_request_encode iterations=400000 elapsed_ms=232.280 ops_per_second=1722058.52 nanos_per_op=580.70
+cleanup_repository_request_decode iterations=400000 elapsed_ms=217.418 ops_per_second=1839773.37 nanos_per_op=543.55
+cleanup_repository_request_validate iterations=400000 elapsed_ms=224.991 ops_per_second=1777847.67 nanos_per_op=562.48
+cleanup_repository_response_encode iterations=400000 elapsed_ms=87.071 ops_per_second=4593927.90 nanos_per_op=217.68
+cleanup_repository_response_decode iterations=400000 elapsed_ms=87.425 ops_per_second=4575332.45 nanos_per_op=218.56
+cleanup_repository_wire_bottleneck_ops_per_second=1722058.52
 ```
 
-The current cleanup-repository fail-closed boundary bottleneck is request
-decode. The payload is only the repository name because the OpenSearch 3.7
-request wire implementation does not serialize the acknowledged request
-envelope for this action. At roughly 1.63M ops/s in the latest local release
-run, this boundary is not a material transport bottleneck; the first
-performance-sensitive work is repository cleanup coordination, repository blob
-cleanup, and cleanup result rendering.
+The current cleanup-repository transport boundary bottleneck is request encode.
+The payload is only the repository name because the OpenSearch 3.7 request wire
+implementation does not serialize the acknowledged request envelope for this
+action. At roughly 1.72M ops/s in the latest local release run, this boundary
+is not a material transport bottleneck; the first performance-sensitive work is
+broader repository cleanup coordination and repository blob
+cleanup/accounting beyond the local zero-result subset.
 
 Current get-snapshots reject wire microbenchmark:
 

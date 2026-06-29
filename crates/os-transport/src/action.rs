@@ -1828,8 +1828,8 @@ pub fn classify_opensearch_transport_action(
         },
         CLEANUP_REPOSITORY_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
-            disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "cleanup-repository transport execution requires repository cleanup state coordination and cleanup result rendering",
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "cleanup-repository transport adapter validates the bounded exact-name subset and renders an OpenSearch-shaped zero cleanup result for local manifest repositories",
         },
         GET_SNAPSHOTS_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -14688,16 +14688,30 @@ impl CleanupRepositoryRequestWire {
         Ok(request)
     }
 
-    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+    pub fn validate_supported_execution_subset(&self) -> Result<(), TransportActionWireError> {
         if self.repository.trim().is_empty() {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "cleanup repository missing name",
                 reason: "OpenSearch cleanup-repository requests require a repository name",
             });
         }
+        if self.repository.contains('*')
+            || self.repository.contains('?')
+            || self.repository.contains(',')
+        {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cleanup repository name pattern",
+                reason: "repository wildcard and multi-name cleanup requires repository pattern resolution semantics",
+            });
+        }
+        Ok(())
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        self.validate_supported_execution_subset()?;
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "cleanup repository execution",
-            reason: "cleanup-repository transport execution requires repository cleanup state coordination and cleanup result rendering",
+            reason: "cleanup-repository transport execution is handled by the manifest-backed local adapter",
         })
     }
 }
@@ -53929,7 +53943,7 @@ mod tests {
     }
 
     #[test]
-    fn cleanup_repository_request_wire_round_trips_and_rejects_execution_boundary() {
+    fn cleanup_repository_request_wire_round_trips_and_validates_supported_subset() {
         let request = CleanupRepositoryRequestWire {
             repository: "repo-a".to_string(),
         };
@@ -53938,6 +53952,7 @@ mod tests {
 
         let decoded = CleanupRepositoryRequestWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, request);
+        decoded.validate_supported_execution_subset().unwrap();
         assert!(matches!(
             decoded.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
@@ -53953,16 +53968,28 @@ mod tests {
             repository: " ".to_string(),
         };
         assert!(matches!(
-            missing_name.reject_unsupported_execution(),
+            missing_name.validate_supported_execution_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "cleanup repository missing name",
                 ..
             })
         ));
+        for repository in ["repo-*", "repo?", "repo-a,repo-b"] {
+            let request = CleanupRepositoryRequestWire {
+                repository: repository.to_string(),
+            };
+            assert!(matches!(
+                request.validate_supported_execution_subset(),
+                Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "cleanup repository name pattern",
+                    ..
+                })
+            ));
+        }
     }
 
     #[test]
-    fn cleanup_repository_transport_messages_bind_rejected_action_frame() {
+    fn cleanup_repository_transport_messages_bind_supported_action_frame() {
         let request = CleanupRepositoryRequestWire::default();
         let mut frame =
             build_cleanup_repository_request_message(36, OPENSEARCH_3_7_0_TRANSPORT, &request)
@@ -53974,6 +54001,14 @@ mod tests {
             read_cleanup_repository_request_message(&message).unwrap(),
             request
         );
+        assert_eq!(
+            classify_opensearch_transport_action(CLEANUP_REPOSITORY_ACTION_NAME).disposition,
+            OpenSearchTransportActionDisposition::Implemented
+        );
+        read_cleanup_repository_request_message(&message)
+            .unwrap()
+            .validate_supported_execution_subset()
+            .unwrap();
         assert!(matches!(
             read_cleanup_repository_request_message(&message)
                 .unwrap()
