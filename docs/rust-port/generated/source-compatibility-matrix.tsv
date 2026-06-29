@@ -510,7 +510,7 @@ transport_action	implemented	action	SearchViewAction.INSTANCE	SearchViewAction.T
 transport_action	partial	action	StartPersistentTaskAction.INSTANCE	StartPersistentTaskAction.TransportAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	804
 transport_action	partial	action	UpdatePersistentTaskStatusAction.INSTANCE	UpdatePersistentTaskStatusAction.TransportAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	805
 transport_action	partial	action	CompletionPersistentTaskAction.INSTANCE	CompletionPersistentTaskAction.TransportAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	806
-transport_action	partial	action	RemovePersistentTaskAction.INSTANCE	RemovePersistentTaskAction.TransportAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	807
+transport_action	implemented	action	RemovePersistentTaskAction.INSTANCE	RemovePersistentTaskAction.TransportAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	807
 transport_action	partial	action	RetentionLeaseActions.Add.INSTANCE	RetentionLeaseActions.Add.TransportAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	810
 transport_action	partial	action	RetentionLeaseActions.Renew.INSTANCE	RetentionLeaseActions.Renew.TransportAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	811
 transport_action	partial	action	RetentionLeaseActions.Remove.INSTANCE	RetentionLeaseActions.Remove.TransportAction.class	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/ActionModule.java	812

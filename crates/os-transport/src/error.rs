@@ -186,6 +186,17 @@ pub fn write_index_not_found_exception(output: &mut StreamOutput, index: &str) {
     output.write_string("_na_");
 }
 
+pub fn write_resource_not_found_exception(output: &mut StreamOutput, message: Option<&str>) {
+    output.write_bool(true);
+    output.write_vint(0);
+    output.write_vint(19);
+    output.write_optional_string(message);
+    output.write_bool(false);
+    write_empty_stack_trace(output);
+    write_empty_string_list_map(output);
+    write_empty_string_list_map(output);
+}
+
 pub fn write_shard_not_found_exception(
     output: &mut StreamOutput,
     index: &str,
@@ -500,6 +511,25 @@ mod tests {
         );
         assert_eq!(error.message.as_deref(), Some("too many contexts"));
         assert!(error.cause.is_none());
+    }
+
+    #[test]
+    fn writes_opensearch_resource_not_found_exception_message() {
+        let mut output = StreamOutput::new();
+        super::write_resource_not_found_exception(
+            &mut output,
+            Some("the task with id persistent-task-1 doesn't exist"),
+        );
+
+        let error = TransportError::read(output.freeze()).unwrap().unwrap();
+
+        assert_eq!(error.class_name, "org.opensearch.ResourceNotFoundException");
+        assert_eq!(
+            error.message.as_deref(),
+            Some("the task with id persistent-task-1 doesn't exist")
+        );
+        assert!(error.cause.is_none());
+        assert!(error.search_context_id.is_none());
     }
 
     #[test]

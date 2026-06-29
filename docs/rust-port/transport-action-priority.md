@@ -2179,19 +2179,18 @@ The completion-persistent-task boundary covers:
   task ids, missing allocation ids, exception payloads, completion-persistent-
   task execution, and persistent-task response rendering.
 
-The remove-persistent-task boundary covers:
+The remove-persistent-task adapter covers:
 
 - OpenSearch `RemovePersistentTaskAction.Request` parent task,
   cluster-manager timeout, and task id at the wire decode/build layer;
 - reuse of OpenSearch `PersistentTaskResponse` decode/build for the empty
   optional task payload shape, with concrete task payloads rejected until
   persistent task params/state/metadata named-writeables are mapped;
-- explicit fail-closed classification for `cluster:admin/persistent/remove`
-  until persistent task lookup, cluster metadata removal, and response
-  rendering are implemented;
+- implemented classification for `cluster:admin/persistent/remove` in the empty
+  persistent-task metadata subset, returning OpenSearch's
+  `ResourceNotFoundException` for a missing task id;
 - explicit rejection for custom cluster-manager timeouts, missing or oversized
-  task ids, remove-persistent-task execution, and persistent-task response
-  rendering.
+  task ids, and concrete persistent-task response payloads.
 
 The add-retention-lease boundary covers:
 
@@ -5455,7 +5454,7 @@ update-persistent-task-status boundary; future performance-sensitive work is
 exception payload decoding, allocation checks, cluster metadata mutation,
 restart/removal semantics, and response rendering.
 
-Current remove-persistent-task reject wire microbenchmark:
+Previous remove-persistent-task reject wire microbenchmark:
 
 ```text
 cargo run -p os-transport --release --bin remove-persistent-task-reject-wire-benchmark
@@ -5466,12 +5465,10 @@ remove_persistent_task_empty_response_decode iterations=400000 elapsed_ms=54.764
 remove_persistent_task_reject_wire_bottleneck_ops_per_second=1313347.09
 ```
 
-The current remove-persistent-task fail-closed boundary bottleneck is request
-encode. This path carries the ClusterManagerNode envelope and task id before
-rejecting at admission. At roughly 1.31M ops/s in the latest local release run,
-it is in the same range as the adjacent persistent-task admin boundaries;
-future performance-sensitive work is persistent task lookup, cluster metadata
-removal, and response rendering.
+The previous remove-persistent-task fail-closed boundary bottleneck was request
+encode. The implemented empty-metadata missing-task subset now uses the same
+ClusterManagerNode envelope and task id validation before rendering the
+OpenSearch-shaped missing-task error response.
 
 Current add-retention-lease reject wire microbenchmark:
 

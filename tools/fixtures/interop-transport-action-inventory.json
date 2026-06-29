@@ -1170,8 +1170,8 @@
       "transport_action": "RemovePersistentTaskAction.TransportAction",
       "request_wire_type": "RemovePersistentTaskAction.Request",
       "response_wire_type": "PersistentTaskResponse",
-      "disposition": "rejected",
-      "reason": "Remove-persistent-task transport execution requires persistent task lookup, cluster metadata removal, and response rendering"
+      "disposition": "implemented",
+      "reason": "Remove-persistent-task transport adapter validates the bounded request and returns OpenSearch's ResourceNotFoundException for the empty persistent-task metadata subset"
     },
     {
       "action_name": "indices:admin/seq_no/add_retention_lease",
