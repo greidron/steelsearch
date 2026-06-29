@@ -2472,8 +2472,8 @@ pub fn classify_opensearch_transport_action(
         }
         OPENSEARCH_COMPLETION_PERSISTENT_TASK_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
-            disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "completion-persistent-task transport execution requires exception decoding, allocation checks, cluster metadata mutation, restart/removal semantics, and response rendering",
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "completion-persistent-task transport adapter validates the bounded no-exception request and returns OpenSearch's ResourceNotFoundException for the empty persistent-task metadata subset",
         },
         OPENSEARCH_REMOVE_PERSISTENT_TASK_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -35705,7 +35705,7 @@ impl OpenSearchCompletionPersistentTaskRequestWire {
         })
     }
 
-    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+    pub fn validate_empty_metadata_missing_subset(&self) -> Result<(), TransportActionWireError> {
         if self.cluster_manager_timeout != TimeValueWire::seconds(30) {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "completion persistent task cluster-manager timeout",
@@ -35736,9 +35736,14 @@ impl OpenSearchCompletionPersistentTaskRequestWire {
                 reason: "OpenSearch exception payloads are not mapped by the completion-persistent-task adapter yet",
             });
         }
+        Ok(())
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        self.validate_empty_metadata_missing_subset()?;
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "completion persistent task execution",
-            reason: "completion-persistent-task transport execution requires exception decoding, allocation checks, cluster metadata mutation, restart/removal semantics, and response rendering",
+            reason: "use validate_empty_metadata_missing_subset for the implemented empty-metadata ResourceNotFoundException adapter",
         })
     }
 }
@@ -73060,7 +73065,7 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_completion_persistent_task_transport_messages_bind_rejected_action_frame_and_empty_response(
+    fn opensearch_completion_persistent_task_transport_messages_bind_supported_action_frame_and_empty_response(
     ) {
         let request = OpenSearchCompletionPersistentTaskRequestWire::default();
         let mut frame = build_opensearch_completion_persistent_task_request_message(
@@ -73076,12 +73081,16 @@ mod tests {
             classify_opensearch_transport_request_message(&message)
                 .unwrap()
                 .disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(
             read_opensearch_completion_persistent_task_request_message(&message).unwrap(),
             request
         );
+        read_opensearch_completion_persistent_task_request_message(&message)
+            .unwrap()
+            .validate_empty_metadata_missing_subset()
+            .unwrap();
         assert!(matches!(
             read_opensearch_completion_persistent_task_request_message(&message)
                 .unwrap()
