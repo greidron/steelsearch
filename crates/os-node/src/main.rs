@@ -1067,6 +1067,33 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end,
             &mut connection_end_at_ms,
         )?;
+    } else if is_request
+        && normalized_action_hint == Some("cluster:monitor/health")
+        && cluster_health_request_supports_local_subset(&body)
+    {
+        let response =
+            build_cluster_health_response(request_id, header_version_id, transport_identity);
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("cluster:monitor/health[n]"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
     } else if is_request && normalized_action_hint == Some("internal:monitor/term") {
         let response =
             build_get_term_version_response(request_id, header_version_id, transport_identity);
@@ -19338,6 +19365,35 @@ fn build_empty_cluster_stats_response(
     .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
 }
 
+fn build_cluster_health_response(
+    request_id: i64,
+    header_version_id: u32,
+    transport_identity: &DevTransportIdentity,
+) -> Vec<u8> {
+    os_transport::action::build_cluster_health_response_message(
+        request_id,
+        Version::from_id(header_version_id as i32),
+        &os_transport::action::ClusterHealthResponseWire::green(
+            transport_identity.cluster_name.clone(),
+        ),
+    )
+    .map(|frame| frame.to_vec())
+    .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
+}
+
+fn cluster_health_request_supports_local_subset(body: &[u8]) -> bool {
+    decode_cluster_health_request_from_transport_body(body)
+        .and_then(|request| request.validate_supported_subset().ok())
+        .is_some()
+}
+
+fn decode_cluster_health_request_from_transport_body(
+    body: &[u8],
+) -> Option<os_transport::action::ClusterHealthRequestWire> {
+    let message = decode_transport_message_from_body(body)?;
+    os_transport::action::read_cluster_health_request_message(&message).ok()
+}
+
 fn cluster_stats_request_supports_local_subset(body: &[u8]) -> bool {
     decode_cluster_stats_request_from_transport_body(body)
         .and_then(|request| request.validate_supported_subset().ok())
@@ -20146,6 +20202,13 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
             request_id,
             header_version_id,
         )),
+        Some("cluster:monitor/health") if cluster_health_request_supports_local_subset(body) => {
+            Some(build_cluster_health_response(
+                request_id,
+                header_version_id,
+                transport_identity,
+            ))
+        }
         Some("internal:monitor/term") => Some(build_get_term_version_response(
             request_id,
             header_version_id,
@@ -25342,6 +25405,92 @@ mod tests {
             response,
             os_transport::action::RemoteInfoResponseWire::default()
         );
+    }
+
+    #[test]
+    fn cluster_health_transport_route_builds_opensearch_shaped_local_response() {
+        struct RecordingTransportConnection {
+            writes: Vec<u8>,
+        }
+
+        impl std::io::Read for RecordingTransportConnection {
+            fn read(&mut self, _buf: &mut [u8]) -> std::io::Result<usize> {
+                Ok(0)
+            }
+        }
+
+        impl std::io::Write for RecordingTransportConnection {
+            fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+                self.writes.extend_from_slice(buf);
+                Ok(buf.len())
+            }
+
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+
+        impl TransportConnection for RecordingTransportConnection {
+            fn set_read_timeout(&self, _duration: Option<Duration>) -> std::io::Result<()> {
+                Ok(())
+            }
+
+            fn peer_addr(&self) -> std::io::Result<SocketAddr> {
+                "127.0.0.1:9300"
+                    .parse()
+                    .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidInput, error))
+            }
+        }
+
+        let request = os_transport::action::ClusterHealthRequestWire::default();
+        let frame = os_transport::action::build_cluster_health_request_message(
+            80,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(cluster_health_request_supports_local_subset(&frame[6..]));
+        let transport_identity = DevTransportIdentity {
+            cluster_name: "steelsearch-dev".to_string(),
+            node_name: "steel-node".to_string(),
+            node_id: "steel-node-id".to_string(),
+            ephemeral_id: "steel-node-ephemeral".to_string(),
+            transport_address: "127.0.0.1:9300".parse().unwrap(),
+            attributes: Vec::new(),
+            roles: vec!["cluster_manager".to_string(), "data".to_string()],
+            seed_peer_identity: None,
+            seed_peer_identities: Vec::new(),
+            coordination_state: Arc::new(Mutex::new(DevTransportCoordinationState::default())),
+            remote_transport_queue_gate: Arc::new(RemoteTransportQueueGate::new(1, 1000)),
+            task_queue_state: None,
+        };
+        let mut stream = RecordingTransportConnection { writes: Vec::new() };
+
+        let response = handle_subsequent_transport_request(
+            &mut stream,
+            &frame[6..],
+            &transport_identity,
+            None,
+        )
+        .unwrap();
+
+        assert!(response);
+        let mut frame = BytesMut::from(&stream.writes[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected cluster health response message");
+        };
+        assert_eq!(message.request_id, 80);
+        assert!(!message.status.is_request());
+        let response =
+            os_transport::action::read_cluster_health_response_message(&message).unwrap();
+        assert_eq!(response.cluster_name, "steelsearch-dev");
+        assert_eq!(response.number_of_nodes, 1);
+        assert_eq!(response.number_of_data_nodes, 1);
+        assert!(!response.timed_out);
     }
 
     #[test]
