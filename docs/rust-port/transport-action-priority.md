@@ -2340,6 +2340,9 @@ The search-scroll boundary covers:
   keep-alive `Scroll` time value at the wire decode/build layer;
 - implemented classification for local scroll context advancement with
   OpenSearch `SearchResponse` wire page rendering;
+- decoded OpenSearch opaque scroll ids that carry a single local
+  `ShardSearchContextId`, resolving the local context key from `(session,id)`
+  before advancing the stored page cursor;
 - explicit rejection for empty scroll ids and unsupported search-scroll
   execution shapes.
 
@@ -2351,6 +2354,9 @@ The clear-scroll boundary covers:
   `num_freed` counts;
 - local transport route invalidation for standalone `_all` and explicit scroll
   ids through the shared `SteelNode` scroll context store;
+- decoded OpenSearch opaque scroll ids with per-context invalidation and
+  `num_freed` counted only for contexts that were actually removed, matching
+  the controller's per-search-context free semantics;
 - explicit rejection for empty scroll id arrays and empty scroll id entries;
   `_all` is treated as a clear-all selector only when it is the sole scroll id,
   matching the OpenSearch controller branch.
@@ -5498,19 +5504,23 @@ Current clear-scroll wire microbenchmark:
 
 ```text
 cargo run -p os-transport --release --bin clear-scroll-wire-benchmark
-clear_scroll_request_encode iterations=400000 elapsed_ms=240.974 ops_per_second=1659933.10 nanos_per_op=602.43
-clear_scroll_request_decode iterations=400000 elapsed_ms=228.345 ops_per_second=1751735.57 nanos_per_op=570.86
-clear_scroll_request_validate iterations=400000 elapsed_ms=230.099 ops_per_second=1738379.28 nanos_per_op=575.25
-clear_scroll_response_encode iterations=400000 elapsed_ms=48.438 ops_per_second=8258064.52 nanos_per_op=121.09
-clear_scroll_response_decode iterations=400000 elapsed_ms=57.521 ops_per_second=6954027.24 nanos_per_op=143.80
-clear_scroll_wire_bottleneck_ops_per_second=1659933.10
+clear_scroll_request_encode iterations=400000 elapsed_ms=244.042 ops_per_second=1639063.17 nanos_per_op=610.10
+clear_scroll_request_decode iterations=400000 elapsed_ms=230.341 ops_per_second=1736555.84 nanos_per_op=575.85
+clear_scroll_request_validate iterations=400000 elapsed_ms=232.727 ops_per_second=1718750.12 nanos_per_op=581.82
+clear_scroll_explicit_request_decode iterations=400000 elapsed_ms=399.182 ops_per_second=1002050.09 nanos_per_op=997.95
+clear_scroll_opaque_scroll_id_decode iterations=400000 elapsed_ms=254.372 ops_per_second=1572497.75 nanos_per_op=635.93
+clear_scroll_response_encode iterations=400000 elapsed_ms=48.535 ops_per_second=8241464.53 nanos_per_op=121.34
+clear_scroll_response_decode iterations=400000 elapsed_ms=56.872 ops_per_second=7033345.20 nanos_per_op=142.18
+clear_scroll_wire_bottleneck_ops_per_second=1002050.09
 ```
 
-The current clear-scroll implemented subset bottleneck is request encode. The
-small response encode/decode path runs above 6.9M ops/s in the latest local
-release run, so response rendering is not the first bottleneck. The first
-performance point to inspect before expanding this subset is explicit scroll id
-parsing plus context invalidation.
+The current clear-scroll implemented subset bottleneck is explicit request
+decode once opaque scroll id coverage is included. Opaque scroll id decode
+itself runs at roughly 1.57M ops/s, while the full explicit request decode path
+lands near 1.00M ops/s. The small response encode/decode path runs above 7.0M
+ops/s in the latest local release run, so response rendering is not the first
+bottleneck. The next performance point to inspect is context invalidation under
+larger multi-context scroll ids.
 
 Current explain reject wire microbenchmark:
 

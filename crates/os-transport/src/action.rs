@@ -36871,6 +36871,132 @@ impl OpenSearchClearScrollRequestWire {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenSearchParsedScrollIdWire {
+    pub id_type: String,
+    pub contexts: Vec<OpenSearchSearchContextIdForNodeWire>,
+    pub original_indices: Vec<String>,
+}
+
+impl OpenSearchParsedScrollIdWire {
+    const INCLUDE_CONTEXT_UUID: &'static str = "include_context_uuid";
+    pub const QUERY_AND_FETCH_TYPE: &'static str = "queryAndFetch";
+    pub const QUERY_THEN_FETCH_TYPE: &'static str = "queryThenFetch";
+
+    pub fn new(contexts: Vec<OpenSearchSearchContextIdForNodeWire>) -> Self {
+        Self {
+            id_type: Self::QUERY_AND_FETCH_TYPE.to_string(),
+            contexts,
+            original_indices: Vec::new(),
+        }
+    }
+
+    pub fn encode(&self) -> Result<String, TransportActionWireError> {
+        self.validate_supported_subset()?;
+        let mut output = StreamOutput::new();
+        output.write_string(Self::INCLUDE_CONTEXT_UUID);
+        output.write_string(&self.id_type);
+        output.write_vint(self.contexts.len() as i32);
+        for context in &self.contexts {
+            output.write_string(&context.search_context_id.session_id);
+            output.write_i64(context.search_context_id.id);
+            output.write_string(&scroll_context_target_node(context));
+        }
+        write_optional_string_array(&mut output, Some(&self.original_indices));
+        Ok(URL_SAFE.encode(output.freeze()))
+    }
+
+    pub fn decode(scroll_id: &str) -> Result<Self, TransportActionWireError> {
+        let bytes = URL_SAFE
+            .decode(scroll_id)
+            .or_else(|_| URL_SAFE_NO_PAD.decode(scroll_id))
+            .map_err(|_| TransportActionWireError::UnsupportedWireShape {
+                shape: "scroll id",
+                reason: "OpenSearch scroll ids require base64url-encoded bytes",
+            })?;
+        let mut input = StreamInput::new(Bytes::from(bytes));
+        let first = input.read_string()?;
+        let (include_context_uuid, id_type) = if first == Self::INCLUDE_CONTEXT_UUID {
+            (true, input.read_string()?)
+        } else {
+            (false, first)
+        };
+        let context_count = read_len(&mut input)?;
+        let mut contexts = Vec::with_capacity(context_count);
+        for _ in 0..context_count {
+            let session_id = if include_context_uuid {
+                input.read_string()?
+            } else {
+                String::new()
+            };
+            let id = input.read_i64()?;
+            let target = input.read_string()?;
+            let (cluster_alias, node) = parse_scroll_context_target_node(&target);
+            contexts.push(OpenSearchSearchContextIdForNodeWire {
+                node,
+                cluster_alias,
+                search_context_id: OpenSearchShardSearchContextIdWire::new(session_id, id),
+            });
+        }
+        let original_indices = if input.remaining() > 0 {
+            read_optional_string_array(&mut input)?.unwrap_or_default()
+        } else {
+            Vec::new()
+        };
+        require_no_trailing_bytes(&input)?;
+        let parsed = Self {
+            id_type,
+            contexts,
+            original_indices,
+        };
+        parsed.validate_supported_subset()?;
+        Ok(parsed)
+    }
+
+    pub fn context_keys(&self) -> Vec<String> {
+        self.contexts
+            .iter()
+            .map(|context| {
+                let context_id = &context.search_context_id;
+                format!("{}:{}", context_id.session_id, context_id.id)
+            })
+            .collect()
+    }
+
+    pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
+        if self.contexts.is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "scroll id contexts",
+                reason: "OpenSearch parsed scroll ids require at least one search context",
+            });
+        }
+        for context in &self.contexts {
+            context.validate_supported_subset()?;
+        }
+        Ok(())
+    }
+}
+
+fn scroll_context_target_node(context: &OpenSearchSearchContextIdForNodeWire) -> String {
+    match context
+        .cluster_alias
+        .as_deref()
+        .filter(|alias| !alias.is_empty())
+    {
+        Some(cluster_alias) => format!("{cluster_alias}:{}", context.node),
+        None => context.node.clone(),
+    }
+}
+
+fn parse_scroll_context_target_node(target: &str) -> (Option<String>, String) {
+    match target.split_once(':') {
+        Some((cluster_alias, node)) if !cluster_alias.is_empty() => {
+            (Some(cluster_alias.to_string()), node.to_string())
+        }
+        _ => (None, target.to_string()),
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OpenSearchClearScrollResponseWire {
     pub succeeded: bool,
     pub num_freed: i32,
@@ -76825,6 +76951,35 @@ mod tests {
         }
         .validate_supported_subset()
         .unwrap();
+    }
+
+    #[test]
+    fn opensearch_scroll_id_encodes_decodes_search_context_targets() {
+        let scroll_id = OpenSearchParsedScrollIdWire {
+            id_type: OpenSearchParsedScrollIdWire::QUERY_THEN_FETCH_TYPE.to_string(),
+            contexts: vec![
+                OpenSearchSearchContextIdForNodeWire {
+                    node: "node-a".to_string(),
+                    cluster_alias: None,
+                    search_context_id: OpenSearchShardSearchContextIdWire::new("session-a", 42),
+                },
+                OpenSearchSearchContextIdForNodeWire {
+                    node: "node-b".to_string(),
+                    cluster_alias: Some("remote-a".to_string()),
+                    search_context_id: OpenSearchShardSearchContextIdWire::new("session-b", 43),
+                },
+            ],
+            original_indices: vec!["logs-*".to_string()],
+        };
+
+        let encoded = scroll_id.encode().unwrap();
+        let decoded = OpenSearchParsedScrollIdWire::decode(&encoded).unwrap();
+
+        assert_eq!(decoded, scroll_id);
+        assert_eq!(
+            decoded.context_keys(),
+            vec!["session-a:42".to_string(), "session-b:43".to_string()]
+        );
     }
 
     #[test]

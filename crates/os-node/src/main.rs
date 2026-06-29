@@ -12299,7 +12299,9 @@ fn search_scroll_request_matches_local_lifecycle_subset(
             .contexts
             .lock()
             .expect("dev transport scroll contexts lock poisoned")
-            .contains_key(&request.scroll_id)
+            .contains_key(&transport_scroll_context_key_for_scroll_id(
+                &request.scroll_id,
+            ))
 }
 
 fn decode_search_scroll_request_from_transport_body(
@@ -12312,11 +12314,12 @@ fn decode_search_scroll_request_from_transport_body(
 fn advance_transport_scroll_context(
     scroll_id: &str,
 ) -> os_transport::action::OpenSearchSearchResponseWire {
+    let context_key = transport_scroll_context_key_for_scroll_id(scroll_id);
     let mut contexts = dev_transport_scroll_bindings()
         .contexts
         .lock()
         .expect("dev transport scroll contexts lock poisoned");
-    let Some(context) = contexts.get_mut(scroll_id) else {
+    let Some(context) = contexts.get_mut(&context_key) else {
         return os_transport::action::OpenSearchSearchResponseWire::empty_with_total_hits(0);
     };
     let take = context.page_size.max(1);
@@ -12348,6 +12351,16 @@ fn advance_transport_scroll_context(
         took_millis: 1,
         ..os_transport::action::OpenSearchSearchResponseWire::empty_with_total_hits(total_hits)
     }
+}
+
+fn transport_scroll_context_key_for_scroll_id(scroll_id: &str) -> String {
+    os_transport::action::OpenSearchParsedScrollIdWire::decode(scroll_id)
+        .ok()
+        .and_then(|parsed| {
+            let keys = parsed.context_keys();
+            (keys.len() == 1).then(|| keys[0].clone())
+        })
+        .unwrap_or_else(|| scroll_id.to_string())
 }
 
 fn transport_scroll_hit_from_rest_hit(
@@ -16680,8 +16693,22 @@ fn clear_transport_scroll_contexts(
     } else {
         scroll_ids
             .iter()
-            .filter(|scroll_id| contexts.remove(*scroll_id).is_some())
-            .count()
+            .map(|scroll_id| {
+                if let Ok(parsed) =
+                    os_transport::action::OpenSearchParsedScrollIdWire::decode(scroll_id)
+                {
+                    parsed
+                        .context_keys()
+                        .into_iter()
+                        .filter(|context_key| contexts.remove(context_key).is_some())
+                        .count()
+                } else if contexts.remove(scroll_id).is_some() {
+                    1
+                } else {
+                    0
+                }
+            })
+            .sum()
     };
     os_transport::action::OpenSearchClearScrollResponseWire {
         succeeded: true,
@@ -38324,6 +38351,78 @@ mod tests {
     }
 
     #[test]
+    fn clear_scroll_transport_route_frees_decoded_opensearch_scroll_contexts() {
+        let _lock = dev_transport_scroll_test_lock()
+            .lock()
+            .expect("dev transport scroll test lock poisoned");
+        dev_transport_scroll_bindings()
+            .contexts
+            .lock()
+            .expect("dev transport scroll contexts lock poisoned")
+            .clear();
+        dev_transport_scroll_bindings()
+            .contexts
+            .lock()
+            .expect("dev transport scroll contexts lock poisoned")
+            .insert(
+                "scroll-session:42".to_string(),
+                ScrollContext {
+                    remaining_hits: Vec::new(),
+                    page_size: 10,
+                    total_hits: 0,
+                },
+            );
+        let scroll_id = os_transport::action::OpenSearchParsedScrollIdWire::new(vec![
+            os_transport::action::OpenSearchSearchContextIdForNodeWire {
+                node: "steel-node-id".to_string(),
+                cluster_alias: None,
+                search_context_id: os_transport::action::OpenSearchShardSearchContextIdWire::new(
+                    "scroll-session",
+                    42,
+                ),
+            },
+        ])
+        .encode()
+        .unwrap();
+        let request = os_transport::action::OpenSearchClearScrollRequestWire {
+            scroll_ids: vec![scroll_id],
+            ..os_transport::action::OpenSearchClearScrollRequestWire::default()
+        };
+        let frame = os_transport::action::build_opensearch_clear_scroll_request_message(
+            205,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(clear_scroll_request_supports_local_lifecycle_subset(
+            &frame[6..]
+        ));
+
+        let response = build_local_clear_scroll_response(
+            205,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &frame[6..],
+        );
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected decoded clear-scroll response message");
+        };
+        let response =
+            os_transport::action::read_opensearch_clear_scroll_response_message(&message).unwrap();
+        assert!(response.succeeded);
+        assert_eq!(response.num_freed, 1);
+        assert!(!dev_transport_scroll_bindings()
+            .contexts
+            .lock()
+            .expect("dev transport scroll contexts lock poisoned")
+            .contains_key("scroll-session:42"));
+    }
+
+    #[test]
     fn search_scroll_transport_route_advances_local_context_page() {
         let _lock = dev_transport_scroll_test_lock()
             .lock()
@@ -38406,6 +38505,88 @@ mod tests {
                 .get("scroll-context")
                 .map(|context| context.remaining_hits.len()),
             Some(1)
+        );
+    }
+
+    #[test]
+    fn search_scroll_transport_route_advances_decoded_opensearch_scroll_context() {
+        let _lock = dev_transport_scroll_test_lock()
+            .lock()
+            .expect("dev transport scroll test lock poisoned");
+        dev_transport_scroll_bindings()
+            .contexts
+            .lock()
+            .expect("dev transport scroll contexts lock poisoned")
+            .clear();
+        dev_transport_scroll_bindings()
+            .contexts
+            .lock()
+            .expect("dev transport scroll contexts lock poisoned")
+            .insert(
+                "scroll-session:42".to_string(),
+                ScrollContext {
+                    remaining_hits: vec![serde_json::json!({
+                        "_index": "logs-scroll",
+                        "_id": "doc-opaque",
+                        "_score": 2.0,
+                        "_source": { "status": "active" }
+                    })],
+                    page_size: 1,
+                    total_hits: 1,
+                },
+            );
+        let scroll_id = os_transport::action::OpenSearchParsedScrollIdWire::new(vec![
+            os_transport::action::OpenSearchSearchContextIdForNodeWire {
+                node: "steel-node-id".to_string(),
+                cluster_alias: None,
+                search_context_id: os_transport::action::OpenSearchShardSearchContextIdWire::new(
+                    "scroll-session",
+                    42,
+                ),
+            },
+        ])
+        .encode()
+        .unwrap();
+        let request = os_transport::action::OpenSearchSearchScrollRequestWire {
+            scroll_id: scroll_id.clone(),
+            ..os_transport::action::OpenSearchSearchScrollRequestWire::default()
+        };
+        let frame = os_transport::action::build_opensearch_search_scroll_request_message(
+            206,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(search_scroll_request_supports_local_lifecycle_subset(
+            &frame[6..]
+        ));
+
+        let response = build_local_search_scroll_response(
+            206,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &frame[6..],
+        );
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected decoded search-scroll response message");
+        };
+        let response =
+            os_transport::action::read_opensearch_search_scroll_response_message(&message).unwrap();
+        assert_eq!(response.scroll_id.as_deref(), Some(scroll_id.as_str()));
+        assert_eq!(response.hits.len(), 1);
+        assert_eq!(response.hits[0].id.as_deref(), Some("doc-opaque"));
+        assert_eq!(
+            dev_transport_scroll_bindings()
+                .contexts
+                .lock()
+                .expect("dev transport scroll contexts lock poisoned")
+                .get("scroll-session:42")
+                .map(|context| context.remaining_hits.len()),
+            Some(0)
         );
     }
 
