@@ -3370,6 +3370,116 @@ fn daemon_transport_get_settings_reflects_rest_created_index_metadata() {
 }
 
 #[test]
+fn daemon_point_in_time_contexts_do_not_survive_restart() {
+    let binary = os_node_binary();
+    let root = unique_work_dir();
+    let data_path = root.join("data");
+    fs::create_dir_all(&data_path).unwrap();
+    let transport_port = free_port();
+
+    let mut child = Command::new(&binary)
+        .arg("--http.host")
+        .arg("127.0.0.1")
+        .arg("--http.port")
+        .arg("0")
+        .arg("--transport.host")
+        .arg("127.0.0.1")
+        .arg("--transport.port")
+        .arg(transport_port.to_string())
+        .arg("--cluster.name")
+        .arg("steel-dev-pit-restart")
+        .arg("--path.data")
+        .arg(&data_path)
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+
+    let stderr = child.stderr.take().unwrap();
+    let mut reader = BufReader::new(stderr);
+    let port = read_reported_http_port(&mut reader);
+
+    let create = wait_http_response(
+        port,
+        "PUT",
+        "/pit-restart-it",
+        Some(br#"{"settings":{"number_of_shards":1,"number_of_replicas":0}}"#),
+    );
+    assert_eq!(create["status"], 200, "{create}");
+    let index_doc = http_response(
+        port,
+        "PUT",
+        "/pit-restart-it/_doc/1",
+        Some(br#"{"status":"active","ordinal":1}"#),
+    );
+    assert_eq!(index_doc["status"], 201, "{index_doc}");
+    let refresh = http_response(port, "POST", "/pit-restart-it/_refresh", Some(b"{}"));
+    assert_eq!(refresh["status"], 200, "{refresh}");
+
+    let open_pit = http_response(
+        port,
+        "POST",
+        "/pit-restart-it/_search/point_in_time?keep_alive=1m",
+        Some(b"{}"),
+    );
+    assert_eq!(open_pit["status"], 200, "{open_pit}");
+    let pit_id = open_pit["body"]["pit_id"]
+        .as_str()
+        .expect("pit id")
+        .to_string();
+    assert!(!pit_id.is_empty());
+
+    terminate_child(&child);
+    let status = wait_for_child_exit(&mut child);
+    assert!(status.success(), "daemon did not exit cleanly: {status}");
+
+    let mut restarted = Command::new(&binary)
+        .arg("--http.host")
+        .arg("127.0.0.1")
+        .arg("--http.port")
+        .arg("0")
+        .arg("--transport.host")
+        .arg("127.0.0.1")
+        .arg("--transport.port")
+        .arg(transport_port.to_string())
+        .arg("--cluster.name")
+        .arg("steel-dev-pit-restart")
+        .arg("--path.data")
+        .arg(&data_path)
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+
+    let stderr = restarted.stderr.take().unwrap();
+    let mut reader = BufReader::new(stderr);
+    let restarted_port = read_reported_http_port(&mut reader);
+    let _guard = ChildGuard {
+        children: vec![restarted],
+    };
+
+    let list = wait_http_response(restarted_port, "GET", "/_search/point_in_time/_all", None);
+    assert_eq!(list["status"], 200, "{list}");
+    assert!(list["body"]["pits"].as_array().expect("pits").is_empty());
+
+    let pit_search_body =
+        format!(r#"{{"pit":{{"id":"{pit_id}","keep_alive":"1m"}},"query":{{"match_all":{{}}}}}}"#);
+    let stale_search = http_response(
+        restarted_port,
+        "POST",
+        "/_search",
+        Some(pit_search_body.as_bytes()),
+    );
+    assert_eq!(stale_search["status"], 404, "{stale_search}");
+    assert_eq!(
+        stale_search["body"]["error"]["root_cause"][0]["type"], "search_context_missing_exception",
+        "{stale_search}"
+    );
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
 fn daemon_transport_create_pit_returns_search_context_id_for_local_node() {
     let binary = os_node_binary();
     let root = unique_work_dir();
