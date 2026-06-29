@@ -3958,6 +3958,32 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end_at_ms,
         )?;
     } else if is_request
+        && normalized_action_hint == Some("cluster:admin/knn_warmup_action")
+        && knn_warmup_request_supports_local_subset(&body)
+    {
+        let response = build_knn_warmup_response(request_id, header_version_id, &body);
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("cluster:admin/knn_warmup_action"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request
         && normalized_action_hint == Some("cluster:admin/clear_cache_action")
         && clear_cache_request_supports_local_subset(&body)
     {
@@ -14928,7 +14954,9 @@ fn build_clear_cache_response(request_id: i64, header_version_id: u32, body: &[u
     let Some(request) = decode_clear_cache_request_from_transport_body(body) else {
         return build_empty_transport_response(request_id, header_version_id);
     };
-    let Some(total_shards) = clear_cache_request_local_total_shards(&request) else {
+    let Some(total_shards) =
+        local_knn_indices_total_shards(request.indices.as_ref(), &request.indices_options)
+    else {
         return build_empty_transport_response(request_id, header_version_id);
     };
     if !clear_transport_knn_cache_state() {
@@ -14949,14 +14977,46 @@ fn build_clear_cache_response(request_id: i64, header_version_id: u32, body: &[u
     .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
 }
 
+fn build_knn_warmup_response(request_id: i64, header_version_id: u32, body: &[u8]) -> Vec<u8> {
+    let Some(request) = decode_knn_warmup_request_from_transport_body(body) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    let Some(total_shards) =
+        local_knn_indices_total_shards(request.indices.as_ref(), &request.indices_options)
+    else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    if !warmup_transport_knn_cache_state(total_shards) {
+        return build_empty_transport_response(request_id, header_version_id);
+    }
+    let response = os_transport::action::KnnWarmupResponseWire {
+        total_shards,
+        successful_shards: total_shards,
+        failed_shards: 0,
+        shard_failure_count: 0,
+    };
+    os_transport::action::build_knn_warmup_response_message(
+        request_id,
+        Version::from_id(header_version_id as i32),
+        &response,
+    )
+    .map(|frame| frame.to_vec())
+    .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
+}
+
 fn knn_stats_request_supports_local_subset(body: &[u8]) -> bool {
     decode_knn_stats_request_from_transport_body(body)
         .is_some_and(|request| knn_stats_request_matches_local_subset(&request))
 }
 
+fn knn_warmup_request_supports_local_subset(body: &[u8]) -> bool {
+    decode_knn_warmup_request_from_transport_body(body)
+        .is_some_and(|request| knn_warmup_request_matches_local_subset(&request))
+}
+
 fn clear_cache_request_supports_local_subset(body: &[u8]) -> bool {
     decode_clear_cache_request_from_transport_body(body)
-        .is_some_and(|request| clear_cache_request_local_total_shards(&request).is_some())
+        .is_some_and(|request| clear_cache_request_matches_local_subset(&request))
 }
 
 fn decode_knn_stats_request_from_transport_body(
@@ -14973,17 +15033,48 @@ fn decode_clear_cache_request_from_transport_body(
     os_transport::action::read_clear_cache_request_message(&message).ok()
 }
 
+fn decode_knn_warmup_request_from_transport_body(
+    body: &[u8],
+) -> Option<os_transport::action::KnnWarmupRequestWire> {
+    let message = decode_transport_message_from_body(body)?;
+    os_transport::action::read_knn_warmup_request_message(&message).ok()
+}
+
 fn knn_stats_request_matches_local_subset(
     request: &os_transport::action::KnnStatsRequestWire,
 ) -> bool {
     request.validate_supported_execution_subset().is_ok()
 }
 
-fn clear_cache_request_local_total_shards(
+fn knn_warmup_request_matches_local_subset(
+    request: &os_transport::action::KnnWarmupRequestWire,
+) -> bool {
+    request.validate_supported_execution_subset().is_ok()
+        && local_knn_indices_total_shards(request.indices.as_ref(), &request.indices_options)
+            .is_some()
+}
+
+fn clear_cache_request_matches_local_subset(
     request: &os_transport::action::ClearCacheRequestWire,
+) -> bool {
+    request.validate_supported_execution_subset().is_ok()
+        && local_knn_indices_total_shards(request.indices.as_ref(), &request.indices_options)
+            .is_some()
+}
+
+fn local_knn_indices_total_shards(
+    indices: Option<&Vec<String>>,
+    indices_options: &os_transport::action::OpenSearchIndicesOptionsWire,
 ) -> Option<i32> {
-    request.validate_supported_execution_subset().ok()?;
-    let indices = request.indices.as_ref()?;
+    if *indices_options
+        != os_transport::action::OpenSearchIndicesOptionsWire::strict_expand_open_forbid_closed()
+    {
+        return None;
+    }
+    let indices = indices?;
+    if indices.is_empty() || indices.iter().any(|index| index.trim().is_empty()) {
+        return None;
+    }
     let bindings = dev_transport_pit_bindings();
     let manifest = bindings
         .metadata_manifest
@@ -15041,6 +15132,18 @@ fn clear_transport_knn_cache_state() -> bool {
     current.native_memory_used_bytes = 0;
     current.model_cache_used_bytes = 0;
     current.quantization_cache_used_bytes = 0;
+    persist_transport_shared_runtime_state(&state)
+}
+
+fn warmup_transport_knn_cache_state(total_shards: i32) -> bool {
+    let mut state = load_transport_shared_runtime_state().unwrap_or_default();
+    let current = state
+        .knn_operational_state
+        .get_or_insert_with(KnnOperationalState::default);
+    let warmed = u64::try_from(total_shards.max(1)).unwrap_or(1);
+    current.graph_count = warmed;
+    current.warmed_index_count = 1;
+    current.cache_entry_count = warmed;
     persist_transport_shared_runtime_state(&state)
 }
 
@@ -27248,6 +27351,15 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
                 transport_identity,
             ))
         }
+        Some("cluster:admin/knn_warmup_action")
+            if knn_warmup_request_supports_local_subset(body) =>
+        {
+            Some(build_knn_warmup_response(
+                request_id,
+                header_version_id,
+                body,
+            ))
+        }
         Some("cluster:admin/clear_cache_action")
             if clear_cache_request_supports_local_subset(body) =>
         {
@@ -32209,6 +32321,121 @@ mod tests {
         assert_eq!(state.native_memory_used_bytes, 0);
         assert_eq!(state.model_cache_used_bytes, 0);
         assert_eq!(state.quantization_cache_used_bytes, 0);
+        let _ = fs::remove_file(shared_state_path);
+    }
+
+    #[test]
+    fn knn_warmup_transport_route_populates_local_knn_runtime_cache_state() {
+        struct RecordingTransportConnection {
+            writes: Vec<u8>,
+        }
+
+        impl std::io::Read for RecordingTransportConnection {
+            fn read(&mut self, _buf: &mut [u8]) -> std::io::Result<usize> {
+                Ok(0)
+            }
+        }
+
+        impl std::io::Write for RecordingTransportConnection {
+            fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+                self.writes.extend_from_slice(buf);
+                Ok(buf.len())
+            }
+
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+
+        impl TransportConnection for RecordingTransportConnection {
+            fn set_read_timeout(&self, _duration: Option<Duration>) -> std::io::Result<()> {
+                Ok(())
+            }
+
+            fn peer_addr(&self) -> std::io::Result<SocketAddr> {
+                "127.0.0.1:9300"
+                    .parse()
+                    .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidInput, error))
+            }
+        }
+
+        *dev_transport_pit_bindings()
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned") = serde_json::json!({
+            "indices": {
+                "knn-warmup-index": {
+                    "settings": {
+                        "index": {
+                            "knn": true,
+                            "number_of_shards": "2"
+                        }
+                    }
+                }
+            }
+        });
+        let shared_state_path = unique_test_path("knn-warmup-transport-shared-runtime.json");
+        fs::write(
+            &shared_state_path,
+            serde_json::to_vec_pretty(&SharedRuntimeState::default()).unwrap(),
+        )
+        .unwrap();
+        bind_dev_transport_shared_runtime_state_path(shared_state_path.clone());
+
+        let request = os_transport::action::KnnWarmupRequestWire {
+            indices: Some(vec!["knn-warmup-index".to_string()]),
+            ..os_transport::action::KnnWarmupRequestWire::default()
+        };
+        let frame = os_transport::action::build_knn_warmup_request_message(
+            80,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(knn_warmup_request_supports_local_subset(&frame[6..]));
+        let transport_identity = DevTransportIdentity {
+            cluster_name: "steelsearch-dev".to_string(),
+            node_name: "steel-node".to_string(),
+            node_id: "steel-node-id".to_string(),
+            ephemeral_id: "steel-node-ephemeral".to_string(),
+            transport_address: "127.0.0.1:9300".parse().unwrap(),
+            attributes: Vec::new(),
+            roles: vec!["cluster_manager".to_string(), "data".to_string()],
+            seed_peer_identity: None,
+            seed_peer_identities: Vec::new(),
+            coordination_state: Arc::new(Mutex::new(DevTransportCoordinationState::default())),
+            remote_transport_queue_gate: Arc::new(RemoteTransportQueueGate::new(1, 1000)),
+            task_queue_state: None,
+        };
+        let mut stream = RecordingTransportConnection { writes: Vec::new() };
+
+        let handled = handle_subsequent_transport_request(
+            &mut stream,
+            &frame[6..],
+            &transport_identity,
+            None,
+        )
+        .unwrap();
+
+        assert!(handled);
+        let mut response_frame = BytesMut::from(&stream.writes[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut response_frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected knn warmup response message");
+        };
+        let response = os_transport::action::read_knn_warmup_response_message(&message).unwrap();
+        assert_eq!(response.total_shards, 2);
+        assert_eq!(response.successful_shards, 2);
+        assert_eq!(response.failed_shards, 0);
+        let persisted: SharedRuntimeState =
+            serde_json::from_slice(&fs::read(&shared_state_path).unwrap()).unwrap();
+        let state = persisted.knn_operational_state.expect("knn state");
+        assert_eq!(state.graph_count, 2);
+        assert_eq!(state.warmed_index_count, 1);
+        assert_eq!(state.cache_entry_count, 2);
         let _ = fs::remove_file(shared_state_path);
     }
 

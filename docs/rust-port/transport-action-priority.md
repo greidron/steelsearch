@@ -177,15 +177,15 @@ The source-derived transport inventory currently has 160 rows:
 
 | Status | Count | Meaning |
 | --- | ---: | --- |
-| `implemented` | 147 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
-| `partial` | 13 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
+| `implemented` | 148 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
+| `partial` | 12 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
 | `planned` | 0 | No source-derived transport action remains unclassified. |
 
-The k-NN plugin action sweep is complete at the boundary layer. Two of 12
+The k-NN plugin action sweep is complete at the boundary layer. Three of 12
 registrations from
 `/home/ubuntu/k-NN/src/main/java/org/opensearch/knn/plugin/KNNPlugin.java`
 lines 348-359 are now represented as `implemented` rows for bounded local-node
-stats and clear-cache subsets; the remaining k-NN actions stay `partial` with
+stats, warmup, and clear-cache subsets; the remaining k-NN actions stay `partial` with
 request/response wire coverage and fail-closed admission. This is not a claim
 that the remaining k-NN transport actions execute their full OpenSearch
 semantics yet; it means unsupported transport execution is explicit and
@@ -1027,12 +1027,15 @@ The knn-warmup boundary covers:
   at the wire decode/build layer;
 - OpenSearch k-NN `KNNWarmupResponse` broadcast shard counters and zero shard
   failure count at the wire decode/build layer;
-- explicit fail-closed classification for `cluster:admin/knn_warmup_action`
-  until broadcast shard selection, metadata read block checks, per-shard KNN
-  warmup, shard failure aggregation, and response rendering are implemented;
+- implemented classification for the bounded local warmup subset: concrete
+  manifest indices, strict expand-open/forbid-closed options, k-NN-enabled
+  index metadata, local primary shard counter calculation, shared-runtime
+  warmup/cache mutation, and OpenSearch broadcast response rendering with
+  successful local shard counters;
 - explicit rejection for missing indices, blank index selectors, custom index
-  resolution options, KNN warmup execution, negative shard counters, shard
-  failure rendering, and response rendering.
+  resolution options, unresolved indices, non-k-NN manifest indices, negative
+  shard counters, non-empty shard failures, and shard failure response
+  rendering.
 
 The update-model-metadata boundary covers:
 

@@ -2050,8 +2050,8 @@ pub fn classify_opensearch_transport_action(
         },
         KNN_WARMUP_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
-            disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "knn-warmup transport execution requires broadcast shard selection, metadata read block checks, per-shard KNN warmup, shard failure aggregation, and response rendering",
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "knn-warmup transport adapter validates concrete local KNN indices, mutates shared runtime warmup/cache state, and renders an OpenSearch broadcast response with local shard counters",
         },
         UPDATE_MODEL_METADATA_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -19746,8 +19746,8 @@ impl KnnWarmupRequestWire {
     pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
         self.validate_supported_execution_subset()?;
         Err(TransportActionWireError::UnsupportedWireShape {
-            shape: "clear cache execution",
-            reason: "use validate_supported_execution_subset for the implemented local KNN clear-cache adapter",
+            shape: "knn warmup execution",
+            reason: "use validate_supported_execution_subset for the implemented local KNN warmup adapter",
         })
     }
 
@@ -19780,10 +19780,7 @@ impl KnnWarmupRequestWire {
                 reason: "custom KNN warmup index resolution options require OpenSearch index expression resolution semantics",
             });
         }
-        Err(TransportActionWireError::UnsupportedWireShape {
-            shape: "knn warmup execution",
-            reason: "knn-warmup transport execution requires broadcast shard selection, metadata read block checks, per-shard KNN warmup, shard failure aggregation, and response rendering",
-        })
+        Ok(())
     }
 }
 
@@ -19841,10 +19838,7 @@ impl KnnWarmupResponseWire {
                 reason: "KNN warmup shard failure rendering is not implemented",
             });
         }
-        Err(TransportActionWireError::UnsupportedWireShape {
-            shape: "knn warmup response rendering",
-            reason: "KNNWarmupResponse rendering requires broadcast shard execution and shard result aggregation",
-        })
+        Ok(())
     }
 }
 
@@ -61721,7 +61715,7 @@ mod tests {
     }
 
     #[test]
-    fn knn_warmup_request_wire_round_trips_and_rejects_execution_boundary() {
+    fn knn_warmup_request_wire_round_trips_and_validates_local_subset() {
         let request = KnnWarmupRequestWire {
             parent_task_node: "cluster-manager".to_string(),
             parent_task_id: Some(52),
@@ -61733,6 +61727,7 @@ mod tests {
 
         let decoded = KnnWarmupRequestWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, request);
+        decoded.validate_supported_execution_subset().unwrap();
         assert!(matches!(
             decoded.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
@@ -61790,7 +61785,7 @@ mod tests {
     }
 
     #[test]
-    fn knn_warmup_response_wire_round_trips_and_rejects_unsupported_shapes() {
+    fn knn_warmup_response_wire_round_trips_and_validates_success_rendering() {
         let response = KnnWarmupResponseWire {
             total_shards: 2,
             successful_shards: 2,
@@ -61802,13 +61797,7 @@ mod tests {
 
         let decoded = KnnWarmupResponseWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, response);
-        assert!(matches!(
-            decoded.reject_unsupported_rendering(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "knn warmup response rendering",
-                ..
-            })
-        ));
+        decoded.reject_unsupported_rendering().unwrap();
 
         let mut negative_counters = StreamOutput::new();
         negative_counters.write_vint(-1);
@@ -61838,7 +61827,7 @@ mod tests {
     }
 
     #[test]
-    fn knn_warmup_transport_messages_bind_rejected_action_frame_and_response() {
+    fn knn_warmup_transport_messages_bind_implemented_action_frame_and_response() {
         let request = KnnWarmupRequestWire::default();
         let mut frame =
             build_knn_warmup_request_message(52, OPENSEARCH_3_7_0_TRANSPORT, &request).unwrap();
@@ -61849,18 +61838,13 @@ mod tests {
             classify_opensearch_transport_request_message(&message)
                 .unwrap()
                 .disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
         assert_eq!(read_knn_warmup_request_message(&message).unwrap(), request);
-        assert!(matches!(
-            read_knn_warmup_request_message(&message)
-                .unwrap()
-                .reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "knn warmup execution",
-                ..
-            })
-        ));
+        read_knn_warmup_request_message(&message)
+            .unwrap()
+            .validate_supported_execution_subset()
+            .unwrap();
 
         let response = KnnWarmupResponseWire::default();
         let mut frame =
