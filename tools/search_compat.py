@@ -921,6 +921,8 @@ def run_case(
 
 
 def case_report_with_metadata(case: dict[str, Any], result: dict[str, Any]) -> dict[str, Any]:
+    if "family" in case:
+        result["family"] = case["family"]
     metadata = case.get("metadata")
     if isinstance(metadata, dict) and metadata:
         result["metadata"] = metadata

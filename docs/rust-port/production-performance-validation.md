@@ -226,16 +226,18 @@ pins the current live-required breadth through
 `--min-live-required-matched-source-route-count 15`, preventing the required
 E2E profile from silently shrinking while still reporting `failed=0`. The
 current collected required-suite reports show zero failed and zero missing
-cases. The search semantic suite now reports 49 passed, 0 failed, and 0 skipped cases, including root and targeted
-`_validate/query` range-query parity, native root multi-index shard accounting
-for term, search-template, sorted, thresholded, ignored-unavailable, and
-`_msearch` sub-response status queries, plus OpenSearch-matched error-shape
-parity for `_count?q`, malformed `_count`, malformed `exists`, missing search
-templates, malformed stored search-template sources, malformed `_msearch` NDJSON
-bodies, malformed inline `_render/template` sources, malformed
-`_validate/query` payloads, `_validate/query?rewrite=true`, range `_count`,
-range `_explain`, OpenSearch-compatible `_msearch` dangling-header parsing,
-rescore score-mode, highlight encoder, term suggest size, and missing
+cases. The search semantic suite now reports 73 passed, 0 failed, and 0 skipped
+cases, including root and targeted `_validate/query` range-query parity, native
+root multi-index shard accounting for term, search-template, sorted,
+thresholded, ignored-unavailable, and `_msearch` sub-response status queries,
+plus OpenSearch-matched error-shape parity for `_count?q`, malformed `_count`,
+malformed `exists`, missing search templates, malformed stored search-template
+sources, malformed `_msearch` NDJSON bodies, malformed inline
+`_render/template` sources, malformed `_validate/query` payloads,
+`_validate/query?rewrite=true`, range `_count`, range `_explain`,
+OpenSearch-compatible `_msearch` dangling-header parsing, PIT snapshot and
+closed-context search semantics, bool `minimum_should_match: 0` semantics,
+rescore score-mode ordering, highlight encoder, term suggest size, and missing
 `_explain` targets. k-NN query and hybrid-query option parity is covered by the
 dedicated `vector-search` suite, which runs against the OpenSearch k-NN plugin
 profile and currently reports 10 passed, 0 failed, and 0 skipped cases.

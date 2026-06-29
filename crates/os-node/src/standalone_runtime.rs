@@ -9240,6 +9240,16 @@ impl SteelNode {
     }
 
     fn handle_count_route(&self, target: Option<&str>, request: &RestRequest) -> RestResponse {
+        let unsupported_query_params = request
+            .query_params
+            .keys()
+            .filter(|key| matches!(key.as_str(), "q" | "df" | "default_operator"))
+            .collect::<Vec<_>>();
+        if let Some(response) =
+            unrecognized_query_param_response_for_keys(request, &unsupported_query_params)
+        {
+            return response;
+        }
         let mut payload = if request.body.is_empty() {
             Value::Object(serde_json::Map::new())
         } else {
@@ -28375,6 +28385,24 @@ fn apply_search_rescore(hits: &mut [Value], rescore: &Value) {
         right_score
             .partial_cmp(&left_score)
             .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| {
+                left["_index"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .cmp(right["_index"].as_str().unwrap_or_default())
+            })
+            .then_with(|| {
+                left["_seq_no"]
+                    .as_i64()
+                    .unwrap_or(i64::MAX)
+                    .cmp(&right["_seq_no"].as_i64().unwrap_or(i64::MAX))
+            })
+            .then_with(|| {
+                left["_id"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .cmp(right["_id"].as_str().unwrap_or_default())
+            })
     });
     hits[window..].sort_by(|left, right| {
         search_hit_source_string(left, "ts")
@@ -29271,11 +29299,19 @@ fn evaluate_search_query_source_with_mappings(
                     has_scoring_clause = true;
                 }
             }
+            let has_required_positive_clause =
+                bool_query.get("must").is_some() || has_filter_clause;
             let required = bool_query
                 .get("minimum_should_match")
                 .and_then(Value::as_u64)
-                .map(|value| value as usize)
-                .unwrap_or_else(|| if has_scoring_clause { 0 } else { 1 });
+                .map(|value| {
+                    if !has_required_positive_clause {
+                        (value as usize).max(1)
+                    } else {
+                        value as usize
+                    }
+                })
+                .unwrap_or_else(|| if has_required_positive_clause { 0 } else { 1 });
             if matched_should < required {
                 return Some((false, 0.0));
             }
@@ -49623,8 +49659,11 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 }),
             ),
         );
-        assert_eq!(q_count.status, 200);
-        assert_eq!(q_count.body["count"], 1);
+        assert_eq!(q_count.status, 400);
+        assert_eq!(
+            q_count.body["error"]["reason"],
+            "request [/_count] contains unrecognized parameter: [q]"
+        );
 
         let q_count_with_df = node.handle_rest_request(
             RestRequest::new(RestMethod::Get, "/_count?q=tenantb&df=tenant").with_json_body(
@@ -49635,8 +49674,11 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 }),
             ),
         );
-        assert_eq!(q_count_with_df.status, 200);
-        assert_eq!(q_count_with_df.body["count"], 1);
+        assert_eq!(q_count_with_df.status, 400);
+        assert_eq!(
+            q_count_with_df.body["error"]["reason"],
+            "request [/_count] contains unrecognized parameters: [df], [q]"
+        );
 
         let unsupported_q_count_analyzer = node.handle_rest_request(RestRequest::new(
             RestMethod::Get,
@@ -49645,7 +49687,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(unsupported_q_count_analyzer.status, 400);
         assert_eq!(
             unsupported_q_count_analyzer.body["error"]["reason"],
-            "unsupported search option [analyzer]"
+            "request [/_count] contains unrecognized parameter: [q]"
         );
 
         let empty_wildcard_count = node.handle_rest_request(
@@ -60502,7 +60544,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             ),
         );
         assert_eq!(zero_minimum_should_match.status, 200);
-        assert_eq!(zero_minimum_should_match.body["hits"]["total"]["value"], 3);
+        assert_eq!(zero_minimum_should_match.body["hits"]["total"]["value"], 0);
     }
 
     #[test]
