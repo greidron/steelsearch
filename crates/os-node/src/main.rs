@@ -4387,7 +4387,7 @@ fn handle_transport_seed_connection<S: TransportConnection>(
         )?;
     } else if is_request
         && normalized_action_hint == Some("indices:data/read/search[phase/fetch/id]")
-        && fetch_id_request_supports_empty_local_execution_subset(&body)
+        && fetch_id_request_supports_local_execution_subset(&body)
     {
         let response = build_local_fetch_id_phase_response(request_id, header_version_id, &body);
         response_frame = summarize_transport_response_frame_for_action(
@@ -6552,7 +6552,13 @@ fn build_java_query_phase_result_body(
     shard_id: i32,
     context_id: &os_transport::action::OpenSearchShardSearchContextIdWire,
     total_hits: i64,
+    score_doc_ids: &[i32],
 ) -> Option<Vec<u8>> {
+    let score_doc_ids = score_doc_ids
+        .iter()
+        .map(i32::to_string)
+        .collect::<Vec<_>>()
+        .join(",");
     let script_path = workspace_tool_script_path("tools/build_java_query_phase_result.sh")?;
     let output = Command::new("bash")
         .arg(script_path)
@@ -6570,6 +6576,8 @@ fn build_java_query_phase_result_body(
         .arg(&context_id.session_id)
         .arg("--context-id")
         .arg(context_id.id.to_string())
+        .arg("--score-doc-ids")
+        .arg(score_doc_ids)
         .output()
         .ok()?;
     if !output.status.success() {
@@ -6792,6 +6800,7 @@ fn maybe_build_query_phase_response(
                 1,
             ),
             total_hits,
+            &[],
         )?;
         return Some(build_transport_response_frame(
             request_id,
@@ -18563,14 +18572,31 @@ fn query_id_total_hits_for_reader_context(
     request: &os_transport::action::OpenSearchQuerySearchRequestWire,
     reader_context: &DevTransportReaderContext,
 ) -> i64 {
+    i64::try_from(query_id_score_doc_ids_for_reader_context(request, reader_context).len())
+        .unwrap_or(i64::MAX)
+}
+
+fn query_id_score_doc_ids_for_reader_context(
+    request: &os_transport::action::OpenSearchQuerySearchRequestWire,
+    reader_context: &DevTransportReaderContext,
+) -> Vec<i32> {
     let query = request
         .shard_search_request
         .as_ref()
         .and_then(|request| request.source.as_ref())
         .and_then(|source| source.query.as_ref());
     match query {
-        Some(os_transport::action::OpenSearchQueryBuilderWire::MatchNone(_)) => 0,
-        _ => i64::try_from(reader_context.documents.len()).unwrap_or(i64::MAX),
+        Some(os_transport::action::OpenSearchQueryBuilderWire::MatchNone(_)) => Vec::new(),
+        _ => reader_context
+            .documents
+            .iter()
+            .enumerate()
+            .filter_map(|(doc_id, (_, record))| {
+                record
+                    .refreshed
+                    .then(|| i32::try_from(doc_id).unwrap_or(i32::MAX))
+            })
+            .collect(),
     }
 }
 
@@ -18594,6 +18620,7 @@ fn build_local_query_id_phase_response(
         return build_empty_transport_response(request_id, header_version_id);
     }
     let total_hits = query_id_total_hits_for_reader_context(&request, &reader_context);
+    let score_doc_ids = query_id_score_doc_ids_for_reader_context(&request, &reader_context);
     let Some(payload) = build_java_query_phase_result_body(
         transport_identity,
         &reader_context.shard_id.index_name,
@@ -18601,6 +18628,7 @@ fn build_local_query_id_phase_response(
         reader_context.shard_id.shard_id,
         &request.context_id,
         total_hits,
+        &score_doc_ids,
     ) else {
         return build_empty_transport_response(request_id, header_version_id);
     };
@@ -18613,10 +18641,9 @@ fn fetch_id_request_has_missing_reader_context(body: &[u8]) -> bool {
         .is_some_and(|request| !reader_context_exists(&request.context_id))
 }
 
-fn fetch_id_request_supports_empty_local_execution_subset(body: &[u8]) -> bool {
+fn fetch_id_request_supports_local_execution_subset(body: &[u8]) -> bool {
     decode_fetch_id_request_from_transport_body(body)
         .filter(|request| request.validate_supported_subset().is_ok())
-        .filter(|request| request.doc_ids.is_empty())
         .is_some_and(|request| reader_context_exists(&request.context_id))
 }
 
@@ -18639,10 +18666,19 @@ fn build_local_fetch_id_phase_response(
     let Some(request) = decode_fetch_id_request_from_transport_body(body) else {
         return build_empty_transport_response(request_id, header_version_id);
     };
-    if !fetch_id_request_supports_empty_local_execution_subset(body) {
+    if !fetch_id_request_supports_local_execution_subset(body) {
         return build_empty_transport_response(request_id, header_version_id);
     }
-    let response = os_transport::action::OpenSearchFetchSearchResultWire::empty(request.context_id);
+    let Some(reader_context) = reader_context_for_fetch_id_request(&request) else {
+        return build_missing_search_context_error_response(
+            request_id,
+            header_version_id,
+            &request.context_id,
+        );
+    };
+    let hits = fetch_id_hits_for_reader_context(&request, &reader_context);
+    let response =
+        os_transport::action::OpenSearchFetchSearchResultWire::new(request.context_id, hits);
     os_transport::action::build_opensearch_fetch_id_phase_response_message(
         request_id,
         Version::from_id(header_version_id as i32),
@@ -18650,6 +18686,66 @@ fn build_local_fetch_id_phase_response(
     )
     .map(|frame| frame.to_vec())
     .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
+}
+
+fn reader_context_for_fetch_id_request(
+    request: &os_transport::action::OpenSearchShardFetchSearchRequestWire,
+) -> Option<DevTransportReaderContext> {
+    let bindings = dev_transport_pit_bindings();
+    let mut reader_contexts = bindings
+        .reader_contexts
+        .lock()
+        .expect("dev transport reader contexts lock poisoned");
+    prune_expired_transport_reader_contexts(&mut reader_contexts, now_epoch_ms());
+    let key = reader_context_lookup_key_for_request(&reader_contexts, &request.context_id)?;
+    reader_contexts.get(&key).cloned()
+}
+
+fn fetch_id_hits_for_reader_context(
+    request: &os_transport::action::OpenSearchShardFetchSearchRequestWire,
+    reader_context: &DevTransportReaderContext,
+) -> Vec<os_transport::action::OpenSearchSearchHitWire> {
+    request
+        .doc_ids
+        .iter()
+        .filter_map(|doc_id| usize::try_from(*doc_id).ok())
+        .filter_map(|doc_id| {
+            reader_context
+                .documents
+                .iter()
+                .enumerate()
+                .find(|(ordinal, _)| *ordinal == doc_id)
+                .and_then(|(_, (key, record))| {
+                    record
+                        .refreshed
+                        .then(|| fetch_id_hit_from_reader_document(key, record))
+                })
+        })
+        .collect()
+}
+
+fn fetch_id_hit_from_reader_document(
+    key: &str,
+    record: &StoredDocument,
+) -> os_transport::action::OpenSearchSearchHitWire {
+    let (index, id, _) = split_transport_document_key(key).unwrap_or_default();
+    os_transport::action::OpenSearchSearchHitWire {
+        id: (!id.is_empty()).then(|| id.to_string()),
+        score: 1.0,
+        nested_identity: None,
+        version: -1,
+        seq_no: -2,
+        primary_term: 0,
+        source: Some(record.source.clone()),
+        explanation: None,
+        fields: BTreeMap::new(),
+        meta_fields: BTreeMap::new(),
+        highlight_fields: BTreeMap::new(),
+        sort_values: Vec::new(),
+        matched_queries: BTreeMap::new(),
+        shard_target: os_transport::action::OpenSearchSearchShardTargetWire::from_hit_index(index),
+        inner_hits: BTreeMap::new(),
+    }
 }
 
 fn build_can_match_reader_keep_alive_too_large_error_response(
@@ -24109,7 +24205,7 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
             ))
         }
         Some("indices:data/read/search[phase/fetch/id]")
-            if fetch_id_request_supports_empty_local_execution_subset(body) =>
+            if fetch_id_request_supports_local_execution_subset(body) =>
         {
             Some(build_local_fetch_id_phase_response(
                 request_id,
@@ -43274,7 +43370,7 @@ mod tests {
             &request,
         )
         .unwrap();
-        assert!(fetch_id_request_supports_empty_local_execution_subset(
+        assert!(fetch_id_request_supports_local_execution_subset(
             &frame[6..]
         ));
 
@@ -43299,6 +43395,102 @@ mod tests {
         assert_eq!(response.context_id, context_id);
         assert!(response.hits.hits.is_empty());
         assert_eq!(response.hits.total_hits, None);
+    }
+
+    #[test]
+    fn fetch_id_phase_route_returns_hit_for_doc_id_reader_context() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        let bindings = dev_transport_pit_bindings();
+        bindings
+            .reader_contexts
+            .lock()
+            .expect("dev transport reader contexts lock poisoned")
+            .clear();
+        let context_id =
+            os_transport::action::OpenSearchShardSearchContextIdWire::new("fetch-hit", 73);
+        let mut documents = BTreeMap::new();
+        documents.insert(
+            "logs-fetch-hit:doc-1:".to_string(),
+            StoredDocument {
+                source: serde_json::json!({"message":"steel"}),
+                version: 7,
+                seq_no: 11,
+                primary_term: 2,
+                routing: None,
+                refreshed: true,
+            }
+            .into(),
+        );
+        bindings
+            .reader_contexts
+            .lock()
+            .expect("dev transport reader contexts lock poisoned")
+            .insert(
+                reader_context_key(&context_id),
+                DevTransportReaderContext {
+                    shard_id: os_transport::action::OpenSearchShardIdWire {
+                        index_name: "logs-fetch-hit".to_string(),
+                        index_uuid: "uuid-logs-fetch-hit".to_string(),
+                        shard_id: 0,
+                    },
+                    documents: Arc::new(documents),
+                    keep_alive_millis: 60_000,
+                    expires_at_millis: now_epoch_ms().saturating_add(60_000),
+                    pit_id: None,
+                    creation_time_millis: None,
+                },
+            );
+        let request = os_transport::action::OpenSearchShardFetchSearchRequestWire {
+            parent_task_node: String::new(),
+            parent_task_id: None,
+            context_id: context_id.clone(),
+            doc_ids: vec![0],
+            original_indices: os_transport::action::OpenSearchOriginalIndicesWire::new(
+                Some(vec!["logs-fetch-hit".to_string()]),
+                os_transport::action::OpenSearchIndicesOptionsWire::strict_expand_open_forbid_closed_ignore_throttled(),
+            ),
+        };
+        let frame = os_transport::action::build_opensearch_fetch_id_phase_request_message(
+            353,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(fetch_id_request_supports_local_execution_subset(
+            &frame[6..]
+        ));
+
+        let response = build_local_fetch_id_phase_response(
+            353,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &frame[6..],
+        );
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected non-empty fetch-id phase response frame");
+        };
+        assert_eq!(message.request_id, 353);
+        assert!(!message.status.is_error());
+        let response =
+            os_transport::action::read_opensearch_fetch_id_phase_response_message(&message)
+                .unwrap();
+        assert_eq!(response.context_id, context_id);
+        assert_eq!(response.hits.hits.len(), 1);
+        assert_eq!(response.hits.hits[0].id.as_deref(), Some("doc-1"));
+        assert_eq!(
+            response.hits.hits[0]
+                .source
+                .as_ref()
+                .and_then(|source| source.get("message"))
+                .and_then(Value::as_str),
+            Some("steel")
+        );
     }
 
     #[test]

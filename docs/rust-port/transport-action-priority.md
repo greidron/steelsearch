@@ -327,7 +327,7 @@ As of the bulk transport adapter pass, the explicit dispatcher contract in
 - `indices:data/read/search[phase/query/scroll]` (rejected fail-closed)
 - `indices:data/read/search[phase/query+fetch/scroll]` (rejected fail-closed)
 - `indices:data/read/search[phase/fetch/id/scroll]` (rejected fail-closed)
-- `indices:data/read/search[phase/fetch/id]` (implemented bounded empty-doc-id fetch-result subset)
+- `indices:data/read/search[phase/fetch/id]` (implemented bounded reader-context doc-id fetch-result subset)
 - `indices:data/read/search[can_match]` (implemented bounded local shard subset for null, match_all, and match_none sources)
 - `indices:data/read/explain` (implemented bounded local explain subset)
 - `indices:data/read/point_in_time/create` (implemented PIT lifecycle subset with multi-daemon socket evidence)

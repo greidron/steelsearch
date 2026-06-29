@@ -5,7 +5,7 @@ OPENSEARCH_ROOT=${OPENSEARCH_ROOT:-/home/ubuntu/OpenSearch}
 DISTRO_ROOT="${OPENSEARCH_ROOT}/distribution/archives/linux-arm64-tar/build/install/opensearch-3.7.0-SNAPSHOT"
 LIB_CP="${DISTRO_ROOT}/lib/*"
 CACHE_DIR="${TMPDIR:-/tmp}/steelsearch-java-response-cache"
-CLASS_NAME="BuildQueryPhaseResultV2"
+CLASS_NAME="BuildQueryPhaseResultV3"
 JAVA_FILE="${CACHE_DIR}/${CLASS_NAME}.java"
 CLASS_FILE="${CACHE_DIR}/${CLASS_NAME}.class"
 
@@ -16,6 +16,7 @@ shard_id=""
 total_hits=""
 context_session_id="steelsearch-phase-query"
 context_id="1"
+score_doc_ids=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -26,6 +27,7 @@ while [[ $# -gt 0 ]]; do
     --total-hits) total_hits="$2"; shift 2 ;;
     --context-session-id) context_session_id="$2"; shift 2 ;;
     --context-id) context_id="$2"; shift 2 ;;
+    --score-doc-ids) score_doc_ids="$2"; shift 2 ;;
     *)
       echo "unknown arg: $1" >&2
       exit 2
@@ -56,7 +58,7 @@ import org.opensearch.core.common.bytes.BytesReference;
 import org.opensearch.core.index.Index;
 import org.opensearch.core.index.shard.ShardId;
 
-public class BuildQueryPhaseResultV2 {
+public class BuildQueryPhaseResultV3 {
     private static String hex(byte[] bytes, int offset, int length) {
         StringBuilder sb = new StringBuilder(length * 2);
         for (int i = offset; i < offset + length; i++) {
@@ -80,16 +82,19 @@ public class BuildQueryPhaseResultV2 {
                 case "--total-hits": totalHits = Long.parseLong(args[i + 1]); break;
                 case "--context-session-id": break;
                 case "--context-id": break;
+                case "--score-doc-ids": break;
                 default: throw new IllegalArgumentException("unknown arg " + args[i]);
             }
         }
 
         String contextSessionId = "steelsearch-phase-query";
         long contextId = 1L;
+        String scoreDocIds = "";
         for (int i = 0; i < args.length; i += 2) {
             switch (args[i]) {
                 case "--context-session-id": contextSessionId = args[i + 1]; break;
                 case "--context-id": contextId = Long.parseLong(args[i + 1]); break;
+                case "--score-doc-ids": scoreDocIds = args[i + 1]; break;
                 default: break;
             }
         }
@@ -99,8 +104,18 @@ public class BuildQueryPhaseResultV2 {
             new SearchShardTarget(localNodeId, new ShardId(new Index(indexName, indexUuid), shardId), null, OriginalIndices.NONE),
             null
         );
-        TopDocs topDocs = new TopDocs(new TotalHits(totalHits, TotalHits.Relation.EQUAL_TO), new ScoreDoc[0]);
-        querySearchResult.topDocs(new TopDocsAndMaxScore(topDocs, Float.NaN), new DocValueFormat[0]);
+        ScoreDoc[] scoreDocs;
+        if (scoreDocIds.isEmpty()) {
+            scoreDocs = new ScoreDoc[0];
+        } else {
+            String[] parts = scoreDocIds.split(",");
+            scoreDocs = new ScoreDoc[parts.length];
+            for (int i = 0; i < parts.length; i++) {
+                scoreDocs[i] = new ScoreDoc(Integer.parseInt(parts[i]), 1.0f);
+            }
+        }
+        TopDocs topDocs = new TopDocs(new TotalHits(totalHits, TotalHits.Relation.EQUAL_TO), scoreDocs);
+        querySearchResult.topDocs(new TopDocsAndMaxScore(topDocs, scoreDocs.length == 0 ? Float.NaN : 1.0f), new DocValueFormat[0]);
         querySearchResult.setShardIndex(shardId);
 
         BytesStreamOutput out = new BytesStreamOutput();
@@ -122,4 +137,5 @@ java -cp "${LIB_CP}:${CACHE_DIR}" "${CLASS_NAME}" \
   --shard-id "${shard_id}" \
   --total-hits "${total_hits}" \
   --context-session-id "${context_session_id}" \
-  --context-id "${context_id}"
+  --context-id "${context_id}" \
+  --score-doc-ids "${score_doc_ids}"

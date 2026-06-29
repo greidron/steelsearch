@@ -39400,10 +39400,10 @@ impl OpenSearchShardFetchSearchRequestWire {
     pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
         self.context_id.validate_supported_subset()?;
         self.original_indices.validate_supported_subset()?;
-        if !self.doc_ids.is_empty() {
+        if self.doc_ids.iter().any(|doc_id| *doc_id < 0) {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "fetch phase doc ids",
-                reason: "fetch-id phase bounded subset only supports empty doc id lists",
+                reason: "fetch-id phase doc ids must be non-negative",
             });
         }
         Ok(())
@@ -39418,13 +39418,27 @@ pub struct OpenSearchFetchSearchResultWire {
 
 impl OpenSearchFetchSearchResultWire {
     pub fn empty(context_id: OpenSearchShardSearchContextIdWire) -> Self {
+        Self::new(context_id, Vec::new())
+    }
+
+    pub fn new(
+        context_id: OpenSearchShardSearchContextIdWire,
+        hits: Vec<OpenSearchSearchHitWire>,
+    ) -> Self {
         Self {
             context_id,
             hits: OpenSearchSearchHitsWire {
                 total_hits: None,
                 total_hits_relation: 0,
-                max_score: 0.0,
-                hits: Vec::new(),
+                max_score: hits
+                    .iter()
+                    .map(|hit| hit.score)
+                    .filter(|score| !score.is_nan())
+                    .max_by(|left, right| {
+                        left.partial_cmp(right).unwrap_or(std::cmp::Ordering::Equal)
+                    })
+                    .unwrap_or(0.0),
+                hits,
                 sort_fields: None,
                 collapse_field: None,
                 collapse_values: None,
@@ -81030,6 +81044,24 @@ mod tests {
         assert_eq!(
             read_opensearch_fetch_id_phase_response_message(&message).unwrap(),
             response
+        );
+
+        let non_empty_request = OpenSearchShardFetchSearchRequestWire {
+            doc_ids: vec![0, 2],
+            ..request
+        };
+        let mut frame = build_opensearch_fetch_id_phase_request_message(
+            71,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &non_empty_request,
+        )
+        .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected non-empty fetch-id phase request message");
+        };
+        assert_eq!(
+            read_opensearch_fetch_id_phase_request_message(&message).unwrap(),
+            non_empty_request
         );
     }
 
