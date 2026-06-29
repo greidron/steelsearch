@@ -17221,14 +17221,21 @@ fn prune_unavailable_transport_pits(contexts: &mut BTreeMap<String, PitContext>)
 fn delete_transport_pit_contexts(
     pit_ids: &[String],
 ) -> os_transport::action::OpenSearchDeletePitResponseWire {
-    let mut contexts = dev_transport_pit_bindings()
-        .contexts
-        .lock()
-        .expect("dev transport PIT contexts lock poisoned");
-    prune_expired_transport_pits(&mut contexts, now_epoch_ms());
-    prune_unavailable_transport_pits(&mut contexts);
-    let ids = if pit_ids.len() == 1 && pit_ids.first().is_some_and(|id| id == "_all") {
-        contexts.keys().cloned().collect::<Vec<_>>()
+    let clear_all = pit_ids.len() == 1 && pit_ids.first().is_some_and(|id| id == "_all");
+    let now_millis = now_epoch_ms();
+    let ids = if clear_all {
+        let mut reader_contexts = dev_transport_pit_bindings()
+            .reader_contexts
+            .lock()
+            .expect("dev transport reader contexts lock poisoned");
+        prune_expired_transport_reader_contexts(&mut reader_contexts, now_millis);
+        let mut seen_ids = BTreeSet::new();
+        reader_contexts
+            .values()
+            .filter_map(|context| context.pit_id.as_ref())
+            .filter(|id| seen_ids.insert((*id).clone()))
+            .cloned()
+            .collect::<Vec<_>>()
     } else {
         let mut seen_ids = BTreeSet::new();
         pit_ids
@@ -17237,7 +17244,12 @@ fn delete_transport_pit_contexts(
             .cloned()
             .collect()
     };
-    let clear_all = pit_ids.len() == 1 && pit_ids.first().is_some_and(|id| id == "_all");
+    let mut contexts = dev_transport_pit_bindings()
+        .contexts
+        .lock()
+        .expect("dev transport PIT contexts lock poisoned");
+    prune_expired_transport_pits(&mut contexts, now_millis);
+    prune_unavailable_transport_pits(&mut contexts);
     let results = ids
         .into_iter()
         .map(|id| {
@@ -17353,7 +17365,6 @@ fn get_all_transport_pits_response(
             .expect("dev transport PIT contexts lock poisoned");
         prune_expired_transport_pits(&mut contexts, now_millis);
         prune_unavailable_transport_pits(&mut contexts);
-        let pit_contexts = contexts.clone();
         drop(contexts);
 
         let mut reader_contexts = bindings
@@ -17366,7 +17377,6 @@ fn get_all_transport_pits_response(
             .filter_map(|reader_context| {
                 let pit_id = reader_context.pit_id.as_ref()?;
                 let creation_time_millis = reader_context.creation_time_millis?;
-                pit_contexts.get(pit_id)?;
                 Some(os_transport::action::OpenSearchListPitInfoWire::new(
                     pit_id.clone(),
                     creation_time_millis,
@@ -34845,7 +34855,7 @@ mod tests {
     }
 
     #[test]
-    fn delete_all_pit_transport_route_clears_orphaned_reader_contexts() {
+    fn delete_all_pit_transport_route_uses_active_reader_pit_ids_like_opensearch() {
         let _lock = dev_transport_pit_test_lock()
             .lock()
             .expect("dev transport PIT test lock poisoned");
@@ -34905,7 +34915,13 @@ mod tests {
         };
         let response =
             os_transport::action::read_opensearch_delete_pit_response_message(&message).unwrap();
-        assert!(response.results.is_empty());
+        assert_eq!(
+            response.results,
+            vec![os_transport::action::OpenSearchDeletePitInfoWire::new(
+                true,
+                "orphan-pit"
+            )]
+        );
         assert!(bindings
             .reader_contexts
             .lock()
@@ -38613,6 +38629,21 @@ mod tests {
                     creation_time_millis: Some(u128_to_i64_saturating(now - 500)),
                 },
             );
+            reader_contexts.insert(
+                ("pit-reader-no-aggregate".to_string(), 3),
+                DevTransportReaderContext {
+                    shard_id: os_transport::action::OpenSearchShardIdWire {
+                        index_name: "logs-pit-000001".to_string(),
+                        index_uuid: "_na_".to_string(),
+                        shard_id: 0,
+                    },
+                    documents: Arc::new(BTreeMap::new()),
+                    keep_alive_millis: 180_000,
+                    expires_at_millis: now + 180_000,
+                    pit_id: Some("pit-reader-no-aggregate".to_string()),
+                    creation_time_millis: Some(u128_to_i64_saturating(now - 250)),
+                },
+            );
         }
         let response = build_local_get_all_pits_response(
             93,
@@ -38648,6 +38679,11 @@ mod tests {
                     "pit-live-a",
                     u128_to_i64_saturating(now - 500),
                     120_000
+                ),
+                os_transport::action::OpenSearchListPitInfoWire::new(
+                    "pit-reader-no-aggregate",
+                    u128_to_i64_saturating(now - 250),
+                    180_000
                 ),
             ]
         );

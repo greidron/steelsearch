@@ -2386,10 +2386,13 @@ The delete-PIT boundary covers:
 - local transport delete-PIT now applies the same explicit-id decode admission
   before local lifecycle execution, so idempotent successful delete results are
   limited to OpenSearch `SearchContextId`-shaped PIT ids;
-- standalone `_all` delete prunes expired local PIT contexts before rendering
-  active deletion results, while `_all` mixed with explicit ids is not admitted
-  into the local execution subset because OpenSearch routes that shape through
-  the explicit-id path and fails while decoding `_all` as a PIT id;
+- standalone `_all` delete follows OpenSearch `TransportDeletePitAction` by
+  deriving unique PIT ids from active local PIT reader contexts before
+  invalidation; orphan aggregate PIT store entries are not rendered as delete
+  results unless backed by an active reader context, while `_all` mixed with
+  explicit ids is not admitted into the local execution subset because
+  OpenSearch routes that shape through the explicit-id path and fails while
+  decoding `_all` as a PIT id;
 - explicit local lifecycle rejection for empty PIT id arrays and malformed
   explicit PIT id entries, while wire-level empty PIT id entries still decode
   like OpenSearch request bytes before execution admission.
@@ -2406,7 +2409,10 @@ The get-all-PITs boundary covers:
   `_local` node selectors, optional timeout, and single concrete-node
   `BaseNodesRequest` payloads, plus response build/decode support for non-empty
   PIT info node lists;
-- shared `SteelNode` PIT context listing for the local-node transport subset;
+- shared `SteelNode` PIT context listing for the local-node transport subset,
+  with active local PIT reader contexts as the authoritative source for
+  `ListPitInfo` entries even when an aggregate local PIT context entry is
+  absent, matching OpenSearch `SearchService.getAllPITReaderContexts()`;
 - local node-id filters (`_local`, local node id, or local node name) are
   admitted by the local lifecycle route, while remote node-id filters,
   non-local/multi-node concrete-node payloads decode as valid OpenSearch
@@ -5522,40 +5528,42 @@ Current delete-PIT wire microbenchmark:
 
 ```text
 cargo run -p os-transport --release --bin delete-pit-wire-benchmark
-delete_pit_request_encode iterations=400000 elapsed_ms=335.382 ops_per_second=1192668.56 nanos_per_op=838.46
-delete_pit_request_decode iterations=400000 elapsed_ms=306.574 ops_per_second=1304742.37 nanos_per_op=766.43
-delete_pit_request_validate iterations=400000 elapsed_ms=306.697 ops_per_second=1304218.24 nanos_per_op=766.74
-delete_pit_response_encode iterations=400000 elapsed_ms=162.764 ops_per_second=2457551.41 nanos_per_op=406.91
-delete_pit_response_decode iterations=400000 elapsed_ms=157.325 ops_per_second=2542514.92 nanos_per_op=393.31
-delete_pit_wire_bottleneck_ops_per_second=1192668.56
+delete_pit_request_encode iterations=400000 elapsed_ms=388.368 ops_per_second=1029949.66 nanos_per_op=970.92
+delete_pit_request_decode iterations=400000 elapsed_ms=317.887 ops_per_second=1258309.97 nanos_per_op=794.72
+delete_pit_request_validate iterations=400000 elapsed_ms=313.418 ops_per_second=1276250.83 nanos_per_op=783.55
+delete_pit_response_encode iterations=400000 elapsed_ms=163.732 ops_per_second=2443015.83 nanos_per_op=409.33
+delete_pit_response_decode iterations=400000 elapsed_ms=155.318 ops_per_second=2575355.33 nanos_per_op=388.30
+delete_pit_wire_bottleneck_ops_per_second=1029949.66
 ```
 
 The current delete-PIT wire subset bottleneck is request encode with explicit
 PIT ids. The non-empty response encode/decode path for two `DeletePitInfo`
-entries remains above 2.45M ops/s in the latest local release
+entries remains above 2.44M ops/s in the latest local release
 run, so response rendering is not the first bottleneck. The first performance
 point to inspect while expanding execution is lock hold time and allocation in
-shared PIT context invalidation.
+shared PIT reader-context invalidation for `_all` and explicit PIT context
+invalidation.
 
 Current get-all-PITs wire microbenchmark:
 
 ```text
 cargo run -p os-transport --release --bin get-all-pits-wire-benchmark
-get_all_pits_request_encode iterations=400000 elapsed_ms=343.458 ops_per_second=1164626.58 nanos_per_op=858.64
-get_all_pits_request_decode iterations=400000 elapsed_ms=237.722 ops_per_second=1682641.21 nanos_per_op=594.30
-get_all_pits_request_validate iterations=400000 elapsed_ms=222.773 ops_per_second=1795548.45 nanos_per_op=556.93
-get_all_pits_response_encode iterations=400000 elapsed_ms=739.541 ops_per_second=540875.91 nanos_per_op=1848.85
-get_all_pits_response_decode iterations=400000 elapsed_ms=740.949 ops_per_second=539847.89 nanos_per_op=1852.37
-get_all_pits_wire_bottleneck_ops_per_second=539847.89
+get_all_pits_request_encode iterations=400000 elapsed_ms=232.159 ops_per_second=1722958.06 nanos_per_op=580.40
+get_all_pits_request_decode iterations=400000 elapsed_ms=227.860 ops_per_second=1755465.50 nanos_per_op=569.65
+get_all_pits_request_validate iterations=400000 elapsed_ms=236.076 ops_per_second=1694371.12 nanos_per_op=590.19
+get_all_pits_response_encode iterations=400000 elapsed_ms=741.548 ops_per_second=539412.35 nanos_per_op=1853.87
+get_all_pits_response_decode iterations=400000 elapsed_ms=741.077 ops_per_second=539754.83 nanos_per_op=1852.69
+get_all_pits_wire_bottleneck_ops_per_second=539412.35
 ```
 
-The current get-all-PITs wire subset bottleneck is non-empty response decode
+The current get-all-PITs wire subset bottleneck is non-empty response encode
 with one `DiscoveryNode` and two `ListPitInfo` entries. The first performance
 point to inspect before expanding execution is avoiding repeated node metadata
-serialization and minimizing lock hold time around shared PIT context listing.
+serialization and minimizing lock hold time around shared PIT reader-context
+listing.
 Runtime get-all-PITs now mirrors OpenSearch `getAllPITReaderContexts()` more
-closely by rendering each active PIT reader context's own keep-alive instead of
-the aggregate PIT id keep-alive.
+closely by rendering each active PIT reader context's own keep-alive and by
+listing active reader PIT ids even when no aggregate PIT context entry remains.
 
 Current create-PIT wire microbenchmark:
 
@@ -5594,13 +5602,13 @@ Current PIT runtime snapshot microbenchmark:
 cargo run -q -p os-node --release --bin pit-context-benchmark
 pit_context_clone_documents=10000
 pit_context_clone_iterations=500000
-pit_context_clone_elapsed_ms=22.465
-pit_context_clone_ops_per_second=22256905.41
+pit_context_clone_elapsed_ms=22.423
+pit_context_clone_ops_per_second=22298357.73
 pit_context_clone_snapshot_strong_count=1
 pit_open_snapshot_iterations=250
-pit_open_snapshot_elapsed_ms=390.683
-pit_open_snapshot_ops_per_second=639.90
-pit_open_snapshot_documents_per_second=6399042.24
+pit_open_snapshot_elapsed_ms=364.296
+pit_open_snapshot_ops_per_second=686.25
+pit_open_snapshot_documents_per_second=6862547.15
 pit_snapshot_documents=10000
 pit_snapshot_estimated_payload_bytes=1306670
 ```
