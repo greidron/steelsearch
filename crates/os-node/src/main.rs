@@ -18394,12 +18394,12 @@ fn build_local_free_pit_context_response(
     let Some(request) = decode_free_pit_context_request_from_transport_body(body) else {
         return build_empty_transport_response(request_id, header_version_id);
     };
-    if !free_pit_context_request_matches_local_subset(&request, transport_identity) {
+    if !free_pit_context_request_matches_bounded_fanout_subset(&request, transport_identity) {
         return build_empty_transport_response(request_id, header_version_id);
     }
-    let response = free_transport_reader_contexts_for_free_pit_request(&request);
-    remove_transport_pit_context_entries_without_readers(
-        response.results.iter().map(|result| result.pit_id.as_str()),
+    let response = free_transport_reader_contexts_for_free_pit_request_with_fanout(
+        &request,
+        transport_identity,
     );
     os_transport::action::build_opensearch_delete_pit_response_message(
         request_id,
@@ -18417,11 +18417,11 @@ fn free_pit_context_request_supports_local_subset(
     decode_free_pit_context_request_from_transport_body(body)
         .as_ref()
         .is_some_and(|request| {
-            free_pit_context_request_matches_local_subset(request, transport_identity)
+            free_pit_context_request_matches_bounded_fanout_subset(request, transport_identity)
         })
 }
 
-fn free_pit_context_request_matches_local_subset(
+fn free_pit_context_request_matches_bounded_fanout_subset(
     request: &os_transport::action::OpenSearchFreePitContextRequestWire,
     transport_identity: &DevTransportIdentity,
 ) -> bool {
@@ -18433,11 +18433,9 @@ fn free_pit_context_request_matches_local_subset(
                 .cluster_alias
                 .as_deref()
                 .map_or(true, str::is_empty);
-            let node_is_local = search_context.node.is_empty()
-                || search_context.node == "_local"
-                || search_context.node == transport_identity.node_id
-                || search_context.node == transport_identity.node_name;
-            cluster_alias_is_local && node_is_local
+            cluster_alias_is_local
+                && (free_pit_context_targets_local_node(search_context, transport_identity)
+                    || free_pit_context_target_peer(search_context, transport_identity).is_some())
         })
 }
 
@@ -18550,6 +18548,121 @@ fn free_transport_reader_contexts_for_free_pit_request(
         })
         .collect();
     os_transport::action::OpenSearchDeletePitResponseWire::with_results(results)
+}
+
+fn free_transport_reader_contexts_for_free_pit_request_with_fanout(
+    request: &os_transport::action::OpenSearchFreePitContextRequestWire,
+    transport_identity: &DevTransportIdentity,
+) -> os_transport::action::OpenSearchDeletePitResponseWire {
+    let local_request = os_transport::action::OpenSearchFreePitContextRequestWire {
+        parent_task_node: request.parent_task_node.clone(),
+        parent_task_id: request.parent_task_id,
+        context_ids: request
+            .context_ids
+            .iter()
+            .filter(|context| {
+                free_pit_context_targets_local_node(&context.search_context, transport_identity)
+            })
+            .cloned()
+            .collect(),
+    };
+    let mut results = Vec::new();
+    if !local_request.context_ids.is_empty() {
+        let local_response = free_transport_reader_contexts_for_free_pit_request(&local_request);
+        remove_transport_pit_context_entries_without_readers(
+            local_response
+                .results
+                .iter()
+                .map(|result| result.pit_id.as_str()),
+        );
+        results.extend(local_response.results);
+    }
+
+    let mut grouped_remote_contexts: BTreeMap<String, (GetAllPitsPeerTarget, Vec<_>)> =
+        BTreeMap::new();
+    for context in request.context_ids.iter().filter(|context| {
+        !free_pit_context_targets_local_node(&context.search_context, transport_identity)
+    }) {
+        if let Some(peer) =
+            free_pit_context_target_peer(&context.search_context, transport_identity)
+        {
+            grouped_remote_contexts
+                .entry(peer.node_id.clone())
+                .or_insert_with(|| (peer, Vec::new()))
+                .1
+                .push(context.clone());
+        }
+    }
+
+    for (_node_id, (peer, context_ids)) in grouped_remote_contexts {
+        let remote_request = os_transport::action::OpenSearchFreePitContextRequestWire {
+            parent_task_node: request.parent_task_node.clone(),
+            parent_task_id: request.parent_task_id,
+            context_ids,
+        };
+        match free_pit_contexts_on_peer(&peer, &remote_request) {
+            Ok(response) => results.extend(response.results),
+            Err(_) => results.extend(remote_request.context_ids.into_iter().map(|context| {
+                os_transport::action::OpenSearchDeletePitInfoWire::new(false, context.pit_id)
+            })),
+        }
+    }
+
+    os_transport::action::OpenSearchDeletePitResponseWire::with_results(results)
+}
+
+fn free_pit_context_targets_local_node(
+    search_context: &os_transport::action::OpenSearchSearchContextIdForNodeWire,
+    transport_identity: &DevTransportIdentity,
+) -> bool {
+    search_context.node.is_empty()
+        || search_context.node == "_local"
+        || search_context.node == transport_identity.node_id
+        || search_context.node == transport_identity.node_name
+}
+
+fn free_pit_context_target_peer(
+    search_context: &os_transport::action::OpenSearchSearchContextIdForNodeWire,
+    transport_identity: &DevTransportIdentity,
+) -> Option<GetAllPitsPeerTarget> {
+    get_all_pits_target_peers(
+        &os_transport::action::OpenSearchGetAllPitsRequestWire {
+            node_ids: Some(vec![search_context.node.clone()]),
+            ..os_transport::action::OpenSearchGetAllPitsRequestWire::default()
+        },
+        transport_identity,
+    )
+    .into_iter()
+    .next()
+}
+
+fn free_pit_contexts_on_peer(
+    peer: &GetAllPitsPeerTarget,
+    request: &os_transport::action::OpenSearchFreePitContextRequestWire,
+) -> Result<os_transport::action::OpenSearchDeletePitResponseWire, String> {
+    let target_transport_address = peer
+        .transport_address
+        .parse::<SocketAddr>()
+        .map_err(|error| format!("invalid transport address: {error}"))?;
+    let forwarded_request_id = TRANSPORT_REQUEST_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+    let frame = os_transport::action::build_opensearch_free_pit_context_request_message(
+        forwarded_request_id,
+        OPENSEARCH_3_7_0_TRANSPORT,
+        request,
+    )
+    .map_err(|error| format!("failed to encode request: {error}"))?;
+    let response_body = send_transport_request_and_capture_response_body(
+        target_transport_address,
+        forwarded_request_id,
+        &frame,
+        Duration::from_secs(5),
+    )
+    .map_err(|error| format!("transport request failed: {error}"))?
+    .ok_or_else(|| "transport request returned no response".to_string())?;
+    let response_message = decode_transport_message_from_body(&response_body)
+        .ok_or_else(|| "transport response frame was not decodable".to_string())?;
+    os_transport::action::read_opensearch_delete_pit_response_message(&response_message)
+        .map_err(|error| format!("failed to decode response: {error}"))
 }
 
 fn build_local_delete_pit_response(

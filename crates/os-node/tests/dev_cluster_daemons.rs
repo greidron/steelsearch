@@ -4607,6 +4607,55 @@ fn multi_daemon_get_all_pits_fans_out_to_seed_peers() {
         .iter()
         .any(|pit| pit.pit_id == pit_response.pit_id)));
 
+    let context_id =
+        os_transport::action::OpenSearchSearchContextIdWire::decode(&pit_response.pit_id).unwrap();
+    let free_request = os_transport::action::OpenSearchFreePitContextRequestWire {
+        parent_task_node: String::new(),
+        parent_task_id: None,
+        context_ids: context_id
+            .shards
+            .values()
+            .map(
+                |search_context| os_transport::action::OpenSearchPitSearchContextIdForNodeWire {
+                    pit_id: pit_response.pit_id.clone(),
+                    search_context: search_context.clone(),
+                },
+            )
+            .collect(),
+    };
+    let free_frame = os_transport::action::build_opensearch_free_pit_context_request_message(
+        613,
+        OPENSEARCH_3_7_0_TRANSPORT,
+        &free_request,
+    )
+    .unwrap();
+    let free_response = send_transport_request_and_decode_response(transport_ports[1], &free_frame);
+    let freed_pits =
+        os_transport::action::read_opensearch_delete_pit_response_message(&free_response).unwrap();
+    assert_eq!(freed_pits.results.len(), 1, "{freed_pits:?}");
+    assert_eq!(freed_pits.results[0].pit_id, pit_response.pit_id);
+    assert!(freed_pits.results[0].successful, "{freed_pits:?}");
+
+    let post_free_list_frame = os_transport::action::build_opensearch_get_all_pits_request_message(
+        614,
+        OPENSEARCH_3_7_0_TRANSPORT,
+        &default_list_request,
+    )
+    .unwrap();
+    let post_free_list_response =
+        send_transport_request_and_decode_response(transport_ports[1], &post_free_list_frame);
+    let post_free_list = os_transport::action::read_opensearch_get_all_pits_response_message(
+        &post_free_list_response,
+    )
+    .unwrap();
+    assert!(
+        !post_free_list.nodes.iter().any(|node| node
+            .pit_infos
+            .iter()
+            .any(|pit| pit.pit_id == pit_response.pit_id)),
+        "{post_free_list:?}"
+    );
+
     let _ = fs::remove_dir_all(root);
 }
 
