@@ -5578,8 +5578,12 @@ local all-success shard subset. The transport reader-context path is covered
 separately: create-reader-context allocates a local snapshot,
 update-reader-context attaches the final PIT id/creation time/keep-alive, PIT
 search reuses that snapshot and extends keep-alive, and free-PIT-context clears
-both reader and PIT context state. The first runtime performance point to inspect while expanding
-the path is lock hold time and snapshot allocation around larger document sets.
+both reader and PIT context state. Update-reader-context now follows the
+OpenSearch `getPitReaderContext` lookup shape by matching the numeric reader
+context id, while free-PIT-context still uses the full session/id key for
+explicit context release. The first runtime performance point to inspect while
+expanding the path is lock hold time and snapshot allocation around larger
+document sets.
 
 Current PIT runtime snapshot microbenchmark:
 
@@ -5587,13 +5591,13 @@ Current PIT runtime snapshot microbenchmark:
 cargo run -q -p os-node --release --bin pit-context-benchmark
 pit_context_clone_documents=10000
 pit_context_clone_iterations=500000
-pit_context_clone_elapsed_ms=37.094
-pit_context_clone_ops_per_second=13479432.41
+pit_context_clone_elapsed_ms=23.314
+pit_context_clone_ops_per_second=21446680.70
 pit_context_clone_snapshot_strong_count=1
 pit_open_snapshot_iterations=250
-pit_open_snapshot_elapsed_ms=363.144
-pit_open_snapshot_ops_per_second=688.43
-pit_open_snapshot_documents_per_second=6884326.24
+pit_open_snapshot_elapsed_ms=358.976
+pit_open_snapshot_ops_per_second=696.43
+pit_open_snapshot_documents_per_second=6964253.35
 pit_snapshot_documents=10000
 pit_snapshot_estimated_payload_bytes=1306670
 ```
@@ -5602,19 +5606,19 @@ Current PIT reader-context wire microbenchmark:
 
 ```text
 cargo run -q -p os-transport --release --bin pit-reader-context-wire-benchmark
-pit_reader_create_request_encode iterations=400000 elapsed_ms=351.739 ops_per_second=1137207.76 nanos_per_op=879.35
-pit_reader_create_request_decode iterations=400000 elapsed_ms=317.143 ops_per_second=1261261.21 nanos_per_op=792.86
-pit_reader_create_response_encode iterations=400000 elapsed_ms=117.059 ops_per_second=3417094.75 nanos_per_op=292.65
-pit_reader_create_response_decode iterations=400000 elapsed_ms=107.667 ops_per_second=3715173.44 nanos_per_op=269.17
-pit_reader_update_request_encode iterations=400000 elapsed_ms=352.205 ops_per_second=1135701.05 nanos_per_op=880.51
-pit_reader_update_request_decode iterations=400000 elapsed_ms=322.746 ops_per_second=1239364.23 nanos_per_op=806.87
-pit_reader_update_response_encode iterations=400000 elapsed_ms=116.882 ops_per_second=3422250.77 nanos_per_op=292.21
-pit_reader_update_response_decode iterations=400000 elapsed_ms=95.081 ops_per_second=4206922.71 nanos_per_op=237.70
-pit_reader_free_request_encode iterations=400000 elapsed_ms=407.684 ops_per_second=981152.73 nanos_per_op=1019.21
-pit_reader_free_request_decode iterations=400000 elapsed_ms=380.131 ops_per_second=1052269.09 nanos_per_op=950.33
-pit_reader_free_response_encode iterations=400000 elapsed_ms=100.384 ops_per_second=3984696.10 nanos_per_op=250.96
-pit_reader_free_response_decode iterations=400000 elapsed_ms=106.981 ops_per_second=3738998.15 nanos_per_op=267.45
-pit_reader_context_wire_bottleneck_ops_per_second=981152.73
+pit_reader_create_request_encode iterations=400000 elapsed_ms=347.647 ops_per_second=1150593.75 nanos_per_op=869.12
+pit_reader_create_request_decode iterations=400000 elapsed_ms=308.346 ops_per_second=1297244.99 nanos_per_op=770.86
+pit_reader_create_response_encode iterations=400000 elapsed_ms=116.409 ops_per_second=3436161.91 nanos_per_op=291.02
+pit_reader_create_response_decode iterations=400000 elapsed_ms=106.238 ops_per_second=3765129.35 nanos_per_op=265.60
+pit_reader_update_request_encode iterations=400000 elapsed_ms=351.878 ops_per_second=1136758.80 nanos_per_op=879.69
+pit_reader_update_request_decode iterations=400000 elapsed_ms=318.164 ops_per_second=1257213.01 nanos_per_op=795.41
+pit_reader_update_response_encode iterations=400000 elapsed_ms=116.092 ops_per_second=3445540.01 nanos_per_op=290.23
+pit_reader_update_response_decode iterations=400000 elapsed_ms=94.427 ops_per_second=4236068.78 nanos_per_op=236.07
+pit_reader_free_request_encode iterations=400000 elapsed_ms=406.208 ops_per_second=984717.06 nanos_per_op=1015.52
+pit_reader_free_request_decode iterations=400000 elapsed_ms=376.250 ops_per_second=1063123.95 nanos_per_op=940.62
+pit_reader_free_response_encode iterations=400000 elapsed_ms=100.077 ops_per_second=3996932.39 nanos_per_op=250.19
+pit_reader_free_response_decode iterations=400000 elapsed_ms=106.564 ops_per_second=3753599.71 nanos_per_op=266.41
+pit_reader_context_wire_bottleneck_ops_per_second=984717.06
 ```
 
 The current PIT reader-context wire bottleneck is free-PIT-context request

@@ -16315,7 +16315,6 @@ fn upsert_transport_pit_context_from_reader_update(
         0
     };
     let expires_at_millis = transport_pit_expires_at_millis(now_millis, keep_alive_millis);
-    let reader_context_key = reader_context_key(&request.search_context_id);
     let reader_context = {
         let bindings = dev_transport_pit_bindings();
         let mut reader_contexts = bindings
@@ -16323,6 +16322,11 @@ fn upsert_transport_pit_context_from_reader_update(
             .lock()
             .expect("dev transport reader contexts lock poisoned");
         prune_expired_transport_reader_contexts(&mut reader_contexts, now_millis);
+        let Some(reader_context_key) =
+            reader_context_key_by_numeric_id(&reader_contexts, request.search_context_id.id)
+        else {
+            return false;
+        };
         let Some(reader_context) = reader_contexts.get_mut(&reader_context_key) else {
             return false;
         };
@@ -16456,7 +16460,7 @@ fn reader_context_exists(
         .lock()
         .expect("dev transport reader contexts lock poisoned");
     prune_expired_transport_reader_contexts(&mut reader_contexts, now_epoch_ms());
-    reader_contexts.contains_key(&reader_context_key(context_id))
+    reader_context_key_by_numeric_id(&reader_contexts, context_id.id).is_some()
 }
 
 fn reader_context_available_for_update(
@@ -16468,9 +16472,24 @@ fn reader_context_available_for_update(
         .lock()
         .expect("dev transport reader contexts lock poisoned");
     prune_expired_transport_reader_contexts(&mut reader_contexts, now_epoch_ms());
+    let Some(reader_context_key) =
+        reader_context_key_by_numeric_id(&reader_contexts, context_id.id)
+    else {
+        return false;
+    };
     reader_contexts
-        .get(&reader_context_key(context_id))
+        .get(&reader_context_key)
         .is_some_and(|context| context.pit_id.is_none() && context.creation_time_millis.is_none())
+}
+
+fn reader_context_key_by_numeric_id(
+    reader_contexts: &BTreeMap<(String, i64), DevTransportReaderContext>,
+    context_id: i64,
+) -> Option<(String, i64)> {
+    reader_contexts
+        .keys()
+        .find(|(_, id)| *id == context_id)
+        .cloned()
 }
 
 fn can_allocate_reader_context(bindings: &DevTransportPitBindings) -> bool {
@@ -36017,6 +36036,97 @@ mod tests {
             Some("transport-pit-reader-extend")
         );
         assert_eq!(context.creation_time_millis, Some(1_700_000_000_000_i64));
+    }
+
+    #[test]
+    fn update_reader_context_transport_route_matches_by_numeric_id_like_opensearch() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        let bindings = dev_transport_pit_bindings();
+        bindings
+            .contexts
+            .lock()
+            .expect("dev transport PIT contexts lock poisoned")
+            .clear();
+        bindings
+            .reader_contexts
+            .lock()
+            .expect("dev transport reader contexts lock poisoned")
+            .clear();
+        let stored_context_id = os_transport::action::OpenSearchShardSearchContextIdWire::new(
+            "stored-update-session",
+            91,
+        );
+        let request_context_id = os_transport::action::OpenSearchShardSearchContextIdWire::new(
+            "request-update-session",
+            91,
+        );
+        bindings
+            .reader_contexts
+            .lock()
+            .expect("dev transport reader contexts lock poisoned")
+            .insert(
+                reader_context_key(&stored_context_id),
+                DevTransportReaderContext {
+                    shard_id: os_transport::action::OpenSearchShardIdWire {
+                        index_name: "logs-reader-numeric-update".to_string(),
+                        index_uuid: "uuid-reader-numeric-update".to_string(),
+                        shard_id: 0,
+                    },
+                    documents: Arc::new(BTreeMap::new()),
+                    expires_at_millis: now_epoch_ms() + 60_000,
+                    pit_id: None,
+                    creation_time_millis: None,
+                },
+            );
+
+        let request = os_transport::action::OpenSearchUpdateReaderContextRequestWire {
+            parent_task_node: String::new(),
+            parent_task_id: None,
+            pit_id: "transport-pit-numeric-update".to_string(),
+            keep_alive_millis: 120_000,
+            creation_time_millis: 1_700_000_000_001,
+            search_context_id: request_context_id,
+        };
+        let frame = os_transport::action::build_opensearch_update_reader_context_request_message(
+            326,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(update_reader_context_request_supports_local_subset(
+            &frame[6..]
+        ));
+        let response = build_local_update_reader_context_response(
+            326,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &frame[6..],
+        );
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected numeric-id update-reader-context response");
+        };
+        let response =
+            os_transport::action::read_opensearch_update_reader_context_response_message(&message)
+                .unwrap();
+        assert_eq!(response.pit_id, "transport-pit-numeric-update");
+        let reader_contexts = bindings
+            .reader_contexts
+            .lock()
+            .expect("dev transport reader contexts lock poisoned");
+        let context = reader_contexts
+            .get(&reader_context_key(&stored_context_id))
+            .expect("stored reader context should be updated by numeric id");
+        assert_eq!(
+            context.pit_id.as_deref(),
+            Some("transport-pit-numeric-update")
+        );
+        assert_eq!(context.creation_time_millis, Some(1_700_000_000_001_i64));
     }
 
     #[test]
