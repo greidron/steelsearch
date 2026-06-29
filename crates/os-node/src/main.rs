@@ -11744,11 +11744,15 @@ fn transport_pit_index_uuid(bindings: &DevTransportPitBindings, index: &str) -> 
         .metadata_manifest
         .lock()
         .expect("dev transport metadata manifest lock poisoned");
-    manifest["indices"][index]["settings"]["index"]["uuid"]
-        .as_str()
-        .or_else(|| manifest["indices"][index]["settings"]["uuid"].as_str())
+    transport_manifest_index_uuid(&manifest["indices"][index])
         .unwrap_or("_na_")
         .to_string()
+}
+
+fn transport_manifest_index_uuid(index_body: &Value) -> Option<&str> {
+    index_body["settings"]["index"]["uuid"]
+        .as_str()
+        .or_else(|| index_body["settings"]["uuid"].as_str())
 }
 
 fn transport_pit_primary_shard_count(bindings: &DevTransportPitBindings, index: &str) -> usize {
@@ -16173,6 +16177,11 @@ fn create_reader_context_shard_exists(
             .is_some_and(|state| state == "close")
         {
             return false;
+        }
+        if let Some(index_uuid) = transport_manifest_index_uuid(index_body) {
+            if shard_id.index_uuid != "_na_" && shard_id.index_uuid != index_uuid {
+                return false;
+            }
         }
         let settings = &index_body["settings"];
         let shard_count = settings["index"]["number_of_shards"]
@@ -35064,6 +35073,130 @@ mod tests {
             .lock()
             .expect("dev transport reader contexts lock poisoned")
             .clear();
+    }
+
+    #[test]
+    fn create_reader_context_transport_route_matches_manifest_index_uuid() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        let bindings = dev_transport_pit_bindings();
+        bindings
+            .contexts
+            .lock()
+            .expect("dev transport PIT contexts lock poisoned")
+            .clear();
+        bindings
+            .reader_contexts
+            .lock()
+            .expect("dev transport reader contexts lock poisoned")
+            .clear();
+        bindings
+            .created_indices
+            .lock()
+            .expect("dev transport created indices lock poisoned")
+            .clear();
+        *bindings
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned") = serde_json::json!({
+            "indices": {
+                "logs-reader-uuid": {
+                    "settings": {
+                        "index": {
+                            "uuid": "uuid-reader-uuid",
+                            "number_of_shards": "1"
+                        }
+                    }
+                }
+            }
+        });
+        *bindings
+            .next_id
+            .lock()
+            .expect("dev transport next PIT id lock poisoned") = 41;
+
+        let wrong_uuid_request =
+            os_transport::action::OpenSearchCreateReaderContextRequestWire::new(
+                os_transport::action::OpenSearchShardIdWire {
+                    index_name: "logs-reader-uuid".to_string(),
+                    index_uuid: "uuid-reader-other".to_string(),
+                    shard_id: 0,
+                },
+                os_transport::action::TimeValueWire::minutes(1),
+            );
+        let wrong_uuid_frame =
+            os_transport::action::build_opensearch_create_reader_context_request_message(
+                327,
+                OPENSEARCH_3_7_0_TRANSPORT,
+                &wrong_uuid_request,
+            )
+            .unwrap();
+        assert!(!create_reader_context_request_supports_local_subset(
+            &wrong_uuid_frame[6..]
+        ));
+        let wrong_uuid_response = build_local_create_reader_context_response(
+            327,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &wrong_uuid_frame[6..],
+        );
+        let mut wrong_uuid_frame = BytesMut::from(&wrong_uuid_response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut wrong_uuid_frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected wrong-uuid create-reader-context fallback response frame");
+        };
+        assert_eq!(message.request_id, 327);
+        assert!(message.body.is_empty());
+        assert!(bindings
+            .reader_contexts
+            .lock()
+            .expect("dev transport reader contexts lock poisoned")
+            .is_empty());
+
+        let matching_uuid_request =
+            os_transport::action::OpenSearchCreateReaderContextRequestWire::new(
+                os_transport::action::OpenSearchShardIdWire {
+                    index_name: "logs-reader-uuid".to_string(),
+                    index_uuid: "uuid-reader-uuid".to_string(),
+                    shard_id: 0,
+                },
+                os_transport::action::TimeValueWire::minutes(1),
+            );
+        let matching_uuid_frame =
+            os_transport::action::build_opensearch_create_reader_context_request_message(
+                328,
+                OPENSEARCH_3_7_0_TRANSPORT,
+                &matching_uuid_request,
+            )
+            .unwrap();
+        assert!(create_reader_context_request_supports_local_subset(
+            &matching_uuid_frame[6..]
+        ));
+        let matching_uuid_response = build_local_create_reader_context_response(
+            328,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &matching_uuid_frame[6..],
+        );
+        let mut matching_uuid_frame = BytesMut::from(&matching_uuid_response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut matching_uuid_frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected matching-uuid create-reader-context response frame");
+        };
+        let response =
+            os_transport::action::read_opensearch_create_reader_context_response_message(&message)
+                .unwrap();
+        assert_eq!(response.context_id.id, 42);
+        assert!(bindings
+            .reader_contexts
+            .lock()
+            .expect("dev transport reader contexts lock poisoned")
+            .contains_key(&reader_context_key(&response.context_id)));
     }
 
     #[test]
