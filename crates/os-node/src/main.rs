@@ -3329,6 +3329,32 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end_at_ms,
         )?;
     } else if is_request
+        && normalized_action_hint == Some("internal:indices/admin/upgrade")
+        && upgrade_settings_request_supports_manifest_execution_subset(&body)
+    {
+        let response = build_local_upgrade_settings_response(request_id, header_version_id, &body);
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("internal:indices/admin/upgrade"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request
         && normalized_action_hint == Some("indices:monitor/upgrade")
         && upgrade_status_request_supports_local_execution_subset(&body)
     {
@@ -11640,6 +11666,97 @@ fn local_transport_upgrade_response_from_request(
     )
 }
 
+fn build_local_upgrade_settings_response(
+    request_id: i64,
+    header_version_id: u32,
+    body: &[u8],
+) -> Vec<u8> {
+    let Some(request) = decode_upgrade_settings_request_from_transport_body(body) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    if !upgrade_settings_request_matches_manifest_subset(&request) {
+        return build_empty_transport_response(request_id, header_version_id);
+    }
+    if !apply_transport_upgrade_settings_to_manifest(&request) {
+        return build_empty_transport_response(request_id, header_version_id);
+    }
+    build_acknowledged_template_response(
+        request_id,
+        header_version_id,
+        os_transport::action::build_opensearch_upgrade_settings_response_message,
+    )
+}
+
+fn upgrade_settings_request_supports_manifest_execution_subset(body: &[u8]) -> bool {
+    decode_upgrade_settings_request_from_transport_body(body)
+        .is_some_and(|request| upgrade_settings_request_matches_manifest_subset(&request))
+}
+
+fn decode_upgrade_settings_request_from_transport_body(
+    body: &[u8],
+) -> Option<os_transport::action::OpenSearchUpgradeSettingsRequestWire> {
+    let message = decode_transport_message_from_body(body)?;
+    os_transport::action::read_opensearch_upgrade_settings_request_message(&message).ok()
+}
+
+fn upgrade_settings_request_matches_manifest_subset(
+    request: &os_transport::action::OpenSearchUpgradeSettingsRequestWire,
+) -> bool {
+    request.validate_supported_execution_subset().is_ok()
+        && request
+            .versions
+            .keys()
+            .all(|index| transport_delete_index_name_is_concrete(index))
+        && request
+            .versions
+            .keys()
+            .all(|index| transport_index_exists(index))
+}
+
+fn apply_transport_upgrade_settings_to_manifest(
+    request: &os_transport::action::OpenSearchUpgradeSettingsRequestWire,
+) -> bool {
+    let bindings = dev_transport_pit_bindings();
+    let mut manifest = bindings
+        .metadata_manifest
+        .lock()
+        .expect("dev transport metadata manifest lock poisoned");
+    if !manifest.is_object() {
+        return false;
+    }
+    for (index, version) in &request.versions {
+        let settings_root = &mut manifest["indices"][index]["settings"];
+        if !settings_root.is_object() {
+            *settings_root = serde_json::json!({});
+        }
+        if manifest_index_created_version_is_current(settings_root) {
+            continue;
+        }
+        set_dotted_string_setting(
+            settings_root,
+            "index.version.upgraded",
+            &version.version_id.to_string(),
+        );
+    }
+    true
+}
+
+fn manifest_index_created_version_is_current(settings_root: &Value) -> bool {
+    manifest_string_setting(settings_root, "index.version.created")
+        .is_some_and(|version| version == OPENSEARCH_3_7_0_TRANSPORT.id().to_string())
+}
+
+fn manifest_string_setting<'a>(root: &'a Value, key: &str) -> Option<&'a str> {
+    if let Some(value) = root.get(key).and_then(Value::as_str) {
+        return Some(value);
+    }
+    let mut current = root;
+    for part in key.split('.') {
+        current = current.get(part)?;
+    }
+    current.as_str()
+}
+
 fn build_local_upgrade_status_response(
     request_id: i64,
     header_version_id: u32,
@@ -18553,6 +18670,15 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
         }
         Some("indices:admin/upgrade") if upgrade_request_supports_local_execution_subset(body) => {
             Some(build_local_upgrade_response(
+                request_id,
+                header_version_id,
+                body,
+            ))
+        }
+        Some("internal:indices/admin/upgrade")
+            if upgrade_settings_request_supports_manifest_execution_subset(body) =>
+        {
+            Some(build_local_upgrade_settings_response(
                 request_id,
                 header_version_id,
                 body,
@@ -29400,6 +29526,166 @@ mod tests {
         assert_eq!(response.total_shards, 3);
         assert_eq!(response.successful_shards, 3);
         assert_eq!(response.failed_shards, 0);
+    }
+
+    #[test]
+    fn upgrade_settings_transport_route_updates_manifest_version_settings() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        let bindings = dev_transport_pit_bindings();
+        bindings
+            .created_indices
+            .lock()
+            .expect("dev transport created indices lock poisoned")
+            .clear();
+        {
+            let mut manifest = bindings
+                .metadata_manifest
+                .lock()
+                .expect("dev transport metadata manifest lock poisoned");
+            *manifest = serde_json::json!({
+                "indices": {
+                    "logs-upgrade-settings": {
+                        "settings": {
+                            "index": {
+                                "version": {
+                                    "created": "136277827"
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        let mut versions = BTreeMap::new();
+        versions.insert(
+            "logs-upgrade-settings".to_string(),
+            os_transport::action::OpenSearchUpgradeSettingsVersionWire {
+                version_id: 3_070_099,
+                oldest_lucene_segment_version: "10.4.0".to_string(),
+            },
+        );
+        let request = os_transport::action::OpenSearchUpgradeSettingsRequestWire {
+            versions,
+            ..os_transport::action::OpenSearchUpgradeSettingsRequestWire::default()
+        };
+        let frame = os_transport::action::build_opensearch_upgrade_settings_request_message(
+            313,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(upgrade_settings_request_supports_manifest_execution_subset(
+            &frame[6..]
+        ));
+
+        let response = build_local_upgrade_settings_response(
+            313,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &frame[6..],
+        );
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected upgrade settings response message");
+        };
+        let response =
+            os_transport::action::read_opensearch_upgrade_settings_response_message(&message)
+                .unwrap();
+        assert!(response.acknowledged);
+
+        let manifest = bindings
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned");
+        assert_eq!(
+            manifest["indices"]["logs-upgrade-settings"]["settings"]["index"]["version"]
+                ["upgraded"],
+            serde_json::json!("3070099")
+        );
+    }
+
+    #[test]
+    fn upgrade_settings_transport_route_skips_current_created_version() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        let bindings = dev_transport_pit_bindings();
+        bindings
+            .created_indices
+            .lock()
+            .expect("dev transport created indices lock poisoned")
+            .clear();
+        {
+            let mut manifest = bindings
+                .metadata_manifest
+                .lock()
+                .expect("dev transport metadata manifest lock poisoned");
+            *manifest = serde_json::json!({
+                "indices": {
+                    "logs-upgrade-settings-current": {
+                        "settings": {
+                            "index": {
+                                "version": {
+                                    "created": OPENSEARCH_3_7_0_TRANSPORT.id().to_string()
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        let mut versions = BTreeMap::new();
+        versions.insert(
+            "logs-upgrade-settings-current".to_string(),
+            os_transport::action::OpenSearchUpgradeSettingsVersionWire {
+                version_id: 3_070_099,
+                oldest_lucene_segment_version: "10.4.0".to_string(),
+            },
+        );
+        let request = os_transport::action::OpenSearchUpgradeSettingsRequestWire {
+            versions,
+            ..os_transport::action::OpenSearchUpgradeSettingsRequestWire::default()
+        };
+        let frame = os_transport::action::build_opensearch_upgrade_settings_request_message(
+            314,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        let response = build_local_upgrade_settings_response(
+            314,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &frame[6..],
+        );
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected upgrade settings response message");
+        };
+        let response =
+            os_transport::action::read_opensearch_upgrade_settings_response_message(&message)
+                .unwrap();
+        assert!(response.acknowledged);
+
+        let manifest = bindings
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned");
+        assert!(
+            manifest["indices"]["logs-upgrade-settings-current"]["settings"]["index"]["version"]
+                .get("upgraded")
+                .is_none()
+        );
     }
 
     #[test]

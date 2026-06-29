@@ -444,8 +444,8 @@ name = "upgrade-status-reject-wire-benchmark"
 path = "benchmarks/upgrade_status_reject_wire.rs"
 
 [[bin]]
-name = "upgrade-settings-reject-wire-benchmark"
-path = "benchmarks/upgrade_settings_reject_wire.rs"
+name = "upgrade-settings-wire-benchmark"
+path = "benchmarks/upgrade_settings_wire.rs"
 
 [[bin]]
 name = "clear-indices-cache-reject-wire-benchmark"

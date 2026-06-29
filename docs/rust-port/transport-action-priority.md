@@ -177,8 +177,8 @@ The source-derived transport inventory currently has 160 rows:
 
 | Status | Count | Meaning |
 | --- | ---: | --- |
-| `implemented` | 102 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
-| `partial` | 58 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
+| `implemented` | 103 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
+| `partial` | 57 | Steelsearch has an explicit action classification and bounded fail-closed transport boundary, but broader server-side execution semantics remain incomplete. |
 | `planned` | 0 | No source-derived transport action remains unclassified. |
 
 The k-NN plugin action sweep is complete at the boundary layer. All 12
@@ -1775,13 +1775,18 @@ The upgrade-settings boundary covers:
   acknowledgement timeout, and versions map from index name to OpenSearch
   version id plus oldest Lucene segment version string at the wire decode/build
   layer;
-- explicit fail-closed classification for `internal:indices/admin/upgrade`
-  until index setting metadata mutation, cluster-manager publication, and
-  acknowledgement rendering are implemented against Rust cluster metadata;
+- implemented classification for the bounded concrete-index
+  `internal:indices/admin/upgrade` subset with manifest-backed
+  `index.version.upgraded` mutation and OpenSearch-shaped acknowledgement
+  rendering;
+- local execution admits default cluster-manager and acknowledgement timeouts,
+  non-empty version maps, concrete existing index names, positive version ids,
+  and non-blank oldest segment version strings;
 - explicit rejection for custom cluster-manager timeouts, custom
   acknowledgement timeouts, empty versions maps, blank index names, invalid
-  version ids, blank oldest Lucene segment versions, and upgrade-settings
-  execution.
+  version ids, blank oldest Lucene segment versions, non-existing indices,
+  wildcard/date-math/comma/remote-style targets, and broader cluster
+  publication semantics.
 
 The clear-indices-cache boundary covers:
 
@@ -4726,23 +4731,25 @@ execution. At roughly 1.78M ops/s in the latest local release run, the remaining
 performance-sensitive work is shard segment-version scanning, routing metadata
 collection, byte-counter aggregation, and response rendering.
 
-Current upgrade-settings reject wire microbenchmark:
+Current upgrade-settings wire microbenchmark:
 
 ```text
-cargo run -p os-transport --release --bin upgrade-settings-reject-wire-benchmark
-upgrade_settings_reject_request_encode iterations=400000 elapsed_ms=343.694 ops_per_second=1163826.18 nanos_per_op=859.23
-upgrade_settings_reject_request_decode iterations=400000 elapsed_ms=292.415 ops_per_second=1367916.77 nanos_per_op=731.04
-upgrade_settings_reject_validation iterations=400000 elapsed_ms=306.408 ops_per_second=1305446.97 nanos_per_op=766.02
-upgrade_settings_reject_wire_bottleneck_ops_per_second=1163826.18
+cargo run -q -p os-transport --release --bin upgrade-settings-wire-benchmark
+upgrade_settings_request_encode iterations=400000 elapsed_ms=326.656 ops_per_second=1224530.89 nanos_per_op=816.64
+upgrade_settings_request_decode iterations=400000 elapsed_ms=289.951 ops_per_second=1379542.33 nanos_per_op=724.88
+upgrade_settings_request_validate iterations=400000 elapsed_ms=302.001 ops_per_second=1324497.57 nanos_per_op=755.00
+upgrade_settings_response_encode iterations=400000 elapsed_ms=48.746 ops_per_second=8205723.56 nanos_per_op=121.87
+upgrade_settings_response_decode iterations=400000 elapsed_ms=53.575 ops_per_second=7466237.35 nanos_per_op=133.94
+upgrade_settings_wire_bottleneck_ops_per_second=1224530.89
 ```
 
-The current upgrade-settings fail-closed boundary bottleneck is request encode.
+The current upgrade-settings transport boundary bottleneck is request encode.
 The default benchmark writes the parent task, default cluster-manager and
 acknowledgement timeouts, one versions-map entry, an OpenSearch version id, and
-the oldest Lucene segment version string before rejecting execution. At roughly
-1.16M ops/s in the latest local release run, the remaining performance-sensitive
-work is metadata mutation planning, cluster-state publication, acknowledgement
-tracking, and acknowledged response rendering.
+the oldest Lucene segment version string before validating the supported subset
+and rendering an acknowledgement response. At roughly 1.22M ops/s in the latest
+local release run, the remaining performance-sensitive work is broader
+multi-index resolution, cluster-state publication, and acknowledgement tracking.
 
 Current clear-indices-cache reject wire microbenchmark:
 

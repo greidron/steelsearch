@@ -2231,8 +2231,8 @@ pub fn classify_opensearch_transport_action(
         },
         OPENSEARCH_UPGRADE_SETTINGS_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
-            disposition: OpenSearchTransportActionDisposition::Rejected,
-            reason: "upgrade-settings transport execution requires index setting metadata mutation, cluster-manager publication, and acknowledgement rendering",
+            disposition: OpenSearchTransportActionDisposition::Implemented,
+            reason: "upgrade-settings transport adapter validates the bounded concrete-index subset, mutates local index version settings, and renders an OpenSearch-shaped acknowledgement",
         },
         OPENSEARCH_CLEAR_INDICES_CACHE_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -42831,7 +42831,7 @@ impl OpenSearchUpgradeSettingsRequestWire {
         Ok(request)
     }
 
-    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+    pub fn validate_supported_execution_subset(&self) -> Result<(), TransportActionWireError> {
         if self.cluster_manager_timeout != TimeValueWire::seconds(30) {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "upgrade settings cluster-manager timeout",
@@ -42872,9 +42872,14 @@ impl OpenSearchUpgradeSettingsRequestWire {
                 });
             }
         }
+        Ok(())
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        self.validate_supported_execution_subset()?;
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "upgrade settings execution",
-            reason: "upgrade-settings transport execution requires index setting metadata mutation and acknowledgement rendering",
+            reason: "upgrade-settings transport execution is handled by the manifest-backed local adapter",
         })
     }
 }
@@ -43696,6 +43701,35 @@ pub fn read_opensearch_upgrade_settings_request_message(
         });
     }
     OpenSearchUpgradeSettingsRequestWire::read(message.body.clone().freeze())
+}
+
+pub fn build_opensearch_upgrade_settings_response_message(
+    request_id: i64,
+    version: Version,
+    response: &AcknowledgedResponseWire,
+) -> Result<BytesMut, TransportActionWireError> {
+    let mut body = StreamOutput::new();
+    response.write(&mut body);
+    let message = TransportMessage {
+        request_id,
+        status: TransportStatus::response(),
+        version,
+        variable_header: BytesMut::new(),
+        body: BytesMut::from(&body.freeze()[..]),
+    };
+    Ok(encode_message(&message))
+}
+
+pub fn read_opensearch_upgrade_settings_response_message(
+    message: &TransportMessage,
+) -> Result<AcknowledgedResponseWire, TransportActionWireError> {
+    if message.status.is_request() {
+        return Err(TransportActionWireError::UnexpectedMessageStatus {
+            expected: "response",
+            actual: message.status.bits(),
+        });
+    }
+    AcknowledgedResponseWire::read(message.body.clone().freeze())
 }
 
 pub fn build_opensearch_clear_indices_cache_request_message(
@@ -65806,7 +65840,7 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_upgrade_settings_request_wire_round_trips_and_rejects_execution_boundary() {
+    fn opensearch_upgrade_settings_request_wire_round_trips_and_validates_supported_subset() {
         let request = OpenSearchUpgradeSettingsRequestWire {
             parent_task_node: "node-a".into(),
             parent_task_id: Some(42),
@@ -65817,6 +65851,7 @@ mod tests {
 
         let decoded = OpenSearchUpgradeSettingsRequestWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, request);
+        decoded.validate_supported_execution_subset().unwrap();
         assert!(matches!(
             decoded.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
@@ -65833,7 +65868,7 @@ mod tests {
             ..OpenSearchUpgradeSettingsRequestWire::default()
         };
         assert!(matches!(
-            cluster_manager_timeout.reject_unsupported_execution(),
+            cluster_manager_timeout.validate_supported_execution_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "upgrade settings cluster-manager timeout",
                 ..
@@ -65845,7 +65880,7 @@ mod tests {
             ..OpenSearchUpgradeSettingsRequestWire::default()
         };
         assert!(matches!(
-            ack_timeout.reject_unsupported_execution(),
+            ack_timeout.validate_supported_execution_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "upgrade settings ack timeout",
                 ..
@@ -65857,7 +65892,7 @@ mod tests {
             ..OpenSearchUpgradeSettingsRequestWire::default()
         };
         assert!(matches!(
-            empty_versions.reject_unsupported_execution(),
+            empty_versions.validate_supported_execution_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "upgrade settings versions",
                 ..
@@ -65877,7 +65912,7 @@ mod tests {
             ..OpenSearchUpgradeSettingsRequestWire::default()
         };
         assert!(matches!(
-            blank_index.reject_unsupported_execution(),
+            blank_index.validate_supported_execution_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "upgrade settings index name",
                 ..
@@ -65897,7 +65932,7 @@ mod tests {
             ..OpenSearchUpgradeSettingsRequestWire::default()
         };
         assert!(matches!(
-            bad_version.reject_unsupported_execution(),
+            bad_version.validate_supported_execution_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "upgrade settings version",
                 ..
@@ -65917,7 +65952,7 @@ mod tests {
             ..OpenSearchUpgradeSettingsRequestWire::default()
         };
         assert!(matches!(
-            blank_lucene.reject_unsupported_execution(),
+            blank_lucene.validate_supported_execution_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "upgrade settings lucene version",
                 ..
@@ -65926,7 +65961,7 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_upgrade_settings_transport_messages_bind_rejected_action_frame() {
+    fn opensearch_upgrade_settings_transport_messages_bind_supported_action_frame() {
         let request = OpenSearchUpgradeSettingsRequestWire::default();
         let mut frame = build_opensearch_upgrade_settings_request_message(
             73,
@@ -65945,17 +65980,27 @@ mod tests {
             classify_opensearch_transport_request_message(&message)
                 .unwrap()
                 .disposition,
-            OpenSearchTransportActionDisposition::Rejected
+            OpenSearchTransportActionDisposition::Implemented
         );
-        assert!(matches!(
-            read_opensearch_upgrade_settings_request_message(&message)
-                .unwrap()
-                .reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "upgrade settings execution",
-                ..
-            })
-        ));
+        read_opensearch_upgrade_settings_request_message(&message)
+            .unwrap()
+            .validate_supported_execution_subset()
+            .unwrap();
+
+        let response = AcknowledgedResponseWire { acknowledged: true };
+        let mut frame = build_opensearch_upgrade_settings_response_message(
+            73,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &response,
+        )
+        .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected upgrade settings response message");
+        };
+        assert_eq!(
+            read_opensearch_upgrade_settings_response_message(&message).unwrap(),
+            response
+        );
     }
 
     #[test]
