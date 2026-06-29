@@ -61,7 +61,8 @@
       "route_families": [
         "cluster-health-state-stats",
         "pending-tasks",
-        "task-inspection"
+        "task-inspection",
+        "cross-node-pit-lifecycle"
       ],
       "entrypoint": "tools/run-phase-a-acceptance-harness.sh --mode local --scope transport-admin",
       "required_reports": [

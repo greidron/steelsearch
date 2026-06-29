@@ -56,6 +56,7 @@ SUITES: tuple[Suite, ...] = (
     Suite("snapshot-lifecycle", "snapshot", "durability_parity", "tools/snapshot_lifecycle_compat.py", "tools/fixtures/snapshot-lifecycle-compat.json", "snapshot-lifecycle-compat-report.json"),
     Suite("alias-template-persistence", "durability", "durability_parity", "tools/alias_template_persistence_compat.py", "tools/fixtures/alias-template-persistence-compat.json", "alias-template-persistence-report.json"),
     Suite("security-authz", "security", "security_parity", None, "tools/fixtures/security-authz-compat.json", "security-authz-compat-report.json", required=False),
+    Suite("multi-node-transport-admin", "distributed", "distributed_parity", None, "tools/fixtures/multi-node-transport-admin.json", "multi-node-transport-admin-report.json", needs_opensearch=False),
     Suite("multi-node-write-path", "distributed", "distributed_parity", None, "tools/fixtures/comparison-harness-required-suites.json", "multi-node-write-path-report.json", required=False),
 )
 
