@@ -7510,6 +7510,38 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "hit_metadata_invalid_version_query_param_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search?version=maybe",
+      "body": {
+        "query": {
+          "match_all": {}
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error",
+      "family": "fetch",
+      "description": "[fetch] invalid version query param is rejected like OpenSearch",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "hit_metadata_invalid_seq_no_primary_term_query_param_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search?seq_no_primary_term=maybe",
+      "body": {
+        "query": {
+          "match_all": {}
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error",
+      "family": "fetch",
+      "description": "[fetch] invalid seq_no_primary_term query param is rejected like OpenSearch",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "wildcard_match_search",
       "area": "search",
       "method": "POST",

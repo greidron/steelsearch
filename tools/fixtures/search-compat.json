@@ -9477,6 +9477,36 @@
       "description": "[fetch] seq metadata query param overrides body without changing version search"
     },
     {
+      "name": "hit_metadata_invalid_version_query_param_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search?version=maybe",
+      "body": {
+        "query": {
+          "match_all": {}
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error",
+      "family": "fetch",
+      "description": "[fetch] invalid version query param is rejected like OpenSearch"
+    },
+    {
+      "name": "hit_metadata_invalid_seq_no_primary_term_query_param_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search?seq_no_primary_term=maybe",
+      "body": {
+        "query": {
+          "match_all": {}
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error",
+      "family": "fetch",
+      "description": "[fetch] invalid seq_no_primary_term query param is rejected like OpenSearch"
+    },
+    {
       "name": "min_score_search",
       "area": "search",
       "method": "POST",
