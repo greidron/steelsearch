@@ -30733,7 +30733,7 @@ fn evaluate_search_query_source_with_mappings(
             lookup_query_field_value(source, field),
             extract_match_query_value(expected).unwrap_or_default(),
             true,
-            0,
+            extract_match_phrase_slop(expected),
         );
         return Some((matched, if matched { 1.0 } else { 0.0 }));
     }
@@ -32350,25 +32350,7 @@ fn value_matches_phrase(
         return false;
     }
     if prefix_last_token {
-        for window in candidate_tokens.windows(expected_tokens.len()) {
-            let mut matched = true;
-            for (index, expected_token) in expected_tokens.iter().enumerate() {
-                let candidate_token = &window[index];
-                let token_matches = if index + 1 == expected_tokens.len() {
-                    candidate_token.starts_with(expected_token)
-                } else {
-                    candidate_token == expected_token
-                };
-                if !token_matches {
-                    matched = false;
-                    break;
-                }
-            }
-            if matched {
-                return true;
-            }
-        }
-        return false;
+        return phrase_prefix_tokens_match_with_slop(&candidate_tokens, &expected_tokens, slop);
     }
     phrase_tokens_match_with_slop(&candidate_tokens, &expected_tokens, slop)
 }
@@ -32432,6 +32414,75 @@ fn phrase_tokens_match_with_slop(
     }
 
     visit(candidate_tokens, expected_tokens, 0, 0, None, 0, slop)
+}
+
+fn phrase_prefix_tokens_match_with_slop(
+    candidate_tokens: &[String],
+    expected_tokens: &[String],
+    slop: usize,
+) -> bool {
+    if slop == 0 {
+        return candidate_tokens
+            .windows(expected_tokens.len())
+            .any(|window| phrase_prefix_window_matches(window, expected_tokens));
+    }
+
+    fn visit(
+        candidate_tokens: &[String],
+        expected_tokens: &[String],
+        candidate_start: usize,
+        expected_index: usize,
+        previous_position: Option<usize>,
+        used_slop: usize,
+        slop: usize,
+    ) -> bool {
+        if expected_index == expected_tokens.len() {
+            return true;
+        }
+        for position in candidate_start..candidate_tokens.len() {
+            let is_last = expected_index + 1 == expected_tokens.len();
+            let token_matches = if is_last {
+                candidate_tokens[position].starts_with(&expected_tokens[expected_index])
+            } else {
+                candidate_tokens[position] == expected_tokens[expected_index]
+            };
+            if !token_matches {
+                continue;
+            }
+            let extra_gap = previous_position
+                .map(|previous| position.saturating_sub(previous + 1))
+                .unwrap_or(0);
+            let next_slop = used_slop.saturating_add(extra_gap);
+            if next_slop > slop {
+                continue;
+            }
+            if visit(
+                candidate_tokens,
+                expected_tokens,
+                position + 1,
+                expected_index + 1,
+                Some(position),
+                next_slop,
+                slop,
+            ) {
+                return true;
+            }
+        }
+        false
+    }
+
+    visit(candidate_tokens, expected_tokens, 0, 0, None, 0, slop)
+}
+
+fn phrase_prefix_window_matches(window: &[String], expected_tokens: &[String]) -> bool {
+    window.iter().enumerate().all(|(index, candidate_token)| {
+        let expected_token = &expected_tokens[index];
+        if index + 1 == expected_tokens.len() {
+            candidate_token.starts_with(expected_token)
+        } else {
+            candidate_token == expected_token
+        }
+    })
 }
 
 fn value_matches_wildcard(candidate: Option<&Value>, expected: &str) -> bool {

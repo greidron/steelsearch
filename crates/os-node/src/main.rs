@@ -20804,18 +20804,26 @@ fn local_transport_query_matches(
         Some(os_transport::action::OpenSearchQueryBuilderWire::MatchPhrase(query)) => {
             let value = lookup_transport_source_value(source, &query.field_name);
             let query_text = query.value.as_str().unwrap_or_default();
-            local_transport_value_matches_phrase(value, query_text, false)
-                || (query_text.trim().is_empty()
-                    && query.zero_terms_query
-                        == os_transport::action::OpenSearchZeroTermsQueryWire::All)
+            local_transport_value_matches_phrase(
+                value,
+                query_text,
+                false,
+                query.slop.max(0) as usize,
+            ) || (query_text.trim().is_empty()
+                && query.zero_terms_query
+                    == os_transport::action::OpenSearchZeroTermsQueryWire::All)
         }
         Some(os_transport::action::OpenSearchQueryBuilderWire::MatchPhrasePrefix(query)) => {
             let value = lookup_transport_source_value(source, &query.field_name);
             let query_text = query.value.as_str().unwrap_or_default();
-            local_transport_value_matches_phrase(value, query_text, true)
-                || (query_text.trim().is_empty()
-                    && query.zero_terms_query
-                        == os_transport::action::OpenSearchZeroTermsQueryWire::All)
+            local_transport_value_matches_phrase(
+                value,
+                query_text,
+                true,
+                query.slop.max(0) as usize,
+            ) || (query_text.trim().is_empty()
+                && query.zero_terms_query
+                    == os_transport::action::OpenSearchZeroTermsQueryWire::All)
         }
         Some(os_transport::action::OpenSearchQueryBuilderWire::MoreLikeThis(query)) => {
             let fields = query
@@ -21523,10 +21531,16 @@ fn local_transport_json_phrase_query_matches(
         .as_str()
         .or_else(|| expected.get("query").and_then(Value::as_str))
         .unwrap_or_default();
+    let slop = expected
+        .get("slop")
+        .and_then(Value::as_u64)
+        .and_then(|value| usize::try_from(value).ok())
+        .unwrap_or(0);
     local_transport_value_matches_phrase(
         lookup_transport_source_value(source, field),
         query_text,
         prefix_last_token,
+        slop,
     )
 }
 
@@ -22334,7 +22348,7 @@ fn score_transport_text_query_term(haystacks: &[String], term: &str) -> f64 {
     for haystack in haystacks {
         let candidate = Value::String(haystack.clone());
         let score = if is_phrase {
-            if local_transport_value_matches_phrase(Some(&candidate), phrase, false) {
+            if local_transport_value_matches_phrase(Some(&candidate), phrase, false, 0) {
                 phrase.split_whitespace().count().max(1) as f64
             } else {
                 0.0
@@ -22369,6 +22383,7 @@ fn local_transport_value_matches_phrase(
     candidate: Option<&Value>,
     expected: &str,
     prefix_last_token: bool,
+    slop: usize,
 ) -> bool {
     let Some(candidate_text) = candidate.and_then(Value::as_str) else {
         return false;
@@ -22378,25 +22393,133 @@ fn local_transport_value_matches_phrase(
     if expected_tokens.is_empty() || candidate_tokens.len() < expected_tokens.len() {
         return false;
     }
-    for window in candidate_tokens.windows(expected_tokens.len()) {
-        let mut matched = true;
-        for (index, expected_token) in expected_tokens.iter().enumerate() {
-            let candidate_token = &window[index];
-            let token_matches = if prefix_last_token && index + 1 == expected_tokens.len() {
-                candidate_token.starts_with(expected_token)
-            } else {
-                candidate_token == expected_token
-            };
-            if !token_matches {
-                matched = false;
-                break;
-            }
-        }
-        if matched {
+    if prefix_last_token {
+        return local_transport_phrase_prefix_tokens_match_with_slop(
+            &candidate_tokens,
+            &expected_tokens,
+            slop,
+        );
+    }
+    local_transport_phrase_tokens_match_with_slop(&candidate_tokens, &expected_tokens, slop)
+}
+
+fn local_transport_phrase_tokens_match_with_slop(
+    candidate_tokens: &[String],
+    expected_tokens: &[String],
+    slop: usize,
+) -> bool {
+    if slop == 0 {
+        return candidate_tokens
+            .windows(expected_tokens.len())
+            .any(|window| window == expected_tokens);
+    }
+
+    fn visit(
+        candidate_tokens: &[String],
+        expected_tokens: &[String],
+        candidate_start: usize,
+        expected_index: usize,
+        previous_position: Option<usize>,
+        used_slop: usize,
+        slop: usize,
+    ) -> bool {
+        if expected_index == expected_tokens.len() {
             return true;
         }
+        for position in candidate_start..candidate_tokens.len() {
+            if candidate_tokens[position] != expected_tokens[expected_index] {
+                continue;
+            }
+            let extra_gap = previous_position
+                .map(|previous| position.saturating_sub(previous + 1))
+                .unwrap_or(0);
+            let next_slop = used_slop.saturating_add(extra_gap);
+            if next_slop > slop {
+                continue;
+            }
+            if visit(
+                candidate_tokens,
+                expected_tokens,
+                position + 1,
+                expected_index + 1,
+                Some(position),
+                next_slop,
+                slop,
+            ) {
+                return true;
+            }
+        }
+        false
     }
-    false
+
+    visit(candidate_tokens, expected_tokens, 0, 0, None, 0, slop)
+}
+
+fn local_transport_phrase_prefix_tokens_match_with_slop(
+    candidate_tokens: &[String],
+    expected_tokens: &[String],
+    slop: usize,
+) -> bool {
+    if slop == 0 {
+        return candidate_tokens
+            .windows(expected_tokens.len())
+            .any(|window| {
+                window.iter().enumerate().all(|(index, candidate_token)| {
+                    let expected_token = &expected_tokens[index];
+                    if index + 1 == expected_tokens.len() {
+                        candidate_token.starts_with(expected_token)
+                    } else {
+                        candidate_token == expected_token
+                    }
+                })
+            });
+    }
+
+    fn visit(
+        candidate_tokens: &[String],
+        expected_tokens: &[String],
+        candidate_start: usize,
+        expected_index: usize,
+        previous_position: Option<usize>,
+        used_slop: usize,
+        slop: usize,
+    ) -> bool {
+        if expected_index == expected_tokens.len() {
+            return true;
+        }
+        for position in candidate_start..candidate_tokens.len() {
+            let is_last = expected_index + 1 == expected_tokens.len();
+            let token_matches = if is_last {
+                candidate_tokens[position].starts_with(&expected_tokens[expected_index])
+            } else {
+                candidate_tokens[position] == expected_tokens[expected_index]
+            };
+            if !token_matches {
+                continue;
+            }
+            let extra_gap = previous_position
+                .map(|previous| position.saturating_sub(previous + 1))
+                .unwrap_or(0);
+            let next_slop = used_slop.saturating_add(extra_gap);
+            if next_slop > slop {
+                continue;
+            }
+            if visit(
+                candidate_tokens,
+                expected_tokens,
+                position + 1,
+                expected_index + 1,
+                Some(position),
+                next_slop,
+                slop,
+            ) {
+                return true;
+            }
+        }
+        false
+    }
+
+    visit(candidate_tokens, expected_tokens, 0, 0, None, 0, slop)
 }
 
 fn collect_transport_searchable_field_values(

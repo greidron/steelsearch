@@ -306,6 +306,7 @@
       "match_phrase_slop_search",
       "match_phrase_prefix_search",
       "match_phrase_prefix_max_expansions_search",
+      "match_phrase_prefix_slop_search",
       "query_string_minimum_should_match_search",
       "dis_max_search",
       "multi_match_phrase_search",
@@ -5632,6 +5633,32 @@
       "extract": "search_hits",
       "family": "lexical",
       "description": "[lexical] match_phrase_prefix accepts max_expansions like OpenSearch"
+    },
+    {
+      "name": "match_phrase_prefix_slop_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_phrase_prefix": {
+            "message": {
+              "query": "checkout pay",
+              "slop": 1
+            }
+          }
+        },
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] match_phrase_prefix honors slop like OpenSearch"
     },
     {
       "name": "match_phrase_prefix_object_query_search",

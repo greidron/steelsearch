@@ -77,6 +77,7 @@ pub enum Query {
     MatchPhrasePrefix {
         field: String,
         query: serde_json::Value,
+        slop: usize,
     },
     MatchBoolPrefix {
         field: String,
@@ -2376,21 +2377,54 @@ fn parse_match_phrase_prefix(body: &Value) -> QueryDslResult<Query> {
     }
 
     let (field, match_body) = object.iter().next().expect("checked len");
-    let query = if let Some(object) = match_body.as_object() {
-        object
+    let (query, slop) = if let Some(object) = match_body.as_object() {
+        let query = object
             .get("query")
             .cloned()
             .ok_or_else(|| QueryDslError::MissingField {
                 clause: "match_phrase_prefix".to_string(),
                 field: "query".to_string(),
-            })?
+            })?;
+        let slop = object
+            .get("slop")
+            .map(|value| {
+                value
+                    .as_u64()
+                    .and_then(|value| usize::try_from(value).ok())
+                    .ok_or_else(|| QueryDslError::InvalidValue {
+                        clause: "match_phrase_prefix".to_string(),
+                        field: "slop".to_string(),
+                        reason: "must be a non-negative integer".to_string(),
+                    })
+            })
+            .transpose()?
+            .unwrap_or(0);
+        for option in object.keys() {
+            if !matches!(
+                option.as_str(),
+                "query"
+                    | "slop"
+                    | "analyzer"
+                    | "max_expansions"
+                    | "zero_terms_query"
+                    | "boost"
+                    | "_name"
+            ) {
+                return Err(QueryDslError::UnsupportedOption {
+                    clause: "match_phrase_prefix".to_string(),
+                    option: option.clone(),
+                });
+            }
+        }
+        (query, slop)
     } else {
-        match_body.clone()
+        (match_body.clone(), 0)
     };
 
     Ok(Query::MatchPhrasePrefix {
         field: field.clone(),
         query,
+        slop,
     })
 }
 
@@ -4305,6 +4339,7 @@ mod tests {
             Query::MatchPhrasePrefix {
                 field: "message".to_string(),
                 query: serde_json::json!("alpha check"),
+                slop: 0,
             }
         );
         assert_eq!(
@@ -4312,6 +4347,29 @@ mod tests {
             Query::MatchPhrasePrefix {
                 field: "message".to_string(),
                 query: serde_json::json!("alpha check"),
+                slop: 0,
+            }
+        );
+    }
+
+    #[test]
+    fn parses_match_phrase_prefix_slop() {
+        let query = parse_query(&serde_json::json!({
+            "match_phrase_prefix": {
+                "message": {
+                    "query": "alpha check",
+                    "slop": 2
+                }
+            }
+        }))
+        .unwrap();
+
+        assert_eq!(
+            query,
+            Query::MatchPhrasePrefix {
+                field: "message".to_string(),
+                query: serde_json::json!("alpha check"),
+                slop: 2,
             }
         );
     }
