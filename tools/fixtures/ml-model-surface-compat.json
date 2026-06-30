@@ -3,6 +3,8 @@
   "aggregate_case": {
     "name": "ml_model_lifecycle_shape",
     "required_cases": [
+      "register_model_group",
+      "get_model_group",
       "register_model",
       "get_register_task",
       "create_connector",
@@ -19,6 +21,7 @@
     ],
     "metadata": {
       "evidence_classes": [
+        "model-group-lifecycle",
         "task-lifecycle",
         "connector-lifecycle",
         "deploy-persistence",
@@ -29,6 +32,73 @@
     }
   },
   "cases": [
+    {
+      "name": "register_model_group",
+      "method": "POST",
+      "path": "/_plugins/_ml/model_groups/_register",
+      "body": {
+        "group_id": "compat-model-group",
+        "name": "compat embeddings",
+        "description": "compat model group",
+        "access": {
+          "owner": "steelsearch-compat",
+          "backend_roles": [
+            "ml-admin"
+          ],
+          "tenant": "development",
+          "is_public": false
+        }
+      },
+      "expected_status": 200,
+      "compare_paths": [
+        "group_id",
+        "name",
+        "description",
+        "access.owner",
+        "access.backend_roles.0",
+        "access.tenant",
+        "access.is_public"
+      ],
+      "expected_paths": {
+        "group_id": "compat-model-group",
+        "name": "compat embeddings",
+        "description": "compat model group",
+        "access.owner": "steelsearch-compat",
+        "access.backend_roles.0": "ml-admin",
+        "access.tenant": "development",
+        "access.is_public": false
+      },
+      "metadata": {
+        "evidence_classes": [
+          "model-group-lifecycle"
+        ]
+      }
+    },
+    {
+      "name": "get_model_group",
+      "method": "GET",
+      "path": "/_plugins/_ml/model_groups/compat-model-group",
+      "expected_status": 200,
+      "compare_paths": [
+        "group_id",
+        "name",
+        "access.owner",
+        "access.backend_roles.0",
+        "access.tenant"
+      ],
+      "expected_paths": {
+        "group_id": "compat-model-group",
+        "name": "compat embeddings",
+        "access.owner": "steelsearch-compat",
+        "access.backend_roles.0": "ml-admin",
+        "access.tenant": "development"
+      },
+      "metadata": {
+        "evidence_classes": [
+          "model-group-lifecycle"
+        ]
+      }
+    },
     {
       "name": "register_model",
       "method": "POST",

@@ -146,6 +146,7 @@ class PromotionReportEvidenceTests(unittest.TestCase):
         self.assertEqual(
             set(aggregate.get("metadata", {}).get("evidence_classes") or []),
             {
+                "model-group-lifecycle",
                 "task-lifecycle",
                 "connector-lifecycle",
                 "deploy-persistence",
@@ -157,6 +158,8 @@ class PromotionReportEvidenceTests(unittest.TestCase):
         self.assertEqual(
             set(aggregate.get("required_cases") or []),
             {
+                "register_model_group",
+                "get_model_group",
                 "register_model",
                 "get_register_task",
                 "create_connector",

@@ -20,6 +20,8 @@
         "vector-ml"
       ],
       "required_cases": [
+        "register_model_group",
+        "get_model_group",
         "register_model",
         "get_register_task",
         "create_connector",
@@ -46,6 +48,7 @@
         "undeploy_model"
       ],
       "required_evidence_classes": [
+        "model-group-lifecycle",
         "task-lifecycle",
         "connector-lifecycle",
         "connector-authz",

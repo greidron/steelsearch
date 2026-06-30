@@ -2300,6 +2300,7 @@ pub struct SteelNode {
     pub knn_operational_state: Arc<Mutex<Option<KnnOperationalState>>>,
     pub ml_models_state: Arc<Mutex<BTreeMap<String, MlModelState>>>,
     pub next_ml_model_id: Arc<Mutex<u64>>,
+    pub ml_model_groups_state: Arc<Mutex<BTreeMap<String, MlModelGroupState>>>,
     pub ml_connectors_state: Arc<Mutex<BTreeMap<String, MlConnectorState>>>,
     pub next_ml_connector_id: Arc<Mutex<u64>>,
     pub ml_tasks_state: Arc<Mutex<BTreeMap<String, MlTaskState>>>,
@@ -2451,6 +2452,8 @@ pub struct SharedRuntimeState {
     #[serde(default)]
     pub next_ml_model_id: u64,
     #[serde(default)]
+    pub ml_model_groups: BTreeMap<String, MlModelGroupState>,
+    #[serde(default)]
     pub ml_connectors: BTreeMap<String, MlConnectorState>,
     #[serde(default)]
     pub next_ml_connector_id: u64,
@@ -2504,6 +2507,22 @@ pub struct MlTaskState {
     pub model_id: String,
     pub task_type: String,
     pub state: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct MlModelGroupState {
+    pub group_id: String,
+    pub name: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub description: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub owner: String,
+    #[serde(default)]
+    pub backend_roles: Vec<String>,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub tenant: String,
+    #[serde(default)]
+    pub is_public: bool,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -2635,6 +2654,7 @@ impl SteelNode {
             knn_operational_state: Arc::new(Mutex::new(None)),
             ml_models_state: Arc::new(Mutex::new(BTreeMap::new())),
             next_ml_model_id: Arc::new(Mutex::new(0)),
+            ml_model_groups_state: Arc::new(Mutex::new(BTreeMap::new())),
             ml_connectors_state: Arc::new(Mutex::new(BTreeMap::new())),
             next_ml_connector_id: Arc::new(Mutex::new(0)),
             ml_tasks_state: Arc::new(Mutex::new(BTreeMap::new())),
@@ -4534,6 +4554,14 @@ impl SteelNode {
             }
             return Some(self.handle_ml_model_register_route(request));
         }
+        if request.path == "/_plugins/_ml/model_groups/_register"
+            && request.method == RestMethod::Post
+        {
+            if let Err(response) = require_admin_ml_role(request) {
+                return Some(response);
+            }
+            return Some(self.handle_ml_model_group_register_route(request));
+        }
         if request.path == "/_plugins/_ml/connectors/_create" && request.method == RestMethod::Post
         {
             if let Err(response) = require_admin_ml_role(request) {
@@ -4561,6 +4589,14 @@ impl SteelNode {
                     return Some(response);
                 }
                 return Some(self.handle_ml_connector_get_route(connector_id));
+            }
+        }
+        if let Some(group_id) = request.path.strip_prefix("/_plugins/_ml/model_groups/") {
+            if request.method == RestMethod::Get {
+                if let Err(response) = require_admin_ml_role(request) {
+                    return Some(response);
+                }
+                return Some(self.handle_ml_model_group_get_route(group_id));
             }
         }
         if let Some(model_id) = request.path.strip_prefix("/_plugins/_ml/models/") {
@@ -18454,6 +18490,123 @@ impl SteelNode {
         )
     }
 
+    fn handle_ml_model_group_register_route(&self, request: &RestRequest) -> RestResponse {
+        let body = serde_json::from_slice::<Value>(&request.body).unwrap_or(Value::Null);
+        let group_id = body
+            .get("group_id")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string();
+        let name = body
+            .get("name")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string();
+        let access = body.get("access").and_then(Value::as_object);
+        if group_id.is_empty() || name.is_empty() || access.is_none() {
+            return RestResponse::opensearch_error(
+                400,
+                "parse_exception",
+                "model group registration requires group_id, name, and access metadata",
+            );
+        }
+        let access = access.expect("checked access object");
+        let owner = access
+            .get("owner")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string();
+        if owner.is_empty() {
+            return RestResponse::opensearch_error(
+                400,
+                "parse_exception",
+                "model group access owner is required",
+            );
+        }
+        let mut backend_roles: Vec<String> = access
+            .get("backend_roles")
+            .and_then(Value::as_array)
+            .map(|roles| {
+                roles
+                    .iter()
+                    .filter_map(Value::as_str)
+                    .map(ToString::to_string)
+                    .collect()
+            })
+            .unwrap_or_default();
+        backend_roles.sort();
+        backend_roles.dedup();
+        let group = MlModelGroupState {
+            group_id: group_id.clone(),
+            name,
+            description: body
+                .get("description")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_string(),
+            owner,
+            backend_roles,
+            tenant: access
+                .get("tenant")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_string(),
+            is_public: access
+                .get("is_public")
+                .and_then(Value::as_bool)
+                .unwrap_or(false),
+        };
+        let mut groups = self
+            .ml_model_groups_state
+            .lock()
+            .expect("ml model groups state lock poisoned");
+        if groups.contains_key(&group_id) {
+            return RestResponse::opensearch_error(
+                409,
+                "resource_already_exists_exception",
+                &format!("ML model group [{group_id}] already exists"),
+            );
+        }
+        groups.insert(group_id.clone(), group.clone());
+        drop(groups);
+        self.persist_shared_runtime_state_to_disk();
+        RestResponse::json(200, self.ml_model_group_response(&group))
+    }
+
+    fn handle_ml_model_group_get_route(&self, group_id: &str) -> RestResponse {
+        let groups = self
+            .ml_model_groups_state
+            .lock()
+            .expect("ml model groups state lock poisoned");
+        let Some(group) = groups.get(group_id) else {
+            return RestResponse::json(
+                404,
+                serde_json::json!({
+                    "error": {
+                        "type": "resource_not_found_exception",
+                        "reason": format!("ML model group [{group_id}] missing")
+                    },
+                    "status": 404
+                }),
+            );
+        };
+        RestResponse::json(200, self.ml_model_group_response(group))
+    }
+
+    fn ml_model_group_response(&self, group: &MlModelGroupState) -> Value {
+        serde_json::json!({
+            "group_id": group.group_id,
+            "name": group.name,
+            "description": group.description,
+            "access": {
+                "owner": group.owner,
+                "backend_roles": group.backend_roles,
+                "tenant": group.tenant,
+                "is_public": group.is_public
+            }
+        })
+    }
+
     fn handle_ml_connector_create_route(&self, request: &RestRequest) -> RestResponse {
         let body = serde_json::from_slice::<Value>(&request.body).unwrap_or(Value::Null);
         let name = body
@@ -21471,6 +21624,10 @@ impl SteelNode {
             .lock()
             .expect("next ml model id lock poisoned") = state.next_ml_model_id;
         *self
+            .ml_model_groups_state
+            .lock()
+            .expect("ml model groups state lock poisoned") = state.ml_model_groups;
+        *self
             .ml_connectors_state
             .lock()
             .expect("ml connectors state lock poisoned") = state.ml_connectors;
@@ -21683,6 +21840,11 @@ impl SteelNode {
                 .next_ml_model_id
                 .lock()
                 .expect("next ml model id lock poisoned"),
+            ml_model_groups: self
+                .ml_model_groups_state
+                .lock()
+                .expect("ml model groups state lock poisoned")
+                .clone(),
             ml_connectors: self
                 .ml_connectors_state
                 .lock()
@@ -52089,6 +52251,10 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
 
     #[test]
     fn ml_model_routes_support_task_lifecycle_and_restart_persistence() {
+        let _lock = security_env_lock();
+        let previous_persist_flag =
+            env::var("STEELSEARCH_PERSIST_SHARED_RUNTIME_STATE_PER_WRITE").ok();
+        env::set_var("STEELSEARCH_PERSIST_SHARED_RUNTIME_STATE_PER_WRITE", "1");
         let root = std::env::temp_dir().join(format!(
             "steelsearch-ml-state-{}",
             std::time::SystemTime::now()
@@ -52104,6 +52270,25 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             version: OPENSEARCH_3_7_0_TRANSPORT,
         });
         node.shared_runtime_state_path = Some(shared_state_path.clone());
+
+        let group = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_plugins/_ml/model_groups/_register")
+                .with_json_body(serde_json::json!({
+                    "group_id": "group-1",
+                    "name": "bounded-embeddings",
+                    "description": "bounded ML model group",
+                    "access": {
+                        "owner": "steelsearch-dev",
+                        "backend_roles": ["ml-admin", "ml-admin"],
+                        "tenant": "development",
+                        "is_public": false
+                    }
+                })),
+        );
+        assert_eq!(group.status, 200);
+        assert_eq!(group.body["group_id"], "group-1");
+        assert_eq!(group.body["access"]["owner"], "steelsearch-dev");
+        assert_eq!(group.body["access"]["backend_roles"][0], "ml-admin");
 
         let register = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/_plugins/_ml/models/_register").with_json_body(
@@ -52160,6 +52345,14 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         restarted.shared_runtime_state_path = Some(shared_state_path.clone());
         restarted.sync_shared_runtime_state_from_disk();
 
+        let group_get = restarted.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_plugins/_ml/model_groups/group-1",
+        ));
+        assert_eq!(group_get.status, 200);
+        assert_eq!(group_get.body["name"], "bounded-embeddings");
+        assert_eq!(group_get.body["access"]["tenant"], "development");
+
         let model_get = restarted.handle_rest_request(RestRequest::new(
             RestMethod::Get,
             &format!("/_plugins/_ml/models/{model_id}"),
@@ -52196,6 +52389,11 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
 
         let _ = std::fs::remove_file(shared_state_path);
         let _ = std::fs::remove_dir_all(root);
+        if let Some(value) = previous_persist_flag {
+            env::set_var("STEELSEARCH_PERSIST_SHARED_RUNTIME_STATE_PER_WRITE", value);
+        } else {
+            env::remove_var("STEELSEARCH_PERSIST_SHARED_RUNTIME_STATE_PER_WRITE");
+        }
     }
 
     #[test]

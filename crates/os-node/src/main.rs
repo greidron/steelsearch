@@ -33164,7 +33164,7 @@ mod tests {
             "opensearch-knn:knn-rest-compatibility:rest=[/_plugins/_knn/stats|/_plugins/_knn/settings|/_plugins/_knn/warmup|/_plugins/_knn/models]:transport=[]"
         ));
         assert!(development_transcript.contains(
-            "opensearch-ml-commons:ml-commons-rest-compatibility:rest=[/_plugins/_ml/models|/_plugins/_ml/tasks|/_plugins/_ml/connectors]:transport=[]"
+            "opensearch-ml-commons:ml-commons-rest-compatibility:rest=[/_plugins/_ml/models|/_plugins/_ml/model_groups|/_plugins/_ml/tasks|/_plugins/_ml/connectors]:transport=[]"
         ));
 
         config.mode = DaemonMode::Production;
@@ -33174,7 +33174,7 @@ mod tests {
         assert!(production_transcript.contains("manifest=inline/default"));
         assert!(production_transcript.contains("registered_components=steelsearch-runtime"));
         assert!(production_transcript.contains(
-            "steelsearch-runtime:runtime-observability:rest=[/_cat/plugins|/_steelsearch/dev/extensions|/_steelsearch/dev/extensions/_shutdown|/_steelsearch/dev/extensions/_recovery_failed]:transport=[]"
+            "steelsearch-runtime:runtime-observability:rest=[/_cat/plugins|/_steelsearch/dev/extensions|/_steelsearch/dev/extensions/_shutdown|/_steelsearch/dev/extensions/_recovery_failed|/_steelsearch/readiness]:transport=[]"
         ));
         assert!(!production_transcript.contains("opensearch-knn"));
         assert!(!production_transcript.contains("opensearch-ml-commons"));

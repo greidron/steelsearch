@@ -13,6 +13,7 @@ pub const ML_COMMONS_EXTENSION_DESCRIPTION: &str =
 pub const ML_COMMONS_EXTENSION_CLASSNAME: &str = "org.steelsearch.ml.MLCommonsPlugin";
 pub const ML_COMMONS_EXTENSION_REST_ROUTES: &[&str] = &[
     "/_plugins/_ml/models",
+    "/_plugins/_ml/model_groups",
     "/_plugins/_ml/tasks",
     "/_plugins/_ml/connectors",
 ];

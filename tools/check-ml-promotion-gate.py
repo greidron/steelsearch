@@ -70,6 +70,7 @@ def main() -> int:
         if isinstance(case, dict) and case.get("name")
     }
     semantic_required_evidence_classes = {
+        "model-group-lifecycle",
         "task-lifecycle",
         "connector-lifecycle",
         "connector-authz",
