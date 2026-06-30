@@ -18,6 +18,56 @@ EXPECTED_DISTRIBUTED = {
     "seed-loss-recovery",
 }
 
+PHASE_C_CHILD_REPORTS = {
+    "join": (
+        "join/mixed-cluster-join-report.json",
+        {"live_join_probe_passed", "join_reject_passed"},
+    ),
+    "live_join_probe": (
+        "join/live-join-probe-report.json",
+        {
+            "remote_transport_version_matches_fixture",
+            "response_header_matches_min_compat",
+            "transport_payload_matches_fixture",
+            "handshake_cluster_name_matches_state",
+            "cluster_uuid_present",
+            "single_local_node_visible",
+            "advertised_roles_match_fixture",
+            "required_attributes_present",
+            "transport_address_present",
+            "node_name_present",
+        },
+    ),
+    "recovery": (
+        "recovery/mixed-cluster-recovery-report.json",
+        {"bounded_peer_recovery_probe_passed", "recovery_reject_passed"},
+    ),
+    "bounded_recovery_probe": (
+        "recovery/bounded-peer-recovery-probe-report.json",
+        {"wire_round_trip_passed"},
+    ),
+    "failure": (
+        "failure/mixed-cluster-failure-report.json",
+        {"failure_topology_probe_passed", "failure_ledger_passed"},
+    ),
+    "write_replication": (
+        "write-replication/mixed-cluster-write-replication-report.json",
+        {"write_replication_happy_path_passed", "write_replication_reject_passed"},
+    ),
+    "publication": (
+        "publication/mixed-cluster-publication-report.json",
+        {
+            "publication-full-state-report.json",
+            "publication-diff-ack-report.json",
+            "publication-reject-report.json",
+        },
+    ),
+    "allocation": (
+        "allocation/mixed-cluster-allocation-report.json",
+        {"routing_convergence_probe_passed", "allocation_reject_passed"},
+    ),
+}
+
 
 def fail(message: str) -> None:
     raise SystemExit(message)
@@ -61,6 +111,7 @@ def validate_phase_c_summary(path: str) -> dict:
     report = load_json(path)
     if not report.get("summary", {}).get("passed"):
         fail("phase-c mixed-cluster summary did not pass")
+    phase_c_root = Path(path).parent
     required_reports = {
         "generated-api-spec-report.json",
         "mixed-cluster-allocation-report.json",
@@ -77,10 +128,35 @@ def validate_phase_c_summary(path: str) -> dict:
         fail(f"phase-c summary missing reports: {missing}")
     if failed:
         fail(f"phase-c summary has failed reports: {failed}")
+    child_reports = validate_phase_c_child_reports(phase_c_root)
     return {
         "report": str(path),
+        "child_reports": child_reports,
         "classes": ["publication-ordering", "peer-recovery", "mixed-write-replication"],
     }
+
+
+def validate_phase_c_child_reports(phase_c_root: Path) -> dict:
+    validated = {}
+    for name, (relative_path, required_checks) in PHASE_C_CHILD_REPORTS.items():
+        path = phase_c_root / relative_path
+        child = load_json(path)
+        if not child.get("summary", {}).get("passed"):
+            fail(f"phase-c child report did not pass: {relative_path}")
+        checks = child.get("checks") or {}
+        missing = sorted(required_checks - set(checks))
+        failed = sorted(
+            check for check in required_checks if check in checks and checks.get(check) is not True
+        )
+        if missing:
+            fail(f"phase-c child report missing checks for {name}: {missing}")
+        if failed:
+            fail(f"phase-c child report failed checks for {name}: {failed}")
+        validated[name] = {
+            "report": str(path),
+            "required_checks": sorted(required_checks),
+        }
+    return validated
 
 
 def validate_rolling_report(path: str) -> dict:
