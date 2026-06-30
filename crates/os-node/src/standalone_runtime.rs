@@ -28444,7 +28444,13 @@ fn bool_minimum_should_match_value(value: &Value, should_count: usize) -> Option
         return usize::try_from(value).ok();
     }
     let value = value.as_str()?.trim();
-    if value.is_empty() || value.contains('<') || value.split_whitespace().nth(1).is_some() {
+    if value.is_empty() {
+        return None;
+    }
+    if value.contains('<') {
+        return bool_conditional_minimum_should_match_value(value, should_count);
+    }
+    if value.split_whitespace().nth(1).is_some() {
         return None;
     }
     if let Some(percent) = value.strip_suffix('%') {
@@ -28464,6 +28470,53 @@ fn bool_minimum_should_match_value(value: &Value, should_count: usize) -> Option
         (should_count as i64 + required).max(0)
     };
     usize::try_from(required).ok()
+}
+
+fn bool_conditional_minimum_should_match_value(value: &str, should_count: usize) -> Option<usize> {
+    let mut result = should_count;
+    let normalized = normalize_minimum_should_match_condition_spacing(value);
+    for token in normalized.split(' ') {
+        if token.is_empty() {
+            return None;
+        }
+        let (upper_bound, spec) = token.split_once('<')?;
+        if spec.contains('<') {
+            return None;
+        }
+        let upper_bound = upper_bound.parse::<usize>().ok()?;
+        if should_count <= upper_bound {
+            return Some(result);
+        }
+        result = bool_minimum_should_match_value(&Value::String(spec.to_string()), should_count)?;
+    }
+    Some(result)
+}
+
+fn normalize_minimum_should_match_condition_spacing(value: &str) -> String {
+    let mut normalized = String::with_capacity(value.len());
+    let mut pending_space = false;
+    for ch in value.trim().chars() {
+        match ch {
+            '<' => {
+                if normalized.ends_with(' ') {
+                    normalized.pop();
+                }
+                normalized.push('<');
+                pending_space = false;
+            }
+            ch if ch.is_whitespace() => {
+                pending_space = true;
+            }
+            ch => {
+                if pending_space && !normalized.ends_with('<') && !normalized.is_empty() {
+                    normalized.push(' ');
+                }
+                normalized.push(ch);
+                pending_space = false;
+            }
+        }
+    }
+    normalized
 }
 
 fn extract_knn_field_name(query: &Value) -> Option<&str> {
@@ -61988,6 +62041,33 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         );
         assert_eq!(
             bool_percentage_minimum_should_match.body["hits"]["hits"][0]["_id"],
+            "doc-2"
+        );
+
+        let bool_conditional_minimum_should_match = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-dsl-000001/_search").with_json_body(
+                serde_json::json!({
+                    "query": {
+                        "bool": {
+                            "should": [
+                                { "term": { "tags": "blue" } },
+                                { "term": { "code": "beta-2" } },
+                                { "match": { "message": "beta" } },
+                                { "term": { "code": "gamma-3" } }
+                            ],
+                            "minimum_should_match": "3 < 75%"
+                        }
+                    }
+                }),
+            ),
+        );
+        assert_eq!(bool_conditional_minimum_should_match.status, 200);
+        assert_eq!(
+            bool_conditional_minimum_should_match.body["hits"]["total"]["value"],
+            1
+        );
+        assert_eq!(
+            bool_conditional_minimum_should_match.body["hits"]["hits"][0]["_id"],
             "doc-2"
         );
 

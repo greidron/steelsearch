@@ -3699,7 +3699,13 @@ fn parse_minimum_should_match(value: &Value, should_count: usize) -> QueryDslRes
 
 fn parse_minimum_should_match_text(value: &str, should_count: usize) -> Option<u32> {
     let value = value.trim();
-    if value.is_empty() || value.contains('<') || value.split_whitespace().nth(1).is_some() {
+    if value.is_empty() {
+        return None;
+    }
+    if value.contains('<') {
+        return parse_conditional_minimum_should_match_text(value, should_count);
+    }
+    if value.split_whitespace().nth(1).is_some() {
         return None;
     }
     if let Some(percent) = value.strip_suffix('%') {
@@ -3719,6 +3725,53 @@ fn parse_minimum_should_match_text(value: &str, should_count: usize) -> Option<u
         (should_count as i64 + required).max(0)
     };
     u32::try_from(required).ok()
+}
+
+fn parse_conditional_minimum_should_match_text(value: &str, should_count: usize) -> Option<u32> {
+    let mut result = u32::try_from(should_count).ok()?;
+    let normalized = normalize_minimum_should_match_condition_spacing(value);
+    for token in normalized.split(' ') {
+        if token.is_empty() {
+            return None;
+        }
+        let (upper_bound, spec) = token.split_once('<')?;
+        if spec.contains('<') {
+            return None;
+        }
+        let upper_bound = upper_bound.parse::<usize>().ok()?;
+        if should_count <= upper_bound {
+            return Some(result);
+        }
+        result = parse_minimum_should_match_text(spec, should_count)?;
+    }
+    Some(result)
+}
+
+fn normalize_minimum_should_match_condition_spacing(value: &str) -> String {
+    let mut normalized = String::with_capacity(value.len());
+    let mut pending_space = false;
+    for ch in value.trim().chars() {
+        match ch {
+            '<' => {
+                if normalized.ends_with(' ') {
+                    normalized.pop();
+                }
+                normalized.push('<');
+                pending_space = false;
+            }
+            ch if ch.is_whitespace() => {
+                pending_space = true;
+            }
+            ch => {
+                if pending_space && !normalized.ends_with('<') && !normalized.is_empty() {
+                    normalized.push(' ');
+                }
+                normalized.push(ch);
+                pending_space = false;
+            }
+        }
+    }
+    normalized
 }
 
 #[cfg(test)]
@@ -5104,6 +5157,61 @@ mod tests {
             Query::Bool {
                 clauses: BoolQuery {
                     minimum_should_match: Some(3),
+                    ..
+                }
+            }
+        ));
+    }
+
+    #[test]
+    fn parses_bool_conditional_minimum_should_match() {
+        let query = parse_query(&serde_json::json!({
+            "bool": {
+                "should": [
+                    { "term": { "service": "checkout" } },
+                    { "term": { "level": "info" } },
+                    { "term": { "labels": "payment" } },
+                    { "term": { "tag": "payment" } }
+                ],
+                "minimum_should_match": "3 < 75%"
+            }
+        }))
+        .unwrap();
+
+        assert!(matches!(
+            query,
+            Query::Bool {
+                clauses: BoolQuery {
+                    minimum_should_match: Some(3),
+                    ..
+                }
+            }
+        ));
+
+        let multi_condition = parse_query(&serde_json::json!({
+            "bool": {
+                "should": [
+                    { "term": { "service": "checkout" } },
+                    { "term": { "level": "info" } },
+                    { "term": { "labels": "payment" } },
+                    { "term": { "tag": "payment" } },
+                    { "term": { "message": "checkout" } },
+                    { "term": { "message": "payment" } },
+                    { "term": { "message": "accepted" } },
+                    { "term": { "message": "timeout" } },
+                    { "term": { "message": "cache" } },
+                    { "term": { "message": "catalog" } }
+                ],
+                "minimum_should_match": "2<-25% 9<-3"
+            }
+        }))
+        .unwrap();
+
+        assert!(matches!(
+            multi_condition,
+            Query::Bool {
+                clauses: BoolQuery {
+                    minimum_should_match: Some(7),
                     ..
                 }
             }

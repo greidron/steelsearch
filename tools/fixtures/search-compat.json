@@ -291,6 +291,7 @@
       "bool_filter_range",
       "bool_object_form_array_keyword_filter_search",
       "bool_percentage_minimum_should_match_search",
+      "bool_conditional_minimum_should_match_search",
       "multi_match_best_fields_search",
       "nested_query_search",
       "nested_tuple_semantics_search",
@@ -4047,6 +4048,51 @@
       "extract": "search_hits",
       "family": "lexical",
       "description": "[lexical] bool percentage minimum_should_match"
+    },
+    {
+      "name": "bool_conditional_minimum_should_match_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "bool": {
+            "should": [
+              {
+                "term": {
+                  "service": "checkout"
+                }
+              },
+              {
+                "term": {
+                  "level": "info"
+                }
+              },
+              {
+                "term": {
+                  "labels": "payment"
+                }
+              },
+              {
+                "term": {
+                  "tag": "payment"
+                }
+              }
+            ],
+            "minimum_should_match": "3 < 75%"
+          }
+        },
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] bool conditional minimum_should_match"
     },
     {
       "name": "bulk_match_search",
