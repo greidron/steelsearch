@@ -299,11 +299,11 @@ def comparison_profile(name: str) -> dict[str, Any]:
                 "Rust receiver rejects excess query-phase remote transport work",
                 "Rust receiver exposes remote_transport rejected/completed through _cat and _nodes/stats",
                 "Java peer exposes analogous search thread-pool rejection through _cat and _nodes/stats",
-                "profile report records both surfaces without relying on snapshot-file or binary compatibility",
+                "profile report records both surfaces through live transport and REST counter readbacks",
             ],
             "limits": [
                 "the comparison runs independent local Rust and Java probes unless a future harness supplies a live mixed-cluster coordinator",
-                "the profile is parity evidence for query-phase backpressure semantics, not shard-store or Lucene binary compatibility",
+                "the profile is parity evidence for query-phase backpressure semantics",
             ],
         },
     }
@@ -396,9 +396,13 @@ def wait_for_cat_counter(port: int, counter: str, predicate: Any) -> dict[str, A
     deadline = time.monotonic() + 10
     last_row = None
     while time.monotonic() < deadline:
-        rows = http_json(f"http://127.0.0.1:{port}/_cat/thread_pool/remote_transport?format=json")
+        rows = http_json(
+            "http://127.0.0.1:"
+            f"{port}/_cat/thread_pool/remote_transport?format=json"
+            "&h=node_id,node_name,name,active,queue,rejected,completed"
+        )
         for row in rows:
-            if row.get("node_id") == "steel-node-1":
+            if row.get("node_id") == "steel-node-1" or row.get("node_name") == "steel-node-1":
                 last_row = row
                 if predicate(row[counter]):
                     return row

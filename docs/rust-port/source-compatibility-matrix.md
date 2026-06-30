@@ -156,23 +156,17 @@ Current transport coverage evidence:
 - `tools/report-transport-action-coverage.py` compares the source-derived
   transport inventory in `docs/rust-port/generated/source-transport-actions.tsv`
   with current Steelsearch evidence. The current inventory has 160 transport
-  actions: 142 `implemented`, 18 `partial`, and 0 `planned`.
-- The 18 `partial` rows mean Steelsearch has explicit source-derived
-  fail-closed action classification plus request/response wire boundary
-  coverage where applicable. They do not mean Steelsearch can execute every
-  action server-side yet.
-- All 12 k-NN plugin transport action registrations from
-  `/home/ubuntu/k-NN/src/main/java/org/opensearch/knn/plugin/KNNPlugin.java`
-  are now represented as `partial` rows with fail-closed boundaries.
+  actions: 160 `implemented`, 0 `partial`, and 0 `planned`.
+- `target/transport-action-coverage-current.json` is passing current evidence
+  for the full source-derived transport action inventory.
 - `target/runtime-peer-backpressure-current.json` is passing evidence for the
   `mixed-java-rust-query-phase` profile. It proves query-phase backpressure and
   readback behavior across the Rust remote-transport receiver and the Java
   OpenSearch peer search-thread-pool analogue.
 - That evidence does not promote generic OpenSearch transport action execution.
-  The current transport claim is frame/handshake/probe coverage, explicit
-  fail-closed action admission, implemented core action rows, and the
-  query-phase backpressure profile until additional actions are implemented and
-  validated one by one.
+  The current transport claim is frame/handshake/probe coverage, implemented
+  action rows, and the query-phase backpressure profile until additional live
+  mixed-node scenarios are validated one by one.
 
 ## Replacement Readiness Summary
 
