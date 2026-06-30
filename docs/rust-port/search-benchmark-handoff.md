@@ -40,6 +40,18 @@ Latest per-operation throughput ratios:
 | vector | 0.061x | 0.098x |
 | write | 0.055x | 0.099x |
 
+Latest native-path follow-up benchmarks after the full matrix:
+
+| Run | Scope | Before | After | Ratio |
+| --- | --- | ---: | ---: | ---: |
+| `target/search-benchmark-sort-filter-native-20260630T041058Z/summary.json` | 1-client `sort_filter=100` throughput | 4.64 ops/s | 100.87 ops/s | 21.73x |
+| `target/search-benchmark-sort-filter-native-20260630T041058Z/summary.json` | 1-client `sort_filter=100` p95 latency | 238.00 ms | 13.53 ms | 0.057x |
+| `target/search-benchmark-native-sort-mixed-20260630T041127Z/summary.json` | 4-client mixed non-vector throughput | 28.49 ops/s | 104.69 ops/s | 3.67x |
+| `target/search-benchmark-native-sort-mixed-20260630T041127Z/summary.json` | 4-client mixed `sort_filter` p95 latency | 634.21 ms | 79.83 ms | 0.126x |
+
+Both follow-up runs reported zero `materialized_response_fetches` and zero
+`compatibility_materialized_response_fetches`.
+
 Remaining slower-than-OpenSearch points in the latest run:
 
 | Topology | Operation | Metric | SteelSearch | OpenSearch | Ratio |
@@ -145,6 +157,10 @@ Documentation changed:
 ### Native/runtime path
 
 - Standalone HTTP path routes through the native engine path.
+- Simple field `sort` requests now stay on the native engine path when the sort
+  list contains only user fields with `asc`/`desc` order. Complex sort options,
+  `_score`, `_doc`, and other metadata sorts still fail closed to the
+  compatibility path.
 - Engine store uses `RwLock`; search paths take read locks.
 - Existing refreshed native search snapshot is preserved across `refresh=false` writes.
 

@@ -22252,6 +22252,9 @@ fn standalone_search_body_allows_native_engine(body: &Value) -> bool {
         .or_else(|| body.get("aggregations"))
         .unwrap_or(&Value::Null);
     !query_contains_native_unsafe_nested_knn(body.get("query").unwrap_or(&Value::Null))
+        && body
+            .get("sort")
+            .map_or(true, standalone_sort_allows_native_engine)
         && !value_contains_any_key(
             aggregations,
             &["scripted_metric", "significant_terms", "top_hits"],
@@ -22272,7 +22275,6 @@ fn standalone_search_body_allows_native_engine(body: &Value) -> bool {
             "seq_no_primary_term",
             "script_fields",
             "slice",
-            "sort",
             "stored_fields",
             "suggest",
             "terminate_after",
@@ -22285,6 +22287,45 @@ fn standalone_search_body_allows_native_engine(body: &Value) -> bool {
         ]
         .iter()
         .any(|key| body.get(*key).is_some())
+}
+
+fn standalone_sort_allows_native_engine(sort: &Value) -> bool {
+    let Some(sort_fields) = sort.as_array() else {
+        return false;
+    };
+    sort_fields.iter().all(|sort_field| {
+        if let Some(field_name) = sort_field.as_str() {
+            return standalone_sort_field_name_allows_native_engine(field_name);
+        }
+        let Some(object) = sort_field.as_object() else {
+            return false;
+        };
+        if object.len() != 1 {
+            return false;
+        }
+        object.iter().all(|(field_name, options)| {
+            standalone_sort_field_name_allows_native_engine(field_name)
+                && standalone_sort_options_allow_native_engine(options)
+        })
+    })
+}
+
+fn standalone_sort_field_name_allows_native_engine(field_name: &str) -> bool {
+    !field_name.is_empty() && field_name != "_doc" && !field_name.starts_with('_')
+}
+
+fn standalone_sort_options_allow_native_engine(options: &Value) -> bool {
+    match options {
+        Value::String(value) => matches!(value.as_str(), "asc" | "desc"),
+        Value::Object(object) => {
+            object
+                .get("order")
+                .and_then(Value::as_str)
+                .is_some_and(|order| matches!(order, "asc" | "desc"))
+                && object.keys().all(|key| key == "order")
+        }
+        _ => false,
+    }
 }
 
 fn query_contains_native_unsafe_nested_knn(query: &Value) -> bool {
@@ -59333,6 +59374,41 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
 
     #[test]
     fn native_search_gate_allows_safe_nested_filtered_knn_subset() {
+        assert!(standalone_search_body_allows_native_engine(
+            &serde_json::json!({
+                "query": {
+                    "bool": {
+                        "filter": [
+                            { "term": { "tenant": "tenant-a" } },
+                            { "range": { "price": { "gte": 10.0, "lte": 75.0 } } }
+                        ],
+                        "must": [
+                            { "match": { "message": "service" } }
+                        ]
+                    }
+                },
+                "sort": [
+                    { "latency": "asc" },
+                    { "price": { "order": "desc" } }
+                ]
+            })
+        ));
+        assert!(!standalone_search_body_allows_native_engine(
+            &serde_json::json!({
+                "query": { "match_all": {} },
+                "sort": [
+                    { "_score": "desc" }
+                ]
+            })
+        ));
+        assert!(!standalone_search_body_allows_native_engine(
+            &serde_json::json!({
+                "query": { "match_all": {} },
+                "sort": [
+                    { "latency": { "order": "asc", "missing": "_last" } }
+                ]
+            })
+        ));
         assert!(standalone_search_body_allows_native_engine(
             &serde_json::json!({
                 "query": {
