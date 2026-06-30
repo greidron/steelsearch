@@ -2825,13 +2825,32 @@ fn build_tantivy_query(
             field,
             query,
             minimum_should_match,
-        } => build_tantivy_match_query(search_state, field, query, *minimum_should_match),
-        Query::MatchPhrase { field, query, slop } => {
-            build_tantivy_match_phrase_query(search_state, field, query, *slop)
-        }
-        Query::MatchPhrasePrefix { field, query, slop } => {
-            build_tantivy_match_phrase_prefix_query(search_state, field, query, *slop)
-        }
+            zero_terms_all,
+        } => build_tantivy_match_query(
+            search_state,
+            field,
+            query,
+            *minimum_should_match,
+            *zero_terms_all,
+        ),
+        Query::MatchPhrase {
+            field,
+            query,
+            slop,
+            zero_terms_all,
+        } => build_tantivy_match_phrase_query(search_state, field, query, *slop, *zero_terms_all),
+        Query::MatchPhrasePrefix {
+            field,
+            query,
+            slop,
+            zero_terms_all,
+        } => build_tantivy_match_phrase_prefix_query(
+            search_state,
+            field,
+            query,
+            *slop,
+            *zero_terms_all,
+        ),
         Query::MatchBoolPrefix { field, query } => {
             build_tantivy_match_bool_prefix_query(search_state, field, query)
         }
@@ -2888,6 +2907,7 @@ fn build_tantivy_query(
             minimum_should_match,
             tie_breaker,
             boost,
+            zero_terms_all,
         } => build_tantivy_multi_match_query(
             search_state,
             fields,
@@ -2898,6 +2918,7 @@ fn build_tantivy_query(
             *minimum_should_match,
             *tie_breaker,
             *boost,
+            *zero_terms_all,
         ),
         Query::QueryString { query, fields } => build_tantivy_tokenized_field_set_query(
             search_state,
@@ -3434,12 +3455,20 @@ fn build_tantivy_match_query(
     field: &str,
     value: &Value,
     minimum_should_match: Option<usize>,
+    zero_terms_all: bool,
 ) -> EngineResult<Option<Box<dyn TantivyQueryTrait>>> {
+    let query_text = json_value_to_query_text(value)?;
+    if tokenize_phrase_text(&query_text).is_empty() {
+        return if zero_terms_all {
+            Ok(Some(Box::new(AllQuery)))
+        } else {
+            Ok(None)
+        };
+    }
     if field == "_id" {
         let Some(id_field) = search_state.fields.get("_id") else {
             return Ok(Some(Box::new(EmptyQuery)));
         };
-        let query_text = json_value_to_query_text(value)?;
         let pattern = format!(".*{}.*", regex_escape_literal(&query_text));
         let query = RegexQuery::from_pattern(&pattern, id_field.field).map_err(tantivy_error)?;
         return Ok(Some(Box::new(query)));
@@ -3447,18 +3476,15 @@ fn build_tantivy_match_query(
     let Some(indexed_field) = search_state.fields.get(field) else {
         return Ok(None);
     };
-    let query_text = json_value_to_query_text(value)?;
     if let Some(minimum_should_match) = minimum_should_match {
         let tokens = tokenize_phrase_text(&query_text);
-        if tokens.is_empty() {
-            return Ok(None);
-        }
         let should_queries = tokens
             .into_iter()
             .map(|token| Query::Match {
                 field: field.to_string(),
                 query: Value::String(token),
                 minimum_should_match: None,
+                zero_terms_all: false,
             })
             .collect::<Vec<_>>();
         return build_tantivy_minimum_should_match_query(
@@ -3486,11 +3512,19 @@ fn build_tantivy_match_phrase_query(
     field: &str,
     value: &Value,
     slop: usize,
+    zero_terms_all: bool,
 ) -> EngineResult<Option<Box<dyn TantivyQueryTrait>>> {
+    let query_text = json_value_to_query_text(value)?;
+    if tokenize_phrase_text(&query_text).is_empty() {
+        return if zero_terms_all {
+            Ok(Some(Box::new(AllQuery)))
+        } else {
+            Ok(None)
+        };
+    }
     let Some(indexed_field) = search_state.fields.get(field) else {
         return Ok(None);
     };
-    let query_text = json_value_to_query_text(value)?;
     match indexed_field.field_type {
         TantivyFieldType::Text => {
             if slop > 0 {
@@ -3546,8 +3580,13 @@ fn build_tantivy_match_bool_prefix_query(
     let last_index = query_tokens.len() - 1;
     let mut clauses = Vec::new();
     for token in &query_tokens[..last_index] {
-        let Some(inner_query) =
-            build_tantivy_match_query(search_state, field, &Value::String(token.clone()), None)?
+        let Some(inner_query) = build_tantivy_match_query(
+            search_state,
+            field,
+            &Value::String(token.clone()),
+            None,
+            false,
+        )?
         else {
             return Ok(None);
         };
@@ -3597,6 +3636,7 @@ fn build_tantivy_multi_match_bool_prefix_field_query(
             field: field.to_string(),
             query: Value::String(token.clone()),
             minimum_should_match: None,
+            zero_terms_all: false,
         })
         .collect::<Vec<_>>();
     should_queries.push(Query::Prefix {
@@ -3619,11 +3659,16 @@ fn build_tantivy_match_phrase_prefix_query(
     field: &str,
     value: &Value,
     slop: usize,
+    zero_terms_all: bool,
 ) -> EngineResult<Option<Box<dyn TantivyQueryTrait>>> {
     let query_text = json_value_to_query_text(value)?;
     let query_tokens = tokenize_phrase_text(&query_text);
     if query_tokens.is_empty() {
-        return Ok(None);
+        return if zero_terms_all {
+            Ok(Some(Box::new(AllQuery)))
+        } else {
+            Ok(None)
+        };
     }
     if field == "_id" {
         if query_tokens.len() != 1 {
@@ -3651,6 +3696,7 @@ fn build_tantivy_match_phrase_prefix_query(
                         field: field.to_string(),
                         query: Value::String(token.clone()),
                         minimum_should_match: None,
+                        zero_terms_all: false,
                     })
                     .collect::<Vec<_>>();
                 should_queries.push(Query::Prefix {
@@ -3767,6 +3813,7 @@ fn build_tantivy_tokenized_field_set_query(
                 field,
                 &Value::String(token.to_string()),
                 None,
+                false,
             )?
             else {
                 return Ok(None);
@@ -3804,6 +3851,7 @@ fn build_tantivy_tokenized_field_set_query(
                     field,
                     &Value::String(token.to_string()),
                     None,
+                    false,
                 )?
                 else {
                     return Ok(None);
@@ -3837,7 +3885,15 @@ fn build_tantivy_multi_match_query(
     minimum_should_match: Option<usize>,
     tie_breaker: Option<f64>,
     boost: Option<f64>,
+    zero_terms_all: bool,
 ) -> EngineResult<Option<Box<dyn TantivyQueryTrait>>> {
+    if tokenize_phrase_text(&json_value_to_query_text(query)?).is_empty() {
+        return if zero_terms_all {
+            Ok(Some(Box::new(AllQuery)))
+        } else {
+            Ok(None)
+        };
+    }
     let mut clauses = Vec::new();
     let field_minimum_should_match = minimum_should_match
         .or_else(|| (operator == Some("and")).then(|| match_query_token_count(query).max(1)));
@@ -3874,13 +3930,18 @@ fn build_tantivy_multi_match_query(
                 base_field,
                 query,
                 field_minimum_should_match,
+                false,
             )?,
             MultiMatchType::Phrase => {
-                build_tantivy_match_phrase_query(search_state, base_field, query, slop)?
+                build_tantivy_match_phrase_query(search_state, base_field, query, slop, false)?
             }
-            MultiMatchType::PhrasePrefix => {
-                build_tantivy_match_phrase_prefix_query(search_state, base_field, query, slop)?
-            }
+            MultiMatchType::PhrasePrefix => build_tantivy_match_phrase_prefix_query(
+                search_state,
+                base_field,
+                query,
+                slop,
+                false,
+            )?,
             MultiMatchType::BoolPrefix => build_tantivy_multi_match_bool_prefix_field_query(
                 search_state,
                 base_field,
@@ -4079,6 +4140,7 @@ fn build_tantivy_more_like_this_query(
                 field,
                 &Value::String(token.clone()),
                 None,
+                false,
             )?
             else {
                 return Ok(None);
@@ -6981,6 +7043,7 @@ impl StoredIndex {
                 field,
                 query,
                 minimum_should_match,
+                ..
             } if field != "_id" => {
                 let query_text = json_value_to_query_text(query).ok()?;
                 let candidates = self.fast_top_level_match_candidate_ids(field, &query_text);
@@ -12096,7 +12159,9 @@ fn search_hit_query_explanation_details(query: &Query, hit: &SearchHit) -> Vec<V
                 "matched_value_count": matched_value_count
             })]
         }
-        Query::MatchPhrase { field, query, slop } if field == "_id" => {
+        Query::MatchPhrase {
+            field, query, slop, ..
+        } if field == "_id" => {
             let id_match = matches_match_phrase_query(
                 Some(&Value::String(hit.metadata.id.clone())),
                 query,
@@ -12133,7 +12198,9 @@ fn search_hit_query_explanation_details(query: &Query, hit: &SearchHit) -> Vec<V
                 "query_token_count": query_token_count
             })]
         }
-        Query::MatchPhrase { field, query, slop } if field != "_id" => {
+        Query::MatchPhrase {
+            field, query, slop, ..
+        } if field != "_id" => {
             let matched_token_count = match_phrase_matched_token_count(
                 source_value_for_highlight_field(&hit.source, field),
                 query,
@@ -12171,7 +12238,9 @@ fn search_hit_query_explanation_details(query: &Query, hit: &SearchHit) -> Vec<V
                 "query_token_count": query_token_count
             })]
         }
-        Query::MatchPhrasePrefix { field, query, slop } if field == "_id" => {
+        Query::MatchPhrasePrefix {
+            field, query, slop, ..
+        } if field == "_id" => {
             let id_match = matches_match_phrase_prefix_query(
                 Some(&Value::String(hit.metadata.id.clone())),
                 query,
@@ -12208,7 +12277,9 @@ fn search_hit_query_explanation_details(query: &Query, hit: &SearchHit) -> Vec<V
                 "query_token_count": query_token_count
             })]
         }
-        Query::MatchPhrasePrefix { field, query, slop } if field != "_id" => {
+        Query::MatchPhrasePrefix {
+            field, query, slop, ..
+        } if field != "_id" => {
             let matched_token_count = match_phrase_prefix_matched_token_count(
                 source_value_for_highlight_field(&hit.source, field),
                 query,
@@ -13668,7 +13739,9 @@ fn search_hit_query_observation_counts(query: &Query, hit: &SearchHit) -> (usize
                 usize::from(id_match && search_hit_projected_field_present(hit, field)),
             )
         }
-        Query::MatchPhrase { field, query, slop } if field == "_id" => {
+        Query::MatchPhrase {
+            field, query, slop, ..
+        } if field == "_id" => {
             let id_match = matches_match_phrase_query(
                 Some(&Value::String(hit.metadata.id.clone())),
                 query,
@@ -13680,7 +13753,9 @@ fn search_hit_query_observation_counts(query: &Query, hit: &SearchHit) -> (usize
                 usize::from(id_match && search_hit_projected_field_present(hit, field)),
             )
         }
-        Query::MatchPhrasePrefix { field, query, slop } if field == "_id" => {
+        Query::MatchPhrasePrefix {
+            field, query, slop, ..
+        } if field == "_id" => {
             let id_match = matches_match_phrase_prefix_query(
                 Some(&Value::String(hit.metadata.id.clone())),
                 query,
@@ -13756,7 +13831,9 @@ fn search_hit_query_observation_counts(query: &Query, hit: &SearchHit) -> (usize
                 )
             })
         }
-        Query::MatchPhrase { field, query, slop } if field != "_id" => {
+        Query::MatchPhrase {
+            field, query, slop, ..
+        } if field != "_id" => {
             ({
                 let field_match = matches_match_phrase_query(
                     source_value_for_highlight_field(&hit.source, field),
@@ -13770,7 +13847,9 @@ fn search_hit_query_observation_counts(query: &Query, hit: &SearchHit) -> (usize
                 )
             })
         }
-        Query::MatchPhrasePrefix { field, query, slop } if field != "_id" => {
+        Query::MatchPhrasePrefix {
+            field, query, slop, ..
+        } if field != "_id" => {
             ({
                 let field_match = matches_match_phrase_prefix_query(
                     source_value_for_highlight_field(&hit.source, field),
@@ -14833,7 +14912,9 @@ fn collect_search_hit_highlights(
                 append_highlight_snippets(highlights, field, render_spec, snippets);
             }
         }
-        Query::MatchPhrase { field, query, slop } if field == "_id" => {
+        Query::MatchPhrase {
+            field, query, slop, ..
+        } if field == "_id" => {
             if requested_fields.is_some_and(|fields| !fields.contains(field)) {
                 return;
             }
@@ -14852,7 +14933,9 @@ fn collect_search_hit_highlights(
                 append_highlight_snippets(highlights, field, render_spec, snippets);
             }
         }
-        Query::MatchPhrase { field, query, slop } if field != "_id" => {
+        Query::MatchPhrase {
+            field, query, slop, ..
+        } if field != "_id" => {
             if requested_fields.is_some_and(|fields| !fields.contains(field)) {
                 return;
             }
@@ -14871,7 +14954,9 @@ fn collect_search_hit_highlights(
                 append_highlight_snippets(highlights, field, render_spec, snippets);
             }
         }
-        Query::MatchPhrasePrefix { field, query, slop } if field == "_id" => {
+        Query::MatchPhrasePrefix {
+            field, query, slop, ..
+        } if field == "_id" => {
             if requested_fields.is_some_and(|fields| !fields.contains(field)) {
                 return;
             }
@@ -14894,7 +14979,9 @@ fn collect_search_hit_highlights(
                 append_highlight_snippets(highlights, field, render_spec, snippets);
             }
         }
-        Query::MatchPhrasePrefix { field, query, slop } if field != "_id" => {
+        Query::MatchPhrasePrefix {
+            field, query, slop, ..
+        } if field != "_id" => {
             if requested_fields.is_some_and(|fields| !fields.contains(field)) {
                 return;
             }
@@ -16505,16 +16592,36 @@ fn document_matches_query(query: &Query, id: &str, source: &Value) -> bool {
             field,
             query,
             minimum_should_match,
-        } if field == "_id" => matches_match_query_with_minimum(
-            Some(&Value::String(id.to_string())),
-            query,
-            *minimum_should_match,
-        ),
-        Query::MatchPhrase { field, query, slop } if field == "_id" => {
-            matches_match_phrase_query(Some(&Value::String(id.to_string())), query, *slop)
+            zero_terms_all,
+        } if field == "_id" => {
+            (*zero_terms_all && match_query_token_count(query) == 0)
+                || matches_match_query_with_minimum(
+                    Some(&Value::String(id.to_string())),
+                    query,
+                    *minimum_should_match,
+                )
         }
-        Query::MatchPhrasePrefix { field, query, slop } if field == "_id" => {
-            matches_match_phrase_prefix_query(Some(&Value::String(id.to_string())), query, *slop)
+        Query::MatchPhrase {
+            field,
+            query,
+            slop,
+            zero_terms_all,
+        } if field == "_id" => {
+            (*zero_terms_all && match_query_token_count(query) == 0)
+                || matches_match_phrase_query(Some(&Value::String(id.to_string())), query, *slop)
+        }
+        Query::MatchPhrasePrefix {
+            field,
+            query,
+            slop,
+            zero_terms_all,
+        } if field == "_id" => {
+            (*zero_terms_all && match_query_token_count(query) == 0)
+                || matches_match_phrase_prefix_query(
+                    Some(&Value::String(id.to_string())),
+                    query,
+                    *slop,
+                )
         }
         Query::MatchBoolPrefix { field, query } if field == "_id" => {
             matches_match_bool_prefix_query(Some(&Value::String(id.to_string())), query)
@@ -16531,6 +16638,7 @@ fn document_matches_query(query: &Query, id: &str, source: &Value) -> bool {
             minimum_should_match,
             tie_breaker: _,
             boost: _,
+            zero_terms_all,
         } => matches_multi_match_query(
             id,
             source,
@@ -16540,6 +16648,7 @@ fn document_matches_query(query: &Query, id: &str, source: &Value) -> bool {
             *slop,
             operator.as_deref(),
             *minimum_should_match,
+            *zero_terms_all,
         ),
         Query::QueryString { query, fields } => {
             matches_query_string_query(id, source, fields.as_deref(), query)
@@ -16608,21 +16717,41 @@ fn document_matches_query(query: &Query, id: &str, source: &Value) -> bool {
             field,
             query,
             minimum_should_match,
-        } => matches_match_query_with_minimum(
-            source_value_for_highlight_field(source, field),
+            zero_terms_all,
+        } => {
+            (*zero_terms_all && match_query_token_count(query) == 0)
+                || matches_match_query_with_minimum(
+                    source_value_for_highlight_field(source, field),
+                    query,
+                    *minimum_should_match,
+                )
+        }
+        Query::MatchPhrase {
+            field,
             query,
-            *minimum_should_match,
-        ),
-        Query::MatchPhrase { field, query, slop } => matches_match_phrase_query(
-            source_value_for_highlight_field(source, field),
+            slop,
+            zero_terms_all,
+        } => {
+            (*zero_terms_all && match_query_token_count(query) == 0)
+                || matches_match_phrase_query(
+                    source_value_for_highlight_field(source, field),
+                    query,
+                    *slop,
+                )
+        }
+        Query::MatchPhrasePrefix {
+            field,
             query,
-            *slop,
-        ),
-        Query::MatchPhrasePrefix { field, query, slop } => matches_match_phrase_prefix_query(
-            source_value_for_highlight_field(source, field),
-            query,
-            *slop,
-        ),
+            slop,
+            zero_terms_all,
+        } => {
+            (*zero_terms_all && match_query_token_count(query) == 0)
+                || matches_match_phrase_prefix_query(
+                    source_value_for_highlight_field(source, field),
+                    query,
+                    *slop,
+                )
+        }
         Query::MatchBoolPrefix { field, query } => {
             matches_match_bool_prefix_query(source_value_for_highlight_field(source, field), query)
         }
@@ -17745,7 +17874,11 @@ fn matches_multi_match_query(
     slop: usize,
     operator: Option<&str>,
     minimum_should_match: Option<usize>,
+    zero_terms_all: bool,
 ) -> bool {
+    if zero_terms_all && match_query_token_count(query) == 0 {
+        return true;
+    }
     let field_minimum_should_match = minimum_should_match
         .or_else(|| (operator == Some("and")).then(|| match_query_token_count(query).max(1)));
     fields.iter().any(|field| {
@@ -18063,21 +18196,35 @@ fn remap_query_field(query: &Query, field: &str) -> Query {
         Query::Match {
             query,
             minimum_should_match,
+            zero_terms_all,
             ..
         } => Query::Match {
             field: field.to_string(),
             query: query.clone(),
             minimum_should_match: *minimum_should_match,
+            zero_terms_all: *zero_terms_all,
         },
-        Query::MatchPhrase { query, slop, .. } => Query::MatchPhrase {
+        Query::MatchPhrase {
+            query,
+            slop,
+            zero_terms_all,
+            ..
+        } => Query::MatchPhrase {
             field: field.to_string(),
             query: query.clone(),
             slop: *slop,
+            zero_terms_all: *zero_terms_all,
         },
-        Query::MatchPhrasePrefix { query, slop, .. } => Query::MatchPhrasePrefix {
+        Query::MatchPhrasePrefix {
+            query,
+            slop,
+            zero_terms_all,
+            ..
+        } => Query::MatchPhrasePrefix {
             field: field.to_string(),
             query: query.clone(),
             slop: *slop,
+            zero_terms_all: *zero_terms_all,
         },
         Query::MatchBoolPrefix { query, .. } => Query::MatchBoolPrefix {
             field: field.to_string(),
@@ -18210,20 +18357,34 @@ fn prefix_query_fields_for_nested_path(query: &Query, path: &str) -> Query {
             field,
             query,
             minimum_should_match,
+            zero_terms_all,
         } => Query::Match {
             field: nested_candidate_field_name(path, field),
             query: query.clone(),
             minimum_should_match: *minimum_should_match,
+            zero_terms_all: *zero_terms_all,
         },
-        Query::MatchPhrase { field, query, slop } => Query::MatchPhrase {
+        Query::MatchPhrase {
+            field,
+            query,
+            slop,
+            zero_terms_all,
+        } => Query::MatchPhrase {
             field: nested_candidate_field_name(path, field),
             query: query.clone(),
             slop: *slop,
+            zero_terms_all: *zero_terms_all,
         },
-        Query::MatchPhrasePrefix { field, query, slop } => Query::MatchPhrasePrefix {
+        Query::MatchPhrasePrefix {
+            field,
+            query,
+            slop,
+            zero_terms_all,
+        } => Query::MatchPhrasePrefix {
             field: nested_candidate_field_name(path, field),
             query: query.clone(),
             slop: *slop,
+            zero_terms_all: *zero_terms_all,
         },
         Query::MatchBoolPrefix { field, query } => Query::MatchBoolPrefix {
             field: nested_candidate_field_name(path, field),
@@ -18430,20 +18591,34 @@ fn localize_query_fields_for_nested_child(query: &Query, path: &str) -> Query {
             field,
             query,
             minimum_should_match,
+            zero_terms_all,
         } => Query::Match {
             field: nested_child_local_field_name(path, field),
             query: query.clone(),
             minimum_should_match: *minimum_should_match,
+            zero_terms_all: *zero_terms_all,
         },
-        Query::MatchPhrase { field, query, slop } => Query::MatchPhrase {
+        Query::MatchPhrase {
+            field,
+            query,
+            slop,
+            zero_terms_all,
+        } => Query::MatchPhrase {
             field: nested_child_local_field_name(path, field),
             query: query.clone(),
             slop: *slop,
+            zero_terms_all: *zero_terms_all,
         },
-        Query::MatchPhrasePrefix { field, query, slop } => Query::MatchPhrasePrefix {
+        Query::MatchPhrasePrefix {
+            field,
+            query,
+            slop,
+            zero_terms_all,
+        } => Query::MatchPhrasePrefix {
             field: nested_child_local_field_name(path, field),
             query: query.clone(),
             slop: *slop,
+            zero_terms_all: *zero_terms_all,
         },
         Query::MatchBoolPrefix { field, query } => Query::MatchBoolPrefix {
             field: nested_child_local_field_name(path, field),
@@ -18465,6 +18640,7 @@ fn localize_query_fields_for_nested_child(query: &Query, path: &str) -> Query {
             minimum_should_match,
             tie_breaker,
             boost,
+            zero_terms_all,
         } => Query::MultiMatch {
             fields: fields
                 .iter()
@@ -18477,6 +18653,7 @@ fn localize_query_fields_for_nested_child(query: &Query, path: &str) -> Query {
             minimum_should_match: *minimum_should_match,
             tie_breaker: *tie_breaker,
             boost: *boost,
+            zero_terms_all: *zero_terms_all,
         },
         Query::QueryString { query, fields } => Query::QueryString {
             query: query.clone(),
@@ -18728,12 +18905,37 @@ fn native_nested_child_ordinals_for_query(
             field,
             query,
             minimum_should_match,
-        } => nested_child_match_ordinals(path_index, path, field, query, *minimum_should_match),
-        Query::MatchPhrase { field, query, slop } => {
-            nested_child_match_phrase_ordinals(path_index, path, field, query, *slop)
+            zero_terms_all,
+        } => {
+            if *zero_terms_all && match_query_token_count(query) == 0 {
+                Some((0..path_index.children.len()).collect())
+            } else {
+                nested_child_match_ordinals(path_index, path, field, query, *minimum_should_match)
+            }
         }
-        Query::MatchPhrasePrefix { field, query, slop } => {
-            nested_child_match_phrase_prefix_ordinals(path_index, path, field, query, *slop)
+        Query::MatchPhrase {
+            field,
+            query,
+            slop,
+            zero_terms_all,
+        } => {
+            if *zero_terms_all && match_query_token_count(query) == 0 {
+                Some((0..path_index.children.len()).collect())
+            } else {
+                nested_child_match_phrase_ordinals(path_index, path, field, query, *slop)
+            }
+        }
+        Query::MatchPhrasePrefix {
+            field,
+            query,
+            slop,
+            zero_terms_all,
+        } => {
+            if *zero_terms_all && match_query_token_count(query) == 0 {
+                Some((0..path_index.children.len()).collect())
+            } else {
+                nested_child_match_phrase_prefix_ordinals(path_index, path, field, query, *slop)
+            }
         }
         Query::MatchBoolPrefix { field, query } => {
             nested_child_match_bool_prefix_ordinals(path_index, path, field, query)
@@ -18750,6 +18952,7 @@ fn native_nested_child_ordinals_for_query(
             minimum_should_match,
             tie_breaker: _,
             boost: _,
+            zero_terms_all,
         } => nested_child_multi_match_ordinals(
             path_index,
             path,
@@ -18759,6 +18962,7 @@ fn native_nested_child_ordinals_for_query(
             *slop,
             operator.as_deref(),
             *minimum_should_match,
+            *zero_terms_all,
         ),
         Query::QueryString { query, fields } => {
             nested_child_query_string_ordinals(path_index, path, fields.as_deref(), query)
@@ -19299,7 +19503,11 @@ fn nested_child_multi_match_ordinals(
     slop: usize,
     operator: Option<&str>,
     minimum_should_match: Option<usize>,
+    zero_terms_all: bool,
 ) -> Option<std::collections::BTreeSet<usize>> {
+    if zero_terms_all && match_query_token_count(query) == 0 {
+        return Some((0..path_index.children.len()).collect());
+    }
     let mut ordinals = std::collections::BTreeSet::new();
     let field_minimum_should_match = minimum_should_match
         .or_else(|| (operator == Some("and")).then(|| match_query_token_count(query).max(1)));
@@ -145202,6 +145410,92 @@ mod tests {
             .unwrap()
             .expect("native match_phrase_prefix slop hits");
         assert_eq!(search_hit_ids(&native_hits), vec!["1", "2"]);
+    }
+
+    #[test]
+    fn native_tantivy_path_executes_zero_terms_query_all() {
+        let engine = TantivyEngine::default();
+        engine
+            .create_index(CreateIndexRequest {
+                index: "bench".to_string(),
+                settings: serde_json::json!({}),
+                mappings: serde_json::json!({
+                    "properties": {
+                        "message": { "type": "text" },
+                        "title": { "type": "text" },
+                        "body": { "type": "text" }
+                    }
+                }),
+            })
+            .unwrap();
+
+        for (id, message, title, body) in [
+            ("1", "alpha checkout", "alpha", "checkout"),
+            ("2", "beta checkout", "beta", "store"),
+            ("3", "gamma cache", "gamma", "cache"),
+        ] {
+            engine
+                .index_document(IndexDocumentRequest {
+                    index: "bench".to_string(),
+                    id: id.to_string(),
+                    source: serde_json::json!({
+                        "message": message,
+                        "title": title,
+                        "body": body
+                    }),
+                })
+                .unwrap();
+        }
+        engine
+            .refresh(RefreshRequest {
+                indices: vec!["bench".to_string()],
+            })
+            .unwrap();
+
+        let queries = [
+            serde_json::json!({
+                "match": {
+                    "message": {
+                        "query": "",
+                        "zero_terms_query": "all"
+                    }
+                }
+            }),
+            serde_json::json!({
+                "match_phrase": {
+                    "message": {
+                        "query": "",
+                        "zero_terms_query": "all"
+                    }
+                }
+            }),
+            serde_json::json!({
+                "match_phrase_prefix": {
+                    "message": {
+                        "query": "",
+                        "zero_terms_query": "all"
+                    }
+                }
+            }),
+            serde_json::json!({
+                "multi_match": {
+                    "query": "",
+                    "fields": ["title", "body"],
+                    "zero_terms_query": "all"
+                }
+            }),
+        ];
+
+        let mut store = engine.store.write().unwrap();
+        let index = store.indices.get_mut("bench").unwrap();
+        for query_body in queries {
+            let query = parse_query(&query_body).unwrap();
+            let native_hits = index
+                .search_hits_for_query_native("bench", &query, &[])
+                .unwrap()
+                .expect("native zero_terms_query=all hits");
+            assert_eq!(search_hit_ids(&native_hits), vec!["1", "2", "3"]);
+        }
     }
 
     #[test]

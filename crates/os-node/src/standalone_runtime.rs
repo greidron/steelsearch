@@ -28951,11 +28951,16 @@ fn validate_multi_match_query_shape(
             )));
         }
     }
+    let zero_terms_all = query
+        .get("zero_terms_query")
+        .and_then(Value::as_str)
+        .is_some_and(|value| value.eq_ignore_ascii_case("all"));
     if query
         .get("query")
         .and_then(Value::as_str)
         .map(str::is_empty)
         .unwrap_or(true)
+        && !zero_terms_all
     {
         return Some(build_unsupported_search_response(
             "unsupported multi_match query shape",
@@ -30638,6 +30643,9 @@ fn evaluate_search_query_source_with_mappings(
     if let Some(match_query) = query.get("match").and_then(Value::as_object) {
         let (field, expected) = match_query.iter().next()?;
         let query_text = extract_match_query_value(expected).unwrap_or_default();
+        if query_text.trim().is_empty() && extract_zero_terms_query_all(expected) {
+            return Some((true, 1.0));
+        }
         let haystacks = lookup_query_field_value(source, field)
             .map(collect_string_leaf_values)
             .unwrap_or_default();
@@ -30655,6 +30663,11 @@ fn evaluate_search_query_source_with_mappings(
             .get("query")
             .and_then(Value::as_str)
             .unwrap_or_default();
+        if expected.trim().is_empty()
+            && extract_zero_terms_query_all(&Value::Object(multi_match.clone()))
+        {
+            return Some((true, 1.0));
+        }
         let fields = extract_multi_match_fields(multi_match.get("fields"));
         let field_refs = fields.iter().map(String::as_str).collect::<Vec<_>>();
         let haystacks = collect_searchable_field_values(source, Some(field_refs.as_slice()));
@@ -30719,9 +30732,13 @@ fn evaluate_search_query_source_with_mappings(
     }
     if let Some(match_phrase) = query.get("match_phrase").and_then(Value::as_object) {
         let (field, expected) = match_phrase.iter().next()?;
+        let query_text = extract_match_query_value(expected).unwrap_or_default();
+        if query_text.trim().is_empty() && extract_zero_terms_query_all(expected) {
+            return Some((true, 1.0));
+        }
         let matched = value_matches_phrase(
             lookup_query_field_value(source, field),
-            extract_match_query_value(expected).unwrap_or_default(),
+            query_text,
             false,
             extract_match_phrase_slop(expected),
         );
@@ -30729,9 +30746,13 @@ fn evaluate_search_query_source_with_mappings(
     }
     if let Some(match_phrase_prefix) = query.get("match_phrase_prefix").and_then(Value::as_object) {
         let (field, expected) = match_phrase_prefix.iter().next()?;
+        let query_text = extract_match_query_value(expected).unwrap_or_default();
+        if query_text.trim().is_empty() && extract_zero_terms_query_all(expected) {
+            return Some((true, 1.0));
+        }
         let matched = value_matches_phrase(
             lookup_query_field_value(source, field),
-            extract_match_query_value(expected).unwrap_or_default(),
+            query_text,
             true,
             extract_match_phrase_slop(expected),
         );
@@ -32292,6 +32313,14 @@ fn extract_match_minimum_should_match(value: &Value) -> Option<&Value> {
     value
         .as_object()
         .and_then(|object| object.get("minimum_should_match"))
+}
+
+fn extract_zero_terms_query_all(value: &Value) -> bool {
+    value
+        .as_object()
+        .and_then(|object| object.get("zero_terms_query"))
+        .and_then(Value::as_str)
+        .is_some_and(|value| value.eq_ignore_ascii_case("all"))
 }
 
 fn extract_multi_match_fields(value: Option<&Value>) -> Vec<String> {
@@ -57331,6 +57360,15 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             response.body["error"]["root_cause"][0]["reason"],
             "[multi_match] query does not support [unsupported_option]"
         );
+
+        assert!(validate_search_query_body(&serde_json::json!({
+            "multi_match": {
+                "query": "",
+                "fields": ["message", "service"],
+                "zero_terms_query": "all"
+            }
+        }))
+        .is_none());
 
         assert_eq!(
             extract_multi_match_fields(Some(&serde_json::json!("message^2"))),

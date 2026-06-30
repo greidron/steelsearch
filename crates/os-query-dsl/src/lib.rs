@@ -68,16 +68,19 @@ pub enum Query {
         field: String,
         query: serde_json::Value,
         minimum_should_match: Option<usize>,
+        zero_terms_all: bool,
     },
     MatchPhrase {
         field: String,
         query: serde_json::Value,
         slop: usize,
+        zero_terms_all: bool,
     },
     MatchPhrasePrefix {
         field: String,
         query: serde_json::Value,
         slop: usize,
+        zero_terms_all: bool,
     },
     MatchBoolPrefix {
         field: String,
@@ -96,6 +99,7 @@ pub enum Query {
         minimum_should_match: Option<usize>,
         tie_breaker: Option<f64>,
         boost: Option<f64>,
+        zero_terms_all: bool,
     },
     QueryString {
         query: String,
@@ -2270,14 +2274,16 @@ fn parse_match(body: &Value) -> QueryDslResult<Query> {
     }
 
     let (field, match_body) = object.iter().next().expect("checked len");
-    let (query, minimum_should_match) = if let Some(object) = match_body.as_object() {
+    let (query, minimum_should_match, zero_terms_all) = if let Some(object) = match_body.as_object()
+    {
         if let Some(query) = object.get("query") {
             let minimum_should_match = object
                 .get("minimum_should_match")
                 .map(|value| parse_minimum_should_match(value, match_query_clause_count(query)))
                 .transpose()?
                 .map(|value| value as usize);
-            (query.clone(), minimum_should_match)
+            let zero_terms_all = parse_zero_terms_all_option(object, "match")?;
+            (query.clone(), minimum_should_match, zero_terms_all)
         } else if object.keys().any(|key| {
             matches!(
                 key.as_str(),
@@ -2301,16 +2307,17 @@ fn parse_match(body: &Value) -> QueryDslResult<Query> {
                 field: "query".to_string(),
             });
         } else {
-            (match_body.clone(), None)
+            (match_body.clone(), None, false)
         }
     } else {
-        (match_body.clone(), None)
+        (match_body.clone(), None, false)
     };
 
     Ok(Query::Match {
         field: field.clone(),
         query,
         minimum_should_match,
+        zero_terms_all,
     })
 }
 
@@ -2323,7 +2330,7 @@ fn parse_match_phrase(body: &Value) -> QueryDslResult<Query> {
     }
 
     let (field, match_body) = object.iter().next().expect("checked len");
-    let (query, slop) = if let Some(object) = match_body.as_object() {
+    let (query, slop, zero_terms_all) = if let Some(object) = match_body.as_object() {
         let query = object
             .get("query")
             .cloned()
@@ -2345,6 +2352,7 @@ fn parse_match_phrase(body: &Value) -> QueryDslResult<Query> {
             })
             .transpose()?
             .unwrap_or(0);
+        let zero_terms_all = parse_zero_terms_all_option(object, "match_phrase")?;
         for option in object.keys() {
             if !matches!(
                 option.as_str(),
@@ -2356,15 +2364,16 @@ fn parse_match_phrase(body: &Value) -> QueryDslResult<Query> {
                 });
             }
         }
-        (query, slop)
+        (query, slop, zero_terms_all)
     } else {
-        (match_body.clone(), 0)
+        (match_body.clone(), 0, false)
     };
 
     Ok(Query::MatchPhrase {
         field: field.clone(),
         query,
         slop,
+        zero_terms_all,
     })
 }
 
@@ -2377,7 +2386,7 @@ fn parse_match_phrase_prefix(body: &Value) -> QueryDslResult<Query> {
     }
 
     let (field, match_body) = object.iter().next().expect("checked len");
-    let (query, slop) = if let Some(object) = match_body.as_object() {
+    let (query, slop, zero_terms_all) = if let Some(object) = match_body.as_object() {
         let query = object
             .get("query")
             .cloned()
@@ -2399,6 +2408,7 @@ fn parse_match_phrase_prefix(body: &Value) -> QueryDslResult<Query> {
             })
             .transpose()?
             .unwrap_or(0);
+        let zero_terms_all = parse_zero_terms_all_option(object, "match_phrase_prefix")?;
         for option in object.keys() {
             if !matches!(
                 option.as_str(),
@@ -2416,15 +2426,16 @@ fn parse_match_phrase_prefix(body: &Value) -> QueryDslResult<Query> {
                 });
             }
         }
-        (query, slop)
+        (query, slop, zero_terms_all)
     } else {
-        (match_body.clone(), 0)
+        (match_body.clone(), 0, false)
     };
 
     Ok(Query::MatchPhrasePrefix {
         field: field.clone(),
         query,
         slop,
+        zero_terms_all,
     })
 }
 
@@ -2532,6 +2543,7 @@ fn parse_multi_match(body: &Value) -> QueryDslResult<Query> {
         .get("boost")
         .map(|value| parse_non_negative_f64_option("multi_match", "boost", value))
         .transpose()?;
+    let zero_terms_all = parse_zero_terms_all_option(object, "multi_match")?;
     validate_optional_string_option(object, "multi_match", "analyzer")?;
     validate_optional_string_option(object, "multi_match", "_name")?;
     validate_optional_bool_option(object, "multi_match", "lenient")?;
@@ -2550,6 +2562,7 @@ fn parse_multi_match(body: &Value) -> QueryDslResult<Query> {
             && option != "_name"
             && option != "lenient"
             && option != "auto_generate_synonyms_phrase_query"
+            && option != "zero_terms_query"
         {
             return Err(QueryDslError::UnsupportedOption {
                 clause: "multi_match".to_string(),
@@ -2567,7 +2580,26 @@ fn parse_multi_match(body: &Value) -> QueryDslResult<Query> {
         minimum_should_match,
         tie_breaker,
         boost,
+        zero_terms_all,
     })
+}
+
+fn parse_zero_terms_all_option(
+    object: &serde_json::Map<String, Value>,
+    clause: &str,
+) -> QueryDslResult<bool> {
+    let Some(value) = object.get("zero_terms_query") else {
+        return Ok(false);
+    };
+    match value.as_str().map(str::to_ascii_lowercase).as_deref() {
+        Some("all") => Ok(true),
+        Some("none") => Ok(false),
+        _ => Err(QueryDslError::InvalidValue {
+            clause: clause.to_string(),
+            field: "zero_terms_query".to_string(),
+            reason: "must be [none] or [all]".to_string(),
+        }),
+    }
 }
 
 fn parse_non_negative_f64_option(clause: &str, field: &str, value: &Value) -> QueryDslResult<f64> {
@@ -4286,6 +4318,7 @@ mod tests {
                 field: "message".to_string(),
                 query: serde_json::json!("alpha checkout"),
                 slop: 0,
+                zero_terms_all: false,
             }
         );
         assert_eq!(
@@ -4294,6 +4327,7 @@ mod tests {
                 field: "message".to_string(),
                 query: serde_json::json!("alpha checkout"),
                 slop: 0,
+                zero_terms_all: false,
             }
         );
 
@@ -4313,6 +4347,27 @@ mod tests {
                 field: "message".to_string(),
                 query: serde_json::json!("alpha checkout"),
                 slop: 1,
+                zero_terms_all: false,
+            }
+        );
+
+        let zero_terms_all = parse_query(&serde_json::json!({
+            "match_phrase": {
+                "message": {
+                    "query": "",
+                    "zero_terms_query": "all"
+                }
+            }
+        }))
+        .unwrap();
+
+        assert_eq!(
+            zero_terms_all,
+            Query::MatchPhrase {
+                field: "message".to_string(),
+                query: serde_json::json!(""),
+                slop: 0,
+                zero_terms_all: true,
             }
         );
     }
@@ -4340,6 +4395,7 @@ mod tests {
                 field: "message".to_string(),
                 query: serde_json::json!("alpha check"),
                 slop: 0,
+                zero_terms_all: false,
             }
         );
         assert_eq!(
@@ -4348,6 +4404,7 @@ mod tests {
                 field: "message".to_string(),
                 query: serde_json::json!("alpha check"),
                 slop: 0,
+                zero_terms_all: false,
             }
         );
     }
@@ -4370,6 +4427,27 @@ mod tests {
                 field: "message".to_string(),
                 query: serde_json::json!("alpha check"),
                 slop: 2,
+                zero_terms_all: false,
+            }
+        );
+
+        let zero_terms_all = parse_query(&serde_json::json!({
+            "match_phrase_prefix": {
+                "message": {
+                    "query": "",
+                    "zero_terms_query": "all"
+                }
+            }
+        }))
+        .unwrap();
+
+        assert_eq!(
+            zero_terms_all,
+            Query::MatchPhrasePrefix {
+                field: "message".to_string(),
+                query: serde_json::json!(""),
+                slop: 0,
+                zero_terms_all: true,
             }
         );
     }
@@ -4448,6 +4526,7 @@ mod tests {
                 minimum_should_match: None,
                 tie_breaker: None,
                 boost: None,
+                zero_terms_all: false,
             }
         );
 
@@ -4471,6 +4550,7 @@ mod tests {
                 minimum_should_match: None,
                 tie_breaker: None,
                 boost: None,
+                zero_terms_all: false,
             }
         );
 
@@ -4494,6 +4574,7 @@ mod tests {
                 minimum_should_match: None,
                 tie_breaker: None,
                 boost: None,
+                zero_terms_all: false,
             }
         );
 
@@ -4517,6 +4598,7 @@ mod tests {
                 minimum_should_match: None,
                 tie_breaker: None,
                 boost: None,
+                zero_terms_all: false,
             }
         );
 
@@ -4541,6 +4623,7 @@ mod tests {
                 minimum_should_match: None,
                 tie_breaker: None,
                 boost: None,
+                zero_terms_all: false,
             }
         );
 
@@ -4569,6 +4652,7 @@ mod tests {
                 minimum_should_match: None,
                 tie_breaker: Some(0.2),
                 boost: Some(1.5),
+                zero_terms_all: false,
             }
         );
 
@@ -4593,6 +4677,7 @@ mod tests {
                 minimum_should_match: None,
                 tie_breaker: None,
                 boost: None,
+                zero_terms_all: false,
             }
         );
 
@@ -4615,6 +4700,31 @@ mod tests {
                 minimum_should_match: None,
                 tie_breaker: None,
                 boost: None,
+                zero_terms_all: false,
+            }
+        );
+
+        let zero_terms_all = parse_query(&serde_json::json!({
+            "multi_match": {
+                "query": "",
+                "fields": ["title", "body"],
+                "zero_terms_query": "all"
+            }
+        }))
+        .unwrap();
+
+        assert_eq!(
+            zero_terms_all,
+            Query::MultiMatch {
+                fields: vec!["title".to_string(), "body".to_string()],
+                query: serde_json::json!(""),
+                query_type: MultiMatchType::BestFields,
+                slop: 0,
+                operator: None,
+                minimum_should_match: None,
+                tie_breaker: None,
+                boost: None,
+                zero_terms_all: true,
             }
         );
 
@@ -5359,7 +5469,8 @@ mod tests {
             Query::Match {
                 field: "message".to_string(),
                 query: serde_json::json!("hello world"),
-                minimum_should_match: None
+                minimum_should_match: None,
+                zero_terms_all: false
             }
         );
     }
@@ -5380,7 +5491,28 @@ mod tests {
             Query::Match {
                 field: "message".to_string(),
                 query: serde_json::json!("hello world"),
-                minimum_should_match: None
+                minimum_should_match: None,
+                zero_terms_all: false
+            }
+        );
+
+        let zero_terms_all = parse_query(&serde_json::json!({
+            "match": {
+                "message": {
+                    "query": "",
+                    "zero_terms_query": "all"
+                }
+            }
+        }))
+        .unwrap();
+
+        assert_eq!(
+            zero_terms_all,
+            Query::Match {
+                field: "message".to_string(),
+                query: serde_json::json!(""),
+                minimum_should_match: None,
+                zero_terms_all: true
             }
         );
     }
@@ -5580,7 +5712,8 @@ mod tests {
                     must_not: vec![Query::Match {
                         field: "message".to_string(),
                         query: serde_json::json!("debug"),
-                        minimum_should_match: None
+                        minimum_should_match: None,
+                        zero_terms_all: false
                     }],
                     minimum_should_match: Some(1)
                 }
