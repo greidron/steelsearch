@@ -6699,7 +6699,7 @@ impl StoredIndex {
                 if document.metadata.seq_no > self.refreshed_seq_no {
                     return None;
                 }
-                let field_value = document.top_level_scalar_fields.get(field)?;
+                let field_value = source_value_for_highlight_field(&document.source, field)?;
                 matches_term_query(field_value, value).then_some(id.clone())
             })
             .collect()
@@ -41763,6 +41763,91 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec!["b".to_string()]
         );
+    }
+
+    #[test]
+    fn search_request_parses_object_form_bool_clauses_for_native_hits() {
+        let mut engine = TantivyEngine::default();
+        engine
+            .create_index(CreateIndexRequest {
+                index: "docs".to_string(),
+                settings: serde_json::json!({}),
+                mappings: serde_json::json!({
+                    "properties": {
+                        "code": { "type": "keyword" },
+                        "tags": { "type": "keyword" },
+                        "contact_email": { "type": "keyword" }
+                    }
+                }),
+            })
+            .unwrap();
+
+        for (id, source) in [
+            (
+                "doc-1",
+                serde_json::json!({
+                    "code": "alpha-1",
+                    "tags": ["red", "blue"],
+                    "contact_email": "alpha@example.com"
+                }),
+            ),
+            (
+                "doc-2",
+                serde_json::json!({
+                    "code": "beta-2",
+                    "tags": ["blue", "green"]
+                }),
+            ),
+            (
+                "doc-3",
+                serde_json::json!({
+                    "code": "gamma-3",
+                    "tags": ["yellow"]
+                }),
+            ),
+        ] {
+            engine
+                .index_document(IndexDocumentRequest {
+                    index: "docs".to_string(),
+                    id: id.to_string(),
+                    source,
+                })
+                .unwrap();
+        }
+        engine
+            .refresh(RefreshRequest {
+                indices: vec!["docs".to_string()],
+            })
+            .unwrap();
+
+        let response = engine
+            .search(SearchRequest {
+                indices: vec!["docs".to_string()],
+                query: serde_json::json!({
+                    "bool": {
+                        "must": { "term": { "code": "beta-2" } },
+                        "filter": { "term": { "tags": "blue" } },
+                        "must_not": { "exists": { "field": "contact_email" } }
+                    }
+                }),
+                aggregations: serde_json::json!({}),
+                sort: Vec::new(),
+                from: 0,
+                size: 10,
+                stored_fields: None,
+                source_fields: None,
+                source_filter: None,
+                source_includes: None,
+                source_include: None,
+                source_excludes: None,
+                source_exclude: None,
+                highlight: None,
+                explain: false,
+            })
+            .unwrap();
+
+        assert_eq!(response.total_hits, 1);
+        assert_eq!(response.hits[0].metadata.id, "doc-2");
     }
 
     #[test]

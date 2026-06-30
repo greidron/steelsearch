@@ -289,6 +289,7 @@
     "search_requests": [
       "bulk_match_search",
       "bool_filter_range",
+      "bool_object_form_array_keyword_filter_search",
       "multi_match_best_fields_search",
       "nested_query_search",
       "nested_tuple_semantics_search",
@@ -3968,6 +3969,43 @@
       "extract": "search_hits",
       "family": "lexical",
       "description": "[lexical] bool filter range"
+    },
+    {
+      "name": "bool_object_form_array_keyword_filter_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "bool": {
+            "must": {
+              "term": {
+                "service": "checkout"
+              }
+            },
+            "filter": {
+              "term": {
+                "labels": "checkout"
+              }
+            },
+            "must_not": {
+              "term": {
+                "level": "warn"
+              }
+            }
+          }
+        },
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] bool object-form clauses with array keyword filter"
     },
     {
       "name": "bulk_match_search",
