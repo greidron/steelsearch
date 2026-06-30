@@ -11249,6 +11249,36 @@
       "description": "[failure-path] malformed search body parse exception"
     },
     {
+      "name": "unknown_query_type_root_search_error",
+      "area": "search",
+      "method": "POST",
+      "path": "/_search",
+      "body": {
+        "query": {
+          "unsupported_query": {}
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "failure-path",
+      "description": "[failure-path] root search rejects unknown query types like OpenSearch"
+    },
+    {
+      "name": "unknown_query_type_target_search_error",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "unsupported_query": {}
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "failure-path",
+      "description": "[failure-path] targeted search rejects unknown query types like OpenSearch"
+    },
+    {
       "name": "missing_document_shape",
       "area": "error",
       "method": "GET",

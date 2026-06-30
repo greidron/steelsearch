@@ -26645,8 +26645,8 @@ fn validate_search_query_body(query: &Value) -> Option<RestResponse> {
         | "range"
         | "knn" => validate_supported_query_shape(query),
         "hybrid" => validate_supported_query_shape(query),
-        unsupported => Some(build_unsupported_search_response(&format!(
-            "unsupported query [{unsupported}]"
+        unsupported => Some(build_parsing_search_response_with_root_cause(&format!(
+            "unknown query [{unsupported}]"
         ))),
     }
 }
