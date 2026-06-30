@@ -29786,6 +29786,18 @@ fn evaluate_search_query_source_with_mappings(
                 });
                 (matched, if matched { 1.0 } else { 0.0 })
             }
+            Some("bool_prefix") => {
+                let matched = value_matches_multi_match_bool_prefix(
+                    &haystacks,
+                    expected,
+                    multi_match
+                        .get("operator")
+                        .and_then(Value::as_str)
+                        .unwrap_or("or"),
+                    multi_match.get("minimum_should_match"),
+                );
+                (matched, if matched { 1.0 } else { 0.0 })
+            }
             _ => evaluate_text_query_strings(
                 &haystacks,
                 expected,
@@ -30935,6 +30947,40 @@ fn value_matches_match_bool_prefix(haystacks: &[String], query_text: &str) -> bo
             .filter(|token| !token.is_empty())
             .any(|token| token.to_ascii_lowercase().starts_with(&prefix))
     })
+}
+
+fn value_matches_multi_match_bool_prefix(
+    haystacks: &[String],
+    query_text: &str,
+    operator: &str,
+    minimum_should_match: Option<&Value>,
+) -> bool {
+    let terms = split_query_terms(query_text);
+    let Some((last, exact_terms)) = terms.split_last() else {
+        return true;
+    };
+    let matched_exact = exact_terms
+        .iter()
+        .filter(|term| score_text_query_term(haystacks, term) > 0.0)
+        .count();
+    let prefix = last.to_ascii_lowercase();
+    let matched_prefix = usize::from(haystacks.iter().any(|haystack| {
+        haystack
+            .split(|ch: char| !ch.is_alphanumeric())
+            .filter(|token| !token.is_empty())
+            .any(|token| token.to_ascii_lowercase().starts_with(&prefix))
+    }));
+    let matched = matched_exact + matched_prefix;
+    let required = minimum_should_match
+        .and_then(|value| bool_minimum_should_match_value(value, terms.len()))
+        .unwrap_or_else(|| {
+            if operator.eq_ignore_ascii_case("and") {
+                terms.len()
+            } else {
+                1
+            }
+        });
+    matched >= required
 }
 
 fn score_text_query_term(haystacks: &[String], term: &str) -> f64 {

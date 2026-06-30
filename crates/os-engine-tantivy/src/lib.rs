@@ -3547,6 +3547,52 @@ fn build_tantivy_match_bool_prefix_query(
     Ok(Some(Box::new(BooleanQuery::new(clauses))))
 }
 
+fn build_tantivy_multi_match_bool_prefix_field_query(
+    search_state: &TantivySearchState,
+    field: &str,
+    value: &Value,
+    minimum_should_match: Option<usize>,
+) -> EngineResult<Option<Box<dyn TantivyQueryTrait>>> {
+    if field != "_id" {
+        let Some(indexed_field) = search_state.fields.get(field) else {
+            return Ok(None);
+        };
+        if !matches!(
+            indexed_field.field_type,
+            TantivyFieldType::Text | TantivyFieldType::Keyword
+        ) {
+            return Ok(None);
+        }
+    }
+    let query_text = json_value_to_query_text(value)?;
+    let query_tokens = tokenize_phrase_text(&query_text);
+    if query_tokens.is_empty() {
+        return Ok(None);
+    }
+    let last_index = query_tokens.len() - 1;
+    let mut should_queries = query_tokens[..last_index]
+        .iter()
+        .map(|token| Query::Match {
+            field: field.to_string(),
+            query: Value::String(token.clone()),
+            minimum_should_match: None,
+        })
+        .collect::<Vec<_>>();
+    should_queries.push(Query::Prefix {
+        field: field.to_string(),
+        value: query_tokens[last_index].clone(),
+        case_insensitive: false,
+    });
+    let minimum_should_match = minimum_should_match.unwrap_or(1);
+    build_tantivy_minimum_should_match_query(
+        search_state,
+        &[],
+        &should_queries,
+        &[],
+        minimum_should_match,
+    )
+}
+
 fn build_tantivy_match_phrase_prefix_query(
     search_state: &TantivySearchState,
     field: &str,
@@ -3722,6 +3768,12 @@ fn build_tantivy_multi_match_query(
             MultiMatchType::PhrasePrefix => {
                 build_tantivy_match_phrase_prefix_query(search_state, base_field, query)?
             }
+            MultiMatchType::BoolPrefix => build_tantivy_multi_match_bool_prefix_field_query(
+                search_state,
+                base_field,
+                query,
+                field_minimum_should_match,
+            )?,
         };
         let Some(inner_query) = inner_query else {
             return Ok(None);
@@ -17469,6 +17521,10 @@ fn matches_multi_match_query(
             }
             MultiMatchType::Phrase => matches_match_phrase_query(field_value, query, slop),
             MultiMatchType::PhrasePrefix => matches_match_phrase_prefix_query(field_value, query),
+            MultiMatchType::BoolPrefix => {
+                let required = field_minimum_should_match.unwrap_or(1);
+                match_bool_prefix_matched_token_count(field_value, query) >= required
+            }
         }
     })
 }
@@ -19000,6 +19056,11 @@ fn nested_child_multi_match_ordinals(
             }
             MultiMatchType::PhrasePrefix => {
                 ordinals.extend(nested_child_match_phrase_prefix_ordinals(
+                    path_index, path, field, query,
+                )?);
+            }
+            MultiMatchType::BoolPrefix => {
+                ordinals.extend(nested_child_match_bool_prefix_ordinals(
                     path_index, path, field, query,
                 )?);
             }
@@ -144946,6 +145007,20 @@ mod tests {
             .search_hits_for_query_native("bench", &phrase_slop_query, &[])
             .unwrap()
             .expect("native multi_match phrase slop hits");
+        assert_eq!(search_hit_ids(&native_hits), vec!["2", "3"]);
+
+        let bool_prefix_query = parse_query(&serde_json::json!({
+            "multi_match": {
+                "query": "alpha sto",
+                "fields": ["body"],
+                "type": "bool_prefix"
+            }
+        }))
+        .unwrap();
+        let native_hits = index
+            .search_hits_for_query_native("bench", &bool_prefix_query, &[])
+            .unwrap()
+            .expect("native multi_match bool_prefix hits");
         assert_eq!(search_hit_ids(&native_hits), vec!["2", "3"]);
     }
 

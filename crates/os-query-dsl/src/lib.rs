@@ -199,6 +199,7 @@ pub enum MultiMatchType {
     BestFields,
     Phrase,
     PhrasePrefix,
+    BoolPrefix,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -2451,6 +2452,7 @@ fn parse_multi_match(body: &Value) -> QueryDslResult<Query> {
             "best_fields" => Ok(MultiMatchType::BestFields),
             "phrase" => Ok(MultiMatchType::Phrase),
             "phrase_prefix" => Ok(MultiMatchType::PhrasePrefix),
+            "bool_prefix" => Ok(MultiMatchType::BoolPrefix),
             _ => Err(QueryDslError::UnsupportedOption {
                 clause: "multi_match".to_string(),
                 option: "type".to_string(),
@@ -4311,6 +4313,27 @@ mod tests {
                 fields: vec!["title".to_string()],
                 query: serde_json::json!("alpha che"),
                 query_type: MultiMatchType::PhrasePrefix,
+                slop: 0,
+                operator: None,
+                minimum_should_match: None,
+            }
+        );
+
+        let bool_prefix = parse_query(&serde_json::json!({
+            "multi_match": {
+                "query": "alpha che",
+                "fields": ["title", "body"],
+                "type": "bool_prefix"
+            }
+        }))
+        .unwrap();
+
+        assert_eq!(
+            bool_prefix,
+            Query::MultiMatch {
+                fields: vec!["title".to_string(), "body".to_string()],
+                query: serde_json::json!("alpha che"),
+                query_type: MultiMatchType::BoolPrefix,
                 slop: 0,
                 operator: None,
                 minimum_should_match: None,
