@@ -2859,6 +2859,15 @@
       "description": "[admin-cat] get alias readback"
     },
     {
+      "name": "get_alias_invalid_allow_no_indices_error",
+      "area": "alias",
+      "method": "GET",
+      "path": "/_alias/logs-compat-read?allow_no_indices=maybe",
+      "extract": "search_error",
+      "family": "admin-cat",
+      "description": "[admin-cat] get alias invalid allow_no_indices boolean error"
+    },
+    {
       "name": "get_aliases_readback",
       "area": "alias",
       "method": "GET",
@@ -2866,6 +2875,15 @@
       "extract": "alias_metadata",
       "family": "admin-cat",
       "description": "[admin-cat] get aliases readback"
+    },
+    {
+      "name": "get_aliases_invalid_ignore_unavailable_error",
+      "area": "alias",
+      "method": "GET",
+      "path": "/_aliases?ignore_unavailable=maybe",
+      "extract": "search_error",
+      "family": "admin-cat",
+      "description": "[admin-cat] get aliases invalid ignore_unavailable boolean error"
     },
     {
       "name": "get_document",

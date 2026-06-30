@@ -37047,12 +37047,15 @@ fn validate_alias_get_query_params(request: &RestRequest) -> Option<RestResponse
         return Some(response);
     }
 
-    for field in [
-        "allow_no_indices",
-        "ignore_throttled",
-        "ignore_unavailable",
-        "local",
-    ] {
+    for field in ["allow_no_indices", "ignore_unavailable"] {
+        if let Some(response) =
+            validate_opensearch_named_boolean_query_param(field, request.query_params.get(field))
+        {
+            return Some(response);
+        }
+    }
+
+    for field in ["ignore_throttled", "local"] {
         if let Some(response) =
             validate_opensearch_boolean_query_param(request.query_params.get(field))
         {
@@ -66080,6 +66083,16 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             "Failed to parse value [maybe] as only [true] or [false] are allowed."
         );
 
+        let invalid_allow_no_indices = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_alias/logs-root-read?allow_no_indices=maybe",
+        ));
+        assert_eq!(invalid_allow_no_indices.status, 400);
+        assert_eq!(
+            invalid_allow_no_indices.body["error"]["reason"],
+            "Could not convert [allow_no_indices] to boolean"
+        );
+
         let invalid_timeout = node.handle_rest_request(RestRequest::new(
             RestMethod::Get,
             "/_alias?cluster_manager_timeout=bogus",
@@ -66314,6 +66327,16 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert!(aliases_get.body["logs-root-alias-000001"]["aliases"]
             .get("logs-root-search")
             .is_some());
+
+        let aliases_get_invalid_ignore_unavailable = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_aliases?ignore_unavailable=maybe",
+        ));
+        assert_eq!(aliases_get_invalid_ignore_unavailable.status, 400);
+        assert_eq!(
+            aliases_get_invalid_ignore_unavailable.body["error"]["reason"],
+            "Could not convert [ignore_unavailable] to boolean"
+        );
         assert_eq!(
             aliases_get.body["logs-root-alias-000001"]["aliases"]["logs-root-search"]
                 ["search_routing"],

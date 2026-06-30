@@ -213,7 +213,7 @@ The runtime path now:
 
 | Route family | OpenSearch meaning | Steelsearch behavior | Status |
 | --- | --- | --- | --- |
-| `GET /_alias`, `GET /{index}/_alias/{name}` and related forms | Read alias definitions, wildcard matches, and index association. | Live standalone route family with strict fixture coverage for global, scoped, wildcard, comma-target, and registry readback. | Partial |
+| `GET /_alias`, `GET /{index}/_alias/{name}` and related forms | Read alias definitions, wildcard matches, and index association. | Live standalone route family with strict fixture coverage for global, scoped, wildcard, comma-target, registry readback, and invalid selector boolean rejection. | Partial |
 | `PUT/POST /{index}/_alias/{name}` and related forms | Create or update aliases and alias metadata such as routing/filter/write index. | Live standalone route family with strict fixture coverage for selector fanout and the documented alias metadata contract. | Partial |
 | `POST /_aliases` | Bulk alias mutation transaction. | Live standalone route family with strict fixture coverage for `add`, `remove`, and `remove_index`. | Partial |
 | `DELETE /{index}/_alias/{name}` | Remove aliases from target indices. | The live standalone profile now supports alias deletion across concrete, wildcard, and comma index selectors. | Partial |
