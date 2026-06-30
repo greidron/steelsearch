@@ -492,6 +492,10 @@
         "body_paths_present": [
           "error.type",
           "error.reason",
+          "error.index",
+          "error.resource.id",
+          "error.resource.type",
+          "error.index_uuid",
           "status"
         ]
       },
@@ -500,9 +504,60 @@
         "body_paths_present": [
           "error.type",
           "error.reason",
+          "error.index",
+          "error.resource.id",
+          "error.resource.type",
+          "error.index_uuid",
           "status"
         ]
-      }
+      },
+      "body_paths_equal": [
+        "error.type",
+        "error.reason",
+        "error.index",
+        "error.resource.id",
+        "error.resource.type",
+        "error.index_uuid",
+        "status"
+      ]
+    },
+    {
+      "name": "get_missing_data_stream_stats_error",
+      "method": "GET",
+      "path": "/_data_stream/rollover-ds/_stats",
+      "steelsearch_compare": {
+        "expected_status": 404,
+        "body_paths_present": [
+          "error.type",
+          "error.reason",
+          "error.index",
+          "error.resource.id",
+          "error.resource.type",
+          "error.index_uuid",
+          "status"
+        ]
+      },
+      "opensearch_compare": {
+        "expected_status": 404,
+        "body_paths_present": [
+          "error.type",
+          "error.reason",
+          "error.index",
+          "error.resource.id",
+          "error.resource.type",
+          "error.index_uuid",
+          "status"
+        ]
+      },
+      "body_paths_equal": [
+        "error.type",
+        "error.reason",
+        "error.index",
+        "error.resource.id",
+        "error.resource.type",
+        "error.index_uuid",
+        "status"
+      ]
     }
   ]
 }

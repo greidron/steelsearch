@@ -118,7 +118,8 @@
         "rollover_alias_named_met_max_docs_condition",
         "rollover_alias_named_unknown_condition_failure",
         "delete_data_stream_happy_path",
-        "get_missing_data_stream_error"
+        "get_missing_data_stream_error",
+        "get_missing_data_stream_stats_error"
       ]
     },
     "security_parity": {

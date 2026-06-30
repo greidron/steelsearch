@@ -7476,16 +7476,7 @@ impl SteelNode {
             }));
         }
         if target.is_some() && entries.is_empty() {
-            return RestResponse::json(
-                404,
-                serde_json::json!({
-                    "error": {
-                        "type": "resource_not_found_exception",
-                        "reason": format!("data_stream matching [{}] not found", target.unwrap_or_default())
-                    },
-                    "status": 404
-                }),
-            );
+            return index_not_found_response(target.unwrap_or_default());
         }
         RestResponse::json(200, serde_json::json!({ "data_streams": entries }))
     }
@@ -7508,16 +7499,7 @@ impl SteelNode {
             })
             .collect::<Vec<_>>();
         if target.is_some() && selected.is_empty() {
-            return RestResponse::json(
-                404,
-                serde_json::json!({
-                    "error": {
-                        "type": "resource_not_found_exception",
-                        "reason": format!("data_stream matching [{}] not found", target.unwrap_or_default())
-                    },
-                    "status": 404
-                }),
-            );
+            return index_not_found_response(target.unwrap_or_default());
         }
         let backing_indices = selected
             .iter()
