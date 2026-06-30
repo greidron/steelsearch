@@ -4433,6 +4433,72 @@
       "description": "[lexical] request-scoped derived field string script search"
     },
     {
+      "name": "runtime_mappings_field_request_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "runtime_mappings": {
+          "runtime_level": {
+            "type": "keyword",
+            "script": {
+              "source": "emit(doc[\"level\"].value)"
+            }
+          }
+        },
+        "query": {
+          "term": {
+            "runtime_level": "error"
+          }
+        },
+        "fields": [
+          "runtime_level"
+        ],
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "extract": "search_fields",
+      "family": "lexical",
+      "description": "[lexical] request-scoped runtime_mappings field search"
+    },
+    {
+      "name": "runtime_mappings_string_script_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "runtime_mappings": {
+          "runtime_level": {
+            "type": "keyword",
+            "script": "emit(params._source[\"level\"])"
+          }
+        },
+        "query": {
+          "term": {
+            "runtime_level": "warn"
+          }
+        },
+        "fields": [
+          "runtime_level"
+        ],
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "extract": "search_fields",
+      "family": "lexical",
+      "description": "[lexical] request-scoped runtime_mappings string script search"
+    },
+    {
       "name": "derived_field_definition_options_search",
       "area": "search",
       "method": "POST",
@@ -9292,6 +9358,66 @@
       "extract": "search_score_rendering",
       "family": "lexical",
       "description": "[lexical] boolean execution query params search"
+    },
+    {
+      "name": "phase_took_invalid_query_param_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search?phase_took=maybe",
+      "body": {
+        "query": {
+          "match_all": {}
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error",
+      "family": "lexical",
+      "description": "[lexical] invalid phase_took query param is rejected like OpenSearch"
+    },
+    {
+      "name": "verbose_pipeline_invalid_query_param_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search?verbose_pipeline=maybe",
+      "body": {
+        "query": {
+          "match_all": {}
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error",
+      "family": "lexical",
+      "description": "[lexical] invalid verbose_pipeline query param is rejected like OpenSearch"
+    },
+    {
+      "name": "track_scores_invalid_query_param_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search?track_scores=maybe",
+      "body": {
+        "query": {
+          "match_all": {}
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error",
+      "family": "lexical",
+      "description": "[lexical] invalid track_scores query param is rejected like OpenSearch"
+    },
+    {
+      "name": "include_named_queries_score_invalid_query_param_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search?include_named_queries_score=maybe",
+      "body": {
+        "query": {
+          "match_all": {}
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error",
+      "family": "lexical",
+      "description": "[lexical] invalid include_named_queries_score query param is rejected like OpenSearch"
     },
     {
       "name": "search_boolean_string_body_options",
