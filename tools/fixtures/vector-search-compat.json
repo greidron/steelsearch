@@ -713,6 +713,27 @@
           "extract": "knn_stats_shape"
         }
       ]
+    },
+    {
+      "name": "knn_model_train_missing_training_field_error",
+      "kind": "error_shape",
+      "method": "POST",
+      "path": "/_plugins/_knn/models/vector-missing-field-model/_train",
+      "body": {
+        "training_index": "vector-search-compat-000001",
+        "dimension": 3,
+        "description": "missing training field parity",
+        "method": {
+          "name": "hnsw",
+          "engine": "lucene",
+          "space_type": "l2"
+        }
+      },
+      "metadata": {
+        "evidence_classes": [
+          "knn-model-validation"
+        ]
+      }
     }
   ]
 }

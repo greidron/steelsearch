@@ -39,6 +39,7 @@
         "knn_warmup_get_shape",
         "knn_warmup_basic_shape",
         "knn_clear_cache_basic_shape",
+        "knn_model_train_missing_training_field_error",
         "knn_query_unsupported_parameter_error",
         "hybrid_should_query_happy_path",
         "hybrid_minimum_should_match_happy_path",

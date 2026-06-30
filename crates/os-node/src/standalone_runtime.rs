@@ -17912,8 +17912,26 @@ impl SteelNode {
         let training_index = body
             .get("training_index")
             .and_then(Value::as_str)
-            .unwrap_or("vector-search-compat-000001")
+            .unwrap_or_default()
             .to_string();
+        if training_index.is_empty() {
+            return RestResponse::opensearch_error(
+                400,
+                "illegal_argument_exception",
+                "training_index is missing",
+            );
+        }
+        let training_field = body
+            .get("training_field")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        if training_field.is_empty() {
+            return RestResponse::opensearch_error(
+                400,
+                "illegal_argument_exception",
+                "training_field is missing",
+            );
+        }
         if training_index.starts_with("remote:") {
             return RestResponse::json(
                 400,
@@ -50963,6 +50981,19 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             root_train.body["transport_action"],
             "cluster:admin/knn/model/train"
+        );
+
+        let missing_training_field = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_plugins/_knn/models/missing-field/_train")
+                .with_json_body(serde_json::json!({
+                    "training_index": "logs-stateful-probe",
+                    "dimension": 3
+                })),
+        );
+        assert_eq!(missing_training_field.status, 400);
+        assert_eq!(
+            missing_training_field.body["error"]["type"],
+            "illegal_argument_exception"
         );
 
         let search_get = node.handle_rest_request(RestRequest::new(
