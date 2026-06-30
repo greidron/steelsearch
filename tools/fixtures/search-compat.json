@@ -2122,6 +2122,46 @@
       "description": "[admin-cat] targeted validate query GET valid"
     },
     {
+      "name": "validate_query_target_post_valid",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_validate/query",
+      "body": {
+        "query": {
+          "term": {
+            "service": "catalog"
+          }
+        }
+      },
+      "extract": "validate_query_result",
+      "family": "admin-cat",
+      "description": "[admin-cat] targeted validate query POST valid"
+    },
+    {
+      "name": "validate_query_target_post_invalid",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_validate/query",
+      "body": {
+        "query": {
+          "term": {}
+        }
+      },
+      "extract": "validate_query_result",
+      "family": "admin-cat",
+      "description": "[admin-cat] targeted validate query POST invalid"
+    },
+    {
+      "name": "validate_query_target_post_empty_body",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_validate/query",
+      "body": null,
+      "extract": "validate_query_result",
+      "family": "admin-cat",
+      "description": "[admin-cat] targeted validate query POST empty body"
+    },
+    {
       "name": "mget_root_get_summary",
       "area": "document",
       "method": "GET",
