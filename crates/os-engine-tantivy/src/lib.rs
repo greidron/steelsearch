@@ -2825,8 +2825,8 @@ fn build_tantivy_query(
             query,
             minimum_should_match,
         } => build_tantivy_match_query(search_state, field, query, *minimum_should_match),
-        Query::MatchPhrase { field, query } => {
-            build_tantivy_match_phrase_query(search_state, field, query)
+        Query::MatchPhrase { field, query, slop } => {
+            build_tantivy_match_phrase_query(search_state, field, query, *slop)
         }
         Query::MatchPhrasePrefix { field, query } => {
             build_tantivy_match_phrase_prefix_query(search_state, field, query)
@@ -3460,6 +3460,7 @@ fn build_tantivy_match_phrase_query(
     search_state: &TantivySearchState,
     field: &str,
     value: &Value,
+    slop: usize,
 ) -> EngineResult<Option<Box<dyn TantivyQueryTrait>>> {
     let Some(indexed_field) = search_state.fields.get(field) else {
         return Ok(None);
@@ -3467,6 +3468,24 @@ fn build_tantivy_match_phrase_query(
     let query_text = json_value_to_query_text(value)?;
     match indexed_field.field_type {
         TantivyFieldType::Text => {
+            if slop > 0 {
+                let Ok(slop) = u32::try_from(slop) else {
+                    return Ok(None);
+                };
+                let terms = tokenize_phrase_text(&query_text)
+                    .into_iter()
+                    .enumerate()
+                    .map(|(offset, token)| {
+                        (offset, Term::from_field_text(indexed_field.field, &token))
+                    })
+                    .collect::<Vec<_>>();
+                if terms.is_empty() {
+                    return Ok(None);
+                }
+                return Ok(Some(Box::new(PhraseQuery::new_with_offset_and_slop(
+                    terms, slop,
+                ))));
+            }
             let parser = QueryParser::for_index(&search_state.index, vec![indexed_field.field]);
             let escaped = query_text.replace('\\', "\\\\").replace('"', "\\\"");
             parser
@@ -11848,13 +11867,17 @@ fn search_hit_query_explanation_details(query: &Query, hit: &SearchHit) -> Vec<V
                 "matched_value_count": matched_value_count
             })]
         }
-        Query::MatchPhrase { field, query } if field == "_id" => {
-            let id_match =
-                matches_match_phrase_query(Some(&Value::String(hit.metadata.id.clone())), query);
+        Query::MatchPhrase { field, query, slop } if field == "_id" => {
+            let id_match = matches_match_phrase_query(
+                Some(&Value::String(hit.metadata.id.clone())),
+                query,
+                *slop,
+            );
             let query_token_count = match_query_token_count(query);
             let matched_token_count = match_phrase_matched_token_count(
                 Some(&Value::String(hit.metadata.id.clone())),
                 query,
+                *slop,
             );
             let highlight_present = id_match && search_hit_highlight_field_present(hit, field);
             let projected_field_present =
@@ -11881,15 +11904,17 @@ fn search_hit_query_explanation_details(query: &Query, hit: &SearchHit) -> Vec<V
                 "query_token_count": query_token_count
             })]
         }
-        Query::MatchPhrase { field, query } if field != "_id" => {
+        Query::MatchPhrase { field, query, slop } if field != "_id" => {
             let matched_token_count = match_phrase_matched_token_count(
                 source_value_for_highlight_field(&hit.source, field),
                 query,
+                *slop,
             );
             let query_token_count = match_query_token_count(query);
             let field_match = matches_match_phrase_query(
                 source_value_for_highlight_field(&hit.source, field),
                 query,
+                *slop,
             );
             let highlight_present = field_match && search_hit_highlight_field_present(hit, field);
             let projected_field_present =
@@ -13410,9 +13435,12 @@ fn search_hit_query_observation_counts(query: &Query, hit: &SearchHit) -> (usize
                 usize::from(id_match && search_hit_projected_field_present(hit, field)),
             )
         }
-        Query::MatchPhrase { field, query } if field == "_id" => {
-            let id_match =
-                matches_match_phrase_query(Some(&Value::String(hit.metadata.id.clone())), query);
+        Query::MatchPhrase { field, query, slop } if field == "_id" => {
+            let id_match = matches_match_phrase_query(
+                Some(&Value::String(hit.metadata.id.clone())),
+                query,
+                *slop,
+            );
             (
                 usize::from(id_match),
                 usize::from(id_match && search_hit_highlight_field_present(hit, field)),
@@ -13494,11 +13522,12 @@ fn search_hit_query_observation_counts(query: &Query, hit: &SearchHit) -> (usize
                 )
             })
         }
-        Query::MatchPhrase { field, query } if field != "_id" => {
+        Query::MatchPhrase { field, query, slop } if field != "_id" => {
             ({
                 let field_match = matches_match_phrase_query(
                     source_value_for_highlight_field(&hit.source, field),
                     query,
+                    *slop,
                 );
                 (
                     usize::from(field_match),
@@ -14569,11 +14598,11 @@ fn collect_search_hit_highlights(
                 append_highlight_snippets(highlights, field, render_spec, snippets);
             }
         }
-        Query::MatchPhrase { field, query } if field == "_id" => {
+        Query::MatchPhrase { field, query, slop } if field == "_id" => {
             if requested_fields.is_some_and(|fields| !fields.contains(field)) {
                 return;
             }
-            if !matches_match_phrase_query(Some(&Value::String(hit_id.to_string())), query) {
+            if !matches_match_phrase_query(Some(&Value::String(hit_id.to_string())), query, *slop) {
                 return;
             }
             let pattern_key = format!("contains:{field}:{}", query);
@@ -14588,7 +14617,7 @@ fn collect_search_hit_highlights(
                 append_highlight_snippets(highlights, field, render_spec, snippets);
             }
         }
-        Query::MatchPhrase { field, query } if field != "_id" => {
+        Query::MatchPhrase { field, query, slop } if field != "_id" => {
             if requested_fields.is_some_and(|fields| !fields.contains(field)) {
                 return;
             }
@@ -14600,7 +14629,7 @@ fn collect_search_hit_highlights(
                 highlight_render_spec_for_field(field, default_render_spec, requested_field_specs);
             if let Some(snippets) =
                 source_value_for_highlight_field(source, field).and_then(|value_in_source| {
-                    matches_match_phrase_query(Some(value_in_source), query)
+                    matches_match_phrase_query(Some(value_in_source), query, *slop)
                         .then(|| highlight_plain_snippets_for_value(value_in_source, render_spec))?
                 })
             {
@@ -16242,8 +16271,8 @@ fn document_matches_query(query: &Query, id: &str, source: &Value) -> bool {
             query,
             *minimum_should_match,
         ),
-        Query::MatchPhrase { field, query } if field == "_id" => {
-            matches_match_phrase_query(Some(&Value::String(id.to_string())), query)
+        Query::MatchPhrase { field, query, slop } if field == "_id" => {
+            matches_match_phrase_query(Some(&Value::String(id.to_string())), query, *slop)
         }
         Query::MatchPhrasePrefix { field, query } if field == "_id" => {
             matches_match_phrase_prefix_query(Some(&Value::String(id.to_string())), query)
@@ -16339,9 +16368,11 @@ fn document_matches_query(query: &Query, id: &str, source: &Value) -> bool {
             query,
             *minimum_should_match,
         ),
-        Query::MatchPhrase { field, query } => {
-            matches_match_phrase_query(source_value_for_highlight_field(source, field), query)
-        }
+        Query::MatchPhrase { field, query, slop } => matches_match_phrase_query(
+            source_value_for_highlight_field(source, field),
+            query,
+            *slop,
+        ),
         Query::MatchPhrasePrefix { field, query } => matches_match_phrase_prefix_query(
             source_value_for_highlight_field(source, field),
             query,
@@ -17225,7 +17256,11 @@ fn match_query_token_count(query: &Value) -> usize {
     }
 }
 
-fn match_phrase_matched_token_count(field_value: Option<&Value>, query: &Value) -> usize {
+fn match_phrase_matched_token_count(
+    field_value: Option<&Value>,
+    query: &Value,
+    slop: usize,
+) -> usize {
     let Some(field_value) = field_value else {
         return 0;
     };
@@ -17233,18 +17268,18 @@ fn match_phrase_matched_token_count(field_value: Option<&Value>, query: &Value) 
     match (field_value, query) {
         (Value::Array(items), query) => items
             .iter()
-            .map(|item| match_phrase_matched_token_count(Some(item), query))
+            .map(|item| match_phrase_matched_token_count(Some(item), query, slop))
             .max()
             .unwrap_or(0),
         (Value::String(field_value), Value::String(query)) => {
             let field_tokens = tokenize_phrase_text(field_value);
             let query_tokens = tokenize_phrase_text(query);
             if !query_tokens.is_empty() && !field_tokens.is_empty() {
-                usize::from(
-                    field_tokens
-                        .windows(query_tokens.len())
-                        .any(|window| window == query_tokens.as_slice()),
-                ) * query_tokens.len()
+                usize::from(phrase_tokens_match_with_slop(
+                    &field_tokens,
+                    &query_tokens,
+                    slop,
+                )) * query_tokens.len()
             } else {
                 usize::from(field_value.contains(query))
             }
@@ -17253,8 +17288,63 @@ fn match_phrase_matched_token_count(field_value: Option<&Value>, query: &Value) 
     }
 }
 
-fn matches_match_phrase_query(field_value: Option<&Value>, query: &Value) -> bool {
-    match_phrase_matched_token_count(field_value, query) == match_query_token_count(query)
+fn matches_match_phrase_query(field_value: Option<&Value>, query: &Value, slop: usize) -> bool {
+    match_phrase_matched_token_count(field_value, query, slop) == match_query_token_count(query)
+}
+
+fn phrase_tokens_match_with_slop(
+    field_tokens: &[String],
+    query_tokens: &[String],
+    slop: usize,
+) -> bool {
+    if query_tokens.is_empty() {
+        return false;
+    }
+    if slop == 0 {
+        return field_tokens
+            .windows(query_tokens.len())
+            .any(|window| window == query_tokens);
+    }
+
+    fn visit(
+        field_tokens: &[String],
+        query_tokens: &[String],
+        field_start: usize,
+        query_index: usize,
+        previous_position: Option<usize>,
+        used_slop: usize,
+        slop: usize,
+    ) -> bool {
+        if query_index == query_tokens.len() {
+            return true;
+        }
+        for position in field_start..field_tokens.len() {
+            if field_tokens[position] != query_tokens[query_index] {
+                continue;
+            }
+            let extra_gap = previous_position
+                .map(|previous| position.saturating_sub(previous + 1))
+                .unwrap_or(0);
+            let next_slop = used_slop.saturating_add(extra_gap);
+            if next_slop > slop {
+                continue;
+            }
+            if visit(
+                field_tokens,
+                query_tokens,
+                position + 1,
+                query_index + 1,
+                Some(position),
+                next_slop,
+                slop,
+            ) {
+                return true;
+            }
+        }
+        false
+    }
+
+    visit(field_tokens, query_tokens, 0, 0, None, 0, slop)
 }
 
 fn match_phrase_prefix_matched_token_count(field_value: Option<&Value>, query: &Value) -> usize {
@@ -17644,9 +17734,10 @@ fn remap_query_field(query: &Query, field: &str) -> Query {
             query: query.clone(),
             minimum_should_match: *minimum_should_match,
         },
-        Query::MatchPhrase { query, .. } => Query::MatchPhrase {
+        Query::MatchPhrase { query, slop, .. } => Query::MatchPhrase {
             field: field.to_string(),
             query: query.clone(),
+            slop: *slop,
         },
         Query::MatchPhrasePrefix { query, .. } => Query::MatchPhrasePrefix {
             field: field.to_string(),
@@ -17788,9 +17879,10 @@ fn prefix_query_fields_for_nested_path(query: &Query, path: &str) -> Query {
             query: query.clone(),
             minimum_should_match: *minimum_should_match,
         },
-        Query::MatchPhrase { field, query } => Query::MatchPhrase {
+        Query::MatchPhrase { field, query, slop } => Query::MatchPhrase {
             field: nested_candidate_field_name(path, field),
             query: query.clone(),
+            slop: *slop,
         },
         Query::MatchPhrasePrefix { field, query } => Query::MatchPhrasePrefix {
             field: nested_candidate_field_name(path, field),
@@ -18006,9 +18098,10 @@ fn localize_query_fields_for_nested_child(query: &Query, path: &str) -> Query {
             query: query.clone(),
             minimum_should_match: *minimum_should_match,
         },
-        Query::MatchPhrase { field, query } => Query::MatchPhrase {
+        Query::MatchPhrase { field, query, slop } => Query::MatchPhrase {
             field: nested_child_local_field_name(path, field),
             query: query.clone(),
+            slop: *slop,
         },
         Query::MatchPhrasePrefix { field, query } => Query::MatchPhrasePrefix {
             field: nested_child_local_field_name(path, field),
@@ -18290,8 +18383,8 @@ fn native_nested_child_ordinals_for_query(
             query,
             minimum_should_match,
         } => nested_child_match_ordinals(path_index, path, field, query, *minimum_should_match),
-        Query::MatchPhrase { field, query } => {
-            nested_child_match_phrase_ordinals(path_index, path, field, query)
+        Query::MatchPhrase { field, query, slop } => {
+            nested_child_match_phrase_ordinals(path_index, path, field, query, *slop)
         }
         Query::MatchPhrasePrefix { field, query } => {
             nested_child_match_phrase_prefix_ordinals(path_index, path, field, query)
@@ -18753,11 +18846,16 @@ fn nested_child_match_phrase_ordinals(
     path: &str,
     field: &str,
     query: &Value,
+    slop: usize,
 ) -> Option<std::collections::BTreeSet<usize>> {
     let mut ordinals = std::collections::BTreeSet::new();
     if field == "_id" {
         for (ordinal, child) in path_index.children.iter().enumerate() {
-            if matches_match_phrase_query(Some(&Value::String(child.parent_id.clone())), query) {
+            if matches_match_phrase_query(
+                Some(&Value::String(child.parent_id.clone())),
+                query,
+                slop,
+            ) {
                 ordinals.insert(ordinal);
             }
         }
@@ -18769,6 +18867,7 @@ fn nested_child_match_phrase_ordinals(
         if matches_match_phrase_query(
             source_value_for_highlight_field(&child.source, &field),
             query,
+            slop,
         ) {
             ordinals.insert(ordinal);
         }

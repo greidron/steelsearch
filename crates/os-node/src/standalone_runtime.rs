@@ -29780,6 +29780,7 @@ fn evaluate_search_query_source_with_mappings(
             lookup_query_field_value(source, field),
             extract_match_query_value(expected).unwrap_or_default(),
             false,
+            extract_match_phrase_slop(expected),
         );
         return Some((matched, if matched { 1.0 } else { 0.0 }));
     }
@@ -29789,6 +29790,7 @@ fn evaluate_search_query_source_with_mappings(
             lookup_query_field_value(source, field),
             extract_match_query_value(expected).unwrap_or_default(),
             true,
+            0,
         );
         return Some((matched, if matched { 1.0 } else { 0.0 }));
     }
@@ -30917,7 +30919,7 @@ fn score_text_query_term(haystacks: &[String], term: &str) -> f64 {
     for haystack in haystacks {
         let candidate = Value::String(haystack.clone());
         let score = if is_phrase {
-            if value_matches_phrase(Some(&candidate), phrase, false) {
+            if value_matches_phrase(Some(&candidate), phrase, false, 0) {
                 phrase.split_whitespace().count().max(1) as f64
             } else {
                 0.0
@@ -31356,6 +31358,7 @@ fn value_matches_phrase(
     candidate: Option<&Value>,
     expected: &str,
     prefix_last_token: bool,
+    slop: usize,
 ) -> bool {
     let Some(candidate_text) = candidate.and_then(Value::as_str) else {
         return false;
@@ -31365,25 +31368,89 @@ fn value_matches_phrase(
     if expected_tokens.is_empty() || candidate_tokens.len() < expected_tokens.len() {
         return false;
     }
-    for window in candidate_tokens.windows(expected_tokens.len()) {
-        let mut matched = true;
-        for (index, expected_token) in expected_tokens.iter().enumerate() {
-            let candidate_token = &window[index];
-            let token_matches = if prefix_last_token && index + 1 == expected_tokens.len() {
-                candidate_token.starts_with(expected_token)
-            } else {
-                candidate_token == expected_token
-            };
-            if !token_matches {
-                matched = false;
-                break;
+    if prefix_last_token {
+        for window in candidate_tokens.windows(expected_tokens.len()) {
+            let mut matched = true;
+            for (index, expected_token) in expected_tokens.iter().enumerate() {
+                let candidate_token = &window[index];
+                let token_matches = if index + 1 == expected_tokens.len() {
+                    candidate_token.starts_with(expected_token)
+                } else {
+                    candidate_token == expected_token
+                };
+                if !token_matches {
+                    matched = false;
+                    break;
+                }
+            }
+            if matched {
+                return true;
             }
         }
-        if matched {
+        return false;
+    }
+    phrase_tokens_match_with_slop(&candidate_tokens, &expected_tokens, slop)
+}
+
+fn extract_match_phrase_slop(value: &Value) -> usize {
+    value
+        .as_object()
+        .and_then(|object| object.get("slop"))
+        .and_then(Value::as_u64)
+        .and_then(|slop| usize::try_from(slop).ok())
+        .unwrap_or(0)
+}
+
+fn phrase_tokens_match_with_slop(
+    candidate_tokens: &[String],
+    expected_tokens: &[String],
+    slop: usize,
+) -> bool {
+    if slop == 0 {
+        return candidate_tokens
+            .windows(expected_tokens.len())
+            .any(|window| window == expected_tokens);
+    }
+
+    fn visit(
+        candidate_tokens: &[String],
+        expected_tokens: &[String],
+        candidate_start: usize,
+        expected_index: usize,
+        previous_position: Option<usize>,
+        used_slop: usize,
+        slop: usize,
+    ) -> bool {
+        if expected_index == expected_tokens.len() {
             return true;
         }
+        for position in candidate_start..candidate_tokens.len() {
+            if candidate_tokens[position] != expected_tokens[expected_index] {
+                continue;
+            }
+            let extra_gap = previous_position
+                .map(|previous| position.saturating_sub(previous + 1))
+                .unwrap_or(0);
+            let next_slop = used_slop.saturating_add(extra_gap);
+            if next_slop > slop {
+                continue;
+            }
+            if visit(
+                candidate_tokens,
+                expected_tokens,
+                position + 1,
+                expected_index + 1,
+                Some(position),
+                next_slop,
+                slop,
+            ) {
+                return true;
+            }
+        }
+        false
     }
-    false
+
+    visit(candidate_tokens, expected_tokens, 0, 0, None, 0, slop)
 }
 
 fn value_matches_wildcard(candidate: Option<&Value>, expected: &str) -> bool {
@@ -61844,7 +61911,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             (
                 "/logs-search-dsl-000001/_doc/doc-1",
                 serde_json::json!({
-                    "message": "alpha fox",
+                    "message": "alpha quick fox",
                     "code": "alpha-1",
                     "tags": ["red", "blue"],
                     "contact_email": "alpha@example.com",
@@ -62046,6 +62113,24 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             multi_match_operator_and.body["hits"]["hits"][0]["_id"],
             "doc-2"
         );
+
+        let match_phrase_slop = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-dsl-000001/_search").with_json_body(
+                serde_json::json!({
+                    "query": {
+                        "match_phrase": {
+                            "message": {
+                                "query": "alpha fox",
+                                "slop": 1
+                            }
+                        }
+                    }
+                }),
+            ),
+        );
+        assert_eq!(match_phrase_slop.status, 200);
+        assert_eq!(match_phrase_slop.body["hits"]["total"]["value"], 1);
+        assert_eq!(match_phrase_slop.body["hits"]["hits"][0]["_id"], "doc-1");
 
         let prefix = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/logs-search-dsl-000001/_search").with_json_body(
