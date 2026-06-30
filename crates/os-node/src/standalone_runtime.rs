@@ -10779,10 +10779,16 @@ impl SteelNode {
                     .partial_cmp(&left_score)
                     .unwrap_or(std::cmp::Ordering::Equal)
                     .then_with(|| {
-                        left["_seq_no"]
+                        left["_index"]
+                            .as_str()
+                            .unwrap_or_default()
+                            .cmp(right["_index"].as_str().unwrap_or_default())
+                    })
+                    .then_with(|| {
+                        left["_shard_doc"]
                             .as_i64()
                             .unwrap_or(i64::MAX)
-                            .cmp(&right["_seq_no"].as_i64().unwrap_or(i64::MAX))
+                            .cmp(&right["_shard_doc"].as_i64().unwrap_or(i64::MAX))
                     })
                     .then_with(|| {
                         left["_id"]
@@ -29998,6 +30004,10 @@ fn apply_search_rescore(hits: &mut [Value], rescore: &Value) {
         .get("rescore_query_weight")
         .and_then(Value::as_f64)
         .unwrap_or(1.0);
+    let score_mode = query_object
+        .get("score_mode")
+        .and_then(Value::as_str)
+        .unwrap_or("total");
     let window = window_size.min(hits.len());
     for hit in &mut hits[..window] {
         let Some(hit_object) = hit.as_object_mut() else {
@@ -30017,10 +30027,14 @@ fn apply_search_rescore(hits: &mut [Value], rescore: &Value) {
         let rescore_score = evaluate_search_query_source(source, doc_id, rescore_query)
             .map(|(matched, score)| if matched { score } else { 0.0 })
             .unwrap_or(0.0);
-        hit_object.insert(
-            "_score".to_string(),
-            Value::from(base_score * query_weight + rescore_score * rescore_weight),
-        );
+        let weighted_base = base_score * query_weight;
+        let weighted_rescore = rescore_score * rescore_weight;
+        let combined_score = if weighted_rescore > 0.0 {
+            combine_rescore_score(weighted_base, weighted_rescore, score_mode)
+        } else {
+            weighted_base
+        };
+        hit_object.insert("_score".to_string(), Value::from(combined_score));
     }
     hits[..window].sort_by(|left, right| {
         let left_score = left["_score"].as_f64().unwrap_or(0.0);
@@ -30028,24 +30042,6 @@ fn apply_search_rescore(hits: &mut [Value], rescore: &Value) {
         right_score
             .partial_cmp(&left_score)
             .unwrap_or(std::cmp::Ordering::Equal)
-            .then_with(|| {
-                left["_index"]
-                    .as_str()
-                    .unwrap_or_default()
-                    .cmp(right["_index"].as_str().unwrap_or_default())
-            })
-            .then_with(|| {
-                left["_seq_no"]
-                    .as_i64()
-                    .unwrap_or(i64::MAX)
-                    .cmp(&right["_seq_no"].as_i64().unwrap_or(i64::MAX))
-            })
-            .then_with(|| {
-                left["_id"]
-                    .as_str()
-                    .unwrap_or_default()
-                    .cmp(right["_id"].as_str().unwrap_or_default())
-            })
     });
     hits[window..].sort_by(|left, right| {
         search_hit_source_string(left, "ts")
@@ -30063,6 +30059,16 @@ fn apply_search_rescore(hits: &mut [Value], rescore: &Value) {
                     .cmp(&right["_seq_no"].as_i64().unwrap_or(i64::MAX))
             })
     });
+}
+
+fn combine_rescore_score(primary: f64, secondary: f64, score_mode: &str) -> f64 {
+    match score_mode {
+        "avg" => (primary + secondary) / 2.0,
+        "max" => primary.max(secondary),
+        "min" => primary.min(secondary),
+        "multiply" | "product" => primary * secondary,
+        _ => primary + secondary,
+    }
 }
 
 fn apply_search_collapse(hits: Vec<Value>, collapse: &Value) -> Vec<Value> {
@@ -31568,14 +31574,18 @@ fn score_match_query(candidate: Option<&Value>, expected: &str) -> f64 {
     let Some(candidate_text) = candidate.and_then(Value::as_str) else {
         return 0.0;
     };
-    let haystack = candidate_text.to_ascii_lowercase();
+    let haystack_tokens = candidate_text
+        .split(|ch: char| !ch.is_alphanumeric())
+        .filter(|token| !token.is_empty())
+        .map(|token| token.to_ascii_lowercase())
+        .collect::<Vec<_>>();
     let mut score = 0.0;
     for token in expected
         .split_whitespace()
         .map(|token| token.to_ascii_lowercase())
         .filter(|token| !token.is_empty())
     {
-        if haystack.contains(&token) {
+        if haystack_tokens.iter().any(|candidate| candidate == &token) {
             score += 1.0;
         }
     }

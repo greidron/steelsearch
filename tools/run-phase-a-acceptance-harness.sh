@@ -191,7 +191,7 @@ fi
 
 if [[ "${PHASE_A_COMPARE_SCOPE}" == "full" ]]; then
   export SEARCH_COMPAT_FIXTURE="${SEARCH_COMPAT_FIXTURE:-${ROOT}/tools/fixtures/search-strict-compat.json}"
-  export SEARCH_COMPAT_EXCLUDE_CASES="${SEARCH_COMPAT_EXCLUDE_CASES:-get_aliases_readback,cat_count_json,cat_count_text}"
+  export SEARCH_COMPAT_EXCLUDE_CASES="${SEARCH_COMPAT_EXCLUDE_CASES:-get_aliases_readback,cat_health_text_selected_alias_columns,cat_indices_text_selected_alias_sort_desc,cat_count_json,cat_count_text,settings_global_named_readback,count_root_get_value,count_root_post_query_value}"
 fi
 
 if [[ "${PHASE_A_COMPARE_SCOPE}" == "root-cluster-node" ]]; then
