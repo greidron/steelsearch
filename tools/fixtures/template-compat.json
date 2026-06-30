@@ -260,6 +260,23 @@
       }
     },
     {
+      "name": "simulate_missing_index_template_error",
+      "method": "POST",
+      "path": "/_index_template/_simulate/missing-template-compat",
+      "compare": {
+        "expected_status": 400,
+        "body_paths_present": [
+          "error.type",
+          "error.reason",
+          "status"
+        ],
+        "body_paths_equal": [
+          "error.type",
+          "status"
+        ]
+      }
+    },
+    {
       "name": "simulate_index_name_template_match",
       "method": "POST",
       "path": "/_index_template/_simulate_index/template-logs-000001",

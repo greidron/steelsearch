@@ -12364,6 +12364,23 @@ impl SteelNode {
         })
     }
 
+    fn build_missing_index_template_simulate_error(name: &str) -> Value {
+        let reason = format!("unable to simulate template [{name}] that does not exist");
+        serde_json::json!({
+            "error": {
+                "root_cause": [
+                    {
+                        "type": "illegal_argument_exception",
+                        "reason": reason
+                    }
+                ],
+                "type": "illegal_argument_exception",
+                "reason": reason
+            },
+            "status": 400
+        })
+    }
+
     fn build_component_template_array_readback(templates: &Value, target: Option<&str>) -> Value {
         let selected =
             template_route_registration::invoke_component_template_live_readback(templates, target);
@@ -12537,8 +12554,16 @@ impl SteelNode {
                     Self::build_simulate_template_overlaps(&manifest, &request_subset, target),
                 )
             } else if let Some(name) = target {
-                let index_template =
-                    manifest["templates"]["index_templates"][name]["index_template"].clone();
+                let Some(index_template) = manifest["templates"]["index_templates"]
+                    .get(name)
+                    .and_then(|template| template.get("index_template"))
+                    .cloned()
+                else {
+                    return RestResponse::json(
+                        400,
+                        Self::build_missing_index_template_simulate_error(name),
+                    );
+                };
                 (
                     Self::build_resolved_composable_template(&manifest, &index_template),
                     Self::build_simulate_template_overlaps(&manifest, &index_template, target),
