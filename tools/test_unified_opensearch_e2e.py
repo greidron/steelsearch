@@ -107,6 +107,32 @@ class UnifiedOpenSearchE2EReportTests(unittest.TestCase):
         self.assertEqual(result["classification"]["steelsearch_only"], 1)
         self.assertEqual(result["case_gaps"]["missing"], [])
 
+    def test_steelsearch_only_expected_status_classification_separates_supported_and_fail_closed_cases(self):
+        runner = load_module(RUNNER_PATH, "run_unified_opensearch_e2e_steelsearch_only_status")
+
+        counts = runner.classify_cases(
+            [
+                {
+                    "name": "supported",
+                    "comparison": "steelsearch_only",
+                    "expected_steelsearch_status": 200,
+                },
+                {
+                    "name": "fail-closed",
+                    "comparison": "steelsearch_only",
+                    "expected_steelsearch_status": 400,
+                },
+            ],
+            [
+                {"name": "supported", "status": "passed"},
+                {"name": "fail-closed", "status": "passed"},
+            ],
+            has_opensearch=False,
+        )
+
+        self.assertEqual(counts["steelsearch_only"], 1)
+        self.assertEqual(counts["steelsearch_fail_closed"], 1)
+
     def test_suite_recomputes_failed_count_from_cases_when_summary_lies(self):
         runner = load_module(RUNNER_PATH, "run_unified_opensearch_e2e_summary_drift")
         suite = runner.Suite(

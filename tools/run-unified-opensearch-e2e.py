@@ -73,6 +73,21 @@ SUITES: tuple[Suite, ...] = (
             "knn_warmup_clear_cache_telemetry_shape",
         ),
     ),
+    Suite(
+        "tier-read-surface",
+        "index-metadata",
+        "route_parity",
+        "tools/search_compat.py",
+        "tools/fixtures/search-compat.json",
+        "tier-read-surface-report.json",
+        output_arg="--report",
+        needs_opensearch=False,
+        allow_partial_report=True,
+        default_cases=(
+            "tier_all_shape",
+            "tier_index_shape",
+        ),
+    ),
     Suite("ml-model-surface", "vector-ml", "semantic_parity", "tools/ml_model_surface_compat.py", "tools/fixtures/ml-model-surface-compat.json", "ml-model-surface-compat-report.json", needs_opensearch=False),
     Suite("snapshot-lifecycle", "snapshot", "durability_parity", "tools/snapshot_lifecycle_compat.py", "tools/fixtures/snapshot-lifecycle-compat.json", "snapshot-lifecycle-compat-report.json"),
     Suite("alias-template-persistence", "durability", "durability_parity", "tools/alias_template_persistence_compat.py", "tools/fixtures/alias-template-persistence-compat.json", "alias-template-persistence-report.json"),
@@ -586,7 +601,8 @@ def classify_cases(fixture_cases: list[dict[str, Any]], report_cases: list[dict[
             counts["failed"] += 1
             continue
         if fixture_case.get("comparison") == "steelsearch_only":
-            if "expected_steelsearch_status" in fixture_case:
+            expected_status = fixture_case.get("expected_steelsearch_status")
+            if isinstance(expected_status, int) and expected_status >= 400:
                 counts["steelsearch_fail_closed"] += 1
             else:
                 counts["steelsearch_only"] += 1
