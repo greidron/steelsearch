@@ -427,6 +427,11 @@ def write_valid_release_inventory_artifacts(temp_dir: Path, artifacts: dict[str,
                     "profile": "rolling-upgrade",
                     "status": "completed",
                 },
+                "assertion_hits": {
+                    "cluster ready before upgrade sequence": True,
+                    "upgrade steps recorded in order": True,
+                    "cluster ready after each upgraded node rejoins": True,
+                },
             }
         ),
         encoding="utf-8",

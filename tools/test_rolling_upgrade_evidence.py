@@ -57,6 +57,41 @@ class RollingUpgradeEvidenceTests(unittest.TestCase):
 
         self.assertIn("transcript execution order does not match fixture", errors)
 
+    def test_validate_transcript_rejects_unsatisfied_assertion(self):
+        profile = {
+            "steps": [
+                "cluster-ready-before",
+                "node-1-upgrade",
+                "cluster-ready-after-node-1",
+                "node-2-upgrade",
+                "cluster-ready-after-node-2",
+                "node-3-upgrade",
+                "cluster-ready-after-node-3",
+            ],
+            "transcript_assertions": ["cluster ready after each upgraded node rejoins"],
+        }
+        transcript = {
+            "profile": "rolling-upgrade",
+            "status": "completed",
+            "steps": profile["steps"],
+            "transcript": [
+                "cluster-ready-before",
+                "node-1-upgrade",
+                "cluster-ready-after-node-1",
+                "node-2-upgrade",
+                "cluster-ready-after-node-2",
+                "node-3-upgrade",
+            ],
+            "transcript_assertions": ["cluster ready after each upgraded node rejoins"],
+        }
+
+        errors = self.rolling.validate_transcript(transcript, profile)
+
+        self.assertIn(
+            "transcript assertion not satisfied: cluster ready after each upgraded node rejoins",
+            errors,
+        )
+
     def test_cli_writes_rolling_upgrade_report(self):
         with tempfile.TemporaryDirectory() as temp_dir_value:
             output = Path(temp_dir_value) / "rolling-upgrade-report.json"
@@ -81,6 +116,7 @@ class RollingUpgradeEvidenceTests(unittest.TestCase):
                 payload["summary"]["coverage_scope"],
                 "rolling-upgrade transcript fixture",
             )
+            self.assertTrue(all(payload["assertion_hits"].values()))
 
 
 if __name__ == "__main__":

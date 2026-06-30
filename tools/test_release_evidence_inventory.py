@@ -140,6 +140,49 @@ class ReleaseEvidenceInventoryTests(unittest.TestCase):
             self.assertFalse(item["ready"])
             self.assertIn("load comparison is a dry-run report", item["blockers"])
 
+    def test_inventory_rejects_failed_rolling_upgrade_assertion_hit(self):
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            temp_dir = Path(temp_dir_value)
+            now = 1_000_000.0
+            rolling = temp_dir / "final-rolling-upgrade.json"
+            rolling.write_text(
+                json.dumps(
+                    {
+                        "ready": True,
+                        "passed": True,
+                        "blockers": [],
+                        "summary": {
+                            "passed": True,
+                            "error_count": 0,
+                            "coverage_scope": "rolling-upgrade transcript fixture",
+                        },
+                        "transcript": {
+                            "profile": "rolling-upgrade",
+                            "status": "completed",
+                        },
+                        "assertion_hits": {
+                            "cluster ready after each upgraded node rejoins": False,
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            os.utime(rolling, (now, now))
+
+            report = self.inventory.build_inventory(
+                temp_dir,
+                max_age_seconds=60.0,
+                require_complete=False,
+                now=now,
+            )
+
+            item = report["items"]["rolling_upgrade_coverage"]
+            self.assertFalse(item["ready"])
+            self.assertIn(
+                "rolling-upgrade assertion_hits failed: cluster ready after each upgraded node rejoins",
+                item["blockers"],
+            )
+
     def test_inventory_rejects_chaos_source_failed_child_check(self):
         with tempfile.TemporaryDirectory() as temp_dir_value:
             temp_dir = Path(temp_dir_value)
@@ -324,6 +367,11 @@ class ReleaseEvidenceInventoryTests(unittest.TestCase):
                     "transcript": {
                         "profile": "rolling-upgrade",
                         "status": "completed",
+                    },
+                    "assertion_hits": {
+                        "cluster ready before upgrade sequence": True,
+                        "upgrade steps recorded in order": True,
+                        "cluster ready after each upgraded node rejoins": True,
                     },
                 }
             ),

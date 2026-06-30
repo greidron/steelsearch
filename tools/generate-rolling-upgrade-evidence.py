@@ -71,6 +71,7 @@ def generate_report(root: Path, *, output: Path) -> dict[str, Any]:
         "stdout_tail": completed.stdout[-4000:],
         "stderr_tail": completed.stderr[-4000:],
         "transcript_report": str(transcript_path),
+        "assertion_hits": rolling_upgrade_assertion_hits(transcript, profile),
         "transcript": transcript,
     }
 
@@ -119,7 +120,42 @@ def validate_transcript(transcript: Any, profile: dict[str, Any]) -> list[str]:
         errors.append("transcript execution order does not match fixture")
     if transcript.get("transcript_assertions") != expected_assertions:
         errors.append("transcript assertions do not match fixture")
+    assertion_hits = rolling_upgrade_assertion_hits(transcript, profile)
+    for assertion, passed in assertion_hits.items():
+        if passed is not True:
+            errors.append(f"transcript assertion not satisfied: {assertion}")
     return errors
+
+
+def rolling_upgrade_assertion_hits(transcript: Any, profile: dict[str, Any]) -> dict[str, bool]:
+    expected_assertions = profile.get("transcript_assertions", [])
+    observed = transcript.get("transcript") if isinstance(transcript, dict) else []
+    if not isinstance(observed, list):
+        observed = []
+    observed_steps = [str(step) for step in observed]
+    expected_steps = [str(step) for step in profile.get("steps", [])]
+    hits: dict[str, bool] = {}
+    for assertion in expected_assertions:
+        if assertion == "cluster ready before upgrade sequence":
+            hits[assertion] = bool(observed_steps) and observed_steps[0] == "cluster-ready-before"
+        elif assertion == "upgrade steps recorded in order":
+            hits[assertion] = observed_steps == expected_steps
+        elif assertion == "cluster ready after each upgraded node rejoins":
+            hits[assertion] = all(
+                ready_step_after_upgrade(observed_steps, node)
+                for node in ("1", "2", "3")
+            )
+        else:
+            hits[assertion] = True
+    return hits
+
+
+def ready_step_after_upgrade(observed_steps: list[str], node: str) -> bool:
+    upgrade = f"node-{node}-upgrade"
+    ready = f"cluster-ready-after-node-{node}"
+    if upgrade not in observed_steps or ready not in observed_steps:
+        return False
+    return observed_steps.index(upgrade) < observed_steps.index(ready)
 
 
 if __name__ == "__main__":

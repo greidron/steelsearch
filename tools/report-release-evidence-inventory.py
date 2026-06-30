@@ -278,8 +278,18 @@ def validate_rolling_upgrade_json(payload: dict[str, Any]) -> list[str]:
     transcript = payload.get("transcript")
     if not isinstance(transcript, dict):
         errors.append("rolling-upgrade transcript is missing")
-    elif transcript.get("profile") != "rolling-upgrade":
-        errors.append("rolling-upgrade transcript profile mismatch")
+    else:
+        if transcript.get("profile") != "rolling-upgrade":
+            errors.append("rolling-upgrade transcript profile mismatch")
+        if transcript.get("status") != "completed":
+            errors.append(f"rolling-upgrade transcript status mismatch: {transcript.get('status')}")
+    assertion_hits = payload.get("assertion_hits")
+    if not isinstance(assertion_hits, dict) or not assertion_hits:
+        errors.append("rolling-upgrade assertion_hits is missing")
+    else:
+        failed = sorted(name for name, passed in assertion_hits.items() if passed is not True)
+        if failed:
+            errors.append(f"rolling-upgrade assertion_hits failed: {', '.join(failed)}")
     return errors
 
 
