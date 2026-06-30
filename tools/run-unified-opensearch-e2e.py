@@ -71,6 +71,8 @@ SUITES: tuple[Suite, ...] = (
             "knn_model_lifecycle_shape",
             "knn_warmup_budget_failure",
             "knn_warmup_clear_cache_telemetry_shape",
+            "knn_unsupported_method_engine_fail_closed",
+            "knn_unsupported_mode_fail_closed",
         ),
     ),
     Suite(
@@ -484,7 +486,10 @@ def shell_join_with_env(command: list[str]) -> str:
 
 
 def summarize_suite(suite: Suite, fixture: dict[str, Any], report: dict[str, Any] | None) -> dict[str, Any]:
-    fixture_cases = fixture.get("cases") or []
+    fixture_cases = list(fixture.get("cases") or [])
+    aggregate_case = fixture.get("aggregate_case")
+    if isinstance(aggregate_case, dict) and aggregate_case.get("name"):
+        fixture_cases.append(aggregate_case)
     report_cases = (report.get("cases") or []) if report is not None else []
     if suite.allow_partial_report and report_cases:
         report_names = {
@@ -513,6 +518,7 @@ def summarize_suite(suite: Suite, fixture: dict[str, Any], report: dict[str, Any
             "has_opensearch_target": False,
             "classification": empty_classification(),
             "case_gaps": empty_case_gaps(),
+            "passed_cases": [],
             "by_area": {},
         }
     reported_summary = report.get("summary") or {}
@@ -541,6 +547,7 @@ def summarize_suite(suite: Suite, fixture: dict[str, Any], report: dict[str, Any
         "has_opensearch_target": has_opensearch,
         "classification": classification,
         "case_gaps": case_gaps,
+        "passed_cases": collect_passed_cases(fixture_cases, report_cases),
         "summary_drift": summary_drift,
         "by_area": summary.get("by_area") or {},
     }
@@ -646,6 +653,18 @@ def collect_case_gaps(fixture_cases: list[dict[str, Any]], report_cases: list[di
     }
 
 
+def collect_passed_cases(fixture_cases: list[dict[str, Any]], report_cases: list[dict[str, Any]]) -> list[str]:
+    fixture_names = {str(case.get("name")) for case in fixture_cases if case.get("name")}
+    passed = [
+        str(case.get("name"))
+        for case in report_cases
+        if isinstance(case, dict)
+        and case.get("name") in fixture_names
+        and case.get("status") == "passed"
+    ]
+    return sorted(passed)
+
+
 def build_report(profile: str, suite_results: list[dict[str, Any]]) -> dict[str, Any]:
     sections = {
         name: section_summary(name, suite_results)
@@ -660,6 +679,12 @@ def build_report(profile: str, suite_results: list[dict[str, Any]]) -> dict[str,
     for suite in suite_results:
         for key, value in suite["classification"].items():
             totals[key] += int(value)
+    gap_resolution = resolve_cross_suite_skips(suite_results)
+    effective_totals = dict(totals)
+    effective_totals["known_gap_or_skipped"] = max(
+        0,
+        effective_totals["known_gap_or_skipped"] - gap_resolution["skipped"]["resolved_by_other_suite_count"],
+    )
     return {
         "profile": profile,
         "generated_at": int(time.time()),
@@ -671,8 +696,53 @@ def build_report(profile: str, suite_results: list[dict[str, Any]]) -> dict[str,
             "reported_suite_count": sum(1 for suite in suite_results if suite["report_source"] != "missing"),
             "opensearch_compared_suite_count": sum(1 for suite in suite_results if suite["has_opensearch_target"]),
             "case_classification": totals,
+            "effective_case_classification": effective_totals,
+            "case_gap_resolution": gap_resolution,
         },
         "suite_results": suite_results,
+    }
+
+
+def resolve_cross_suite_skips(suite_results: list[dict[str, Any]]) -> dict[str, Any]:
+    passed_by_case: dict[str, list[str]] = {}
+    for suite in suite_results:
+        if not suite.get("required"):
+            continue
+        if suite.get("status") != "ok":
+            continue
+        for case_name in suite.get("passed_cases") or []:
+            passed_by_case.setdefault(str(case_name), []).append(str(suite["name"]))
+
+    resolved: list[dict[str, Any]] = []
+    unresolved: list[dict[str, Any]] = []
+    total_skipped = 0
+    for suite in suite_results:
+        if not suite.get("required"):
+            continue
+        skipped_cases = (suite.get("case_gaps") or {}).get("skipped") or []
+        for case_name in skipped_cases:
+            total_skipped += 1
+            covering_suites = [
+                candidate
+                for candidate in passed_by_case.get(str(case_name), [])
+                if candidate != suite.get("name")
+            ]
+            entry = {
+                "case": str(case_name),
+                "suite": str(suite.get("name")),
+            }
+            if covering_suites:
+                resolved.append({**entry, "covered_by": covering_suites})
+            else:
+                unresolved.append(entry)
+    return {
+        "skipped": {
+            "total_count": total_skipped,
+            "resolved_by_other_suite_count": len(resolved),
+            "unresolved_count": len(unresolved),
+            "resolved": resolved,
+            "unresolved": unresolved,
+        }
     }
 
 

@@ -107,6 +107,39 @@ class UnifiedOpenSearchE2EReportTests(unittest.TestCase):
         self.assertEqual(result["classification"]["steelsearch_only"], 1)
         self.assertEqual(result["case_gaps"]["missing"], [])
 
+    def test_suite_treats_fixture_aggregate_case_as_first_class_evidence(self):
+        runner = load_module(RUNNER_PATH, "run_unified_opensearch_e2e_aggregate_case")
+        suite = runner.Suite(
+            "synthetic-aggregate",
+            "vector-ml",
+            "semantic_parity",
+            None,
+            "unused-fixture.json",
+            "unused-report.json",
+            needs_opensearch=False,
+        )
+
+        result = runner.summarize_suite(
+            suite,
+            {
+                "aggregate_case": {"name": "aggregate"},
+                "cases": [{"name": "step"}],
+            },
+            {
+                "targets": {"steelsearch": "http://steelsearch"},
+                "summary": {"passed": 2, "failed": 0, "skipped": 0},
+                "cases": [
+                    {"name": "step", "status": "passed"},
+                    {"name": "aggregate", "status": "passed"},
+                ],
+            },
+        )
+
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual(result["case_gaps"]["extra"], [])
+        self.assertEqual(result["classification"]["steelsearch_only"], 2)
+        self.assertIn("aggregate", result["passed_cases"])
+
     def test_steelsearch_only_expected_status_classification_separates_supported_and_fail_closed_cases(self):
         runner = load_module(RUNNER_PATH, "run_unified_opensearch_e2e_steelsearch_only_status")
 
@@ -132,6 +165,71 @@ class UnifiedOpenSearchE2EReportTests(unittest.TestCase):
 
         self.assertEqual(counts["steelsearch_only"], 1)
         self.assertEqual(counts["steelsearch_fail_closed"], 1)
+
+    def test_build_report_tracks_cross_suite_resolved_skips_separately_from_raw_classification(self):
+        runner = load_module(RUNNER_PATH, "run_unified_opensearch_e2e_cross_suite_resolution")
+        raw_skipped = runner.empty_classification()
+        raw_skipped["known_gap_or_skipped"] = 1
+        covered = runner.empty_classification()
+        covered["steelsearch_only"] = 1
+
+        report = runner.build_report(
+            "synthetic",
+            [
+                {
+                    "name": "broad-search",
+                    "area": "search",
+                    "parity_section": "semantic_parity",
+                    "required": True,
+                    "status": "ok",
+                    "summary": {"passed": 0, "failed": 0, "skipped": 1},
+                    "classification": raw_skipped,
+                    "case_gaps": {
+                        "missing": [],
+                        "extra": [],
+                        "failed": [],
+                        "skipped": ["covered-case"],
+                    },
+                    "passed_cases": [],
+                    "report_source": "target",
+                    "report_path": "broad-search.json",
+                    "has_opensearch_target": True,
+                },
+                {
+                    "name": "focused-surface",
+                    "area": "search",
+                    "parity_section": "semantic_parity",
+                    "required": True,
+                    "status": "ok",
+                    "summary": {"passed": 1, "failed": 0, "skipped": 0},
+                    "classification": covered,
+                    "case_gaps": {
+                        "missing": [],
+                        "extra": [],
+                        "failed": [],
+                        "skipped": [],
+                    },
+                    "passed_cases": ["covered-case"],
+                    "report_source": "target",
+                    "report_path": "focused-surface.json",
+                    "has_opensearch_target": False,
+                },
+            ],
+        )
+
+        self.assertEqual(report["coverage_summary"]["case_classification"]["known_gap_or_skipped"], 1)
+        self.assertEqual(
+            report["coverage_summary"]["effective_case_classification"]["known_gap_or_skipped"],
+            0,
+        )
+        self.assertEqual(
+            report["coverage_summary"]["case_gap_resolution"]["skipped"]["resolved_by_other_suite_count"],
+            1,
+        )
+        self.assertEqual(
+            report["coverage_summary"]["case_gap_resolution"]["skipped"]["unresolved_count"],
+            0,
+        )
 
     def test_suite_recomputes_failed_count_from_cases_when_summary_lies(self):
         runner = load_module(RUNNER_PATH, "run_unified_opensearch_e2e_summary_drift")
