@@ -297,6 +297,7 @@
       "nested_tuple_semantics_search",
       "match_phrase_search",
       "match_phrase_prefix_search",
+      "query_string_minimum_should_match_search",
       "dis_max_search",
       "ids_query_search",
       "knn_search",
@@ -7915,6 +7916,33 @@
       "extract": "search_hits",
       "family": "lexical",
       "description": "[lexical] query string search"
+    },
+    {
+      "name": "query_string_minimum_should_match_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "query_string": {
+            "query": "checkout payment cache",
+            "fields": [
+              "message"
+            ],
+            "minimum_should_match": "75%"
+          }
+        },
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] query string minimum_should_match"
     },
     {
       "name": "regexp_query_search",

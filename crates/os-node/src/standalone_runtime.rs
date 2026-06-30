@@ -27259,7 +27259,11 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
                 }
             }
             for key in spec.keys() {
-                if key != "query" && key != "fields" && key != "default_operator" {
+                if key != "query"
+                    && key != "fields"
+                    && key != "default_operator"
+                    && key != "minimum_should_match"
+                {
                     return Some(build_unsupported_search_response(&format!(
                         "unsupported {query_name} parameter [{key}]"
                     )));
@@ -29794,7 +29798,8 @@ fn evaluate_search_query_source_with_mappings(
             .filter_map(Value::as_str)
             .collect::<Vec<_>>();
         let haystacks = collect_searchable_field_values(source, Some(fields.as_slice()));
-        let (matched, score) = evaluate_text_query_strings(&haystacks, query_text, "and", false);
+        let (matched, score) =
+            evaluate_text_query_strings(&haystacks, query_text, "and", false, None);
         return Some((matched, score));
     }
     if let Some(dis_max) = query.get("dis_max").and_then(Value::as_object) {
@@ -30724,7 +30729,14 @@ fn evaluate_text_query_spec(
         .and_then(Value::as_array)
         .map(|items| items.iter().filter_map(Value::as_str).collect::<Vec<_>>());
     let haystacks = collect_searchable_field_values(source, fields.as_deref());
-    evaluate_text_query_strings(&haystacks, query_text, default_operator, simple_syntax)
+    let minimum_should_match = query_spec.get("minimum_should_match");
+    evaluate_text_query_strings(
+        &haystacks,
+        query_text,
+        default_operator,
+        simple_syntax,
+        minimum_should_match,
+    )
 }
 
 fn collect_searchable_field_values(source: &Value, fields: Option<&[&str]>) -> Vec<String> {
@@ -30761,6 +30773,7 @@ fn evaluate_text_query_strings(
     query_text: &str,
     default_operator: &str,
     simple_syntax: bool,
+    minimum_should_match: Option<&Value>,
 ) -> (bool, f64) {
     let explicit_or = if simple_syntax && query_text.contains('|') {
         Some(
@@ -30799,15 +30812,23 @@ fn evaluate_text_query_strings(
     if query_text.contains(" AND ") || default_operator == "and" {
         return evaluate_text_conjunction(haystacks, &split_query_terms(query_text));
     }
+    let terms = split_query_terms(query_text);
+    let required = minimum_should_match
+        .and_then(|value| bool_minimum_should_match_value(value, terms.len()))
+        .unwrap_or(1);
+    if required == 0 {
+        return (true, 1.0);
+    }
     let mut best_score: f64 = 0.0;
-    let mut matched = false;
-    for term in split_query_terms(query_text) {
+    let mut matched_terms = 0usize;
+    for term in terms {
         let term_score = score_text_query_term(haystacks, &term);
         if term_score > 0.0 {
-            matched = true;
+            matched_terms += 1;
             best_score = best_score.max(term_score);
         }
     }
+    let matched = matched_terms >= required;
     (matched, if matched { best_score.max(1.0) } else { 0.0 })
 }
 
@@ -61935,6 +61956,29 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(query_string.status, 200);
         assert_eq!(query_string.body["hits"]["total"]["value"], 1);
         assert_eq!(query_string.body["hits"]["hits"][0]["_id"], "doc-1");
+
+        let query_string_minimum_should_match = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-dsl-000001/_search").with_json_body(
+                serde_json::json!({
+                    "query": {
+                        "query_string": {
+                            "query": "beta green yellow",
+                            "fields": ["message", "tags"],
+                            "minimum_should_match": "75%"
+                        }
+                    }
+                }),
+            ),
+        );
+        assert_eq!(query_string_minimum_should_match.status, 200);
+        assert_eq!(
+            query_string_minimum_should_match.body["hits"]["total"]["value"],
+            1
+        );
+        assert_eq!(
+            query_string_minimum_should_match.body["hits"]["hits"][0]["_id"],
+            "doc-2"
+        );
 
         let prefix = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/logs-search-dsl-000001/_search").with_json_body(
