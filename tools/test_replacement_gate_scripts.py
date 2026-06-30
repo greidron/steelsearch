@@ -276,6 +276,62 @@ class ReplacementGateScriptTests(unittest.TestCase):
                 any("chaos_test_coverage.artifact_path" in error for error in payload["errors"])
             )
 
+    def test_phase_b_gap_harness_requires_expected_markers(self):
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            report_dir = Path(temp_dir_value)
+            result = self.run_command(
+                "./tools/run-phase-b-gap-harness.sh",
+                "--profile",
+                "disconnect-during-read-coordination",
+                "--report-dir",
+                str(report_dir),
+                "--prepare-cmd",
+                "echo remote disconnect",
+                "--trigger-cmd",
+                "echo read coordination rejected",
+                "--check-cmd",
+                "echo fail-closed",
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            report = json.loads(
+                (report_dir / "disconnect-during-read-coordination" / "report.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            self.assertEqual(report["status"], "completed")
+            self.assertEqual(report["missing_markers"], [])
+            self.assertTrue(all(report["marker_hits"].values()))
+            for phase in ["prepare", "trigger", "check"]:
+                self.assertTrue(Path(report["phase_logs"][phase]).exists())
+
+    def test_phase_b_gap_harness_fails_when_marker_is_missing(self):
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            report_dir = Path(temp_dir_value)
+            result = self.run_command(
+                "./tools/run-phase-b-gap-harness.sh",
+                "--profile",
+                "disconnect-during-read-coordination",
+                "--report-dir",
+                str(report_dir),
+                "--prepare-cmd",
+                "echo remote disconnect",
+                "--trigger-cmd",
+                "echo read coordination rejected",
+                "--check-cmd",
+                "echo no marker here",
+            )
+
+            self.assertEqual(result.returncode, 1)
+            self.assertIn("missing expected marker", result.stderr)
+            report = json.loads(
+                (report_dir / "disconnect-during-read-coordination" / "report.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            self.assertEqual(report["status"], "failed")
+            self.assertEqual(report["missing_markers"], ["fail-closed"])
+
 
 if __name__ == "__main__":
     unittest.main()
