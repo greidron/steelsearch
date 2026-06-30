@@ -1938,6 +1938,7 @@
     - [x] `/_nodes/{nodeId}/{metrics}` (GET) [implemented-read]
     - [x] `/_tasks` (GET) [implemented-read]
     - [x] `/_tasks/{task_id}` (GET) [implemented-read]
+    - [x] `/` (GET, HEAD) [implemented-read]
     - [x] `/_cat` (GET) [implemented-read]
     - [x] `/_dangling` (GET) [implemented-read]
     - [x] `/_list/wlm_stats` (GET) [implemented-read]

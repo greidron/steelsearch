@@ -4,6 +4,8 @@
 from __future__ import annotations
 
 import importlib.util
+import sys
+import tempfile
 import unittest
 from pathlib import Path
 from types import ModuleType
@@ -11,6 +13,9 @@ from types import ModuleType
 
 def load_tool_module(name: str) -> ModuleType:
     module_path = Path(__file__).with_name(f"{name}.py")
+    tools_dir = str(module_path.parent)
+    if tools_dir not in sys.path:
+        sys.path.insert(0, tools_dir)
     spec = importlib.util.spec_from_file_location(name, module_path)
     assert spec is not None
     module = importlib.util.module_from_spec(spec)
@@ -137,6 +142,81 @@ class StatefulCompatCaseSelectionTests(unittest.TestCase):
                 "body": '{"pits":[{"creation_time":0,"keep_alive":60000,"pit_id":"<pit_id>"}]}',
             },
         )
+
+    def test_runtime_backlog_matches_stateful_probe_by_normalized_inventory_path(self) -> None:
+        backlog = load_tool_module("build_runtime_route_backlog")
+
+        stateful_probe = backlog.load_stateful_probe()
+
+        self.assertEqual(
+            stateful_probe[
+                (
+                    "POST",
+                    "/_plugins/_knn/clear_cache/{index}",
+                )
+            ],
+            "implemented-stateful",
+        )
+        self.assertEqual(
+            stateful_probe[
+                (
+                    "POST",
+                    "/_plugins/_knn/models/_search",
+                )
+            ],
+            "implemented-stateful",
+        )
+        self.assertEqual(
+            stateful_probe[
+                (
+                    "POST",
+                    "/{index}/_tier/{targetTier}",
+                )
+            ],
+            "implemented-stateful",
+        )
+
+    def test_runtime_backlog_rewrite_preserves_following_top_level_sections(self) -> None:
+        backlog = load_tool_module("build_runtime_route_backlog")
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            tasks_path = Path(temp_dir) / "tasks.md"
+            tasks_path.write_text(
+                "\n".join(
+                    [
+                        "- [x] before",
+                        f"- [ ] {backlog.ANCHOR_TEXT}",
+                        "  - [ ] stale generated row",
+                        "- [x] OpenSearch replacement gap backlog",
+                        "  - [x] keep this section",
+                        "",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            original_tasks = backlog.TASKS
+            try:
+                backlog.TASKS = tasks_path
+                backlog.rewrite_tasks(
+                    [
+                        {
+                            "family": "search",
+                            "path": "/_search",
+                            "method": "GET",
+                            "runtime_status": "implemented-read",
+                        }
+                    ],
+                    {},
+                    {},
+                )
+            finally:
+                backlog.TASKS = original_tasks
+
+            rewritten = tasks_path.read_text(encoding="utf-8")
+
+        self.assertIn("- [x] OpenSearch replacement gap backlog", rewritten)
+        self.assertIn("  - [x] keep this section", rewritten)
+        self.assertNotIn("stale generated row", rewritten)
 
 
 if __name__ == "__main__":

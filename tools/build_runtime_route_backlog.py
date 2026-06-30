@@ -79,6 +79,7 @@ def load_stateful_probe():
         method = case.get('method')
         if inventory_path and method:
             result[(method, inventory_path)] = 'implemented-stateful'
+            result[(method, normalize_path(inventory_path))] = 'implemented-stateful'
     return result
 
 
@@ -157,8 +158,19 @@ def rewrite_tasks(rows, summary, by_family):
             method_text=', '.join(sorted(m for m,_ in methods))
             lines.append(f'    - [{mark}] `{path}` ({method_text}) [{status}]')
     text = TASKS.read_text(encoding='utf-8')
-    idx = text.index(ANCHOR_TEXT) - 6
-    TASKS.write_text(text[:idx] + '\n'.join(lines) + '\n', encoding='utf-8')
+    anchor_idx = text.index(ANCHOR_TEXT)
+    section_start = text.rfind('\n- [', 0, anchor_idx)
+    if section_start == -1:
+        section_start = 0
+    else:
+        section_start += 1
+    next_section = text.find('\n- [', anchor_idx + len(ANCHOR_TEXT))
+    suffix = '' if next_section == -1 else text[next_section:]
+    separator = '\n' if suffix else ''
+    TASKS.write_text(
+        text[:section_start] + '\n'.join(lines) + separator + suffix,
+        encoding='utf-8',
+    )
 
 
 def main():
