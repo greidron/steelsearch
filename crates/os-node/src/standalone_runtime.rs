@@ -85,6 +85,39 @@ const SWAGGER_UI_HTML: &str = r#"<!DOCTYPE html>
 </html>
 "#;
 
+fn request_refreshes_visible_writes(request: &RestRequest) -> bool {
+    request
+        .query_params
+        .get("refresh")
+        .is_some_and(|value| value == "wait_for" || value == "true")
+}
+
+fn request_reports_forced_refresh(request: &RestRequest) -> bool {
+    request
+        .query_params
+        .get("refresh")
+        .is_some_and(|value| value == "true")
+}
+
+fn seq_primary_term_conflict_reason(
+    id: &str,
+    expected_seq_no: Option<i64>,
+    expected_primary_term: Option<i64>,
+    current: Option<&StoredDocument>,
+) -> String {
+    let required_seq_no = expected_seq_no.unwrap_or(-2);
+    let required_primary_term = expected_primary_term.unwrap_or(0);
+    match current {
+        Some(record) => format!(
+            "[{id}]: version conflict, required seqNo [{required_seq_no}], primary term [{required_primary_term}]. current document has seqNo [{}] and primary term [{}]",
+            record.seq_no, record.primary_term
+        ),
+        None => format!(
+            "[{id}]: version conflict, required seqNo [{required_seq_no}], primary term [{required_primary_term}]. but no document was found"
+        ),
+    }
+}
+
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ExtensionBoundaryRegistry {
     pub manifest_path: Option<PathBuf>,
@@ -11066,10 +11099,59 @@ impl SteelNode {
             .query_params
             .get("require_alias")
             .map_or(false, |value| query_param_is_true(Some(value)));
-        let forced_refresh = request
-            .query_params
-            .get("refresh")
-            .is_some_and(|value| value == "wait_for" || value == "true");
+        let forced_refresh = request_refreshes_visible_writes(request);
+        let reports_forced_refresh = request_reports_forced_refresh(request);
+        let mut validation_lines = body.lines().enumerate();
+        while let Some((line_number, action_line)) = validation_lines.next() {
+            if action_line.trim().is_empty() {
+                continue;
+            }
+            let action_value = match serde_json::from_str::<Value>(action_line) {
+                Ok(value) => value,
+                Err(_) => continue,
+            };
+            let Some(action_object) = action_value.as_object() else {
+                continue;
+            };
+            let Some((action, meta_value)) = action_object.iter().next() else {
+                continue;
+            };
+            let Some(meta) = meta_value.as_object() else {
+                continue;
+            };
+            if !matches!(action.as_str(), "index" | "create" | "update" | "delete") {
+                let reason = format!(
+                    "Malformed action/metadata line [{}], expected one of [create, delete, index, update] but found [{action}]",
+                    line_number + 1
+                );
+                return RestResponse::json(
+                    400,
+                    serde_json::json!({
+                        "error": {
+                            "type": "illegal_argument_exception",
+                            "reason": reason,
+                            "root_cause": [{
+                                "type": "illegal_argument_exception",
+                                "reason": reason
+                            }]
+                        },
+                        "status": 400
+                    }),
+                );
+            }
+            if action == "create"
+                && (meta.contains_key("version")
+                    || meta.get("version_type").and_then(Value::as_str) != Some("internal")
+                        && meta.contains_key("version_type"))
+            {
+                return action_request_validation_error(vec![
+                    "create operations only support internal versioning. use index instead",
+                ]);
+            }
+            if matches!(action.as_str(), "index" | "create" | "update") {
+                let _ = validation_lines.next();
+            }
+        }
         while let Some(action_line) = lines.next() {
             if action_line.trim().is_empty() {
                 continue;
@@ -11248,6 +11330,7 @@ impl SteelNode {
                     payload,
                     &meta,
                     forced_refresh,
+                    reports_forced_refresh,
                 )
             };
             let item_payload = item
@@ -11927,6 +12010,7 @@ impl SteelNode {
         payload: Value,
         meta: &serde_json::Map<String, Value>,
         forced_refresh: bool,
+        reports_forced_refresh: bool,
     ) -> Value {
         let resolved_index = match action {
             "index" | "create" => match self.resolve_write_target(index, true) {
@@ -12004,7 +12088,7 @@ impl SteelNode {
                     "status": 400,
                     "error": {
                         "type": "index_closed_exception",
-                        "reason": format!("closed index [{}]", index)
+                        "reason": "closed"
                     }
                 }
             });
@@ -12018,7 +12102,8 @@ impl SteelNode {
                     .expect("documents state lock poisoned");
                 let doc_existed = docs.contains_key(&key);
                 if expected_seq_no.is_some() || expected_primary_term.is_some() {
-                    let conflict = match docs.get(&key) {
+                    let current = docs.get(&key);
+                    let conflict = match current {
                         Some(record) => {
                             expected_seq_no.is_some_and(|seq_no| seq_no != record.seq_no)
                                 || expected_primary_term
@@ -12034,7 +12119,12 @@ impl SteelNode {
                                 "status": 409,
                                 "error": {
                                     "type": "version_conflict_engine_exception",
-                                    "reason": format!("[{id}]: version conflict in index [{index}]")
+                                    "reason": seq_primary_term_conflict_reason(
+                                        id,
+                                        expected_seq_no,
+                                        expected_primary_term,
+                                        current.map(|record| record.as_ref()),
+                                    )
                                 }
                             }
                         });
@@ -12090,7 +12180,7 @@ impl SteelNode {
                         "status": if doc_existed { 200 } else { 201 },
                     }
                 });
-                if forced_refresh {
+                if reports_forced_refresh {
                     response["index"]["forced_refresh"] = Value::Bool(true);
                 }
                 response
@@ -12101,7 +12191,7 @@ impl SteelNode {
                     .documents_state
                     .lock()
                     .expect("documents state lock poisoned");
-                if docs.contains_key(&key) {
+                if let Some(record) = docs.get(&key) {
                     return serde_json::json!({
                         "create": {
                             "_index": resolved_index,
@@ -12109,7 +12199,7 @@ impl SteelNode {
                             "status": 409,
                             "error": {
                                 "type": "version_conflict_engine_exception",
-                                "reason": format!("[{id}]: version conflict, document already exists")
+                                "reason": format!("[{id}]: version conflict, document already exists (current version [{}])", record.version)
                             }
                         }
                     });
@@ -12142,7 +12232,7 @@ impl SteelNode {
                         "status": 201,
                     }
                 });
-                if forced_refresh {
+                if reports_forced_refresh {
                     response["create"]["forced_refresh"] = Value::Bool(true);
                 }
                 response
@@ -12153,7 +12243,8 @@ impl SteelNode {
                     .lock()
                     .expect("documents state lock poisoned");
                 if expected_seq_no.is_some() || expected_primary_term.is_some() {
-                    let conflict = match docs.get(&key) {
+                    let current = docs.get(&key);
+                    let conflict = match current {
                         Some(record) => {
                             expected_seq_no.is_some_and(|seq_no| seq_no != record.seq_no)
                                 || expected_primary_term
@@ -12169,7 +12260,12 @@ impl SteelNode {
                                 "status": 409,
                                 "error": {
                                     "type": "version_conflict_engine_exception",
-                                    "reason": format!("[{id}]: version conflict in index [{index}]")
+                                    "reason": seq_primary_term_conflict_reason(
+                                        id,
+                                        expected_seq_no,
+                                        expected_primary_term,
+                                        current.map(|record| record.as_ref()),
+                                    )
                                 }
                             }
                         });
@@ -12190,7 +12286,7 @@ impl SteelNode {
                             "status": 200,
                         }
                     });
-                    if forced_refresh {
+                    if reports_forced_refresh {
                         response["delete"]["forced_refresh"] = Value::Bool(true);
                     }
                     response
@@ -12206,7 +12302,7 @@ impl SteelNode {
                             "status": 404,
                         }
                     });
-                    if forced_refresh {
+                    if reports_forced_refresh {
                         response["delete"]["forced_refresh"] = Value::Bool(true);
                     }
                     response
@@ -12227,7 +12323,8 @@ impl SteelNode {
                     .lock()
                     .expect("documents state lock poisoned");
                 if expected_seq_no.is_some() || expected_primary_term.is_some() {
-                    let conflict = match docs.get(&key) {
+                    let current = docs.get(&key);
+                    let conflict = match current {
                         Some(record) => {
                             expected_seq_no.is_some_and(|seq_no| seq_no != record.seq_no)
                                 || expected_primary_term
@@ -12243,7 +12340,12 @@ impl SteelNode {
                                 "status": 409,
                                 "error": {
                                     "type": "version_conflict_engine_exception",
-                                    "reason": format!("[{id}]: version conflict in index [{index}]")
+                                    "reason": seq_primary_term_conflict_reason(
+                                        id,
+                                        expected_seq_no,
+                                        expected_primary_term,
+                                        current.map(|record| record.as_ref()),
+                                    )
                                 }
                             }
                         });
@@ -12269,7 +12371,7 @@ impl SteelNode {
                             "status": 200,
                         }
                     });
-                    if forced_refresh {
+                    if reports_forced_refresh {
                         response["update"]["forced_refresh"] = Value::Bool(true);
                     }
                     drop(docs);
@@ -12304,7 +12406,7 @@ impl SteelNode {
                             "status": 201,
                         }
                     });
-                    if forced_refresh {
+                    if reports_forced_refresh {
                         response["update"]["forced_refresh"] = Value::Bool(true);
                     }
                     drop(docs);
@@ -13990,12 +14092,8 @@ impl SteelNode {
                 if let Some(script) = body.get("script") {
                     let mut updated_doc = doc.as_ref().clone();
                     apply_update_by_query_script(&mut updated_doc.source, script);
-                    if updated_doc.source == original_source {
-                        noops += 1;
-                    } else {
-                        updated += 1;
-                        *doc = Arc::new(updated_doc);
-                    }
+                    updated += 1;
+                    *doc = Arc::new(updated_doc);
                 } else if doc.source == original_source {
                     noops += 1;
                 } else {
@@ -17059,10 +17157,8 @@ impl SteelNode {
         let version = external_version
             .or_else(|| docs.get(&key).map(|doc| doc.version + 1))
             .unwrap_or(1);
-        let forced_refresh = request
-            .query_params
-            .get("refresh")
-            .is_some_and(|value| value == "wait_for" || value == "true");
+        let forced_refresh = request_refreshes_visible_writes(request);
+        let reports_forced_refresh = request_reports_forced_refresh(request);
         let native_source = source.clone();
         self.apply_dynamic_mappings_for_source(&resolved_index, &source);
         let record = StoredDocument {
@@ -17081,7 +17177,7 @@ impl SteelNode {
             "_seq_no": record.seq_no,
             "_primary_term": record.primary_term,
         });
-        if forced_refresh {
+        if reports_forced_refresh {
             response["forced_refresh"] = Value::Bool(true);
         }
         docs.insert(key, Arc::new(record));
@@ -17169,10 +17265,8 @@ impl SteelNode {
             );
         }
         let assigned_seq_no = self.allocate_seq_no(&resolved_index);
-        let forced_refresh = request
-            .query_params
-            .get("refresh")
-            .is_some_and(|value| value == "wait_for" || value == "true");
+        let forced_refresh = request_refreshes_visible_writes(request);
+        let reports_forced_refresh = request_reports_forced_refresh(request);
         let native_source = source.clone();
         self.apply_dynamic_mappings_for_source(&resolved_index, &source);
         let record = StoredDocument {
@@ -17191,7 +17285,7 @@ impl SteelNode {
             "_seq_no": record.seq_no,
             "_primary_term": record.primary_term,
         });
-        if forced_refresh {
+        if reports_forced_refresh {
             response["forced_refresh"] = Value::Bool(true);
         }
         docs.insert(key, Arc::new(record));
@@ -17337,13 +17431,8 @@ impl SteelNode {
             ) {
                 response["fields"] = fields;
             }
-            if requested_stored_fields
-                .iter()
-                .any(|field| field == "_routing")
-            {
-                if let Some(routing) = record.routing.as_deref() {
-                    response["_routing"] = Value::String(routing.to_string());
-                }
+            if let Some(routing) = record.routing.as_deref() {
+                response["_routing"] = Value::String(routing.to_string());
             }
             return RestResponse::json(200, response);
         }
@@ -17397,11 +17486,9 @@ impl SteelNode {
         if let Some(record) = docs.get(&key) {
             return Some(record);
         }
-        if !routing.is_empty() {
-            return None;
-        }
         let shard_count = self.index_primary_shard_count(resolved_index).max(1);
-        let requested_shard = opensearch_routing_shard(id, shard_count);
+        let requested_shard =
+            opensearch_routing_shard(if routing.is_empty() { id } else { routing }, shard_count);
         docs.iter()
             .find(|(candidate, record)| {
                 if !candidate.starts_with(&format!("{resolved_index}:{id}:")) {
@@ -17601,10 +17688,8 @@ impl SteelNode {
                 } else {
                     resolved_index.clone()
                 };
-            let forced_refresh = request
-                .query_params
-                .get("refresh")
-                .is_some_and(|value| value == "wait_for" || value == "true");
+            let forced_refresh = request_refreshes_visible_writes(request);
+            let reports_forced_refresh = request_reports_forced_refresh(request);
             let mut body = serde_json::json!({
                     "_index": response_index,
                     "_id": id,
@@ -17613,7 +17698,7 @@ impl SteelNode {
                     "_seq_no": assigned_seq_no,
                     "_primary_term": record.primary_term,
             });
-            if forced_refresh {
+            if reports_forced_refresh {
                 body["forced_refresh"] = Value::Bool(true);
             }
             let response = RestResponse::json(200, body);
@@ -17731,10 +17816,8 @@ impl SteelNode {
         if !validation_errors.is_empty() {
             return action_request_validation_error_owned(validation_errors);
         }
-        let forced_refresh = request
-            .query_params
-            .get("refresh")
-            .is_some_and(|value| value == "wait_for" || value == "true");
+        let forced_refresh = request_refreshes_visible_writes(request);
+        let reports_forced_refresh = request_reports_forced_refresh(request);
         let mut docs = self
             .documents_state
             .lock()
@@ -17776,7 +17859,7 @@ impl SteelNode {
                     "_seq_no": updated_record.seq_no,
                     "_primary_term": updated_record.primary_term,
                 });
-                if forced_refresh {
+                if reports_forced_refresh {
                     response["forced_refresh"] = Value::Bool(true);
                 }
                 if let Some(get) = SteelNode::build_update_get_response(&updated_record, request) {
@@ -17797,7 +17880,7 @@ impl SteelNode {
                 "_seq_no": updated_record.seq_no,
                 "_primary_term": updated_record.primary_term,
             });
-            if forced_refresh {
+            if reports_forced_refresh {
                 response["forced_refresh"] = Value::Bool(true);
             }
             if let Some(get) = SteelNode::build_update_get_response(&updated_record, request) {
@@ -17836,7 +17919,7 @@ impl SteelNode {
                 "_seq_no": record.seq_no,
                 "_primary_term": 1,
             });
-            if forced_refresh {
+            if reports_forced_refresh {
                 response["forced_refresh"] = Value::Bool(true);
             }
             if let Some(get) = SteelNode::build_update_get_response(&record, request) {
@@ -17866,7 +17949,7 @@ impl SteelNode {
                 "_seq_no": record.seq_no,
                 "_primary_term": 1,
             });
-            if forced_refresh {
+            if reports_forced_refresh {
                 response["forced_refresh"] = Value::Bool(true);
             }
             if let Some(get) = SteelNode::build_update_get_response(&record, request) {
@@ -70180,18 +70263,10 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 .with_header("content-type", "application/x-ndjson")
                 .with_body(ndjson.as_bytes().to_vec()),
         );
-        assert_eq!(response.status, 200);
-        assert_eq!(response.body["errors"], Value::Bool(true));
-        assert_eq!(response.body["items"][0]["create"]["status"], 201);
-        assert_eq!(response.body["items"][1]["noop"]["status"], 400);
+        assert_eq!(response.status, 400);
         assert_eq!(
-            response.body["items"][1]["noop"]["error"]["reason"],
-            "unsupported bulk operation [noop]"
-        );
-        assert_eq!(response.body["items"][2]["index"]["status"], 400);
-        assert_eq!(
-            response.body["items"][2]["index"]["error"]["reason"],
-            "bulk [index] operation requires a source"
+            response.body["error"]["reason"],
+            "Malformed action/metadata line [3], expected one of [create, delete, index, update] but found [noop]"
         );
     }
 
@@ -71025,10 +71100,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 .with_body(refresh_wait_for.as_bytes().to_vec()),
         );
         assert_eq!(refresh_wait_for_response.status, 200);
-        assert_eq!(
-            refresh_wait_for_response.body["items"][0]["create"]["forced_refresh"],
-            true
-        );
+        assert!(refresh_wait_for_response.body["items"][0]["create"]["forced_refresh"].is_null());
         let refresh_wait_for_readback = node.handle_rest_request(RestRequest::new(
             RestMethod::Get,
             "/logs-bulk-refresh-000001/_doc/doc-wait?realtime=false",

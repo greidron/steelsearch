@@ -1422,7 +1422,7 @@
           "path": "/_bulk",
           "body": "{\"create\":{\"_index\":\"logs-bulk-ordering-000001\",\"_id\":\"doc-1\"}}\n{\"message\":\"created-once\"}\n{\"noop\":{\"_index\":\"logs-bulk-ordering-000001\",\"_id\":\"doc-noop\"}}\n{\"index\":{\"_index\":\"logs-bulk-ordering-000001\",\"_id\":\"doc-2\"}}\n",
           "raw": true,
-          "expected_status": 200,
+          "expected_status": 400,
           "extract": "bulk_items"
         }
       ]
@@ -1472,6 +1472,7 @@
       "path": "/_bulk",
       "body": "{\"create\":{\"_index\":\"logs-bulk-metadata-000001\",\"_id\":\"doc-create-ext\",\"version\":5,\"version_type\":\"external\"}}\n{\"message\":\"external bulk create\"}\n",
       "raw": true,
+      "expected_status": 400,
       "extract": "bulk_items"
     },
     {
@@ -1495,7 +1496,7 @@
           "path": "/_bulk",
           "body": "{\"create\":{\"_index\":\"logs-bulk-metadata-000001\",\"_id\":\"doc-create-ext-conflict\",\"version\":1,\"version_type\":\"external\"}}\n{\"message\":\"external bulk create conflict\"}\n",
           "raw": true,
-          "expected_status": 200,
+          "expected_status": 400,
           "extract": "bulk_items"
         }
       ]

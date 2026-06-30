@@ -19,6 +19,7 @@ SINGLE_DOC_CRUD_COMPAT_REPORT="${SINGLE_DOC_CRUD_COMPAT_REPORT:-${REHEARSAL_DIR}
 REFRESH_COMPAT_REPORT="${REFRESH_COMPAT_REPORT:-${REHEARSAL_DIR}/refresh-compat-report.json}"
 BULK_COMPAT_REPORT="${BULK_COMPAT_REPORT:-${REHEARSAL_DIR}/bulk-compat-report.json}"
 ROUTING_COMPAT_REPORT="${ROUTING_COMPAT_REPORT:-${REHEARSAL_DIR}/routing-compat-report.json}"
+DOCUMENT_WRITE_SEMANTIC_COMPAT_REPORT="${DOCUMENT_WRITE_SEMANTIC_COMPAT_REPORT:-${REHEARSAL_DIR}/document-write-semantic-compat-report.json}"
 ALIAS_READ_COMPAT_REPORT="${ALIAS_READ_COMPAT_REPORT:-${REHEARSAL_DIR}/alias-read-compat-report.json}"
 TEMPLATE_COMPAT_REPORT="${TEMPLATE_COMPAT_REPORT:-${REHEARSAL_DIR}/template-compat-report.json}"
 SNAPSHOT_LIFECYCLE_COMPAT_REPORT="${SNAPSHOT_LIFECYCLE_COMPAT_REPORT:-${REHEARSAL_DIR}/snapshot-lifecycle-compat-report.json}"
@@ -755,6 +756,15 @@ if [[ "${RUN_ROUTING_COMPAT:-1}" == "1" ]]; then
     --opensearch-url "${OPENSEARCH_URL}" \
     --output "${ROUTING_COMPAT_REPORT}"
 fi
+if [[ "${RUN_DOCUMENT_WRITE_SEMANTIC_COMPAT:-1}" == "1" ]]; then
+  python3 "${ROOT}/tools/search_compat.py" \
+    --steelsearch-url "${STEELSEARCH_URL}" \
+    --opensearch-url "${OPENSEARCH_URL}" \
+    --fixture "${ROOT}/tools/fixtures/document-write-semantic-compat.json" \
+    --report "${DOCUMENT_WRITE_SEMANTIC_COMPAT_REPORT}" \
+    --wait \
+    --timeout "${SEARCH_COMPAT_TIMEOUT:-10}"
+fi
 if [[ "${RUN_ALIAS_READ_COMPAT:-1}" == "1" ]]; then
   python3 "${ROOT}/tools/alias_read_compat.py" \
     --steelsearch-url "${STEELSEARCH_URL}" \
@@ -893,6 +903,9 @@ if [[ "${RUN_BULK_COMPAT:-1}" == "1" ]]; then
 fi
 if [[ "${RUN_ROUTING_COMPAT:-1}" == "1" ]]; then
   echo "routing compatibility report: ${ROUTING_COMPAT_REPORT}"
+fi
+if [[ "${RUN_DOCUMENT_WRITE_SEMANTIC_COMPAT:-1}" == "1" ]]; then
+  echo "document write semantic compatibility report: ${DOCUMENT_WRITE_SEMANTIC_COMPAT_REPORT}"
 fi
 if [[ "${RUN_ALIAS_READ_COMPAT:-1}" == "1" ]]; then
   echo "alias read compatibility report: ${ALIAS_READ_COMPAT_REPORT}"

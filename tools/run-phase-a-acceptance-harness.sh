@@ -49,6 +49,8 @@ Environment passthrough:
   RUN_REFRESH_COMPAT=0              Skip the always-on refresh visibility comparison.
   RUN_BULK_COMPAT=0                 Skip the always-on bulk partial-failure comparison.
   RUN_ROUTING_COMPAT=0              Skip the always-on custom-routing visibility comparison.
+  RUN_DOCUMENT_WRITE_SEMANTIC_COMPAT=0
+                                    Skip the document write semantic comparison.
   RUN_ALIAS_READ_COMPAT=0           Skip the always-on alias read live comparison.
   RUN_TEMPLATE_COMPAT=0             Skip the always-on template live comparison.
   RUN_SNAPSHOT_LIFECYCLE_COMPAT=0   Skip the always-on snapshot lifecycle comparison.
@@ -135,6 +137,7 @@ export SINGLE_DOC_CRUD_COMPAT_REPORT="${SINGLE_DOC_CRUD_COMPAT_REPORT:-${COMPARE
 export REFRESH_COMPAT_REPORT="${REFRESH_COMPAT_REPORT:-${COMPARE_DIR}/refresh-compat-report.json}"
 export BULK_COMPAT_REPORT="${BULK_COMPAT_REPORT:-${COMPARE_DIR}/bulk-compat-report.json}"
 export ROUTING_COMPAT_REPORT="${ROUTING_COMPAT_REPORT:-${COMPARE_DIR}/routing-compat-report.json}"
+export DOCUMENT_WRITE_SEMANTIC_COMPAT_REPORT="${DOCUMENT_WRITE_SEMANTIC_COMPAT_REPORT:-${COMPARE_DIR}/document-write-semantic-compat-report.json}"
 export ALIAS_READ_COMPAT_REPORT="${ALIAS_READ_COMPAT_REPORT:-${COMPARE_DIR}/alias-read-compat-report.json}"
 export TEMPLATE_COMPAT_REPORT="${TEMPLATE_COMPAT_REPORT:-${COMPARE_DIR}/template-compat-report.json}"
 export SNAPSHOT_LIFECYCLE_COMPAT_REPORT="${SNAPSHOT_LIFECYCLE_COMPAT_REPORT:-${COMPARE_DIR}/snapshot-lifecycle-compat-report.json}"
@@ -165,6 +168,7 @@ export RUN_SINGLE_DOC_CRUD_COMPAT="${RUN_SINGLE_DOC_CRUD_COMPAT:-1}"
 export RUN_REFRESH_COMPAT="${RUN_REFRESH_COMPAT:-1}"
 export RUN_BULK_COMPAT="${RUN_BULK_COMPAT:-1}"
 export RUN_ROUTING_COMPAT="${RUN_ROUTING_COMPAT:-1}"
+export RUN_DOCUMENT_WRITE_SEMANTIC_COMPAT="${RUN_DOCUMENT_WRITE_SEMANTIC_COMPAT:-1}"
 export RUN_ALIAS_READ_COMPAT="${RUN_ALIAS_READ_COMPAT:-1}"
 export RUN_TEMPLATE_COMPAT="${RUN_TEMPLATE_COMPAT:-1}"
 export RUN_SNAPSHOT_LIFECYCLE_COMPAT="${RUN_SNAPSHOT_LIFECYCLE_COMPAT:-1}"
@@ -221,6 +225,7 @@ if [[ "${PHASE_A_COMPARE_SCOPE}" == "index-metadata" ]]; then
   export RUN_REFRESH_COMPAT=0
   export RUN_BULK_COMPAT=0
   export RUN_ROUTING_COMPAT=0
+  export RUN_DOCUMENT_WRITE_SEMANTIC_COMPAT=0
   export RUN_SNAPSHOT_LIFECYCLE_COMPAT=0
   export RUN_MIGRATION_CUTOVER_INTEGRATION=0
   export RUN_VECTOR_SEARCH_COMPAT=0
@@ -263,6 +268,7 @@ if [[ "${PHASE_A_COMPARE_SCOPE}" == "search" ]]; then
   export RUN_REFRESH_COMPAT=0
   export RUN_BULK_COMPAT=0
   export RUN_ROUTING_COMPAT=0
+  export RUN_DOCUMENT_WRITE_SEMANTIC_COMPAT=0
   export RUN_ALIAS_READ_COMPAT=0
   export RUN_TEMPLATE_COMPAT=0
   export RUN_SNAPSHOT_LIFECYCLE_COMPAT=0
@@ -287,6 +293,7 @@ if [[ "${PHASE_A_COMPARE_SCOPE}" == "search-execution" ]]; then
   export RUN_REFRESH_COMPAT=0
   export RUN_BULK_COMPAT=0
   export RUN_ROUTING_COMPAT=0
+  export RUN_DOCUMENT_WRITE_SEMANTIC_COMPAT=0
   export RUN_ALIAS_READ_COMPAT=0
   export RUN_TEMPLATE_COMPAT=0
   export RUN_SNAPSHOT_LIFECYCLE_COMPAT=0
@@ -311,6 +318,7 @@ if [[ "${PHASE_A_COMPARE_SCOPE}" == "snapshot-migration" ]]; then
   export RUN_REFRESH_COMPAT=0
   export RUN_BULK_COMPAT=0
   export RUN_ROUTING_COMPAT=0
+  export RUN_DOCUMENT_WRITE_SEMANTIC_COMPAT=0
   export RUN_ALIAS_READ_COMPAT=0
   export RUN_TEMPLATE_COMPAT=0
   export RUN_DATA_STREAM_ROLLOVER_COMPAT=0
@@ -335,6 +343,7 @@ if [[ "${PHASE_A_COMPARE_SCOPE}" == "vector-ml" ]]; then
   export RUN_REFRESH_COMPAT=0
   export RUN_BULK_COMPAT=0
   export RUN_ROUTING_COMPAT=0
+  export RUN_DOCUMENT_WRITE_SEMANTIC_COMPAT=0
   export RUN_ALIAS_READ_COMPAT=0
   export RUN_TEMPLATE_COMPAT=0
   export RUN_SNAPSHOT_LIFECYCLE_COMPAT=0
@@ -363,6 +372,7 @@ if [[ "${PHASE_A_COMPARE_SCOPE}" == "transport-admin" ]]; then
   export RUN_REFRESH_COMPAT=0
   export RUN_BULK_COMPAT=0
   export RUN_ROUTING_COMPAT=0
+  export RUN_DOCUMENT_WRITE_SEMANTIC_COMPAT=0
   export RUN_ALIAS_READ_COMPAT=0
   export RUN_TEMPLATE_COMPAT=0
   export RUN_SNAPSHOT_LIFECYCLE_COMPAT=0
@@ -389,6 +399,7 @@ if [[ "${PHASE_A_COMPARE_SCOPE}" == "admin-ops" ]]; then
   export RUN_REFRESH_COMPAT=0
   export RUN_BULK_COMPAT=0
   export RUN_ROUTING_COMPAT=0
+  export RUN_DOCUMENT_WRITE_SEMANTIC_COMPAT=0
   export RUN_ALIAS_READ_COMPAT=0
   export RUN_TEMPLATE_COMPAT=0
   export RUN_SNAPSHOT_LIFECYCLE_COMPAT=0
