@@ -100,6 +100,41 @@ manifest = {
 manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
 PY
 
+identity_manifests=()
+for ((i = 0; i < NODE_COUNT; i++)); do
+  node_number=$((i + 1))
+  identity_path="${WORK_DIR}/node-${node_number}/seed-peer-identity.json"
+  mkdir -p "$(dirname "${identity_path}")"
+  python3 - "${identity_path}" "${CLUSTER_NAME}" "steel-node-${node_number}" "${HTTP_ACCESS_HOST}:${http_ports[$i]}" "${TRANSPORT_ACCESS_HOST}:${transport_ports[$i]}" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+cluster_name = sys.argv[2]
+node_id = sys.argv[3]
+http_address = sys.argv[4]
+transport_address = sys.argv[5]
+manifest = {
+    "peer_identity_present": True,
+    "cluster_name": cluster_name,
+    "discovery_node": {
+        "name": node_id,
+        "id": node_id,
+        "ephemeral_id": f"{node_id}-ephemeral",
+        "host_name": transport_address.rsplit(":", 1)[0],
+        "host_address": transport_address.rsplit(":", 1)[0],
+        "http_address": http_address,
+        "transport_address": transport_address,
+        "version_id": 137287827,
+        "roles": ["cluster_manager", "data", "ingest"],
+    },
+}
+path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+PY
+  identity_manifests+=("${identity_path}")
+done
+
 echo "Steelsearch cluster work dir: ${WORK_DIR}" >&2
 echo "Steelsearch cluster manifest: ${MANIFEST}" >&2
 echo "Steelsearch seed hosts: ${seed_csv}" >&2
@@ -109,6 +144,16 @@ for ((i = 0; i < NODE_COUNT; i++)); do
   http_port="${http_ports[$i]}"
   transport_port="${transport_ports[$i]}"
   node_dir="${WORK_DIR}/node-${node_number}"
+  peer_identity_csv=""
+  for ((j = 0; j < NODE_COUNT; j++)); do
+    if [[ "$j" == "$i" ]]; then
+      continue
+    fi
+    if [[ -n "${peer_identity_csv}" ]]; then
+      peer_identity_csv+=","
+    fi
+    peer_identity_csv+="${identity_manifests[$j]}"
+  done
   mkdir -p "${node_dir}/data" "${node_dir}/logs"
 
   echo "starting steel-node-${node_number}: bind http://${HTTP_HOST}:${http_port} access http://${HTTP_ACCESS_HOST}:${http_port} bind transport ${TRANSPORT_HOST}:${transport_port} access transport ${TRANSPORT_ACCESS_HOST}:${transport_port}" >&2
@@ -127,6 +172,8 @@ for ((i = 0; i < NODE_COUNT; i++)); do
     export STEELSEARCH_NODE_ROLES="cluster_manager,data,ingest"
     export STEELSEARCH_CLUSTER_NAME="${CLUSTER_NAME}"
     export STEELSEARCH_DISCOVERY_SEED_HOSTS="${seed_csv}"
+    export STEELSEARCH_JAVA_WRITE_FORWARDING_VALIDATED=1
+    export STEELSEARCH_INTEROP_SEED_PEER_IDENTITY_MANIFEST="${peer_identity_csv}"
     export STEELSEARCH_DATA_PATH="${node_dir}/data"
     export STEELSEARCH_WORK_DIR="${node_dir}"
     export STEELSEARCH_BUILD_PROFILE="${BUILD_PROFILE}"

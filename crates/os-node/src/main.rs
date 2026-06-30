@@ -31050,10 +31050,9 @@ fn startup_preflight_blockers(config: &DaemonConfig) -> Vec<String> {
     }
 
     if config.java_write_forwarding_validated
-        && config
-            .seed_hosts
-            .iter()
-            .any(|seed_host| seed_host != &config.local_transport_address())
+        && config.seed_hosts.iter().any(|seed_host| {
+            !same_local_transport_endpoint(seed_host, &config.local_transport_address())
+        })
         && config.seed_peer_identities.is_empty()
     {
         blockers.push(
@@ -31071,7 +31070,10 @@ fn startup_preflight_blockers(config: &DaemonConfig) -> Vec<String> {
             ));
         }
         let manifest_transport_address = &seed_peer_identity.discovery_node.transport_address;
-        if manifest_transport_address == &config.local_transport_address() {
+        if same_local_transport_endpoint(
+            manifest_transport_address,
+            &config.local_transport_address(),
+        ) {
             blockers.push(format!(
                 "[interop] seed peer identity transport address [{}] must not point at the local transport address",
                 manifest_transport_address
@@ -31506,6 +31508,31 @@ fn validate_seed_host(seed_host: &str) -> Result<(), Box<dyn std::error::Error>>
     Ok(())
 }
 
+fn split_host_port(value: &str) -> Option<(&str, u16)> {
+    let (host, port) = value.rsplit_once(':')?;
+    let port = port.parse().ok()?;
+    Some((host, port))
+}
+
+fn is_local_wildcard_or_loopback(host: &str) -> bool {
+    matches!(host, "0.0.0.0" | "::" | "127.0.0.1" | "localhost" | "::1")
+}
+
+fn same_local_transport_endpoint(left: &str, right: &str) -> bool {
+    if left == right {
+        return true;
+    }
+    let Some((left_host, left_port)) = split_host_port(left) else {
+        return false;
+    };
+    let Some((right_host, right_port)) = split_host_port(right) else {
+        return false;
+    };
+    left_port == right_port
+        && is_local_wildcard_or_loopback(left_host)
+        && is_local_wildcard_or_loopback(right_host)
+}
+
 fn validate_data_path_writable(path: &std::path::Path) -> Result<(), Box<dyn std::error::Error>> {
     let probe = path.join(".steelsearch-preflight-write-check");
     let mut file = fs::File::create(&probe).map_err(|error| {
@@ -31568,7 +31595,7 @@ fn development_cluster_view(
     }];
 
     for (index, seed_host) in config.seed_hosts().iter().enumerate() {
-        if seed_host == &local_transport_address {
+        if same_local_transport_endpoint(seed_host, &local_transport_address) {
             continue;
         }
         if let Some(seed_peer_identity) = config
@@ -60310,6 +60337,36 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         );
         assert_eq!(view.nodes[1].transport_address, "127.0.0.1:19302");
         assert_eq!(view.nodes[2].transport_address, "127.0.0.1:19303");
+    }
+
+    #[test]
+    fn development_cluster_view_skips_loopback_seed_for_wildcard_local_transport() {
+        let vars = BTreeMap::new();
+        let config = daemon_config_from_sources(
+            &vars,
+            [
+                "--node.id",
+                "node-a",
+                "--node.name",
+                "steel-a",
+                "--transport.host",
+                "0.0.0.0",
+                "--transport.port",
+                "19301",
+                "--discovery.seed_hosts",
+                "127.0.0.1:19301,127.0.0.1:19302",
+            ]
+            .into_iter()
+            .map(ToOwned::to_owned),
+        )
+        .unwrap();
+
+        let view = development_cluster_view(&config, "cluster-uuid");
+
+        assert_eq!(view.nodes.len(), 2);
+        assert!(view.nodes[0].local);
+        assert_eq!(view.nodes[0].transport_address, "0.0.0.0:19301");
+        assert_eq!(view.nodes[1].transport_address, "127.0.0.1:19302");
     }
 
     #[test]
