@@ -12833,6 +12833,15 @@
       "description": "[misc] index stats shape"
     },
     {
+      "name": "index_stats_invalid_allow_no_indices_error",
+      "area": "operational",
+      "method": "GET",
+      "path": "/logs-compat/_stats?allow_no_indices=maybe",
+      "extract": "search_error",
+      "family": "misc",
+      "description": "[misc] index stats invalid allow_no_indices boolean error"
+    },
+    {
       "name": "wildcard_index_read_expansion",
       "area": "index",
       "method": "GET",

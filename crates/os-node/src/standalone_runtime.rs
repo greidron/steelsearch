@@ -4835,6 +4835,9 @@ impl SteelNode {
                 ) {
                     return Some(response);
                 }
+                if let Some(response) = validate_index_target_boolean_query_params(request) {
+                    return Some(response);
+                }
                 return Some(self.handle_index_stats_route(Some(index)));
             }
         }
@@ -4848,6 +4851,9 @@ impl SteelNode {
                     SecurityPermission::IndexRead,
                     "index metadata",
                 ) {
+                    return Some(response);
+                }
+                if let Some(response) = validate_index_target_boolean_query_params(request) {
                     return Some(response);
                 }
                 return Some(self.handle_index_stats_route(Some(target)));
@@ -68085,6 +68091,30 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(targeted_metric.status, 200);
         assert!(targeted_metric.body["indices"]["logs-stats-000001"].is_object());
         assert!(targeted_metric.body["indices"]["metrics-stats-000001"].is_null());
+
+        let invalid_allow_no_indices = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/logs-*/_stats?allow_no_indices=maybe",
+        ));
+        assert_eq!(invalid_allow_no_indices.status, 400);
+        assert_eq!(
+            invalid_allow_no_indices.body["error"]["type"],
+            "illegal_argument_exception"
+        );
+        assert_eq!(
+            invalid_allow_no_indices.body["error"]["reason"],
+            "Could not convert [allow_no_indices] to boolean"
+        );
+
+        let invalid_ignore_unavailable = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/logs-*/_stats/docs?ignore_unavailable=maybe",
+        ));
+        assert_eq!(invalid_ignore_unavailable.status, 400);
+        assert_eq!(
+            invalid_ignore_unavailable.body["error"]["reason"],
+            "Could not convert [ignore_unavailable] to boolean"
+        );
     }
 
     #[test]
