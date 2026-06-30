@@ -610,7 +610,7 @@
       "reason": "Steelsearch semantic hardening fixture for stale seq_no/primary_term conflict."
     },
     {
-      "name": "update_wrong_routing_missing_error",
+      "name": "update_routing_same_shard_readback",
       "area": "document-write",
       "method": "POST",
       "path": "/logs-write-source-a/_update/doc-1?routing=tenant-route",
@@ -619,10 +619,8 @@
           "processed": true
         }
       },
-      "extract": "document_write_error",
-      "comparison": "steelsearch_only",
-      "expected_steelsearch_status": 404,
-      "reason": "Steelsearch semantic hardening fixture for wrong-routing update miss."
+      "expected_status": 200,
+      "extract": "document_write_error"
     },
     {
       "name": "single_doc_update_noop_result",

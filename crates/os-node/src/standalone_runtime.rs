@@ -13890,10 +13890,15 @@ impl SteelNode {
                 } else {
                     Some(resolved_routing.clone())
                 };
-                let key = format!("{resolved_dest}:{id}:{resolved_routing}");
-                if docs.insert(key, Arc::new(dest_doc)).is_some() {
+                let requested_key = format!("{resolved_dest}:{id}:{resolved_routing}");
+                if let Some(existing_key) =
+                    self.lookup_document_key(&docs, &resolved_dest, &id, &resolved_routing)
+                {
+                    docs.remove(&existing_key);
+                    docs.insert(requested_key, Arc::new(dest_doc));
                     updated += 1;
                 } else {
+                    docs.insert(requested_key, Arc::new(dest_doc));
                     created += 1;
                 }
             }
@@ -17488,9 +17493,20 @@ impl SteelNode {
         id: &str,
         routing: &str,
     ) -> Option<&'a SharedStoredDocument> {
+        self.lookup_document_key(docs, resolved_index, id, routing)
+            .and_then(|key| docs.get(&key))
+    }
+
+    fn lookup_document_key(
+        &self,
+        docs: &DocumentMap,
+        resolved_index: &str,
+        id: &str,
+        routing: &str,
+    ) -> Option<String> {
         let key = format!("{resolved_index}:{id}:{routing}");
-        if let Some(record) = docs.get(&key) {
-            return Some(record);
+        if docs.contains_key(&key) {
+            return Some(key);
         }
         let shard_count = self.index_primary_shard_count(resolved_index).max(1);
         let requested_shard =
@@ -17503,7 +17519,7 @@ impl SteelNode {
                 let doc_routing = record.routing.as_deref().unwrap_or(id);
                 opensearch_routing_shard(doc_routing, shard_count) == requested_shard
             })
-            .map(|(_, record)| record)
+            .map(|(key, _)| key.clone())
     }
 
     fn build_update_get_response(record: &StoredDocument, request: &RestRequest) -> Option<Value> {
@@ -17764,10 +17780,11 @@ impl SteelNode {
             .get("routing")
             .cloned()
             .or_else(|| self.resolve_alias_write_routing(index));
-        let key = format!(
+        let requested_key = format!(
             "{resolved_index}:{id}:{}",
             routing.clone().unwrap_or_default()
         );
+        let lookup_routing = routing.as_deref().unwrap_or_default();
         let doc_patch = body
             .get("doc")
             .cloned()
@@ -17828,8 +17845,9 @@ impl SteelNode {
             .documents_state
             .lock()
             .expect("documents state lock poisoned");
+        let existing_key = self.lookup_document_key(&docs, &resolved_index, id, lookup_routing);
         if expected_seq_no.is_some() || expected_primary_term.is_some() {
-            let conflict = match docs.get(&key) {
+            let conflict = match existing_key.as_ref().and_then(|key| docs.get(key)) {
                 Some(record) => {
                     expected_seq_no.is_some_and(|seq_no| seq_no != record.seq_no)
                         || expected_primary_term
@@ -17844,7 +17862,16 @@ impl SteelNode {
                 );
             }
         }
-        if let Some(record) = docs.get_mut(&key) {
+        if let Some(existing_key) = existing_key {
+            let Some(record) = docs.get(&existing_key).cloned() else {
+                return RestResponse::json(
+                    404,
+                    crate::single_doc_update_route_registration::build_update_doc_not_found_error(
+                        &resolved_index,
+                        id,
+                    ),
+                );
+            };
             let mut updated_record = record.as_ref().clone();
             let original_source = updated_record.source.clone();
             if let Some(script) = script.as_ref() {
@@ -17877,7 +17904,11 @@ impl SteelNode {
             updated_record.version += 1;
             updated_record.seq_no = assigned_seq_no as i64;
             updated_record.refreshed = forced_refresh;
-            *record = Arc::new(updated_record.clone());
+            if let Some(routing) = routing.as_ref() {
+                updated_record.routing = Some(routing.clone());
+            }
+            docs.remove(&existing_key);
+            docs.insert(requested_key, Arc::new(updated_record.clone()));
             let mut response = serde_json::json!({
                 "_index": self.write_response_index(index, &resolved_index),
                 "_id": id,
@@ -17931,7 +17962,7 @@ impl SteelNode {
             if let Some(get) = SteelNode::build_update_get_response(&record, request) {
                 response["get"] = get;
             }
-            docs.insert(key, Arc::new(record));
+            docs.insert(requested_key, Arc::new(record));
             drop(docs);
             self.persist_shared_runtime_state_to_disk();
             return RestResponse::json(201, response);
@@ -17961,7 +17992,7 @@ impl SteelNode {
             if let Some(get) = SteelNode::build_update_get_response(&record, request) {
                 response["get"] = get;
             }
-            docs.insert(key, Arc::new(record));
+            docs.insert(requested_key, Arc::new(record));
             drop(docs);
             self.persist_shared_runtime_state_to_disk();
             return RestResponse::json(201, response);
