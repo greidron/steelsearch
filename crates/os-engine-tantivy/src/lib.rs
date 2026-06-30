@@ -20,8 +20,8 @@ use os_plugin_knn::{
     KNN_VECTOR_FORMAT,
 };
 use os_query_dsl::{
-    parse_aggregation_map, parse_query, Aggregation, AggregationMap, BoolQuery, KnnQuery, Query,
-    RangeBounds,
+    parse_aggregation_map, parse_query, Aggregation, AggregationMap, BoolQuery, KnnQuery,
+    MultiMatchType, Query, RangeBounds,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -2871,12 +2871,14 @@ fn build_tantivy_query(
         Query::MultiMatch {
             fields,
             query,
+            query_type,
             operator,
             minimum_should_match,
         } => build_tantivy_multi_match_query(
             search_state,
             fields,
             query,
+            *query_type,
             operator.as_deref(),
             *minimum_should_match,
         ),
@@ -3679,6 +3681,7 @@ fn build_tantivy_multi_match_query(
     search_state: &TantivySearchState,
     fields: &[String],
     query: &Value,
+    query_type: MultiMatchType,
     operator: Option<&str>,
     minimum_should_match: Option<usize>,
 ) -> EngineResult<Option<Box<dyn TantivyQueryTrait>>> {
@@ -3703,9 +3706,21 @@ fn build_tantivy_multi_match_query(
                 return Ok(None);
             }
         }
-        let Some(inner_query) =
-            build_tantivy_match_query(search_state, base_field, query, field_minimum_should_match)?
-        else {
+        let inner_query = match query_type {
+            MultiMatchType::BestFields => build_tantivy_match_query(
+                search_state,
+                base_field,
+                query,
+                field_minimum_should_match,
+            )?,
+            MultiMatchType::Phrase => {
+                build_tantivy_match_phrase_query(search_state, base_field, query, 0)?
+            }
+            MultiMatchType::PhrasePrefix => {
+                build_tantivy_match_phrase_prefix_query(search_state, base_field, query)?
+            }
+        };
+        let Some(inner_query) = inner_query else {
             return Ok(None);
         };
         clauses.push((Occur::Should, inner_query));
@@ -16286,6 +16301,7 @@ fn document_matches_query(query: &Query, id: &str, source: &Value) -> bool {
         Query::MultiMatch {
             fields,
             query,
+            query_type,
             operator,
             minimum_should_match,
         } => matches_multi_match_query(
@@ -16293,6 +16309,7 @@ fn document_matches_query(query: &Query, id: &str, source: &Value) -> bool {
             source,
             fields,
             query,
+            *query_type,
             operator.as_deref(),
             *minimum_should_match,
         ),
@@ -17425,24 +17442,27 @@ fn matches_multi_match_query(
     source: &Value,
     fields: &[String],
     query: &Value,
+    query_type: MultiMatchType,
     operator: Option<&str>,
     minimum_should_match: Option<usize>,
 ) -> bool {
     let field_minimum_should_match = minimum_should_match
         .or_else(|| (operator == Some("and")).then(|| match_query_token_count(query).max(1)));
     fields.iter().any(|field| {
-        if field == "_id" {
-            matches_match_query_with_minimum(
-                Some(&Value::String(id.to_string())),
-                query,
-                field_minimum_should_match,
-            )
+        let value = if field == "_id" {
+            Some(Value::String(id.to_string()))
         } else {
-            matches_match_query_with_minimum(
-                source_value_for_highlight_field(source, field),
-                query,
-                field_minimum_should_match,
-            )
+            None
+        };
+        let field_value = value
+            .as_ref()
+            .or_else(|| source_value_for_highlight_field(source, field));
+        match query_type {
+            MultiMatchType::BestFields => {
+                matches_match_query_with_minimum(field_value, query, field_minimum_should_match)
+            }
+            MultiMatchType::Phrase => matches_match_phrase_query(field_value, query, 0),
+            MultiMatchType::PhrasePrefix => matches_match_phrase_prefix_query(field_value, query),
         }
     })
 }
@@ -18121,6 +18141,7 @@ fn localize_query_fields_for_nested_child(query: &Query, path: &str) -> Query {
         Query::MultiMatch {
             fields,
             query,
+            query_type,
             operator,
             minimum_should_match,
         } => Query::MultiMatch {
@@ -18129,6 +18150,7 @@ fn localize_query_fields_for_nested_child(query: &Query, path: &str) -> Query {
                 .map(|field| nested_child_local_field_name(path, field))
                 .collect(),
             query: query.clone(),
+            query_type: *query_type,
             operator: operator.clone(),
             minimum_should_match: *minimum_should_match,
         },
@@ -18398,6 +18420,7 @@ fn native_nested_child_ordinals_for_query(
         Query::MultiMatch {
             fields,
             query,
+            query_type,
             operator,
             minimum_should_match,
         } => nested_child_multi_match_ordinals(
@@ -18405,6 +18428,7 @@ fn native_nested_child_ordinals_for_query(
             path,
             fields,
             query,
+            *query_type,
             operator.as_deref(),
             *minimum_should_match,
         ),
@@ -18940,6 +18964,7 @@ fn nested_child_multi_match_ordinals(
     path: &str,
     fields: &[String],
     query: &Value,
+    query_type: MultiMatchType,
     operator: Option<&str>,
     minimum_should_match: Option<usize>,
 ) -> Option<std::collections::BTreeSet<usize>> {
@@ -18947,13 +18972,27 @@ fn nested_child_multi_match_ordinals(
     let field_minimum_should_match = minimum_should_match
         .or_else(|| (operator == Some("and")).then(|| match_query_token_count(query).max(1)));
     for field in fields {
-        ordinals.extend(nested_child_match_ordinals(
-            path_index,
-            path,
-            field,
-            query,
-            field_minimum_should_match,
-        )?);
+        match query_type {
+            MultiMatchType::BestFields => {
+                ordinals.extend(nested_child_match_ordinals(
+                    path_index,
+                    path,
+                    field,
+                    query,
+                    field_minimum_should_match,
+                )?);
+            }
+            MultiMatchType::Phrase => {
+                ordinals.extend(nested_child_match_phrase_ordinals(
+                    path_index, path, field, query, 0,
+                )?);
+            }
+            MultiMatchType::PhrasePrefix => {
+                ordinals.extend(nested_child_match_phrase_prefix_ordinals(
+                    path_index, path, field, query,
+                )?);
+            }
+        }
     }
     Some(ordinals)
 }

@@ -89,6 +89,7 @@ pub enum Query {
     MultiMatch {
         fields: Vec<String>,
         query: serde_json::Value,
+        query_type: MultiMatchType,
         operator: Option<String>,
         minimum_should_match: Option<usize>,
     },
@@ -189,6 +190,14 @@ pub enum Query {
     Bool {
         clauses: BoolQuery,
     },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MultiMatchType {
+    BestFields,
+    Phrase,
+    PhrasePrefix,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -2431,14 +2440,20 @@ fn parse_multi_match(body: &Value) -> QueryDslResult<Query> {
         })
         .collect::<QueryDslResult<Vec<_>>>()?;
 
-    if let Some(query_type) = object.get("type").and_then(Value::as_str) {
-        if query_type != "best_fields" {
-            return Err(QueryDslError::UnsupportedOption {
+    let query_type = object
+        .get("type")
+        .and_then(Value::as_str)
+        .map(|query_type| match query_type {
+            "best_fields" => Ok(MultiMatchType::BestFields),
+            "phrase" => Ok(MultiMatchType::Phrase),
+            "phrase_prefix" => Ok(MultiMatchType::PhrasePrefix),
+            _ => Err(QueryDslError::UnsupportedOption {
                 clause: "multi_match".to_string(),
                 option: "type".to_string(),
-            });
-        }
-    }
+            }),
+        })
+        .transpose()?
+        .unwrap_or(MultiMatchType::BestFields);
     let operator = object
         .get("operator")
         .and_then(Value::as_str)
@@ -2478,6 +2493,7 @@ fn parse_multi_match(body: &Value) -> QueryDslResult<Query> {
     Ok(Query::MultiMatch {
         fields,
         query,
+        query_type,
         operator,
         minimum_should_match,
     })
@@ -4262,7 +4278,28 @@ mod tests {
             Query::MultiMatch {
                 fields: vec!["title".to_string(), "body".to_string()],
                 query: serde_json::json!("alpha"),
+                query_type: MultiMatchType::BestFields,
                 operator: Some("and".to_string()),
+                minimum_should_match: None,
+            }
+        );
+
+        let phrase_prefix = parse_query(&serde_json::json!({
+            "multi_match": {
+                "query": "alpha che",
+                "fields": ["title"],
+                "type": "phrase_prefix"
+            }
+        }))
+        .unwrap();
+
+        assert_eq!(
+            phrase_prefix,
+            Query::MultiMatch {
+                fields: vec!["title".to_string()],
+                query: serde_json::json!("alpha che"),
+                query_type: MultiMatchType::PhrasePrefix,
+                operator: None,
                 minimum_should_match: None,
             }
         );

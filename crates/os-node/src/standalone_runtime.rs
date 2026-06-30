@@ -29762,16 +29762,30 @@ fn evaluate_search_query_source_with_mappings(
         let fields = extract_multi_match_fields(multi_match.get("fields"));
         let field_refs = fields.iter().map(String::as_str).collect::<Vec<_>>();
         let haystacks = collect_searchable_field_values(source, Some(field_refs.as_slice()));
-        let (matched, score) = evaluate_text_query_strings(
-            &haystacks,
-            expected,
-            multi_match
-                .get("operator")
-                .and_then(Value::as_str)
-                .unwrap_or("or"),
-            false,
-            multi_match.get("minimum_should_match"),
-        );
+        let (matched, score) = match multi_match.get("type").and_then(Value::as_str) {
+            Some("phrase") => {
+                let matched = haystacks.iter().any(|haystack| {
+                    value_matches_phrase(Some(&Value::String(haystack.clone())), expected, false, 0)
+                });
+                (matched, if matched { 1.0 } else { 0.0 })
+            }
+            Some("phrase_prefix") => {
+                let matched = haystacks.iter().any(|haystack| {
+                    value_matches_phrase(Some(&Value::String(haystack.clone())), expected, true, 0)
+                });
+                (matched, if matched { 1.0 } else { 0.0 })
+            }
+            _ => evaluate_text_query_strings(
+                &haystacks,
+                expected,
+                multi_match
+                    .get("operator")
+                    .and_then(Value::as_str)
+                    .unwrap_or("or"),
+                false,
+                multi_match.get("minimum_should_match"),
+            ),
+        };
         return Some((matched, score));
     }
     if let Some(match_phrase) = query.get("match_phrase").and_then(Value::as_object) {
@@ -62112,6 +62126,42 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             multi_match_operator_and.body["hits"]["hits"][0]["_id"],
             "doc-2"
+        );
+
+        let multi_match_phrase_miss = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-dsl-000001/_search").with_json_body(
+                serde_json::json!({
+                    "query": {
+                        "multi_match": {
+                            "query": "alpha fox",
+                            "fields": ["message"],
+                            "type": "phrase"
+                        }
+                    }
+                }),
+            ),
+        );
+        assert_eq!(multi_match_phrase_miss.status, 200);
+        assert_eq!(multi_match_phrase_miss.body["hits"]["total"]["value"], 0);
+
+        let multi_match_phrase_prefix = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-dsl-000001/_search").with_json_body(
+                serde_json::json!({
+                    "query": {
+                        "multi_match": {
+                            "query": "alpha quick fo",
+                            "fields": ["message"],
+                            "type": "phrase_prefix"
+                        }
+                    }
+                }),
+            ),
+        );
+        assert_eq!(multi_match_phrase_prefix.status, 200);
+        assert_eq!(multi_match_phrase_prefix.body["hits"]["total"]["value"], 1);
+        assert_eq!(
+            multi_match_phrase_prefix.body["hits"]["hits"][0]["_id"],
+            "doc-1"
         );
 
         let match_phrase_slop = node.handle_rest_request(

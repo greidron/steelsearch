@@ -303,6 +303,8 @@
       "match_phrase_prefix_search",
       "query_string_minimum_should_match_search",
       "dis_max_search",
+      "multi_match_phrase_search",
+      "multi_match_phrase_prefix_search",
       "ids_query_search",
       "knn_search",
       "knn_cosinesimil_search",
@@ -5474,6 +5476,61 @@
       "extract": "search_hits",
       "family": "lexical",
       "description": "[lexical] multi_match field boost syntax still resolves the base field"
+    },
+    {
+      "name": "multi_match_phrase_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "multi_match": {
+            "query": "payment timeout",
+            "fields": [
+              "message",
+              "service"
+            ],
+            "type": "phrase"
+          }
+        },
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] multi_match phrase type"
+    },
+    {
+      "name": "multi_match_phrase_prefix_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "multi_match": {
+            "query": "checkout service pay",
+            "fields": [
+              "message"
+            ],
+            "type": "phrase_prefix"
+          }
+        },
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] multi_match phrase_prefix type"
     },
     {
       "name": "multi_match_unknown_option_error_search",
