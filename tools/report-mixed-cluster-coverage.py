@@ -14,6 +14,48 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_PHASE_C_ROOT = ROOT / "target/phase-c-mixed-cluster"
 DEFAULT_SHARD_MOVEMENT = ROOT / "target/three-node-shard-movement-checkpoint-20260616/report.json"
+REQUIRED_REPORT_CHECKS = {
+    "join": {
+        "live_join_probe_passed",
+        "join_reject_passed",
+    },
+    "live_join_probe": {
+        "remote_transport_version_matches_fixture",
+        "response_header_matches_min_compat",
+        "transport_payload_matches_fixture",
+        "handshake_cluster_name_matches_state",
+        "cluster_uuid_present",
+        "single_local_node_visible",
+        "advertised_roles_match_fixture",
+        "required_attributes_present",
+        "transport_address_present",
+        "node_name_present",
+    },
+    "recovery": {
+        "bounded_peer_recovery_probe_passed",
+        "recovery_reject_passed",
+    },
+    "bounded_recovery_probe": {
+        "wire_round_trip_passed",
+    },
+    "failure": {
+        "failure_topology_probe_passed",
+        "failure_ledger_passed",
+    },
+    "write_replication": {
+        "write_replication_happy_path_passed",
+        "write_replication_reject_passed",
+    },
+    "publication": {
+        "publication-full-state-report.json",
+        "publication-diff-ack-report.json",
+        "publication-reject-report.json",
+    },
+    "allocation": {
+        "routing_convergence_probe_passed",
+        "allocation_reject_passed",
+    },
+}
 
 
 def main() -> int:
@@ -48,6 +90,16 @@ def main() -> int:
         for name, report in reports.items()
         if not report["passed"]
     ]
+    errors.extend(
+        f"{name} report missing required checks: {missing}"
+        for name, report in reports.items()
+        if (missing := report["missing_required_checks"])
+    )
+    errors.extend(
+        f"{name} report has failed required checks: {failed}"
+        for name, report in reports.items()
+        if (failed := report["failed_required_checks"])
+    )
     if not shard_movement["passed"]:
         errors.append("shard movement report is missing or not passed")
     errors.extend(
@@ -98,6 +150,12 @@ def inspect_report(path: Path, max_age_seconds: float | None = None) -> dict[str
     payload = load_json(path)
     summary = payload.get("summary") if isinstance(payload, dict) else None
     freshness = report_fresh(path, max_age_seconds)
+    checks = payload.get("checks", {}) if isinstance(payload, dict) else {}
+    required_checks = required_checks_for(path)
+    missing_required_checks = sorted(required_checks - set(checks))
+    failed_required_checks = sorted(
+        check for check in required_checks if check in checks and checks.get(check) is not True
+    )
     return {
         "path": str(path),
         "present": payload is not None,
@@ -106,8 +164,41 @@ def inspect_report(path: Path, max_age_seconds: float | None = None) -> dict[str
         "age_seconds": freshness["age_seconds"],
         "max_age_seconds": freshness["max_age_seconds"],
         "summary": summary if isinstance(summary, dict) else {},
-        "checks": payload.get("checks", {}) if isinstance(payload, dict) else {},
+        "checks": checks,
+        "required_checks": sorted(required_checks),
+        "missing_required_checks": missing_required_checks,
+        "failed_required_checks": failed_required_checks,
     }
+
+
+def required_checks_for(path: Path) -> set[str]:
+    normalized = path.as_posix()
+    for name, required_checks in REQUIRED_REPORT_CHECKS.items():
+        if name == "live_join_probe" and normalized.endswith("/join/live-join-probe-report.json"):
+            return required_checks
+        if name == "join" and normalized.endswith("/join/mixed-cluster-join-report.json"):
+            return required_checks
+        if name == "bounded_recovery_probe" and normalized.endswith(
+            "/recovery/bounded-peer-recovery-probe-report.json"
+        ):
+            return required_checks
+        if name == "recovery" and normalized.endswith("/recovery/mixed-cluster-recovery-report.json"):
+            return required_checks
+        if name == "failure" and normalized.endswith("/failure/mixed-cluster-failure-report.json"):
+            return required_checks
+        if name == "write_replication" and normalized.endswith(
+            "/write-replication/mixed-cluster-write-replication-report.json"
+        ):
+            return required_checks
+        if name == "publication" and normalized.endswith(
+            "/publication/mixed-cluster-publication-report.json"
+        ):
+            return required_checks
+        if name == "allocation" and normalized.endswith(
+            "/allocation/mixed-cluster-allocation-report.json"
+        ):
+            return required_checks
+    return set()
 
 
 def inspect_shard_movement(path: Path, max_age_seconds: float | None = None) -> dict[str, Any]:

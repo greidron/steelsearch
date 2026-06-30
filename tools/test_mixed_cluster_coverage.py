@@ -140,6 +140,50 @@ class MixedClusterCoverageTests(unittest.TestCase):
             self.assertEqual(payload["summary"]["phase_c_fresh_report_count"], 0)
             self.assertFalse(payload["summary"]["shard_movement_fresh"])
 
+    def test_cli_rejects_report_without_required_checks(self):
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            root = Path(temp_dir_value) / "phase-c"
+            write_phase_c_fixture(root)
+            (root / "join/mixed-cluster-join-report.json").write_text(
+                json.dumps({"summary": {"passed": True}, "checks": {}}) + "\n",
+                encoding="utf-8",
+            )
+            movement = Path(temp_dir_value) / "movement.json"
+            movement.write_text(
+                json.dumps(
+                    {
+                        "summary": {
+                            "passed": True,
+                            "checkpoint_drift_ok": True,
+                            "opensearch_to_steelsearch_passed": True,
+                            "steelsearch_to_opensearch_passed": True,
+                        },
+                        "phases": [{"phase": "replica_on_rust"}],
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            output = Path(temp_dir_value) / "coverage.json"
+
+            result = self.run_cli(
+                "--phase-c-root",
+                str(root),
+                "--shard-movement-report",
+                str(movement),
+                "--require-passed",
+                "--output",
+                str(output),
+            )
+
+            payload = json.loads(output.read_text(encoding="utf-8"))
+            self.assertEqual(result, 1)
+            self.assertFalse(payload["summary"]["passed"])
+            self.assertIn(
+                "join report missing required checks",
+                "\n".join(payload["errors"]),
+            )
+
     def run_cli(self, *args: str) -> int:
         old_argv = sys.argv
         try:
@@ -150,22 +194,82 @@ class MixedClusterCoverageTests(unittest.TestCase):
 
 
 def write_phase_c_fixture(root: Path) -> None:
-    paths = [
-        "phase-c-mixed-cluster-summary.json",
-        "join/mixed-cluster-join-report.json",
-        "join/live-join-probe-report.json",
-        "join/join-reject-report.json",
-        "recovery/mixed-cluster-recovery-report.json",
-        "recovery/bounded-peer-recovery-probe-report.json",
-        "failure/mixed-cluster-failure-report.json",
-        "write-replication/mixed-cluster-write-replication-report.json",
-        "publication/mixed-cluster-publication-report.json",
-        "allocation/mixed-cluster-allocation-report.json",
-    ]
-    for relative in paths:
+    payloads = {
+        "phase-c-mixed-cluster-summary.json": {
+            "summary": {"passed": True},
+        },
+        "join/mixed-cluster-join-report.json": {
+            "summary": {"passed": True},
+            "checks": {
+                "live_join_probe_passed": True,
+                "join_reject_passed": True,
+            },
+        },
+        "join/live-join-probe-report.json": {
+            "summary": {"passed": True},
+            "checks": {
+                "remote_transport_version_matches_fixture": True,
+                "response_header_matches_min_compat": True,
+                "transport_payload_matches_fixture": True,
+                "handshake_cluster_name_matches_state": True,
+                "cluster_uuid_present": True,
+                "single_local_node_visible": True,
+                "advertised_roles_match_fixture": True,
+                "required_attributes_present": True,
+                "transport_address_present": True,
+                "node_name_present": True,
+            },
+        },
+        "join/join-reject-report.json": {
+            "summary": {"passed": True},
+        },
+        "recovery/mixed-cluster-recovery-report.json": {
+            "summary": {"passed": True},
+            "checks": {
+                "bounded_peer_recovery_probe_passed": True,
+                "recovery_reject_passed": True,
+            },
+        },
+        "recovery/bounded-peer-recovery-probe-report.json": {
+            "summary": {"passed": True},
+            "checks": {
+                "wire_round_trip_passed": True,
+            },
+        },
+        "failure/mixed-cluster-failure-report.json": {
+            "summary": {"passed": True},
+            "checks": {
+                "failure_topology_probe_passed": True,
+                "failure_ledger_passed": True,
+            },
+        },
+        "write-replication/mixed-cluster-write-replication-report.json": {
+            "summary": {"passed": True},
+            "checks": {
+                "write_replication_happy_path_passed": True,
+                "write_replication_reject_passed": True,
+            },
+        },
+        "publication/mixed-cluster-publication-report.json": {
+            "summary": {"passed": True},
+            "checks": {
+                "publication-full-state-report.json": True,
+                "publication-diff-ack-report.json": True,
+                "publication-reject-report.json": True,
+            },
+        },
+        "allocation/mixed-cluster-allocation-report.json": {
+            "summary": {"passed": True},
+            "checks": {
+                "routing_convergence_probe_passed": True,
+                "allocation_reject_passed": True,
+            },
+        },
+    }
+    for relative, payload in payloads.items():
         path = root / relative
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps({"summary": {"passed": True}}) + "\n", encoding="utf-8")
+        path.write_text(json.dumps(payload) + "\n", encoding="utf-8")
 
 
 if __name__ == "__main__":
