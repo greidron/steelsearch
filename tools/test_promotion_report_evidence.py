@@ -147,6 +147,7 @@ class PromotionReportEvidenceTests(unittest.TestCase):
             set(aggregate.get("metadata", {}).get("evidence_classes") or []),
             {
                 "task-lifecycle",
+                "connector-lifecycle",
                 "deploy-persistence",
                 "neural-query-rewrite",
                 "rerank-pipeline",
@@ -157,8 +158,12 @@ class PromotionReportEvidenceTests(unittest.TestCase):
             set(aggregate.get("required_cases") or []),
             {
                 "register_model",
+                "get_register_task",
+                "create_connector",
+                "get_connector",
                 "get_model",
                 "deploy_model",
+                "get_deploy_task",
                 "predict_model",
                 "search_model",
                 "neural_query_search",

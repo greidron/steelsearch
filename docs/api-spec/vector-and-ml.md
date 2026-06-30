@@ -198,7 +198,8 @@ Current compare note:
 | Deploy / undeploy | Controls model runtime availability. | `POST /_plugins/_ml/models/{id}/_deploy|_undeploy` is live and covered by the Steelsearch-only strict runner owned by `vector-ml`. | Partial |
 | Predict / embedding flow | Uses ML model output for vector workflows. | `POST /_plugins/_ml/models/{id}/_predict` is live and covered by the Steelsearch-only strict runner owned by `vector-ml`. | Partial |
 | Model get / search | Operational model lookup. | `GET /_plugins/_ml/models/{id}` and `POST /_plugins/_ml/models/_search` are live and covered by the Steelsearch-only strict runner owned by `vector-ml`. | Partial |
-| Model groups, tasks, connectors, authz boundaries | Broader ML Commons lifecycle and external integration. | Not part of the current Phase A-1 claimed surface. | Planned |
+| Model tasks / connectors / authz boundaries | Broader ML Commons lifecycle and external integration. | Register/deploy task lookup plus connector create/get are live and covered by `ml-model-surface-compat`; connector authz is covered by the secure authz fixture. Broader external connector execution remains outside the current claimed surface. | Partial |
+| Model groups | Broader ML Commons model grouping lifecycle. | The native registry type exists, but no REST compatibility route is currently claimed. | Planned |
 
 ## Production Boundary
 

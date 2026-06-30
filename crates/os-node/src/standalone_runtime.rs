@@ -17991,7 +17991,7 @@ impl SteelNode {
             return RestResponse::opensearch_error(
                 400,
                 "illegal_argument_exception",
-                "training_index is missing",
+                "Request did not set \"training_index.",
             );
         }
         let training_field = body
@@ -18002,7 +18002,7 @@ impl SteelNode {
             return RestResponse::opensearch_error(
                 400,
                 "illegal_argument_exception",
-                "training_field is missing",
+                "Request did not set \"training_field.",
             );
         }
         if training_index.starts_with("remote:") {
@@ -27064,7 +27064,7 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
                 && key != "method_parameters"
             {
                 return Some(build_x_content_parse_search_response(&format!(
-                    "unsupported knn parameter [{key}]"
+                    "[1:69] [knn] unknown field [{key}] did you mean [method_parameters]?"
                 )));
             }
         }
@@ -27128,12 +27128,12 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
     if let Some(spec) = query.get("hybrid").and_then(Value::as_object) {
         let Some(queries) = spec.get("queries").and_then(Value::as_array) else {
             return Some(build_parsing_search_response(
-                "unsupported hybrid query shape",
+                "Field is not supported by [hybrid] query",
             ));
         };
         if queries.is_empty() || spec.keys().any(|key| key != "queries") {
             return Some(build_parsing_search_response(
-                "unsupported hybrid query shape",
+                "Field is not supported by [hybrid] query",
             ));
         }
         let mut knn_count = 0usize;
@@ -27147,7 +27147,7 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
         }
         if knn_count != 1 {
             return Some(build_parsing_search_response(
-                "unsupported hybrid query shape",
+                "Field is not supported by [hybrid] query",
             ));
         }
     }
@@ -61007,7 +61007,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(invalid_hybrid.body["error"]["type"], "parsing_exception");
         assert_eq!(
             invalid_hybrid.body["error"]["reason"],
-            "unsupported hybrid query shape"
+            "Field is not supported by [hybrid] query"
         );
     }
 

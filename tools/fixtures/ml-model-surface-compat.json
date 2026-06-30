@@ -4,8 +4,12 @@
     "name": "ml_model_lifecycle_shape",
     "required_cases": [
       "register_model",
+      "get_register_task",
+      "create_connector",
+      "get_connector",
       "get_model",
       "deploy_model",
+      "get_deploy_task",
       "predict_model",
       "search_model",
       "neural_query_search",
@@ -16,6 +20,7 @@
     "metadata": {
       "evidence_classes": [
         "task-lifecycle",
+        "connector-lifecycle",
         "deploy-persistence",
         "neural-query-rewrite",
         "rerank-pipeline",
@@ -43,6 +48,73 @@
         "name": "compat-text-embedding",
         "function_name": "text_embedding",
         "model_state": "registered"
+      }
+    },
+    {
+      "name": "get_register_task",
+      "method": "GET",
+      "path": "/_plugins/_ml/tasks/${register_model.task_id}",
+      "expected_status": 200,
+      "compare_paths": [
+        "task_id",
+        "model_id",
+        "task_type",
+        "state"
+      ],
+      "expected_paths": {
+        "task_id": "${register_model.task_id}",
+        "model_id": "${register_model.model_id}",
+        "task_type": "REGISTER_MODEL",
+        "state": "COMPLETED"
+      },
+      "metadata": {
+        "evidence_classes": [
+          "task-lifecycle"
+        ]
+      }
+    },
+    {
+      "name": "create_connector",
+      "method": "POST",
+      "path": "/_plugins/_ml/connectors/_create",
+      "body": {
+        "name": "compat-connector",
+        "protocol": "http"
+      },
+      "expected_status": 200,
+      "compare_paths": [
+        "name",
+        "protocol"
+      ],
+      "expected_paths": {
+        "name": "compat-connector",
+        "protocol": "http"
+      },
+      "metadata": {
+        "evidence_classes": [
+          "connector-lifecycle"
+        ]
+      }
+    },
+    {
+      "name": "get_connector",
+      "method": "GET",
+      "path": "/_plugins/_ml/connectors/${create_connector.connector_id}",
+      "expected_status": 200,
+      "compare_paths": [
+        "connector_id",
+        "name",
+        "protocol"
+      ],
+      "expected_paths": {
+        "connector_id": "${create_connector.connector_id}",
+        "name": "compat-connector",
+        "protocol": "http"
+      },
+      "metadata": {
+        "evidence_classes": [
+          "connector-lifecycle"
+        ]
       }
     },
     {
@@ -79,6 +151,34 @@
         "model_id": "${register_model.model_id}",
         "deployed": true,
         "task_state": "DEPLOYED"
+      },
+      "metadata": {
+        "evidence_classes": [
+          "task-lifecycle"
+        ]
+      }
+    },
+    {
+      "name": "get_deploy_task",
+      "method": "GET",
+      "path": "/_plugins/_ml/tasks/${deploy_model.task_id}",
+      "expected_status": 200,
+      "compare_paths": [
+        "task_id",
+        "model_id",
+        "task_type",
+        "state"
+      ],
+      "expected_paths": {
+        "task_id": "${deploy_model.task_id}",
+        "model_id": "${register_model.model_id}",
+        "task_type": "DEPLOY_MODEL",
+        "state": "COMPLETED"
+      },
+      "metadata": {
+        "evidence_classes": [
+          "task-lifecycle"
+        ]
       }
     },
     {

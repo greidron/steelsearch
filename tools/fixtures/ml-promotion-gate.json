@@ -21,8 +21,12 @@
       ],
       "required_cases": [
         "register_model",
+        "get_register_task",
+        "create_connector",
+        "get_connector",
         "get_model",
         "deploy_model",
+        "get_deploy_task",
         "predict_model",
         "search_model",
         "create_neural_index",
@@ -43,6 +47,7 @@
       ],
       "required_evidence_classes": [
         "task-lifecycle",
+        "connector-lifecycle",
         "connector-authz",
         "deploy-persistence",
         "neural-query-rewrite",

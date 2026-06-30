@@ -71,6 +71,7 @@ def main() -> int:
     }
     semantic_required_evidence_classes = {
         "task-lifecycle",
+        "connector-lifecycle",
         "connector-authz",
         "deploy-persistence",
         "neural-query-rewrite",
