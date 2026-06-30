@@ -12,6 +12,9 @@ ROOT = Path(__file__).resolve().parents[1]
 REPORT_PATH = ROOT / "tools" / "report-transport-action-coverage.py"
 SOURCE_TRANSPORT_ACTIONS = ROOT / "docs" / "rust-port" / "generated" / "source-transport-actions.tsv"
 TRANSPORT_INVENTORY = ROOT / "tools" / "fixtures" / "interop-transport-action-inventory.json"
+ACCEPTED_TRANSPORT_EVIDENCE = (
+    ROOT / "tools" / "fixtures" / "interop-accepted-transport-action-evidence.json"
+)
 TRANSPORT_ACTION_SUBSET_LEDGER = ROOT / "tools" / "fixtures" / "transport-action-subset-ledger.json"
 TRANSPORT_NEGOTIATION_POLICY = (
     ROOT / "tools" / "fixtures" / "transport-negotiation-exception-policy.json"
@@ -53,6 +56,20 @@ class TransportActionCoverageTests(unittest.TestCase):
         self.assertIn("no OpenSearch", self.report.action_coverage_claim(0))
         self.assertIn("partial actions", self.report.action_coverage_claim(0, 1))
         self.assertIn("implemented adapters", self.report.action_coverage_claim(1))
+
+    def test_accepted_transport_evidence_scope_counts_are_reported(self):
+        evidence = json.loads(ACCEPTED_TRANSPORT_EVIDENCE.read_text(encoding="utf-8"))
+
+        self.assertEqual(self.report.accepted_evidence_action_count(evidence), 174)
+        self.assertEqual(
+            self.report.accepted_evidence_scope_counts(evidence),
+            {
+                "bounded_execution_boundary": 8,
+                "bounded_local_subset": 112,
+                "fail_closed_or_empty_subset": 54,
+            },
+        )
+        self.assertEqual(self.report.accepted_evidence_errors(evidence), [])
 
     def test_peer_report_passed_requires_summary_passed(self):
         self.assertTrue(self.report.peer_report_passed({"summary": {"passed": True}}))
@@ -101,6 +118,11 @@ class TransportActionCoverageTests(unittest.TestCase):
             self.assertEqual(payload["summary"]["planned_action_count"], 1)
             self.assertEqual(payload["summary"]["implemented_action_count"], 0)
             self.assertEqual(payload["summary"]["partial_action_count"], 0)
+            self.assertEqual(payload["summary"]["accepted_evidence_action_count"], 174)
+            self.assertEqual(
+                payload["summary"]["accepted_evidence_scope_counts"]["bounded_execution_boundary"],
+                8,
+            )
             self.assertEqual(len(payload["actions"]), 1)
             self.assertEqual(len(payload["planned_actions"]), 1)
             self.assertEqual(payload["implemented_actions"], [])
@@ -123,10 +145,61 @@ class TransportActionCoverageTests(unittest.TestCase):
             self.assertEqual(payload["summary"]["implemented_action_count"], 160)
             self.assertEqual(payload["summary"]["partial_action_count"], 0)
             self.assertEqual(payload["summary"]["planned_action_count"], 0)
+            self.assertEqual(payload["summary"]["accepted_evidence_action_count"], 174)
+            self.assertEqual(
+                payload["summary"]["accepted_evidence_scope_counts"],
+                {
+                    "bounded_execution_boundary": 8,
+                    "bounded_local_subset": 112,
+                    "fail_closed_or_empty_subset": 54,
+                },
+            )
             self.assertEqual(len(payload["actions"]), 160)
             self.assertEqual(len(payload["implemented_actions"]), 160)
             self.assertEqual(len(payload["partial_actions"]), 0)
+            self.assertEqual(len(payload["accepted_transport_evidence"]), 174)
             self.assertEqual(payload["planned_actions"], [])
+
+    def test_cli_rejects_invalid_accepted_evidence_scope(self):
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            temp_dir = Path(temp_dir_value)
+            source = temp_dir / "source.tsv"
+            evidence = temp_dir / "evidence.json"
+            output = temp_dir / "transport.json"
+            source.write_text(
+                "status\taction\ttransport_handler\tsource\tline\n"
+                "implemented\tSearchAction.INSTANCE\tTransportSearchAction.class\tActionModule.java\t1\n",
+                encoding="utf-8",
+            )
+            evidence.write_text(
+                json.dumps(
+                    {
+                        "actions": [
+                            {
+                                "action_name": "indices:data/read/search",
+                                "disposition": "implemented",
+                                "execution_scope": "full_parity",
+                            }
+                        ]
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            result = self.run_cli(
+                "--source",
+                str(source),
+                "--accepted-evidence",
+                str(evidence),
+                "--output",
+                str(output),
+            )
+
+            payload = json.loads(output.read_text(encoding="utf-8"))
+            self.assertEqual(result, 1)
+            self.assertFalse(payload["summary"]["passed"])
+            self.assertIn("full_parity", " ".join(payload["errors"]))
 
     def test_locally_handled_transport_actions_are_implemented_in_source_tsv(self):
         implemented_actions = {

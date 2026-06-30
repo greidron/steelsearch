@@ -63,7 +63,16 @@ class NativeClosureValidationRunnerTests(unittest.TestCase):
     def test_e2e_search_compat_parity_batch_allows_known_skips_but_rejects_failures(self):
         batch = self.runner.BATCHES["e2e-search-compat-parity"]
 
-        self.assertEqual(len(batch), 1)
+        self.assertEqual(len(batch), 2)
+        names = {case.name for case in batch}
+        self.assertIn(
+            "search_compat_and_strict_e2e_reports_have_no_failed_or_missing_cases",
+            names,
+        )
+        self.assertIn(
+            "pit_e2e_reports_have_required_opensearch_compared_cases_without_skips",
+            names,
+        )
         command_text = " ".join(batch[0].command)
         self.assertIn("tools/run-unified-opensearch-e2e.py", command_text)
         self.assertIn("search-compat", command_text)
@@ -157,6 +166,7 @@ class NativeClosureValidationRunnerTests(unittest.TestCase):
                 "non_native_path_inventory_has_no_missing_probe_or_family",
                 "search_semantic_and_vector_search_e2e_reports_have_no_failed_missing_or_skipped_cases",
                 "search_compat_and_strict_e2e_reports_have_no_failed_or_missing_cases",
+                "pit_e2e_reports_have_required_opensearch_compared_cases_without_skips",
                 "broad_unified_opensearch_e2e_report_has_no_failed_missing_or_drifted_required_suites",
                 "rest_api_source_inventory_coverage_is_reported_for_broad_required_live_suites",
                 "transport_action_inventory_is_reported_with_current_peer_backpressure_evidence",

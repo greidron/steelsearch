@@ -15,14 +15,21 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_SOURCE = ROOT / "docs/rust-port/generated/source-transport-actions.tsv"
 DEFAULT_PEER_REPORT = ROOT / "target/runtime-peer-backpressure-current.json"
+DEFAULT_ACCEPTED_EVIDENCE = ROOT / "tools/fixtures/interop-accepted-transport-action-evidence.json"
 HANDSHAKE_MATRIX = ROOT / "docs/rust-port/transport-handshake-version-skew-matrix.md"
 MESSAGE_SEQUENCE = ROOT / "docs/rust-port/transport-message-sequence.md"
+ACCEPTED_EVIDENCE_SCOPES = {
+    "bounded_local_subset",
+    "fail_closed_or_empty_subset",
+    "bounded_execution_boundary",
+}
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source", default=str(DEFAULT_SOURCE))
     parser.add_argument("--peer-backpressure-report", default=str(DEFAULT_PEER_REPORT))
+    parser.add_argument("--accepted-evidence", default=str(DEFAULT_ACCEPTED_EVIDENCE))
     parser.add_argument("--output")
     parser.add_argument("--require-peer-backpressure", action="store_true")
     parser.add_argument(
@@ -33,6 +40,8 @@ def main() -> int:
     args = parser.parse_args()
 
     actions = load_actions(Path(args.source))
+    accepted_evidence_path = Path(args.accepted_evidence)
+    accepted_evidence = load_optional_json(accepted_evidence_path)
     peer_path = Path(args.peer_backpressure_report)
     peer_report = load_optional_json(peer_path)
     peer_fresh = report_fresh(peer_path, args.max_report_age_seconds)
@@ -41,6 +50,8 @@ def main() -> int:
         errors.append("peer backpressure report is missing or not passed")
     if args.require_peer_backpressure and not peer_fresh["fresh"]:
         errors.append(peer_fresh["reason"])
+    evidence_errors = accepted_evidence_errors(accepted_evidence)
+    errors.extend(evidence_errors)
 
     protocol_evidence = {
         "handshake_version_skew_matrix": file_evidence(HANDSHAKE_MATRIX),
@@ -67,6 +78,7 @@ def main() -> int:
         "status": status,
         "errors": errors,
         "source": str(Path(args.source)),
+        "accepted_evidence_source": str(accepted_evidence_path),
         "summary": {
             "passed": not errors,
             "transport_action_count": len(actions),
@@ -77,6 +89,8 @@ def main() -> int:
             "out_of_scope_action_count": out_of_scope_count,
             "action_coverage_claim": action_coverage_claim(implemented_count, partial_count),
             "peer_backpressure_passed": protocol_evidence["peer_backpressure"]["passed"],
+            "accepted_evidence_action_count": accepted_evidence_action_count(accepted_evidence),
+            "accepted_evidence_scope_counts": accepted_evidence_scope_counts(accepted_evidence),
         },
         "status_counts": status_counts(actions),
         "protocol_evidence": protocol_evidence,
@@ -86,6 +100,7 @@ def main() -> int:
         "planned_actions": filter_status(actions, "planned"),
         "stubbed_actions": filter_status(actions, "stubbed"),
         "out_of_scope_actions": filter_status(actions, "out-of-scope"),
+        "accepted_transport_evidence": accepted_evidence_actions(accepted_evidence),
     }
     text = json.dumps(report, indent=2, sort_keys=True) + "\n"
     if args.output:
@@ -118,6 +133,54 @@ def load_optional_json(path_value: str) -> dict[str, Any] | None:
         return json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError:
         return None
+
+
+def accepted_evidence_actions(report: dict[str, Any] | None) -> list[dict[str, Any]]:
+    if not isinstance(report, dict):
+        return []
+    actions = report.get("actions")
+    return actions if isinstance(actions, list) else []
+
+
+def accepted_evidence_action_count(report: dict[str, Any] | None) -> int:
+    return len(accepted_evidence_actions(report))
+
+
+def accepted_evidence_scope_counts(report: dict[str, Any] | None) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for action in accepted_evidence_actions(report):
+        if not isinstance(action, dict):
+            scope = "invalid"
+        else:
+            scope = str(action.get("execution_scope") or "missing")
+        counts[scope] = counts.get(scope, 0) + 1
+    return dict(sorted(counts.items()))
+
+
+def accepted_evidence_errors(report: dict[str, Any] | None) -> list[str]:
+    if not isinstance(report, dict):
+        return ["accepted transport evidence ledger is missing or invalid"]
+    errors: list[str] = []
+    seen: set[str] = set()
+    for index, action in enumerate(accepted_evidence_actions(report)):
+        if not isinstance(action, dict):
+            errors.append(f"accepted transport evidence row {index} is not an object")
+            continue
+        action_name = str(action.get("action_name") or "")
+        if not action_name:
+            errors.append(f"accepted transport evidence row {index} is missing action_name")
+        elif action_name in seen:
+            errors.append(f"duplicate accepted transport evidence action {action_name}")
+        else:
+            seen.add(action_name)
+        if action.get("disposition") != "implemented":
+            errors.append(f"{action_name or index}: accepted evidence disposition must be implemented")
+        scope = action.get("execution_scope")
+        if scope not in ACCEPTED_EVIDENCE_SCOPES:
+            errors.append(f"{action_name or index}: unexpected execution_scope {scope!r}")
+        if "full_parity" in str(scope):
+            errors.append(f"{action_name or index}: accepted evidence must not claim full parity")
+    return errors
 
 
 def report_fresh(path: Path, max_age_seconds: float | None) -> dict[str, Any]:
