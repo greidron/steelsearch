@@ -2783,10 +2783,7 @@ fn build_tantivy_query(
             ]))))
         }
         Query::SpanMulti { query } => build_tantivy_query(search_state, query),
-        Query::FieldMaskingSpan { query, field } => {
-            let remapped = remap_query_field(query, field);
-            build_tantivy_query(search_state, &remapped)
-        }
+        Query::FieldMaskingSpan { .. } => Ok(None),
         Query::TermsSet {
             field,
             values,
@@ -2965,7 +2962,7 @@ fn build_tantivy_query(
                 return Ok(Some(Box::new(AllQuery)));
             }
             let Some(indexed_field) = search_state.fields.get(field) else {
-                return Ok(Some(Box::new(EmptyQuery)));
+                return Ok(None);
             };
             match indexed_field.field_type {
                 TantivyFieldType::Text | TantivyFieldType::Keyword => {
@@ -7006,16 +7003,13 @@ impl StoredIndex {
             return Ok(Some((total_hits, hits)));
         }
         let needs_post_filter = query_requires_native_candidate_post_filter(query);
-        if needs_post_filter
-            && sort_uses_default_relevance_order(sort)
-            && query_allows_source_candidate_scan_for_native_post_filter(query)
-        {
+        if needs_post_filter && query_allows_source_candidate_scan_for_native_post_filter(query) {
             let Some(search_state) = &self.search_state else {
                 return Ok(None);
             };
             if build_tantivy_query(search_state, query)?.is_none() {
                 return self.search_hits_page_for_source_candidate_post_filter(
-                    index_name, query, from, size,
+                    index_name, query, sort, from, size,
                 );
             }
         }
@@ -7032,6 +7026,10 @@ impl StoredIndex {
             && !matches!(query, Query::Nested { .. })
             && !needs_post_filter
         {
+            if sort.len() > 1 {
+                return self
+                    .search_hits_page_for_full_native_sort(index_name, query, sort, from, size);
+            }
             let Some(search_state) = &self.search_state else {
                 return Ok(None);
             };
@@ -7115,40 +7113,56 @@ impl StoredIndex {
         &self,
         index_name: &str,
         query: &Query,
+        sort: &[SortSpec],
         from: usize,
         size: usize,
     ) -> EngineResult<Option<(u64, Vec<SearchHit>)>> {
-        let mut scored_ids = Vec::new();
+        let mut hits = Vec::new();
         for document in self.refreshed_documents() {
             let Some(score) = self.score_document_query(query, document)? else {
                 continue;
             };
-            scored_ids.push((
+            hits.push(self.search_hit_for_document_with_score(
+                index_name,
+                document,
                 if score == 0.0 { 1.0 } else { score },
-                document.metadata.id.clone(),
+                false,
             ));
         }
-        scored_ids.sort_by(|(left_score, left_id), (right_score, right_id)| {
-            right_score
-                .partial_cmp(left_score)
-                .unwrap_or(std::cmp::Ordering::Equal)
-                .then_with(|| left_id.cmp(right_id))
-        });
-        let total_hits = scored_ids.len() as u64;
+        if sort_uses_default_relevance_order(sort) {
+            hits.sort_by(compare_relevance_hits);
+        } else {
+            sort_hits(&mut hits, sort);
+        }
+        let total_hits = hits.len() as u64;
         if size == 0 {
             return Ok(Some((total_hits, Vec::new())));
         }
-        let hits = scored_ids
-            .into_iter()
-            .skip(from)
-            .take(size)
-            .filter_map(|(score, document_id)| {
-                self.refreshed_document_by_id(&document_id).map(|document| {
-                    self.search_hit_for_document_with_score(index_name, document, score, false)
-                })
-            })
-            .collect();
-        Ok(Some((total_hits, hits)))
+        Ok(Some((
+            total_hits,
+            hits.into_iter().skip(from).take(size).collect(),
+        )))
+    }
+
+    fn search_hits_page_for_full_native_sort(
+        &self,
+        index_name: &str,
+        query: &Query,
+        sort: &[SortSpec],
+        from: usize,
+        size: usize,
+    ) -> EngineResult<Option<(u64, Vec<SearchHit>)>> {
+        let Some(hits) = self.search_hits_for_query_native(index_name, query, sort)? else {
+            return Ok(None);
+        };
+        let total_hits = hits.len() as u64;
+        if size == 0 {
+            return Ok(Some((total_hits, Vec::new())));
+        }
+        Ok(Some((
+            total_hits,
+            hits.into_iter().skip(from).take(size).collect(),
+        )))
     }
 
     fn search_hits_window_for_query_native(
@@ -7167,7 +7181,9 @@ impl StoredIndex {
             };
             if build_tantivy_query(search_state, query)?.is_none() {
                 return Ok(self
-                    .search_hits_page_for_source_candidate_post_filter(index_name, query, 0, size)?
+                    .search_hits_page_for_source_candidate_post_filter(
+                        index_name, query, sort, 0, size,
+                    )?
                     .map(|(_total_hits, hits)| hits));
             }
         }
@@ -16455,6 +16471,7 @@ fn query_contains_lexical_minimum_should_match_above_one_bool(query: &Query) -> 
 fn query_requires_native_candidate_post_filter(query: &Query) -> bool {
     match query {
         Query::GeoDistance(_)
+        | Query::Exists { .. }
         | Query::GeoPolygon(_)
         | Query::GeoShape(_)
         | Query::Nested { .. }
@@ -16512,6 +16529,7 @@ fn query_requires_native_candidate_post_filter(query: &Query) -> bool {
 fn query_allows_source_candidate_scan_for_native_post_filter(query: &Query) -> bool {
     match query {
         Query::QueryString { .. }
+        | Query::Exists { .. }
         | Query::SimpleQueryString { .. }
         | Query::MoreLikeThis { .. }
         | Query::GeoPolygon(_)
@@ -16563,9 +16581,8 @@ fn query_allows_source_candidate_scan_for_native_post_filter(query: &Query) -> b
         Query::FunctionScore { query } | Query::ScriptScore { query, .. } => {
             query_allows_source_candidate_scan_for_native_post_filter(query)
         }
-        Query::SpanMulti { query }
-        | Query::FieldMaskingSpan { query, .. }
-        | Query::Wrapper { query } => {
+        Query::FieldMaskingSpan { .. } => true,
+        Query::SpanMulti { query } | Query::Wrapper { query } => {
             query_allows_source_candidate_scan_for_native_post_filter(query)
         }
         _ => false,
@@ -19929,6 +19946,9 @@ fn sort_hits(hits: &mut [SearchHit], sort_specs: &[SortSpec]) {
         for sort_spec in sort_specs {
             let ordering = compare_hits_by_sort(left, right, sort_spec);
             if !ordering.is_eq() {
+                if sort_spec_has_one_missing_value(left, right, sort_spec) {
+                    return ordering;
+                }
                 return match sort_spec.order {
                     SortOrder::Asc => ordering,
                     SortOrder::Desc => ordering.reverse(),
@@ -19999,7 +20019,7 @@ fn compare_hits_by_sort(
             evaluate_sort_script(&right.source, script),
         );
     }
-    if let Some(origin) = &sort_spec.geo_origin {
+    if sort_spec.geo_origin.is_some() {
         return compare_optional_numeric_sort_values(
             geo_sort_distance_value_from_source(&left.source, sort_spec),
             geo_sort_distance_value_from_source(&right.source, sort_spec),
@@ -20026,6 +20046,49 @@ fn compare_hits_by_sort(
             ),
         ),
     }
+}
+
+fn sort_spec_has_one_missing_value(
+    left: &SearchHit,
+    right: &SearchHit,
+    sort_spec: &SortSpec,
+) -> bool {
+    let (left_missing, right_missing) = match sort_spec.field.as_str() {
+        "_id" | "_score" => (false, false),
+        _ if sort_spec.script.is_some() => (
+            sort_spec
+                .script
+                .as_ref()
+                .and_then(|script| evaluate_sort_script(&left.source, script))
+                .is_none(),
+            sort_spec
+                .script
+                .as_ref()
+                .and_then(|script| evaluate_sort_script(&right.source, script))
+                .is_none(),
+        ),
+        _ if sort_spec.geo_origin.is_some() => (
+            geo_sort_distance_value_from_source(&left.source, sort_spec).is_none(),
+            geo_sort_distance_value_from_source(&right.source, sort_spec).is_none(),
+        ),
+        field => (
+            source_sort_value(
+                &left.source,
+                field,
+                sort_spec.order.clone(),
+                sort_spec.mode.clone(),
+            )
+            .is_none(),
+            source_sort_value(
+                &right.source,
+                field,
+                sort_spec.order.clone(),
+                sort_spec.mode.clone(),
+            )
+            .is_none(),
+        ),
+    };
+    left_missing != right_missing
 }
 
 fn plugin_top_metrics_fields(plugin: &os_query_dsl::PluginAggregation) -> Option<Vec<String>> {
@@ -20756,6 +20819,9 @@ fn compare_hits_for_page(
     for sort_spec in sort_specs {
         let ordering = compare_hits_by_sort(left, right, sort_spec);
         if !ordering.is_eq() {
+            if sort_spec_has_one_missing_value(left, right, sort_spec) {
+                return ordering;
+            }
             return match sort_spec.order {
                 SortOrder::Asc => ordering,
                 SortOrder::Desc => ordering.reverse(),
@@ -148402,7 +148468,7 @@ mod tests {
             .expect("native desc sort hits");
 
         assert_eq!(search_hit_ids(&native_asc), vec!["3", "1", "2"]);
-        assert_eq!(search_hit_ids(&native_desc), vec!["2", "1", "3"]);
+        assert_eq!(search_hit_ids(&native_desc), vec!["1", "3", "2"]);
     }
 
     #[test]

@@ -10433,6 +10433,7 @@ impl SteelNode {
             && !resolved_indices.is_empty()
             && failed_indices.is_empty()
             && requested_routing_values.is_none()
+            && !request.query_params.contains_key("scroll")
             && !request.query_params.contains_key("search_type")
             && !request.query_params.contains_key("pre_filter_shard_size")
             && !request.query_params.contains_key("ignore_unavailable")
@@ -22289,6 +22290,10 @@ fn standalone_search_body_allows_native_engine(body: &Value) -> bool {
         .or_else(|| body.get("aggregations"))
         .unwrap_or(&Value::Null);
     !query_contains_native_unsafe_nested_knn(body.get("query").unwrap_or(&Value::Null))
+        && !value_contains_any_key(
+            body.get("query").unwrap_or(&Value::Null),
+            &["field_masking_span"],
+        )
         && body
             .get("sort")
             .map_or(true, standalone_sort_allows_native_engine)
@@ -26390,6 +26395,7 @@ fn search_after_value_mismatches_sort_type(value: &Value, field_type: &str) -> b
         return false;
     }
     match value {
+        Value::Null => false,
         Value::Number(_) => false,
         Value::String(raw) => raw.parse::<f64>().is_err(),
         _ => true,
@@ -50979,11 +50985,14 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         );
 
         let missing_training_field = node.handle_rest_request(
-            RestRequest::new(RestMethod::Post, "/_plugins/_knn/models/missing-field/_train")
-                .with_json_body(serde_json::json!({
-                    "training_index": "logs-stateful-probe",
-                    "dimension": 3
-                })),
+            RestRequest::new(
+                RestMethod::Post,
+                "/_plugins/_knn/models/missing-field/_train",
+            )
+            .with_json_body(serde_json::json!({
+                "training_index": "logs-stateful-probe",
+                "dimension": 3
+            })),
         );
         assert_eq!(missing_training_field.status, 400);
         assert_eq!(
