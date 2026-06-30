@@ -6803,6 +6803,33 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "regexp_case_insensitive_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "regexp": {
+            "service": {
+              "value": "CHECK.*",
+              "case_insensitive": true
+            }
+          }
+        },
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] regexp case_insensitive query search",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "script_score_search",
       "area": "search",
       "method": "POST",

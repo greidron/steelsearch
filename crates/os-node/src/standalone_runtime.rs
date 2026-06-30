@@ -28321,7 +28321,18 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
             ));
         };
         let candidate_value = if let Some(object) = value.as_object() {
-            if object.keys().any(|key| key != "value") {
+            if object
+                .keys()
+                .any(|key| key != "value" && key != "case_insensitive")
+            {
+                return Some(build_unsupported_search_response(
+                    "unsupported regexp parameter",
+                ));
+            }
+            if object
+                .get("case_insensitive")
+                .is_some_and(|value| !value.is_boolean())
+            {
                 return Some(build_unsupported_search_response(
                     "unsupported regexp parameter",
                 ));
@@ -31003,8 +31014,13 @@ fn evaluate_search_query_source_with_mappings(
     }
     if let Some(regexp_query) = query.get("regexp").and_then(Value::as_object) {
         let (field, expected) = regexp_query.iter().next()?;
-        let expected_value = extract_string_query_value(expected)?;
-        let matched = value_matches_regexp(lookup_query_field_value(source, field), expected_value);
+        let (expected_value, case_insensitive) =
+            extract_string_query_value_and_case_insensitive(expected)?;
+        let matched = value_matches_regexp(
+            lookup_query_field_value(source, field),
+            expected_value,
+            case_insensitive,
+        );
         return Some((matched, if matched { 1.0 } else { 0.0 }));
     }
     if let Some(fuzzy_query) = query.get("fuzzy").and_then(Value::as_object) {
@@ -32840,14 +32856,18 @@ fn value_matches_prefix(candidate: Option<&Value>, expected: &str, case_insensit
     }
 }
 
-fn value_matches_regexp(candidate: Option<&Value>, expected: &str) -> bool {
+fn value_matches_regexp(candidate: Option<&Value>, expected: &str, case_insensitive: bool) -> bool {
     let Some(candidate_text) = candidate.and_then(Value::as_str) else {
         return false;
     };
-    bounded_regexp_match(
-        expected.as_bytes(),
-        candidate_text.to_ascii_lowercase().as_bytes(),
-    )
+    if case_insensitive {
+        bounded_regexp_match(
+            expected.to_ascii_lowercase().as_bytes(),
+            candidate_text.to_ascii_lowercase().as_bytes(),
+        )
+    } else {
+        bounded_regexp_match(expected.as_bytes(), candidate_text.as_bytes())
+    }
 }
 
 fn bounded_regexp_match(pattern: &[u8], candidate: &[u8]) -> bool {
