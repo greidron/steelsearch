@@ -109,6 +109,9 @@ def main() -> int:
             "unified_required_suite_classification": (
                 required_suite_classification(unified) if unified is not None else {}
             ),
+            "unified_required_suite_effective_classification": (
+                effective_suite_classification(unified) if unified is not None else {}
+            ),
         },
         "source_status_counts": status_counts(source_routes),
         "fixture_coverage": fixture_coverage,
@@ -395,19 +398,62 @@ def unified_required_suite_errors(
     allow_known_gaps: bool = False,
 ) -> list[str]:
     errors: list[str] = []
+    effective_known_gaps = effective_required_known_gap_count(report)
     for suite in report.get("suite_results") or []:
         if not isinstance(suite, dict) or not suite.get("required"):
             continue
         if suite.get("status") != "ok":
             errors.append(f"{suite.get('name')}: required suite status is {suite.get('status')}")
         classification = suite.get("classification") or {}
-        required_zero_keys = ("missing", "failed")
-        if not allow_known_gaps:
-            required_zero_keys = (*required_zero_keys, "known_gap_or_skipped")
-        for key in required_zero_keys:
+        for key in ("missing", "failed"):
             if int(classification.get(key) or 0):
                 errors.append(f"{suite.get('name')}: {key}={classification.get(key)}")
+        if not allow_known_gaps and effective_known_gaps is None:
+            if int(classification.get("known_gap_or_skipped") or 0):
+                errors.append(f"{suite.get('name')}: known_gap_or_skipped={classification.get('known_gap_or_skipped')}")
+    if not allow_known_gaps and effective_known_gaps is not None and effective_known_gaps:
+        errors.append(f"effective known_gap_or_skipped={effective_known_gaps}")
     return errors
+
+
+def effective_required_known_gap_count(report: dict[str, Any]) -> int | None:
+    coverage_summary = report.get("coverage_summary")
+    if not isinstance(coverage_summary, dict):
+        return None
+    effective = coverage_summary.get("effective_case_classification")
+    if not isinstance(effective, dict):
+        return None
+    return int(effective.get("known_gap_or_skipped") or 0)
+
+
+def effective_suite_classification(report: dict[str, Any]) -> dict[str, int]:
+    coverage_summary = report.get("coverage_summary")
+    if not isinstance(coverage_summary, dict):
+        return required_suite_classification(report)
+    effective = coverage_summary.get("effective_case_classification")
+    if not isinstance(effective, dict):
+        return required_suite_classification(report)
+    totals = {
+        key: int(effective.get(key) or 0)
+        for key in (
+            "canonical_equal",
+            "strict_equal",
+            "semantic_equal",
+            "steelsearch_fail_closed",
+            "steelsearch_only",
+            "missing",
+            "failed",
+            "known_gap_or_skipped",
+            "passed",
+        )
+    }
+    totals["total_equal"] = (
+        totals["canonical_equal"]
+        + totals["strict_equal"]
+        + totals["semantic_equal"]
+        + totals["steelsearch_fail_closed"]
+    )
+    return totals
 
 
 def required_suite_classification(report: dict[str, Any]) -> dict[str, int]:

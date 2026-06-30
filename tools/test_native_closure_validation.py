@@ -96,7 +96,7 @@ class NativeClosureValidationRunnerTests(unittest.TestCase):
         self.assertIn("604800", command_text)
         self.assertIn("tools/report-rest-api-coverage.py", command_text)
         self.assertIn("--require-live-required-suites", command_text)
-        self.assertIn("--allow-known-gaps", command_text)
+        self.assertNotIn("--allow-known-gaps", command_text)
         self.assertIn("--min-live-required-matched-source-route-count", command_text)
         self.assertIn("220", command_text)
         self.assertIn("--min-live-required-matched-source-route-ratio", command_text)

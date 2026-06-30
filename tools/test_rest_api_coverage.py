@@ -374,6 +374,58 @@ class RestApiCoverageTests(unittest.TestCase):
         self.assertNotIn("search: known_gap_or_skipped=2", allowed_gap_errors)
         self.assertIn("strict: failed=1", allowed_gap_errors)
 
+    def test_required_suite_errors_use_effective_known_gap_count_when_available(self):
+        report = {
+            "coverage_summary": {
+                "effective_case_classification": {
+                    "canonical_equal": 10,
+                    "strict_equal": 20,
+                    "semantic_equal": 30,
+                    "steelsearch_fail_closed": 1,
+                    "steelsearch_only": 2,
+                    "missing": 0,
+                    "failed": 0,
+                    "known_gap_or_skipped": 0,
+                    "passed": 0,
+                },
+            },
+            "suite_results": [
+                {
+                    "name": "search",
+                    "required": True,
+                    "status": "ok",
+                    "classification": {
+                        "missing": 0,
+                        "failed": 0,
+                        "known_gap_or_skipped": 2,
+                    },
+                },
+            ],
+        }
+
+        self.assertEqual(self.report.unified_required_suite_errors(report), [])
+        self.assertEqual(
+            self.report.effective_suite_classification(report),
+            {
+                "canonical_equal": 10,
+                "strict_equal": 20,
+                "semantic_equal": 30,
+                "steelsearch_fail_closed": 1,
+                "steelsearch_only": 2,
+                "missing": 0,
+                "failed": 0,
+                "known_gap_or_skipped": 0,
+                "passed": 0,
+                "total_equal": 61,
+            },
+        )
+
+        report["coverage_summary"]["effective_case_classification"]["known_gap_or_skipped"] = 1
+        self.assertEqual(
+            self.report.unified_required_suite_errors(report),
+            ["effective known_gap_or_skipped=1"],
+        )
+
     def test_required_suite_classification_totals_required_suites_only(self):
         report = {
             "suite_results": [
