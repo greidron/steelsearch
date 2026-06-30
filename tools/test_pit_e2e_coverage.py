@@ -117,6 +117,55 @@ class PitE2ECoverageCheckerTests(unittest.TestCase):
             any("has non-passed PIT cases: pit_search" in error for error in result["errors"])
         )
 
+    def test_checker_prefers_embedded_unified_cases_over_mutable_report_path(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            temp_dir = Path(temp_dir_value)
+            suite_results = []
+            for suite_name, required_cases in self.checker.REQUIRED_PIT_CASES.items():
+                report_path = temp_dir / f"{suite_name}.json"
+                report_path.write_text(
+                    json.dumps(
+                        {
+                            "cases": [
+                                {
+                                    "name": "later-partial-non-pit-case",
+                                    "status": "passed",
+                                }
+                            ]
+                        },
+                        indent=2,
+                    )
+                    + "\n",
+                    encoding="utf-8",
+                )
+                suite_results.append(
+                    {
+                        "name": suite_name,
+                        "has_opensearch_target": True,
+                        "report_path": str(report_path),
+                        "passed_cases": sorted(required_cases),
+                        "case_gaps": {
+                            "missing": [],
+                            "extra": [],
+                            "failed": [],
+                            "skipped": [],
+                        },
+                    }
+                )
+            unified_path = temp_dir / "unified.json"
+            unified_path.write_text(
+                json.dumps({"suite_results": suite_results}, indent=2) + "\n",
+                encoding="utf-8",
+            )
+
+            result = self.checker.check_unified_report(
+                unified_path,
+                require_all_pit_passed=True,
+            )
+
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual(result["summary"]["non_passed_pit_case_count"], 0)
+
 
 if __name__ == "__main__":
     unittest.main()

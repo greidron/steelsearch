@@ -72,6 +72,30 @@ def case_touches_pit(case: dict[str, Any]) -> bool:
     )
 
 
+def case_name_touches_pit(name: str) -> bool:
+    return "pit_" in name or "point_in_time" in name or "pit" in name
+
+
+def embedded_suite_cases(suite: dict[str, Any]) -> list[dict[str, Any]] | None:
+    passed_cases = suite.get("passed_cases")
+    case_gaps = suite.get("case_gaps") or {}
+    if not isinstance(passed_cases, list):
+        return None
+
+    cases: list[dict[str, Any]] = []
+    for name in passed_cases:
+        if isinstance(name, str) and name:
+            cases.append({"name": name, "status": "passed"})
+    for status, gap_key in (("failed", "failed"), ("skipped", "skipped")):
+        names = case_gaps.get(gap_key) if isinstance(case_gaps, dict) else None
+        if not isinstance(names, list):
+            continue
+        for name in names:
+            if isinstance(name, str) and name:
+                cases.append({"name": name, "status": status})
+    return cases
+
+
 def request_touches_pit(request: dict[str, Any]) -> bool:
     path = str(request.get("path") or "")
     if "point_in_time" in path or "_cat/pit_segments" in path:
@@ -108,21 +132,31 @@ def check_unified_report(unified_report_path: Path, require_all_pit_passed: bool
         if not suite.get("has_opensearch_target"):
             errors.append(f"suite [{suite_name}] is not an OpenSearch comparison suite")
             continue
-        report_path_value = suite.get("report_path")
-        if not isinstance(report_path_value, str) or not report_path_value:
-            errors.append(f"suite [{suite_name}] does not include report_path")
-            continue
+        report_path = None
+        cases = embedded_suite_cases(suite)
+        if cases is None:
+            report_path_value = suite.get("report_path")
+            if not isinstance(report_path_value, str) or not report_path_value:
+                errors.append(f"suite [{suite_name}] does not include report_path")
+                continue
 
-        report_path = resolve_report_path(report_path_value)
-        if not report_path.exists():
-            errors.append(f"suite [{suite_name}] report does not exist: {report_path}")
-            continue
-        report = load_json(report_path)
-        cases = [
-            case
-            for case in report.get("cases") or []
-            if isinstance(case, dict) and case_touches_pit(case)
-        ]
+            report_path = resolve_report_path(report_path_value)
+            if not report_path.exists():
+                errors.append(f"suite [{suite_name}] report does not exist: {report_path}")
+                continue
+            report = load_json(report_path)
+            cases = [
+                case
+                for case in report.get("cases") or []
+                if isinstance(case, dict) and case_touches_pit(case)
+            ]
+        else:
+            cases = [
+                case
+                for case in cases
+                if isinstance(case.get("name"), str)
+                and case_name_touches_pit(str(case.get("name")))
+            ]
         cases_by_name = {
             case.get("name"): case
             for case in cases
@@ -145,7 +179,7 @@ def check_unified_report(unified_report_path: Path, require_all_pit_passed: bool
         suite_summaries.append(
             {
                 "name": suite_name,
-                "report_path": str(report_path),
+                "report_path": str(report_path) if report_path is not None else suite.get("report_path"),
                 "pit_case_count": len(cases),
                 "required_pit_case_count": len(required_cases),
                 "missing_required_pit_cases": missing_required,
