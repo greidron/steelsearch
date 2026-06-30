@@ -8888,6 +8888,54 @@
       "description": "[lexical] track scores query param overrides body search"
     },
     {
+      "name": "stats_body_groups_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "stats": [
+          "group-a",
+          "group-b"
+        ],
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ],
+        "size": 2
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] body stats groups are accepted without changing hits"
+    },
+    {
+      "name": "stats_query_param_groups_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search?stats=group-a,group-b",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ],
+        "size": 2
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] query-param stats groups are accepted without changing hits"
+    },
+    {
       "name": "indices_boost_object_numeric_string_search",
       "area": "search",
       "method": "POST",
