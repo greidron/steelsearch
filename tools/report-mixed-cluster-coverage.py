@@ -41,6 +41,8 @@ REQUIRED_REPORT_CHECKS = {
     "failure": {
         "failure_topology_probe_passed",
         "failure_ledger_passed",
+        "pit_restart_lifecycle_passed",
+        "pit_multi_daemon_lifecycle_passed",
     },
     "write_replication": {
         "write_replication_happy_path_passed",

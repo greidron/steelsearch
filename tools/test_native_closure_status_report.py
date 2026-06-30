@@ -405,6 +405,8 @@ def write_valid_release_inventory_artifacts(temp_dir: Path, artifacts: dict[str,
                     "checks": {
                         "failure_topology_probe_passed": True,
                         "failure_ledger_passed": True,
+                        "pit_restart_lifecycle_passed": True,
+                        "pit_multi_daemon_lifecycle_passed": True,
                     },
                 },
             }

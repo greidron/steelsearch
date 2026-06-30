@@ -27,6 +27,8 @@ class ChaosEvidenceTests(unittest.TestCase):
             "checks": {
                 "failure_topology_probe_passed": True,
                 "failure_ledger_passed": True,
+                "pit_restart_lifecycle_passed": True,
+                "pit_multi_daemon_lifecycle_passed": True,
             },
             "reports": {"failure_topology_probe_report": "probe.json"},
         }
@@ -39,6 +41,8 @@ class ChaosEvidenceTests(unittest.TestCase):
             "checks": {
                 "failure_topology_probe_passed": True,
                 "failure_ledger_passed": False,
+                "pit_restart_lifecycle_passed": True,
+                "pit_multi_daemon_lifecycle_passed": True,
             },
             "reports": {"failure_topology_probe_report": "probe.json"},
         }
@@ -47,6 +51,23 @@ class ChaosEvidenceTests(unittest.TestCase):
 
         self.assertIn(
             "mixed-cluster failure check is not true: failure_ledger_passed",
+            errors,
+        )
+
+    def test_validate_source_report_rejects_missing_pit_lifecycle_checks(self):
+        report = {
+            "summary": {"passed": True},
+            "checks": {
+                "failure_topology_probe_passed": True,
+                "failure_ledger_passed": True,
+            },
+            "reports": {"failure_topology_probe_report": "probe.json"},
+        }
+
+        errors = self.chaos.validate_source_report(report)
+
+        self.assertIn(
+            "mixed-cluster failure checks are missing: pit_multi_daemon_lifecycle_passed, pit_restart_lifecycle_passed",
             errors,
         )
 

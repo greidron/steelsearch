@@ -241,6 +241,8 @@ def write_phase_c_fixture(root: Path) -> None:
             "checks": {
                 "failure_topology_probe_passed": True,
                 "failure_ledger_passed": True,
+                "pit_restart_lifecycle_passed": True,
+                "pit_multi_daemon_lifecycle_passed": True,
             },
         },
         "write-replication/mixed-cluster-write-replication-report.json": {

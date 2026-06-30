@@ -204,6 +204,8 @@ class ReleaseEvidenceInventoryTests(unittest.TestCase):
                             "checks": {
                                 "failure_topology_probe_passed": True,
                                 "failure_ledger_passed": False,
+                                "pit_restart_lifecycle_passed": True,
+                                "pit_multi_daemon_lifecycle_passed": True,
                             },
                         },
                     }
@@ -329,6 +331,8 @@ class ReleaseEvidenceInventoryTests(unittest.TestCase):
                         "checks": {
                             "failure_topology_probe_passed": True,
                             "failure_ledger_passed": True,
+                            "pit_restart_lifecycle_passed": True,
+                            "pit_multi_daemon_lifecycle_passed": True,
                         },
                     },
                 }

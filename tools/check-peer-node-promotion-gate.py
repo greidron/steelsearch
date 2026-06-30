@@ -48,7 +48,12 @@ PHASE_C_CHILD_REPORTS = {
     ),
     "failure": (
         "failure/mixed-cluster-failure-report.json",
-        {"failure_topology_probe_passed", "failure_ledger_passed"},
+        {
+            "failure_topology_probe_passed",
+            "failure_ledger_passed",
+            "pit_restart_lifecycle_passed",
+            "pit_multi_daemon_lifecycle_passed",
+        },
     ),
     "write_replication": (
         "write-replication/mixed-cluster-write-replication-report.json",

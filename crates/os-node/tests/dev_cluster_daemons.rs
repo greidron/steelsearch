@@ -7236,10 +7236,24 @@ fn send_transport_request_and_decode_response(
     stream.flush().unwrap();
 
     let mut header = [0_u8; 6];
-    stream.read_exact(&mut header).unwrap();
-    assert_eq!(&header[0..2], b"ES");
-    let body_len = i32::from_be_bytes([header[2], header[3], header[4], header[5]]);
-    assert!(body_len >= 0, "negative transport response body length");
+    let mut keepalive_frames = 0_u8;
+    let body_len = loop {
+        stream.read_exact(&mut header).unwrap();
+        assert_eq!(&header[0..2], b"ES");
+        let body_len = i32::from_be_bytes([header[2], header[3], header[4], header[5]]);
+        if body_len == -1 {
+            keepalive_frames += 1;
+            assert!(
+                keepalive_frames <= 3,
+                "transport response did not arrive after keepalive frames"
+            );
+            stream.write_all(&header).unwrap();
+            stream.flush().unwrap();
+            continue;
+        }
+        assert!(body_len >= 0, "negative transport response body length");
+        break body_len;
+    };
     let mut body = vec![0_u8; body_len as usize];
     stream.read_exact(&mut body).unwrap();
 
