@@ -766,6 +766,11 @@ For the release cutoff check, regenerate that artifact from a clean checkout
 with both `--readiness-report` and `--release-readiness-file`, then validate it
 with `tools/check-native-closure-status-report.py
 target/native-closure-status-current.json --require-clean-worktree`.
+If the readiness report path is new for the cutoff run, create it during
+evidence attachment with
+`tools/attach-release-readiness-evidence.py --create-readiness-report` so the
+six readiness-attachment inputs and the five-item startup manifest are bound to
+the same evidence set.
 Use `tools/run-native-closure-validation.py --batch release-evidence-inventory-current`
 to refresh the current candidate-artifact inventory before attaching evidence;
 use `tools/report-release-evidence-inventory.py --require-complete` for the

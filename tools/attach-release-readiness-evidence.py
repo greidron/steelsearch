@@ -26,11 +26,16 @@ def main() -> int:
     parser.add_argument("--packaging-report")
     parser.add_argument("--rolling-upgrade-report")
     parser.add_argument("--release-readiness-file")
+    parser.add_argument(
+        "--create-readiness-report",
+        action="store_true",
+        help="create a minimal readiness report when --readiness-report does not exist",
+    )
     parser.add_argument("--max-age-seconds", type=float, default=86_400.0)
     args = parser.parse_args()
 
     report_path = Path(args.readiness_report)
-    report = json.loads(report_path.read_text(encoding="utf-8"))
+    report = load_readiness_report(report_path, create_if_missing=args.create_readiness_report)
     evidence = {
         "benchmark": inspect_jsonl_report(args.benchmark_report, args.max_age_seconds),
         "load": inspect_json_report(args.load_report, args.max_age_seconds),
@@ -75,6 +80,24 @@ def main() -> int:
             },
         )
     return 0
+
+
+def load_readiness_report(path: Path, *, create_if_missing: bool) -> dict[str, Any]:
+    if path.exists():
+        return json.loads(path.read_text(encoding="utf-8"))
+    if not create_if_missing:
+        raise FileNotFoundError(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    return {
+        "ready": False,
+        "blockers": sorted(RELEASE_EVIDENCE_PLACEHOLDER_BLOCKERS),
+        "categories": {
+            "release": {
+                "ready": False,
+                "blockers": sorted(RELEASE_EVIDENCE_PLACEHOLDER_BLOCKERS),
+            }
+        },
+    }
 
 
 def inspect_jsonl_report(path_value: str | None, max_age_seconds: float) -> dict[str, Any]:

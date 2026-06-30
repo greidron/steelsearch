@@ -223,6 +223,68 @@ class ReplacementGateScriptTests(unittest.TestCase):
 
             self.assertEqual(check.returncode, 0, check.stderr)
 
+    def test_attach_release_readiness_evidence_can_create_minimal_readiness_report(self):
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            temp_dir = Path(temp_dir_value)
+            readiness = temp_dir / "nested" / "readiness.json"
+            benchmark = temp_dir / "benchmark.jsonl"
+            load = temp_dir / "load.json"
+            comparison = temp_dir / "comparison.json"
+            chaos = temp_dir / "chaos.json"
+            packaging = temp_dir / "packaging.json"
+            rolling = temp_dir / "rolling.json"
+            release_readiness = temp_dir / "release-readiness.json"
+
+            benchmark.write_text(json.dumps({"benchmark": "lexical"}) + "\n", encoding="utf-8")
+            for path in [load, comparison, chaos, packaging, rolling]:
+                path.write_text(json.dumps({"summary": {"error_count": 0}}), encoding="utf-8")
+
+            result = self.run_command(
+                sys.executable,
+                "tools/attach-release-readiness-evidence.py",
+                "--readiness-report",
+                str(readiness),
+                "--create-readiness-report",
+                "--benchmark-report",
+                str(benchmark),
+                "--load-report",
+                str(load),
+                "--load-comparison-report",
+                str(comparison),
+                "--chaos-report",
+                str(chaos),
+                "--packaging-report",
+                str(packaging),
+                "--rolling-upgrade-report",
+                str(rolling),
+                "--release-readiness-file",
+                str(release_readiness),
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            readiness_payload = json.loads(readiness.read_text(encoding="utf-8"))
+            self.assertTrue(readiness_payload["ready"])
+            self.assertEqual(readiness_payload["blockers"], [])
+            self.assertTrue(readiness_payload["categories"]["release"]["ready"])
+            self.assertEqual(readiness_payload["categories"]["release"]["blockers"], [])
+            self.assertEqual(set(readiness_payload["release_evidence"]), {
+                "benchmark",
+                "load",
+                "load_comparison",
+                "chaos",
+                "packaging",
+                "rolling_upgrade",
+            })
+
+            check = self.run_command(
+                sys.executable,
+                "tools/check-release-readiness-evidence.py",
+                str(release_readiness),
+                "--require-passed",
+            )
+
+            self.assertEqual(check.returncode, 0, check.stderr)
+
     def test_release_readiness_evidence_checker_rejects_missing_artifact(self):
         with tempfile.TemporaryDirectory() as temp_dir_value:
             temp_dir = Path(temp_dir_value)
