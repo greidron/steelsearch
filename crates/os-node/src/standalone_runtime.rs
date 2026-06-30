@@ -132,6 +132,7 @@ impl RustNativeExtension for SteelsearchRuntimeExtension {
                 "/_steelsearch/dev/extensions",
                 "/_steelsearch/dev/extensions/_shutdown",
                 "/_steelsearch/dev/extensions/_recovery_failed",
+                "/_steelsearch/readiness",
             ],
             transport_actions: &[],
             lifecycle_hooks: &[
@@ -2990,6 +2991,7 @@ impl SteelNode {
             (RestMethod::Get, "/_steelsearch/dev/extensions") => {
                 Some(self.handle_dev_extensions_route())
             }
+            (RestMethod::Get, "/_steelsearch/readiness") => Some(self.handle_readiness_route()),
             (RestMethod::Post, "/_steelsearch/dev/extensions/_shutdown") => {
                 Some(self.handle_dev_extensions_shutdown_probe_route())
             }
@@ -5822,6 +5824,27 @@ impl SteelNode {
                 "registration_table": self.extension_registry.registration_table(),
                 "lifecycle_transcript": self.extension_lifecycle_execution_transcript(),
                 "runtime_lifecycle": self.runtime_lifecycle_snapshot(),
+            }),
+        )
+    }
+
+    fn handle_readiness_route(&self) -> RestResponse {
+        RestResponse::json(
+            200,
+            serde_json::json!({
+                "available": true,
+                "ready": false,
+                "blockers": [
+                    "release: benchmark/load/chaos/packaging/rolling-upgrade evidence has not been attached"
+                ],
+                "categories": {
+                    "release": {
+                        "ready": false,
+                        "blockers": [
+                            "benchmark/load/chaos/packaging/rolling-upgrade evidence has not been attached"
+                        ]
+                    }
+                }
             }),
         )
     }
@@ -41168,6 +41191,27 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
     }
 
     #[test]
+    fn steelsearch_readiness_route_reports_attachable_release_blocker() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        let response =
+            node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_steelsearch/readiness"));
+
+        assert_eq!(response.status, 200);
+        assert_eq!(response.body["available"], true);
+        assert_eq!(response.body["ready"], false);
+        assert_eq!(response.body["categories"]["release"]["ready"], false);
+        assert!(response.body["release_evidence"].is_null());
+        assert!(response.body["blockers"][0]
+            .as_str()
+            .expect("readiness blocker")
+            .contains("evidence has not been attached"));
+    }
+
+    #[test]
     fn cat_plugins_route_reports_extension_registry_modules() {
         let node = SteelNode::new(NodeInfo {
             name: "steel-node".to_string(),
@@ -41308,6 +41352,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                         "/_steelsearch/dev/extensions",
                         "/_steelsearch/dev/extensions/_shutdown",
                         "/_steelsearch/dev/extensions/_recovery_failed",
+                        "/_steelsearch/readiness",
                     ]
                 && entry.transport_actions.is_empty()
                 && entry
@@ -41347,6 +41392,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                         "/_steelsearch/dev/extensions",
                         "/_steelsearch/dev/extensions/_shutdown",
                         "/_steelsearch/dev/extensions/_recovery_failed",
+                        "/_steelsearch/readiness",
                     ]
                 && descriptor.transport_actions.is_empty()
                 && descriptor

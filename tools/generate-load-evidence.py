@@ -71,6 +71,7 @@ def generate_report(args: argparse.Namespace) -> dict[str, Any]:
             "output": str(args.output),
             "work_dir": str(work_dir),
         }
+    args.output.parent.mkdir(parents=True, exist_ok=True)
     if not binary.is_file():
         write_failed_output(args.output, f"steelsearch binary is missing: {binary}")
         return load_json(args.output)
