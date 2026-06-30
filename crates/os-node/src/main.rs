@@ -18119,7 +18119,7 @@ fn search_request_pit_context_is_unavailable_for_partial(
         prune_expired_transport_pits(&mut contexts, now_epoch_ms());
         remove_transport_pit_if_indices_missing(&mut contexts, pit_id).is_some()
     };
-    pit_context_exists && !transport_pit_has_available_reader_context(pit_id)
+    !pit_context_exists || !transport_pit_has_available_reader_context(pit_id)
 }
 
 fn search_request_allows_partial_results(
@@ -43692,6 +43692,77 @@ mod tests {
         assert_eq!(
             error.message.as_deref(),
             Some("No search context found for id [707]")
+        );
+
+        let default_partial_request = os_transport::action::OpenSearchSearchRequestWire {
+            source: Some(os_transport::action::OpenSearchSearchSourceBuilderWire {
+                point_in_time: Some(os_transport::action::OpenSearchPointInTimeBuilderWire {
+                    id: os_transport::action::OpenSearchSearchContextIdWire::new(BTreeMap::from([
+                        (
+                            os_transport::action::OpenSearchShardIdWire {
+                                index_name: "logs-search-pit-missing".to_string(),
+                                index_uuid: "uuid-logs-search-pit-missing".to_string(),
+                                shard_id: 0,
+                            },
+                            os_transport::action::OpenSearchSearchContextIdForNodeWire {
+                                node: "node-a".to_string(),
+                                cluster_alias: None,
+                                search_context_id:
+                                    os_transport::action::OpenSearchShardSearchContextIdWire::new(
+                                        "session-missing-default",
+                                        709,
+                                    ),
+                            },
+                        ),
+                    ]))
+                    .encode(OPENSEARCH_3_7_0_TRANSPORT)
+                    .unwrap(),
+                    keep_alive: Some(os_transport::action::TimeValueWire::minutes(1)),
+                }),
+                ..os_transport::action::OpenSearchSearchSourceBuilderWire::default()
+            }),
+            indices_options:
+                os_transport::action::OpenSearchIndicesOptionsWire::point_in_time_search_prepared(),
+            ccs_minimize_roundtrips: false,
+            ..os_transport::action::OpenSearchSearchRequestWire::default()
+        };
+        let default_partial_frame = os_transport::action::build_opensearch_search_request_message(
+            319,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &default_partial_request,
+        )
+        .unwrap();
+        assert!(search_request_has_missing_pit_context(
+            &default_partial_frame[6..]
+        ));
+        assert!(!search_request_supports_local_execution_subset(
+            &default_partial_frame[6..]
+        ));
+        let default_partial_response = build_search_missing_pit_context_error_response(
+            319,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &default_partial_frame[6..],
+        );
+        let mut frame = BytesMut::from(&default_partial_response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected default-partial stale PIT search error response frame");
+        };
+        assert_eq!(message.request_id, 319);
+        assert!(message.status.is_error());
+        let error = os_transport::error::TransportError::read(message.body.freeze())
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            error.class_name,
+            "org.opensearch.search.SearchContextMissingException"
+        );
+        assert_eq!(
+            error.message.as_deref(),
+            Some("No search context found for id [709]")
         );
 
         let stream_frame = os_transport::action::build_opensearch_stream_search_request_message(

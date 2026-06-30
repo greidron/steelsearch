@@ -258,6 +258,7 @@ def validate_chaos_source_checks(source: dict[str, Any]) -> list[str]:
         "failure_topology_probe_passed",
         "failure_ledger_passed",
         "pit_restart_lifecycle_passed",
+        "pit_transport_restart_lifecycle_passed",
         "pit_multi_daemon_lifecycle_passed",
     }
     errors: list[str] = []
