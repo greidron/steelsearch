@@ -40,9 +40,9 @@ index access-control planning. It lists the prefix families that later
 | --- | --- | --- | --- | --- | --- |
 | `.opensearch*` | `GET /.opensearch-restricted-authz*/_search` | deny | deny | allow | fixture cases for `reader` deny and `admin` allow |
 | `.plugins*` | `GET /.plugins-restricted-authz*/_search` | deny | deny | allow | fixture cases for `writer` deny and `admin` allow |
-| `.tasks*` | `GET /.tasks*/_search` | deny | deny | admin-only planned | inventory only; fixture pending |
-| `.security*` | `GET /.security*/_settings` | deny | deny | admin-only planned | inventory only; fixture pending |
-| `.*` wildcard expansion | `GET /*/_search` with hidden/system targets | deny implicit expansion | deny implicit expansion | explicit admin-only planned | inventory only; wildcard fixture pending |
+| `.tasks*` | `GET /.tasks*/_search` | deny | deny | allow | fixture cases for `reader` deny and `admin` allow |
+| `.security*` | `GET /.security*/_settings` | deny | deny | allow | fixture cases for `reader` deny and `admin` allow |
+| `.*` wildcard expansion | `GET /*/_search` with hidden/system targets | deny implicit expansion | deny implicit expansion | allow explicit wildcard | fixture cases for `reader` deny and `admin` allow |
 | alias -> restricted concrete index | `GET /restricted-authz-alias/_search` | deny | deny | allow | fixture cases for alias-bypass deny/allow now present |
 
 ## Profile-Specific Hidden/System Read Policy

@@ -69,6 +69,36 @@
       }
     },
     {
+      "name": ".tasks-restricted-authz-000001",
+      "body": {
+        "mappings": {
+          "properties": {
+            "message": {
+              "type": "text"
+            },
+            "tenant": {
+              "type": "keyword"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": ".security-restricted-authz-000001",
+      "body": {
+        "mappings": {
+          "properties": {
+            "message": {
+              "type": "text"
+            },
+            "tenant": {
+              "type": "keyword"
+            }
+          }
+        }
+      }
+    },
+    {
       "name": ".opensearch-restricted-delete-authz-000001",
       "body": {
         "mappings": {
@@ -128,6 +158,30 @@
           "_id": "authz-restricted-plugins-doc-1",
           "_source": {
             "message": "restricted doc",
+            "tenant": "tenant-authz"
+          }
+        }
+      ]
+    },
+    {
+      "index": ".tasks-restricted-authz-000001",
+      "documents": [
+        {
+          "_id": "authz-restricted-tasks-doc-1",
+          "_source": {
+            "message": "restricted task metadata",
+            "tenant": "tenant-authz"
+          }
+        }
+      ]
+    },
+    {
+      "index": ".security-restricted-authz-000001",
+      "documents": [
+        {
+          "_id": "authz-restricted-security-doc-1",
+          "_source": {
+            "message": "restricted security metadata",
             "tenant": "tenant-authz"
           }
         }
@@ -678,6 +732,72 @@
       "extract": "security_error",
       "family": "security-authz",
       "description": "[insufficient-role-403] writer cannot target restricted .plugins* search paths"
+    },
+    {
+      "name": "security_admin_restricted_tasks_search_allowed",
+      "area": "security-authz",
+      "bucket": "minimum-role-success",
+      "method": "GET",
+      "path": "/.tasks-restricted-authz*/_search",
+      "credential_set": "admin-basic",
+      "extract": "status_only",
+      "family": "security-authz",
+      "description": "[minimum-role-success] admin may target restricted .tasks* search paths"
+    },
+    {
+      "name": "security_reader_restricted_tasks_search_403",
+      "area": "security-authz",
+      "bucket": "insufficient-role-403",
+      "method": "GET",
+      "path": "/.tasks-restricted-authz*/_search",
+      "credential_set": "reader-basic",
+      "extract": "security_error",
+      "family": "security-authz",
+      "description": "[insufficient-role-403] reader cannot target restricted .tasks* search paths"
+    },
+    {
+      "name": "security_admin_restricted_security_settings_allowed",
+      "area": "security-authz",
+      "bucket": "minimum-role-success",
+      "method": "GET",
+      "path": "/.security-restricted-authz*/_settings",
+      "credential_set": "admin-basic",
+      "extract": "status_only",
+      "family": "security-authz",
+      "description": "[minimum-role-success] admin may read restricted .security* settings"
+    },
+    {
+      "name": "security_reader_restricted_security_settings_403",
+      "area": "security-authz",
+      "bucket": "insufficient-role-403",
+      "method": "GET",
+      "path": "/.security-restricted-authz*/_settings",
+      "credential_set": "reader-basic",
+      "extract": "security_error",
+      "family": "security-authz",
+      "description": "[insufficient-role-403] reader cannot read restricted .security* settings"
+    },
+    {
+      "name": "security_admin_wildcard_restricted_search_allowed",
+      "area": "security-authz",
+      "bucket": "minimum-role-success",
+      "method": "GET",
+      "path": "/*/_search",
+      "credential_set": "admin-basic",
+      "extract": "status_only",
+      "family": "security-authz",
+      "description": "[minimum-role-success] admin may use wildcard search across restricted namespaces"
+    },
+    {
+      "name": "security_reader_wildcard_restricted_search_403",
+      "area": "security-authz",
+      "bucket": "insufficient-role-403",
+      "method": "GET",
+      "path": "/*/_search",
+      "credential_set": "reader-basic",
+      "extract": "security_error",
+      "family": "security-authz",
+      "description": "[insufficient-role-403] reader wildcard search cannot expand into restricted namespaces"
     },
     {
       "name": "security_admin_restricted_alias_search_allowed",

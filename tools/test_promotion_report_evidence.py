@@ -184,6 +184,31 @@ class PromotionReportEvidenceTests(unittest.TestCase):
             metadata = cases[case_name].get("metadata") or {}
             self.assertEqual(set(metadata.get("evidence_classes") or []), evidence_classes)
 
+    def test_security_fixture_covers_restricted_system_prefixes_and_wildcard(self):
+        fixture_path = Path(__file__).resolve().parents[1] / "tools" / "fixtures" / "security-authz-compat.json"
+        fixture = json.loads(fixture_path.read_text(encoding="utf-8"))
+        cases = {case["name"]: case for case in fixture["cases"]}
+
+        required = {
+            "security_admin_restricted_tasks_search_allowed",
+            "security_reader_restricted_tasks_search_403",
+            "security_admin_restricted_security_settings_allowed",
+            "security_reader_restricted_security_settings_403",
+            "security_admin_wildcard_restricted_search_allowed",
+            "security_reader_wildcard_restricted_search_403",
+        }
+
+        self.assertTrue(required <= set(cases), sorted(required - set(cases)))
+        self.assertEqual(
+            cases["security_reader_restricted_tasks_search_403"]["path"],
+            "/.tasks-restricted-authz*/_search",
+        )
+        self.assertEqual(
+            cases["security_reader_restricted_security_settings_403"]["path"],
+            "/.security-restricted-authz*/_settings",
+        )
+        self.assertEqual(cases["security_reader_wildcard_restricted_search_403"]["path"], "/*/_search")
+
     def test_alias_fixture_carries_global_and_collection_route_variants(self):
         fixture_path = Path(__file__).resolve().parents[1] / "tools" / "fixtures" / "alias-read-compat.json"
         fixture = json.loads(fixture_path.read_text(encoding="utf-8"))
