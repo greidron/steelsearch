@@ -138,6 +138,7 @@ SUITES: tuple[Suite, ...] = (
     Suite("runtime-stateful-probe", "runtime-stateful", "semantic_parity", "tools/probe_stateful_route_ledger.py", "tools/fixtures/runtime-stateful-probe.json", "runtime-stateful-probe-report.json", output_arg="--report", needs_opensearch=False),
     Suite("admin-ops-semantic", "admin-ops", "semantic_parity", "tools/search_compat.py", "tools/fixtures/admin-ops-semantic-compat.json", "admin-ops-semantic-report.json", output_arg="--report", needs_opensearch=False),
     Suite("vector-search", "vector-ml", "semantic_parity", "tools/vector_search_compat.py", "tools/fixtures/vector-search-compat.json", "vector-search-compat-report.json"),
+    Suite("vector-search-native-surface", "vector-ml", "semantic_parity", "tools/vector_search_compat.py", "tools/fixtures/vector-search-compat.json", "vector-search-native-surface-report.json", needs_opensearch=False),
     Suite(
         "knn-plugin-surface",
         "vector-ml",
@@ -215,8 +216,10 @@ def main() -> int:
 
     suite_results = []
     if args.run:
-        if not args.steelsearch_url or not args.opensearch_url:
-            raise SystemExit("--run requires --steelsearch-url and --opensearch-url")
+        if not args.steelsearch_url:
+            raise SystemExit("--run requires --steelsearch-url")
+        if any(suite.needs_opensearch for suite in suites) and not args.opensearch_url:
+            raise SystemExit("--run requires --opensearch-url for selected OpenSearch comparison suites")
         for suite in suites:
             suite_results.append(run_or_collect_suite(suite, output_dir, args))
     else:

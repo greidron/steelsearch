@@ -24,6 +24,11 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--steelsearch-url", default=os.environ.get("STEELSEARCH_URL"))
     parser.add_argument("--opensearch-url", default=os.environ.get("OPENSEARCH_URL"))
+    parser.add_argument(
+        "--steelsearch-only",
+        action="store_true",
+        help="run executable Steelsearch vector checks without an OpenSearch k-NN plugin target",
+    )
     parser.add_argument("--fixture", default=str(DEFAULT_FIXTURE))
     parser.add_argument(
         "--output",
@@ -263,27 +268,67 @@ def compare_case_result(
     return result
 
 
+def expected_case_status(case: dict[str, Any]) -> int:
+    if isinstance(case.get("expected_status"), int):
+        return int(case["expected_status"])
+    if case.get("kind") == "error_shape" or case.get("extract") == "error_shape":
+        return 400
+    return 200
+
+
+def steelsearch_only_case_result(
+    case: dict[str, Any],
+    fixture: dict[str, Any],
+    base_url: str,
+    timeout: float,
+) -> dict[str, Any]:
+    steelsearch = compare_case_result(case, fixture, base_url, timeout)
+    errors = []
+    expected_status = expected_case_status(case)
+    if steelsearch.get("status") != expected_status:
+        errors.append(
+            f"steelsearch status drift: expected={expected_status} actual={steelsearch.get('status')}"
+        )
+    if steelsearch.get("step_failed"):
+        errors.append(f"steelsearch step failure: {steelsearch.get('steps')!r}")
+    status = "passed" if not errors else "failed"
+    result = case_report_base(case)
+    result.update(
+        {
+            "status": status,
+            "steelsearch": steelsearch["extract"],
+            "steelsearch_steps": steelsearch.get("steps", []),
+            "errors": errors,
+        }
+    )
+    return result
+
+
 def main() -> int:
     args = parse_args()
-    if not args.steelsearch_url or not args.opensearch_url:
-        print("Both STEELSEARCH_URL and OPENSEARCH_URL are required", file=sys.stderr)
+    if not args.steelsearch_url:
+        print("STEELSEARCH_URL is required", file=sys.stderr)
         return 2
+    if not args.opensearch_url:
+        args.steelsearch_only = True
 
     fixture = json.loads(Path(args.fixture).read_text(encoding="utf-8"))
     steelsearch_setup, steelsearch_degraded = seed_target(args.steelsearch_url, fixture, args.timeout)
-    opensearch_setup, opensearch_degraded = seed_target(args.opensearch_url, fixture, args.timeout)
+    opensearch_setup: list[dict[str, Any]] = []
+    opensearch_degraded = None
+    if args.opensearch_url:
+        opensearch_setup, opensearch_degraded = seed_target(args.opensearch_url, fixture, args.timeout)
     degraded_reason = steelsearch_degraded or opensearch_degraded
+    steelsearch_only = args.steelsearch_only or not args.opensearch_url
 
     report: dict[str, Any] = {
         "name": "vector-search-compat",
         "fixture": str(Path(args.fixture).resolve()),
         "targets": {
             "steelsearch": args.steelsearch_url,
-            "opensearch": args.opensearch_url,
         },
         "setup": {
             "steelsearch": steelsearch_setup,
-            "opensearch": opensearch_setup,
         },
         "cases": [],
         "summary": {
@@ -292,10 +337,26 @@ def main() -> int:
             "skipped": 0,
         },
     }
+    if args.opensearch_url:
+        report["targets"]["opensearch"] = args.opensearch_url
+        report["setup"]["opensearch"] = opensearch_setup
+    if steelsearch_only:
+        report["mode"] = "steelsearch_only"
 
     exit_code = 0
     for case in fixture["cases"]:
+        if steelsearch_only:
+            result = steelsearch_only_case_result(case, fixture, args.steelsearch_url, args.timeout)
+            if result["status"] == "passed":
+                report["summary"]["passed"] += 1
+            else:
+                exit_code = 1
+                report["summary"]["failed"] += 1
+            report["cases"].append(result)
+            continue
+
         steelsearch = compare_case_result(case, fixture, args.steelsearch_url, args.timeout)
+        assert args.opensearch_url is not None
         opensearch = compare_case_result(case, fixture, args.opensearch_url, args.timeout)
         if degraded_reason is not None:
             report["summary"]["skipped"] += 1

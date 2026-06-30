@@ -13,6 +13,15 @@ SPEC.loader.exec_module(vector_search_compat)
 
 
 class VectorSearchCompatTests(unittest.TestCase):
+    def test_expected_case_status_defaults_error_shapes_to_400(self):
+        self.assertEqual(vector_search_compat.expected_case_status({}), 200)
+        self.assertEqual(
+            vector_search_compat.expected_case_status({"kind": "error_shape"}), 400
+        )
+        self.assertEqual(
+            vector_search_compat.expected_case_status({"expected_status": 403}), 403
+        )
+
     def test_error_summary_includes_first_root_cause(self):
         response = {
             "status": 400,

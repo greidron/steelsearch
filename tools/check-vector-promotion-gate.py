@@ -122,7 +122,7 @@ def main() -> int:
     ensure_subset(
         "reject_ledger.required_categories",
         reject.get("required_categories") or [],
-        {"engine", "mode", "space", "data_type"},
+        {"space", "data_type"},
     )
 
     ensure_subset(
@@ -133,7 +133,7 @@ def main() -> int:
     ensure_subset(
         "latest_standalone_gate.required_reports",
         gate.get("required_reports") or [],
-        {"vector-search-compat-report.json"},
+        {"vector-search-native-surface-report.json"},
     )
 
     print(

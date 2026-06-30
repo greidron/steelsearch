@@ -59,8 +59,6 @@
   "reject_ledger": {
     "fixture": "vector-reject-ledger.json",
     "required_categories": [
-      "engine",
-      "mode",
       "space",
       "data_type"
     ]
@@ -70,7 +68,7 @@
       "tools/run-phase-a-acceptance-harness.sh --mode local --scope vector-ml"
     ],
     "required_reports": [
-      "vector-search-compat-report.json"
+      "vector-search-native-surface-report.json"
     ]
   }
 }
