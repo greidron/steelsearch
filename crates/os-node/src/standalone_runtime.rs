@@ -27091,6 +27091,11 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
             }
         }
     }
+    if let Some(match_query) = query.get("match").and_then(Value::as_object) {
+        if let Some(response) = validate_match_query_shape("match", match_query) {
+            return Some(response);
+        }
+    }
     if let Some(match_bool_prefix) = query.get("match_bool_prefix").and_then(Value::as_object) {
         let Some((_, spec)) = match_bool_prefix.iter().next() else {
             return Some(build_unsupported_search_response(
@@ -27885,6 +27890,57 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
                 "unsupported intervals query shape",
             ));
         }
+    }
+    None
+}
+
+fn validate_match_query_shape(
+    query_name: &str,
+    query: &serde_json::Map<String, Value>,
+) -> Option<RestResponse> {
+    let Some((_, spec)) = query.iter().next() else {
+        return Some(build_unsupported_search_response(&format!(
+            "unsupported {query_name} query shape"
+        )));
+    };
+    if query.len() != 1 {
+        return Some(build_unsupported_search_response(&format!(
+            "unsupported {query_name} query shape"
+        )));
+    }
+    if let Some(options) = spec.as_object() {
+        for key in options.keys() {
+            if !matches!(
+                key.as_str(),
+                "query"
+                    | "operator"
+                    | "analyzer"
+                    | "fuzziness"
+                    | "prefix_length"
+                    | "max_expansions"
+                    | "minimum_should_match"
+                    | "fuzzy_rewrite"
+                    | "fuzzy_transpositions"
+                    | "lenient"
+                    | "zero_terms_query"
+                    | "auto_generate_synonyms_phrase_query"
+                    | "boost"
+                    | "_name"
+            ) {
+                return Some(build_parsing_search_response_with_root_cause(&format!(
+                    "[{query_name}] query does not support [{key}]"
+                )));
+            }
+        }
+        if options.get("query").and_then(Value::as_str).is_none() {
+            return Some(build_unsupported_search_response(&format!(
+                "unsupported {query_name} query shape"
+            )));
+        }
+    } else if !spec.is_string() {
+        return Some(build_unsupported_search_response(&format!(
+            "unsupported {query_name} query shape"
+        )));
     }
     None
 }
@@ -29416,7 +29472,7 @@ fn evaluate_search_query_source_with_mappings(
         let (field, expected) = match_query.iter().next()?;
         let score = score_match_query(
             lookup_query_field_value(source, field),
-            expected.as_str().unwrap_or_default(),
+            extract_match_query_value(expected).unwrap_or_default(),
         );
         return Some((score > 0.0, score));
     }
@@ -30935,6 +30991,13 @@ fn compare_script_values(left: &Value, right: &Value) -> Option<std::cmp::Orderi
 fn extract_string_query_value(value: &Value) -> Option<&str> {
     if let Some(object) = value.as_object() {
         return object.get("value").and_then(Value::as_str);
+    }
+    value.as_str()
+}
+
+fn extract_match_query_value(value: &Value) -> Option<&str> {
+    if let Some(object) = value.as_object() {
+        return object.get("query").and_then(Value::as_str);
     }
     value.as_str()
 }
@@ -55658,6 +55721,30 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             response.body["error"]["root_cause"][0]["reason"],
             "[field_sort] unknown field [unsupported_option]"
+        );
+    }
+
+    #[test]
+    fn search_match_rejects_unknown_options_and_reads_object_query() {
+        let response = validate_search_query_body(&serde_json::json!({
+            "match": {
+                "message": {
+                    "query": "checkout",
+                    "unsupported_option": true
+                }
+            }
+        }))
+        .expect("unknown match option should fail closed");
+        assert_eq!(response.status, 400);
+        assert_eq!(response.body["error"]["type"], "parsing_exception");
+        assert_eq!(
+            response.body["error"]["root_cause"][0]["reason"],
+            "[match] query does not support [unsupported_option]"
+        );
+
+        assert_eq!(
+            extract_match_query_value(&serde_json::json!({ "query": "checkout" })),
+            Some("checkout")
         );
     }
 

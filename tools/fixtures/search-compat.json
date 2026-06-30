@@ -9863,6 +9863,26 @@
       "description": "[ranking] match query scoring order total hits"
     },
     {
+      "name": "match_unknown_option_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match": {
+            "message": {
+              "query": "checkout",
+              "unsupported_option": true
+            }
+          }
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] match query rejects unknown options like OpenSearch"
+    },
+    {
       "name": "profile_search",
       "area": "search",
       "method": "POST",
