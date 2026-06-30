@@ -1843,6 +1843,16 @@ def extract(kind: str, response: dict[str, Any]) -> Any:
             "root_cause_type": first_root_cause.get("type") if isinstance(first_root_cause, dict) else None,
             "root_cause_reason": first_root_cause.get("reason") if isinstance(first_root_cause, dict) else None,
         }
+    if kind == "search_error_root_cause_type":
+        error = body.get("error") or {}
+        root_cause = error.get("root_cause") if isinstance(error, dict) else None
+        first_root_cause = root_cause[0] if isinstance(root_cause, list) and root_cause else {}
+        return {
+            "status": response["status"],
+            "error_type": error.get("type") if isinstance(error, dict) else None,
+            "reason": error.get("reason") if isinstance(error, dict) else None,
+            "root_cause_type": first_root_cause.get("type") if isinstance(first_root_cause, dict) else None,
+        }
     if kind == "search_hits":
         hits = ((body.get("hits") or {}).get("hits") or [])
         total = (body.get("hits") or {}).get("total")

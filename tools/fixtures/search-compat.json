@@ -13288,6 +13288,27 @@
       "description": "[failure-path] partial shard failure geo search"
     },
     {
+      "name": "partial_shard_failure_geo_disallow_partial_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-geo-good-compat-000001,logs-geo-bad-compat-000001/_search?allow_partial_search_results=false",
+      "body": {
+        "query": {
+          "geo_distance": {
+            "distance": "10km",
+            "location": {
+              "lat": 37.7749,
+              "lon": -122.4194
+            }
+          }
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause_type",
+      "family": "failure-path",
+      "description": "[failure-path] allow_partial_search_results=false converts partial geo shard failure into search phase failure"
+    },
+    {
       "name": "knn_faiss_method_engine_search",
       "area": "knn",
       "extract": "search_hits",
