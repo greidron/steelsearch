@@ -9999,6 +9999,36 @@
       "description": "[ranking] body size cannot be negative"
     },
     {
+      "name": "negative_from_query_param_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search?from=-1",
+      "body": {
+        "query": {
+          "match_all": {}
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error",
+      "family": "ranking",
+      "description": "[ranking] query-param from cannot be negative"
+    },
+    {
+      "name": "negative_size_query_param_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search?size=-1",
+      "body": {
+        "query": {
+          "match_all": {}
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error",
+      "family": "ranking",
+      "description": "[ranking] query-param size cannot be negative"
+    },
+    {
       "name": "collapse_with_rescore_error_search",
       "area": "search",
       "method": "POST",

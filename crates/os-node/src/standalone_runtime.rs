@@ -24013,12 +24013,23 @@ fn search_template_malformed_response() -> RestResponse {
 }
 
 fn search_query_param_parse_error(param: &str, value: &str) -> RestResponse {
+    let reason = if value.starts_with('-') {
+        format!("[{param}] parameter cannot be negative, found [{value}]")
+    } else {
+        format!("Failed to parse value [{value}] for [{param}] as a non-negative integer")
+    };
     RestResponse::json(
         400,
         serde_json::json!({
             "error": {
                 "type": "illegal_argument_exception",
-                "reason": format!("Failed to parse value [{value}] for [{param}] as a non-negative integer")
+                "reason": reason,
+                "root_cause": [
+                    {
+                        "type": "illegal_argument_exception",
+                        "reason": reason
+                    }
+                ]
             },
             "status": 400
         }),
