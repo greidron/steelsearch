@@ -6010,6 +6010,54 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "pre_filter_shard_size_lower_bound_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search?pre_filter_shard_size=0",
+      "body": {
+        "query": {
+          "match_all": {}
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error",
+      "family": "lexical",
+      "description": "[lexical] pre_filter_shard_size lower bound is rejected like OpenSearch",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "batched_reduce_size_lower_bound_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search?batched_reduce_size=1",
+      "body": {
+        "query": {
+          "match_all": {}
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error",
+      "family": "lexical",
+      "description": "[lexical] batched_reduce_size lower bound is rejected like OpenSearch",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "max_concurrent_shard_requests_lower_bound_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search?max_concurrent_shard_requests=0",
+      "body": {
+        "query": {
+          "match_all": {}
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error",
+      "family": "lexical",
+      "description": "[lexical] max_concurrent_shard_requests lower bound is rejected like OpenSearch",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "allow_partial_search_results_true_search",
       "area": "search",
       "method": "POST",
