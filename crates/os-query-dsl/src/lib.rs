@@ -88,6 +88,7 @@ pub enum Query {
     MultiMatch {
         fields: Vec<String>,
         query: serde_json::Value,
+        operator: Option<String>,
         minimum_should_match: Option<usize>,
     },
     QueryString {
@@ -2410,6 +2411,22 @@ fn parse_multi_match(body: &Value) -> QueryDslResult<Query> {
             });
         }
     }
+    let operator = object
+        .get("operator")
+        .and_then(Value::as_str)
+        .map(|operator| {
+            let operator = operator.to_ascii_lowercase();
+            if operator == "and" || operator == "or" {
+                Ok(operator)
+            } else {
+                Err(QueryDslError::InvalidValue {
+                    clause: "multi_match".to_string(),
+                    field: "operator".to_string(),
+                    reason: "must be [and] or [or]".to_string(),
+                })
+            }
+        })
+        .transpose()?;
     let minimum_should_match = object
         .get("minimum_should_match")
         .map(|value| parse_minimum_should_match(value, match_query_clause_count(&query)))
@@ -2420,6 +2437,7 @@ fn parse_multi_match(body: &Value) -> QueryDslResult<Query> {
         if option != "query"
             && option != "fields"
             && option != "type"
+            && option != "operator"
             && option != "minimum_should_match"
         {
             return Err(QueryDslError::UnsupportedOption {
@@ -2432,6 +2450,7 @@ fn parse_multi_match(body: &Value) -> QueryDslResult<Query> {
     Ok(Query::MultiMatch {
         fields,
         query,
+        operator,
         minimum_should_match,
     })
 }
@@ -4183,7 +4202,8 @@ mod tests {
         let query = parse_query(&serde_json::json!({
             "multi_match": {
                 "query": "alpha",
-                "fields": ["title", "body"]
+                "fields": ["title", "body"],
+                "operator": "and"
             }
         }))
         .unwrap();
@@ -4193,6 +4213,7 @@ mod tests {
             Query::MultiMatch {
                 fields: vec!["title".to_string(), "body".to_string()],
                 query: serde_json::json!("alpha"),
+                operator: Some("and".to_string()),
                 minimum_should_match: None,
             }
         );

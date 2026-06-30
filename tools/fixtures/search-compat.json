@@ -294,6 +294,7 @@
       "bool_conditional_minimum_should_match_search",
       "match_minimum_should_match_search",
       "multi_match_best_fields_search",
+      "multi_match_operator_and_search",
       "multi_match_minimum_should_match_search",
       "nested_query_search",
       "nested_tuple_semantics_search",
@@ -5382,6 +5383,33 @@
       "extract": "search_hits",
       "family": "lexical",
       "description": "[lexical] multi_match minimum_should_match"
+    },
+    {
+      "name": "multi_match_operator_and_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "multi_match": {
+            "query": "checkout payment timeout",
+            "fields": [
+              "message"
+            ],
+            "operator": "and"
+          }
+        },
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] multi_match operator and"
     },
     {
       "name": "multi_match_single_field_string_search",

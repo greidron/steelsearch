@@ -62027,6 +62027,26 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             "doc-2"
         );
 
+        let multi_match_operator_and = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-dsl-000001/_search").with_json_body(
+                serde_json::json!({
+                    "query": {
+                        "multi_match": {
+                            "query": "beta wolf",
+                            "fields": ["message"],
+                            "operator": "and"
+                        }
+                    }
+                }),
+            ),
+        );
+        assert_eq!(multi_match_operator_and.status, 200);
+        assert_eq!(multi_match_operator_and.body["hits"]["total"]["value"], 1);
+        assert_eq!(
+            multi_match_operator_and.body["hits"]["hits"][0]["_id"],
+            "doc-2"
+        );
+
         let prefix = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/logs-search-dsl-000001/_search").with_json_body(
                 serde_json::json!({

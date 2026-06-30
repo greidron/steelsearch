@@ -2871,8 +2871,15 @@ fn build_tantivy_query(
         Query::MultiMatch {
             fields,
             query,
+            operator,
             minimum_should_match,
-        } => build_tantivy_multi_match_query(search_state, fields, query, *minimum_should_match),
+        } => build_tantivy_multi_match_query(
+            search_state,
+            fields,
+            query,
+            operator.as_deref(),
+            *minimum_should_match,
+        ),
         Query::QueryString { query, fields } => {
             build_tantivy_tokenized_field_set_query(search_state, fields.as_deref(), query)
         }
@@ -3653,9 +3660,12 @@ fn build_tantivy_multi_match_query(
     search_state: &TantivySearchState,
     fields: &[String],
     query: &Value,
+    operator: Option<&str>,
     minimum_should_match: Option<usize>,
 ) -> EngineResult<Option<Box<dyn TantivyQueryTrait>>> {
     let mut clauses = Vec::new();
+    let field_minimum_should_match = minimum_should_match
+        .or_else(|| (operator == Some("and")).then(|| match_query_token_count(query).max(1)));
     for field in fields {
         let base_field = multi_match_base_field_name(field);
         if base_field != "_id" {
@@ -3675,7 +3685,7 @@ fn build_tantivy_multi_match_query(
             }
         }
         let Some(inner_query) =
-            build_tantivy_match_query(search_state, base_field, query, minimum_should_match)?
+            build_tantivy_match_query(search_state, base_field, query, field_minimum_should_match)?
         else {
             return Ok(None);
         };
@@ -16247,8 +16257,16 @@ fn document_matches_query(query: &Query, id: &str, source: &Value) -> bool {
         Query::MultiMatch {
             fields,
             query,
+            operator,
             minimum_should_match,
-        } => matches_multi_match_query(id, source, fields, query, *minimum_should_match),
+        } => matches_multi_match_query(
+            id,
+            source,
+            fields,
+            query,
+            operator.as_deref(),
+            *minimum_should_match,
+        ),
         Query::QueryString { query, fields } => {
             matches_query_string_query(id, source, fields.as_deref(), query)
         }
@@ -17317,20 +17335,23 @@ fn matches_multi_match_query(
     source: &Value,
     fields: &[String],
     query: &Value,
+    operator: Option<&str>,
     minimum_should_match: Option<usize>,
 ) -> bool {
+    let field_minimum_should_match = minimum_should_match
+        .or_else(|| (operator == Some("and")).then(|| match_query_token_count(query).max(1)));
     fields.iter().any(|field| {
         if field == "_id" {
             matches_match_query_with_minimum(
                 Some(&Value::String(id.to_string())),
                 query,
-                minimum_should_match,
+                field_minimum_should_match,
             )
         } else {
             matches_match_query_with_minimum(
                 source_value_for_highlight_field(source, field),
                 query,
-                minimum_should_match,
+                field_minimum_should_match,
             )
         }
     })
@@ -18007,6 +18028,7 @@ fn localize_query_fields_for_nested_child(query: &Query, path: &str) -> Query {
         Query::MultiMatch {
             fields,
             query,
+            operator,
             minimum_should_match,
         } => Query::MultiMatch {
             fields: fields
@@ -18014,6 +18036,7 @@ fn localize_query_fields_for_nested_child(query: &Query, path: &str) -> Query {
                 .map(|field| nested_child_local_field_name(path, field))
                 .collect(),
             query: query.clone(),
+            operator: operator.clone(),
             minimum_should_match: *minimum_should_match,
         },
         Query::QueryString { query, fields } => Query::QueryString {
@@ -18282,12 +18305,14 @@ fn native_nested_child_ordinals_for_query(
         Query::MultiMatch {
             fields,
             query,
+            operator,
             minimum_should_match,
         } => nested_child_multi_match_ordinals(
             path_index,
             path,
             fields,
             query,
+            operator.as_deref(),
             *minimum_should_match,
         ),
         Query::QueryString { query, fields } => {
@@ -18816,16 +18841,19 @@ fn nested_child_multi_match_ordinals(
     path: &str,
     fields: &[String],
     query: &Value,
+    operator: Option<&str>,
     minimum_should_match: Option<usize>,
 ) -> Option<std::collections::BTreeSet<usize>> {
     let mut ordinals = std::collections::BTreeSet::new();
+    let field_minimum_should_match = minimum_should_match
+        .or_else(|| (operator == Some("and")).then(|| match_query_token_count(query).max(1)));
     for field in fields {
         ordinals.extend(nested_child_match_ordinals(
             path_index,
             path,
             field,
             query,
-            minimum_should_match,
+            field_minimum_should_match,
         )?);
     }
     Some(ordinals)
