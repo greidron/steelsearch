@@ -10835,9 +10835,6 @@ impl SteelNode {
         let request = standalone_native_search_request(resolved_indices, body).ok()?;
         match self.native_engine.search(request) {
             Ok(response) => {
-                if response.total_hits == 0 {
-                    return None;
-                }
                 let total_shards = resolved_indices
                     .iter()
                     .map(|index| self.index_primary_shard_count(index))
@@ -67402,6 +67399,77 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         );
         assert_eq!(search.status, 200);
         assert_eq!(search.body["hits"]["total"]["value"], 0);
+    }
+
+    #[test]
+    fn native_search_fast_path_returns_zero_hit_responses() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        let create = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/logs-native-zero-000001").with_json_body(
+                serde_json::json!({
+                    "mappings": {
+                        "properties": {
+                            "message": { "type": "text" },
+                            "tenant": { "type": "keyword" },
+                            "status": { "type": "keyword" }
+                        }
+                    }
+                }),
+            ),
+        );
+        assert_eq!(create.status, 200);
+
+        let index = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/logs-native-zero-000001/_doc/doc-1")
+                .with_json_body(serde_json::json!({
+                    "message": "alpha service event",
+                    "tenant": "tenant-a",
+                    "status": "ok"
+                })),
+        );
+        assert_eq!(index.status, 201);
+
+        let refresh = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/logs-native-zero-000001/_refresh",
+        ));
+        assert_eq!(refresh.status, 200);
+
+        let body = serde_json::json!({
+            "size": 10,
+            "query": {
+                "bool": {
+                    "must": [
+                        { "match": { "message": "alpha" } }
+                    ],
+                    "filter": [
+                        { "term": { "tenant": "tenant-b" } },
+                        { "term": { "status": "ok" } }
+                    ]
+                }
+            }
+        });
+        let response = node
+            .try_native_engine_search_response(
+                &["logs-native-zero-000001".to_string()],
+                &body,
+                false,
+            )
+            .expect("native fast path should return zero-hit responses");
+
+        assert_eq!(response.status, 200);
+        assert_eq!(response.body["hits"]["total"]["value"], 0);
+        assert_eq!(
+            response.body["hits"]["hits"]
+                .as_array()
+                .expect("hits should be an array")
+                .len(),
+            0
+        );
     }
 
     #[test]

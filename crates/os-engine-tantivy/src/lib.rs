@@ -1963,7 +1963,8 @@ impl IndexEngine for TantivyEngine {
         )
         .map_err(invalid_request)?;
         let aggregation_map = parse_search_aggregation_map(&request.aggregations)?;
-        let index_names = {
+        let request_result_cache_supported = vector_request_result_cache_supported(&query);
+        let index_names = if request_result_cache_supported {
             let mut store = self
                 .store
                 .write()
@@ -1980,6 +1981,16 @@ impl IndexEngine for TantivyEngine {
                 &aggregation_map,
             );
             index_names
+        } else {
+            let store = self
+                .store
+                .read()
+                .expect("tantivy engine store rwlock poisoned");
+            if request.indices.is_empty() {
+                store.indices.keys().cloned().collect::<Vec<_>>()
+            } else {
+                request.indices
+            }
         };
 
         let single_index_name = (index_names.len() == 1).then(|| index_names[0].clone());
@@ -2031,31 +2042,88 @@ impl IndexEngine for TantivyEngine {
             },
         ];
 
-        let mut store = self
-            .store
-            .write()
-            .expect("tantivy engine store rwlock poisoned");
-        let request_result_cache_supported = vector_request_result_cache_supported(&query);
-        store.record_request_result_cache_bypasses_for_search(
-            &query,
-            request.highlight.is_some(),
-            request.explain,
-            request_result_cache_supported,
-        );
-        let cached_response = store.search_cached_single_index_vector_response(
-            single_index_name.as_deref(),
-            &query,
-            &request.sort,
-            &aggregation_map,
-            request.from,
-            request.size,
-            fetch_subphases.clone(),
-            source_projection_fields.as_deref(),
-        )?;
-        let mut response = if let Some(response) = cached_response {
+        let response = if request_result_cache_supported {
+            let mut store = self
+                .store
+                .write()
+                .expect("tantivy engine store rwlock poisoned");
+            store.record_request_result_cache_bypasses_for_search(
+                &query,
+                request.highlight.is_some(),
+                request.explain,
+                request_result_cache_supported,
+            );
+            let cached_response = store.search_cached_single_index_vector_response(
+                single_index_name.as_deref(),
+                &query,
+                &request.sort,
+                &aggregation_map,
+                request.from,
+                request.size,
+                fetch_subphases.clone(),
+                source_projection_fields.as_deref(),
+            )?;
+            let mut response = if let Some(response) = cached_response {
+                response
+            } else {
+                store
+                    .search_response_index_aware_with_optional_reusable(
+                        &index_names,
+                        single_index_name.as_deref(),
+                        &query,
+                        &request.sort,
+                        &aggregation_map,
+                        request.from,
+                        request.size,
+                        fetch_subphases,
+                        source_projection_fields.as_deref(),
+                    )?
+                    .0
+            };
+            if request.highlight.is_some() {
+                response.transform_hits(|mut hit| {
+                    let highlight_source = store
+                        .indices
+                        .get(&hit.index)
+                        .and_then(|index| index.refreshed_document_by_id(&hit.metadata.id))
+                        .map(|document| document.source.clone())
+                        .unwrap_or_else(|| hit.source.clone());
+                    hit.highlight = search_hit_highlight(
+                        &query,
+                        &hit.metadata.id,
+                        &highlight_source,
+                        request.highlight.as_ref(),
+                    );
+                    hit
+                });
+            }
+            if request.explain {
+                response.transform_hits(|mut hit| {
+                    let explanation_source = store
+                        .indices
+                        .get(&hit.index)
+                        .and_then(|index| index.refreshed_document_by_id(&hit.metadata.id))
+                        .map(|document| document.source.clone())
+                        .unwrap_or_else(|| hit.source.clone());
+                    let mut explanation_hit = hit.clone();
+                    explanation_hit.source = explanation_source;
+                    hit.explanation = Some(search_hit_explanation(&query, &explanation_hit));
+                    hit
+                });
+            }
             response
         } else {
-            store
+            let store = self
+                .store
+                .read()
+                .expect("tantivy engine store rwlock poisoned");
+            store.record_request_result_cache_bypasses_for_search(
+                &query,
+                request.highlight.is_some(),
+                request.explain,
+                request_result_cache_supported,
+            );
+            let mut response = store
                 .search_response_index_aware_with_optional_reusable(
                     &index_names,
                     single_index_name.as_deref(),
@@ -2067,39 +2135,40 @@ impl IndexEngine for TantivyEngine {
                     fetch_subphases,
                     source_projection_fields.as_deref(),
                 )?
-                .0
+                .0;
+            if request.highlight.is_some() {
+                response.transform_hits(|mut hit| {
+                    let highlight_source = store
+                        .indices
+                        .get(&hit.index)
+                        .and_then(|index| index.refreshed_document_by_id(&hit.metadata.id))
+                        .map(|document| document.source.clone())
+                        .unwrap_or_else(|| hit.source.clone());
+                    hit.highlight = search_hit_highlight(
+                        &query,
+                        &hit.metadata.id,
+                        &highlight_source,
+                        request.highlight.as_ref(),
+                    );
+                    hit
+                });
+            }
+            if request.explain {
+                response.transform_hits(|mut hit| {
+                    let explanation_source = store
+                        .indices
+                        .get(&hit.index)
+                        .and_then(|index| index.refreshed_document_by_id(&hit.metadata.id))
+                        .map(|document| document.source.clone())
+                        .unwrap_or_else(|| hit.source.clone());
+                    let mut explanation_hit = hit.clone();
+                    explanation_hit.source = explanation_source;
+                    hit.explanation = Some(search_hit_explanation(&query, &explanation_hit));
+                    hit
+                });
+            }
+            response
         };
-        if request.highlight.is_some() {
-            response.transform_hits(|mut hit| {
-                let highlight_source = store
-                    .indices
-                    .get(&hit.index)
-                    .and_then(|index| index.refreshed_document_by_id(&hit.metadata.id))
-                    .map(|document| document.source.clone())
-                    .unwrap_or_else(|| hit.source.clone());
-                hit.highlight = search_hit_highlight(
-                    &query,
-                    &hit.metadata.id,
-                    &highlight_source,
-                    request.highlight.as_ref(),
-                );
-                hit
-            });
-        }
-        if request.explain {
-            response.transform_hits(|mut hit| {
-                let explanation_source = store
-                    .indices
-                    .get(&hit.index)
-                    .and_then(|index| index.refreshed_document_by_id(&hit.metadata.id))
-                    .map(|document| document.source.clone())
-                    .unwrap_or_else(|| hit.source.clone());
-                let mut explanation_hit = hit.clone();
-                explanation_hit.source = explanation_source;
-                hit.explanation = Some(search_hit_explanation(&query, &explanation_hit));
-                hit
-            });
-        }
         Ok(response)
     }
 
@@ -4588,7 +4657,7 @@ impl EngineStore {
     }
 
     fn search_response_index_aware_with_optional_reusable(
-        &mut self,
+        &self,
         index_names: &[String],
         single_index_name: Option<&str>,
         query: &Query,
@@ -4930,25 +4999,11 @@ impl EngineStore {
         }
         let mut hits = Vec::new();
         for index_name in index_names {
-            let Some(index) = self.indices.get_mut(index_name) else {
+            let Some(index) = self.indices.get(index_name) else {
                 return Err(EngineError::IndexNotFound {
                     index: index_name.clone(),
                 });
             };
-            if vector_request_result_cache_supported(query) {
-                if let Some((_, mut index_hits)) = index
-                    .search_hits_page_for_query_index_aware_cached(
-                        index_name,
-                        query,
-                        sort_specs,
-                        0,
-                        usize::MAX,
-                    )?
-                {
-                    hits.append(&mut index_hits);
-                    continue;
-                }
-            }
             for document in index.documents.values() {
                 if document.metadata.seq_no > index.refreshed_seq_no {
                     continue;
@@ -6585,6 +6640,91 @@ impl StoredIndex {
         Ok(candidates)
     }
 
+    fn fast_required_bool_query_has_no_top_level_candidates(
+        &self,
+        clauses: &BoolQuery,
+    ) -> Option<bool> {
+        let mut candidates: Option<std::collections::BTreeSet<String>> = None;
+        let mut saw_unsupported_clause = false;
+        for query in clauses.must.iter().chain(clauses.filter.iter()) {
+            let Some(query_candidates) = self.fast_top_level_candidate_ids_for_query(query) else {
+                saw_unsupported_clause = true;
+                continue;
+            };
+            if query_candidates.is_empty() {
+                return Some(true);
+            }
+            candidates = Some(match candidates {
+                Some(existing) => existing
+                    .intersection(&query_candidates)
+                    .cloned()
+                    .collect::<std::collections::BTreeSet<_>>(),
+                None => query_candidates,
+            });
+            if candidates
+                .as_ref()
+                .is_some_and(|candidates| candidates.is_empty())
+            {
+                return Some(true);
+            }
+        }
+        if saw_unsupported_clause {
+            None
+        } else {
+            Some(false)
+        }
+    }
+
+    fn fast_top_level_candidate_ids_for_query(
+        &self,
+        query: &Query,
+    ) -> Option<std::collections::BTreeSet<String>> {
+        match query {
+            Query::Term { field, value } if field != "_id" => {
+                Some(self.fast_top_level_term_candidate_ids(field, value))
+            }
+            Query::Match { field, query } if field != "_id" => {
+                let query_text = json_value_to_query_text(query).ok()?;
+                Some(self.fast_top_level_match_candidate_ids(field, &query_text))
+            }
+            _ => None,
+        }
+    }
+
+    fn fast_top_level_term_candidate_ids(
+        &self,
+        field: &str,
+        value: &Value,
+    ) -> std::collections::BTreeSet<String> {
+        self.documents
+            .iter()
+            .filter_map(|(id, document)| {
+                if document.metadata.seq_no > self.refreshed_seq_no {
+                    return None;
+                }
+                let field_value = document.top_level_scalar_fields.get(field)?;
+                matches_term_query(field_value, value).then_some(id.clone())
+            })
+            .collect()
+    }
+
+    fn fast_top_level_match_candidate_ids(
+        &self,
+        field: &str,
+        query_text: &str,
+    ) -> std::collections::BTreeSet<String> {
+        self.documents
+            .iter()
+            .filter_map(|(id, document)| {
+                if document.metadata.seq_no > self.refreshed_seq_no {
+                    return None;
+                }
+                let field_value = document.top_level_string_fields.get(field)?;
+                field_value.contains(query_text).then_some(id.clone())
+            })
+            .collect()
+    }
+
     fn reduced_candidate_ids_for_unmapped_vector_query(
         &self,
         index_name: &str,
@@ -6877,6 +7017,14 @@ impl StoredIndex {
                 return self.search_hits_page_for_source_candidate_post_filter(
                     index_name, query, from, size,
                 );
+            }
+        }
+        if let Query::Bool { clauses } = query {
+            if self
+                .fast_required_bool_query_has_no_top_level_candidates(clauses)
+                .unwrap_or(false)
+            {
+                return Ok(Some((0, Vec::new())));
             }
         }
         if !matches!(query, Query::Knn(_))
