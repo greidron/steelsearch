@@ -2689,6 +2689,20 @@
       "description": "[admin-cat] render template GET output"
     },
     {
+      "name": "render_template_named_get_output",
+      "area": "search",
+      "method": "GET",
+      "path": "/_render/template/logs-compat-template",
+      "body": {
+        "params": {
+          "service": "catalog"
+        }
+      },
+      "extract": "render_template_semantic",
+      "family": "admin-cat",
+      "description": "[admin-cat] named render template GET output"
+    },
+    {
       "name": "cluster_health",
       "area": "operational",
       "method": "GET",
@@ -3362,6 +3376,24 @@
       "description": "[admin-cat] painless execute GET result"
     },
     {
+      "name": "painless_execute_post_result",
+      "area": "operational",
+      "method": "POST",
+      "path": "/_scripts/painless/_execute",
+      "body": {
+        "script": {
+          "source": "params.value",
+          "lang": "painless",
+          "params": {
+            "value": 11
+          }
+        }
+      },
+      "extract": "painless_execute",
+      "family": "admin-cat",
+      "description": "[admin-cat] painless execute POST result"
+    },
+    {
       "name": "put_stored_script_ack",
       "area": "operational",
       "method": "PUT",
@@ -3414,6 +3446,27 @@
       "extract": "acknowledged",
       "family": "admin-cat",
       "description": "[admin-cat] put stored script with context"
+    },
+    {
+      "name": "post_stored_script_context_ack",
+      "area": "operational",
+      "method": "POST",
+      "path": "/_scripts/logs-compat-crud-context/template",
+      "body": {
+        "script": {
+          "lang": "mustache",
+          "source": {
+            "query": {
+              "term": {
+                "service": "{{service}}"
+              }
+            }
+          }
+        }
+      },
+      "extract": "acknowledged",
+      "family": "admin-cat",
+      "description": "[admin-cat] post stored script with context"
     },
     {
       "name": "delete_stored_script_ack",
