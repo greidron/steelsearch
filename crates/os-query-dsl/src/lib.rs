@@ -114,10 +114,14 @@ pub enum Query {
     QueryString {
         query: String,
         fields: Option<Vec<String>>,
+        default_operator: Option<String>,
+        minimum_should_match: Option<usize>,
     },
     SimpleQueryString {
         query: String,
         fields: Option<Vec<String>>,
+        default_operator: Option<String>,
+        minimum_should_match: Option<usize>,
     },
     MoreLikeThis {
         fields: Option<Vec<String>>,
@@ -2944,9 +2948,29 @@ fn parse_simple_query_string(body: &Value) -> QueryDslResult<Query> {
                 .collect::<QueryDslResult<Vec<_>>>()
         })
         .transpose()?;
+    let default_operator =
+        parse_text_query_default_operator(object.get("default_operator"), "simple_query_string")?;
+    let minimum_should_match = object
+        .get("minimum_should_match")
+        .map(|value| {
+            usize::try_from(parse_minimum_should_match(
+                value,
+                text_query_clause_count(&query),
+            )?)
+            .map_err(|_| QueryDslError::InvalidValue {
+                clause: "simple_query_string".to_string(),
+                field: "minimum_should_match".to_string(),
+                reason: "is too large".to_string(),
+            })
+        })
+        .transpose()?;
 
     for option in object.keys() {
-        if option != "query" && option != "fields" {
+        if option != "query"
+            && option != "fields"
+            && option != "default_operator"
+            && option != "minimum_should_match"
+        {
             return Err(QueryDslError::UnsupportedOption {
                 clause: "simple_query_string".to_string(),
                 option: option.clone(),
@@ -2954,7 +2978,12 @@ fn parse_simple_query_string(body: &Value) -> QueryDslResult<Query> {
         }
     }
 
-    Ok(Query::SimpleQueryString { query, fields })
+    Ok(Query::SimpleQueryString {
+        query,
+        fields,
+        default_operator,
+        minimum_should_match,
+    })
 }
 
 fn parse_query_string(body: &Value) -> QueryDslResult<Query> {
@@ -2983,9 +3012,29 @@ fn parse_query_string(body: &Value) -> QueryDslResult<Query> {
                 .collect::<QueryDslResult<Vec<_>>>()
         })
         .transpose()?;
+    let default_operator =
+        parse_text_query_default_operator(object.get("default_operator"), "query_string")?;
+    let minimum_should_match = object
+        .get("minimum_should_match")
+        .map(|value| {
+            usize::try_from(parse_minimum_should_match(
+                value,
+                text_query_clause_count(&query),
+            )?)
+            .map_err(|_| QueryDslError::InvalidValue {
+                clause: "query_string".to_string(),
+                field: "minimum_should_match".to_string(),
+                reason: "is too large".to_string(),
+            })
+        })
+        .transpose()?;
 
     for option in object.keys() {
-        if option != "query" && option != "fields" {
+        if option != "query"
+            && option != "fields"
+            && option != "default_operator"
+            && option != "minimum_should_match"
+        {
             return Err(QueryDslError::UnsupportedOption {
                 clause: "query_string".to_string(),
                 option: option.clone(),
@@ -2993,7 +3042,34 @@ fn parse_query_string(body: &Value) -> QueryDslResult<Query> {
         }
     }
 
-    Ok(Query::QueryString { query, fields })
+    Ok(Query::QueryString {
+        query,
+        fields,
+        default_operator,
+        minimum_should_match,
+    })
+}
+
+fn parse_text_query_default_operator(
+    value: Option<&Value>,
+    clause: &str,
+) -> QueryDslResult<Option<String>> {
+    let Some(value) = value else {
+        return Ok(None);
+    };
+    let value = value.as_str().ok_or_else(|| QueryDslError::InvalidValue {
+        clause: clause.to_string(),
+        field: "default_operator".to_string(),
+        reason: "must be a string".to_string(),
+    })?;
+    if value.eq_ignore_ascii_case("and") || value.eq_ignore_ascii_case("or") {
+        return Ok(Some(value.to_ascii_lowercase()));
+    }
+    Err(QueryDslError::InvalidValue {
+        clause: clause.to_string(),
+        field: "default_operator".to_string(),
+        reason: "must be [and] or [or]".to_string(),
+    })
 }
 
 fn parse_exists(body: &Value) -> QueryDslResult<Query> {
@@ -4166,15 +4242,24 @@ fn parse_minimum_should_match(value: &Value, should_count: usize) -> QueryDslRes
 fn match_query_clause_count(query: &Value) -> usize {
     match query {
         Value::String(query) => {
-            let count = query
-                .split_whitespace()
-                .filter(|term| !term.is_empty())
-                .count();
+            let count = text_query_clause_count(query);
             count.max(usize::from(!query.is_empty()))
         }
         Value::Null => 0,
         _ => 1,
     }
+}
+
+fn text_query_clause_count(query: &str) -> usize {
+    query
+        .split_whitespace()
+        .filter(|term| {
+            !term.is_empty()
+                && !term.eq_ignore_ascii_case("and")
+                && !term.eq_ignore_ascii_case("or")
+        })
+        .count()
+        .max(usize::from(!query.is_empty()))
 }
 
 fn parse_minimum_should_match_text(value: &str, should_count: usize) -> Option<u32> {
@@ -5042,6 +5127,28 @@ mod tests {
             Query::SimpleQueryString {
                 query: "alpha beta".to_string(),
                 fields: Some(vec!["title".to_string(), "body".to_string()]),
+                default_operator: None,
+                minimum_should_match: None,
+            }
+        );
+
+        let with_options = parse_query(&serde_json::json!({
+            "simple_query_string": {
+                "query": "alpha beta gamma",
+                "fields": ["title"],
+                "default_operator": "AND",
+                "minimum_should_match": "75%"
+            }
+        }))
+        .unwrap();
+
+        assert_eq!(
+            with_options,
+            Query::SimpleQueryString {
+                query: "alpha beta gamma".to_string(),
+                fields: Some(vec!["title".to_string()]),
+                default_operator: Some("and".to_string()),
+                minimum_should_match: Some(2),
             }
         );
     }
@@ -5061,6 +5168,28 @@ mod tests {
             Query::QueryString {
                 query: "alpha beta".to_string(),
                 fields: Some(vec!["title".to_string(), "body".to_string()]),
+                default_operator: None,
+                minimum_should_match: None,
+            }
+        );
+
+        let with_options = parse_query(&serde_json::json!({
+            "query_string": {
+                "query": "alpha beta gamma",
+                "fields": ["title"],
+                "default_operator": "or",
+                "minimum_should_match": 2
+            }
+        }))
+        .unwrap();
+
+        assert_eq!(
+            with_options,
+            Query::QueryString {
+                query: "alpha beta gamma".to_string(),
+                fields: Some(vec!["title".to_string()]),
+                default_operator: Some("or".to_string()),
+                minimum_should_match: Some(2),
             }
         );
     }

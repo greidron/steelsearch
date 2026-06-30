@@ -325,6 +325,7 @@
       "match_phrase_prefix_slop_search",
       "match_phrase_prefix_zero_terms_query_all_search",
       "query_string_minimum_should_match_search",
+      "simple_query_string_minimum_should_match_search",
       "dis_max_search",
       "multi_match_phrase_search",
       "multi_match_phrase_keyword_analyzer_search",
@@ -11537,6 +11538,33 @@
       "extract": "search_hits",
       "family": "lexical",
       "description": "[lexical] simple query string search"
+    },
+    {
+      "name": "simple_query_string_minimum_should_match_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "simple_query_string": {
+            "query": "checkout payment cache",
+            "fields": [
+              "message"
+            ],
+            "minimum_should_match": "75%"
+          }
+        },
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] simple_query_string minimum_should_match"
     },
     {
       "name": "span_multi_query_search",

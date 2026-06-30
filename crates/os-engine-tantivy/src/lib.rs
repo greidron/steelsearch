@@ -2946,19 +2946,29 @@ fn build_tantivy_query(
             *transpositions,
             *zero_terms_all,
         ),
-        Query::QueryString { query, fields } => build_tantivy_tokenized_field_set_query(
+        Query::QueryString {
+            query,
+            fields,
+            default_operator,
+            minimum_should_match,
+        } => build_tantivy_tokenized_field_set_query(
             search_state,
             fields.as_deref(),
             query,
-            None,
-            None,
+            default_operator.as_deref(),
+            *minimum_should_match,
         ),
-        Query::SimpleQueryString { query, fields } => build_tantivy_tokenized_field_set_query(
+        Query::SimpleQueryString {
+            query,
+            fields,
+            default_operator,
+            minimum_should_match,
+        } => build_tantivy_tokenized_field_set_query(
             search_state,
             fields.as_deref(),
             query,
-            None,
-            None,
+            default_operator.as_deref(),
+            *minimum_should_match,
         ),
         Query::Range { field, bounds } => build_tantivy_range_query(search_state, field, bounds),
         Query::GeoDistance(geo_query) => build_tantivy_geo_distance_query(search_state, geo_query),
@@ -12679,7 +12689,12 @@ fn search_hit_query_explanation_details(query: &Query, hit: &SearchHit) -> Vec<V
                 "matched_value_count": matched_value_count
             })]
         }
-        Query::QueryString { query, fields } => {
+        Query::QueryString {
+            query,
+            fields,
+            default_operator,
+            minimum_should_match,
+        } => {
             let effective_fields = query_string_effective_fields(hit, fields.as_deref());
             let matched_token_count = matched_query_token_count_across_fields(
                 &hit.metadata.id,
@@ -12696,6 +12711,8 @@ fn search_hit_query_explanation_details(query: &Query, hit: &SearchHit) -> Vec<V
                         &hit.source,
                         Some(std::slice::from_ref(field)),
                         query,
+                        default_operator.as_deref(),
+                        *minimum_should_match,
                     )
                 })
                 .cloned()
@@ -12731,7 +12748,12 @@ fn search_hit_query_explanation_details(query: &Query, hit: &SearchHit) -> Vec<V
                 "query_token_count": query_token_count
             })]
         }
-        Query::SimpleQueryString { query, fields } => {
+        Query::SimpleQueryString {
+            query,
+            fields,
+            default_operator,
+            minimum_should_match,
+        } => {
             let effective_fields = simple_query_string_effective_fields(hit, fields.as_deref());
             let matched_token_count = matched_query_token_count_across_fields(
                 &hit.metadata.id,
@@ -12748,6 +12770,8 @@ fn search_hit_query_explanation_details(query: &Query, hit: &SearchHit) -> Vec<V
                         &hit.source,
                         Some(std::slice::from_ref(field)),
                         query,
+                        default_operator.as_deref(),
+                        *minimum_should_match,
                     )
                 })
                 .cloned()
@@ -14098,7 +14122,12 @@ fn search_hit_query_observation_counts(query: &Query, hit: &SearchHit) -> (usize
                 ),
             )
         }
-        Query::SimpleQueryString { query, fields } => {
+        Query::SimpleQueryString {
+            query,
+            fields,
+            default_operator,
+            minimum_should_match,
+        } => {
             let fields = simple_query_string_effective_fields(hit, fields.as_deref());
             let matched_fields = fields
                 .iter()
@@ -14108,6 +14137,8 @@ fn search_hit_query_observation_counts(query: &Query, hit: &SearchHit) -> (usize
                         &hit.source,
                         Some(&vec![(*field).clone()]),
                         query,
+                        default_operator.as_deref(),
+                        *minimum_should_match,
                     )
                 })
                 .collect::<Vec<_>>();
@@ -14117,6 +14148,8 @@ fn search_hit_query_observation_counts(query: &Query, hit: &SearchHit) -> (usize
                     &hit.source,
                     Some(&fields),
                     query,
+                    default_operator.as_deref(),
+                    *minimum_should_match,
                 )),
                 usize::from(
                     matched_fields
@@ -14130,7 +14163,12 @@ fn search_hit_query_observation_counts(query: &Query, hit: &SearchHit) -> (usize
                 ),
             )
         }
-        Query::QueryString { query, fields } => {
+        Query::QueryString {
+            query,
+            fields,
+            default_operator,
+            minimum_should_match,
+        } => {
             let fields = query_string_effective_fields(hit, fields.as_deref());
             let matched_fields = fields
                 .iter()
@@ -14140,6 +14178,8 @@ fn search_hit_query_observation_counts(query: &Query, hit: &SearchHit) -> (usize
                         &hit.source,
                         Some(&vec![(*field).clone()]),
                         query,
+                        default_operator.as_deref(),
+                        *minimum_should_match,
                     )
                 })
                 .collect::<Vec<_>>();
@@ -14149,6 +14189,8 @@ fn search_hit_query_observation_counts(query: &Query, hit: &SearchHit) -> (usize
                     &hit.source,
                     Some(&fields),
                     query,
+                    default_operator.as_deref(),
+                    *minimum_should_match,
                 )),
                 usize::from(
                     matched_fields
@@ -15295,7 +15337,12 @@ fn collect_search_hit_highlights(
                 }
             }
         }
-        Query::QueryString { query, fields } => {
+        Query::QueryString {
+            query,
+            fields,
+            default_operator,
+            minimum_should_match,
+        } => {
             for field in
                 query_string_effective_fields_from_source(hit_id, source, fields.as_deref())
                     .into_iter()
@@ -15305,6 +15352,8 @@ fn collect_search_hit_highlights(
                             source,
                             Some(&vec![field.clone()]),
                             query,
+                            default_operator.as_deref(),
+                            *minimum_should_match,
                         )
                     })
             {
@@ -15335,7 +15384,12 @@ fn collect_search_hit_highlights(
                 }
             }
         }
-        Query::SimpleQueryString { query, fields } => {
+        Query::SimpleQueryString {
+            query,
+            fields,
+            default_operator,
+            minimum_should_match,
+        } => {
             for field in
                 simple_query_string_effective_fields_from_source(hit_id, source, fields.as_deref())
                     .into_iter()
@@ -15345,6 +15399,8 @@ fn collect_search_hit_highlights(
                             source,
                             Some(&vec![field.clone()]),
                             query,
+                            default_operator.as_deref(),
+                            *minimum_should_match,
                         )
                     })
             {
@@ -16865,12 +16921,32 @@ fn document_matches_query(query: &Query, id: &str, source: &Value) -> bool {
             *transpositions,
             *zero_terms_all,
         ),
-        Query::QueryString { query, fields } => {
-            matches_query_string_query(id, source, fields.as_deref(), query)
-        }
-        Query::SimpleQueryString { query, fields } => {
-            matches_simple_query_string_query(id, source, fields.as_deref(), query)
-        }
+        Query::QueryString {
+            query,
+            fields,
+            default_operator,
+            minimum_should_match,
+        } => matches_query_string_query(
+            id,
+            source,
+            fields.as_deref(),
+            query,
+            default_operator.as_deref(),
+            *minimum_should_match,
+        ),
+        Query::SimpleQueryString {
+            query,
+            fields,
+            default_operator,
+            minimum_should_match,
+        } => matches_simple_query_string_query(
+            id,
+            source,
+            fields.as_deref(),
+            query,
+            default_operator.as_deref(),
+            *minimum_should_match,
+        ),
         Query::Range { field, bounds } if field == "_id" => {
             matches_range_query(&Value::String(id.to_string()), bounds)
         }
@@ -18357,11 +18433,38 @@ fn matches_query_string_query(
     source: &Value,
     fields: Option<&[String]>,
     query: &str,
+    operator: Option<&str>,
+    minimum_should_match: Option<usize>,
 ) -> bool {
     let effective_fields = query_string_effective_fields_from_source(id, source, fields);
     let query_tokens = tokenize_query_string_required_terms(query);
-    matched_query_token_count_across_fields(id, source, &effective_fields, query)
-        == query_tokens.len()
+    text_query_match_count_satisfies(
+        matched_query_token_count_across_fields(id, source, &effective_fields, query),
+        query_tokens.len(),
+        query,
+        operator,
+        minimum_should_match,
+    )
+}
+
+fn text_query_match_count_satisfies(
+    matched_count: usize,
+    token_count: usize,
+    query: &str,
+    operator: Option<&str>,
+    minimum_should_match: Option<usize>,
+) -> bool {
+    if token_count == 0 {
+        return false;
+    }
+    let required = minimum_should_match
+        .or_else(|| {
+            (operator == Some("and") || query.contains(" AND ") || query.contains(" +"))
+                .then_some(token_count)
+        })
+        .unwrap_or(1)
+        .min(token_count);
+    matched_count >= required
 }
 
 fn matched_query_token_count_across_fields(
@@ -19107,7 +19210,12 @@ fn localize_query_fields_for_nested_child(query: &Query, path: &str) -> Query {
             transpositions: *transpositions,
             zero_terms_all: *zero_terms_all,
         },
-        Query::QueryString { query, fields } => Query::QueryString {
+        Query::QueryString {
+            query,
+            fields,
+            default_operator,
+            minimum_should_match,
+        } => Query::QueryString {
             query: query.clone(),
             fields: fields.as_ref().map(|fields| {
                 fields
@@ -19115,8 +19223,15 @@ fn localize_query_fields_for_nested_child(query: &Query, path: &str) -> Query {
                     .map(|field| nested_child_local_field_name(path, field))
                     .collect()
             }),
+            default_operator: default_operator.clone(),
+            minimum_should_match: *minimum_should_match,
         },
-        Query::SimpleQueryString { query, fields } => Query::SimpleQueryString {
+        Query::SimpleQueryString {
+            query,
+            fields,
+            default_operator,
+            minimum_should_match,
+        } => Query::SimpleQueryString {
             query: query.clone(),
             fields: fields.as_ref().map(|fields| {
                 fields
@@ -19124,6 +19239,8 @@ fn localize_query_fields_for_nested_child(query: &Query, path: &str) -> Query {
                     .map(|field| nested_child_local_field_name(path, field))
                     .collect()
             }),
+            default_operator: default_operator.clone(),
+            minimum_should_match: *minimum_should_match,
         },
         Query::MoreLikeThis { fields, like } => Query::MoreLikeThis {
             fields: fields.as_ref().map(|fields| {
@@ -19440,12 +19557,32 @@ fn native_nested_child_ordinals_for_query(
             *transpositions,
             *zero_terms_all,
         ),
-        Query::QueryString { query, fields } => {
-            nested_child_query_string_ordinals(path_index, path, fields.as_deref(), query)
-        }
-        Query::SimpleQueryString { query, fields } => {
-            nested_child_simple_query_string_ordinals(path_index, path, fields.as_deref(), query)
-        }
+        Query::QueryString {
+            query,
+            fields,
+            default_operator,
+            minimum_should_match,
+        } => nested_child_query_string_ordinals(
+            path_index,
+            path,
+            fields.as_deref(),
+            query,
+            default_operator.as_deref(),
+            *minimum_should_match,
+        ),
+        Query::SimpleQueryString {
+            query,
+            fields,
+            default_operator,
+            minimum_should_match,
+        } => nested_child_simple_query_string_ordinals(
+            path_index,
+            path,
+            fields.as_deref(),
+            query,
+            default_operator.as_deref(),
+            *minimum_should_match,
+        ),
         Query::MoreLikeThis { fields, like } => {
             nested_child_more_like_this_ordinals(path_index, path, fields.as_deref(), like)
         }
@@ -20113,6 +20250,8 @@ fn nested_child_query_string_ordinals(
     path: &str,
     fields: Option<&[String]>,
     query: &str,
+    operator: Option<&str>,
+    minimum_should_match: Option<usize>,
 ) -> Option<std::collections::BTreeSet<usize>> {
     let local_fields = nested_child_local_fields(path, fields);
     let mut ordinals = std::collections::BTreeSet::new();
@@ -20122,6 +20261,8 @@ fn nested_child_query_string_ordinals(
             &child.source,
             local_fields.as_deref(),
             query,
+            operator,
+            minimum_should_match,
         ) {
             ordinals.insert(ordinal);
         }
@@ -20134,6 +20275,8 @@ fn nested_child_simple_query_string_ordinals(
     path: &str,
     fields: Option<&[String]>,
     query: &str,
+    operator: Option<&str>,
+    minimum_should_match: Option<usize>,
 ) -> Option<std::collections::BTreeSet<usize>> {
     let local_fields = nested_child_local_fields(path, fields);
     let mut ordinals = std::collections::BTreeSet::new();
@@ -20143,6 +20286,8 @@ fn nested_child_simple_query_string_ordinals(
             &child.source,
             local_fields.as_deref(),
             query,
+            operator,
+            minimum_should_match,
         ) {
             ordinals.insert(ordinal);
         }
@@ -20618,11 +20763,18 @@ fn matches_simple_query_string_query(
     source: &Value,
     fields: Option<&[String]>,
     query: &str,
+    operator: Option<&str>,
+    minimum_should_match: Option<usize>,
 ) -> bool {
     let effective_fields = simple_query_string_effective_fields_from_source(id, source, fields);
     let query_tokens = tokenize_query_string_required_terms(query);
-    matched_query_token_count_across_fields(id, source, &effective_fields, query)
-        == query_tokens.len()
+    text_query_match_count_satisfies(
+        matched_query_token_count_across_fields(id, source, &effective_fields, query),
+        query_tokens.len(),
+        query,
+        operator,
+        minimum_should_match,
+    )
 }
 
 fn simple_query_string_effective_fields(hit: &SearchHit, fields: Option<&[String]>) -> Vec<String> {
