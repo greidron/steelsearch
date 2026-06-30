@@ -134,10 +134,20 @@ def validate_report(
         errors.append(f"failed cases: {', '.join(failed_cases)}")
 
     summary = report.get("summary", {})
-    counted = sum(1 for case in report.get("cases", []) if case.get("status") in {"passed", "failed", "skipped"})
-    summary_total = sum(int(summary.get(key, 0)) for key in ("passed", "failed", "skipped"))
+    status_counts = {
+        status: sum(1 for case in report.get("cases", []) if case.get("status") == status)
+        for status in ("passed", "failed", "skipped")
+    }
+    counted = sum(status_counts.values())
+    summary_counts = {key: int(summary.get(key, 0)) for key in ("passed", "failed", "skipped")}
+    summary_total = sum(summary_counts.values())
     if counted != summary_total:
         errors.append(f"summary count drift: cases={counted} summary={summary_total}")
+    for status, counted_status in status_counts.items():
+        if counted_status != summary_counts[status]:
+            errors.append(
+                f"summary {status} drift: cases={counted_status} summary={summary_counts[status]}"
+            )
 
     has_opensearch = "opensearch" in (report.get("targets") or {})
     required_skips = {

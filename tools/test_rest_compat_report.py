@@ -77,6 +77,24 @@ class RestCompatReportTests(unittest.TestCase):
 
         self.assertEqual(errors, ["failed cases: included"])
 
+    def test_report_rejects_per_status_summary_drift(self) -> None:
+        fixture = {"cases": [{"name": "included"}]}
+        report = {
+            "cases": [
+                {"name": "included", "status": "failed"},
+            ],
+            "summary": {"passed": 1, "failed": 0, "skipped": 0, "skips": []},
+        }
+
+        errors = check_rest_compat_report.validate_report(
+            fixture,
+            report,
+            allow_partial=True,
+        )
+
+        self.assertIn("summary passed drift: cases=0 summary=1", errors)
+        self.assertIn("summary failed drift: cases=1 summary=0", errors)
+
     def test_partial_fixture_validation_ignores_unselected_cases(self) -> None:
         fixture = {
             "cases": [
