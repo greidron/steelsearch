@@ -46,9 +46,10 @@
 
 - Apply the same alignment rule to `GET /{index}/_doc/{id}` and
   `PUT /{index}/_doc/{id}`.
-- A usable development shell or Rust-native engine flow is not enough to call
-  these routes `Partial` when the generated REST inventory still classifies
-  them as `Stubbed`.
+- Generated route evidence now classifies `GET /{index}/_doc/{id}`,
+  `HEAD /{index}/_doc/{id}`, and `PUT /{index}/_doc/{id}` as live
+  stateful standalone routes. Keep this section aligned to generated
+  `route-evidence-matrix.md` entries rather than to older inventory notes.
 
 ### `PUT /{index}/_doc/{id}` Current Standalone Contract
 
@@ -108,6 +109,19 @@
 - This gives single-document fetch the current standalone contract for source
   filtering, realtime/routing request shaping, and not-found result-class
   semantics.
+
+### `HEAD /{index}/_doc/{id}` Current Standalone Contract
+
+- The current route is a bodyless single-document existence check backed by
+  the same single-document read path as `GET /{index}/_doc/{id}`.
+- The route returns only status:
+  - `200` when the document exists in the resolved read target
+  - `404` when the document is missing
+- Runtime evidence now covers the route as `implemented-stateful` through:
+  - `single_doc_head` in `tools/fixtures/runtime-stateful-probe.json`
+  - `HEAD /{index}/_doc/{id}` in `docs/api-spec/generated/route-evidence-matrix.md`
+- Treat remaining work as deeper option/error parity, not route-surface
+  uncertainty.
 
 ### `DELETE /{index}/_doc/{id}` Current Standalone Contract
 
@@ -255,10 +269,10 @@ Example boundary:
 
 - `response contract` example:
   - `GET /{index}/_doc/{id}` returns a document envelope
-  - `HEAD /{index}/_doc/{id}` would be a bodyless existence surface
-  - current generated inventory consequence:
-    - `GET /{index}/_doc/{id}` -> `Stubbed`
-    - `HEAD /{index}/_doc/{id}` -> `Planned`
+  - `HEAD /{index}/_doc/{id}` is a bodyless existence surface
+  - current generated evidence consequence:
+    - `GET /{index}/_doc/{id}` -> `implemented-stateful`
+    - `HEAD /{index}/_doc/{id}` -> `implemented-stateful`
 - `request shape` example:
   - `POST /{index}/_doc` relies on server-generated id semantics
   - `PUT /{index}/_doc/{id}` carries an explicit id in the route
