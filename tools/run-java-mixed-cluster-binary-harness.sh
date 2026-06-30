@@ -72,21 +72,27 @@ PY
 mkdir -p "$REPORT_DIR/$PROFILE"
 REPORT_PATH="$REPORT_DIR/$PROFILE/report.json"
 PHASE_ARTIFACT_DIR="$REPORT_DIR/$PROFILE/phase-artifacts"
-mkdir -p "$PHASE_ARTIFACT_DIR"
+LOG_DIR="$REPORT_DIR/$PROFILE/logs"
+mkdir -p "$PHASE_ARTIFACT_DIR" "$LOG_DIR"
 
 run_phase() {
   local phase="$1"
   local cmd="$2"
+  local log_path="$LOG_DIR/$phase.log"
   if [[ -z "$cmd" ]]; then
     echo "missing command for phase: $phase" >&2
     exit 1
   fi
   echo "[$phase] $cmd"
-  JAVA_MIXED_CLUSTER_REPORT_DIR="$REPORT_DIR/$PROFILE" \
-  JAVA_MIXED_CLUSTER_PHASE_ARTIFACT_DIR="$PHASE_ARTIFACT_DIR" \
-  JAVA_MIXED_CLUSTER_PHASE_ARTIFACT_PATH="$PHASE_ARTIFACT_DIR/$phase.json" \
-  JAVA_MIXED_CLUSTER_PHASE_NAME="$phase" \
-    bash -lc "$cmd"
+  if ! JAVA_MIXED_CLUSTER_REPORT_DIR="$REPORT_DIR/$PROFILE" \
+    JAVA_MIXED_CLUSTER_PHASE_ARTIFACT_DIR="$PHASE_ARTIFACT_DIR" \
+    JAVA_MIXED_CLUSTER_PHASE_ARTIFACT_PATH="$PHASE_ARTIFACT_DIR/$phase.json" \
+    JAVA_MIXED_CLUSTER_PHASE_NAME="$phase" \
+      bash -lc "$cmd" >"$log_path" 2>&1; then
+    cat "$log_path"
+    return 1
+  fi
+  cat "$log_path"
 }
 
 run_phase "prepare" "$PREPARE_CMD"
@@ -96,7 +102,7 @@ run_phase "recover" "$RECOVER_CMD"
 run_phase "restart" "$RESTART_CMD"
 run_phase "check" "$CHECK_CMD"
 
-PROFILE_JSON="$profile_json" python3 - "$PROFILE" "$REPORT_PATH" <<'PY'
+PROFILE_JSON="$profile_json" LOG_DIR="$LOG_DIR" python3 - "$PROFILE" "$REPORT_PATH" <<'PY'
 import json
 import os
 import sys
@@ -106,6 +112,15 @@ profile_name = sys.argv[1]
 report_path = Path(sys.argv[2])
 profile = json.loads(os.environ["PROFILE_JSON"])
 phase_artifact_dir = report_path.parent / "phase-artifacts"
+log_dir = Path(os.environ["LOG_DIR"])
+logs = {
+    phase: (log_dir / f"{phase}.log").read_text(encoding="utf-8", errors="replace")
+    for phase in profile["required_phases"]
+}
+combined_logs = "\n".join(logs.values())
+expected_markers = profile.get("expected_markers", [])
+marker_hits = {marker: (marker in combined_logs) for marker in expected_markers}
+missing_markers = [marker for marker, matched in marker_hits.items() if not matched]
 phase_artifacts = {}
 phase_payloads = {}
 for phase in profile["required_phases"]:
@@ -119,7 +134,9 @@ report = {
     "primary_node": profile["primary_node"],
     "replica_node": profile["replica_node"],
     "required_phases": profile["required_phases"],
-    "expected_markers": profile.get("expected_markers", []),
+    "expected_markers": expected_markers,
+    "marker_hits": marker_hits,
+    "missing_markers": missing_markers,
     "write_modes": profile.get("write_modes", []),
     "visibility_stages": profile.get("visibility_stages", []),
     "checkpoint_fields": profile.get("checkpoint_fields", []),
@@ -142,9 +159,10 @@ report = {
     "recovery_bootstrap_mode": profile.get("recovery_bootstrap_mode"),
     "incompatibility_failure_class": profile.get("incompatibility_failure_class"),
     "required_failure_classes": profile.get("required_failure_classes", []),
+    "phase_logs": {phase: str(log_dir / f"{phase}.log") for phase in logs},
     "phase_artifacts": phase_artifacts,
     "artifact_source": "actual-phase-artifacts" if phase_artifacts else "profile-defaults",
-    "status": "completed"
+    "status": "failed" if missing_markers else "completed"
 }
 
 for payload in phase_payloads.values():
@@ -155,6 +173,13 @@ for payload in phase_payloads.values():
             report[key] = value
 
 report_path.write_text(json.dumps(report, indent=2) + "\n")
+if missing_markers:
+    print(
+        "java mixed-cluster binary harness missing expected marker(s): "
+        + ", ".join(missing_markers),
+        file=sys.stderr,
+    )
+    raise SystemExit(1)
 PY
 
 echo "java mixed cluster binary harness completed"

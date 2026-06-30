@@ -440,6 +440,68 @@ class ReplacementGateScriptTests(unittest.TestCase):
             self.assertEqual(report["missing_markers"], ["fail-closed"])
             self.assertFalse((profile_dir / "security-redaction-smoke-report.json").exists())
 
+    def test_java_mixed_cluster_binary_harness_requires_expected_markers(self):
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            report_dir = Path(temp_dir_value)
+            result = self.run_command(
+                "./tools/run-java-mixed-cluster-binary-harness.sh",
+                "--profile",
+                "java-primary-rust-replica",
+                "--report-dir",
+                str(report_dir),
+                "--prepare-cmd",
+                "echo java primary write acknowledged",
+                "--write-cmd",
+                "echo write phase completed",
+                "--read-cmd",
+                "echo rust replica caught up",
+                "--recover-cmd",
+                "echo recover phase completed",
+                "--restart-cmd",
+                "echo restart visibility preserved",
+                "--check-cmd",
+                "echo check phase completed",
+            )
+
+            profile_dir = report_dir / "java-primary-rust-replica"
+            self.assertEqual(result.returncode, 0, result.stderr)
+            report = json.loads((profile_dir / "report.json").read_text(encoding="utf-8"))
+            self.assertEqual(report["status"], "completed")
+            self.assertEqual(report["missing_markers"], [])
+            self.assertTrue(all(report["marker_hits"].values()))
+            for phase in ["prepare", "write", "read", "recover", "restart", "check"]:
+                self.assertTrue(Path(report["phase_logs"][phase]).exists())
+
+    def test_java_mixed_cluster_binary_harness_fails_when_marker_is_missing(self):
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            report_dir = Path(temp_dir_value)
+            result = self.run_command(
+                "./tools/run-java-mixed-cluster-binary-harness.sh",
+                "--profile",
+                "java-primary-rust-replica",
+                "--report-dir",
+                str(report_dir),
+                "--prepare-cmd",
+                "echo java primary write acknowledged",
+                "--write-cmd",
+                "echo write phase completed",
+                "--read-cmd",
+                "echo rust replica caught up",
+                "--recover-cmd",
+                "echo recover phase completed",
+                "--restart-cmd",
+                "echo no marker here",
+                "--check-cmd",
+                "echo check phase completed",
+            )
+
+            profile_dir = report_dir / "java-primary-rust-replica"
+            self.assertEqual(result.returncode, 1)
+            self.assertIn("missing expected marker", result.stderr)
+            report = json.loads((profile_dir / "report.json").read_text(encoding="utf-8"))
+            self.assertEqual(report["status"], "failed")
+            self.assertEqual(report["missing_markers"], ["restart visibility preserved"])
+
 
 if __name__ == "__main__":
     unittest.main()
