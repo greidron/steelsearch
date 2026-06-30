@@ -3065,18 +3065,17 @@ def extract(kind: str, response: dict[str, Any]) -> Any:
         shard_groups = body.get("shards") or []
         first_group = shard_groups[0] if isinstance(shard_groups, list) and shard_groups else []
         first_shard = first_group[0] if isinstance(first_group, list) and first_group else {}
-        fixture_indices = {"logs-root-cat-000001", "metrics-root-cat-000001"}
         fixture_shard_groups = [
             group
             for group in shard_groups
             if isinstance(group, list)
             and group
             and isinstance(group[0], dict)
-            and group[0].get("index") in fixture_indices
+            and group[0].get("index") in COMPAT_INDICES
         ] if isinstance(shard_groups, list) else []
         return {
             "status": response["status"],
-            "fixture_indices_present": sorted(fixture_indices & set(indices.keys()))
+            "fixture_indices_present": sorted(COMPAT_INDICES & set(indices.keys()))
             if isinstance(indices, dict)
             else [],
             "nodes_present": isinstance(body.get("nodes"), dict) and bool(body.get("nodes")),
