@@ -9098,6 +9098,12 @@ impl SteelNode {
                 }
             }
         };
+        if pipeline_id.is_none() && !payload.get("pipeline").is_some_and(Value::is_object) {
+            return ingest_simulate_required_property_error("pipeline");
+        }
+        if !payload.get("docs").is_some_and(Value::is_array) {
+            return ingest_simulate_required_property_error("docs");
+        }
         let mut body = serde_json::json!({
             "docs": ingest_simulate_docs(&payload)
         });
@@ -35131,6 +35137,27 @@ fn default_cluster_metadata_manifest() -> Value {
     })
 }
 
+fn ingest_simulate_required_property_error(property_name: &str) -> RestResponse {
+    RestResponse::json(
+        400,
+        serde_json::json!({
+            "error": {
+                "type": "parse_exception",
+                "reason": format!("[{}] required property is missing", property_name),
+                "property_name": property_name,
+                "root_cause": [
+                    {
+                        "type": "parse_exception",
+                        "reason": format!("[{}] required property is missing", property_name),
+                        "property_name": property_name
+                    }
+                ]
+            },
+            "status": 400
+        }),
+    )
+}
+
 fn ingest_simulate_docs(payload: &Value) -> Vec<Value> {
     if let Some(docs) = payload.get("docs").and_then(Value::as_array) {
         return docs
@@ -35153,15 +35180,7 @@ fn ingest_simulate_docs(payload: &Value) -> Vec<Value> {
             })
             .collect();
     }
-    vec![serde_json::json!({
-        "doc": {
-            "_source": payload
-                .get("doc")
-                .and_then(|doc| doc.get("_source"))
-                .cloned()
-                .unwrap_or_else(|| Value::Object(serde_json::Map::new()))
-        }
-    })]
+    Vec::new()
 }
 
 fn infer_field_caps_type(value: &Value) -> &'static str {
@@ -50885,6 +50904,9 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         let root_simulate = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/_ingest/pipeline/_simulate").with_json_body(
                 serde_json::json!({
+                    "pipeline": {
+                        "processors": []
+                    },
                     "docs": [
                         { "_source": { "message": "hello" } }
                     ]
@@ -50900,7 +50922,9 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         let named_simulate = node.handle_rest_request(
             RestRequest::new(RestMethod::Get, "/_ingest/pipeline/logs-pipeline/_simulate")
                 .with_json_body(serde_json::json!({
-                    "doc": { "_source": { "message": "named" } }
+                    "docs": [
+                        { "_source": { "message": "named" } }
+                    ]
                 })),
         );
         assert_eq!(named_simulate.status, 200);
@@ -50909,6 +50933,38 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             named_simulate.body["docs"][0]["doc"]["_source"]["message"],
             "named"
         );
+
+        let root_missing_pipeline = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_ingest/pipeline/_simulate").with_json_body(
+                serde_json::json!({
+                    "docs": [
+                        { "_source": { "message": "missing pipeline" } }
+                    ]
+                }),
+            ),
+        );
+        assert_eq!(root_missing_pipeline.status, 400);
+        assert_eq!(
+            root_missing_pipeline.body["error"]["type"],
+            "parse_exception"
+        );
+        assert_eq!(
+            root_missing_pipeline.body["error"]["property_name"],
+            "pipeline"
+        );
+
+        let named_missing_docs = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/_ingest/pipeline/logs-pipeline/_simulate",
+            )
+            .with_json_body(serde_json::json!({
+                "doc": { "_source": { "message": "missing docs" } }
+            })),
+        );
+        assert_eq!(named_missing_docs.status, 400);
+        assert_eq!(named_missing_docs.body["error"]["type"], "parse_exception");
+        assert_eq!(named_missing_docs.body["error"]["property_name"], "docs");
 
         let grok =
             node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_ingest/processor/grok"));

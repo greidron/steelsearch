@@ -3341,6 +3341,15 @@
       "description": "[admin-cat] ingest pipeline collection readback"
     },
     {
+      "name": "get_ingest_pipeline_named",
+      "area": "operational",
+      "method": "GET",
+      "path": "/_ingest/pipeline/logs-pipeline",
+      "extract": "pipeline_collection",
+      "family": "admin-cat",
+      "description": "[admin-cat] ingest pipeline named readback"
+    },
+    {
       "name": "simulate_ingest_pipeline_root_get",
       "area": "operational",
       "method": "GET",
@@ -3362,6 +3371,45 @@
       "description": "[admin-cat] root ingest pipeline simulate GET"
     },
     {
+      "name": "simulate_ingest_pipeline_root_post",
+      "area": "operational",
+      "method": "POST",
+      "path": "/_ingest/pipeline/_simulate",
+      "body": {
+        "pipeline": {
+          "processors": []
+        },
+        "docs": [
+          {
+            "_source": {
+              "message": "root simulate post"
+            }
+          }
+        ]
+      },
+      "extract": "ingest_simulate",
+      "family": "admin-cat",
+      "description": "[admin-cat] root ingest pipeline simulate POST"
+    },
+    {
+      "name": "simulate_ingest_pipeline_root_post_missing_pipeline_error",
+      "area": "operational",
+      "method": "POST",
+      "path": "/_ingest/pipeline/_simulate",
+      "body": {
+        "docs": [
+          {
+            "_source": {
+              "message": "root simulate missing pipeline"
+            }
+          }
+        ]
+      },
+      "extract": "error_response",
+      "family": "admin-cat",
+      "description": "[admin-cat] root ingest pipeline simulate POST rejects missing pipeline"
+    },
+    {
       "name": "simulate_ingest_pipeline_named_get",
       "area": "operational",
       "method": "GET",
@@ -3378,6 +3426,49 @@
       "extract": "ingest_simulate",
       "family": "admin-cat",
       "description": "[admin-cat] named ingest pipeline simulate GET"
+    },
+    {
+      "name": "simulate_ingest_pipeline_named_post",
+      "area": "operational",
+      "method": "POST",
+      "path": "/_ingest/pipeline/logs-pipeline/_simulate",
+      "body": {
+        "docs": [
+          {
+            "_source": {
+              "message": "named simulate post"
+            }
+          }
+        ]
+      },
+      "extract": "ingest_simulate",
+      "family": "admin-cat",
+      "description": "[admin-cat] named ingest pipeline simulate POST"
+    },
+    {
+      "name": "simulate_ingest_pipeline_named_post_missing_docs_error",
+      "area": "operational",
+      "method": "POST",
+      "path": "/_ingest/pipeline/logs-pipeline/_simulate",
+      "body": {
+        "doc": {
+          "_source": {
+            "message": "named simulate missing docs"
+          }
+        }
+      },
+      "extract": "error_response",
+      "family": "admin-cat",
+      "description": "[admin-cat] named ingest pipeline simulate POST rejects missing docs"
+    },
+    {
+      "name": "delete_ingest_pipeline_named",
+      "area": "operational",
+      "method": "DELETE",
+      "path": "/_ingest/pipeline/logs-pipeline",
+      "extract": "acknowledged",
+      "family": "admin-cat",
+      "description": "[admin-cat] delete ingest pipeline"
     },
     {
       "name": "list_root_shape",
