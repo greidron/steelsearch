@@ -2308,6 +2308,7 @@ pub struct SteelNode {
     pub next_scroll_id: Arc<Mutex<u64>>,
     pub pit_contexts: Arc<Mutex<BTreeMap<String, PitContext>>>,
     pub pit_total_contexts_by_index: Arc<Mutex<BTreeMap<String, u64>>>,
+    pub pit_time_millis_by_index: Arc<Mutex<BTreeMap<String, u64>>>,
     pub next_pit_id: Arc<Mutex<u64>>,
     pub snapshot_restores_in_progress: Arc<Mutex<BTreeSet<String>>>,
 }
@@ -2642,6 +2643,7 @@ impl SteelNode {
             next_scroll_id: Arc::new(Mutex::new(0)),
             pit_contexts: Arc::new(Mutex::new(BTreeMap::new())),
             pit_total_contexts_by_index: Arc::new(Mutex::new(BTreeMap::new())),
+            pit_time_millis_by_index: Arc::new(Mutex::new(BTreeMap::new())),
             next_pit_id: Arc::new(Mutex::new(0)),
             snapshot_restores_in_progress: Arc::new(Mutex::new(BTreeSet::new())),
         };
@@ -2678,10 +2680,22 @@ impl SteelNode {
         F: Fn() -> bool + Send + 'static,
     {
         let contexts = Arc::clone(&self.pit_contexts);
+        let pit_time_millis_by_index = Arc::clone(&self.pit_time_millis_by_index);
+        let metadata_manifest_state = Arc::clone(&self.metadata_manifest_state);
         std::thread::spawn(move || loop {
             {
+                let now_millis = current_epoch_millis();
                 let mut contexts = contexts.lock().expect("pit contexts lock poisoned");
-                prune_expired_pit_contexts(&mut contexts, current_epoch_millis());
+                let expired_contexts = drain_expired_pit_contexts(&mut contexts, now_millis);
+                drop(contexts);
+                record_pit_context_time_millis_with_lookup(
+                    &pit_time_millis_by_index,
+                    &expired_contexts,
+                    now_millis,
+                    |index| {
+                        index_primary_shard_count_from_manifest(&metadata_manifest_state, index)
+                    },
+                );
             }
             if should_stop() {
                 break;
@@ -11260,7 +11274,14 @@ impl SteelNode {
             .pit_contexts
             .lock()
             .expect("pit contexts lock poisoned");
-        prune_expired_pit_contexts(&mut contexts, current_epoch_millis());
+        let now_millis = current_epoch_millis();
+        let expired_contexts = drain_expired_pit_contexts(&mut contexts, now_millis);
+        drop(contexts);
+        self.record_pit_context_time_millis(&expired_contexts, now_millis);
+        let contexts = self
+            .pit_contexts
+            .lock()
+            .expect("pit contexts lock poisoned");
         let pits = contexts
             .iter()
             .map(|(id, context)| {
@@ -11290,7 +11311,14 @@ impl SteelNode {
             .pit_contexts
             .lock()
             .expect("pit contexts lock poisoned");
-        prune_expired_pit_contexts(&mut contexts, current_epoch_millis());
+        let now_millis = current_epoch_millis();
+        let expired_contexts = drain_expired_pit_contexts(&mut contexts, now_millis);
+        drop(contexts);
+        self.record_pit_context_time_millis(&expired_contexts, now_millis);
+        let mut contexts = self
+            .pit_contexts
+            .lock()
+            .expect("pit contexts lock poisoned");
         let pits = contexts
             .keys()
             .map(|id| {
@@ -11300,8 +11328,10 @@ impl SteelNode {
                 })
             })
             .collect::<Vec<_>>();
+        let cleared_contexts = contexts.values().cloned().collect::<Vec<_>>();
         contexts.clear();
         drop(contexts);
+        self.record_pit_context_time_millis(&cleared_contexts, current_epoch_millis());
         self.persist_shared_runtime_state_to_disk();
         RestResponse::json(
             200,
@@ -11463,7 +11493,13 @@ impl SteelNode {
             .pit_contexts
             .lock()
             .expect("pit contexts lock poisoned");
-        prune_expired_pit_contexts(&mut pit_contexts, creation_time_millis);
+        let expired_contexts = drain_expired_pit_contexts(&mut pit_contexts, creation_time_millis);
+        drop(pit_contexts);
+        self.record_pit_context_time_millis(&expired_contexts, creation_time_millis);
+        let mut pit_contexts = self
+            .pit_contexts
+            .lock()
+            .expect("pit contexts lock poisoned");
         if pit_contexts.len() >= DEFAULT_MAX_OPEN_PIT_CONTEXTS {
             return search_phase_rejected_execution_error(format!(
                 "Trying to create too many Point In Time contexts. Must be less than or equal to: [{DEFAULT_MAX_OPEN_PIT_CONTEXTS}]. This limit can be set by changing the [search.max_open_pit_context] setting."
@@ -11512,12 +11548,13 @@ impl SteelNode {
             .pit_contexts
             .lock()
             .expect("pit contexts lock poisoned");
-        if contexts
-            .get(pit_id)
-            .is_some_and(|context| context.expires_at_millis <= now_millis)
-        {
-            contexts.remove(pit_id);
-        }
+        let expired_contexts = drain_expired_pit_contexts(&mut contexts, now_millis);
+        drop(contexts);
+        self.record_pit_context_time_millis(&expired_contexts, now_millis);
+        let mut contexts = self
+            .pit_contexts
+            .lock()
+            .expect("pit contexts lock poisoned");
         let Some(context) = contexts.get_mut(pit_id) else {
             return Err(search_phase_missing_pit_context_response(pit_id));
         };
@@ -11566,10 +11603,14 @@ impl SteelNode {
     }
 
     fn remove_pit_context(&self, pit_id: &str) {
-        self.pit_contexts
+        let removed_context = self
+            .pit_contexts
             .lock()
             .expect("pit contexts lock poisoned")
             .remove(pit_id);
+        if let Some(context) = removed_context {
+            self.record_pit_context_time_millis(&[context], current_epoch_millis());
+        }
     }
 
     fn pit_context_first_index(&self, pit_id: &str) -> Option<String> {
@@ -11630,11 +11671,14 @@ impl SteelNode {
             .lock()
             .expect("pit contexts lock poisoned");
         let mut seen_ids = BTreeSet::new();
+        let mut closed_contexts = Vec::new();
         let pits = ids
             .into_iter()
             .filter(|id| seen_ids.insert(id.clone()))
             .map(|id| {
-                contexts.remove(&id);
+                if let Some(context) = contexts.remove(&id) {
+                    closed_contexts.push(context);
+                }
                 serde_json::json!({
                     "successful": true,
                     "pit_id": id
@@ -11642,6 +11686,7 @@ impl SteelNode {
             })
             .collect::<Vec<_>>();
         drop(contexts);
+        self.record_pit_context_time_millis(&closed_contexts, current_epoch_millis());
         self.persist_shared_runtime_state_to_disk();
         RestResponse::json(
             200,
@@ -14182,6 +14227,13 @@ impl SteelNode {
             .values()
             .copied()
             .sum::<u64>();
+        let local_pit_time_millis = self
+            .pit_time_millis_by_index
+            .lock()
+            .expect("pit time millis lock poisoned")
+            .values()
+            .copied()
+            .sum::<u64>();
         let local_search_cache_telemetry = self
             .native_engine
             .search_cache_telemetry_snapshot()
@@ -14228,10 +14280,11 @@ impl SteelNode {
                             search_stats_body(
                                 local_search_open_contexts,
                                 local_pit_current_contexts,
-                                local_pit_total_contexts
+                                local_pit_total_contexts,
+                                local_pit_time_millis
                             )
                         } else {
-                            search_stats_body(0, 0, 0)
+                            search_stats_body(0, 0, 0, 0)
                         }
                     },
                     "process": {
@@ -14294,8 +14347,11 @@ impl SteelNode {
                 .pit_contexts
                 .lock()
                 .expect("pit contexts lock poisoned");
-            prune_expired_pit_contexts(&mut contexts, now_millis);
-            contexts.len()
+            let expired_contexts = drain_expired_pit_contexts(&mut contexts, now_millis);
+            let len = contexts.len();
+            drop(contexts);
+            self.record_pit_context_time_millis(&expired_contexts, now_millis);
+            len
         };
         let scroll_count = self
             .scroll_contexts
@@ -15419,9 +15475,18 @@ impl SteelNode {
             .lock()
             .expect("pit total contexts lock poisoned")
             .clone();
+        let pit_time_millis_by_index = self
+            .pit_time_millis_by_index
+            .lock()
+            .expect("pit time millis lock poisoned")
+            .clone();
         let total_pit_contexts = created_indices
             .iter()
             .map(|index| pit_total_contexts_by_index.get(index).copied().unwrap_or(0))
+            .sum::<u64>();
+        let total_pit_time_millis = created_indices
+            .iter()
+            .map(|index| pit_time_millis_by_index.get(index).copied().unwrap_or(0))
             .sum::<u64>();
         let mut indices = serde_json::Map::new();
         for index in created_indices {
@@ -15433,6 +15498,10 @@ impl SteelNode {
                 .get(&index)
                 .copied()
                 .unwrap_or_default();
+            let pit_time_millis = pit_time_millis_by_index
+                .get(&index)
+                .copied()
+                .unwrap_or_default();
             indices.insert(
                 index,
                 serde_json::json!({
@@ -15441,7 +15510,8 @@ impl SteelNode {
                         "search": search_stats_body(
                             pit_open_contexts,
                             pit_open_contexts,
-                            pit_total_contexts
+                            pit_total_contexts,
+                            pit_time_millis
                         )
                     },
                     "total": {
@@ -15449,7 +15519,8 @@ impl SteelNode {
                         "search": search_stats_body(
                             pit_open_contexts,
                             pit_open_contexts,
-                            pit_total_contexts
+                            pit_total_contexts,
+                            pit_time_millis
                         )
                     }
                 }),
@@ -15469,7 +15540,8 @@ impl SteelNode {
                     "search": search_stats_body(
                         total_pit_open_contexts,
                         total_pit_open_contexts,
-                        total_pit_contexts
+                        total_pit_contexts,
+                        total_pit_time_millis
                     )
                 },
                 "total": {
@@ -15479,7 +15551,8 @@ impl SteelNode {
                     "search": search_stats_body(
                         total_pit_open_contexts,
                         total_pit_open_contexts,
-                        total_pit_contexts
+                        total_pit_contexts,
+                        total_pit_time_millis
                     )
                 }
             },
@@ -15493,7 +15566,13 @@ impl SteelNode {
             .pit_contexts
             .lock()
             .expect("pit contexts lock poisoned");
-        prune_expired_pit_contexts(&mut contexts, now_millis);
+        let expired_contexts = drain_expired_pit_contexts(&mut contexts, now_millis);
+        drop(contexts);
+        self.record_pit_context_time_millis(&expired_contexts, now_millis);
+        let contexts = self
+            .pit_contexts
+            .lock()
+            .expect("pit contexts lock poisoned");
         let mut counts = BTreeMap::new();
         for context in contexts.values() {
             for index in &context.indices {
@@ -15513,6 +15592,15 @@ impl SteelNode {
             let shard_contexts = self.index_primary_shard_count(index).max(1) as u64;
             *totals.entry(index.clone()).or_insert(0) += shard_contexts;
         }
+    }
+
+    fn record_pit_context_time_millis(&self, contexts: &[PitContext], now_millis: u128) {
+        record_pit_context_time_millis_with_lookup(
+            &self.pit_time_millis_by_index,
+            contexts,
+            now_millis,
+            |index| self.index_primary_shard_count(index),
+        );
     }
 
     fn handle_index_stats_route(&self, target: Option<&str>) -> RestResponse {
@@ -18776,6 +18864,11 @@ impl SteelNode {
             .lock()
             .expect("pit total contexts lock poisoned")
             .clone();
+        let pit_time_millis_by_index = self
+            .pit_time_millis_by_index
+            .lock()
+            .expect("pit time millis lock poisoned")
+            .clone();
         let mut rows = Vec::new();
         for index in created_indices {
             if target.is_some_and(|pattern| !wildcard_match(pattern, &index)) {
@@ -18793,6 +18886,10 @@ impl SteelNode {
                 .copied()
                 .unwrap_or_default();
             let pit_total = pit_total_contexts_by_index
+                .get(&index)
+                .copied()
+                .unwrap_or_default();
+            let pit_time_millis = pit_time_millis_by_index
                 .get(&index)
                 .copied()
                 .unwrap_or_default();
@@ -18821,8 +18918,10 @@ impl SteelNode {
                 "pri.search.open_contexts": pit_current.to_string(),
                 "search.point_in_time_current": pit_current.to_string(),
                 "pri.search.point_in_time_current": pit_current.to_string(),
-                "search.point_in_time_time": "0s",
-                "pri.search.point_in_time_time": "0s",
+                "search.point_in_time_time": format_time_value_millis(pit_time_millis),
+                "pri.search.point_in_time_time": format_time_value_millis(pit_time_millis),
+                "_search.point_in_time_time_millis": pit_time_millis.to_string(),
+                "_pri.search.point_in_time_time_millis": pit_time_millis.to_string(),
                 "search.point_in_time_total": pit_total.to_string(),
                 "pri.search.point_in_time_total": pit_total.to_string()
             }));
@@ -19325,6 +19424,13 @@ impl SteelNode {
             .values()
             .copied()
             .sum::<u64>();
+        let local_pit_time_millis = self
+            .pit_time_millis_by_index
+            .lock()
+            .expect("pit time millis lock poisoned")
+            .values()
+            .copied()
+            .sum::<u64>();
         let mut rows = Vec::new();
         for node in nodes {
             let (ip, port) = node
@@ -19339,14 +19445,15 @@ impl SteelNode {
             } else {
                 "-"
             };
-            let (search_open_contexts, pit_current, pit_total) = if node.local {
+            let (search_open_contexts, pit_current, pit_total, pit_time_millis) = if node.local {
                 (
                     local_search_open_contexts,
                     local_pit_current_contexts,
                     local_pit_total_contexts,
+                    local_pit_time_millis,
                 )
             } else {
-                (0, 0, 0)
+                (0, 0, 0, 0)
             };
             rows.push(serde_json::json!({
                 "id": node.node_id,
@@ -19382,7 +19489,7 @@ impl SteelNode {
                 "master": if node.local { "*" } else { "-" },
                 "search.open_contexts": search_open_contexts.to_string(),
                 "search.point_in_time_current": pit_current.to_string(),
-                "search.point_in_time_time": "0s",
+                "search.point_in_time_time": format_time_value_millis(pit_time_millis),
                 "search.point_in_time_total": pit_total.to_string(),
                 "name": node.node_name,
             }));
@@ -19858,7 +19965,14 @@ impl SteelNode {
             .pit_contexts
             .lock()
             .expect("pit contexts lock poisoned");
-        prune_expired_pit_contexts(&mut contexts, current_epoch_millis());
+        let now_millis = current_epoch_millis();
+        let expired_contexts = drain_expired_pit_contexts(&mut contexts, now_millis);
+        drop(contexts);
+        self.record_pit_context_time_millis(&expired_contexts, now_millis);
+        let contexts = self
+            .pit_contexts
+            .lock()
+            .expect("pit contexts lock poisoned");
         let pit_ids = if include_all {
             contexts.keys().cloned().collect::<Vec<_>>()
         } else {
@@ -20737,6 +20851,11 @@ impl SteelNode {
             .lock()
             .expect("pit total contexts lock poisoned")
             .clone();
+        let pit_time_millis_by_index = self
+            .pit_time_millis_by_index
+            .lock()
+            .expect("pit time millis lock poisoned")
+            .clone();
         for index in indices {
             let docs = self.index_lucene_document_count(&index);
             let store_size = self.index_store_size_bytes(&index, docs);
@@ -20745,6 +20864,10 @@ impl SteelNode {
                 .copied()
                 .unwrap_or_default();
             let pit_total = pit_total_contexts_by_index
+                .get(&index)
+                .copied()
+                .unwrap_or_default();
+            let pit_time_millis = pit_time_millis_by_index
                 .get(&index)
                 .copied()
                 .unwrap_or_default();
@@ -20760,7 +20883,7 @@ impl SteelNode {
                 "node": self.info.name.clone(),
                 "search.open_contexts": pit_current.to_string(),
                 "search.point_in_time_current": pit_current.to_string(),
-                "search.point_in_time_time": "0s",
+                "search.point_in_time_time": format_time_value_millis(pit_time_millis),
                 "search.point_in_time_total": pit_total.to_string(),
             }));
             for _ in 0..self.index_replica_count(&index) {
@@ -21679,22 +21802,7 @@ impl SteelNode {
     }
 
     fn index_primary_shard_count(&self, index: &str) -> usize {
-        let manifest = self
-            .metadata_manifest_state
-            .lock()
-            .expect("metadata manifest state lock poisoned");
-        let settings = &manifest["indices"][index]["settings"];
-        settings["index"]["number_of_shards"]
-            .as_str()
-            .or_else(|| settings["number_of_shards"].as_str())
-            .and_then(|value| value.parse::<usize>().ok())
-            .or_else(|| {
-                settings["index"]["number_of_shards"]
-                    .as_u64()
-                    .or_else(|| settings["number_of_shards"].as_u64())
-                    .map(|value| value as usize)
-            })
-            .unwrap_or(1)
+        index_primary_shard_count_from_manifest(&self.metadata_manifest_state, index)
     }
 
     fn index_replica_count(&self, index: &str) -> usize {
@@ -27835,14 +27943,79 @@ fn pit_expires_at_millis(now_millis: u128, keep_alive_millis: u64) -> u128 {
     now_millis + u128::from(keep_alive_millis.max(DEFAULT_PIT_EXPIRY_REAPER_GRACE_MILLIS))
 }
 
-fn prune_expired_pit_contexts(contexts: &mut BTreeMap<String, PitContext>, now_millis: u128) {
-    contexts.retain(|_, context| context.expires_at_millis > now_millis);
+fn drain_expired_pit_contexts(
+    contexts: &mut BTreeMap<String, PitContext>,
+    now_millis: u128,
+) -> Vec<PitContext> {
+    let expired_ids = contexts
+        .iter()
+        .filter_map(|(id, context)| {
+            if context.expires_at_millis <= now_millis {
+                Some(id.clone())
+            } else {
+                None
+            }
+        })
+        .collect::<Vec<_>>();
+    expired_ids
+        .into_iter()
+        .filter_map(|id| contexts.remove(&id))
+        .collect()
+}
+
+fn index_primary_shard_count_from_manifest(
+    metadata_manifest_state: &Arc<Mutex<Value>>,
+    index: &str,
+) -> usize {
+    let manifest = metadata_manifest_state
+        .lock()
+        .expect("metadata manifest state lock poisoned");
+    let settings = &manifest["indices"][index]["settings"];
+    settings["index"]["number_of_shards"]
+        .as_str()
+        .or_else(|| settings["number_of_shards"].as_str())
+        .and_then(|value| value.parse::<usize>().ok())
+        .or_else(|| {
+            settings["index"]["number_of_shards"]
+                .as_u64()
+                .or_else(|| settings["number_of_shards"].as_u64())
+                .map(|value| value as usize)
+        })
+        .unwrap_or(1)
+}
+
+fn record_pit_context_time_millis_with_lookup<F>(
+    pit_time_millis_by_index: &Arc<Mutex<BTreeMap<String, u64>>>,
+    contexts: &[PitContext],
+    now_millis: u128,
+    shard_count_for_index: F,
+) where
+    F: Fn(&str) -> usize,
+{
+    if contexts.is_empty() {
+        return;
+    }
+    let mut totals = pit_time_millis_by_index
+        .lock()
+        .expect("pit time millis lock poisoned");
+    for context in contexts {
+        let elapsed_millis = now_millis
+            .saturating_sub(context.creation_time_millis)
+            .min(u128::from(u64::MAX)) as u64;
+        for index in &context.indices {
+            let shard_contexts = shard_count_for_index(index).max(1) as u64;
+            let elapsed = elapsed_millis.saturating_mul(shard_contexts);
+            let entry = totals.entry(index.clone()).or_insert(0);
+            *entry = entry.saturating_add(elapsed);
+        }
+    }
 }
 
 fn search_stats_body(
     open_contexts: u64,
     pit_current_contexts: u64,
     pit_total_contexts: u64,
+    pit_time_millis: u64,
 ) -> Value {
     serde_json::json!({
         "open_contexts": open_contexts,
@@ -27856,7 +28029,7 @@ fn search_stats_body(
         "scroll_time_in_millis": 0,
         "scroll_current": 0,
         "point_in_time_total": pit_total_contexts,
-        "point_in_time_time_in_millis": 0,
+        "point_in_time_time_in_millis": pit_time_millis,
         "point_in_time_current": pit_current_contexts,
         "suggest_total": 0,
         "suggest_time_in_millis": 0,
@@ -27869,7 +28042,9 @@ fn format_time_value_millis(value: u64) -> String {
     const HOUR: u64 = 3_600_000;
     const MINUTE: u64 = 60_000;
     const SECOND: u64 = 1_000;
-    if value >= DAY {
+    if value == 0 {
+        "0s".to_string()
+    } else if value >= DAY {
         format!("{}d", value / DAY)
     } else if value % HOUR == 0 {
         format!("{}h", value / HOUR)
@@ -31559,6 +31734,18 @@ fn cat_indices_cell_text(row: &Value, column: &str, request: &RestRequest) -> St
             | "pri.search.point_in_time_time"
     ) && request.query_params.contains_key("time")
     {
+        if column == "search.point_in_time_time" {
+            return row["_search.point_in_time_time_millis"]
+                .as_str()
+                .unwrap_or_default()
+                .to_string();
+        }
+        if column == "pri.search.point_in_time_time" {
+            return row["_pri.search.point_in_time_time_millis"]
+                .as_str()
+                .unwrap_or_default()
+                .to_string();
+        }
         return value.trim_end_matches('s').to_string();
     }
     value.to_string()
@@ -40206,7 +40393,6 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                     "shard": "0",
                     "prirep": "p",
                     "ip": "127.0.0.1",
-                    "id": "steel-node",
                     "segment": "_0",
                     "generation": "0",
                     "docs.count": "0",
@@ -55227,6 +55413,16 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         ));
         assert_eq!(open_pit.status, 200);
         let pit_id = open_pit.body["pit_id"].as_str().expect("pit id");
+        {
+            let mut contexts = node
+                .pit_contexts
+                .lock()
+                .expect("pit contexts lock poisoned");
+            assert!(contexts.contains_key(pit_id));
+            for context in contexts.values_mut() {
+                context.creation_time_millis = 0;
+            }
+        }
 
         for (after, expected_hits) in [(99, 2), (100, 1), (0, 3)] {
             let response = node.handle_rest_request(
@@ -55367,6 +55563,17 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 .with_json_body(serde_json::json!({ "pit_id": [pit_id] })),
         );
         assert_eq!(delete_pit.status, 200);
+        let recorded_pit_time_millis = node
+            .pit_time_millis_by_index
+            .lock()
+            .expect("pit time millis lock poisoned")
+            .get("pit-stats-index")
+            .copied()
+            .unwrap_or_default();
+        assert!(
+            recorded_pit_time_millis >= 2,
+            "PIT time should be recorded per primary shard, got {recorded_pit_time_millis}"
+        );
 
         let stats_after_delete =
             node.handle_rest_request(RestRequest::new(RestMethod::Get, "/pit-stats-index/_stats"));
@@ -55380,6 +55587,35 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             stats_after_delete.body["indices"]["pit-stats-index"]["total"]["search"]
                 ["point_in_time_total"],
             2
+        );
+        assert!(
+            stats_after_delete.body["indices"]["pit-stats-index"]["total"]["search"]
+                ["point_in_time_time_in_millis"]
+                .as_u64()
+                .unwrap_or_default()
+                >= 2
+        );
+        assert_eq!(
+            stats_after_delete.body["indices"]["pit-stats-index"]["primaries"]["search"]
+                ["point_in_time_time_in_millis"],
+            stats_after_delete.body["indices"]["pit-stats-index"]["total"]["search"]
+                ["point_in_time_time_in_millis"]
+        );
+        let mut cat_indices_time_request =
+            RestRequest::new(RestMethod::Get, "/_cat/indices/pit-stats-index");
+        cat_indices_time_request
+            .query_params
+            .insert("format".to_string(), "json".to_string());
+        cat_indices_time_request
+            .query_params
+            .insert("h".to_string(), "search.point_in_time_time".to_string());
+        let cat_indices_time = node.handle_rest_request(cat_indices_time_request);
+        assert_eq!(cat_indices_time.status, 200);
+        assert_ne!(
+            cat_indices_time.body[0]["search.point_in_time_time"]
+                .as_str()
+                .unwrap_or_default(),
+            "0s"
         );
         assert_eq!(
             stats_after_delete.body["indices"]["pit-stats-index"]["total"]["search"]
