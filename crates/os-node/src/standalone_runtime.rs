@@ -28439,6 +28439,33 @@ fn bool_query_clauses<'a>(
     }
 }
 
+fn bool_minimum_should_match_value(value: &Value, should_count: usize) -> Option<usize> {
+    if let Some(value) = value.as_u64() {
+        return usize::try_from(value).ok();
+    }
+    let value = value.as_str()?.trim();
+    if value.is_empty() || value.contains('<') || value.split_whitespace().nth(1).is_some() {
+        return None;
+    }
+    if let Some(percent) = value.strip_suffix('%') {
+        let percent = percent.parse::<i64>().ok()?;
+        let required = if percent >= 0 {
+            ((should_count as i64 * percent) / 100).max(0)
+        } else {
+            let optional = (should_count as i64 * percent.unsigned_abs() as i64) / 100;
+            (should_count as i64 - optional).max(0)
+        };
+        return usize::try_from(required).ok();
+    }
+    let required = value.parse::<i64>().ok()?;
+    let required = if required >= 0 {
+        required
+    } else {
+        (should_count as i64 + required).max(0)
+    };
+    usize::try_from(required).ok()
+}
+
 fn extract_knn_field_name(query: &Value) -> Option<&str> {
     if let Some(knn) = query.get("knn").and_then(Value::as_object) {
         return knn.keys().next().map(String::as_str);
@@ -29332,8 +29359,7 @@ fn extract_knn_limit(query: &Value) -> Option<usize> {
             }
             let required = bool_query
                 .get("minimum_should_match")
-                .and_then(Value::as_u64)
-                .map(|value| value as usize)
+                .and_then(|value| bool_minimum_should_match_value(value, shoulds.len()))
                 .unwrap_or(1);
             if required == 0 {
                 return None;
@@ -29390,8 +29416,7 @@ fn query_uses_pure_knn_candidate_path(query: &Value) -> bool {
         }
         let required = bool_query
             .get("minimum_should_match")
-            .and_then(Value::as_u64)
-            .map(|value| value as usize)
+            .and_then(|value| bool_minimum_should_match_value(value, shoulds.len()))
             .unwrap_or(1)
             .max(1);
         let pure_should_candidates = shoulds
@@ -30051,7 +30076,7 @@ fn evaluate_search_query_source_with_mappings(
                 bool_query.get("must").is_some() || has_filter_clause;
             let required = bool_query
                 .get("minimum_should_match")
-                .and_then(Value::as_u64)
+                .and_then(|value| bool_minimum_should_match_value(value, shoulds.len()))
                 .map(|value| {
                     if value == 0
                         && shoulds
@@ -30060,9 +30085,9 @@ fn evaluate_search_query_source_with_mappings(
                     {
                         0
                     } else if !has_required_positive_clause {
-                        (value as usize).max(1)
+                        value.max(1)
                     } else {
-                        value as usize
+                        value
                     }
                 })
                 .unwrap_or_else(|| if has_required_positive_clause { 0 } else { 1 });
@@ -61939,6 +61964,32 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(terms_set.status, 200);
         assert_eq!(terms_set.body["hits"]["total"]["value"], 1);
         assert_eq!(terms_set.body["hits"]["hits"][0]["_id"], "doc-1");
+
+        let bool_percentage_minimum_should_match = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-dsl-000001/_search").with_json_body(
+                serde_json::json!({
+                    "query": {
+                        "bool": {
+                            "should": [
+                                { "term": { "tags": "blue" } },
+                                { "term": { "code": "beta-2" } },
+                                { "match": { "message": "beta" } }
+                            ],
+                            "minimum_should_match": "75%"
+                        }
+                    }
+                }),
+            ),
+        );
+        assert_eq!(bool_percentage_minimum_should_match.status, 200);
+        assert_eq!(
+            bool_percentage_minimum_should_match.body["hits"]["total"]["value"],
+            1
+        );
+        assert_eq!(
+            bool_percentage_minimum_should_match.body["hits"]["hits"][0]["_id"],
+            "doc-2"
+        );
 
         let terms = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/logs-search-dsl-000001/_search").with_json_body(

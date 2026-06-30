@@ -3654,6 +3654,7 @@ fn parse_geo_distance_distance(value: &Value) -> QueryDslResult<f64> {
 fn parse_bool(body: &Value) -> QueryDslResult<Query> {
     let object = body.as_object().ok_or(QueryDslError::ExpectedObject)?;
     let mut clauses = BoolQuery::default();
+    let mut minimum_should_match = None;
 
     for (option, value) in object {
         match option.as_str() {
@@ -3661,9 +3662,7 @@ fn parse_bool(body: &Value) -> QueryDslResult<Query> {
             "should" => clauses.should = parse_bool_clause_value(value)?,
             "filter" => clauses.filter = parse_bool_clause_value(value)?,
             "must_not" => clauses.must_not = parse_bool_clause_value(value)?,
-            "minimum_should_match" => {
-                clauses.minimum_should_match = Some(parse_minimum_should_match(value)?);
-            }
+            "minimum_should_match" => minimum_should_match = Some(value),
             _ => {
                 return Err(QueryDslError::UnsupportedOption {
                     clause: "bool".to_string(),
@@ -3671,6 +3670,11 @@ fn parse_bool(body: &Value) -> QueryDslResult<Query> {
                 });
             }
         }
+    }
+
+    if let Some(value) = minimum_should_match {
+        clauses.minimum_should_match =
+            Some(parse_minimum_should_match(value, clauses.should.len())?);
     }
 
     Ok(Query::Bool { clauses })
@@ -3684,13 +3688,37 @@ fn parse_bool_clause_value(value: &Value) -> QueryDslResult<Vec<Query>> {
     }
 }
 
-fn parse_minimum_should_match(value: &Value) -> QueryDslResult<u32> {
+fn parse_minimum_should_match(value: &Value, should_count: usize) -> QueryDslResult<u32> {
     if let Some(value) = value.as_u64() {
         return u32::try_from(value).map_err(|_| QueryDslError::ExpectedObject);
     }
 
     let value = value.as_str().ok_or(QueryDslError::ExpectedObject)?;
-    value.parse().map_err(|_| QueryDslError::ExpectedObject)
+    parse_minimum_should_match_text(value, should_count).ok_or(QueryDslError::ExpectedObject)
+}
+
+fn parse_minimum_should_match_text(value: &str, should_count: usize) -> Option<u32> {
+    let value = value.trim();
+    if value.is_empty() || value.contains('<') || value.split_whitespace().nth(1).is_some() {
+        return None;
+    }
+    if let Some(percent) = value.strip_suffix('%') {
+        let percent = percent.parse::<i64>().ok()?;
+        let required = if percent >= 0 {
+            ((should_count as i64 * percent) / 100).max(0)
+        } else {
+            let optional = (should_count as i64 * percent.unsigned_abs() as i64) / 100;
+            (should_count as i64 - optional).max(0)
+        };
+        return u32::try_from(required).ok();
+    }
+    let required = value.parse::<i64>().ok()?;
+    let required = if required >= 0 {
+        required
+    } else {
+        (should_count as i64 + required).max(0)
+    };
+    u32::try_from(required).ok()
 }
 
 #[cfg(test)]
@@ -5031,6 +5059,55 @@ mod tests {
                 }
             }
         );
+    }
+
+    #[test]
+    fn parses_bool_percentage_minimum_should_match() {
+        let query = parse_query(&serde_json::json!({
+            "bool": {
+                "should": [
+                    { "term": { "service": "checkout" } },
+                    { "term": { "level": "info" } },
+                    { "term": { "labels": "payment" } },
+                    { "term": { "tag": "payment" } }
+                ],
+                "minimum_should_match": "75%"
+            }
+        }))
+        .unwrap();
+
+        assert!(matches!(
+            query,
+            Query::Bool {
+                clauses: BoolQuery {
+                    minimum_should_match: Some(3),
+                    ..
+                }
+            }
+        ));
+
+        let negative_percent = parse_query(&serde_json::json!({
+            "bool": {
+                "should": [
+                    { "term": { "service": "checkout" } },
+                    { "term": { "level": "info" } },
+                    { "term": { "labels": "payment" } },
+                    { "term": { "tag": "payment" } }
+                ],
+                "minimum_should_match": "-25%"
+            }
+        }))
+        .unwrap();
+
+        assert!(matches!(
+            negative_percent,
+            Query::Bool {
+                clauses: BoolQuery {
+                    minimum_should_match: Some(3),
+                    ..
+                }
+            }
+        ));
     }
 
     #[test]
