@@ -511,6 +511,19 @@ E2E_SEARCH_COMPAT_PARITY_BATCH: tuple[ExternalValidation, ...] = (
     ),
 )
 
+BROAD_E2E_PARITY_BATCH: tuple[ExternalValidation, ...] = (
+    ExternalValidation(
+        "broad_unified_opensearch_e2e_report_has_no_failed_missing_or_drifted_required_suites",
+        "e2e-broad-parity",
+        (
+            "python3",
+            "-c",
+            "import subprocess, sys; output_dir = 'target/unified-opensearch-e2e-broad-current'; collect = [sys.executable, 'tools/run-unified-opensearch-e2e.py', '--output-dir', output_dir, '--max-report-age-seconds', '604800']; check = [sys.executable, 'tools/check-unified-opensearch-e2e-report.py', f'{output_dir}/unified-opensearch-e2e-report.json']; first = subprocess.run(collect, stdout=subprocess.DEVNULL); sys.exit(first.returncode) if first.returncode else sys.exit(subprocess.run(check).returncode)",
+        ),
+        timeout_seconds=180,
+    ),
+)
+
 REST_API_COVERAGE_CURRENT_BATCH: tuple[ExternalValidation, ...] = (
     ExternalValidation(
         "rest_api_source_inventory_coverage_is_reported_for_required_live_suites",
@@ -575,6 +588,7 @@ CURRENT_EVIDENCE_GATE_BATCH: tuple[ExternalValidation, ...] = (
     *NON_NATIVE_INVENTORY_BATCH,
     *E2E_REQUIRED_PARITY_BATCH,
     *E2E_SEARCH_COMPAT_PARITY_BATCH,
+    *BROAD_E2E_PARITY_BATCH,
     *REST_API_COVERAGE_CURRENT_BATCH,
     *TRANSPORT_ACTION_COVERAGE_CURRENT_BATCH,
     *MIXED_CLUSTER_COVERAGE_CURRENT_BATCH,
@@ -2119,6 +2133,7 @@ BATCHES: dict[str, tuple[ValidationCase, ...]] = {
     "non-native-inventory": NON_NATIVE_INVENTORY_BATCH,
     "e2e-required-parity": E2E_REQUIRED_PARITY_BATCH,
     "e2e-search-compat-parity": E2E_SEARCH_COMPAT_PARITY_BATCH,
+    "e2e-broad-parity": BROAD_E2E_PARITY_BATCH,
     "rest-api-coverage-current": REST_API_COVERAGE_CURRENT_BATCH,
     "transport-action-coverage-current": TRANSPORT_ACTION_COVERAGE_CURRENT_BATCH,
     "mixed-cluster-coverage-current": MIXED_CLUSTER_COVERAGE_CURRENT_BATCH,

@@ -262,9 +262,6 @@ def main() -> int:
         for check in post_checks:
             if check["status"] == "failed":
                 exit_code = 1
-                report["summary"]["failed"] += 1
-            else:
-                report["summary"]["passed"] += 1
 
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
