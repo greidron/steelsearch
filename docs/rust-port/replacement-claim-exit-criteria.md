@@ -685,12 +685,17 @@ Required binary dispatch proof:
   - `ClusterStateAction.INSTANCE`
   - `SearchAction.INSTANCE`
   - `BulkAction.INSTANCE`
-- rejected actions:
   - `MultiSearchAction.INSTANCE`
+  - `SearchScrollAction.INSTANCE`
+  - `ExplainAction.INSTANCE`
   - `StreamSearchAction.INSTANCE`
+- rejected actions:
+  - no named action in the declared subset; unknown or unlisted actions are
+    rejected by the negotiation policy before dispatch.
 - required ledgers:
   - `transport-action-subset-ledger.json`
   - `transport-negotiation-exception-policy.json`
+- required semantic artifacts:
   - `named-writeable-payload-corpus.json`
   - `cluster-state-diff-apply-transcript.json`
 

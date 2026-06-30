@@ -48,6 +48,30 @@ def load_transport_action_dispositions(ledger_name: str) -> tuple[set[str], set[
     return allowed, rejected
 
 
+def load_negotiation_action_dispositions(ledger_name: str) -> tuple[set[str], set[str]]:
+    repo_root = Path(__file__).resolve().parents[1]
+    ledger_path = repo_root / "tools" / "fixtures" / ledger_name
+    if not ledger_path.exists():
+        fail(f"missing transport negotiation ledger: {ledger_name}")
+    ledger = json.loads(ledger_path.read_text(encoding="utf-8"))
+    allowed = set()
+    rejected = set()
+    for case in ledger.get("cases", []):
+        if case.get("category") != "action_classification":
+            continue
+        action = case.get("kind")
+        disposition = case.get("disposition")
+        if not action or action == "unknown_transport_action":
+            continue
+        if disposition == "allowed":
+            allowed.add(action)
+        elif disposition == "rejected":
+            rejected.add(action)
+        else:
+            fail(f"unknown transport negotiation disposition for {action}: {disposition}")
+    return allowed, rejected
+
+
 def main() -> None:
     if len(sys.argv) != 2:
         fail("usage: check-external-interop-promotion-gate.py <fixture.json>")
@@ -94,6 +118,13 @@ def main() -> None:
         fail("rejected actions mismatch with transport-action-subset-ledger.json")
     if set(dispatch.get("allowed_actions", [])) & set(dispatch.get("rejected_actions", [])):
         fail("rejected actions mismatch")
+    negotiation_allowed, negotiation_rejected = load_negotiation_action_dispositions(
+        "transport-negotiation-exception-policy.json"
+    )
+    if negotiation_allowed != allowed_actions:
+        fail("allowed actions mismatch with transport-negotiation-exception-policy.json")
+    if negotiation_rejected != rejected_actions:
+        fail("rejected actions mismatch with transport-negotiation-exception-policy.json")
 
     print(json.dumps({
         "source_area": data["source_area"],

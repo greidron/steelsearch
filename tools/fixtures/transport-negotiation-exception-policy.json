@@ -58,20 +58,44 @@
       "reason": "bounded bulk transport contract is explicitly allowlisted"
     },
     {
+      "case": "msearch_action_server_side",
+      "category": "action_classification",
+      "kind": "MultiSearchAction.INSTANCE",
+      "bucket": "server-side",
+      "disposition": "allowed",
+      "reason": "bounded multi-search transport contract is explicitly allowlisted"
+    },
+    {
+      "case": "search_scroll_action_server_side",
+      "category": "action_classification",
+      "kind": "SearchScrollAction.INSTANCE",
+      "bucket": "server-side",
+      "disposition": "allowed",
+      "reason": "bounded search-scroll transport contract is explicitly allowlisted"
+    },
+    {
+      "case": "explain_action_server_side",
+      "category": "action_classification",
+      "kind": "ExplainAction.INSTANCE",
+      "bucket": "server-side",
+      "disposition": "allowed",
+      "reason": "bounded explain transport contract is explicitly allowlisted"
+    },
+    {
+      "case": "stream_search_action_server_side",
+      "category": "action_classification",
+      "kind": "StreamSearchAction.INSTANCE",
+      "bucket": "server-side",
+      "disposition": "allowed",
+      "reason": "bounded stream-search transport contract is explicitly allowlisted"
+    },
+    {
       "case": "unknown_transport_action_reject",
       "category": "action_classification",
       "kind": "unknown_transport_action",
       "bucket": "unsupported",
       "disposition": "rejected",
       "reason": "unknown transport actions must reject before dispatch"
-    },
-    {
-      "case": "msearch_action_planned_reject",
-      "category": "action_classification",
-      "kind": "MultiSearchAction.INSTANCE",
-      "bucket": "planned",
-      "disposition": "rejected",
-      "reason": "planned transport actions must stay fail-closed until explicitly promoted"
     }
   ]
 }

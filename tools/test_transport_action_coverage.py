@@ -12,6 +12,10 @@ ROOT = Path(__file__).resolve().parents[1]
 REPORT_PATH = ROOT / "tools" / "report-transport-action-coverage.py"
 SOURCE_TRANSPORT_ACTIONS = ROOT / "docs" / "rust-port" / "generated" / "source-transport-actions.tsv"
 TRANSPORT_INVENTORY = ROOT / "tools" / "fixtures" / "interop-transport-action-inventory.json"
+TRANSPORT_ACTION_SUBSET_LEDGER = ROOT / "tools" / "fixtures" / "transport-action-subset-ledger.json"
+TRANSPORT_NEGOTIATION_POLICY = (
+    ROOT / "tools" / "fixtures" / "transport-negotiation-exception-policy.json"
+)
 
 
 def load_report_module():
@@ -248,6 +252,22 @@ class TransportActionCoverageTests(unittest.TestCase):
                 )
 
         self.assertEqual(planned, [])
+
+    def test_transport_subset_and_negotiation_policy_action_dispositions_match(self):
+        subset = json.loads(TRANSPORT_ACTION_SUBSET_LEDGER.read_text(encoding="utf-8"))
+        policy = json.loads(TRANSPORT_NEGOTIATION_POLICY.read_text(encoding="utf-8"))
+
+        subset_dispositions = {
+            case["action"]: case["disposition"] for case in subset.get("cases", [])
+        }
+        policy_dispositions = {
+            case["kind"]: case["disposition"]
+            for case in policy.get("cases", [])
+            if case.get("category") == "action_classification"
+            and case.get("kind") != "unknown_transport_action"
+        }
+
+        self.assertEqual(policy_dispositions, subset_dispositions)
 
     def run_cli(self, *args: str) -> int:
         old_argv = sys.argv

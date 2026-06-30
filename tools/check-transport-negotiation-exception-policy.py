@@ -73,6 +73,10 @@ def main() -> int:
         "ClusterStateAction.INSTANCE",
         "SearchAction.INSTANCE",
         "BulkAction.INSTANCE",
+        "MultiSearchAction.INSTANCE",
+        "SearchScrollAction.INSTANCE",
+        "ExplainAction.INSTANCE",
+        "StreamSearchAction.INSTANCE",
     }
     if not required_server_side.issubset(server_side):
         raise SystemExit("missing required server-side transport actions in policy fixture")
