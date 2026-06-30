@@ -388,6 +388,58 @@ class ReplacementGateScriptTests(unittest.TestCase):
             self.assertEqual(report["status"], "failed")
             self.assertEqual(report["missing_markers"], ["fail-closed"])
 
+    def test_secure_multinode_gap_harness_requires_expected_markers(self):
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            report_dir = Path(temp_dir_value)
+            result = self.run_command(
+                "./tools/run-secure-multinode-gap-harness.sh",
+                "--profile",
+                "restricted-index-mutation-deny",
+                "--report-dir",
+                str(report_dir),
+                "--prepare-cmd",
+                "echo restricted index mutation denied",
+                "--trigger-cmd",
+                "echo security_exception",
+                "--check-cmd",
+                "echo fail-closed",
+            )
+
+            profile_dir = report_dir / "restricted-index-mutation-deny"
+            self.assertEqual(result.returncode, 0, result.stderr)
+            report = json.loads((profile_dir / "report.json").read_text(encoding="utf-8"))
+            self.assertEqual(report["status"], "completed")
+            self.assertEqual(report["missing_markers"], [])
+            self.assertTrue(all(report["marker_hits"].values()))
+            self.assertTrue((profile_dir / "security-redaction-smoke-report.json").exists())
+            for phase in ["prepare", "trigger", "check"]:
+                self.assertTrue(Path(report["phase_logs"][phase]).exists())
+
+    def test_secure_multinode_gap_harness_fails_when_marker_is_missing(self):
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            report_dir = Path(temp_dir_value)
+            result = self.run_command(
+                "./tools/run-secure-multinode-gap-harness.sh",
+                "--profile",
+                "restricted-index-mutation-deny",
+                "--report-dir",
+                str(report_dir),
+                "--prepare-cmd",
+                "echo restricted index mutation denied",
+                "--trigger-cmd",
+                "echo security_exception",
+                "--check-cmd",
+                "echo no marker here",
+            )
+
+            profile_dir = report_dir / "restricted-index-mutation-deny"
+            self.assertEqual(result.returncode, 1)
+            self.assertIn("missing expected marker", result.stderr)
+            report = json.loads((profile_dir / "report.json").read_text(encoding="utf-8"))
+            self.assertEqual(report["status"], "failed")
+            self.assertEqual(report["missing_markers"], ["fail-closed"])
+            self.assertFalse((profile_dir / "security-redaction-smoke-report.json").exists())
+
 
 if __name__ == "__main__":
     unittest.main()
