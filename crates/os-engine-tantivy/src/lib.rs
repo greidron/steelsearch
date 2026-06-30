@@ -144894,6 +144894,19 @@ mod tests {
             .unwrap()
             .expect("native multi_match hits");
         assert_eq!(search_hit_ids(&native_hits), vec!["1", "2"]);
+
+        let single_field_query = parse_query(&serde_json::json!({
+            "multi_match": {
+                "query": "checkout",
+                "fields": "body^2"
+            }
+        }))
+        .unwrap();
+        let native_hits = index
+            .search_hits_for_query_native("bench", &single_field_query, &[])
+            .unwrap()
+            .expect("native multi_match single field string hits");
+        assert_eq!(search_hit_ids(&native_hits), vec!["1"]);
     }
 
     #[test]

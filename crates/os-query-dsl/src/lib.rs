@@ -2424,21 +2424,24 @@ fn parse_multi_match(body: &Value) -> QueryDslResult<Query> {
             clause: "multi_match".to_string(),
             field: "query".to_string(),
         })?;
-    let fields = object
-        .get("fields")
-        .and_then(Value::as_array)
-        .ok_or_else(|| QueryDslError::MissingField {
-            clause: "multi_match".to_string(),
-            field: "fields".to_string(),
-        })?
-        .iter()
-        .map(|value| {
-            value
-                .as_str()
-                .map(ToString::to_string)
-                .ok_or(QueryDslError::ExpectedObject)
-        })
-        .collect::<QueryDslResult<Vec<_>>>()?;
+    let fields = match object.get("fields") {
+        Some(Value::String(field)) => vec![field.to_string()],
+        Some(Value::Array(fields)) => fields
+            .iter()
+            .map(|value| {
+                value
+                    .as_str()
+                    .map(ToString::to_string)
+                    .ok_or(QueryDslError::ExpectedObject)
+            })
+            .collect::<QueryDslResult<Vec<_>>>()?,
+        _ => {
+            return Err(QueryDslError::MissingField {
+                clause: "multi_match".to_string(),
+                field: "fields".to_string(),
+            });
+        }
+    };
 
     let query_type = object
         .get("type")
@@ -4299,6 +4302,25 @@ mod tests {
                 fields: vec!["title".to_string()],
                 query: serde_json::json!("alpha che"),
                 query_type: MultiMatchType::PhrasePrefix,
+                operator: None,
+                minimum_should_match: None,
+            }
+        );
+
+        let single_field = parse_query(&serde_json::json!({
+            "multi_match": {
+                "query": "alpha",
+                "fields": "title^2"
+            }
+        }))
+        .unwrap();
+
+        assert_eq!(
+            single_field,
+            Query::MultiMatch {
+                fields: vec!["title^2".to_string()],
+                query: serde_json::json!("alpha"),
+                query_type: MultiMatchType::BestFields,
                 operator: None,
                 minimum_should_match: None,
             }
