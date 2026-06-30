@@ -322,8 +322,8 @@
       "knn_model_lifecycle_shape",
       "knn_warmup_budget_failure",
       "knn_warmup_clear_cache_telemetry_shape",
-      "knn_unsupported_method_engine_fail_closed",
-      "knn_unsupported_mode_fail_closed",
+      "knn_faiss_method_engine_search",
+      "knn_on_disk_mode_search",
       "ml_model_lifecycle_shape"
     ],
     "aggregation_requests": [
@@ -403,24 +403,6 @@
         "status": "planned",
         "expected_status": 400,
         "reason": "Executable comparison is added with error normalization to avoid vendor-specific message text."
-      },
-      {
-        "name": "knn_unsupported_method_engine_fail_closed",
-        "request": "POST /vectors-unsupported-engine-compat/_search",
-        "expected_status": 400,
-        "stable_fields": [
-          "error.type",
-          "error.reason"
-        ]
-      },
-      {
-        "name": "knn_unsupported_mode_fail_closed",
-        "request": "POST /vectors-unsupported-mode-compat/_search",
-        "expected_status": 400,
-        "stable_fields": [
-          "error.type",
-          "error.reason"
-        ]
       },
       {
         "name": "knn_warmup_budget_failure",
@@ -12712,23 +12694,19 @@
       "description": "[failure-path] partial shard failure geo search"
     },
     {
-      "name": "knn_unsupported_method_engine_fail_closed",
+      "name": "knn_faiss_method_engine_search",
       "area": "knn",
-      "comparison": "steelsearch_only",
-      "expected_steelsearch_status": 400,
-      "skip_scope": "unsupported-knn-production-option",
-      "reason": "Steelsearch parses OpenSearch k-NN engine declarations for compatibility but rejects FAISS execution in the Rust-native production path.",
-      "extract": "error_response",
+      "extract": "search_hits",
       "steps": [
         {
           "name": "delete-index",
           "method": "DELETE",
-          "path": "/vectors-unsupported-engine-compat"
+          "path": "/vectors-faiss-compat"
         },
         {
           "name": "create-index",
           "method": "PUT",
-          "path": "/vectors-unsupported-engine-compat",
+          "path": "/vectors-faiss-compat",
           "expected_status": 200,
           "body": {
             "settings": {
@@ -12756,7 +12734,7 @@
         {
           "name": "index-doc",
           "method": "POST",
-          "path": "/vectors-unsupported-engine-compat/_bulk",
+          "path": "/vectors-faiss-compat/_bulk",
           "expected_status": 200,
           "raw": true,
           "body": "{\"index\":{\"_id\":\"vec-a\"}}\n{\"embedding\":[1.0,0.0,0.0]}\n"
@@ -12771,8 +12749,8 @@
         {
           "name": "search",
           "method": "POST",
-          "path": "/vectors-unsupported-engine-compat/_search",
-          "expected_status": 400,
+          "path": "/vectors-faiss-compat/_search",
+          "expected_status": 200,
           "body": {
             "query": {
               "knn": {
@@ -12787,30 +12765,26 @@
               }
             }
           },
-          "extract": "error_response"
+          "extract": "search_hits"
         }
       ],
-      "family": "failure-path",
-      "description": "[failure-path] knn unsupported method engine fail closed"
+      "family": "vector-knn",
+      "description": "[vector-knn] knn faiss method engine search"
     },
     {
-      "name": "knn_unsupported_mode_fail_closed",
+      "name": "knn_on_disk_mode_search",
       "area": "knn",
-      "comparison": "steelsearch_only",
-      "expected_steelsearch_status": 400,
-      "skip_scope": "unsupported-knn-production-option",
-      "reason": "Steelsearch rejects on_disk k-NN execution until compressed/on-disk vector semantics are implemented.",
-      "extract": "error_response",
+      "extract": "search_hits",
       "steps": [
         {
           "name": "delete-index",
           "method": "DELETE",
-          "path": "/vectors-unsupported-mode-compat"
+          "path": "/vectors-on-disk-compat"
         },
         {
           "name": "create-index",
           "method": "PUT",
-          "path": "/vectors-unsupported-mode-compat",
+          "path": "/vectors-on-disk-compat",
           "expected_status": 200,
           "body": {
             "settings": {
@@ -12834,7 +12808,7 @@
         {
           "name": "index-doc",
           "method": "POST",
-          "path": "/vectors-unsupported-mode-compat/_bulk",
+          "path": "/vectors-on-disk-compat/_bulk",
           "expected_status": 200,
           "raw": true,
           "body": "{\"index\":{\"_id\":\"vec-a\"}}\n{\"embedding\":[1.0,0.0,0.0]}\n"
@@ -12849,8 +12823,8 @@
         {
           "name": "search",
           "method": "POST",
-          "path": "/vectors-unsupported-mode-compat/_search",
-          "expected_status": 400,
+          "path": "/vectors-on-disk-compat/_search",
+          "expected_status": 200,
           "body": {
             "query": {
               "knn": {
@@ -12865,11 +12839,11 @@
               }
             }
           },
-          "extract": "error_response"
+          "extract": "search_hits"
         }
       ],
-      "family": "failure-path",
-      "description": "[failure-path] knn unsupported mode fail closed"
+      "family": "vector-knn",
+      "description": "[vector-knn] knn on_disk mode search"
     },
     {
       "name": "malformed_search_body_parse_exception",

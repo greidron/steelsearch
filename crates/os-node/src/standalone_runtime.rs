@@ -22705,18 +22705,13 @@ impl SteelNode {
                     }
                 }
             }
-            if field_object.get("mode").and_then(Value::as_str) == Some("on_disk") {
-                return Some(build_unsupported_search_response(
-                    "unsupported knn mode [on_disk]",
-                ));
-            }
             let Some(method) = field_object.get("method").and_then(Value::as_object) else {
                 continue;
             };
             if method
                 .get("engine")
                 .and_then(Value::as_str)
-                .is_some_and(|engine| engine != "lucene")
+                .is_some_and(|engine| engine != "lucene" && engine != "faiss")
             {
                 return Some(build_unsupported_search_response(
                     "unsupported knn method engine",
@@ -60780,8 +60775,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
     }
 
     #[test]
-    fn knn_routes_support_lucene_score_spaces_and_fail_closed_on_unsupported_engine_mode_and_space_type(
-    ) {
+    fn knn_routes_support_k_nn_engines_modes_spaces_and_fail_closed_on_unsupported_space_type() {
         let node = SteelNode::new(NodeInfo {
             name: "steel-node".to_string(),
             version: OPENSEARCH_3_7_0_TRANSPORT,
@@ -60832,6 +60826,38 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                     }
                 }),
             ),
+            (
+                "vectors-unit-faiss-000001",
+                serde_json::json!({
+                    "mappings": {
+                        "properties": {
+                            "embedding": {
+                                "type": "knn_vector",
+                                "dimension": 3,
+                                "method": {
+                                    "name": "hnsw",
+                                    "engine": "faiss",
+                                    "space_type": "l2"
+                                }
+                            }
+                        }
+                    }
+                }),
+            ),
+            (
+                "vectors-unit-ondisk-000001",
+                serde_json::json!({
+                    "mappings": {
+                        "properties": {
+                            "embedding": {
+                                "type": "knn_vector",
+                                "dimension": 3,
+                                "mode": "on_disk"
+                            }
+                        }
+                    }
+                }),
+            ),
         ] {
             assert_eq!(
                 node.handle_rest_request(
@@ -60863,6 +60889,8 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             "vectors-unit-l2-000001",
             "vectors-unit-cosine-000001",
             "vectors-unit-ip-000001",
+            "vectors-unit-faiss-000001",
+            "vectors-unit-ondisk-000001",
         ] {
             let response = node.handle_rest_request(
                 RestRequest::new(RestMethod::Post, &format!("/{index}/_search")).with_json_body(
@@ -60884,84 +60912,6 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 "index {index}"
             );
         }
-
-        assert_eq!(
-            node.handle_rest_request(
-                RestRequest::new(RestMethod::Put, "/vectors-unit-faiss-000001").with_json_body(
-                    serde_json::json!({
-                        "mappings": {
-                            "properties": {
-                                "embedding": {
-                                    "type": "knn_vector",
-                                    "dimension": 3,
-                                    "method": {
-                                        "engine": "faiss"
-                                    }
-                                }
-                            }
-                        }
-                    }),
-                ),
-            )
-            .status,
-            200
-        );
-        let faiss = node.handle_rest_request(
-            RestRequest::new(RestMethod::Post, "/vectors-unit-faiss-000001/_search")
-                .with_json_body(serde_json::json!({
-                    "query": {
-                        "knn": {
-                            "embedding": {
-                                "vector": [1.0, 0.0, 0.0],
-                                "k": 1
-                            }
-                        }
-                    }
-                })),
-        );
-        assert_eq!(faiss.status, 400);
-        assert_eq!(
-            faiss.body["error"]["reason"],
-            "unsupported knn method engine"
-        );
-
-        assert_eq!(
-            node.handle_rest_request(
-                RestRequest::new(RestMethod::Put, "/vectors-unit-ondisk-000001").with_json_body(
-                    serde_json::json!({
-                        "mappings": {
-                            "properties": {
-                                "embedding": {
-                                    "type": "knn_vector",
-                                    "dimension": 3,
-                                    "mode": "on_disk"
-                                }
-                            }
-                        }
-                    }),
-                ),
-            )
-            .status,
-            200
-        );
-        let on_disk = node.handle_rest_request(
-            RestRequest::new(RestMethod::Post, "/vectors-unit-ondisk-000001/_search")
-                .with_json_body(serde_json::json!({
-                    "query": {
-                        "knn": {
-                            "embedding": {
-                                "vector": [1.0, 0.0, 0.0],
-                                "k": 1
-                            }
-                        }
-                    }
-                })),
-        );
-        assert_eq!(on_disk.status, 400);
-        assert_eq!(
-            on_disk.body["error"]["reason"],
-            "unsupported knn mode [on_disk]"
-        );
 
         assert_eq!(
             node.handle_rest_request(

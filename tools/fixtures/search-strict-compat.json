@@ -303,8 +303,8 @@
       "knn_model_lifecycle_shape",
       "knn_warmup_budget_failure",
       "knn_warmup_clear_cache_telemetry_shape",
-      "knn_unsupported_method_engine_fail_closed",
-      "knn_unsupported_mode_fail_closed",
+      "knn_faiss_method_engine_search",
+      "knn_on_disk_mode_search",
       "ml_model_lifecycle_shape"
     ],
     "aggregation_requests": [
@@ -384,24 +384,6 @@
         "status": "planned",
         "expected_status": 400,
         "reason": "Executable comparison is added with error normalization to avoid vendor-specific message text."
-      },
-      {
-        "name": "knn_unsupported_method_engine_fail_closed",
-        "request": "POST /vectors-unsupported-engine-compat/_search",
-        "expected_status": 400,
-        "stable_fields": [
-          "error.type",
-          "error.reason"
-        ]
-      },
-      {
-        "name": "knn_unsupported_mode_fail_closed",
-        "request": "POST /vectors-unsupported-mode-compat/_search",
-        "expected_status": 400,
-        "stable_fields": [
-          "error.type",
-          "error.reason"
-        ]
       },
       {
         "name": "knn_warmup_budget_failure",

@@ -1550,8 +1550,8 @@
     - [x] `knn_stats_shape`
     - [x] `knn_warmup_budget_failure`
     - [x] `knn_warmup_clear_cache_telemetry_shape`
-    - [x] `knn_unsupported_method_engine_fail_closed`
-    - [x] `knn_unsupported_mode_fail_closed`
+    - [x] `knn_faiss_method_engine_search`
+    - [x] `knn_on_disk_mode_search`
     - [x] `knn_unsupported_method_parameters_fail_closed`
   - [x] cat API readback drift 정리
     - [x] `cat_indices_json`
