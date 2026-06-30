@@ -27409,7 +27409,23 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
                 )));
             }
         }
+        if object.contains_key("minimum_should_match_field")
+            && object.contains_key("minimum_should_match_script")
+        {
+            return Some(build_illegal_argument_search_response_with_root_cause(
+                "A field has already been specified. Cannot specify both a field and script",
+            ));
+        }
         if object.contains_key("minimum_should_match_field") {
+            if object
+                .get("minimum_should_match_field")
+                .and_then(Value::as_str)
+                .is_none()
+            {
+                return Some(build_unsupported_search_response(
+                    "unsupported terms_set minimum_should_match_field",
+                ));
+            }
             return None;
         }
         if object
@@ -29792,8 +29808,7 @@ fn evaluate_search_query_source_with_mappings(
     }
     if let Some(terms_set_query) = query.get("terms_set").and_then(Value::as_object) {
         let (field, expected) = terms_set_query.iter().next()?;
-        let (matched, score) =
-            value_matches_terms_set(lookup_query_field_value(source, field), expected)?;
+        let (matched, score) = value_matches_terms_set(source, field, expected)?;
         return Some((matched, score));
     }
     if let Some(constant_score) = query.get("constant_score").and_then(Value::as_object) {
@@ -31307,11 +31322,11 @@ fn value_matches_fuzzy(candidate: Option<&Value>, expected: &str, fuzziness: usi
         .any(|token| levenshtein_distance(&token, &expected) <= fuzziness)
 }
 
-fn value_matches_terms_set(candidate: Option<&Value>, expected: &Value) -> Option<(bool, f64)> {
-    let candidate = candidate?;
+fn value_matches_terms_set(source: &Value, field: &str, expected: &Value) -> Option<(bool, f64)> {
+    let candidate = lookup_query_field_value(source, field)?;
     let expected_object = expected.as_object()?;
     let terms = expected_object.get("terms")?.as_array()?;
-    let minimum = terms_set_minimum_should_match(expected_object)?;
+    let minimum = terms_set_minimum_should_match(source, expected_object)?;
     let mut matched_terms = 0usize;
     for term in terms {
         let matched = match candidate {
@@ -31333,8 +31348,24 @@ fn value_matches_terms_set(candidate: Option<&Value>, expected: &Value) -> Optio
 }
 
 fn terms_set_minimum_should_match(
+    source: &Value,
     expected_object: &serde_json::Map<String, Value>,
 ) -> Option<usize> {
+    if let Some(field) = expected_object
+        .get("minimum_should_match_field")
+        .and_then(Value::as_str)
+    {
+        let value = lookup_query_field_value(source, field)?;
+        return value
+            .as_u64()
+            .or_else(|| {
+                value
+                    .as_i64()
+                    .and_then(|value| if value < 0 { Some(0) } else { None })
+            })
+            .or_else(|| value.as_str().and_then(|value| value.parse::<u64>().ok()))
+            .and_then(|value| usize::try_from(value).ok());
+    }
     expected_object
         .get("minimum_should_match_script")
         .and_then(Value::as_object)
@@ -56098,6 +56129,106 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             }
         }))
         .is_none());
+    }
+
+    #[test]
+    fn search_terms_set_minimum_should_match_field_uses_document_threshold() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, "/terms-set-msm-field-000001").with_json_body(
+                    serde_json::json!({
+                        "mappings": {
+                            "properties": {
+                                "tags": { "type": "keyword" },
+                                "required_matches": { "type": "long" }
+                            }
+                        }
+                    })
+                )
+            )
+            .status,
+            200
+        );
+        for (id, body) in [
+            (
+                "a",
+                serde_json::json!({ "tags": ["payment", "checkout"], "required_matches": 2 }),
+            ),
+            (
+                "b",
+                serde_json::json!({ "tags": ["payment", "timeout"], "required_matches": 2 }),
+            ),
+            (
+                "c",
+                serde_json::json!({ "tags": ["payment", "timeout"], "required_matches": 1 }),
+            ),
+            (
+                "d",
+                serde_json::json!({ "tags": ["catalog"], "required_matches": 1 }),
+            ),
+        ] {
+            assert_eq!(
+                node.handle_rest_request(
+                    RestRequest::new(
+                        RestMethod::Put,
+                        &format!("/terms-set-msm-field-000001/_doc/{id}")
+                    )
+                    .with_json_body(body)
+                )
+                .status,
+                201
+            );
+        }
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(RestMethod::Post, "/_refresh"))
+                .status,
+            200
+        );
+
+        let response = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/terms-set-msm-field-000001/_search")
+                .with_json_body(serde_json::json!({
+                    "query": {
+                        "terms_set": {
+                            "tags": {
+                                "terms": ["payment", "checkout"],
+                                "minimum_should_match_field": "required_matches"
+                            }
+                        }
+                    },
+                    "sort": [{ "_id": "asc" }]
+                })),
+        );
+        assert_eq!(response.status, 200);
+        assert_eq!(response.body["hits"]["total"]["value"], 2);
+        assert_eq!(response.body["hits"]["hits"][0]["_id"], "a");
+        assert_eq!(response.body["hits"]["hits"][1]["_id"], "c");
+
+        let conflict = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/terms-set-msm-field-000001/_search")
+                .with_json_body(serde_json::json!({
+                    "query": {
+                        "terms_set": {
+                            "tags": {
+                                "terms": ["payment"],
+                                "minimum_should_match_field": "required_matches",
+                                "minimum_should_match_script": { "source": "1" }
+                            }
+                        }
+                    }
+                })),
+        );
+        assert_eq!(conflict.status, 400);
+        assert_eq!(conflict.body["error"]["type"], "illegal_argument_exception");
+        assert_eq!(
+            conflict.body["error"]["root_cause"][0]["reason"],
+            "A field has already been specified. Cannot specify both a field and script"
+        );
     }
 
     #[test]

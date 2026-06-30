@@ -12,7 +12,8 @@
           "keyword",
           "long",
           "date",
-          "geo_point"
+          "geo_point",
+          "terms_set_minimum_should_match_field"
         ]
       },
       {
@@ -80,6 +81,8 @@
           "service": "keyword",
           "level": "keyword",
           "tag": "keyword",
+          "labels": "keyword",
+          "required_matches": "long",
           "bytes": "long",
           "ts": "date",
           "location": "geo_point"
@@ -471,6 +474,9 @@
             "labels": {
               "type": "keyword"
             },
+            "required_matches": {
+              "type": "long"
+            },
             "service": {
               "type": "keyword",
               "store": true
@@ -686,6 +692,7 @@
               "payment",
               "checkout"
             ],
+            "required_matches": 2,
             "service_suggest": "checkout",
             "service": "checkout",
             "level": "info",
@@ -712,6 +719,7 @@
               "payment",
               "timeout"
             ],
+            "required_matches": 2,
             "service_suggest": "checkout",
             "service": "checkout",
             "level": "warn",
@@ -738,6 +746,7 @@
               "catalog",
               "cache"
             ],
+            "required_matches": 1,
             "service_suggest": "catalog",
             "service": "catalog",
             "level": "info",
@@ -769,6 +778,7 @@
               "timeout",
               "tuple-guard"
             ],
+            "required_matches": 1,
             "service_suggest": "checkout",
             "service": "checkout",
             "level": "warn",
@@ -10077,6 +10087,60 @@
       "extract": "search_hits",
       "family": "lexical",
       "description": "[lexical] terms set boost search"
+    },
+    {
+      "name": "terms_set_minimum_should_match_field_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "terms_set": {
+            "labels": {
+              "terms": [
+                "payment",
+                "checkout"
+              ],
+              "minimum_should_match_field": "required_matches"
+            }
+          }
+        },
+        "sort": [
+          {
+            "_id": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] terms set minimum should match field search"
+    },
+    {
+      "name": "terms_set_conflicting_minimum_sources_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "terms_set": {
+            "labels": {
+              "terms": [
+                "payment"
+              ],
+              "minimum_should_match_field": "required_matches",
+              "minimum_should_match_script": {
+                "source": "1"
+              }
+            }
+          }
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] terms set conflicting minimum sources error search"
     },
     {
       "name": "timeout_search",
