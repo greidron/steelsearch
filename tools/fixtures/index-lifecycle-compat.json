@@ -141,11 +141,13 @@
         "expected_status": 200,
         "body_paths_present": [
           "acknowledged",
-          "shards_acknowledged"
+          "shards_acknowledged",
+          "indices.logs-compat-lifecycle-000001.closed"
         ],
         "body_paths_equal": [
           "acknowledged",
-          "shards_acknowledged"
+          "shards_acknowledged",
+          "indices.logs-compat-lifecycle-000001.closed"
         ]
       }
     },
@@ -173,11 +175,13 @@
         "expected_status": 200,
         "body_paths_present": [
           "acknowledged",
-          "shards_acknowledged"
+          "shards_acknowledged",
+          "indices.logs-compat-lifecycle-000001.closed"
         ],
         "body_paths_equal": [
           "acknowledged",
-          "shards_acknowledged"
+          "shards_acknowledged",
+          "indices.logs-compat-lifecycle-000001.closed"
         ]
       }
     },

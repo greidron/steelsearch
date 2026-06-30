@@ -16035,11 +16035,23 @@ impl SteelNode {
         }
         drop(manifest);
         self.persist_shared_runtime_state_to_disk();
+        let indices = matched
+            .iter()
+            .map(|index| {
+                (
+                    index.clone(),
+                    serde_json::json!({
+                        "closed": true
+                    }),
+                )
+            })
+            .collect::<serde_json::Map<_, _>>();
         RestResponse::json(
             200,
             serde_json::json!({
                 "acknowledged": true,
-                "shards_acknowledged": true
+                "shards_acknowledged": true,
+                "indices": indices
             }),
         )
     }
