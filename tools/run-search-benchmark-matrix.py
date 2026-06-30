@@ -386,7 +386,7 @@ def free_port(host: str = "127.0.0.1") -> int:
 
 
 def wait_for_cluster(scenario: Scenario, base_url: str, timeout_seconds: float) -> None:
-    deadline = time.time() + 180.0
+    deadline = time.time() + max(180.0, timeout_seconds)
     health_url = f"{base_url}/_cluster/health"
     while time.time() < deadline:
         try:

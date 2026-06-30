@@ -29851,15 +29851,10 @@ fn spawn_proactive_seed_join_loop(transport_identity: DevTransportIdentity) {
             if SHUTDOWN_REQUESTED.load(Ordering::SeqCst) {
                 break;
             }
-            let joined_java_cluster = transport_identity
-                .coordination_state
-                .lock()
-                .map(|state| state.non_self_publish_seen)
-                .unwrap_or(false);
-            if joined_java_cluster {
+            if let Some(reason) = proactive_seed_join_stop_reason(&transport_identity) {
                 eprintln!(
-                    "steelsearch_proactive_join_stopped reason=non_self_publish_seen attempt={}",
-                    attempt
+                    "steelsearch_proactive_join_stopped reason={} attempt={}",
+                    reason, attempt
                 );
                 break;
             }
@@ -29898,6 +29893,29 @@ fn spawn_proactive_seed_join_loop(transport_identity: DevTransportIdentity) {
             thread::sleep(Duration::from_secs(1));
         }
     });
+}
+
+fn proactive_seed_join_stop_reason(
+    transport_identity: &DevTransportIdentity,
+) -> Option<&'static str> {
+    if transport_identity
+        .coordination_state
+        .lock()
+        .map(|state| state.non_self_publish_seen)
+        .unwrap_or(false)
+    {
+        return Some("non_self_publish_seen");
+    }
+    if transport_identity.node_id.starts_with("steel-node-")
+        && !transport_identity.seed_peer_identities.is_empty()
+        && transport_identity
+            .seed_peer_identities
+            .iter()
+            .all(|peer| peer.discovery_node.id.starts_with("steel-node-"))
+    {
+        return Some("steelsearch_dev_cluster_seeded");
+    }
+    None
 }
 
 fn build_join_request_frame(
@@ -33520,6 +33538,70 @@ mod tests {
         assert_eq!(capture_json.as_array().unwrap().len(), 2);
         assert!(capture.contains("keepalive_ping"));
         let _ = fs::remove_dir_all(root);
+    }
+
+    fn test_seed_peer_identity(node_id: &str) -> InteropSeedPeerIdentityManifest {
+        InteropSeedPeerIdentityManifest {
+            peer_identity_present: true,
+            cluster_name: "steelsearch-dev".to_string(),
+            discovery_node: InteropSeedPeerIdentityNode {
+                name: node_id.to_string(),
+                id: node_id.to_string(),
+                ephemeral_id: format!("{node_id}-ephemeral"),
+                host_name: "localhost".to_string(),
+                host_address: "127.0.0.1".to_string(),
+                http_address: None,
+                transport_address: "127.0.0.1:9301".to_string(),
+                version_id: OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+                roles: vec!["cluster_manager".to_string(), "data".to_string()],
+            },
+        }
+    }
+
+    fn test_transport_identity_with_seed_peers(
+        node_id: &str,
+        seed_peer_identities: Vec<InteropSeedPeerIdentityManifest>,
+    ) -> DevTransportIdentity {
+        DevTransportIdentity {
+            cluster_name: "steelsearch-dev".to_string(),
+            node_name: node_id.to_string(),
+            node_id: node_id.to_string(),
+            ephemeral_id: format!("{node_id}-ephemeral"),
+            transport_address: "127.0.0.1:9300".parse().unwrap(),
+            attributes: Vec::new(),
+            roles: vec!["cluster_manager".to_string(), "data".to_string()],
+            seed_peer_identity: None,
+            seed_peer_identities,
+            coordination_state: Arc::new(Mutex::new(DevTransportCoordinationState::default())),
+            remote_transport_queue_gate: Arc::new(RemoteTransportQueueGate::new(1, 1000)),
+            task_queue_state: None,
+        }
+    }
+
+    #[test]
+    fn proactive_seed_join_stops_for_seeded_steelsearch_dev_cluster() {
+        let transport_identity = test_transport_identity_with_seed_peers(
+            "steel-node-1",
+            vec![
+                test_seed_peer_identity("steel-node-2"),
+                test_seed_peer_identity("steel-node-3"),
+            ],
+        );
+
+        assert_eq!(
+            proactive_seed_join_stop_reason(&transport_identity),
+            Some("steelsearch_dev_cluster_seeded")
+        );
+    }
+
+    #[test]
+    fn proactive_seed_join_keeps_retrying_for_non_steelsearch_seed_peer() {
+        let transport_identity = test_transport_identity_with_seed_peers(
+            "steel-node-1",
+            vec![test_seed_peer_identity("opensearch-node-1")],
+        );
+
+        assert_eq!(proactive_seed_join_stop_reason(&transport_identity), None);
     }
 
     #[test]

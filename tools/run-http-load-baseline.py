@@ -626,8 +626,7 @@ class LoadRunner:
     def operation_resource_sample(self, probes: "ResourceProbes") -> dict[str, int | None] | None:
         if not self.config.get("operation_resource_deltas"):
             return None
-        sample = probes.sample()
-        return {counter: sample.get(counter) for counter in NATIVE_TELEMETRY_COUNTERS}
+        return probes.native_counter_sample()
 
     def record_operation_resource_delta(
         self,
@@ -701,6 +700,10 @@ class ResourceProbes:
             "vector_cache_bytes": vector_cache_bytes(metrics),
             **{counter: metric_counter(metrics, counter) for counter in NATIVE_TELEMETRY_COUNTERS},
         }
+
+    def native_counter_sample(self) -> dict[str, int | None]:
+        metrics = self.http_metrics()
+        return {counter: metric_counter(metrics, counter) for counter in NATIVE_TELEMETRY_COUNTERS}
 
     def start_peak_sampling(self, interval_seconds: float = 0.25) -> None:
         if not self.process_pids or self._sampler_thread is not None:
