@@ -284,6 +284,66 @@ class UnifiedOpenSearchE2EReportTests(unittest.TestCase):
         self.assertIn("synthetic: required suite has failed cases", errors)
         self.assertIn("synthetic: failed fixture case evidence", errors)
 
+    def test_checker_rejects_suite_summary_drift(self):
+        checker = load_module(CHECKER_PATH, "check_unified_opensearch_e2e_summary_drift")
+        report = {
+            "profile": "synthetic",
+            "generated_at": 1,
+            "status": "ok",
+            "route_parity": {
+                "required_suites": ["synthetic"],
+                "report_paths": ["synthetic.json"],
+                "status": "ok",
+            },
+            "semantic_parity": {"required_suites": [], "report_paths": [], "status": "ok"},
+            "durability_parity": {"required_suites": [], "report_paths": [], "status": "ok"},
+            "security_parity": {"required_suites": [], "report_paths": [], "status": "ok"},
+            "distributed_parity": {"required_suites": [], "report_paths": [], "status": "ok"},
+            "coverage_summary": {
+                "suite_count": 1,
+                "required_suite_count": 1,
+                "reported_suite_count": 1,
+                "opensearch_compared_suite_count": 1,
+                "case_classification": {
+                    "strict_equal": 0,
+                    "canonical_equal": 1,
+                    "semantic_equal": 0,
+                    "steelsearch_fail_closed": 0,
+                    "steelsearch_only": 0,
+                    "known_gap_or_skipped": 0,
+                    "failed": 0,
+                    "missing": 0,
+                },
+            },
+            "suite_results": [
+                {
+                    "name": "synthetic",
+                    "required": True,
+                    "status": "ok",
+                    "report_source": "target",
+                    "has_opensearch_target": True,
+                    "summary": {"passed": 1, "failed": 0, "skipped": 0},
+                    "summary_drift": {"passed": {"reported": 2, "recomputed": 1}},
+                    "classification": {
+                        "strict_equal": 0,
+                        "canonical_equal": 1,
+                        "semantic_equal": 0,
+                        "steelsearch_fail_closed": 0,
+                        "steelsearch_only": 0,
+                        "known_gap_or_skipped": 0,
+                        "failed": 0,
+                        "missing": 0,
+                    },
+                }
+            ],
+        }
+
+        errors = checker.validate_report(report, allow_missing=False)
+
+        self.assertTrue(
+            any(error.startswith("synthetic: suite summary drift") for error in errors)
+        )
+
     def test_rerun_commands_include_missing_cases(self):
         runner = load_module(RUNNER_PATH, "run_unified_opensearch_e2e_rerun")
         suite = runner.Suite(

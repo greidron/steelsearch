@@ -117,6 +117,9 @@ def validate_report(
         seen.add(name)
         if suite.get("status") not in {"ok", "missing", "blocked", "failed"}:
             errors.append(f"{name}: invalid status [{suite.get('status')}]")
+        summary_drift = suite.get("summary_drift") or {}
+        if summary_drift:
+            errors.append(f"{name}: suite summary drift {summary_drift}")
         case_gaps = suite.get("case_gaps") or {}
         classification = suite.get("classification") or {}
         gap_classification_keys = {
