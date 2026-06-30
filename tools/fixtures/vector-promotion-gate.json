@@ -32,6 +32,8 @@
         "knn_byte_vector_subset_happy_path",
         "knn_binary_vector_subset_happy_path",
         "knn_nested_filtered_happy_path",
+        "knn_stats_shape",
+        "knn_warmup_basic_shape",
         "knn_query_unsupported_parameter_error",
         "hybrid_should_query_happy_path",
         "hybrid_minimum_should_match_happy_path",

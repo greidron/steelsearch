@@ -586,6 +586,49 @@
           }
         }
       }
+    },
+    {
+      "name": "knn_stats_shape",
+      "extract": "knn_stats_shape",
+      "method": "GET",
+      "path": "/_plugins/_knn/stats",
+      "metadata": {
+        "evidence_classes": [
+          "knn-operational-stats"
+        ]
+      }
+    },
+    {
+      "name": "knn_warmup_basic_shape",
+      "extract": "knn_stats_shape",
+      "metadata": {
+        "evidence_classes": [
+          "knn-operational-warmup"
+        ]
+      },
+      "compare_step": "stats-after-warmup",
+      "steps": [
+        {
+          "name": "warmup-vector-index",
+          "method": "GET",
+          "path": "/_plugins/_knn/warmup/${index}",
+          "body": {
+            "model_cache_bytes": 16,
+            "native_memory_bytes": 64,
+            "quantization_cache_bytes": 8,
+            "vector_segment_count": 2
+          },
+          "expected_status": 200,
+          "extract": "knn_warmup_basic"
+        },
+        {
+          "name": "stats-after-warmup",
+          "method": "GET",
+          "path": "/_plugins/_knn/stats",
+          "expected_status": 200,
+          "extract": "knn_stats_shape"
+        }
+      ]
     }
   ]
 }

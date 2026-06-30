@@ -134,9 +134,9 @@ Functional OpenSearch E2E comparison status:
 - `search-compat`: `500` passed, `0` failed, `20` skipped.
 - `search-strict`: `422` passed, `0` failed, `5` skipped.
 - `search-semantic`: `73` passed, `0` failed, `0` skipped.
-- `vector-search`: `16` passed, `0` failed, `0` skipped.
+- `vector-search`: `18` passed, `0` failed, `0` skipped.
 - REST API source coverage gate:
-  `target/rest-api-coverage-current.json` passes with `17` live-required
+  `target/rest-api-coverage-current.json` passes with `18` live-required
   matched source routes and `0` live-required fixture failures/missing cases.
 - The E2E suite does compare many functional cases against live OpenSearch, but the current evidence does not prove broad full compatibility yet; it proves the covered passing cases and tracks the remaining skipped/deferred cases explicitly. The remaining skipped cases are kNN/ML/plugin or Steelsearch-native telemetry/fail-closed cases, not live comparison failures.
 - Release evidence inventory is complete for the current candidate:

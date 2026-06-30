@@ -17632,18 +17632,7 @@ impl SteelNode {
             .lock()
             .expect("knn operational state lock poisoned")
             .clone();
-        let Some(state) = state else {
-            return RestResponse::json(
-                400,
-                serde_json::json!({
-                    "error": {
-                        "type": "illegal_argument_exception",
-                        "reason": "k-NN operational stats are unavailable before warmup"
-                    },
-                    "status": 400
-                }),
-            );
-        };
+        let state = state.unwrap_or_default();
         let requested_node = node_id.unwrap_or("local");
         let stats_body = serde_json::json!({
             "graph_count": state.graph_count,
@@ -51028,6 +51017,15 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             name: "steel-node".to_string(),
             version: OPENSEARCH_3_7_0_TRANSPORT,
         });
+
+        let initial_stats =
+            node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_plugins/_knn/stats"));
+        assert_eq!(initial_stats.status, 200);
+        assert_eq!(initial_stats.body["nodes"]["local"]["graph_count"], 0);
+        assert_eq!(
+            initial_stats.body["nodes"]["local"]["warmed_index_count"],
+            0
+        );
 
         let warmup = node.handle_rest_request(
             RestRequest::new(RestMethod::Get, "/_plugins/_knn/warmup").with_json_body(

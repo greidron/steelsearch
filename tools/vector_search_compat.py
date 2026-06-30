@@ -12,6 +12,8 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
+from search_compat import extract as extract_compat_response
+
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_FIXTURE = ROOT / "tools" / "fixtures" / "vector-search-compat.json"
@@ -105,6 +107,14 @@ def error_summary(response: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def summarize_response(kind: str, response: dict[str, Any]) -> dict[str, Any]:
+    if kind == "error_shape":
+        return error_summary(response)
+    if kind == "search_summary":
+        return search_summary(response)
+    return extract_compat_response(kind, response)
+
+
 def case_report_base(case: dict[str, Any]) -> dict[str, Any]:
     result: dict[str, Any] = {"name": case["name"]}
     for key in ("metadata", "evidence_class", "evidence_classes"):
@@ -162,6 +172,75 @@ def seed_target(base_url: str, fixture: dict[str, Any], timeout: float) -> tuple
     return reports, None
 
 
+def run_case_request(
+    base_url: str,
+    fixture: dict[str, Any],
+    case: dict[str, Any],
+    timeout: float,
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    steps = []
+    if "steps" not in case:
+        path = case.get("path", f"/{fixture['index']}/_search")
+        response = request_json(
+            base_url,
+            case.get("method", "POST"),
+            path,
+            case.get("body"),
+            timeout,
+        )
+        return response, steps
+
+    response: dict[str, Any] = {"status": 0, "body": None, "body_text": ""}
+    for step in case["steps"]:
+        response = request_json(
+            base_url,
+            step.get("method", "POST"),
+            step["path"].replace("${index}", fixture["index"]),
+            step.get("body"),
+            timeout,
+        )
+        extract_kind = step.get("extract", case.get("kind", case.get("extract", "search_summary")))
+        expected_status = step.get("expected_status", 200)
+        status = response.get("status")
+        steps.append(
+            {
+                "name": step.get("name"),
+                "status": status,
+                "expected_status": expected_status,
+                "passed": status == expected_status,
+                "extract": summarize_response(extract_kind, response),
+            }
+        )
+    return response, steps
+
+
+def compare_case_result(
+    case: dict[str, Any],
+    fixture: dict[str, Any],
+    base_url: str,
+    timeout: float,
+) -> dict[str, Any]:
+    response, steps = run_case_request(base_url, fixture, case, timeout)
+    compare_step_name = case.get("compare_step")
+    compare_step = None
+    if isinstance(compare_step_name, str):
+        compare_step = next((step for step in steps if step.get("name") == compare_step_name), None)
+    kind = case.get("extract", case.get("kind", "search_summary"))
+    summary = compare_step["extract"] if compare_step else summarize_response(kind, response)
+    result = {
+        "status": compare_step.get("status") if compare_step else response.get("status"),
+        "extract": summary,
+        "raw_response": response.get("body"),
+    }
+    if steps:
+        result["steps"] = steps
+        result["step_failed"] = any(not step.get("passed", True) for step in steps)
+    if isinstance(compare_step_name, str) and compare_step is None:
+        result["step_failed"] = True
+        result["missing_compare_step"] = compare_step_name
+    return result
+
+
 def main() -> int:
     args = parse_args()
     if not args.steelsearch_url or not args.opensearch_url:
@@ -194,48 +273,29 @@ def main() -> int:
 
     exit_code = 0
     for case in fixture["cases"]:
-        path = case.get("path", f"/{fixture['index']}/_search")
-        method = case.get("method", "POST")
-        steelsearch = request_json(
-            args.steelsearch_url,
-            method,
-            path,
-            case["body"],
-            args.timeout,
-        )
-        opensearch = request_json(
-            args.opensearch_url,
-            method,
-            path,
-            case["body"],
-            args.timeout,
-        )
+        steelsearch = compare_case_result(case, fixture, args.steelsearch_url, args.timeout)
+        opensearch = compare_case_result(case, fixture, args.opensearch_url, args.timeout)
         if degraded_reason is not None:
             report["summary"]["skipped"] += 1
             result = case_report_base(case)
             result.update(
                 {
                     "status": "skipped",
-                    "steelsearch": search_summary(steelsearch)
-                    if case.get("kind", "search_summary") != "error_shape"
-                    else error_summary(steelsearch),
-                    "opensearch": search_summary(opensearch)
-                    if case.get("kind", "search_summary") != "error_shape"
-                    else error_summary(opensearch),
+                    "steelsearch": steelsearch["extract"],
+                    "opensearch": opensearch["extract"],
                     "errors": [],
                     "skipped_reason": degraded_reason,
                 }
             )
             report["cases"].append(result)
             continue
-        kind = case.get("kind", "search_summary")
-        if kind == "error_shape":
-            steel_summary = error_summary(steelsearch)
-            open_summary = error_summary(opensearch)
-        else:
-            steel_summary = search_summary(steelsearch)
-            open_summary = search_summary(opensearch)
+        steel_summary = steelsearch["extract"]
+        open_summary = opensearch["extract"]
         errors = []
+        if steelsearch.get("step_failed"):
+            errors.append(f"steelsearch step failure: {steelsearch.get('steps')!r}")
+        if opensearch.get("step_failed"):
+            errors.append(f"opensearch step failure: {opensearch.get('steps')!r}")
         if steel_summary != open_summary:
             errors.append(
                 f"search summary drift: steelsearch={steel_summary!r} opensearch={open_summary!r}"
@@ -252,6 +312,8 @@ def main() -> int:
                 "status": status,
                 "steelsearch": steel_summary,
                 "opensearch": open_summary,
+                "steelsearch_steps": steelsearch.get("steps", []),
+                "opensearch_steps": opensearch.get("steps", []),
                 "errors": errors,
             }
         )
