@@ -27092,7 +27092,25 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
         }
     }
     if let Some(match_query) = query.get("match").and_then(Value::as_object) {
-        if let Some(response) = validate_match_query_shape("match", match_query) {
+        if let Some(response) =
+            validate_match_query_shape("match", match_query, MATCH_QUERY_OPTIONS)
+        {
+            return Some(response);
+        }
+    }
+    if let Some(match_phrase) = query.get("match_phrase").and_then(Value::as_object) {
+        if let Some(response) =
+            validate_match_query_shape("match_phrase", match_phrase, MATCH_PHRASE_QUERY_OPTIONS)
+        {
+            return Some(response);
+        }
+    }
+    if let Some(match_phrase_prefix) = query.get("match_phrase_prefix").and_then(Value::as_object) {
+        if let Some(response) = validate_match_query_shape(
+            "match_phrase_prefix",
+            match_phrase_prefix,
+            MATCH_PHRASE_PREFIX_QUERY_OPTIONS,
+        ) {
             return Some(response);
         }
     }
@@ -27894,9 +27912,46 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
     None
 }
 
+const MATCH_QUERY_OPTIONS: &[&str] = &[
+    "query",
+    "operator",
+    "analyzer",
+    "fuzziness",
+    "prefix_length",
+    "max_expansions",
+    "minimum_should_match",
+    "fuzzy_rewrite",
+    "fuzzy_transpositions",
+    "lenient",
+    "zero_terms_query",
+    "auto_generate_synonyms_phrase_query",
+    "boost",
+    "_name",
+];
+
+const MATCH_PHRASE_QUERY_OPTIONS: &[&str] = &[
+    "query",
+    "analyzer",
+    "slop",
+    "zero_terms_query",
+    "boost",
+    "_name",
+];
+
+const MATCH_PHRASE_PREFIX_QUERY_OPTIONS: &[&str] = &[
+    "query",
+    "analyzer",
+    "slop",
+    "max_expansions",
+    "zero_terms_query",
+    "boost",
+    "_name",
+];
+
 fn validate_match_query_shape(
     query_name: &str,
     query: &serde_json::Map<String, Value>,
+    supported_options: &[&str],
 ) -> Option<RestResponse> {
     let Some((_, spec)) = query.iter().next() else {
         return Some(build_unsupported_search_response(&format!(
@@ -27910,23 +27965,7 @@ fn validate_match_query_shape(
     }
     if let Some(options) = spec.as_object() {
         for key in options.keys() {
-            if !matches!(
-                key.as_str(),
-                "query"
-                    | "operator"
-                    | "analyzer"
-                    | "fuzziness"
-                    | "prefix_length"
-                    | "max_expansions"
-                    | "minimum_should_match"
-                    | "fuzzy_rewrite"
-                    | "fuzzy_transpositions"
-                    | "lenient"
-                    | "zero_terms_query"
-                    | "auto_generate_synonyms_phrase_query"
-                    | "boost"
-                    | "_name"
-            ) {
+            if !supported_options.contains(&key.as_str()) {
                 return Some(build_parsing_search_response_with_root_cause(&format!(
                     "[{query_name}] query does not support [{key}]"
                 )));
@@ -29495,7 +29534,7 @@ fn evaluate_search_query_source_with_mappings(
         let (field, expected) = match_phrase.iter().next()?;
         let matched = value_matches_phrase(
             lookup_query_field_value(source, field),
-            expected.as_str().unwrap_or_default(),
+            extract_match_query_value(expected).unwrap_or_default(),
             false,
         );
         return Some((matched, if matched { 1.0 } else { 0.0 }));
@@ -29504,7 +29543,7 @@ fn evaluate_search_query_source_with_mappings(
         let (field, expected) = match_phrase_prefix.iter().next()?;
         let matched = value_matches_phrase(
             lookup_query_field_value(source, field),
-            expected.as_str().unwrap_or_default(),
+            extract_match_query_value(expected).unwrap_or_default(),
             true,
         );
         return Some((matched, if matched { 1.0 } else { 0.0 }));
@@ -55740,6 +55779,46 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             response.body["error"]["root_cause"][0]["reason"],
             "[match] query does not support [unsupported_option]"
+        );
+
+        assert_eq!(
+            extract_match_query_value(&serde_json::json!({ "query": "checkout" })),
+            Some("checkout")
+        );
+    }
+
+    #[test]
+    fn search_match_phrase_rejects_unknown_options_and_reads_object_query() {
+        let response = validate_search_query_body(&serde_json::json!({
+            "match_phrase": {
+                "message": {
+                    "query": "checkout",
+                    "unsupported_option": true
+                }
+            }
+        }))
+        .expect("unknown match_phrase option should fail closed");
+        assert_eq!(response.status, 400);
+        assert_eq!(response.body["error"]["type"], "parsing_exception");
+        assert_eq!(
+            response.body["error"]["root_cause"][0]["reason"],
+            "[match_phrase] query does not support [unsupported_option]"
+        );
+
+        let response = validate_search_query_body(&serde_json::json!({
+            "match_phrase_prefix": {
+                "message": {
+                    "query": "checkout",
+                    "unsupported_option": true
+                }
+            }
+        }))
+        .expect("unknown match_phrase_prefix option should fail closed");
+        assert_eq!(response.status, 400);
+        assert_eq!(response.body["error"]["type"], "parsing_exception");
+        assert_eq!(
+            response.body["error"]["root_cause"][0]["reason"],
+            "[match_phrase_prefix] query does not support [unsupported_option]"
         );
 
         assert_eq!(

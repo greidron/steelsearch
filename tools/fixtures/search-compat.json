@@ -4940,6 +4940,51 @@
       "description": "[lexical] match phrase prefix search"
     },
     {
+      "name": "match_phrase_prefix_object_query_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_phrase_prefix": {
+            "message": {
+              "query": "checkout service pay"
+            }
+          }
+        },
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] match_phrase_prefix object query search"
+    },
+    {
+      "name": "match_phrase_prefix_unknown_option_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_phrase_prefix": {
+            "message": {
+              "query": "checkout",
+              "unsupported_option": true
+            }
+          }
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] match_phrase_prefix query rejects unknown options like OpenSearch"
+    },
+    {
       "name": "match_phrase_search",
       "area": "search",
       "method": "POST",
@@ -4954,6 +4999,44 @@
       "extract": "search_hits",
       "family": "lexical",
       "description": "[lexical] match phrase search"
+    },
+    {
+      "name": "match_phrase_object_query_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_phrase": {
+            "message": {
+              "query": "payment timeout"
+            }
+          }
+        }
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] match_phrase object query search"
+    },
+    {
+      "name": "match_phrase_unknown_option_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_phrase": {
+            "message": {
+              "query": "checkout",
+              "unsupported_option": true
+            }
+          }
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] match_phrase query rejects unknown options like OpenSearch"
     },
     {
       "name": "more_like_this_search",
