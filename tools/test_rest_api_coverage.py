@@ -426,6 +426,41 @@ class RestApiCoverageTests(unittest.TestCase):
             ["effective known_gap_or_skipped=1"],
         )
 
+    def test_required_suite_skip_resolution_summarizes_cross_suite_coverage(self):
+        report = {
+            "coverage_summary": {
+                "case_gap_resolution": {
+                    "skipped": {
+                        "total_count": 3,
+                        "resolved_by_other_suite_count": 2,
+                        "unresolved_count": 1,
+                        "resolved": [
+                            {
+                                "suite": "search-compat",
+                                "case": "knn_search",
+                                "covered_by": ["vector-search"],
+                            }
+                        ],
+                        "unresolved": [
+                            {
+                                "suite": "search-compat",
+                                "case": "missing-case",
+                            }
+                        ],
+                    }
+                }
+            }
+        }
+
+        self.assertEqual(
+            self.report.required_suite_skip_resolution(report),
+            {
+                "total_count": 3,
+                "resolved_by_other_suite_count": 2,
+                "unresolved_count": 1,
+            },
+        )
+
     def test_required_suite_classification_totals_required_suites_only(self):
         report = {
             "suite_results": [

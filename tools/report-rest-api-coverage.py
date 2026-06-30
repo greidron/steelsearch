@@ -58,6 +58,7 @@ def main() -> int:
         unified = json.loads(Path(args.unified_report).read_text(encoding="utf-8"))
         live_routes = live_required_fixture_routes(unified)
     live_coverage = coverage_for_routes(source_routes, live_routes)
+    skip_resolution = required_suite_skip_resolution(unified) if unified is not None else {}
 
     errors: list[str] = []
     if args.require_live_required_suites:
@@ -112,6 +113,7 @@ def main() -> int:
             "unified_required_suite_effective_classification": (
                 effective_suite_classification(unified) if unified is not None else {}
             ),
+            "unified_required_suite_skip_resolution": skip_resolution,
         },
         "source_status_counts": status_counts(source_routes),
         "fixture_coverage": fixture_coverage,
@@ -424,6 +426,20 @@ def effective_required_known_gap_count(report: dict[str, Any]) -> int | None:
     if not isinstance(effective, dict):
         return None
     return int(effective.get("known_gap_or_skipped") or 0)
+
+
+def required_suite_skip_resolution(report: dict[str, Any]) -> dict[str, int]:
+    skipped = (
+        ((report.get("coverage_summary") or {}).get("case_gap_resolution") or {})
+        .get("skipped", {})
+    )
+    if not isinstance(skipped, dict):
+        return {}
+    return {
+        "total_count": int(skipped.get("total_count") or 0),
+        "resolved_by_other_suite_count": int(skipped.get("resolved_by_other_suite_count") or 0),
+        "unresolved_count": int(skipped.get("unresolved_count") or 0),
+    }
 
 
 def effective_suite_classification(report: dict[str, Any]) -> dict[str, int]:
