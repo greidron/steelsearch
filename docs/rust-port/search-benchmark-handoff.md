@@ -97,6 +97,13 @@ Interpretation:
   report now passes with `ranked_operation_count=0`. The matrix runner clears a
   scenario output directory before a fresh run so stale gateway manifests from
   previous ports do not poison repeat local slices.
+- Fresh materialization-priority diagnostic:
+  `target/materialization-priority-targeted-current/materialization-priority.json`
+  reports `ranked_operation_count=0` after `557` successful
+  `fallback_query_string` operations, with zero materialized and compatibility
+  materialized response fetch deltas. The retained gate
+  `tools/run-native-closure-validation.py --batch materialization-priority-current`
+  passes against that artifact.
 
 Functional OpenSearch E2E comparison status:
 
