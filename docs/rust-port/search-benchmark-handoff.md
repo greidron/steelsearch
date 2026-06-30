@@ -102,13 +102,19 @@ Functional OpenSearch E2E comparison status:
 
 - Current unified report: `target/unified-opensearch-e2e-current/unified-opensearch-e2e-report.json`
 - Current audit report: `target/unified-opensearch-e2e-audit/unified-opensearch-e2e-report.json`
+- Fresh PIT live subset report:
+  `target/opensearch-compare-pit-current/search-compat-report.json`
 - Route parity: `ok`
 - Durability parity: `ok`
 - Semantic parity: `ok`
-- Current coverage summary: `canonical_equal=226`, `strict_equal=146`, `semantic_equal=0`, `failed=0`, `missing=0`, `known_gap_or_skipped=25`, `steelsearch_only=0`
+- Fresh PIT live subset: `7` passed, `0` failed, `0` skipped. Covered
+  create/open, search, keep-alive extension, routing admission, snapshot after
+  update/delete, explicit REST-option rejection, and multi-sort descending
+  `search_after`.
+- Current coverage summary: `canonical_equal=491`, `strict_equal=422`, `semantic_equal=9`, `failed=0`, `missing=0`, `known_gap_or_skipped=25`, `steelsearch_only=0`
 - Audit coverage summary: `canonical_equal=61`, `strict_equal=0`, `semantic_equal=4`, `failed=0`, `missing=0`, `known_gap_or_skipped=0`, `steelsearch_only=0`
-- `search-compat`: `226` passed, `0` failed, `20` skipped.
-- `search-strict`: `146` passed, `0` failed, `5` skipped.
+- `search-compat`: `500` passed, `0` failed, `20` skipped.
+- `search-strict`: `422` passed, `0` failed, `5` skipped.
 - `search-semantic`: `49` passed, `0` failed, `0` skipped.
 - `vector-search`: `16` passed, `0` failed, `0` skipped.
 - The E2E suite does compare many functional cases against live OpenSearch, but the current evidence does not prove broad full compatibility yet; it proves the covered passing cases and tracks the remaining skipped/deferred cases explicitly. The remaining skipped cases are kNN/ML/plugin or Steelsearch-native telemetry/fail-closed cases, not live comparison failures.
