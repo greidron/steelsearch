@@ -68,6 +68,7 @@ pub enum Query {
         field: String,
         query: serde_json::Value,
         minimum_should_match: Option<usize>,
+        operator: Option<String>,
         zero_terms_all: bool,
     },
     MatchPhrase {
@@ -2274,49 +2275,71 @@ fn parse_match(body: &Value) -> QueryDslResult<Query> {
     }
 
     let (field, match_body) = object.iter().next().expect("checked len");
-    let (query, minimum_should_match, zero_terms_all) = if let Some(object) = match_body.as_object()
-    {
-        if let Some(query) = object.get("query") {
-            let minimum_should_match = object
-                .get("minimum_should_match")
-                .map(|value| parse_minimum_should_match(value, match_query_clause_count(query)))
-                .transpose()?
-                .map(|value| value as usize);
-            let zero_terms_all = parse_zero_terms_all_option(object, "match")?;
-            (query.clone(), minimum_should_match, zero_terms_all)
-        } else if object.keys().any(|key| {
-            matches!(
-                key.as_str(),
-                "analyzer"
-                    | "auto_generate_synonyms_phrase_query"
-                    | "boost"
-                    | "cutoff_frequency"
-                    | "fuzziness"
-                    | "fuzzy_rewrite"
-                    | "fuzzy_transpositions"
-                    | "lenient"
-                    | "max_expansions"
-                    | "minimum_should_match"
-                    | "operator"
-                    | "prefix_length"
-                    | "zero_terms_query"
-            )
-        }) {
-            return Err(QueryDslError::MissingField {
-                clause: "match".to_string(),
-                field: "query".to_string(),
-            });
+    let (query, minimum_should_match, operator, zero_terms_all) =
+        if let Some(object) = match_body.as_object() {
+            if let Some(query) = object.get("query") {
+                let minimum_should_match = object
+                    .get("minimum_should_match")
+                    .map(|value| parse_minimum_should_match(value, match_query_clause_count(query)))
+                    .transpose()?
+                    .map(|value| value as usize);
+                let operator = object
+                    .get("operator")
+                    .and_then(Value::as_str)
+                    .map(|operator| {
+                        let operator = operator.to_ascii_lowercase();
+                        if operator == "and" || operator == "or" {
+                            Ok(operator)
+                        } else {
+                            Err(QueryDslError::InvalidValue {
+                                clause: "match".to_string(),
+                                field: "operator".to_string(),
+                                reason: "must be [and] or [or]".to_string(),
+                            })
+                        }
+                    })
+                    .transpose()?;
+                let zero_terms_all = parse_zero_terms_all_option(object, "match")?;
+                (
+                    query.clone(),
+                    minimum_should_match,
+                    operator,
+                    zero_terms_all,
+                )
+            } else if object.keys().any(|key| {
+                matches!(
+                    key.as_str(),
+                    "analyzer"
+                        | "auto_generate_synonyms_phrase_query"
+                        | "boost"
+                        | "cutoff_frequency"
+                        | "fuzziness"
+                        | "fuzzy_rewrite"
+                        | "fuzzy_transpositions"
+                        | "lenient"
+                        | "max_expansions"
+                        | "minimum_should_match"
+                        | "operator"
+                        | "prefix_length"
+                        | "zero_terms_query"
+                )
+            }) {
+                return Err(QueryDslError::MissingField {
+                    clause: "match".to_string(),
+                    field: "query".to_string(),
+                });
+            } else {
+                (match_body.clone(), None, None, false)
+            }
         } else {
-            (match_body.clone(), None, false)
-        }
-    } else {
-        (match_body.clone(), None, false)
-    };
+            (match_body.clone(), None, None, false)
+        };
 
     Ok(Query::Match {
         field: field.clone(),
         query,
         minimum_should_match,
+        operator,
         zero_terms_all,
     })
 }
@@ -5470,6 +5493,7 @@ mod tests {
                 field: "message".to_string(),
                 query: serde_json::json!("hello world"),
                 minimum_should_match: None,
+                operator: None,
                 zero_terms_all: false
             }
         );
@@ -5492,6 +5516,28 @@ mod tests {
                 field: "message".to_string(),
                 query: serde_json::json!("hello world"),
                 minimum_should_match: None,
+                operator: None,
+                zero_terms_all: false
+            }
+        );
+
+        let operator_and = parse_query(&serde_json::json!({
+            "match": {
+                "message": {
+                    "query": "hello world",
+                    "operator": "and"
+                }
+            }
+        }))
+        .unwrap();
+
+        assert_eq!(
+            operator_and,
+            Query::Match {
+                field: "message".to_string(),
+                query: serde_json::json!("hello world"),
+                minimum_should_match: None,
+                operator: Some("and".to_string()),
                 zero_terms_all: false
             }
         );
@@ -5512,6 +5558,7 @@ mod tests {
                 field: "message".to_string(),
                 query: serde_json::json!(""),
                 minimum_should_match: None,
+                operator: None,
                 zero_terms_all: true
             }
         );
@@ -5713,6 +5760,7 @@ mod tests {
                         field: "message".to_string(),
                         query: serde_json::json!("debug"),
                         minimum_should_match: None,
+                        operator: None,
                         zero_terms_all: false
                     }],
                     minimum_should_match: Some(1)

@@ -2825,12 +2825,14 @@ fn build_tantivy_query(
             field,
             query,
             minimum_should_match,
+            operator,
             zero_terms_all,
         } => build_tantivy_match_query(
             search_state,
             field,
             query,
             *minimum_should_match,
+            operator.as_deref(),
             *zero_terms_all,
         ),
         Query::MatchPhrase {
@@ -3455,6 +3457,7 @@ fn build_tantivy_match_query(
     field: &str,
     value: &Value,
     minimum_should_match: Option<usize>,
+    operator: Option<&str>,
     zero_terms_all: bool,
 ) -> EngineResult<Option<Box<dyn TantivyQueryTrait>>> {
     let query_text = json_value_to_query_text(value)?;
@@ -3476,7 +3479,9 @@ fn build_tantivy_match_query(
     let Some(indexed_field) = search_state.fields.get(field) else {
         return Ok(None);
     };
-    if let Some(minimum_should_match) = minimum_should_match {
+    let field_minimum_should_match =
+        match_effective_minimum_should_match(value, minimum_should_match, operator);
+    if let Some(minimum_should_match) = field_minimum_should_match {
         let tokens = tokenize_phrase_text(&query_text);
         let should_queries = tokens
             .into_iter()
@@ -3484,6 +3489,7 @@ fn build_tantivy_match_query(
                 field: field.to_string(),
                 query: Value::String(token),
                 minimum_should_match: None,
+                operator: None,
                 zero_terms_all: false,
             })
             .collect::<Vec<_>>();
@@ -3585,6 +3591,7 @@ fn build_tantivy_match_bool_prefix_query(
             field,
             &Value::String(token.clone()),
             None,
+            None,
             false,
         )?
         else {
@@ -3636,6 +3643,7 @@ fn build_tantivy_multi_match_bool_prefix_field_query(
             field: field.to_string(),
             query: Value::String(token.clone()),
             minimum_should_match: None,
+            operator: None,
             zero_terms_all: false,
         })
         .collect::<Vec<_>>();
@@ -3696,6 +3704,7 @@ fn build_tantivy_match_phrase_prefix_query(
                         field: field.to_string(),
                         query: Value::String(token.clone()),
                         minimum_should_match: None,
+                        operator: None,
                         zero_terms_all: false,
                     })
                     .collect::<Vec<_>>();
@@ -3813,6 +3822,7 @@ fn build_tantivy_tokenized_field_set_query(
                 field,
                 &Value::String(token.to_string()),
                 None,
+                None,
                 false,
             )?
             else {
@@ -3850,6 +3860,7 @@ fn build_tantivy_tokenized_field_set_query(
                     search_state,
                     field,
                     &Value::String(token.to_string()),
+                    None,
                     None,
                     false,
                 )?
@@ -3930,6 +3941,7 @@ fn build_tantivy_multi_match_query(
                 base_field,
                 query,
                 field_minimum_should_match,
+                None,
                 false,
             )?,
             MultiMatchType::Phrase => {
@@ -4139,6 +4151,7 @@ fn build_tantivy_more_like_this_query(
                 search_state,
                 field,
                 &Value::String(token.clone()),
+                None,
                 None,
                 false,
             )?
@@ -7043,11 +7056,16 @@ impl StoredIndex {
                 field,
                 query,
                 minimum_should_match,
+                operator,
                 ..
             } if field != "_id" => {
                 let query_text = json_value_to_query_text(query).ok()?;
                 let candidates = self.fast_top_level_match_candidate_ids(field, &query_text);
-                if let Some(minimum_should_match) = minimum_should_match {
+                if let Some(minimum_should_match) = match_effective_minimum_should_match(
+                    query,
+                    *minimum_should_match,
+                    operator.as_deref(),
+                ) {
                     Some(
                         candidates
                             .into_iter()
@@ -7056,7 +7074,7 @@ impl StoredIndex {
                                     matches_match_query_with_minimum(
                                         source_value_for_highlight_field(&document.source, field),
                                         query,
-                                        Some(*minimum_should_match),
+                                        Some(minimum_should_match),
                                     )
                                 })
                             })
@@ -16592,13 +16610,18 @@ fn document_matches_query(query: &Query, id: &str, source: &Value) -> bool {
             field,
             query,
             minimum_should_match,
+            operator,
             zero_terms_all,
         } if field == "_id" => {
             (*zero_terms_all && match_query_token_count(query) == 0)
                 || matches_match_query_with_minimum(
                     Some(&Value::String(id.to_string())),
                     query,
-                    *minimum_should_match,
+                    match_effective_minimum_should_match(
+                        query,
+                        *minimum_should_match,
+                        operator.as_deref(),
+                    ),
                 )
         }
         Query::MatchPhrase {
@@ -16717,13 +16740,18 @@ fn document_matches_query(query: &Query, id: &str, source: &Value) -> bool {
             field,
             query,
             minimum_should_match,
+            operator,
             zero_terms_all,
         } => {
             (*zero_terms_all && match_query_token_count(query) == 0)
                 || matches_match_query_with_minimum(
                     source_value_for_highlight_field(source, field),
                     query,
-                    *minimum_should_match,
+                    match_effective_minimum_should_match(
+                        query,
+                        *minimum_should_match,
+                        operator.as_deref(),
+                    ),
                 )
         }
         Query::MatchPhrase {
@@ -17554,6 +17582,18 @@ fn matches_match_query(field_value: Option<&Value>, query: &Value) -> bool {
     matches_match_query_with_minimum(field_value, query, None)
 }
 
+fn match_effective_minimum_should_match(
+    query: &Value,
+    minimum_should_match: Option<usize>,
+    operator: Option<&str>,
+) -> Option<usize> {
+    minimum_should_match.or_else(|| {
+        operator
+            .is_some_and(|value| value.eq_ignore_ascii_case("and"))
+            .then(|| match_query_token_count(query).max(1))
+    })
+}
+
 fn matches_match_query_with_minimum(
     field_value: Option<&Value>,
     query: &Value,
@@ -18196,12 +18236,14 @@ fn remap_query_field(query: &Query, field: &str) -> Query {
         Query::Match {
             query,
             minimum_should_match,
+            operator,
             zero_terms_all,
             ..
         } => Query::Match {
             field: field.to_string(),
             query: query.clone(),
             minimum_should_match: *minimum_should_match,
+            operator: operator.clone(),
             zero_terms_all: *zero_terms_all,
         },
         Query::MatchPhrase {
@@ -18357,11 +18399,13 @@ fn prefix_query_fields_for_nested_path(query: &Query, path: &str) -> Query {
             field,
             query,
             minimum_should_match,
+            operator,
             zero_terms_all,
         } => Query::Match {
             field: nested_candidate_field_name(path, field),
             query: query.clone(),
             minimum_should_match: *minimum_should_match,
+            operator: operator.clone(),
             zero_terms_all: *zero_terms_all,
         },
         Query::MatchPhrase {
@@ -18591,11 +18635,13 @@ fn localize_query_fields_for_nested_child(query: &Query, path: &str) -> Query {
             field,
             query,
             minimum_should_match,
+            operator,
             zero_terms_all,
         } => Query::Match {
             field: nested_child_local_field_name(path, field),
             query: query.clone(),
             minimum_should_match: *minimum_should_match,
+            operator: operator.clone(),
             zero_terms_all: *zero_terms_all,
         },
         Query::MatchPhrase {
@@ -18905,12 +18951,20 @@ fn native_nested_child_ordinals_for_query(
             field,
             query,
             minimum_should_match,
+            operator,
             zero_terms_all,
         } => {
             if *zero_terms_all && match_query_token_count(query) == 0 {
                 Some((0..path_index.children.len()).collect())
             } else {
-                nested_child_match_ordinals(path_index, path, field, query, *minimum_should_match)
+                nested_child_match_ordinals(
+                    path_index,
+                    path,
+                    field,
+                    query,
+                    *minimum_should_match,
+                    operator.as_deref(),
+                )
             }
         }
         Query::MatchPhrase {
@@ -19369,8 +19423,11 @@ fn nested_child_match_ordinals(
     field: &str,
     query: &Value,
     minimum_should_match: Option<usize>,
+    operator: Option<&str>,
 ) -> Option<std::collections::BTreeSet<usize>> {
     let mut ordinals = std::collections::BTreeSet::new();
+    let minimum_should_match =
+        match_effective_minimum_should_match(query, minimum_should_match, operator);
     if field == "_id" {
         for (ordinal, child) in path_index.children.iter().enumerate() {
             if matches_match_query_with_minimum(
@@ -19520,6 +19577,7 @@ fn nested_child_multi_match_ordinals(
                     field,
                     query,
                     field_minimum_should_match,
+                    None,
                 )?);
             }
             MultiMatchType::CrossFields => {
@@ -145250,6 +145308,61 @@ mod tests {
             .search_hits_for_query_native("bench", &query, &[])
             .unwrap()
             .expect("native fuzzy hits");
+        assert_eq!(search_hit_ids(&native_hits), vec!["1"]);
+    }
+
+    #[test]
+    fn native_tantivy_path_executes_match_operator_and_query() {
+        let engine = TantivyEngine::default();
+        engine
+            .create_index(CreateIndexRequest {
+                index: "bench".to_string(),
+                settings: serde_json::json!({}),
+                mappings: serde_json::json!({
+                    "properties": {
+                        "message": { "type": "text" }
+                    }
+                }),
+            })
+            .unwrap();
+
+        for (id, message) in [
+            ("1", "alpha checkout"),
+            ("2", "checkout only"),
+            ("3", "alpha only"),
+        ] {
+            engine
+                .index_document(IndexDocumentRequest {
+                    index: "bench".to_string(),
+                    id: id.to_string(),
+                    source: serde_json::json!({
+                        "message": message
+                    }),
+                })
+                .unwrap();
+        }
+        engine
+            .refresh(RefreshRequest {
+                indices: vec!["bench".to_string()],
+            })
+            .unwrap();
+
+        let query = parse_query(&serde_json::json!({
+            "match": {
+                "message": {
+                    "query": "alpha checkout",
+                    "operator": "and"
+                }
+            }
+        }))
+        .unwrap();
+
+        let mut store = engine.store.write().unwrap();
+        let index = store.indices.get_mut("bench").unwrap();
+        let native_hits = index
+            .search_hits_for_query_native("bench", &query, &[])
+            .unwrap()
+            .expect("native match operator and hits");
         assert_eq!(search_hit_ids(&native_hits), vec!["1"]);
     }
 
