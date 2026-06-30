@@ -1988,6 +1988,34 @@
       "description": "[admin-cat] targeted field caps summary"
     },
     {
+      "name": "field_caps_root_post_summary",
+      "area": "operational",
+      "method": "POST",
+      "path": "/_field_caps?fields=message,service,bytes",
+      "body": {
+        "index_filter": {
+          "match_all": {}
+        }
+      },
+      "extract": "field_caps_summary",
+      "family": "admin-cat",
+      "description": "[admin-cat] root field caps POST summary"
+    },
+    {
+      "name": "field_caps_target_post_summary",
+      "area": "operational",
+      "method": "POST",
+      "path": "/logs-compat/_field_caps?fields=message,service,bytes",
+      "body": {
+        "index_filter": {
+          "match_all": {}
+        }
+      },
+      "extract": "field_caps_summary",
+      "family": "admin-cat",
+      "description": "[admin-cat] targeted field caps POST summary"
+    },
+    {
       "name": "recovery_root_get_shape",
       "area": "operational",
       "method": "GET",
@@ -3296,6 +3324,69 @@
       "description": "[admin-cat] painless execute GET result"
     },
     {
+      "name": "put_stored_script_ack",
+      "area": "operational",
+      "method": "PUT",
+      "path": "/_scripts/logs-compat-crud",
+      "body": {
+        "script": {
+          "lang": "painless",
+          "source": "params.value"
+        }
+      },
+      "extract": "acknowledged",
+      "family": "admin-cat",
+      "description": "[admin-cat] put stored script"
+    },
+    {
+      "name": "get_stored_script_readback",
+      "area": "operational",
+      "method": "GET",
+      "path": "/_scripts/logs-compat-crud",
+      "extract": "stored_script_get",
+      "family": "admin-cat",
+      "description": "[admin-cat] stored script readback"
+    },
+    {
+      "name": "post_stored_script_ack",
+      "area": "operational",
+      "method": "POST",
+      "path": "/_scripts/logs-compat-crud",
+      "body": {
+        "script": {
+          "lang": "painless",
+          "source": "params.value + 1"
+        }
+      },
+      "extract": "acknowledged",
+      "family": "admin-cat",
+      "description": "[admin-cat] post stored script"
+    },
+    {
+      "name": "put_stored_script_context_ack",
+      "area": "operational",
+      "method": "PUT",
+      "path": "/_scripts/logs-compat-crud-context/filter",
+      "body": {
+        "script": {
+          "lang": "painless",
+          "source": "params.value"
+        }
+      },
+      "extract": "acknowledged",
+      "family": "admin-cat",
+      "description": "[admin-cat] put stored script with context"
+    },
+    {
+      "name": "delete_stored_script_ack",
+      "area": "operational",
+      "method": "DELETE",
+      "path": "/_scripts/logs-compat-crud",
+      "extract": "acknowledged",
+      "family": "admin-cat",
+      "description": "[admin-cat] delete stored script"
+    },
+    {
       "name": "put_search_pipeline_ack",
       "area": "operational",
       "method": "PUT",
@@ -3317,6 +3408,24 @@
       "extract": "pipeline_collection",
       "family": "admin-cat",
       "description": "[admin-cat] search pipeline collection readback"
+    },
+    {
+      "name": "get_search_pipeline_named",
+      "area": "operational",
+      "method": "GET",
+      "path": "/_search/pipeline/logs-pipeline",
+      "extract": "pipeline_collection",
+      "family": "admin-cat",
+      "description": "[admin-cat] search pipeline named readback"
+    },
+    {
+      "name": "delete_search_pipeline_named",
+      "area": "operational",
+      "method": "DELETE",
+      "path": "/_search/pipeline/logs-pipeline",
+      "extract": "acknowledged",
+      "family": "admin-cat",
+      "description": "[admin-cat] search pipeline named delete"
     },
     {
       "name": "put_ingest_pipeline_ack",

@@ -8920,13 +8920,7 @@ impl SteelNode {
                 }),
             );
         };
-        RestResponse::json(
-            200,
-            serde_json::json!({
-                "id": pipeline_id,
-                "pipeline": pipeline
-            }),
-        )
+        RestResponse::json(200, serde_json::json!({ pipeline_id: pipeline }))
     }
 
     fn handle_search_pipeline_put_route(
@@ -50848,7 +50842,10 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             "/_search/pipeline/logs-pipeline",
         ));
         assert_eq!(named_get.status, 200);
-        assert_eq!(named_get.body["id"], "logs-pipeline");
+        assert_eq!(
+            named_get.body["logs-pipeline"]["description"],
+            "probe pipeline"
+        );
 
         let collection_get =
             node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_search/pipeline"));
