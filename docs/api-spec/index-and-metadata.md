@@ -45,6 +45,7 @@ Examples:
 | `DELETE /{index}` | Delete index metadata and shard data. | The live standalone profile now supports concrete, wildcard, comma, `_all`, and `ignore_unavailable`/`allow_no_indices` delete semantics plus invalid selector boolean rejection for existing registered indices. Broader option coverage remains pending. | Partial |
 | `POST /{index}/_open`, `POST /{index}/_close` | Transition index state without deleting it. | Live standalone route with strict fixture coverage for targeted and wildcard open/close acknowledgements plus closed-index search failure behavior in unit coverage. Broader allocation and recovery side effects remain partial. | Partial |
 | `GET /{index}/_settings`, `PUT /{index}/_settings` | Read and mutate index settings for one or more targets. | Live standalone route with strict fixture coverage for targeted read/write, named setting readback, hidden wildcard mutation, and invalid selector boolean rejection. | Partial |
+| `GET /{index}/_mapping`, `GET /{index}/_mapping/field/{field}` | Read mappings and field mappings for one or more targets. | Live standalone route with strict fixture coverage for targeted and global mapping readback plus invalid selector boolean rejection. | Partial |
 
 ### `HEAD /{index}` Current Standalone Profile
 

@@ -3049,6 +3049,24 @@
       "description": "[admin-cat] global mapping readback includes fixture indices"
     },
     {
+      "name": "mapping_get_invalid_allow_no_indices_error",
+      "area": "index",
+      "method": "GET",
+      "path": "/logs-mapping-compat-000001/_mapping?allow_no_indices=maybe",
+      "extract": "search_error",
+      "family": "admin-cat",
+      "description": "[admin-cat] mapping get invalid allow_no_indices boolean error"
+    },
+    {
+      "name": "field_mapping_get_invalid_ignore_unavailable_error",
+      "area": "index",
+      "method": "GET",
+      "path": "/logs-mapping-compat-000001/_mapping/field/message?ignore_unavailable=maybe",
+      "extract": "search_error",
+      "family": "admin-cat",
+      "description": "[admin-cat] field mapping get invalid ignore_unavailable boolean error"
+    },
+    {
       "name": "settings_targeted_put_ack",
       "area": "index",
       "method": "PUT",

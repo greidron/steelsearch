@@ -4654,6 +4654,9 @@ impl SteelNode {
                     ) {
                         return Some(response);
                     }
+                    if let Some(response) = validate_index_target_boolean_query_params(request) {
+                        return Some(response);
+                    }
                     Some(self.handle_mapping_get_route(Some(target)))
                 }
                 RestMethod::Put | RestMethod::Post => {
@@ -4678,6 +4681,9 @@ impl SteelNode {
                         SecurityPermission::IndexRead,
                         "index metadata",
                     ) {
+                        return Some(response);
+                    }
+                    if let Some(response) = validate_index_target_boolean_query_params(request) {
                         return Some(response);
                     }
                     Some(self.handle_mapping_get_route(Some(target)))
@@ -4705,6 +4711,9 @@ impl SteelNode {
                     SecurityPermission::IndexRead,
                     "index metadata",
                 ) {
+                    return Some(response);
+                }
+                if let Some(response) = validate_index_target_boolean_query_params(request) {
                     return Some(response);
                 }
                 return Some(self.handle_mapping_field_get_route(Some(target), fields));
@@ -25350,6 +25359,17 @@ fn validate_create_pit_indices_options_boolean_query_params(
     request: &RestRequest,
 ) -> Option<RestResponse> {
     for field in ["allow_no_indices", "ignore_throttled", "ignore_unavailable"] {
+        if let Some(response) =
+            validate_opensearch_named_boolean_query_param(field, request.query_params.get(field))
+        {
+            return Some(response);
+        }
+    }
+    None
+}
+
+fn validate_index_target_boolean_query_params(request: &RestRequest) -> Option<RestResponse> {
+    for field in ["allow_no_indices", "ignore_unavailable"] {
         if let Some(response) =
             validate_opensearch_named_boolean_query_param(field, request.query_params.get(field))
         {
@@ -65723,6 +65743,16 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             "message"
         );
         assert!(targeted.body["logs-mapping-field-000001"]["mappings"]["tenant"].is_null());
+
+        let invalid_ignore_unavailable = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/logs-mapping-field-000001/_mapping/field/message?ignore_unavailable=maybe",
+        ));
+        assert_eq!(invalid_ignore_unavailable.status, 400);
+        assert_eq!(
+            invalid_ignore_unavailable.body["error"]["reason"],
+            "Could not convert [ignore_unavailable] to boolean"
+        );
     }
 
     #[test]
@@ -65828,6 +65858,16 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             singular_readback.body["logs-plural-mapping-000001"]["mappings"]["properties"]
                 ["service"]["type"],
             "keyword"
+        );
+
+        let invalid_allow_no_indices = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/logs-plural-mapping-000001/_mapping?allow_no_indices=maybe",
+        ));
+        assert_eq!(invalid_allow_no_indices.status, 400);
+        assert_eq!(
+            invalid_allow_no_indices.body["error"]["reason"],
+            "Could not convert [allow_no_indices] to boolean"
         );
     }
 
