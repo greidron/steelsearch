@@ -175,6 +175,21 @@ SUITES: tuple[Suite, ...] = (
             "tier_index_shape",
         ),
     ),
+    Suite(
+        "runtime-mappings-surface",
+        "search",
+        "semantic_parity",
+        "tools/search_compat.py",
+        "tools/fixtures/search-compat.json",
+        "runtime-mappings-surface-report.json",
+        output_arg="--report",
+        needs_opensearch=False,
+        allow_partial_report=True,
+        default_cases=(
+            "runtime_mappings_field_request_search",
+            "runtime_mappings_string_script_search",
+        ),
+    ),
     Suite("ml-model-surface", "vector-ml", "semantic_parity", "tools/ml_model_surface_compat.py", "tools/fixtures/ml-model-surface-compat.json", "ml-model-surface-compat-report.json", needs_opensearch=False),
     Suite("snapshot-lifecycle", "snapshot", "durability_parity", "tools/snapshot_lifecycle_compat.py", "tools/fixtures/snapshot-lifecycle-compat.json", "snapshot-lifecycle-compat-report.json"),
     Suite("alias-template-persistence", "durability", "durability_parity", "tools/alias_template_persistence_compat.py", "tools/fixtures/alias-template-persistence-compat.json", "alias-template-persistence-report.json"),
@@ -335,6 +350,7 @@ def collect_suite(
         fixture_path,
         output_dir,
         recursive_target_scan,
+        require_opensearch_target=suite.needs_opensearch,
         max_report_age_seconds=max_report_age_seconds,
     )
     result = summarize_suite(suite, fixture, report)
@@ -368,6 +384,7 @@ def load_best_report(
     output_dir: Path,
     recursive_target_scan: bool,
     exclude_paths: set[Path] | None = None,
+    require_opensearch_target: bool = False,
     max_report_age_seconds: float | None = None,
 ) -> tuple[Path | None, str | None, dict[str, Any] | None, Path | None]:
     report_names = (report_name,) if isinstance(report_name, str) else tuple(report_name)
@@ -414,6 +431,8 @@ def load_best_report(
             continue
         report = load_json(path)
         if report_fixture_mismatch(report, fixture_path):
+            continue
+        if require_opensearch_target and "opensearch" not in (report.get("targets") or {}):
             continue
         if report_has_no_reachable_targets(report):
             unusable_path = path

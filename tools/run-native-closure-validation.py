@@ -492,7 +492,7 @@ E2E_REQUIRED_PARITY_BATCH: tuple[ExternalValidation, ...] = (
         (
             "python3",
             "-c",
-            "import subprocess, sys; output_dir = 'target/unified-opensearch-e2e-audit'; collect = [sys.executable, 'tools/run-unified-opensearch-e2e.py', '--output-dir', output_dir, '--max-report-age-seconds', '604800', '--suite', 'search-semantic', '--suite', 'vector-search']; check = [sys.executable, 'tools/check-unified-opensearch-e2e-report.py', f'{output_dir}/unified-opensearch-e2e-report.json', '--require-no-skips']; first = subprocess.run(collect, stdout=subprocess.DEVNULL); sys.exit(first.returncode) if first.returncode else sys.exit(subprocess.run(check).returncode)",
+            "import subprocess, sys; output_dir = 'target/unified-opensearch-e2e-audit'; collect = [sys.executable, 'tools/run-unified-opensearch-e2e.py', '--output-dir', output_dir, '--max-report-age-seconds', '604800', '--suite', 'search-semantic', '--suite', 'vector-search', '--suite', 'vector-search-native-surface']; check = [sys.executable, 'tools/check-unified-opensearch-e2e-report.py', f'{output_dir}/unified-opensearch-e2e-report.json', '--require-no-unresolved-skips']; first = subprocess.run(collect, stdout=subprocess.DEVNULL); sys.exit(first.returncode) if first.returncode else sys.exit(subprocess.run(check).returncode)",
         ),
         timeout_seconds=120,
     ),

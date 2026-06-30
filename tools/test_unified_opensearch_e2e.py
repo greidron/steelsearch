@@ -905,6 +905,73 @@ class UnifiedOpenSearchE2EReportTests(unittest.TestCase):
             self.assertIsNone(unusable)
             self.assertEqual(report["summary"]["passed"], 1)
 
+    def test_opensearch_suite_ignores_steelsearch_only_reports(self):
+        runner = load_module(RUNNER_PATH, "run_unified_opensearch_e2e_requires_opensearch")
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            temp_dir = Path(temp_dir_value)
+            fixture_path = temp_dir / "search-compat.json"
+            fixture_path.write_text(
+                """
+{
+  "cases": [
+    { "name": "case-a" }
+  ]
+}
+""".strip(),
+                encoding="utf-8",
+            )
+            output_dir = temp_dir / "out"
+            output_dir.mkdir()
+            steel_only = temp_dir / "target" / "search-compat-report.json"
+            steel_only.parent.mkdir(parents=True)
+            steel_only.write_text(
+                """
+{
+  "fixture": "__FIXTURE__",
+  "targets": { "steelsearch": "s" },
+  "summary": { "passed": 1, "failed": 0, "skipped": 0 },
+  "cases": [
+    { "name": "case-a", "status": "passed" }
+  ]
+}
+""".replace("__FIXTURE__", str(fixture_path)),
+                encoding="utf-8",
+            )
+            compared_dir = temp_dir / "target" / "compare"
+            compared_dir.mkdir()
+            compared = compared_dir / "search-compat-report.json"
+            compared.write_text(
+                """
+{
+  "fixture": "__FIXTURE__",
+  "targets": { "steelsearch": "s", "opensearch": "o" },
+  "summary": { "passed": 1, "failed": 0, "skipped": 0 },
+  "cases": [
+    { "name": "case-a", "status": "passed" }
+  ]
+}
+""".replace("__FIXTURE__", str(fixture_path)),
+                encoding="utf-8",
+            )
+
+            previous_root = runner.ROOT
+            runner.ROOT = temp_dir
+            try:
+                path, source, report, unusable = runner.load_best_report(
+                    "search-compat-report.json",
+                    fixture_path,
+                    output_dir,
+                    recursive_target_scan=True,
+                    require_opensearch_target=True,
+                )
+            finally:
+                runner.ROOT = previous_root
+
+            self.assertEqual(path, compared)
+            self.assertEqual(source, "target-recursive")
+            self.assertIsNone(unusable)
+            self.assertIn("opensearch", report["targets"])
+
     def test_partial_search_suite_does_not_collect_generic_search_report_name(self):
         runner = load_module(RUNNER_PATH, "run_unified_opensearch_e2e_partial_search_report")
         suite = runner.Suite(

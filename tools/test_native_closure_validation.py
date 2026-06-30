@@ -55,10 +55,12 @@ class NativeClosureValidationRunnerTests(unittest.TestCase):
         self.assertIn("tools/run-unified-opensearch-e2e.py", command_text)
         self.assertIn("search-semantic", command_text)
         self.assertIn("vector-search", command_text)
+        self.assertIn("vector-search-native-surface", command_text)
         self.assertIn("--max-report-age-seconds", command_text)
         self.assertIn("604800", command_text)
         self.assertIn("tools/check-unified-opensearch-e2e-report.py", command_text)
-        self.assertIn("--require-no-skips", command_text)
+        self.assertIn("--require-no-unresolved-skips", command_text)
+        self.assertNotIn("--require-no-skips", command_text)
 
     def test_e2e_search_compat_parity_batch_allows_known_skips_but_rejects_failures(self):
         batch = self.runner.BATCHES["e2e-search-compat-parity"]
