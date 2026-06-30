@@ -2628,6 +2628,54 @@
       "description": "[admin-cat] targeted explain GET doc"
     },
     {
+      "name": "explain_target_post_matched_doc",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_explain/log-1",
+      "body": {
+        "query": {
+          "term": {
+            "service": "checkout"
+          }
+        }
+      },
+      "extract": "explain_doc_semantic",
+      "family": "admin-cat",
+      "description": "[admin-cat] targeted explain POST matched doc"
+    },
+    {
+      "name": "explain_target_post_unmatched_doc",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_explain/log-1",
+      "body": {
+        "query": {
+          "term": {
+            "service": "catalog"
+          }
+        }
+      },
+      "extract": "explain_doc_semantic",
+      "family": "admin-cat",
+      "description": "[admin-cat] targeted explain POST unmatched doc"
+    },
+    {
+      "name": "explain_target_post_missing_doc",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_explain/missing-log",
+      "body": {
+        "query": {
+          "term": {
+            "service": "checkout"
+          }
+        }
+      },
+      "extract": "explain_doc_semantic",
+      "family": "admin-cat",
+      "description": "[admin-cat] targeted explain POST missing doc"
+    },
+    {
       "name": "search_template_root_get_summary",
       "area": "search",
       "method": "GET",
