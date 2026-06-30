@@ -3193,6 +3193,9 @@ impl SteelNode {
                 ) {
                     return Some(response);
                 }
+                if let Some(response) = validate_shard_stores_query_params(request) {
+                    return Some(response);
+                }
                 Some(self.handle_shard_stores_route(None))
             }
             (RestMethod::Get, "/_upgrade") | (RestMethod::Post, "/_upgrade") => {
@@ -4082,6 +4085,9 @@ impl SteelNode {
             ));
         }
         if request.method == RestMethod::Get && request.path == "/_segments" {
+            if let Some(response) = validate_segments_query_params(request) {
+                return Some(response);
+            }
             return Some(self.handle_segments_route(None));
         }
         if request.method == RestMethod::Get && request.path.ends_with("/_segments") {
@@ -4090,6 +4096,9 @@ impl SteelNode {
                 .trim_end_matches("/_segments")
                 .trim_start_matches('/');
             if !target.is_empty() {
+                if let Some(response) = validate_segments_query_params(request) {
+                    return Some(response);
+                }
                 return Some(self.handle_segments_route(Some(target)));
             }
         }
@@ -4129,6 +4138,9 @@ impl SteelNode {
             ));
         }
         if request.method == RestMethod::Get && request.path == "/_recovery" {
+            if let Some(response) = validate_recovery_query_params(request) {
+                return Some(response);
+            }
             return Some(self.handle_recovery_route(None));
         }
         if request.method == RestMethod::Get && request.path.ends_with("/_recovery") {
@@ -4137,6 +4149,9 @@ impl SteelNode {
                 .trim_end_matches("/_recovery")
                 .trim_start_matches('/');
             if !target.is_empty() {
+                if let Some(response) = validate_recovery_query_params(request) {
+                    return Some(response);
+                }
                 return Some(self.handle_recovery_route(Some(target)));
             }
         }
@@ -4935,6 +4950,9 @@ impl SteelNode {
                     SecurityPermission::IndexRead,
                     "index metadata",
                 ) {
+                    return Some(response);
+                }
+                if let Some(response) = validate_shard_stores_query_params(request) {
                     return Some(response);
                 }
                 return Some(self.handle_shard_stores_route(Some(index)));
@@ -25453,6 +25471,140 @@ fn validate_index_stats_query_params(request: &RestRequest) -> Option<RestRespon
         }
     }
 
+    None
+}
+
+fn validate_segments_query_params(request: &RestRequest) -> Option<RestResponse> {
+    const ALLOWED_PARAMS: &[&str] = &[
+        "allow_no_indices",
+        "cluster_manager_timeout",
+        "expand_wildcards",
+        "human",
+        "ignore_unavailable",
+        "master_timeout",
+        "verbose",
+    ];
+
+    let unrecognized = request
+        .query_params
+        .keys()
+        .filter(|key| !ALLOWED_PARAMS.contains(&key.as_str()))
+        .collect::<Vec<_>>();
+    if let Some(response) = unrecognized_query_param_response_for_keys(request, &unrecognized) {
+        return Some(response);
+    }
+
+    if let Some(response) = validate_index_target_boolean_query_params(request) {
+        return Some(response);
+    }
+
+    for field in ["human", "verbose"] {
+        if let Some(response) =
+            validate_opensearch_boolean_query_param(request.query_params.get(field))
+        {
+            return Some(response);
+        }
+    }
+
+    if let Some(response) = validate_index_expand_wildcards_query_param(request) {
+        return Some(response);
+    }
+
+    validate_cluster_manager_timeout_query_params(request)
+}
+
+fn validate_recovery_query_params(request: &RestRequest) -> Option<RestResponse> {
+    const ALLOWED_PARAMS: &[&str] = &[
+        "active_only",
+        "detailed",
+        "human",
+        "cluster_manager_timeout",
+        "master_timeout",
+    ];
+
+    let unrecognized = request
+        .query_params
+        .keys()
+        .filter(|key| !ALLOWED_PARAMS.contains(&key.as_str()))
+        .collect::<Vec<_>>();
+    if let Some(response) = unrecognized_query_param_response_for_keys(request, &unrecognized) {
+        return Some(response);
+    }
+
+    for field in ["active_only", "detailed", "human"] {
+        if let Some(response) =
+            validate_opensearch_boolean_query_param(request.query_params.get(field))
+        {
+            return Some(response);
+        }
+    }
+
+    validate_cluster_manager_timeout_query_params(request)
+}
+
+fn validate_shard_stores_query_params(request: &RestRequest) -> Option<RestResponse> {
+    const ALLOWED_PARAMS: &[&str] = &[
+        "allow_no_indices",
+        "cluster_manager_timeout",
+        "expand_wildcards",
+        "ignore_unavailable",
+        "master_timeout",
+        "status",
+    ];
+
+    let unrecognized = request
+        .query_params
+        .keys()
+        .filter(|key| !ALLOWED_PARAMS.contains(&key.as_str()))
+        .collect::<Vec<_>>();
+    if let Some(response) = unrecognized_query_param_response_for_keys(request, &unrecognized) {
+        return Some(response);
+    }
+
+    if let Some(response) = validate_index_target_boolean_query_params(request) {
+        return Some(response);
+    }
+
+    if let Some(response) = validate_index_expand_wildcards_query_param(request) {
+        return Some(response);
+    }
+
+    if let Some(status) = request.query_params.get("status") {
+        for token in status.split(',').map(str::trim) {
+            if !matches!(token, "green" | "yellow" | "red" | "all") {
+                return Some(delete_pit_illegal_argument(format!(
+                    "unknown cluster health status [{token}]"
+                )));
+            }
+        }
+    }
+
+    validate_cluster_manager_timeout_query_params(request)
+}
+
+fn validate_index_expand_wildcards_query_param(request: &RestRequest) -> Option<RestResponse> {
+    if let Some(expand_wildcards) = request.query_params.get("expand_wildcards") {
+        if let Err(response) = parse_index_expand_wildcards(expand_wildcards) {
+            return Some(response);
+        }
+    }
+    None
+}
+
+fn validate_cluster_manager_timeout_query_params(request: &RestRequest) -> Option<RestResponse> {
+    for param in ["cluster_manager_timeout", "master_timeout"] {
+        let Some(raw_value) = request.query_params.get(param) else {
+            continue;
+        };
+        if parse_time_value_millis(raw_value).is_none() {
+            return Some(RestResponse::opensearch_error_kind(
+                os_rest::RestErrorKind::IllegalArgument,
+                format!(
+                    "failed to parse setting [{param}] with value [{raw_value}] as a time value"
+                ),
+            ));
+        }
+    }
     None
 }
 
@@ -68105,6 +68257,26 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             targeted.body["logs-recovery-000001"]["shards"][0]["stage"],
             "DONE"
         );
+
+        let invalid_active_only = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/logs-*/_recovery?active_only=maybe",
+        ));
+        assert_eq!(invalid_active_only.status, 400);
+        assert_eq!(
+            invalid_active_only.body["error"]["reason"],
+            "Failed to parse value [maybe] as only [true] or [false] are allowed."
+        );
+
+        let unrecognized_param = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/logs-*/_recovery?not_a_param=x",
+        ));
+        assert_eq!(unrecognized_param.status, 400);
+        assert_eq!(
+            unrecognized_param.body["error"]["reason"],
+            "request [/logs-*/_recovery] contains unrecognized parameter: [not_a_param]"
+        );
     }
 
     #[test]
@@ -68152,6 +68324,46 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             targeted.body["indices"]["logs-segments-000001"]["shards"]["0"][0]["segments"]["_0"]
                 ["committed"],
             false
+        );
+
+        let invalid_allow_no_indices = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/logs-*/_segments?allow_no_indices=maybe",
+        ));
+        assert_eq!(invalid_allow_no_indices.status, 400);
+        assert_eq!(
+            invalid_allow_no_indices.body["error"]["reason"],
+            "Could not convert [allow_no_indices] to boolean"
+        );
+
+        let invalid_verbose = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/logs-*/_segments?verbose=maybe",
+        ));
+        assert_eq!(invalid_verbose.status, 400);
+        assert_eq!(
+            invalid_verbose.body["error"]["reason"],
+            "Failed to parse value [maybe] as only [true] or [false] are allowed."
+        );
+
+        let invalid_expand_wildcards = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/logs-*/_segments?expand_wildcards=bogus",
+        ));
+        assert_eq!(invalid_expand_wildcards.status, 400);
+        assert_eq!(
+            invalid_expand_wildcards.body["error"]["reason"],
+            "No valid expand wildcard value [bogus]"
+        );
+
+        let unrecognized_param = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/logs-*/_segments?not_a_param=x",
+        ));
+        assert_eq!(unrecognized_param.status, 400);
+        assert_eq!(
+            unrecognized_param.body["error"]["reason"],
+            "request [/logs-*/_segments] contains unrecognized parameter: [not_a_param]"
         );
     }
 
@@ -68610,6 +68822,46 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 .is_array()
         );
         assert!(targeted.body["indices"]["metrics-shard-stores-000001"].is_null());
+
+        let invalid_ignore_unavailable = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/logs-*/_shard_stores?ignore_unavailable=maybe",
+        ));
+        assert_eq!(invalid_ignore_unavailable.status, 400);
+        assert_eq!(
+            invalid_ignore_unavailable.body["error"]["reason"],
+            "Could not convert [ignore_unavailable] to boolean"
+        );
+
+        let invalid_expand_wildcards = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/logs-*/_shard_stores?expand_wildcards=bogus",
+        ));
+        assert_eq!(invalid_expand_wildcards.status, 400);
+        assert_eq!(
+            invalid_expand_wildcards.body["error"]["reason"],
+            "No valid expand wildcard value [bogus]"
+        );
+
+        let invalid_status = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/logs-*/_shard_stores?status=bogus",
+        ));
+        assert_eq!(invalid_status.status, 400);
+        assert_eq!(
+            invalid_status.body["error"]["reason"],
+            "unknown cluster health status [bogus]"
+        );
+
+        let unrecognized_param = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/logs-*/_shard_stores?not_a_param=x",
+        ));
+        assert_eq!(unrecognized_param.status, 400);
+        assert_eq!(
+            unrecognized_param.body["error"]["reason"],
+            "request [/logs-*/_shard_stores] contains unrecognized parameter: [not_a_param]"
+        );
     }
 
     #[test]

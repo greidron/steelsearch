@@ -1700,6 +1700,106 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "segments_invalid_allow_no_indices_error",
+      "area": "operational",
+      "method": "GET",
+      "path": "/logs-compat/_segments?allow_no_indices=maybe",
+      "extract": "search_error",
+      "family": "admin-cat",
+      "description": "[admin-cat] segments invalid allow_no_indices boolean error",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "segments_invalid_verbose_error",
+      "area": "operational",
+      "method": "GET",
+      "path": "/logs-compat/_segments?verbose=maybe",
+      "extract": "search_error",
+      "family": "admin-cat",
+      "description": "[admin-cat] segments invalid verbose boolean error",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "segments_invalid_expand_wildcards_error",
+      "area": "operational",
+      "method": "GET",
+      "path": "/logs-compat/_segments?expand_wildcards=bogus",
+      "extract": "search_error",
+      "family": "admin-cat",
+      "description": "[admin-cat] segments invalid expand_wildcards error",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "segments_unrecognized_query_param_error",
+      "area": "operational",
+      "method": "GET",
+      "path": "/logs-compat/_segments?not_a_param=x",
+      "extract": "search_error",
+      "family": "admin-cat",
+      "description": "[admin-cat] segments unrecognized query parameter error",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "recovery_invalid_active_only_error",
+      "area": "operational",
+      "method": "GET",
+      "path": "/logs-compat/_recovery?active_only=maybe",
+      "extract": "search_error",
+      "family": "admin-cat",
+      "description": "[admin-cat] recovery invalid active_only boolean error",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "recovery_unrecognized_query_param_error",
+      "area": "operational",
+      "method": "GET",
+      "path": "/logs-compat/_recovery?not_a_param=x",
+      "extract": "search_error",
+      "family": "admin-cat",
+      "description": "[admin-cat] recovery unrecognized query parameter error",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "shard_stores_invalid_ignore_unavailable_error",
+      "area": "operational",
+      "method": "GET",
+      "path": "/logs-compat/_shard_stores?ignore_unavailable=maybe",
+      "extract": "search_error",
+      "family": "admin-cat",
+      "description": "[admin-cat] shard stores invalid ignore_unavailable boolean error",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "shard_stores_invalid_expand_wildcards_error",
+      "area": "operational",
+      "method": "GET",
+      "path": "/logs-compat/_shard_stores?expand_wildcards=bogus",
+      "extract": "search_error",
+      "family": "admin-cat",
+      "description": "[admin-cat] shard stores invalid expand_wildcards error",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "shard_stores_invalid_status_error",
+      "area": "operational",
+      "method": "GET",
+      "path": "/logs-compat/_shard_stores?status=bogus",
+      "extract": "search_error",
+      "family": "admin-cat",
+      "description": "[admin-cat] shard stores invalid status error",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "shard_stores_unrecognized_query_param_error",
+      "area": "operational",
+      "method": "GET",
+      "path": "/logs-compat/_shard_stores?not_a_param=x",
+      "extract": "search_error",
+      "family": "admin-cat",
+      "description": "[admin-cat] shard stores unrecognized query parameter error",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "node_stats_shape",
       "area": "operational",
       "method": "GET",
