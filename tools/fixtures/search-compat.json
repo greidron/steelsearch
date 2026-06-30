@@ -293,6 +293,10 @@
       "bool_percentage_minimum_should_match_search",
       "bool_conditional_minimum_should_match_search",
       "match_fuzziness_search",
+      "match_fuzziness_prefix_length_search",
+      "match_fuzziness_prefix_length_miss_search",
+      "match_fuzzy_transpositions_search",
+      "match_fuzzy_transpositions_disabled_search",
       "match_minimum_should_match_search",
       "match_operator_and_search",
       "match_zero_terms_query_all_search",
@@ -4459,6 +4463,114 @@
       "extract": "search_hits",
       "family": "lexical",
       "description": "[lexical] match fuzziness handles bounded edit distance like OpenSearch"
+    },
+    {
+      "name": "match_fuzziness_prefix_length_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match": {
+            "message": {
+              "query": "paymant",
+              "fuzziness": 1,
+              "prefix_length": 1
+            }
+          }
+        },
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] match fuzziness honors prefix_length like OpenSearch"
+    },
+    {
+      "name": "match_fuzziness_prefix_length_miss_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match": {
+            "message": {
+              "query": "paymant",
+              "fuzziness": 1,
+              "prefix_length": 5
+            }
+          }
+        },
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] match fuzziness prefix_length rejects mismatched prefixes like OpenSearch"
+    },
+    {
+      "name": "match_fuzzy_transpositions_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match": {
+            "message": {
+              "query": "pamyent",
+              "fuzziness": 1,
+              "fuzzy_transpositions": true
+            }
+          }
+        },
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] match fuzziness honors fuzzy_transpositions=true like OpenSearch"
+    },
+    {
+      "name": "match_fuzzy_transpositions_disabled_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match": {
+            "message": {
+              "query": "pamyent",
+              "fuzziness": 1,
+              "fuzzy_transpositions": false
+            }
+          }
+        },
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] match fuzziness honors fuzzy_transpositions=false like OpenSearch"
     },
     {
       "name": "match_minimum_should_match_search",
