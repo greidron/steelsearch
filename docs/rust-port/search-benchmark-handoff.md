@@ -134,7 +134,7 @@ Functional OpenSearch E2E comparison status:
 - `search-compat`: `500` passed, `0` failed, `20` skipped.
 - `search-strict`: `422` passed, `0` failed, `5` skipped.
 - `search-semantic`: `73` passed, `0` failed, `0` skipped.
-- `vector-search`: `18` passed, `0` failed, `0` skipped.
+- `vector-search`: `19` passed, `0` failed, `0` skipped.
 - REST API source coverage gate:
   `target/rest-api-coverage-current.json` passes with `18` live-required
   matched source routes and `0` live-required fixture failures/missing cases.

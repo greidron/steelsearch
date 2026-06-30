@@ -629,6 +629,43 @@
           "extract": "knn_stats_shape"
         }
       ]
+    },
+    {
+      "name": "knn_clear_cache_basic_shape",
+      "extract": "knn_stats_shape",
+      "metadata": {
+        "evidence_classes": [
+          "knn-operational-clear-cache"
+        ]
+      },
+      "compare_step": "stats-after-clear-cache",
+      "steps": [
+        {
+          "name": "warmup-before-clear-cache",
+          "method": "GET",
+          "path": "/_plugins/_knn/warmup/${index}",
+          "body": {
+            "native_memory_bytes": 32,
+            "vector_segment_count": 1
+          },
+          "expected_status": 200,
+          "extract": "knn_warmup_basic"
+        },
+        {
+          "name": "clear-cache-vector-index",
+          "method": "POST",
+          "path": "/_plugins/_knn/clear_cache/${index}",
+          "expected_status": 200,
+          "extract": "status_only"
+        },
+        {
+          "name": "stats-after-clear-cache",
+          "method": "GET",
+          "path": "/_plugins/_knn/stats",
+          "expected_status": 200,
+          "extract": "knn_stats_shape"
+        }
+      ]
     }
   ]
 }

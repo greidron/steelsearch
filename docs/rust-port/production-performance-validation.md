@@ -241,7 +241,7 @@ rescore score-mode ordering, highlight encoder, term suggest size, and missing
 `_explain` targets. k-NN query, hybrid-query option parity, and bounded k-NN
 operational stats/warmup parity are covered by the
 dedicated `vector-search` suite, which runs against the OpenSearch k-NN plugin
-profile and currently reports 18 passed, 0 failed, and 0 skipped cases.
+profile and currently reports 19 passed, 0 failed, and 0 skipped cases.
 
 This means OpenSearch feature E2E comparison is broad and currently has no
 observed failing compared cases in the collected required-suite reports. The
