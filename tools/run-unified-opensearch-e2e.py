@@ -134,6 +134,7 @@ SUITES: tuple[Suite, ...] = (
     Suite("search-compat", "search", "semantic_parity", "tools/search_compat.py", "tools/fixtures/search-compat.json", "search-compat-report.json", output_arg="--report"),
     Suite("search-strict", "search", "semantic_parity", "tools/search_compat.py", "tools/fixtures/search-strict-compat.json", "search-strict-compat-report.json", output_arg="--report"),
     Suite("search-semantic", "search", "semantic_parity", "tools/search_compat.py", "tools/fixtures/search-semantic-compat.json", "search-semantic-compat-report.json", output_arg="--report"),
+    Suite("runtime-stateful-probe", "runtime-stateful", "semantic_parity", "tools/probe_stateful_route_ledger.py", "tools/fixtures/runtime-stateful-probe.json", "runtime-stateful-probe-report.json", output_arg="--report", needs_opensearch=False),
     Suite("admin-ops-semantic", "admin-ops", "semantic_parity", "tools/search_compat.py", "tools/fixtures/admin-ops-semantic-compat.json", "admin-ops-semantic-report.json", output_arg="--report", needs_opensearch=False),
     Suite("vector-search", "vector-ml", "semantic_parity", "tools/vector_search_compat.py", "tools/fixtures/vector-search-compat.json", "vector-search-compat-report.json"),
     Suite(

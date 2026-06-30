@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import argparse
 import json
-import sys
 import urllib.error
 import urllib.request
 from collections import defaultdict
@@ -54,13 +54,13 @@ def materialize_case(case: dict[str, Any], captures: dict[str, Any]) -> dict[str
     return {key: materialize(value, captures) for key, value in case.items()}
 
 
-def request(base_url: str, case: dict[str, Any]) -> dict[str, Any]:
+def request(base_url: str, case: dict[str, Any], timeout: float = 3.0) -> dict[str, Any]:
     data, content_type = encode_body(case)
     req = urllib.request.Request(base_url + case['path'], data=data, method=case['method'])
     if content_type:
         req.add_header('Content-Type', content_type)
     try:
-        with urllib.request.urlopen(req, timeout=3.0) as response:
+        with urllib.request.urlopen(req, timeout=timeout) as response:
             body = response.read().decode('utf-8', errors='replace')
             return {'status': response.getcode(), 'body': body}
     except urllib.error.HTTPError as error:
@@ -151,12 +151,37 @@ def infer_semantic_tags(case: dict[str, Any]) -> list[str]:
     return tags
 
 
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("base_url", nargs="?", help="legacy Steelsearch base URL")
+    parser.add_argument("--steelsearch-url", help="Steelsearch base URL")
+    parser.add_argument("--fixture", default=str(FIXTURE))
+    parser.add_argument("--report", "--output", dest="report", default=str(REPORT))
+    parser.add_argument("--timeout", type=float, default=3.0)
+    parser.add_argument("--case", action="append", help="case name to run; may be repeated")
+    return parser.parse_args()
+
+
+def select_cases(fixture: dict[str, Any], case_names: list[str] | None) -> list[dict[str, Any]]:
+    cases = list(fixture['cases'])
+    if not case_names:
+        return cases
+    cases_by_name = {case.get('name'): case for case in cases}
+    missing = sorted(set(case_names) - set(cases_by_name))
+    if missing:
+        raise SystemExit(f"unknown stateful route probe case(s): {', '.join(missing)}")
+    return [cases_by_name[name] for name in case_names]
+
+
 def main() -> int:
-    base_url = (sys.argv[1] if len(sys.argv) > 1 else 'http://127.0.0.1:19200').rstrip('/')
-    fixture = json.loads(FIXTURE.read_text(encoding='utf-8'))
+    args = parse_args()
+    base_url = (args.steelsearch_url or args.base_url or 'http://127.0.0.1:19200').rstrip('/')
+    fixture_path = Path(args.fixture)
+    report_path = Path(args.report)
+    fixture = json.loads(fixture_path.read_text(encoding='utf-8'))
     captures: dict[str, Any] = {}
     setup_results = [
-        {**step, 'result': request(base_url, materialize_case(step, captures))}
+        {**step, 'result': request(base_url, materialize_case(step, captures), args.timeout)}
         for step in fixture.get('setup', [])
     ]
     for record in setup_results:
@@ -165,9 +190,9 @@ def main() -> int:
     summary = defaultdict(int)
     by_family: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
     semantic_coverage: dict[str, set[str]] = defaultdict(set)
-    for case in fixture['cases']:
+    for case in select_cases(fixture, args.case):
         request_case = materialize_case(case, captures)
-        result = request(base_url, request_case)
+        result = request(base_url, request_case, args.timeout)
         capture_values(case, result, captures)
         report_result = normalize_result_for_report(case, result)
         runtime_status = classify(result)
@@ -204,7 +229,7 @@ def main() -> int:
 
     payload = {
         'base_url': base_url,
-        'fixture': str(FIXTURE),
+        'fixture': str(fixture_path),
         'setup': setup_results,
         'cases': cases,
         'summary': dict(summary),
@@ -214,7 +239,8 @@ def main() -> int:
         'semantic_coverage_missing': [route for route in semantic_routes if route['missing']],
         'semantic_coverage_summary': dict(semantic_summary),
     }
-    REPORT.write_text(json.dumps(payload, indent=2, sort_keys=True) + '\n', encoding='utf-8')
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    report_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + '\n', encoding='utf-8')
     print(json.dumps({
         **payload['summary'],
         'semantic_complete': payload['semantic_coverage_summary'].get('complete', 0),
