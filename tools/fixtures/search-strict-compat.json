@@ -1935,6 +1935,31 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "settings_targeted_get_invalid_allow_no_indices_error",
+      "area": "index",
+      "method": "GET",
+      "path": "/logs-settings-compat-000001/_settings?allow_no_indices=maybe",
+      "extract": "search_error",
+      "family": "admin-cat",
+      "description": "[admin-cat] settings get invalid allow_no_indices boolean error",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "settings_targeted_put_invalid_ignore_unavailable_error",
+      "area": "index",
+      "method": "PUT",
+      "path": "/logs-settings-compat-000001/_settings?ignore_unavailable=maybe",
+      "body": {
+        "index": {
+          "refresh_interval": "2s"
+        }
+      },
+      "extract": "search_error",
+      "family": "admin-cat",
+      "description": "[admin-cat] settings put invalid ignore_unavailable boolean error",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "settings_targeted_flat_readback",
       "area": "index",
       "method": "GET",

@@ -6538,6 +6538,14 @@ impl SteelNode {
         if let Some(response) = self.validate_settings_update_body(&body, index) {
             return response;
         }
+        for field in ["ignore_unavailable", "allow_no_indices"] {
+            if let Some(response) = validate_opensearch_named_boolean_query_param(
+                field,
+                request.query_params.get(field),
+            ) {
+                return response;
+            }
+        }
         let ignore_unavailable =
             query_param_is_true(request.query_params.get("ignore_unavailable"));
         let allow_no_indices = query_param_is_true(request.query_params.get("allow_no_indices"));
@@ -36955,11 +36963,17 @@ fn validate_settings_get_query_params(request: &RestRequest) -> Option<RestRespo
         return Some(response);
     }
 
+    for field in ["allow_no_indices", "ignore_unavailable"] {
+        if let Some(response) =
+            validate_opensearch_named_boolean_query_param(field, request.query_params.get(field))
+        {
+            return Some(response);
+        }
+    }
+
     for field in [
-        "allow_no_indices",
         "flat_settings",
         "ignore_throttled",
-        "ignore_unavailable",
         "include_defaults",
         "local",
     ] {
@@ -70347,6 +70361,16 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             "Failed to parse value [maybe] as only [true] or [false] are allowed."
         );
 
+        let invalid_allow_no_indices = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/logs-settings-000001/_settings?allow_no_indices=maybe",
+        ));
+        assert_eq!(invalid_allow_no_indices.status, 400);
+        assert_eq!(
+            invalid_allow_no_indices.body["error"]["root_cause"][0]["reason"],
+            "Could not convert [allow_no_indices] to boolean"
+        );
+
         let invalid_timeout = node.handle_rest_request(RestRequest::new(
             RestMethod::Get,
             "/_settings?cluster_manager_timeout=bogus",
@@ -70378,6 +70402,23 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         );
         assert_eq!(targeted_put.status, 200);
         assert_eq!(targeted_put.body["acknowledged"], Value::Bool(true));
+
+        let invalid_put_ignore_unavailable = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Put,
+                "/logs-settings-000001/_settings?ignore_unavailable=maybe",
+            )
+            .with_json_body(serde_json::json!({
+                "index": {
+                    "refresh_interval": "2s"
+                }
+            })),
+        );
+        assert_eq!(invalid_put_ignore_unavailable.status, 400);
+        assert_eq!(
+            invalid_put_ignore_unavailable.body["error"]["root_cause"][0]["reason"],
+            "Could not convert [ignore_unavailable] to boolean"
+        );
 
         let targeted = node.handle_rest_request(RestRequest::new(
             RestMethod::Get,
