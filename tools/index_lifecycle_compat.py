@@ -84,9 +84,13 @@ def decode_response(status: int, payload: bytes) -> dict[str, Any]:
 
 def extract_path(value: Any, path: str) -> Any:
     current = value
-    for segment in path.split("."):
+    segments = path.split(".")
+    for index, segment in enumerate(segments):
         if not isinstance(current, dict):
             return None
+        remaining = ".".join(segments[index:])
+        if remaining in current:
+            return current.get(remaining)
         current = current.get(segment)
         if current is None:
             return None

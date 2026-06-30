@@ -1,6 +1,6 @@
 //! Workspace-visible route-registration anchors for bounded `DELETE /{index}` parity work.
 
-use os_rest::{RestErrorKind, RestMethod, RestResponse};
+use os_rest::RestResponse;
 
 pub const DELETE_INDEX_ROUTE_METHOD: &str = "DELETE";
 pub const DELETE_INDEX_ROUTE_PATH: &str = "/{index}";
@@ -52,9 +52,30 @@ pub fn build_delete_index_success_response() -> RestResponse {
 }
 
 pub fn build_delete_index_missing_response(target: &str) -> RestResponse {
-    RestResponse::opensearch_error_kind(
-        RestErrorKind::IndexNotFound,
-        format!("no such index [{target}]"),
+    let reason = format!("no such index [{target}]");
+    RestResponse::json(
+        404,
+        serde_json::json!({
+            "error": {
+                "root_cause": [
+                    {
+                        "type": DELETE_INDEX_MISSING_BUCKET,
+                        "reason": reason,
+                        "index": target,
+                        "resource.id": target,
+                        "resource.type": "index_or_alias",
+                        "index_uuid": "_na_"
+                    }
+                ],
+                "type": DELETE_INDEX_MISSING_BUCKET,
+                "reason": reason,
+                "index": target,
+                "resource.id": target,
+                "resource.type": "index_or_alias",
+                "index_uuid": "_na_"
+            },
+            "status": 404
+        }),
     )
 }
 
@@ -119,6 +140,22 @@ mod tests {
         assert_eq!(
             missing.body["error"]["type"],
             serde_json::json!(DELETE_INDEX_MISSING_BUCKET)
+        );
+        assert_eq!(
+            missing.body["error"]["index"],
+            serde_json::json!("missing-000001")
+        );
+        assert_eq!(
+            missing.body["error"]["resource.id"],
+            serde_json::json!("missing-000001")
+        );
+        assert_eq!(
+            missing.body["error"]["resource.type"],
+            serde_json::json!("index_or_alias")
+        );
+        assert_eq!(
+            missing.body["error"]["index_uuid"],
+            serde_json::json!("_na_")
         );
     }
 }

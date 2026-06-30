@@ -152,6 +152,32 @@
       }
     },
     {
+      "name": "close_missing_index_error",
+      "method": "POST",
+      "path": "/missing-compat-lifecycle-000001/_close",
+      "compare": {
+        "expected_status": 404,
+        "body_paths_present": [
+          "error.type",
+          "error.reason",
+          "error.index",
+          "error.resource.id",
+          "error.resource.type",
+          "error.index_uuid",
+          "status"
+        ],
+        "body_paths_equal": [
+          "error.type",
+          "error.reason",
+          "error.index",
+          "error.resource.id",
+          "error.resource.type",
+          "error.index_uuid",
+          "status"
+        ]
+      }
+    },
+    {
       "name": "open_index_ack",
       "method": "POST",
       "path": "/logs-compat-lifecycle-000001/_open",
@@ -164,6 +190,32 @@
         "body_paths_equal": [
           "acknowledged",
           "shards_acknowledged"
+        ]
+      }
+    },
+    {
+      "name": "open_missing_index_error",
+      "method": "POST",
+      "path": "/missing-compat-lifecycle-000001/_open",
+      "compare": {
+        "expected_status": 404,
+        "body_paths_present": [
+          "error.type",
+          "error.reason",
+          "error.index",
+          "error.resource.id",
+          "error.resource.type",
+          "error.index_uuid",
+          "status"
+        ],
+        "body_paths_equal": [
+          "error.type",
+          "error.reason",
+          "error.index",
+          "error.resource.id",
+          "error.resource.type",
+          "error.index_uuid",
+          "status"
         ]
       }
     },
