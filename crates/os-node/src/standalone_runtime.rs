@@ -12375,19 +12375,27 @@ impl SteelNode {
             .metadata_manifest_state
             .lock()
             .expect("metadata manifest state lock poisoned");
-        let simulated_template = if request_subset != Value::Object(serde_json::Map::new()) {
-            request_subset
-        } else if let Some(name) = target {
-            manifest["templates"]["index_templates"][name]["index_template"].clone()
-        } else {
-            Value::Object(serde_json::Map::new())
-        };
+        let (simulated_template, overlapping) =
+            if request_subset != Value::Object(serde_json::Map::new()) {
+                (
+                    Self::build_resolved_composable_template(&manifest, &request_subset),
+                    Self::build_simulate_template_overlaps(&manifest, &request_subset, target),
+                )
+            } else if let Some(name) = target {
+                let index_template =
+                    manifest["templates"]["index_templates"][name]["index_template"].clone();
+                (
+                    Self::build_resolved_composable_template(&manifest, &index_template),
+                    Self::build_simulate_template_overlaps(&manifest, &index_template, target),
+                )
+            } else {
+                (Value::Object(serde_json::Map::new()), Vec::new())
+            };
         RestResponse::json(
             200,
             serde_json::json!({
                 "template": simulated_template,
-                "overlapping": [],
-                "component_templates": []
+                "overlapping": overlapping
             }),
         )
     }
@@ -12408,17 +12416,78 @@ impl SteelNode {
                     .iter()
                     .filter_map(Value::as_str)
                     .any(|pattern| matches_index_selector(pattern, index_name))
-                    .then(|| index_template.clone())
+                    .then(|| Self::build_resolved_composable_template(&manifest, index_template))
             })
             .unwrap_or_else(|| Value::Object(serde_json::Map::new()));
         RestResponse::json(
             200,
             serde_json::json!({
                 "template": simulated_template,
-                "overlapping": [],
-                "component_templates": []
+                "overlapping": []
             }),
         )
+    }
+
+    fn build_resolved_composable_template(manifest: &Value, index_template: &Value) -> Value {
+        let mut resolved = serde_json::json!({
+            "aliases": {},
+            "mappings": {},
+            "settings": {}
+        });
+        if let Some(component_names) = index_template["composed_of"].as_array() {
+            for component_name in component_names.iter().filter_map(Value::as_str) {
+                let component_template = &manifest["templates"]["component_templates"]
+                    [component_name]["component_template"];
+                if component_template.is_object() {
+                    merge_object_with_null_reset(&mut resolved, &component_template["template"]);
+                }
+            }
+        }
+        merge_object_with_null_reset(&mut resolved, &index_template["template"]);
+        stringify_opensearch_setting_number_readbacks(&mut resolved);
+        resolved
+    }
+
+    fn build_simulate_template_overlaps(
+        manifest: &Value,
+        candidate_index_template: &Value,
+        target: Option<&str>,
+    ) -> Vec<Value> {
+        let candidate_patterns: Vec<&str> = candidate_index_template["index_patterns"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .collect();
+        if candidate_patterns.is_empty() {
+            return Vec::new();
+        }
+        manifest["templates"]["index_templates"]
+            .as_object()
+            .into_iter()
+            .flat_map(|templates| templates.iter())
+            .filter(|(name, _)| target != Some(name.as_str()))
+            .filter_map(|(name, template)| {
+                let index_template = template.get("index_template")?;
+                let patterns: Vec<&str> = index_template["index_patterns"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter_map(Value::as_str)
+                    .collect();
+                let overlaps = patterns.iter().any(|pattern| {
+                    candidate_patterns
+                        .iter()
+                        .any(|candidate| pattern == candidate)
+                });
+                overlaps.then(|| {
+                    serde_json::json!({
+                        "name": name,
+                        "index_patterns": patterns
+                    })
+                })
+            })
+            .collect()
     }
 
     fn handle_legacy_template_get_route(&self, target: Option<&str>) -> RestResponse {
@@ -37543,8 +37612,8 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         ));
         assert_eq!(named_simulate_response.status, 200);
         assert_eq!(
-            named_simulate_response.body["template"]["index_patterns"][0],
-            "logs-sim-*"
+            named_simulate_response.body["template"]["settings"]["index"]["number_of_replicas"],
+            "0"
         );
 
         let index_simulate_response = node.handle_rest_request(RestRequest::new(
@@ -37553,8 +37622,8 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         ));
         assert_eq!(index_simulate_response.status, 200);
         assert_eq!(
-            index_simulate_response.body["template"]["index_patterns"][0],
-            "logs-sim-*"
+            index_simulate_response.body["template"]["settings"]["index"]["number_of_replicas"],
+            "0"
         );
 
         let post_response = node.handle_rest_request(

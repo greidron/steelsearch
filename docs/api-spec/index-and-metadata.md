@@ -271,13 +271,14 @@ The runtime path now:
 | --- | --- | --- | --- |
 | Component index templates (`/_component_template`) | Defines reusable template fragments for future index creation and template composition. | Standalone profile now covers live CRUD/readback, wildcard/comma name selection, in-use delete failure, and named missing-template `404` semantics for the current persisted template subset. | Partial |
 | Composable index templates (`/_index_template`) | Defines higher-level index templates used for future index creation and data streams. | Standalone profile now covers live CRUD/readback, comma-selected named readback, and named missing-template `404` semantics for the current persisted template subset. | Partial |
-| Composable template simulation (`/_index_template/_simulate`, `/_index_template/_simulate/{name}`) | Simulates composable-template resolution without committing metadata. | The named/unnamed composable-template simulation surface is still missing as a REST route family; do not treat composable-template persistence as evidence of simulation parity. | Planned |
-| Composable index-template simulation (`/_index_template/_simulate_index/{name}`) | Simulates how a target index name would resolve through composable templates without committing metadata. | The index-name-specific simulation surface is also still missing as a REST route family. | Planned |
+| Composable template simulation (`/_index_template/_simulate`, `/_index_template/_simulate/{name}`) | Simulates composable-template resolution without committing metadata. | Live standalone route with strict fixture coverage for request-body simulation and named persisted-template simulation over the bounded template subset. | Partial |
+| Composable index-template simulation (`/_index_template/_simulate_index/{name}`) | Simulates how a target index name would resolve through composable templates without committing metadata. | Live standalone route with strict fixture coverage for matching a target index name to a persisted composable template over the bounded selector subset. | Partial |
 | Legacy index templates | Older template mechanism used by OpenSearch. | Standalone profile now covers live CRUD/readback, wildcard-selected named readback, and named missing-template `404` semantics for the current persisted template subset. | Partial |
 
 Keep named and unnamed composable-template simulation in one row for now. They
-share the same handler family, status, and missing-parity story, so splitting
-them further would add table noise without changing the current contract.
+share the same handler family and are promoted together through the
+`template-compat.json` simulation cases, so splitting them further would add
+table noise without changing the current contract.
 
 ### Component/Composable Template Current Standalone Profile
 

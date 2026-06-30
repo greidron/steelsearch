@@ -204,6 +204,82 @@
       "extract": "index_template_collection"
     },
     {
+      "name": "simulate_index_template_request_body",
+      "method": "POST",
+      "path": "/_index_template/_simulate",
+      "body": {
+        "index_patterns": [
+          "template-logs-*"
+        ],
+        "composed_of": [
+          "logs-component-compat"
+        ],
+        "template": {
+          "settings": {
+            "index": {
+              "refresh_interval": "30s"
+            }
+          }
+        },
+        "priority": 11
+      },
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "template.settings.index.refresh_interval",
+          "template.settings.index.number_of_replicas",
+          "template.mappings.properties.message.type",
+          "template.aliases",
+          "overlapping"
+        ],
+        "body_paths_equal": [
+          "template.settings.index.refresh_interval",
+          "template.settings.index.number_of_replicas",
+          "template.mappings.properties.message.type"
+        ]
+      }
+    },
+    {
+      "name": "simulate_named_index_template_readback",
+      "method": "POST",
+      "path": "/_index_template/_simulate/logs-template-compat",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "template.settings.index.number_of_shards",
+          "template.settings.index.number_of_replicas",
+          "template.mappings.properties.message.type",
+          "template.aliases",
+          "overlapping"
+        ],
+        "body_paths_equal": [
+          "template.settings.index.number_of_shards",
+          "template.settings.index.number_of_replicas",
+          "template.mappings.properties.message.type"
+        ]
+      }
+    },
+    {
+      "name": "simulate_index_name_template_match",
+      "method": "POST",
+      "path": "/_index_template/_simulate_index/template-logs-000001",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "template.settings.index.number_of_shards",
+          "template.settings.index.number_of_replicas",
+          "template.mappings.properties.message.type",
+          "template.aliases",
+          "overlapping"
+        ],
+        "body_paths_equal": [
+          "template.settings.index.number_of_shards",
+          "template.settings.index.number_of_replicas",
+          "template.mappings.properties.message.type"
+        ]
+      }
+    },
+    {
       "name": "put_legacy_template_full_subset",
       "method": "PUT",
       "path": "/_template/logs-legacy-compat",
