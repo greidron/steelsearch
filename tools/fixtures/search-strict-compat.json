@@ -3449,6 +3449,62 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "fuzzy_query_transpositions_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "fuzzy": {
+            "message": {
+              "value": "pyament",
+              "fuzziness": 1,
+              "transpositions": true
+            }
+          }
+        },
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] fuzzy query honors transpositions=true like OpenSearch",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "fuzzy_query_transpositions_disabled_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "fuzzy": {
+            "message": {
+              "value": "pyament",
+              "fuzziness": 1,
+              "transpositions": false
+            }
+          }
+        },
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] fuzzy query honors transpositions=false like OpenSearch",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "geo_distance_query_search",
       "area": "search",
       "method": "POST",
