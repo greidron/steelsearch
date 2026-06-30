@@ -190,6 +190,113 @@ class UnifiedOpenSearchE2EReportTests(unittest.TestCase):
         self.assertIn("report has missing required suite evidence", errors)
         self.assertIn("synthetic: missing fixture case evidence", errors)
 
+    def test_checker_rejects_incomplete_suite_result_shape(self):
+        checker = load_module(CHECKER_PATH, "check_unified_opensearch_e2e_incomplete_suite")
+        report = {
+            "profile": "synthetic",
+            "generated_at": 1,
+            "status": "ok",
+            "route_parity": {
+                "required_suites": ["synthetic"],
+                "report_paths": ["synthetic.json"],
+                "status": "ok",
+            },
+            "semantic_parity": {"required_suites": [], "report_paths": [], "status": "ok"},
+            "durability_parity": {"required_suites": [], "report_paths": [], "status": "ok"},
+            "security_parity": {"required_suites": [], "report_paths": [], "status": "ok"},
+            "distributed_parity": {"required_suites": [], "report_paths": [], "status": "ok"},
+            "coverage_summary": {
+                "suite_count": 1,
+                "required_suite_count": 1,
+                "reported_suite_count": 0,
+                "opensearch_compared_suite_count": 0,
+                "case_classification": {},
+            },
+            "suite_results": [
+                {
+                    "name": "synthetic",
+                    "required": True,
+                    "status": "ok",
+                }
+            ],
+        }
+
+        errors = checker.validate_report(report, allow_missing=False)
+
+        self.assertIn("synthetic: missing suite field [summary]", errors)
+        self.assertIn("synthetic: missing suite field [case_gaps]", errors)
+        self.assertIn("synthetic: missing suite field [report_source]", errors)
+        self.assertIn("synthetic: missing suite field [rerun]", errors)
+
+    def test_checker_rejects_malformed_suite_result_shape(self):
+        checker = load_module(CHECKER_PATH, "check_unified_opensearch_e2e_malformed_suite")
+        report = {
+            "profile": "synthetic",
+            "generated_at": 1,
+            "status": "ok",
+            "route_parity": {
+                "required_suites": ["synthetic"],
+                "report_paths": ["synthetic.json"],
+                "status": "ok",
+            },
+            "semantic_parity": {"required_suites": [], "report_paths": [], "status": "ok"},
+            "durability_parity": {"required_suites": [], "report_paths": [], "status": "ok"},
+            "security_parity": {"required_suites": [], "report_paths": [], "status": "ok"},
+            "distributed_parity": {"required_suites": [], "report_paths": [], "status": "ok"},
+            "coverage_summary": {
+                "suite_count": 1,
+                "required_suite_count": 1,
+                "reported_suite_count": 1,
+                "opensearch_compared_suite_count": 1,
+                "case_classification": {
+                    "strict_equal": 1,
+                    "canonical_equal": 0,
+                    "semantic_equal": 0,
+                    "steelsearch_fail_closed": 0,
+                    "steelsearch_only": 0,
+                    "known_gap_or_skipped": 0,
+                    "failed": 0,
+                    "missing": 0,
+                },
+            },
+            "suite_results": [
+                {
+                    "name": "synthetic",
+                    "area": "",
+                    "parity_section": "unknown",
+                    "required": "yes",
+                    "fixture_case_count": -1,
+                    "status": "ok",
+                    "summary": {"passed": True, "failed": 0, "skipped": 0},
+                    "has_opensearch_target": "yes",
+                    "classification": {
+                        "strict_equal": 1,
+                        "canonical_equal": 0,
+                        "semantic_equal": 0,
+                        "steelsearch_fail_closed": 0,
+                        "steelsearch_only": 0,
+                        "known_gap_or_skipped": 0,
+                        "failed": 0,
+                        "missing": 0,
+                    },
+                    "case_gaps": {"missing": [], "extra": [], "failed": [], "skipped": "no"},
+                    "report_source": "handwritten",
+                    "report_path": "",
+                    "fixture_path": "",
+                    "rerun": {"unified_command": [], "direct_command": ""},
+                }
+            ],
+        }
+
+        errors = checker.validate_report(report, allow_missing=False)
+
+        self.assertIn("synthetic: invalid parity_section [unknown]", errors)
+        self.assertIn("synthetic: required must be boolean", errors)
+        self.assertIn("synthetic: fixture_case_count must be a non-negative integer", errors)
+        self.assertIn("synthetic: summary.passed must be a non-negative integer", errors)
+        self.assertIn("synthetic: case_gaps.skipped must be a list", errors)
+        self.assertIn("synthetic: rerun.unified_command must be a string", errors)
+
     def test_checker_rejects_required_skips_when_requested(self):
         checker = load_module(CHECKER_PATH, "check_unified_opensearch_e2e_no_skips")
         report = {
