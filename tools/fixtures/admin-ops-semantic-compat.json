@@ -204,28 +204,16 @@
       ]
     },
     {
-      "name": "admin_ops_tier_cancel_after_set_semantic",
+      "name": "admin_ops_tier_default_no_handler_semantic",
       "area": "admin-ops-semantic",
-      "extract": "tier_preference",
+      "extract": "error_response",
       "steps": [
         {
-          "name": "set-tier",
+          "name": "set-tier-no-handler",
           "method": "POST",
           "path": "/logs-admin-ops-000001/_tier/warm",
-          "expected_status": 200
-        },
-        {
-          "name": "cancel-tier",
-          "method": "POST",
-          "path": "/_tier/_cancel/logs-admin-ops-000001",
-          "expected_status": 200
-        },
-        {
-          "name": "read-tier",
-          "method": "GET",
-          "path": "/logs-admin-ops-000001/_tier",
-          "expected_status": 200,
-          "extract": "tier_preference"
+          "expected_status": 400,
+          "extract": "error_response"
         }
       ]
     },

@@ -3742,28 +3742,22 @@
     {
       "name": "tier_all_shape",
       "area": "operational",
-      "comparison": "steelsearch_only",
-      "expected_steelsearch_status": 200,
-      "skip_scope": "degraded-source",
-      "reason": "OpenSearch target does not expose tiering read handlers in this environment, so tier read coverage is retained as SteelSearch-only route evidence.",
       "method": "GET",
       "path": "/_tier/all",
-      "extract": "tier_summary",
+      "expected_status": 400,
+      "extract": "error_response",
       "family": "admin-cat",
-      "description": "[admin-cat] tier all shape"
+      "description": "[admin-cat] tier all default no-handler shape"
     },
     {
       "name": "tier_index_shape",
       "area": "operational",
-      "comparison": "steelsearch_only",
-      "expected_steelsearch_status": 200,
-      "skip_scope": "degraded-source",
-      "reason": "OpenSearch target does not expose tiering read handlers in this environment, so tier read coverage is retained as SteelSearch-only route evidence.",
       "method": "GET",
       "path": "/logs-compat/_tier",
-      "extract": "tier_summary",
+      "expected_status": 400,
+      "extract": "error_response",
       "family": "admin-cat",
-      "description": "[admin-cat] index tier shape"
+      "description": "[admin-cat] index tier default no-handler shape"
     },
     {
       "name": "grok_processor_patterns",

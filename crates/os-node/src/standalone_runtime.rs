@@ -99,6 +99,41 @@ fn request_reports_forced_refresh(request: &RestRequest) -> bool {
         .is_some_and(|value| value == "true")
 }
 
+fn tier_route_is_feature_flag_disabled(path: &str, method: RestMethod) -> bool {
+    if path == "/_tier/all" && method == RestMethod::Get {
+        return true;
+    }
+    if path
+        .trim_matches('/')
+        .strip_suffix("/_tier")
+        .is_some_and(|index| !index.is_empty())
+        && method == RestMethod::Get
+    {
+        return true;
+    }
+    if path
+        .trim_matches('/')
+        .split_once("/_tier/")
+        .is_some_and(|(index, target_tier)| !index.is_empty() && !target_tier.is_empty())
+        && method == RestMethod::Post
+    {
+        return true;
+    }
+    path.trim_matches('/')
+        .strip_prefix("_tier/_cancel/")
+        .is_some_and(|index| !index.is_empty())
+        && method == RestMethod::Post
+}
+
+fn feature_flag_disabled_tier_route_response(path: &str, method: RestMethod) -> RestResponse {
+    RestResponse::json(
+        400,
+        serde_json::json!({
+            "error": format!("no handler found for uri [{path}] and method [{}]", method.as_str())
+        }),
+    )
+}
+
 fn seq_primary_term_conflict_reason(
     id: &str,
     expected_seq_no: Option<i64>,
@@ -5202,15 +5237,11 @@ impl SteelNode {
                 return Some(self.handle_field_caps_route(Some(index)));
             }
         }
-        if let Some(index) = request.path.trim_matches('/').strip_suffix("/_tier") {
-            if request.method == RestMethod::Get && !index.is_empty() {
-                return Some(self.handle_index_tier_route(index));
-            }
-        }
-        if let Some((index, target_tier)) = request.path.trim_matches('/').split_once("/_tier/") {
-            if request.method == RestMethod::Post && !index.is_empty() && !target_tier.is_empty() {
-                return Some(self.handle_index_target_tier_route(index, target_tier));
-            }
+        if tier_route_is_feature_flag_disabled(&request.path, request.method) {
+            return Some(feature_flag_disabled_tier_route_response(
+                &request.path,
+                request.method,
+            ));
         }
         if let Some(index) = request.path.trim_matches('/').strip_suffix("/_rank_eval") {
             if request.method == RestMethod::Get || request.method == RestMethod::Post {
@@ -5446,18 +5477,6 @@ impl SteelNode {
             && (request.method == RestMethod::Get || request.method == RestMethod::Post)
         {
             return Some(self.handle_render_template_route(None, request));
-        }
-        if request.path == "/_tier/all" && request.method == RestMethod::Get {
-            return Some(self.handle_tier_all_route());
-        }
-        if let Some(index) = request
-            .path
-            .trim_matches('/')
-            .strip_prefix("_tier/_cancel/")
-        {
-            if request.method == RestMethod::Post && !index.is_empty() {
-                return Some(self.handle_cancel_index_tier_route(index));
-            }
         }
         if request.path == "/_ingest/processor/grok" && request.method == RestMethod::Get {
             return Some(self.handle_grok_processor_get_route());
@@ -53930,7 +53949,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
     }
 
     #[test]
-    fn field_caps_list_and_tier_routes_serve_root_and_targeted_misc_shapes() {
+    fn field_caps_and_list_routes_serve_root_and_targeted_misc_shapes() {
         let node = SteelNode::new(NodeInfo {
             name: "steel-node".to_string(),
             version: OPENSEARCH_3_7_0_TRANSPORT,
@@ -54000,66 +54019,22 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(list_targeted_shards.status, 200);
         assert_eq!(list_targeted_shards.body["shards"][0]["primary"], true);
 
-        let tier_all = node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_tier/all"));
-        assert_eq!(tier_all.status, 200);
-        assert_eq!(tier_all.body["tiers"][0], "hot");
-
-        let index_tier =
-            node.handle_rest_request(RestRequest::new(RestMethod::Get, "/logs-misc-000001/_tier"));
-        assert_eq!(index_tier.status, 200);
-        assert_eq!(index_tier.body["index"], "logs-misc-000001");
-        assert_eq!(index_tier.body["tiers"][0], "hot");
-
-        let multi_index_tier = node.handle_rest_request(RestRequest::new(
-            RestMethod::Get,
-            "/logs-misc-000001,metrics-misc-000001/_tier",
-        ));
-        assert_eq!(multi_index_tier.status, 400);
-        assert_eq!(
-            multi_index_tier.body["error"]["type"],
-            "illegal_argument_exception"
-        );
-        assert_eq!(
-            multi_index_tier.body["error"]["reason"],
-            "request should contain single index"
-        );
-
-        let tier_target = node.handle_rest_request(RestRequest::new(
-            RestMethod::Post,
-            "/logs-misc-000001/_tier/warm",
-        ));
-        assert_eq!(tier_target.status, 200);
-        assert_eq!(tier_target.body["acknowledged"], Value::Bool(true));
-        assert_eq!(tier_target.body["target_tier"], "warm");
-
-        let updated_tier =
-            node.handle_rest_request(RestRequest::new(RestMethod::Get, "/logs-misc-000001/_tier"));
-        assert_eq!(updated_tier.status, 200);
-        assert_eq!(updated_tier.body["tiers"][0], "warm");
-
-        let tier_cancel = node.handle_rest_request(RestRequest::new(
-            RestMethod::Post,
-            "/_tier/_cancel/logs-misc-000001",
-        ));
-        assert_eq!(tier_cancel.status, 200);
-        assert_eq!(tier_cancel.body["acknowledged"], Value::Bool(true));
-
-        let reset_tier =
-            node.handle_rest_request(RestRequest::new(RestMethod::Get, "/logs-misc-000001/_tier"));
-        assert_eq!(reset_tier.status, 200);
-        assert_eq!(reset_tier.body["tiers"][0], "hot");
-
-        let repeated_cancel = node.handle_rest_request(RestRequest::new(
-            RestMethod::Post,
-            "/_tier/_cancel/logs-misc-000001",
-        ));
-        assert_eq!(repeated_cancel.status, 200);
-        assert_eq!(repeated_cancel.body["acknowledged"], Value::Bool(true));
-
-        let tier_after_repeated_cancel =
-            node.handle_rest_request(RestRequest::new(RestMethod::Get, "/logs-misc-000001/_tier"));
-        assert_eq!(tier_after_repeated_cancel.status, 200);
-        assert_eq!(tier_after_repeated_cancel.body["tiers"][0], "hot");
+        for (method, path) in [
+            (RestMethod::Get, "/_tier/all"),
+            (RestMethod::Get, "/logs-misc-000001/_tier"),
+            (RestMethod::Post, "/logs-misc-000001/_tier/warm"),
+            (RestMethod::Post, "/_tier/_cancel/logs-misc-000001"),
+        ] {
+            let response = node.handle_rest_request(RestRequest::new(method, path));
+            assert_eq!(response.status, 400);
+            assert_eq!(
+                response.body["error"],
+                format!(
+                    "no handler found for uri [{path}] and method [{}]",
+                    method.as_str()
+                )
+            );
+        }
     }
 
     #[test]
@@ -54102,7 +54077,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
     }
 
     #[test]
-    fn tier_transition_restart_smoke_preserves_readback_and_cancel() {
+    fn tier_routes_are_not_registered_by_default_after_restart() {
         let _lock = security_env_lock();
         env::set_var("STEELSEARCH_PERSIST_SHARED_RUNTIME_STATE_PER_WRITE", "1");
         let root = std::env::temp_dir().join(format!(
@@ -54130,13 +54105,11 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             RestMethod::Post,
             "/tier-restart-000001/_tier/warm",
         ));
-        assert_eq!(transition.status, 200);
-        assert_eq!(transition.body["acknowledged"], Value::Bool(true));
+        assert_eq!(transition.status, 400);
         assert_eq!(
-            transition.body["indices"],
-            serde_json::json!(["tier-restart-000001"])
+            transition.body["error"],
+            "no handler found for uri [/tier-restart-000001/_tier/warm] and method [POST]"
         );
-        assert_eq!(transition.body["target_tier"], "warm");
 
         let mut restarted = SteelNode::new(NodeInfo {
             name: "steel-node".to_string(),
@@ -54149,27 +54122,27 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             RestMethod::Get,
             "/tier-restart-000001/_tier",
         ));
-        assert_eq!(tier_after_restart.status, 200);
-        assert_eq!(tier_after_restart.body["index"], "tier-restart-000001");
-        assert_eq!(tier_after_restart.body["tiers"][0], "warm");
+        assert_eq!(tier_after_restart.status, 400);
+        assert_eq!(
+            tier_after_restart.body["error"],
+            "no handler found for uri [/tier-restart-000001/_tier] and method [GET]"
+        );
 
         let cancel_after_restart = restarted.handle_rest_request(RestRequest::new(
             RestMethod::Post,
             "/_tier/_cancel/tier-restart-000001",
         ));
-        assert_eq!(cancel_after_restart.status, 200);
-        assert_eq!(cancel_after_restart.body["acknowledged"], Value::Bool(true));
+        assert_eq!(cancel_after_restart.status, 400);
         assert_eq!(
-            cancel_after_restart.body["indices"],
-            serde_json::json!(["tier-restart-000001"])
+            cancel_after_restart.body["error"],
+            "no handler found for uri [/_tier/_cancel/tier-restart-000001] and method [POST]"
         );
 
         let tier_after_cancel = restarted.handle_rest_request(RestRequest::new(
             RestMethod::Get,
             "/tier-restart-000001/_tier",
         ));
-        assert_eq!(tier_after_cancel.status, 200);
-        assert_eq!(tier_after_cancel.body["tiers"][0], "hot");
+        assert_eq!(tier_after_cancel.status, 400);
 
         let mut restarted_again = SteelNode::new(NodeInfo {
             name: "steel-node".to_string(),
@@ -54181,8 +54154,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             RestMethod::Get,
             "/tier-restart-000001/_tier",
         ));
-        assert_eq!(tier_after_cancel_restart.status, 200);
-        assert_eq!(tier_after_cancel_restart.body["tiers"][0], "hot");
+        assert_eq!(tier_after_cancel_restart.status, 400);
 
         env::remove_var("STEELSEARCH_PERSIST_SHARED_RUNTIME_STATE_PER_WRITE");
         let _ = std::fs::remove_file(shared_state_path);
