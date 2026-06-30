@@ -92,6 +92,7 @@ class NativeClosureValidationRunnerTests(unittest.TestCase):
         self.assertIn("--max-report-age-seconds", command_text)
         self.assertIn("604800", command_text)
         self.assertIn("tools/check-unified-opensearch-e2e-report.py", command_text)
+        self.assertIn("--require-no-unresolved-skips", command_text)
         self.assertNotIn("--require-no-skips", command_text)
 
     def test_rest_api_coverage_current_batch_reports_source_inventory_coverage(self):

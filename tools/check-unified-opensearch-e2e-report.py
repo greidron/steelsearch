@@ -58,6 +58,11 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="fail when required suites contain skipped fixture cases",
     )
+    parser.add_argument(
+        "--require-no-unresolved-skips",
+        action="store_true",
+        help="fail when required-suite skips are not covered by another suite in case_gap_resolution",
+    )
     return parser.parse_args()
 
 
@@ -68,6 +73,7 @@ def main() -> int:
         report,
         allow_missing=args.allow_missing,
         require_no_skips=args.require_no_skips,
+        require_no_unresolved_skips=args.require_no_unresolved_skips,
     )
     if errors:
         for error in errors:
@@ -94,6 +100,7 @@ def validate_report(
     report: dict[str, Any],
     allow_missing: bool,
     require_no_skips: bool = False,
+    require_no_unresolved_skips: bool = False,
 ) -> list[str]:
     errors: list[str] = []
     for field in ("profile", "generated_at", "status", "coverage_summary", "suite_results"):
@@ -116,6 +123,20 @@ def validate_report(
         errors.append("report has missing required suite evidence")
     if report.get("status") == "blocked":
         errors.append("report has failed required suite evidence")
+    if require_no_unresolved_skips:
+        unresolved = (
+            ((report.get("coverage_summary") or {}).get("case_gap_resolution") or {})
+            .get("skipped", {})
+            .get("unresolved")
+            or []
+        )
+        if unresolved:
+            unresolved_names = ", ".join(
+                f"{entry.get('suite')}:{entry.get('case')}"
+                for entry in unresolved
+                if isinstance(entry, dict)
+            )
+            errors.append(f"unresolved skipped fixture cases: {unresolved_names}")
 
     suites = report.get("suite_results") or []
     summary = report.get("coverage_summary") or {}
