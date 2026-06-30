@@ -103,6 +103,9 @@ pub enum Query {
         minimum_should_match: Option<usize>,
         tie_breaker: Option<f64>,
         boost: Option<f64>,
+        fuzziness: Option<u8>,
+        prefix_length: usize,
+        transpositions: bool,
         zero_terms_all: bool,
     },
     QueryString {
@@ -2646,6 +2649,21 @@ fn parse_multi_match(body: &Value) -> QueryDslResult<Query> {
         .get("boost")
         .map(|value| parse_non_negative_f64_option("multi_match", "boost", value))
         .transpose()?;
+    let fuzziness = parse_multi_match_fuzziness_option(object.get("fuzziness"), &query)?;
+    let prefix_length = object
+        .get("prefix_length")
+        .map(|value| parse_usize_option("multi_match", "prefix_length", value))
+        .transpose()?
+        .unwrap_or(0);
+    let transpositions = object
+        .get("fuzzy_transpositions")
+        .map(Value::as_bool)
+        .unwrap_or(Some(true))
+        .ok_or_else(|| QueryDslError::InvalidValue {
+            clause: "multi_match".to_string(),
+            field: "fuzzy_transpositions".to_string(),
+            reason: "must be a boolean".to_string(),
+        })?;
     let zero_terms_all = parse_zero_terms_all_option(object, "multi_match")?;
     validate_optional_string_option(object, "multi_match", "analyzer")?;
     validate_optional_string_option(object, "multi_match", "_name")?;
@@ -2661,6 +2679,10 @@ fn parse_multi_match(body: &Value) -> QueryDslResult<Query> {
             && option != "minimum_should_match"
             && option != "tie_breaker"
             && option != "boost"
+            && option != "fuzziness"
+            && option != "prefix_length"
+            && option != "fuzzy_rewrite"
+            && option != "fuzzy_transpositions"
             && option != "analyzer"
             && option != "_name"
             && option != "lenient"
@@ -2683,8 +2705,48 @@ fn parse_multi_match(body: &Value) -> QueryDslResult<Query> {
         minimum_should_match,
         tie_breaker,
         boost,
+        fuzziness,
+        prefix_length,
+        transpositions,
         zero_terms_all,
     })
+}
+
+fn parse_multi_match_fuzziness_option(
+    value: Option<&Value>,
+    query: &Value,
+) -> QueryDslResult<Option<u8>> {
+    let Some(value) = value else {
+        return Ok(None);
+    };
+    match value {
+        Value::Number(number) => number
+            .as_u64()
+            .and_then(|value| u8::try_from(value).ok())
+            .map(Some)
+            .ok_or_else(|| QueryDslError::InvalidValue {
+                clause: "multi_match".to_string(),
+                field: "fuzziness".to_string(),
+                reason: "must be a non-negative integer, integer string, or AUTO".to_string(),
+            }),
+        Value::String(text) if text.eq_ignore_ascii_case("AUTO") => {
+            Ok(Some(auto_match_fuzziness(query)))
+        }
+        Value::String(text) => {
+            text.parse::<u8>()
+                .map(Some)
+                .map_err(|_| QueryDslError::InvalidValue {
+                    clause: "multi_match".to_string(),
+                    field: "fuzziness".to_string(),
+                    reason: "must be a non-negative integer, integer string, or AUTO".to_string(),
+                })
+        }
+        _ => Err(QueryDslError::InvalidValue {
+            clause: "multi_match".to_string(),
+            field: "fuzziness".to_string(),
+            reason: "must be a non-negative integer, integer string, or AUTO".to_string(),
+        }),
+    }
 }
 
 fn parse_zero_terms_all_option(
@@ -4629,6 +4691,9 @@ mod tests {
                 minimum_should_match: None,
                 tie_breaker: None,
                 boost: None,
+                fuzziness: None,
+                prefix_length: 0,
+                transpositions: true,
                 zero_terms_all: false,
             }
         );
@@ -4653,6 +4718,9 @@ mod tests {
                 minimum_should_match: None,
                 tie_breaker: None,
                 boost: None,
+                fuzziness: None,
+                prefix_length: 0,
+                transpositions: true,
                 zero_terms_all: false,
             }
         );
@@ -4677,6 +4745,9 @@ mod tests {
                 minimum_should_match: None,
                 tie_breaker: None,
                 boost: None,
+                fuzziness: None,
+                prefix_length: 0,
+                transpositions: true,
                 zero_terms_all: false,
             }
         );
@@ -4701,6 +4772,9 @@ mod tests {
                 minimum_should_match: None,
                 tie_breaker: None,
                 boost: None,
+                fuzziness: None,
+                prefix_length: 0,
+                transpositions: true,
                 zero_terms_all: false,
             }
         );
@@ -4726,6 +4800,9 @@ mod tests {
                 minimum_should_match: None,
                 tie_breaker: None,
                 boost: None,
+                fuzziness: None,
+                prefix_length: 0,
+                transpositions: true,
                 zero_terms_all: false,
             }
         );
@@ -4755,6 +4832,9 @@ mod tests {
                 minimum_should_match: None,
                 tie_breaker: Some(0.2),
                 boost: Some(1.5),
+                fuzziness: None,
+                prefix_length: 0,
+                transpositions: true,
                 zero_terms_all: false,
             }
         );
@@ -4780,6 +4860,9 @@ mod tests {
                 minimum_should_match: None,
                 tie_breaker: None,
                 boost: None,
+                fuzziness: None,
+                prefix_length: 0,
+                transpositions: true,
                 zero_terms_all: false,
             }
         );
@@ -4803,6 +4886,38 @@ mod tests {
                 minimum_should_match: None,
                 tie_breaker: None,
                 boost: None,
+                fuzziness: None,
+                prefix_length: 0,
+                transpositions: true,
+                zero_terms_all: false,
+            }
+        );
+
+        let fuzzy = parse_query(&serde_json::json!({
+            "multi_match": {
+                "query": "paymant",
+                "fields": ["title", "body"],
+                "fuzziness": 1,
+                "prefix_length": 1,
+                "fuzzy_transpositions": false
+            }
+        }))
+        .unwrap();
+
+        assert_eq!(
+            fuzzy,
+            Query::MultiMatch {
+                fields: vec!["title".to_string(), "body".to_string()],
+                query: serde_json::json!("paymant"),
+                query_type: MultiMatchType::BestFields,
+                slop: 0,
+                operator: None,
+                minimum_should_match: None,
+                tie_breaker: None,
+                boost: None,
+                fuzziness: Some(1),
+                prefix_length: 1,
+                transpositions: false,
                 zero_terms_all: false,
             }
         );
@@ -4827,6 +4942,9 @@ mod tests {
                 minimum_should_match: None,
                 tie_breaker: None,
                 boost: None,
+                fuzziness: None,
+                prefix_length: 0,
+                transpositions: true,
                 zero_terms_all: true,
             }
         );

@@ -2915,6 +2915,9 @@ fn build_tantivy_query(
             minimum_should_match,
             tie_breaker,
             boost,
+            fuzziness,
+            prefix_length,
+            transpositions,
             zero_terms_all,
         } => build_tantivy_multi_match_query(
             search_state,
@@ -2926,6 +2929,9 @@ fn build_tantivy_query(
             *minimum_should_match,
             *tie_breaker,
             *boost,
+            *fuzziness,
+            *prefix_length,
+            *transpositions,
             *zero_terms_all,
         ),
         Query::QueryString { query, fields } => build_tantivy_tokenized_field_set_query(
@@ -3934,6 +3940,9 @@ fn build_tantivy_multi_match_query(
     minimum_should_match: Option<usize>,
     tie_breaker: Option<f64>,
     boost: Option<f64>,
+    fuzziness: Option<u8>,
+    prefix_length: usize,
+    transpositions: bool,
     zero_terms_all: bool,
 ) -> EngineResult<Option<Box<dyn TantivyQueryTrait>>> {
     if tokenize_phrase_text(&json_value_to_query_text(query)?).is_empty() {
@@ -3980,9 +3989,9 @@ fn build_tantivy_multi_match_query(
                 query,
                 field_minimum_should_match,
                 None,
-                None,
-                0,
-                true,
+                fuzziness,
+                prefix_length,
+                transpositions,
                 false,
             )?,
             MultiMatchType::Phrase => {
@@ -16782,6 +16791,9 @@ fn document_matches_query(query: &Query, id: &str, source: &Value) -> bool {
             minimum_should_match,
             tie_breaker: _,
             boost: _,
+            fuzziness,
+            prefix_length,
+            transpositions,
             zero_terms_all,
         } => matches_multi_match_query(
             id,
@@ -16792,6 +16804,9 @@ fn document_matches_query(query: &Query, id: &str, source: &Value) -> bool {
             *slop,
             operator.as_deref(),
             *minimum_should_match,
+            *fuzziness,
+            *prefix_length,
+            *transpositions,
             *zero_terms_all,
         ),
         Query::QueryString { query, fields } => {
@@ -18138,6 +18153,9 @@ fn matches_multi_match_query(
     slop: usize,
     operator: Option<&str>,
     minimum_should_match: Option<usize>,
+    fuzziness: Option<u8>,
+    prefix_length: usize,
+    transpositions: bool,
     zero_terms_all: bool,
 ) -> bool {
     if zero_terms_all && match_query_token_count(query) == 0 {
@@ -18156,7 +18174,15 @@ fn matches_multi_match_query(
             .or_else(|| source_value_for_highlight_field(source, field));
         match query_type {
             MultiMatchType::BestFields | MultiMatchType::MostFields => {
-                matches_match_query_with_minimum(field_value, query, field_minimum_should_match)
+                matches_match_query_with_options(
+                    field_value,
+                    query,
+                    minimum_should_match,
+                    operator,
+                    fuzziness,
+                    prefix_length,
+                    transpositions,
+                )
             }
             MultiMatchType::CrossFields => {
                 let query_text = json_value_to_query_text(query).unwrap_or_default();
@@ -18928,6 +18954,9 @@ fn localize_query_fields_for_nested_child(query: &Query, path: &str) -> Query {
             minimum_should_match,
             tie_breaker,
             boost,
+            fuzziness,
+            prefix_length,
+            transpositions,
             zero_terms_all,
         } => Query::MultiMatch {
             fields: fields
@@ -18941,6 +18970,9 @@ fn localize_query_fields_for_nested_child(query: &Query, path: &str) -> Query {
             minimum_should_match: *minimum_should_match,
             tie_breaker: *tie_breaker,
             boost: *boost,
+            fuzziness: *fuzziness,
+            prefix_length: *prefix_length,
+            transpositions: *transpositions,
             zero_terms_all: *zero_terms_all,
         },
         Query::QueryString { query, fields } => Query::QueryString {
@@ -19254,6 +19286,9 @@ fn native_nested_child_ordinals_for_query(
             minimum_should_match,
             tie_breaker: _,
             boost: _,
+            fuzziness,
+            prefix_length,
+            transpositions,
             zero_terms_all,
         } => nested_child_multi_match_ordinals(
             path_index,
@@ -19264,6 +19299,9 @@ fn native_nested_child_ordinals_for_query(
             *slop,
             operator.as_deref(),
             *minimum_should_match,
+            *fuzziness,
+            *prefix_length,
+            *transpositions,
             *zero_terms_all,
         ),
         Query::QueryString { query, fields } => {
@@ -19817,6 +19855,9 @@ fn nested_child_multi_match_ordinals(
     slop: usize,
     operator: Option<&str>,
     minimum_should_match: Option<usize>,
+    fuzziness: Option<u8>,
+    prefix_length: usize,
+    transpositions: bool,
     zero_terms_all: bool,
 ) -> Option<std::collections::BTreeSet<usize>> {
     if zero_terms_all && match_query_token_count(query) == 0 {
@@ -19835,9 +19876,9 @@ fn nested_child_multi_match_ordinals(
                     query,
                     field_minimum_should_match,
                     None,
-                    None,
-                    0,
-                    true,
+                    fuzziness,
+                    prefix_length,
+                    transpositions,
                 )?);
             }
             MultiMatchType::CrossFields => {
@@ -146044,6 +146085,20 @@ mod tests {
             .unwrap()
             .expect("native multi_match single field string hits");
         assert_eq!(search_hit_ids(&native_hits), vec!["1"]);
+
+        let fuzzy_query = parse_query(&serde_json::json!({
+            "multi_match": {
+                "query": "storw",
+                "fields": ["title", "body"],
+                "fuzziness": 1
+            }
+        }))
+        .unwrap();
+        let native_hits = index
+            .search_hits_for_query_native("bench", &fuzzy_query, &[])
+            .unwrap()
+            .expect("native multi_match fuzziness hits");
+        assert_eq!(search_hit_ids(&native_hits), vec!["2", "3"]);
 
         let phrase_query = parse_query(&serde_json::json!({
             "multi_match": {

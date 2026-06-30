@@ -298,6 +298,7 @@
       "match_zero_terms_query_all_search",
       "multi_match_best_fields_search",
       "multi_match_accepts_common_options_search",
+      "multi_match_fuzziness_search",
       "multi_match_zero_terms_query_all_search",
       "multi_match_boost_scoring_search",
       "multi_match_most_fields_search",
@@ -6001,6 +6002,34 @@
       "extract": "search_hits",
       "family": "lexical",
       "description": "[lexical] multi_match accepts common OpenSearch options"
+    },
+    {
+      "name": "multi_match_fuzziness_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "multi_match": {
+            "query": "paymant",
+            "fields": [
+              "message",
+              "service"
+            ],
+            "fuzziness": 1
+          }
+        },
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] multi_match fuzziness handles bounded edit distance like OpenSearch"
     },
     {
       "name": "multi_match_zero_terms_query_all_search",

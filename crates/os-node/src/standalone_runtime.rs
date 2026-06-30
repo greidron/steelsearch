@@ -30727,16 +30727,32 @@ fn evaluate_search_query_source_with_mappings(
                 false,
                 multi_match.get("minimum_should_match"),
             ),
-            _ => evaluate_text_query_strings(
-                &haystacks,
-                expected,
-                multi_match
+            _ => {
+                let operator = multi_match
                     .get("operator")
                     .and_then(Value::as_str)
-                    .unwrap_or("or"),
-                false,
-                multi_match.get("minimum_should_match"),
-            ),
+                    .unwrap_or("or");
+                if let Some(fuzziness) =
+                    extract_match_query_fuzziness(&Value::Object(multi_match.clone()), expected)
+                {
+                    let matched = value_matches_match_fuzzy(
+                        &haystacks,
+                        expected,
+                        fuzziness,
+                        operator,
+                        multi_match.get("minimum_should_match"),
+                    );
+                    (matched, if matched { 1.0 } else { 0.0 })
+                } else {
+                    evaluate_text_query_strings(
+                        &haystacks,
+                        expected,
+                        operator,
+                        false,
+                        multi_match.get("minimum_should_match"),
+                    )
+                }
+            }
         };
         return Some((matched, score));
     }
