@@ -2490,6 +2490,12 @@ fn parse_multi_match(body: &Value) -> QueryDslResult<Query> {
         .map(|value| parse_usize_option("multi_match", "slop", value))
         .transpose()?
         .unwrap_or(0);
+    validate_optional_f64_option(object, "multi_match", "tie_breaker")?;
+    validate_optional_f64_option(object, "multi_match", "boost")?;
+    validate_optional_string_option(object, "multi_match", "analyzer")?;
+    validate_optional_string_option(object, "multi_match", "_name")?;
+    validate_optional_bool_option(object, "multi_match", "lenient")?;
+    validate_optional_bool_option(object, "multi_match", "auto_generate_synonyms_phrase_query")?;
 
     for option in object.keys() {
         if option != "query"
@@ -2498,6 +2504,12 @@ fn parse_multi_match(body: &Value) -> QueryDslResult<Query> {
             && option != "slop"
             && option != "operator"
             && option != "minimum_should_match"
+            && option != "tie_breaker"
+            && option != "boost"
+            && option != "analyzer"
+            && option != "_name"
+            && option != "lenient"
+            && option != "auto_generate_synonyms_phrase_query"
         {
             return Err(QueryDslError::UnsupportedOption {
                 clause: "multi_match".to_string(),
@@ -2514,6 +2526,57 @@ fn parse_multi_match(body: &Value) -> QueryDslResult<Query> {
         operator,
         minimum_should_match,
     })
+}
+
+fn validate_optional_f64_option(
+    object: &serde_json::Map<String, Value>,
+    clause: &str,
+    option: &str,
+) -> QueryDslResult<()> {
+    if let Some(value) = object.get(option) {
+        if !value.as_f64().is_some_and(f64::is_finite) {
+            return Err(QueryDslError::InvalidValue {
+                clause: clause.to_string(),
+                field: option.to_string(),
+                reason: "must be a finite number".to_string(),
+            });
+        }
+    }
+    Ok(())
+}
+
+fn validate_optional_string_option(
+    object: &serde_json::Map<String, Value>,
+    clause: &str,
+    option: &str,
+) -> QueryDslResult<()> {
+    if let Some(value) = object.get(option) {
+        if value.as_str().is_none() {
+            return Err(QueryDslError::InvalidValue {
+                clause: clause.to_string(),
+                field: option.to_string(),
+                reason: "must be a string".to_string(),
+            });
+        }
+    }
+    Ok(())
+}
+
+fn validate_optional_bool_option(
+    object: &serde_json::Map<String, Value>,
+    clause: &str,
+    option: &str,
+) -> QueryDslResult<()> {
+    if let Some(value) = object.get(option) {
+        if value.as_bool().is_none() {
+            return Err(QueryDslError::InvalidValue {
+                clause: clause.to_string(),
+                field: option.to_string(),
+                reason: "must be a boolean".to_string(),
+            });
+        }
+    }
+    Ok(())
 }
 
 fn parse_combined_fields(body: &Value) -> QueryDslResult<Query> {
@@ -4383,6 +4446,32 @@ mod tests {
                 query_type: MultiMatchType::CrossFields,
                 slop: 0,
                 operator: Some("and".to_string()),
+                minimum_should_match: None,
+            }
+        );
+
+        let accepted_options = parse_query(&serde_json::json!({
+            "multi_match": {
+                "query": "alpha",
+                "fields": ["title", "body"],
+                "tie_breaker": 0.2,
+                "boost": 1.5,
+                "analyzer": "standard",
+                "_name": "named_multi_match",
+                "lenient": true,
+                "auto_generate_synonyms_phrase_query": false
+            }
+        }))
+        .unwrap();
+
+        assert_eq!(
+            accepted_options,
+            Query::MultiMatch {
+                fields: vec!["title".to_string(), "body".to_string()],
+                query: serde_json::json!("alpha"),
+                query_type: MultiMatchType::BestFields,
+                slop: 0,
+                operator: None,
                 minimum_should_match: None,
             }
         );

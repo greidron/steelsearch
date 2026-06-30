@@ -294,6 +294,7 @@
       "bool_conditional_minimum_should_match_search",
       "match_minimum_should_match_search",
       "multi_match_best_fields_search",
+      "multi_match_accepts_common_options_search",
       "multi_match_most_fields_search",
       "multi_match_cross_fields_operator_and_search",
       "multi_match_operator_and_search",
@@ -5389,6 +5390,39 @@
       "extract": "search_hits",
       "family": "lexical",
       "description": "[lexical] multi match best fields search"
+    },
+    {
+      "name": "multi_match_accepts_common_options_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "multi_match": {
+            "query": "checkout",
+            "fields": [
+              "message",
+              "service"
+            ],
+            "tie_breaker": 0.2,
+            "boost": 1.5,
+            "analyzer": "standard",
+            "_name": "named_multi_match",
+            "lenient": true,
+            "auto_generate_synonyms_phrase_query": false
+          }
+        },
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] multi_match accepts common OpenSearch options"
     },
     {
       "name": "multi_match_most_fields_search",
