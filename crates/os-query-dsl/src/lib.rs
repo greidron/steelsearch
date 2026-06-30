@@ -67,6 +67,7 @@ pub enum Query {
     Match {
         field: String,
         query: serde_json::Value,
+        minimum_should_match: Option<usize>,
     },
     MatchPhrase {
         field: String,
@@ -87,6 +88,7 @@ pub enum Query {
     MultiMatch {
         fields: Vec<String>,
         query: serde_json::Value,
+        minimum_should_match: Option<usize>,
     },
     QueryString {
         query: String,
@@ -2250,9 +2252,14 @@ fn parse_match(body: &Value) -> QueryDslResult<Query> {
     }
 
     let (field, match_body) = object.iter().next().expect("checked len");
-    let query = if let Some(object) = match_body.as_object() {
+    let (query, minimum_should_match) = if let Some(object) = match_body.as_object() {
         if let Some(query) = object.get("query") {
-            query.clone()
+            let minimum_should_match = object
+                .get("minimum_should_match")
+                .map(|value| parse_minimum_should_match(value, match_query_clause_count(query)))
+                .transpose()?
+                .map(|value| value as usize);
+            (query.clone(), minimum_should_match)
         } else if object.keys().any(|key| {
             matches!(
                 key.as_str(),
@@ -2276,15 +2283,16 @@ fn parse_match(body: &Value) -> QueryDslResult<Query> {
                 field: "query".to_string(),
             });
         } else {
-            match_body.clone()
+            (match_body.clone(), None)
         }
     } else {
-        match_body.clone()
+        (match_body.clone(), None)
     };
 
     Ok(Query::Match {
         field: field.clone(),
         query,
+        minimum_should_match,
     })
 }
 
@@ -2402,8 +2410,18 @@ fn parse_multi_match(body: &Value) -> QueryDslResult<Query> {
             });
         }
     }
+    let minimum_should_match = object
+        .get("minimum_should_match")
+        .map(|value| parse_minimum_should_match(value, match_query_clause_count(&query)))
+        .transpose()?
+        .map(|value| value as usize);
+
     for option in object.keys() {
-        if option != "query" && option != "fields" && option != "type" {
+        if option != "query"
+            && option != "fields"
+            && option != "type"
+            && option != "minimum_should_match"
+        {
             return Err(QueryDslError::UnsupportedOption {
                 clause: "multi_match".to_string(),
                 option: option.clone(),
@@ -2411,7 +2429,11 @@ fn parse_multi_match(body: &Value) -> QueryDslResult<Query> {
         }
     }
 
-    Ok(Query::MultiMatch { fields, query })
+    Ok(Query::MultiMatch {
+        fields,
+        query,
+        minimum_should_match,
+    })
 }
 
 fn parse_combined_fields(body: &Value) -> QueryDslResult<Query> {
@@ -3697,6 +3719,20 @@ fn parse_minimum_should_match(value: &Value, should_count: usize) -> QueryDslRes
     parse_minimum_should_match_text(value, should_count).ok_or(QueryDslError::ExpectedObject)
 }
 
+fn match_query_clause_count(query: &Value) -> usize {
+    match query {
+        Value::String(query) => {
+            let count = query
+                .split_whitespace()
+                .filter(|term| !term.is_empty())
+                .count();
+            count.max(usize::from(!query.is_empty()))
+        }
+        Value::Null => 0,
+        _ => 1,
+    }
+}
+
 fn parse_minimum_should_match_text(value: &str, should_count: usize) -> Option<u32> {
     let value = value.trim();
     if value.is_empty() {
@@ -4157,6 +4193,7 @@ mod tests {
             Query::MultiMatch {
                 fields: vec!["title".to_string(), "body".to_string()],
                 query: serde_json::json!("alpha"),
+                minimum_should_match: None,
             }
         );
     }
@@ -4887,7 +4924,8 @@ mod tests {
             query,
             Query::Match {
                 field: "message".to_string(),
-                query: serde_json::json!("hello world")
+                query: serde_json::json!("hello world"),
+                minimum_should_match: None
             }
         );
     }
@@ -4907,7 +4945,8 @@ mod tests {
             query,
             Query::Match {
                 field: "message".to_string(),
-                query: serde_json::json!("hello world")
+                query: serde_json::json!("hello world"),
+                minimum_should_match: None
             }
         );
     }
@@ -5106,7 +5145,8 @@ mod tests {
                     }],
                     must_not: vec![Query::Match {
                         field: "message".to_string(),
-                        query: serde_json::json!("debug")
+                        query: serde_json::json!("debug"),
+                        minimum_should_match: None
                     }],
                     minimum_should_match: Some(1)
                 }

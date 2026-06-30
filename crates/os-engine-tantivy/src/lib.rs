@@ -2820,7 +2820,11 @@ fn build_tantivy_query(
             }
             Ok(Some(Box::new(BooleanQuery::new(clauses))))
         }
-        Query::Match { field, query } => build_tantivy_match_query(search_state, field, query),
+        Query::Match {
+            field,
+            query,
+            minimum_should_match,
+        } => build_tantivy_match_query(search_state, field, query, *minimum_should_match),
         Query::MatchPhrase { field, query } => {
             build_tantivy_match_phrase_query(search_state, field, query)
         }
@@ -2864,9 +2868,11 @@ fn build_tantivy_query(
         Query::CombinedFields { fields, query } => {
             build_tantivy_tokenized_field_set_query(search_state, Some(fields.as_slice()), query)
         }
-        Query::MultiMatch { fields, query } => {
-            build_tantivy_multi_match_query(search_state, fields, query)
-        }
+        Query::MultiMatch {
+            fields,
+            query,
+            minimum_should_match,
+        } => build_tantivy_multi_match_query(search_state, fields, query, *minimum_should_match),
         Query::QueryString { query, fields } => {
             build_tantivy_tokenized_field_set_query(search_state, fields.as_deref(), query)
         }
@@ -3395,6 +3401,7 @@ fn build_tantivy_match_query(
     search_state: &TantivySearchState,
     field: &str,
     value: &Value,
+    minimum_should_match: Option<usize>,
 ) -> EngineResult<Option<Box<dyn TantivyQueryTrait>>> {
     if field == "_id" {
         let Some(id_field) = search_state.fields.get("_id") else {
@@ -3409,6 +3416,27 @@ fn build_tantivy_match_query(
         return Ok(None);
     };
     let query_text = json_value_to_query_text(value)?;
+    if let Some(minimum_should_match) = minimum_should_match {
+        let tokens = tokenize_phrase_text(&query_text);
+        if tokens.is_empty() {
+            return Ok(None);
+        }
+        let should_queries = tokens
+            .into_iter()
+            .map(|token| Query::Match {
+                field: field.to_string(),
+                query: Value::String(token),
+                minimum_should_match: None,
+            })
+            .collect::<Vec<_>>();
+        return build_tantivy_minimum_should_match_query(
+            search_state,
+            &[],
+            &should_queries,
+            &[],
+            minimum_should_match,
+        );
+    }
     match indexed_field.field_type {
         TantivyFieldType::Text => {
             let parser = QueryParser::for_index(&search_state.index, vec![indexed_field.field]);
@@ -3468,7 +3496,7 @@ fn build_tantivy_match_bool_prefix_query(
     let mut clauses = Vec::new();
     for token in &query_tokens[..last_index] {
         let Some(inner_query) =
-            build_tantivy_match_query(search_state, field, &Value::String(token.clone()))?
+            build_tantivy_match_query(search_state, field, &Value::String(token.clone()), None)?
         else {
             return Ok(None);
         };
@@ -3602,8 +3630,12 @@ fn build_tantivy_tokenized_field_set_query(
                     return Ok(None);
                 }
             }
-            let Some(inner_query) =
-                build_tantivy_match_query(search_state, field, &Value::String(token.clone()))?
+            let Some(inner_query) = build_tantivy_match_query(
+                search_state,
+                field,
+                &Value::String(token.clone()),
+                None,
+            )?
             else {
                 return Ok(None);
             };
@@ -3621,6 +3653,7 @@ fn build_tantivy_multi_match_query(
     search_state: &TantivySearchState,
     fields: &[String],
     query: &Value,
+    minimum_should_match: Option<usize>,
 ) -> EngineResult<Option<Box<dyn TantivyQueryTrait>>> {
     let mut clauses = Vec::new();
     for field in fields {
@@ -3641,7 +3674,9 @@ fn build_tantivy_multi_match_query(
                 return Ok(None);
             }
         }
-        let Some(inner_query) = build_tantivy_match_query(search_state, base_field, query)? else {
+        let Some(inner_query) =
+            build_tantivy_match_query(search_state, base_field, query, minimum_should_match)?
+        else {
             return Ok(None);
         };
         clauses.push((Occur::Should, inner_query));
@@ -3781,8 +3816,12 @@ fn build_tantivy_more_like_this_query(
     let mut clauses = Vec::new();
     for token in like_tokens {
         for field in fields {
-            let Some(inner_query) =
-                build_tantivy_match_query(search_state, field, &Value::String(token.clone()))?
+            let Some(inner_query) = build_tantivy_match_query(
+                search_state,
+                field,
+                &Value::String(token.clone()),
+                None,
+            )?
             else {
                 return Ok(None);
             };
@@ -6453,7 +6492,7 @@ impl StoredIndex {
                     })
                     .collect())
             }
-            Query::Match { field, query } if numeric_array_value(query).is_some() => {
+            Query::Match { field, query, .. } if numeric_array_value(query).is_some() => {
                 let expected = numeric_array_value(query).unwrap_or_default();
                 Ok(self
                     .documents
@@ -6680,9 +6719,31 @@ impl StoredIndex {
             Query::Term { field, value } if field != "_id" => {
                 Some(self.fast_top_level_term_candidate_ids(field, value))
             }
-            Query::Match { field, query } if field != "_id" => {
+            Query::Match {
+                field,
+                query,
+                minimum_should_match,
+            } if field != "_id" => {
                 let query_text = json_value_to_query_text(query).ok()?;
-                Some(self.fast_top_level_match_candidate_ids(field, &query_text))
+                let candidates = self.fast_top_level_match_candidate_ids(field, &query_text);
+                if let Some(minimum_should_match) = minimum_should_match {
+                    Some(
+                        candidates
+                            .into_iter()
+                            .filter(|id| {
+                                self.documents.get(id).is_some_and(|document| {
+                                    matches_match_query_with_minimum(
+                                        source_value_for_highlight_field(&document.source, field),
+                                        query,
+                                        Some(*minimum_should_match),
+                                    )
+                                })
+                            })
+                            .collect(),
+                    )
+                } else {
+                    Some(candidates)
+                }
             }
             _ => None,
         }
@@ -11721,7 +11782,7 @@ fn search_hit_query_explanation_details(query: &Query, hit: &SearchHit) -> Vec<V
                 "matched_value_count": matched_value_count
             })]
         }
-        Query::Match { field, query } if field == "_id" => {
+        Query::Match { field, query, .. } if field == "_id" => {
             let id_match = query.as_str().is_some_and(|query| query == hit.metadata.id);
             let matched_value_count = usize::from(id_match);
             let highlight_present = id_match && search_hit_highlight_field_present(hit, field);
@@ -11747,7 +11808,7 @@ fn search_hit_query_explanation_details(query: &Query, hit: &SearchHit) -> Vec<V
                 "matched_value_count": matched_value_count
             })]
         }
-        Query::Match { field, query } if field != "_id" => {
+        Query::Match { field, query, .. } if field != "_id" => {
             let matched_value_count = match_query_matching_value_count(
                 source_value_for_highlight_field(&hit.source, field),
                 query,
@@ -12041,7 +12102,7 @@ fn search_hit_query_explanation_details(query: &Query, hit: &SearchHit) -> Vec<V
                 "query_token_count": query_token_count
             })]
         }
-        Query::MultiMatch { fields, query } => {
+        Query::MultiMatch { fields, query, .. } => {
             let matched_value_count =
                 multi_match_matched_value_count(&hit.metadata.id, &hit.source, fields, query);
             let matched_fields = fields
@@ -13331,7 +13392,7 @@ fn search_hit_query_observation_counts(query: &Query, hit: &SearchHit) -> (usize
                 usize::from(id_match && search_hit_projected_field_present(hit, field)),
             )
         }
-        Query::Match { field, query } if field == "_id" => {
+        Query::Match { field, query, .. } if field == "_id" => {
             let id_match = query.as_str().is_some_and(|query| query == hit.metadata.id);
             (
                 usize::from(id_match),
@@ -13410,7 +13471,7 @@ fn search_hit_query_observation_counts(query: &Query, hit: &SearchHit) -> (usize
                 )
             })
         }
-        Query::Match { field, query } if field != "_id" => {
+        Query::Match { field, query, .. } if field != "_id" => {
             ({
                 let field_match = matches_match_query(
                     source_value_for_highlight_field(&hit.source, field),
@@ -13557,7 +13618,7 @@ fn search_hit_query_observation_counts(query: &Query, hit: &SearchHit) -> (usize
                 ),
             )
         }
-        Query::MultiMatch { fields, query } => {
+        Query::MultiMatch { fields, query, .. } => {
             let matched_fields = fields
                 .iter()
                 .filter(|field| {
@@ -14460,7 +14521,7 @@ fn collect_search_hit_highlights(
                 }
             }
         }
-        Query::Match { field, query } if field == "_id" => {
+        Query::Match { field, query, .. } if field == "_id" => {
             if requested_fields.is_some_and(|fields| !fields.contains(field)) {
                 return;
             }
@@ -14479,7 +14540,7 @@ fn collect_search_hit_highlights(
                 append_highlight_snippets(highlights, field, render_spec, snippets);
             }
         }
-        Query::Match { field, query } if field != "_id" => {
+        Query::Match { field, query, .. } if field != "_id" => {
             if requested_fields.is_some_and(|fields| !fields.contains(field)) {
                 return;
             }
@@ -14643,7 +14704,7 @@ fn collect_search_hit_highlights(
                 }
             }
         }
-        Query::MultiMatch { fields, query } => {
+        Query::MultiMatch { fields, query, .. } => {
             for field in fields.iter().filter(|field| {
                 if field.as_str() == "_id" {
                     matches_match_query(Some(&Value::String(hit_id.to_string())), query)
@@ -16162,9 +16223,15 @@ fn document_matches_query(query: &Query, id: &str, source: &Value) -> bool {
             values,
             *minimum_should_match,
         ),
-        Query::Match { field, query } if field == "_id" => {
-            matches_match_query(Some(&Value::String(id.to_string())), query)
-        }
+        Query::Match {
+            field,
+            query,
+            minimum_should_match,
+        } if field == "_id" => matches_match_query_with_minimum(
+            Some(&Value::String(id.to_string())),
+            query,
+            *minimum_should_match,
+        ),
         Query::MatchPhrase { field, query } if field == "_id" => {
             matches_match_phrase_query(Some(&Value::String(id.to_string())), query)
         }
@@ -16177,7 +16244,11 @@ fn document_matches_query(query: &Query, id: &str, source: &Value) -> bool {
         Query::CombinedFields { fields, query } => {
             matches_combined_fields_query(id, source, fields, query)
         }
-        Query::MultiMatch { fields, query } => matches_multi_match_query(id, source, fields, query),
+        Query::MultiMatch {
+            fields,
+            query,
+            minimum_should_match,
+        } => matches_multi_match_query(id, source, fields, query, *minimum_should_match),
         Query::QueryString { query, fields } => {
             matches_query_string_query(id, source, fields.as_deref(), query)
         }
@@ -16241,9 +16312,15 @@ fn document_matches_query(query: &Query, id: &str, source: &Value) -> bool {
         Query::RankFeature { field } => {
             source_value_for_highlight_field(source, field).is_some_and(matches_rank_feature_query)
         }
-        Query::Match { field, query } => {
-            matches_match_query(source_value_for_highlight_field(source, field), query)
-        }
+        Query::Match {
+            field,
+            query,
+            minimum_should_match,
+        } => matches_match_query_with_minimum(
+            source_value_for_highlight_field(source, field),
+            query,
+            *minimum_should_match,
+        ),
         Query::MatchPhrase { field, query } => {
             matches_match_phrase_query(source_value_for_highlight_field(source, field), query)
         }
@@ -17050,7 +17127,41 @@ fn point_on_polygon_segment(
 }
 
 fn matches_match_query(field_value: Option<&Value>, query: &Value) -> bool {
-    match_query_matching_value_count(field_value, query) > 0
+    matches_match_query_with_minimum(field_value, query, None)
+}
+
+fn matches_match_query_with_minimum(
+    field_value: Option<&Value>,
+    query: &Value,
+    minimum_should_match: Option<usize>,
+) -> bool {
+    let Some(minimum_should_match) = minimum_should_match else {
+        return match_query_matching_value_count(field_value, query) > 0;
+    };
+    let Some(field_value) = field_value else {
+        return false;
+    };
+    match (field_value, query) {
+        (Value::Array(items), query) => items.iter().any(|item| {
+            matches_match_query_with_minimum(Some(item), query, Some(minimum_should_match))
+        }),
+        (Value::Object(object), query) => object.values().any(|value| {
+            matches_match_query_with_minimum(Some(value), query, Some(minimum_should_match))
+        }),
+        (Value::String(field_text), Value::String(query_text)) => {
+            let field_tokens = tokenize_phrase_text(field_text);
+            let query_tokens = tokenize_phrase_text(query_text);
+            if query_tokens.is_empty() {
+                return !query_text.is_empty() && field_text.contains(query_text);
+            }
+            query_tokens
+                .iter()
+                .filter(|query_token| field_tokens.contains(query_token))
+                .count()
+                >= minimum_should_match
+        }
+        _ => minimum_should_match <= 1 && field_value == query,
+    }
 }
 
 fn match_query_matching_value_count(field_value: Option<&Value>, query: &Value) -> usize {
@@ -17201,8 +17312,28 @@ fn matches_match_bool_prefix_query(field_value: Option<&Value>, query: &Value) -
     match_bool_prefix_matched_token_count(field_value, query) == match_query_token_count(query)
 }
 
-fn matches_multi_match_query(id: &str, source: &Value, fields: &[String], query: &Value) -> bool {
-    multi_match_matched_value_count(id, source, fields, query) > 0
+fn matches_multi_match_query(
+    id: &str,
+    source: &Value,
+    fields: &[String],
+    query: &Value,
+    minimum_should_match: Option<usize>,
+) -> bool {
+    fields.iter().any(|field| {
+        if field == "_id" {
+            matches_match_query_with_minimum(
+                Some(&Value::String(id.to_string())),
+                query,
+                minimum_should_match,
+            )
+        } else {
+            matches_match_query_with_minimum(
+                source_value_for_highlight_field(source, field),
+                query,
+                minimum_should_match,
+            )
+        }
+    })
 }
 
 fn multi_match_matched_value_count(
@@ -17483,9 +17614,14 @@ fn remap_query_field(query: &Query, field: &str) -> Query {
             values: values.clone(),
             minimum_should_match: *minimum_should_match,
         },
-        Query::Match { query, .. } => Query::Match {
+        Query::Match {
+            query,
+            minimum_should_match,
+            ..
+        } => Query::Match {
             field: field.to_string(),
             query: query.clone(),
+            minimum_should_match: *minimum_should_match,
         },
         Query::MatchPhrase { query, .. } => Query::MatchPhrase {
             field: field.to_string(),
@@ -17622,9 +17758,14 @@ fn prefix_query_fields_for_nested_path(query: &Query, path: &str) -> Query {
             values: values.clone(),
             minimum_should_match: *minimum_should_match,
         },
-        Query::Match { field, query } => Query::Match {
+        Query::Match {
+            field,
+            query,
+            minimum_should_match,
+        } => Query::Match {
             field: nested_candidate_field_name(path, field),
             query: query.clone(),
+            minimum_should_match: *minimum_should_match,
         },
         Query::MatchPhrase { field, query } => Query::MatchPhrase {
             field: nested_candidate_field_name(path, field),
@@ -17835,9 +17976,14 @@ fn localize_query_fields_for_nested_child(query: &Query, path: &str) -> Query {
             values: values.clone(),
             minimum_should_match: *minimum_should_match,
         },
-        Query::Match { field, query } => Query::Match {
+        Query::Match {
+            field,
+            query,
+            minimum_should_match,
+        } => Query::Match {
             field: nested_child_local_field_name(path, field),
             query: query.clone(),
+            minimum_should_match: *minimum_should_match,
         },
         Query::MatchPhrase { field, query } => Query::MatchPhrase {
             field: nested_child_local_field_name(path, field),
@@ -17858,12 +18004,17 @@ fn localize_query_fields_for_nested_child(query: &Query, path: &str) -> Query {
                 .collect(),
             query: query.clone(),
         },
-        Query::MultiMatch { fields, query } => Query::MultiMatch {
+        Query::MultiMatch {
+            fields,
+            query,
+            minimum_should_match,
+        } => Query::MultiMatch {
             fields: fields
                 .iter()
                 .map(|field| nested_child_local_field_name(path, field))
                 .collect(),
             query: query.clone(),
+            minimum_should_match: *minimum_should_match,
         },
         Query::QueryString { query, fields } => Query::QueryString {
             query: query.clone(),
@@ -18111,9 +18262,11 @@ fn native_nested_child_ordinals_for_query(
         | Query::FieldMaskingSpan { .. } => {
             nested_child_source_match_ordinals(path_index, path, query)
         }
-        Query::Match { field, query } => {
-            nested_child_match_ordinals(path_index, path, field, query)
-        }
+        Query::Match {
+            field,
+            query,
+            minimum_should_match,
+        } => nested_child_match_ordinals(path_index, path, field, query, *minimum_should_match),
         Query::MatchPhrase { field, query } => {
             nested_child_match_phrase_ordinals(path_index, path, field, query)
         }
@@ -18126,9 +18279,17 @@ fn native_nested_child_ordinals_for_query(
         Query::CombinedFields { fields, query } => {
             nested_child_combined_fields_ordinals(path_index, path, fields, query)
         }
-        Query::MultiMatch { fields, query } => {
-            nested_child_multi_match_ordinals(path_index, path, fields, query)
-        }
+        Query::MultiMatch {
+            fields,
+            query,
+            minimum_should_match,
+        } => nested_child_multi_match_ordinals(
+            path_index,
+            path,
+            fields,
+            query,
+            *minimum_should_match,
+        ),
         Query::QueryString { query, fields } => {
             nested_child_query_string_ordinals(path_index, path, fields.as_deref(), query)
         }
@@ -18533,11 +18694,16 @@ fn nested_child_match_ordinals(
     path: &str,
     field: &str,
     query: &Value,
+    minimum_should_match: Option<usize>,
 ) -> Option<std::collections::BTreeSet<usize>> {
     let mut ordinals = std::collections::BTreeSet::new();
     if field == "_id" {
         for (ordinal, child) in path_index.children.iter().enumerate() {
-            if matches_match_query(Some(&Value::String(child.parent_id.clone())), query) {
+            if matches_match_query_with_minimum(
+                Some(&Value::String(child.parent_id.clone())),
+                query,
+                minimum_should_match,
+            ) {
                 ordinals.insert(ordinal);
             }
         }
@@ -18546,9 +18712,10 @@ fn nested_child_match_ordinals(
 
     let field = nested_child_local_field_name(path, field);
     for (ordinal, child) in path_index.children.iter().enumerate() {
-        if matches_match_query(
+        if matches_match_query_with_minimum(
             source_value_for_highlight_field(&child.source, &field),
             query,
+            minimum_should_match,
         ) {
             ordinals.insert(ordinal);
         }
@@ -18649,10 +18816,17 @@ fn nested_child_multi_match_ordinals(
     path: &str,
     fields: &[String],
     query: &Value,
+    minimum_should_match: Option<usize>,
 ) -> Option<std::collections::BTreeSet<usize>> {
     let mut ordinals = std::collections::BTreeSet::new();
     for field in fields {
-        ordinals.extend(nested_child_match_ordinals(path_index, path, field, query)?);
+        ordinals.extend(nested_child_match_ordinals(
+            path_index,
+            path,
+            field,
+            query,
+            minimum_should_match,
+        )?);
     }
     Some(ordinals)
 }

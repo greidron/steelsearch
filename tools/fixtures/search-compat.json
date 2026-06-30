@@ -292,7 +292,9 @@
       "bool_object_form_array_keyword_filter_search",
       "bool_percentage_minimum_should_match_search",
       "bool_conditional_minimum_should_match_search",
+      "match_minimum_should_match_search",
       "multi_match_best_fields_search",
+      "multi_match_minimum_should_match_search",
       "nested_query_search",
       "nested_tuple_semantics_search",
       "match_phrase_search",
@@ -4120,6 +4122,32 @@
       "description": "[lexical] bulk match search"
     },
     {
+      "name": "match_minimum_should_match_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match": {
+            "message": {
+              "query": "checkout payment cache",
+              "minimum_should_match": "75%"
+            }
+          }
+        },
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] match minimum_should_match"
+    },
+    {
       "name": "cat_count_json",
       "area": "cat",
       "method": "GET",
@@ -5327,6 +5355,33 @@
       "extract": "search_hits",
       "family": "lexical",
       "description": "[lexical] multi match best fields search"
+    },
+    {
+      "name": "multi_match_minimum_should_match_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "multi_match": {
+            "query": "checkout payment cache",
+            "fields": [
+              "message"
+            ],
+            "minimum_should_match": "75%"
+          }
+        },
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] multi_match minimum_should_match"
     },
     {
       "name": "multi_match_single_field_string_search",

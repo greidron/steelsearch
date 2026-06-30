@@ -29741,11 +29741,18 @@ fn evaluate_search_query_source_with_mappings(
     }
     if let Some(match_query) = query.get("match").and_then(Value::as_object) {
         let (field, expected) = match_query.iter().next()?;
-        let score = score_match_query(
-            lookup_query_field_value(source, field),
-            extract_match_query_value(expected).unwrap_or_default(),
+        let query_text = extract_match_query_value(expected).unwrap_or_default();
+        let haystacks = lookup_query_field_value(source, field)
+            .map(collect_string_leaf_values)
+            .unwrap_or_default();
+        let (matched, score) = evaluate_text_query_strings(
+            &haystacks,
+            query_text,
+            extract_match_query_operator(expected),
+            false,
+            extract_match_minimum_should_match(expected),
         );
-        return Some((score > 0.0, score));
+        return Some((matched, score));
     }
     if let Some(multi_match) = query.get("multi_match").and_then(Value::as_object) {
         let expected = multi_match
@@ -29753,14 +29760,19 @@ fn evaluate_search_query_source_with_mappings(
             .and_then(Value::as_str)
             .unwrap_or_default();
         let fields = extract_multi_match_fields(multi_match.get("fields"));
-        let mut best_score: f64 = 0.0;
-        for field in fields {
-            best_score = best_score.max(score_match_query(
-                lookup_query_field_value(source, &field),
-                expected,
-            ));
-        }
-        return Some((best_score > 0.0, best_score));
+        let field_refs = fields.iter().map(String::as_str).collect::<Vec<_>>();
+        let haystacks = collect_searchable_field_values(source, Some(field_refs.as_slice()));
+        let (matched, score) = evaluate_text_query_strings(
+            &haystacks,
+            expected,
+            multi_match
+                .get("operator")
+                .and_then(Value::as_str)
+                .unwrap_or("or"),
+            false,
+            multi_match.get("minimum_should_match"),
+        );
+        return Some((matched, score));
     }
     if let Some(match_phrase) = query.get("match_phrase").and_then(Value::as_object) {
         let (field, expected) = match_phrase.iter().next()?;
@@ -31283,6 +31295,20 @@ fn extract_match_query_value(value: &Value) -> Option<&str> {
         return object.get("query").and_then(Value::as_str);
     }
     value.as_str()
+}
+
+fn extract_match_query_operator(value: &Value) -> &str {
+    value
+        .as_object()
+        .and_then(|object| object.get("operator"))
+        .and_then(Value::as_str)
+        .unwrap_or("or")
+}
+
+fn extract_match_minimum_should_match(value: &Value) -> Option<&Value> {
+    value
+        .as_object()
+        .and_then(|object| object.get("minimum_should_match"))
 }
 
 fn extract_multi_match_fields(value: Option<&Value>) -> Vec<String> {
@@ -61977,6 +62003,27 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         );
         assert_eq!(
             query_string_minimum_should_match.body["hits"]["hits"][0]["_id"],
+            "doc-2"
+        );
+
+        let match_minimum_should_match = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-dsl-000001/_search").with_json_body(
+                serde_json::json!({
+                    "query": {
+                        "match": {
+                            "message": {
+                                "query": "beta wolf alpha",
+                                "minimum_should_match": "75%"
+                            }
+                        }
+                    }
+                }),
+            ),
+        );
+        assert_eq!(match_minimum_should_match.status, 200);
+        assert_eq!(match_minimum_should_match.body["hits"]["total"]["value"], 1);
+        assert_eq!(
+            match_minimum_should_match.body["hits"]["hits"][0]["_id"],
             "doc-2"
         );
 

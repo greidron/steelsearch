@@ -20789,7 +20789,7 @@ fn local_transport_query_matches(
                 .map(collect_transport_string_leaf_values)
                 .unwrap_or_default();
             let query_text = query.value.as_str().unwrap_or_default();
-            local_transport_match_query_matches(&haystacks, query_text, query.operator)
+            local_transport_match_query_matches(&haystacks, query_text, query.operator, None)
                 || (query_text.trim().is_empty()
                     && query.zero_terms_query
                         == os_transport::action::OpenSearchZeroTermsQueryWire::All)
@@ -20831,6 +20831,7 @@ fn local_transport_query_matches(
                     &haystacks,
                     like,
                     os_transport::action::OpenSearchMatchOperatorWire::Or,
+                    None,
                 )
             })
         }
@@ -20891,6 +20892,7 @@ fn local_transport_query_matches(
                 &query.query_string,
                 query.default_operator,
                 false,
+                None,
             )
         }
         Some(os_transport::action::OpenSearchQueryBuilderWire::Range(range)) => {
@@ -20943,6 +20945,7 @@ fn local_transport_query_matches(
                 &query.query_text,
                 query.default_operator,
                 true,
+                None,
             )
         }
         Some(os_transport::action::OpenSearchQueryBuilderWire::SpanMulti(query)) => {
@@ -21053,17 +21056,104 @@ fn local_transport_bool_minimum_should_match(
         return 0;
     }
     if let Some(value) = query.minimum_should_match.as_deref() {
-        return value
-            .trim()
-            .parse::<usize>()
-            .map(|minimum| minimum.min(should_clause_count))
-            .unwrap_or(1);
+        return local_transport_minimum_should_match_value(
+            &Value::String(value.to_string()),
+            should_clause_count,
+        )
+        .map(|minimum| minimum.min(should_clause_count))
+        .unwrap_or(1);
     }
     if query.must.is_empty() && query.filter.is_empty() {
         1
     } else {
         0
     }
+}
+
+fn local_transport_minimum_should_match_value(value: &Value, clause_count: usize) -> Option<usize> {
+    if let Some(value) = value.as_u64() {
+        return usize::try_from(value).ok();
+    }
+    let value = value.as_str()?.trim();
+    if value.is_empty() {
+        return None;
+    }
+    if value.contains('<') {
+        return local_transport_conditional_minimum_should_match_value(value, clause_count);
+    }
+    if value.split_whitespace().nth(1).is_some() {
+        return None;
+    }
+    if let Some(percent) = value.strip_suffix('%') {
+        let percent = percent.parse::<i64>().ok()?;
+        let required = if percent >= 0 {
+            ((clause_count as i64 * percent) / 100).max(0)
+        } else {
+            let optional = (clause_count as i64 * percent.unsigned_abs() as i64) / 100;
+            (clause_count as i64 - optional).max(0)
+        };
+        return usize::try_from(required).ok();
+    }
+    let required = value.parse::<i64>().ok()?;
+    let required = if required >= 0 {
+        required
+    } else {
+        (clause_count as i64 + required).max(0)
+    };
+    usize::try_from(required).ok()
+}
+
+fn local_transport_conditional_minimum_should_match_value(
+    value: &str,
+    clause_count: usize,
+) -> Option<usize> {
+    let mut result = clause_count;
+    let normalized = normalize_transport_minimum_should_match_condition_spacing(value);
+    for token in normalized.split(' ') {
+        if token.is_empty() {
+            return None;
+        }
+        let (upper_bound, spec) = token.split_once('<')?;
+        if spec.contains('<') {
+            return None;
+        }
+        let upper_bound = upper_bound.parse::<usize>().ok()?;
+        if clause_count <= upper_bound {
+            return Some(result);
+        }
+        result = local_transport_minimum_should_match_value(
+            &Value::String(spec.to_string()),
+            clause_count,
+        )?;
+    }
+    Some(result)
+}
+
+fn normalize_transport_minimum_should_match_condition_spacing(value: &str) -> String {
+    let mut normalized = String::with_capacity(value.len());
+    let mut pending_space = false;
+    for ch in value.trim().chars() {
+        match ch {
+            '<' => {
+                if normalized.ends_with(' ') {
+                    normalized.pop();
+                }
+                normalized.push('<');
+                pending_space = false;
+            }
+            ch if ch.is_whitespace() => {
+                pending_space = true;
+            }
+            ch => {
+                if pending_space && !normalized.ends_with('<') && !normalized.is_empty() {
+                    normalized.push(' ');
+                }
+                normalized.push(ch);
+                pending_space = false;
+            }
+        }
+    }
+    normalized
 }
 
 fn local_transport_range_query_matches(
@@ -21413,7 +21503,12 @@ fn local_transport_json_match_query_matches(
     let haystacks = lookup_transport_source_value(source, field)
         .map(collect_transport_string_leaf_values)
         .unwrap_or_default();
-    local_transport_match_query_matches(&haystacks, query_text, operator)
+    local_transport_match_query_matches(
+        &haystacks,
+        query_text,
+        operator,
+        expected.get("minimum_should_match"),
+    )
 }
 
 fn local_transport_json_phrase_query_matches(
@@ -21460,7 +21555,13 @@ fn local_transport_json_text_query_matches(
         .and_then(Value::as_array)
         .map(|fields| fields.iter().filter_map(Value::as_str).collect::<Vec<_>>());
     let haystacks = collect_transport_searchable_field_values(source, fields.as_deref());
-    local_transport_query_string_matches(&haystacks, query_text, operator, simple_syntax)
+    local_transport_query_string_matches(
+        &haystacks,
+        query_text,
+        operator,
+        simple_syntax,
+        query.get("minimum_should_match"),
+    )
 }
 
 fn local_transport_json_prefix_query_matches(
@@ -21999,7 +22100,7 @@ fn local_transport_text_query_matches(
     query_text: &str,
     operator: os_transport::action::OpenSearchMatchOperatorWire,
 ) -> bool {
-    local_transport_match_query_matches(haystacks, query_text, operator)
+    local_transport_match_query_matches(haystacks, query_text, operator, None)
 }
 
 fn local_transport_query_string_matches(
@@ -22007,6 +22108,7 @@ fn local_transport_query_string_matches(
     query_text: &str,
     operator: os_transport::action::OpenSearchMatchOperatorWire,
     simple_syntax: bool,
+    minimum_should_match: Option<&Value>,
 ) -> bool {
     let explicit_or = if simple_syntax && query_text.contains('|') {
         Some(
@@ -22035,6 +22137,7 @@ fn local_transport_query_string_matches(
                 haystacks,
                 disjunct,
                 os_transport::action::OpenSearchMatchOperatorWire::And,
+                None,
             )
         });
     }
@@ -22043,15 +22146,17 @@ fn local_transport_query_string_matches(
             haystacks,
             query_text,
             os_transport::action::OpenSearchMatchOperatorWire::And,
+            None,
         );
     }
-    local_transport_match_query_matches(haystacks, query_text, operator)
+    local_transport_match_query_matches(haystacks, query_text, operator, minimum_should_match)
 }
 
 fn local_transport_match_query_matches(
     haystacks: &[String],
     query_text: &str,
     operator: os_transport::action::OpenSearchMatchOperatorWire,
+    minimum_should_match: Option<&Value>,
 ) -> bool {
     let terms = split_transport_query_terms(query_text);
     if terms.is_empty() {
@@ -22061,9 +22166,19 @@ fn local_transport_match_query_matches(
         os_transport::action::OpenSearchMatchOperatorWire::And => terms
             .iter()
             .all(|term| score_transport_text_query_term(haystacks, term) > 0.0),
-        os_transport::action::OpenSearchMatchOperatorWire::Or => terms
-            .iter()
-            .any(|term| score_transport_text_query_term(haystacks, term) > 0.0),
+        os_transport::action::OpenSearchMatchOperatorWire::Or => {
+            let required = minimum_should_match
+                .and_then(|value| local_transport_minimum_should_match_value(value, terms.len()))
+                .unwrap_or(1);
+            if required == 0 {
+                return true;
+            }
+            terms
+                .iter()
+                .filter(|term| score_transport_text_query_term(haystacks, term) > 0.0)
+                .count()
+                >= required
+        }
     }
 }
 
