@@ -65,6 +65,7 @@ Environment:
   OPENSEARCH_URL               Reuse an existing OpenSearch endpoint.
   STEELSEARCH_HTTP_PORT        Local Steelsearch port when started here. Default: 19201.
   OPENSEARCH_HTTP_PORT         Local OpenSearch port when started here. Default: random free port.
+  OPENSEARCH_TRANSPORT_PORT    Local OpenSearch transport port when started here. Default: random free port.
   REHEARSAL_DIR                Output/log directory. Default: target/development-replacement-rehearsal.
   REHEARSAL_WAIT_TIMEOUT       Startup wait timeout in seconds. Default: 300.
   SEARCH_COMPAT_FIXTURE        Fixture passed to tools/search_compat.py.
@@ -650,9 +651,11 @@ if [[ "${PHASE_A_COMPARE_SCOPE}" != "transport-admin" && "${PHASE_A_COMPARE_SCOP
   echo "Using existing OpenSearch endpoint: ${OPENSEARCH_URL}" >&2
 elif [[ "${PHASE_A_COMPARE_SCOPE}" != "transport-admin" && "${PHASE_A_COMPARE_SCOPE}" != "admin-ops" ]]; then
   OPENSEARCH_HTTP_HOST="${OPENSEARCH_HTTP_HOST:-127.0.0.1}"
-  OPENSEARCH_HTTP_PORT="${OPENSEARCH_HTTP_PORT:-9200}"
+  OPENSEARCH_HTTP_PORT="${OPENSEARCH_HTTP_PORT:-$(find_free_port "${OPENSEARCH_HTTP_HOST}")}"
+  OPENSEARCH_TRANSPORT_HOST="${OPENSEARCH_TRANSPORT_HOST:-${OPENSEARCH_HTTP_HOST}}"
+  OPENSEARCH_TRANSPORT_PORT="${OPENSEARCH_TRANSPORT_PORT:-$(find_free_port "${OPENSEARCH_TRANSPORT_HOST}")}"
   OPENSEARCH_URL="http://${OPENSEARCH_HTTP_HOST}:${OPENSEARCH_HTTP_PORT}"
-  export OPENSEARCH_HTTP_HOST OPENSEARCH_HTTP_PORT
+  export OPENSEARCH_HTTP_HOST OPENSEARCH_HTTP_PORT OPENSEARCH_TRANSPORT_HOST OPENSEARCH_TRANSPORT_PORT
   rm -rf "${OPENSEARCH_WORK_DIR}"
   echo "Starting OpenSearch at ${OPENSEARCH_URL}" >&2
   if [[ "${PHASE_A_COMPARE_SCOPE}" == "vector-ml" ]]; then
