@@ -96,7 +96,7 @@ PROBES: tuple[Probe, ...] = (
         watchpoint="unsupported vector/hybrid shapes must remain fallback-counted while direct paths widen",
     ),
     Probe(
-        name="nested filtered kNN parity and fallback boundary",
+        name="nested filtered kNN parity and native boundary",
         category="vector-hybrid",
         path=VECTOR_FIXTURE,
         patterns=(
@@ -105,7 +105,7 @@ PROBES: tuple[Probe, ...] = (
             r"segments\.embedding",
             r"segments\.tag",
         ),
-        watchpoint="nested filtered kNN has OpenSearch parity evidence but remains routed away from the native search engine until full-path nested vector normalization is native",
+        watchpoint="nested filtered kNN has OpenSearch parity evidence and native child-ordinal coverage for the score-threshold-free subset; thresholded variants must remain fallback-counted",
     ),
     Probe(
         name="mixed shard movement hardening",
@@ -320,10 +320,10 @@ FAMILIES: tuple[Family, ...] = (
     Family(
         name="nested filtered kNN",
         category="vector-hybrid",
-        status="OpenSearch-parity scenario covered in the vector comparison fixture, with nested+kNN requests deliberately routed away from the native engine for now",
-        next_action="make nested kNN native only after the engine can preserve OpenSearch nested path scoping, full dotted vector field lookup, and inner nested filter semantics under strict comparison",
-        evidence_path=STANDALONE_RUNTIME_SOURCE,
-        evidence_pattern=r"query_contains_nested_knn",
+        status="OpenSearch-parity scenario covered in the vector comparison fixture, with native child-ordinal execution for nested filtered kNN requests that do not use min_score or max_distance",
+        next_action="keep nested kNN variants with min_score or max_distance explicit in fallback telemetry while widening only with strict comparison coverage",
+        evidence_path=ENGINE_SOURCE,
+        evidence_pattern=r"nested_child_knn_ordinals|native_nested_child_ordinals_support_filtered_knn_leaf_without_source_validation",
     ),
     Family(
         name="mixed shard movement interruption",

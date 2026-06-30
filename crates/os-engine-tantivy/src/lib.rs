@@ -8649,6 +8649,12 @@ impl StoredIndex {
     ) -> EngineResult<Option<f32>> {
         match query {
             Query::Knn(knn) => self.score_knn_query(knn, document),
+            Query::Nested { path, query }
+                if query_uses_vector_scores(query)
+                    && !query_contains_knn_score_threshold(query) =>
+            {
+                self.score_nested_vector_query(path, query, document)
+            }
             Query::Range { field, bounds } if self.knn_mapping(field).is_ok() => Ok(None),
             Query::Range { field, bounds } => {
                 Ok(source_value_for_highlight_field(&document.source, field)
@@ -8758,6 +8764,113 @@ impl StoredIndex {
         Ok(Some(score))
     }
 
+    fn score_nested_vector_query(
+        &self,
+        path: &str,
+        query: &Query,
+        document: &StoredDocument,
+    ) -> EngineResult<Option<f32>> {
+        let mut best_score: Option<f32> = None;
+        for child_source in nested_source_values_for_path(&document.source, path) {
+            let Some(score) = self.score_nested_child_vector_query(
+                &document.metadata.id,
+                path,
+                child_source,
+                query,
+            )?
+            else {
+                continue;
+            };
+            best_score = Some(best_score.map_or(score, |best| best.max(score)));
+        }
+        Ok(best_score)
+    }
+
+    fn score_nested_child_vector_query(
+        &self,
+        id: &str,
+        path: &str,
+        source: &Value,
+        query: &Query,
+    ) -> EngineResult<Option<f32>> {
+        match query {
+            Query::Knn(knn) => score_nested_child_knn_query(id, path, source, knn),
+            Query::Bool { clauses } => {
+                let mut total_score = 0.0;
+                for child in clauses.must.iter().chain(clauses.filter.iter()) {
+                    let Some(score) =
+                        self.score_nested_child_vector_query(id, path, source, child)?
+                    else {
+                        return Ok(None);
+                    };
+                    total_score += score.max(0.0);
+                }
+                for child in &clauses.must_not {
+                    if self
+                        .score_nested_child_vector_query(id, path, source, child)?
+                        .is_some()
+                    {
+                        return Ok(None);
+                    }
+                }
+                let minimum_should_match = effective_bool_minimum_should_match(clauses) as usize;
+                let mut should_matches = 0usize;
+                for child in &clauses.should {
+                    if let Some(score) =
+                        self.score_nested_child_vector_query(id, path, source, child)?
+                    {
+                        should_matches += 1;
+                        total_score += score.max(0.0);
+                    }
+                }
+                if should_matches < minimum_should_match {
+                    return Ok(None);
+                }
+                Ok(Some(total_score.max(1.0)))
+            }
+            Query::Wrapper { query } => {
+                self.score_nested_child_vector_query(id, path, source, query)
+            }
+            Query::ConstantScore { filter } => Ok(self
+                .score_nested_child_vector_query(id, path, source, filter)?
+                .map(|_| 1.0)),
+            Query::DisMax { queries, .. } => {
+                let mut best_score: Option<f32> = None;
+                for child in queries {
+                    if let Some(score) =
+                        self.score_nested_child_vector_query(id, path, source, child)?
+                    {
+                        best_score = Some(best_score.map_or(score, |best| best.max(score)));
+                    }
+                }
+                Ok(best_score)
+            }
+            Query::Boosting {
+                positive,
+                negative,
+                negative_boost,
+            } => {
+                let Some(positive_score) =
+                    self.score_nested_child_vector_query(id, path, source, positive)?
+                else {
+                    return Ok(None);
+                };
+                if self
+                    .score_nested_child_vector_query(id, path, source, negative)?
+                    .is_some()
+                {
+                    Ok(Some(positive_score.max(1.0) * *negative_boost as f32))
+                } else {
+                    Ok(Some(positive_score.max(1.0)))
+                }
+            }
+            Query::FunctionScore { query } | Query::ScriptScore { query, .. } => {
+                self.score_nested_child_vector_query(id, path, source, query)
+            }
+            _ => Ok(nested_child_source_matches_query(id, path, source, query).then_some(1.0)),
+        }
+    }
+
     fn score_bool_query(
         &self,
         clauses: &BoolQuery,
@@ -8800,6 +8913,49 @@ impl StoredIndex {
         }
         Ok(Some(score))
     }
+}
+
+fn score_nested_child_knn_query(
+    id: &str,
+    path: &str,
+    source: &Value,
+    knn: &KnnQuery,
+) -> EngineResult<Option<f32>> {
+    if let Some(filter) = &knn.filter {
+        if !nested_child_source_matches_query(id, path, source, filter) {
+            return Ok(None);
+        }
+    }
+    let field = nested_child_local_field_name(path, &knn.field);
+    let Some(vector) =
+        source_value_for_highlight_field(source, &field).and_then(numeric_array_value)
+    else {
+        return Ok(None);
+    };
+    if vector.len() != knn.vector.len() {
+        return Ok(None);
+    }
+    let vector = vector
+        .into_iter()
+        .map(|value| value as VectorValue)
+        .collect::<Vec<_>>();
+    let score = l2_similarity_score(&knn.vector, &vector);
+    if let Some(min_score) = knn.min_score {
+        if score < min_score {
+            return Ok(None);
+        }
+    }
+    if let Some(max_distance) = knn.max_distance {
+        let distance = squared_l2_distance(&knn.vector, &vector);
+        if distance > max_distance {
+            return Ok(None);
+        }
+    }
+    Ok(Some(score))
+}
+
+fn l2_similarity_score(left: &[VectorValue], right: &[VectorValue]) -> VectorValue {
+    1.0 / (1.0 + squared_l2_distance(left, right))
 }
 
 fn merge_update_document(source: &mut Value, doc: Value) {
@@ -15734,10 +15890,11 @@ fn effective_bool_minimum_should_match(clauses: &BoolQuery) -> u32 {
     let should_only_default = u32::from(
         !clauses.should.is_empty() && clauses.must.is_empty() && clauses.filter.is_empty(),
     );
-    clauses
-        .minimum_should_match
-        .unwrap_or(should_only_default)
-        .max(should_only_default)
+    match clauses.minimum_should_match {
+        Some(0) if clauses.should.iter().any(query_uses_vector_scores) => 0,
+        Some(value) => value.max(should_only_default),
+        None => should_only_default,
+    }
 }
 
 fn document_matches_query(query: &Query, id: &str, source: &Value) -> bool {
@@ -16035,6 +16192,46 @@ fn query_uses_vector_scores(query: &Query) -> bool {
             .chain(clauses.filter.iter())
             .chain(clauses.must_not.iter())
             .any(query_uses_vector_scores),
+        _ => false,
+    }
+}
+
+fn query_contains_knn_score_threshold(query: &Query) -> bool {
+    match query {
+        Query::Knn(knn) => knn.min_score.is_some() || knn.max_distance.is_some(),
+        Query::SpanTerm { .. } => false,
+        Query::SpanOr { clauses } => clauses.iter().any(query_contains_knn_score_threshold),
+        Query::SpanFirst { match_query, .. } => query_contains_knn_score_threshold(match_query),
+        Query::SpanNear { clauses, .. } => clauses.iter().any(query_contains_knn_score_threshold),
+        Query::SpanNot { include, exclude } => {
+            query_contains_knn_score_threshold(include)
+                || query_contains_knn_score_threshold(exclude)
+        }
+        Query::SpanContaining { big, little } | Query::SpanWithin { big, little } => {
+            query_contains_knn_score_threshold(big) || query_contains_knn_score_threshold(little)
+        }
+        Query::SpanMulti { query }
+        | Query::FieldMaskingSpan { query, .. }
+        | Query::Wrapper { query }
+        | Query::Nested { query, .. }
+        | Query::Pinned { organic: query, .. }
+        | Query::FunctionScore { query }
+        | Query::ScriptScore { query, .. } => query_contains_knn_score_threshold(query),
+        Query::ConstantScore { filter } => query_contains_knn_score_threshold(filter),
+        Query::DisMax { queries, .. } => queries.iter().any(query_contains_knn_score_threshold),
+        Query::Boosting {
+            positive, negative, ..
+        } => {
+            query_contains_knn_score_threshold(positive)
+                || query_contains_knn_score_threshold(negative)
+        }
+        Query::Bool { clauses } => clauses
+            .must
+            .iter()
+            .chain(clauses.should.iter())
+            .chain(clauses.filter.iter())
+            .chain(clauses.must_not.iter())
+            .any(query_contains_knn_score_threshold),
         _ => false,
     }
 }
@@ -17727,6 +17924,7 @@ fn native_nested_child_ordinals_for_query(
             value,
             case_insensitive,
         } => nested_child_regexp_ordinals(path_index, path, field, value, *case_insensitive),
+        Query::Knn(knn) => nested_child_knn_ordinals(path_index, path, knn),
         Query::Fuzzy {
             field,
             value,
@@ -17848,6 +18046,49 @@ fn native_nested_child_ordinals_for_query(
         }
         _ => None,
     }
+}
+
+fn nested_child_knn_ordinals(
+    path_index: &NestedPathChildIndex,
+    path: &str,
+    knn: &KnnQuery,
+) -> Option<std::collections::BTreeSet<usize>> {
+    if knn.min_score.is_some() || knn.max_distance.is_some() {
+        return None;
+    }
+
+    let field = nested_child_local_field_name(path, &knn.field);
+    let mut scored_ordinals = Vec::new();
+    for (ordinal, child) in path_index.children.iter().enumerate() {
+        if let Some(filter) = &knn.filter {
+            if !nested_child_source_matches_query(&child.parent_id, path, &child.source, filter) {
+                continue;
+            }
+        }
+        let vector = source_value_for_highlight_field(&child.source, &field)
+            .and_then(numeric_array_value)?;
+        if vector.len() != knn.vector.len() {
+            continue;
+        }
+        let vector = vector
+            .into_iter()
+            .map(|value| value as VectorValue)
+            .collect::<Vec<_>>();
+        scored_ordinals.push((l2_similarity_score(&knn.vector, &vector), ordinal));
+    }
+    scored_ordinals.sort_by(|(left_score, left_ordinal), (right_score, right_ordinal)| {
+        right_score
+            .partial_cmp(left_score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| left_ordinal.cmp(right_ordinal))
+    });
+    scored_ordinals.truncate(knn.k.max(1));
+    Some(
+        scored_ordinals
+            .into_iter()
+            .map(|(_, ordinal)| ordinal)
+            .collect(),
+    )
 }
 
 fn nested_child_term_ordinals(
@@ -146807,6 +147048,103 @@ mod tests {
             .unwrap()
             .expect("nested span_near/span_multi child ordinal hits");
         assert_eq!(search_hit_ids(&native_hits), vec!["1"]);
+    }
+
+    #[test]
+    fn native_nested_child_ordinals_support_filtered_knn_leaf_without_source_validation() {
+        let engine = TantivyEngine::default();
+        engine
+            .create_index(CreateIndexRequest {
+                index: "bench".to_string(),
+                settings: serde_json::json!({}),
+                mappings: serde_json::json!({
+                    "properties": {
+                        "comments": {
+                            "type": "nested",
+                            "properties": {
+                                "tag": { "type": "keyword" },
+                                "embedding": {
+                                    "type": "knn_vector",
+                                    "dimension": 2
+                                }
+                            }
+                        }
+                    }
+                }),
+            })
+            .unwrap();
+
+        for (id, comments) in [
+            (
+                "1",
+                serde_json::json!([
+                    { "tag": "keep", "embedding": [1.0, 0.0] },
+                    { "tag": "drop", "embedding": [0.0, 1.0] }
+                ]),
+            ),
+            (
+                "2",
+                serde_json::json!([
+                    { "tag": "keep", "embedding": [0.0, 1.0] }
+                ]),
+            ),
+            (
+                "3",
+                serde_json::json!([
+                    { "tag": "keep", "embedding": [0.8, 0.2] }
+                ]),
+            ),
+        ] {
+            engine
+                .index_document(IndexDocumentRequest {
+                    index: "bench".to_string(),
+                    id: id.to_string(),
+                    source: serde_json::json!({ "comments": comments }),
+                })
+                .unwrap();
+        }
+        engine
+            .refresh(RefreshRequest {
+                indices: vec!["bench".to_string()],
+            })
+            .unwrap();
+
+        let query = parse_query(&serde_json::json!({
+            "nested": {
+                "path": "comments",
+                "query": {
+                    "knn": {
+                        "comments.embedding": {
+                            "vector": [0.0, 1.0],
+                            "k": 2,
+                            "filter": {
+                                "term": { "comments.tag": "keep" }
+                            }
+                        }
+                    }
+                }
+            }
+        }))
+        .unwrap();
+
+        let mut store = engine.store.write().unwrap();
+        let index = store.indices.get_mut("bench").unwrap();
+        let Query::Nested {
+            path,
+            query: nested_query,
+        } = &query
+        else {
+            panic!("expected nested query");
+        };
+        assert!(index.native_nested_query_is_proven_by_child_ordinals(path, nested_query));
+
+        let documents = index.search_documents_for_native_nested_query(path, nested_query);
+        assert_eq!(document_ids(&documents), vec!["2", "3"]);
+        let native_hits = index
+            .search_hits_for_query_native("bench", &query, &[])
+            .unwrap()
+            .expect("nested filtered knn child ordinal hits");
+        assert_eq!(search_hit_ids(&native_hits), vec!["2", "3"]);
     }
 
     #[test]

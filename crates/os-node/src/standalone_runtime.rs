@@ -22143,7 +22143,7 @@ fn standalone_search_body_allows_native_engine(body: &Value) -> bool {
         .get("aggs")
         .or_else(|| body.get("aggregations"))
         .unwrap_or(&Value::Null);
-    !query_contains_nested_knn(body.get("query").unwrap_or(&Value::Null))
+    !query_contains_native_unsafe_nested_knn(body.get("query").unwrap_or(&Value::Null))
         && !value_contains_any_key(
             aggregations,
             &["scripted_metric", "significant_terms", "top_hits"],
@@ -22179,32 +22179,48 @@ fn standalone_search_body_allows_native_engine(body: &Value) -> bool {
         .any(|key| body.get(*key).is_some())
 }
 
-fn query_contains_nested_knn(query: &Value) -> bool {
+fn query_contains_native_unsafe_nested_knn(query: &Value) -> bool {
+    if let Value::Array(values) = query {
+        return values.iter().any(query_contains_native_unsafe_nested_knn);
+    }
     if query
         .get("nested")
         .and_then(Value::as_object)
         .and_then(|nested| nested.get("query"))
-        .is_some_and(value_contains_knn_query)
+        .is_some_and(value_contains_native_unsafe_knn_query)
     {
         return true;
     }
     query.as_object().is_some_and(|object| {
         object.values().any(|value| match value {
-            Value::Array(values) => values.iter().any(query_contains_nested_knn),
-            Value::Object(_) => query_contains_nested_knn(value),
+            Value::Array(values) => values.iter().any(query_contains_native_unsafe_nested_knn),
+            Value::Object(_) => query_contains_native_unsafe_nested_knn(value),
             _ => false,
         })
     })
 }
 
-fn value_contains_knn_query(value: &Value) -> bool {
+fn value_contains_native_unsafe_knn_query(value: &Value) -> bool {
+    if let Some(knn) = value.get("knn") {
+        return value_contains_any_key(knn, &["min_score", "max_distance"]);
+    }
+    value.as_object().is_some_and(|object| {
+        object.values().any(|child| match child {
+            Value::Array(values) => values.iter().any(value_contains_native_unsafe_knn_query),
+            Value::Object(_) => value_contains_native_unsafe_knn_query(child),
+            _ => false,
+        })
+    })
+}
+
+fn value_contains_vector_query(value: &Value) -> bool {
     if value.get("knn").is_some() {
         return true;
     }
     value.as_object().is_some_and(|object| {
         object.values().any(|child| match child {
-            Value::Array(values) => values.iter().any(value_contains_knn_query),
-            Value::Object(_) => value_contains_knn_query(child),
+            Value::Array(values) => values.iter().any(value_contains_vector_query),
+            Value::Object(_) => value_contains_vector_query(child),
             _ => false,
         })
     })
@@ -29492,7 +29508,13 @@ fn evaluate_search_query_source_with_mappings(
                 .get("minimum_should_match")
                 .and_then(Value::as_u64)
                 .map(|value| {
-                    if !has_required_positive_clause {
+                    if value == 0
+                        && shoulds
+                            .iter()
+                            .any(|clause| value_contains_vector_query(clause))
+                    {
+                        0
+                    } else if !has_required_positive_clause {
                         (value as usize).max(1)
                     } else {
                         value as usize
@@ -59013,6 +59035,98 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(must_not_nested_knn.status, 200);
         assert_eq!(must_not_nested_knn.body["hits"]["total"]["value"], 1);
         assert_eq!(must_not_nested_knn.body["hits"]["hits"][0]["_id"], "doc-2");
+    }
+
+    #[test]
+    fn native_search_gate_allows_safe_nested_filtered_knn_subset() {
+        assert!(standalone_search_body_allows_native_engine(
+            &serde_json::json!({
+                "query": {
+                    "nested": {
+                        "path": "segments",
+                        "query": {
+                            "knn": {
+                                "segments.embedding": {
+                                    "vector": [1.0, 0.0, 0.0],
+                                    "k": 2,
+                                    "filter": {
+                                        "term": { "segments.tag": "keep" }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            })
+        ));
+        assert!(!standalone_search_body_allows_native_engine(
+            &serde_json::json!({
+                "query": {
+                    "nested": {
+                        "path": "segments",
+                        "query": {
+                            "knn": {
+                                "segments.embedding": {
+                                    "vector": [1.0, 0.0, 0.0],
+                                    "k": 2,
+                                    "min_score": 0.5
+                                }
+                            }
+                        }
+                    }
+                }
+            })
+        ));
+        assert!(!standalone_search_body_allows_native_engine(
+            &serde_json::json!({
+                "query": {
+                    "bool": {
+                        "should": [
+                            {
+                                "nested": {
+                                    "path": "segments",
+                                    "query": {
+                                        "knn": {
+                                            "segments.embedding": {
+                                                "vector": [1.0, 0.0, 0.0],
+                                                "k": 1,
+                                                "min_score": 0.5
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        ],
+                        "minimum_should_match": 0
+                    }
+                }
+            })
+        ));
+        assert!(!standalone_search_body_allows_native_engine(
+            &serde_json::json!({
+                "query": {
+                    "bool": {
+                        "should": [
+                            {
+                                "nested": {
+                                    "path": "segments",
+                                    "query": {
+                                        "knn": {
+                                            "embedding": {
+                                                "vector": [1.0, 0.0, 0.0],
+                                                "k": 1,
+                                                "min_score": 0.5
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        ],
+                        "minimum_should_match": 0
+                    }
+                }
+            })
+        ));
     }
 
     #[test]

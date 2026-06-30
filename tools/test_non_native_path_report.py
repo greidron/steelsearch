@@ -72,13 +72,13 @@ class NonNativePathReportTests(unittest.TestCase):
             production_security["next_action"],
         )
 
-    def test_nested_filtered_knn_is_reported_as_vector_fallback_boundary(self) -> None:
+    def test_nested_filtered_knn_is_reported_as_vector_native_boundary(self) -> None:
         report = load_module().build_report()
 
         probe = next(
             probe
             for probe in report["probes"]
-            if probe["name"] == "nested filtered kNN parity and fallback boundary"
+            if probe["name"] == "nested filtered kNN parity and native boundary"
         )
         family = next(
             family
@@ -89,7 +89,8 @@ class NonNativePathReportTests(unittest.TestCase):
         self.assertTrue(probe["matched"])
         self.assertTrue(family["evidenced"])
         self.assertIn("OpenSearch-parity scenario covered", family["status"])
-        self.assertIn("routed away from the native engine", family["status"])
+        self.assertIn("native child-ordinal execution", family["status"])
+        self.assertIn("min_score or max_distance", family["next_action"])
 
 
 if __name__ == "__main__":
