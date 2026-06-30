@@ -93,6 +93,7 @@ pub enum Query {
         slop: usize,
         operator: Option<String>,
         minimum_should_match: Option<usize>,
+        tie_breaker: Option<f64>,
     },
     QueryString {
         query: String,
@@ -2490,6 +2491,7 @@ fn parse_multi_match(body: &Value) -> QueryDslResult<Query> {
         .map(|value| parse_usize_option("multi_match", "slop", value))
         .transpose()?
         .unwrap_or(0);
+    let tie_breaker = object.get("tie_breaker").and_then(Value::as_f64);
     validate_optional_f64_option(object, "multi_match", "tie_breaker")?;
     validate_optional_f64_option(object, "multi_match", "boost")?;
     validate_optional_string_option(object, "multi_match", "analyzer")?;
@@ -2525,6 +2527,7 @@ fn parse_multi_match(body: &Value) -> QueryDslResult<Query> {
         slop,
         operator,
         minimum_should_match,
+        tie_breaker,
     })
 }
 
@@ -4362,6 +4365,7 @@ mod tests {
                 slop: 0,
                 operator: Some("and".to_string()),
                 minimum_should_match: None,
+                tie_breaker: None,
             }
         );
 
@@ -4383,6 +4387,7 @@ mod tests {
                 slop: 0,
                 operator: None,
                 minimum_should_match: None,
+                tie_breaker: None,
             }
         );
 
@@ -4404,6 +4409,7 @@ mod tests {
                 slop: 0,
                 operator: None,
                 minimum_should_match: None,
+                tie_breaker: None,
             }
         );
 
@@ -4425,6 +4431,7 @@ mod tests {
                 slop: 0,
                 operator: None,
                 minimum_should_match: None,
+                tie_breaker: None,
             }
         );
 
@@ -4447,6 +4454,7 @@ mod tests {
                 slop: 0,
                 operator: Some("and".to_string()),
                 minimum_should_match: None,
+                tie_breaker: None,
             }
         );
 
@@ -4473,6 +4481,7 @@ mod tests {
                 slop: 0,
                 operator: None,
                 minimum_should_match: None,
+                tie_breaker: Some(0.2),
             }
         );
 
@@ -4495,6 +4504,7 @@ mod tests {
                 slop: 1,
                 operator: None,
                 minimum_should_match: None,
+                tie_breaker: None,
             }
         );
 
@@ -4515,6 +4525,7 @@ mod tests {
                 slop: 0,
                 operator: None,
                 minimum_should_match: None,
+                tie_breaker: None,
             }
         );
     }

@@ -39,8 +39,9 @@ use tantivy::aggregation::agg_req::Aggregations as TantivyAggregations;
 use tantivy::aggregation::AggregationCollector;
 use tantivy::collector::{Count, TopDocs};
 use tantivy::query::{
-    AllQuery, BooleanQuery, EmptyQuery, FuzzyTermQuery, Occur, PhrasePrefixQuery, PhraseQuery,
-    Query as TantivyQueryTrait, QueryParser, RangeQuery, RegexQuery, TermQuery,
+    AllQuery, BooleanQuery, DisjunctionMaxQuery, EmptyQuery, FuzzyTermQuery, Occur,
+    PhrasePrefixQuery, PhraseQuery, Query as TantivyQueryTrait, QueryParser, RangeQuery,
+    RegexQuery, TermQuery,
 };
 use tantivy::schema::{
     DateOptions, Field, IndexRecordOption, NumericOptions, Schema as TantivySchemaDef,
@@ -2850,15 +2851,21 @@ fn build_tantivy_query(
             build_tantivy_more_like_this_query(search_state, fields.as_deref(), like)
         }
         Query::ConstantScore { filter } => build_tantivy_query(search_state, filter),
-        Query::DisMax { queries, .. } => {
+        Query::DisMax {
+            queries,
+            tie_breaker,
+        } => {
             let mut clauses = Vec::new();
             for query in queries {
                 let Some(inner_query) = build_tantivy_query(search_state, query)? else {
                     return Ok(None);
                 };
-                clauses.push((Occur::Should, inner_query));
+                clauses.push(inner_query);
             }
-            Ok(Some(Box::new(BooleanQuery::new(clauses))))
+            Ok(Some(Box::new(DisjunctionMaxQuery::with_tie_breaker(
+                clauses,
+                tie_breaker.unwrap_or(0.0) as f32,
+            ))))
         }
         Query::Boosting { positive, .. } => build_tantivy_query(search_state, positive),
         Query::FunctionScore { query } => build_tantivy_query(search_state, query),
@@ -2879,6 +2886,7 @@ fn build_tantivy_query(
             slop,
             operator,
             minimum_should_match,
+            tie_breaker,
         } => build_tantivy_multi_match_query(
             search_state,
             fields,
@@ -2887,6 +2895,7 @@ fn build_tantivy_query(
             *slop,
             operator.as_deref(),
             *minimum_should_match,
+            *tie_breaker,
         ),
         Query::QueryString { query, fields } => build_tantivy_tokenized_field_set_query(
             search_state,
@@ -3802,6 +3811,7 @@ fn build_tantivy_multi_match_query(
     slop: usize,
     operator: Option<&str>,
     minimum_should_match: Option<usize>,
+    tie_breaker: Option<f64>,
 ) -> EngineResult<Option<Box<dyn TantivyQueryTrait>>> {
     let mut clauses = Vec::new();
     let field_minimum_should_match = minimum_should_match
@@ -3856,9 +3866,43 @@ fn build_tantivy_multi_match_query(
         let Some(inner_query) = inner_query else {
             return Ok(None);
         };
-        clauses.push((Occur::Should, inner_query));
+        clauses.push(inner_query);
     }
-    Ok(Some(Box::new(BooleanQuery::new(clauses))))
+    let tie_breaker =
+        tie_breaker.unwrap_or_else(|| default_multi_match_tie_breaker(query_type)) as f32;
+    if clauses.len() == 1 {
+        return Ok(clauses.pop());
+    }
+    if uses_multi_match_dismax_grouping(query_type) {
+        Ok(Some(Box::new(DisjunctionMaxQuery::with_tie_breaker(
+            clauses,
+            tie_breaker,
+        ))))
+    } else {
+        Ok(Some(Box::new(BooleanQuery::new(
+            clauses
+                .into_iter()
+                .map(|query| (Occur::Should, query))
+                .collect(),
+        ))))
+    }
+}
+
+fn default_multi_match_tie_breaker(query_type: MultiMatchType) -> f64 {
+    match query_type {
+        MultiMatchType::MostFields | MultiMatchType::BoolPrefix => 1.0,
+        MultiMatchType::BestFields
+        | MultiMatchType::CrossFields
+        | MultiMatchType::Phrase
+        | MultiMatchType::PhrasePrefix => 0.0,
+    }
+}
+
+fn uses_multi_match_dismax_grouping(query_type: MultiMatchType) -> bool {
+    matches!(
+        query_type,
+        MultiMatchType::BestFields | MultiMatchType::Phrase | MultiMatchType::PhrasePrefix
+    )
 }
 
 fn build_tantivy_fuzzy_query(
@@ -16438,6 +16482,7 @@ fn document_matches_query(query: &Query, id: &str, source: &Value) -> bool {
             slop,
             operator,
             minimum_should_match,
+            tie_breaker: _,
         } => matches_multi_match_query(
             id,
             source,
@@ -18294,6 +18339,7 @@ fn localize_query_fields_for_nested_child(query: &Query, path: &str) -> Query {
             slop,
             operator,
             minimum_should_match,
+            tie_breaker,
         } => Query::MultiMatch {
             fields: fields
                 .iter()
@@ -18304,6 +18350,7 @@ fn localize_query_fields_for_nested_child(query: &Query, path: &str) -> Query {
             slop: *slop,
             operator: operator.clone(),
             minimum_should_match: *minimum_should_match,
+            tie_breaker: *tie_breaker,
         },
         Query::QueryString { query, fields } => Query::QueryString {
             query: query.clone(),
@@ -18575,6 +18622,7 @@ fn native_nested_child_ordinals_for_query(
             slop,
             operator,
             minimum_should_match,
+            tie_breaker: _,
         } => nested_child_multi_match_ordinals(
             path_index,
             path,
