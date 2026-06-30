@@ -400,7 +400,13 @@ def write_valid_release_inventory_artifacts(temp_dir: Path, artifacts: dict[str,
                     "error_count": 0,
                     "coverage_scope": "mixed-cluster failure fixture",
                 },
-                "source_report": {"summary": {"passed": True}},
+                "source_report": {
+                    "summary": {"passed": True},
+                    "checks": {
+                        "failure_topology_probe_passed": True,
+                        "failure_ledger_passed": True,
+                    },
+                },
             }
         ),
         encoding="utf-8",
@@ -417,7 +423,10 @@ def write_valid_release_inventory_artifacts(temp_dir: Path, artifacts: dict[str,
                     "error_count": 0,
                     "coverage_scope": "rolling-upgrade transcript fixture",
                 },
-                "transcript": {"profile": "rolling-upgrade"},
+                "transcript": {
+                    "profile": "rolling-upgrade",
+                    "status": "completed",
+                },
             }
         ),
         encoding="utf-8",

@@ -245,6 +245,26 @@ def validate_chaos_json(payload: dict[str, Any]) -> list[str]:
         errors.append("chaos source_report is missing")
     elif source.get("summary", {}).get("passed") is not True:
         errors.append("chaos source_report summary.passed is not true")
+    else:
+        errors.extend(validate_chaos_source_checks(source))
+    return errors
+
+
+def validate_chaos_source_checks(source: dict[str, Any]) -> list[str]:
+    checks = source.get("checks")
+    if not isinstance(checks, dict):
+        return ["chaos source_report checks are missing"]
+    expected = {
+        "failure_topology_probe_passed",
+        "failure_ledger_passed",
+    }
+    errors: list[str] = []
+    missing = sorted(expected - set(checks))
+    if missing:
+        errors.append(f"chaos source_report checks are missing: {', '.join(missing)}")
+    for name in sorted(expected & set(checks)):
+        if checks.get(name) is not True:
+            errors.append(f"chaos source_report check is not true: {name}")
     return errors
 
 

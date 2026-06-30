@@ -140,6 +140,49 @@ class ReleaseEvidenceInventoryTests(unittest.TestCase):
             self.assertFalse(item["ready"])
             self.assertIn("load comparison is a dry-run report", item["blockers"])
 
+    def test_inventory_rejects_chaos_source_failed_child_check(self):
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            temp_dir = Path(temp_dir_value)
+            now = 1_000_000.0
+            chaos = temp_dir / "final-chaos.json"
+            chaos.write_text(
+                json.dumps(
+                    {
+                        "ready": True,
+                        "passed": True,
+                        "blockers": [],
+                        "summary": {
+                            "passed": True,
+                            "error_count": 0,
+                            "coverage_scope": "mixed-cluster failure fixture",
+                        },
+                        "source_report": {
+                            "summary": {"passed": True},
+                            "checks": {
+                                "failure_topology_probe_passed": True,
+                                "failure_ledger_passed": False,
+                            },
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            os.utime(chaos, (now, now))
+
+            report = self.inventory.build_inventory(
+                temp_dir,
+                max_age_seconds=60.0,
+                require_complete=False,
+                now=now,
+            )
+
+            item = report["items"]["chaos_test_coverage"]
+            self.assertFalse(item["ready"])
+            self.assertIn(
+                "chaos source_report check is not true: failure_ledger_passed",
+                item["blockers"],
+            )
+
     def test_inventory_ignores_cargo_fingerprint_candidates(self):
         with tempfile.TemporaryDirectory() as temp_dir_value:
             temp_dir = Path(temp_dir_value)
