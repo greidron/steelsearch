@@ -78,12 +78,14 @@ pub enum Query {
         field: String,
         query: serde_json::Value,
         slop: usize,
+        analyzer: Option<String>,
         zero_terms_all: bool,
     },
     MatchPhrasePrefix {
         field: String,
         query: serde_json::Value,
         slop: usize,
+        analyzer: Option<String>,
         zero_terms_all: bool,
     },
     MatchBoolPrefix {
@@ -2436,7 +2438,7 @@ fn parse_match_phrase(body: &Value) -> QueryDslResult<Query> {
     }
 
     let (field, match_body) = object.iter().next().expect("checked len");
-    let (query, slop, zero_terms_all) = if let Some(object) = match_body.as_object() {
+    let (query, slop, analyzer, zero_terms_all) = if let Some(object) = match_body.as_object() {
         let query = object
             .get("query")
             .cloned()
@@ -2458,6 +2460,19 @@ fn parse_match_phrase(body: &Value) -> QueryDslResult<Query> {
             })
             .transpose()?
             .unwrap_or(0);
+        let analyzer = object
+            .get("analyzer")
+            .map(|value| {
+                value
+                    .as_str()
+                    .map(str::to_string)
+                    .ok_or_else(|| QueryDslError::InvalidValue {
+                        clause: "match_phrase".to_string(),
+                        field: "analyzer".to_string(),
+                        reason: "must be a string".to_string(),
+                    })
+            })
+            .transpose()?;
         let zero_terms_all = parse_zero_terms_all_option(object, "match_phrase")?;
         for option in object.keys() {
             if !matches!(
@@ -2470,15 +2485,16 @@ fn parse_match_phrase(body: &Value) -> QueryDslResult<Query> {
                 });
             }
         }
-        (query, slop, zero_terms_all)
+        (query, slop, analyzer, zero_terms_all)
     } else {
-        (match_body.clone(), 0, false)
+        (match_body.clone(), 0, None, false)
     };
 
     Ok(Query::MatchPhrase {
         field: field.clone(),
         query,
         slop,
+        analyzer,
         zero_terms_all,
     })
 }
@@ -2492,7 +2508,7 @@ fn parse_match_phrase_prefix(body: &Value) -> QueryDslResult<Query> {
     }
 
     let (field, match_body) = object.iter().next().expect("checked len");
-    let (query, slop, zero_terms_all) = if let Some(object) = match_body.as_object() {
+    let (query, slop, analyzer, zero_terms_all) = if let Some(object) = match_body.as_object() {
         let query = object
             .get("query")
             .cloned()
@@ -2514,6 +2530,19 @@ fn parse_match_phrase_prefix(body: &Value) -> QueryDslResult<Query> {
             })
             .transpose()?
             .unwrap_or(0);
+        let analyzer = object
+            .get("analyzer")
+            .map(|value| {
+                value
+                    .as_str()
+                    .map(str::to_string)
+                    .ok_or_else(|| QueryDslError::InvalidValue {
+                        clause: "match_phrase_prefix".to_string(),
+                        field: "analyzer".to_string(),
+                        reason: "must be a string".to_string(),
+                    })
+            })
+            .transpose()?;
         let zero_terms_all = parse_zero_terms_all_option(object, "match_phrase_prefix")?;
         for option in object.keys() {
             if !matches!(
@@ -2532,15 +2561,16 @@ fn parse_match_phrase_prefix(body: &Value) -> QueryDslResult<Query> {
                 });
             }
         }
-        (query, slop, zero_terms_all)
+        (query, slop, analyzer, zero_terms_all)
     } else {
-        (match_body.clone(), 0, false)
+        (match_body.clone(), 0, None, false)
     };
 
     Ok(Query::MatchPhrasePrefix {
         field: field.clone(),
         query,
         slop,
+        analyzer,
         zero_terms_all,
     })
 }
@@ -4483,6 +4513,7 @@ mod tests {
                 field: "message".to_string(),
                 query: serde_json::json!("alpha checkout"),
                 slop: 0,
+                analyzer: None,
                 zero_terms_all: false,
             }
         );
@@ -4492,6 +4523,7 @@ mod tests {
                 field: "message".to_string(),
                 query: serde_json::json!("alpha checkout"),
                 slop: 0,
+                analyzer: None,
                 zero_terms_all: false,
             }
         );
@@ -4500,7 +4532,8 @@ mod tests {
             "match_phrase": {
                 "message": {
                     "query": "alpha checkout",
-                    "slop": 1
+                    "slop": 1,
+                    "analyzer": "keyword"
                 }
             }
         }))
@@ -4512,6 +4545,7 @@ mod tests {
                 field: "message".to_string(),
                 query: serde_json::json!("alpha checkout"),
                 slop: 1,
+                analyzer: Some("keyword".to_string()),
                 zero_terms_all: false,
             }
         );
@@ -4532,6 +4566,7 @@ mod tests {
                 field: "message".to_string(),
                 query: serde_json::json!(""),
                 slop: 0,
+                analyzer: None,
                 zero_terms_all: true,
             }
         );
@@ -4560,6 +4595,7 @@ mod tests {
                 field: "message".to_string(),
                 query: serde_json::json!("alpha check"),
                 slop: 0,
+                analyzer: None,
                 zero_terms_all: false,
             }
         );
@@ -4569,6 +4605,7 @@ mod tests {
                 field: "message".to_string(),
                 query: serde_json::json!("alpha check"),
                 slop: 0,
+                analyzer: None,
                 zero_terms_all: false,
             }
         );
@@ -4580,7 +4617,8 @@ mod tests {
             "match_phrase_prefix": {
                 "message": {
                     "query": "alpha check",
-                    "slop": 2
+                    "slop": 2,
+                    "analyzer": "keyword"
                 }
             }
         }))
@@ -4592,6 +4630,7 @@ mod tests {
                 field: "message".to_string(),
                 query: serde_json::json!("alpha check"),
                 slop: 2,
+                analyzer: Some("keyword".to_string()),
                 zero_terms_all: false,
             }
         );
@@ -4612,6 +4651,7 @@ mod tests {
                 field: "message".to_string(),
                 query: serde_json::json!(""),
                 slop: 0,
+                analyzer: None,
                 zero_terms_all: true,
             }
         );

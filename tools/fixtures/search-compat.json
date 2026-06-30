@@ -316,9 +316,11 @@
       "nested_query_search",
       "nested_tuple_semantics_search",
       "match_phrase_search",
+      "match_phrase_keyword_analyzer_search",
       "match_phrase_zero_terms_query_all_search",
       "match_phrase_slop_search",
       "match_phrase_prefix_search",
+      "match_phrase_prefix_keyword_analyzer_search",
       "match_phrase_prefix_max_expansions_search",
       "match_phrase_prefix_slop_search",
       "match_phrase_prefix_zero_terms_query_all_search",
@@ -5810,6 +5812,32 @@
       "description": "[lexical] match phrase prefix search"
     },
     {
+      "name": "match_phrase_prefix_keyword_analyzer_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_phrase_prefix": {
+            "message": {
+              "query": "checkout service pay",
+              "analyzer": "keyword"
+            }
+          }
+        },
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] match_phrase_prefix honors keyword analyzer like OpenSearch"
+    },
+    {
       "name": "match_phrase_prefix_max_expansions_search",
       "area": "search",
       "method": "POST",
@@ -5947,6 +5975,32 @@
       "extract": "search_hits",
       "family": "lexical",
       "description": "[lexical] match phrase search"
+    },
+    {
+      "name": "match_phrase_keyword_analyzer_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_phrase": {
+            "message": {
+              "query": "checkout service accepted payment",
+              "analyzer": "keyword"
+            }
+          }
+        },
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] match_phrase honors keyword analyzer like OpenSearch"
     },
     {
       "name": "match_phrase_object_query_search",

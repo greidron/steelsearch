@@ -2845,18 +2845,28 @@ fn build_tantivy_query(
             field,
             query,
             slop,
+            analyzer,
             zero_terms_all,
-        } => build_tantivy_match_phrase_query(search_state, field, query, *slop, *zero_terms_all),
+        } => build_tantivy_match_phrase_query(
+            search_state,
+            field,
+            query,
+            *slop,
+            analyzer.as_deref(),
+            *zero_terms_all,
+        ),
         Query::MatchPhrasePrefix {
             field,
             query,
             slop,
+            analyzer,
             zero_terms_all,
         } => build_tantivy_match_phrase_prefix_query(
             search_state,
             field,
             query,
             *slop,
+            analyzer.as_deref(),
             *zero_terms_all,
         ),
         Query::MatchBoolPrefix { field, query } => {
@@ -3547,10 +3557,21 @@ fn build_tantivy_match_phrase_query(
     field: &str,
     value: &Value,
     slop: usize,
+    analyzer: Option<&str>,
     zero_terms_all: bool,
 ) -> EngineResult<Option<Box<dyn TantivyQueryTrait>>> {
     let query_text = json_value_to_query_text(value)?;
-    if tokenize_phrase_text(&query_text).is_empty() {
+    let keyword_analyzer = analyzer.is_some_and(|value| value.eq_ignore_ascii_case("keyword"));
+    let query_tokens = if keyword_analyzer {
+        if query_text.is_empty() {
+            Vec::new()
+        } else {
+            vec![query_text.clone()]
+        }
+    } else {
+        tokenize_phrase_text(&query_text)
+    };
+    if query_tokens.is_empty() {
         return if zero_terms_all {
             Ok(Some(Box::new(AllQuery)))
         } else {
@@ -3562,11 +3583,14 @@ fn build_tantivy_match_phrase_query(
     };
     match indexed_field.field_type {
         TantivyFieldType::Text => {
+            if keyword_analyzer && tokenize_phrase_text(&query_text).len() != 1 {
+                return Ok(Some(Box::new(EmptyQuery)));
+            }
             if slop > 0 {
                 let Ok(slop) = u32::try_from(slop) else {
                     return Ok(None);
                 };
-                let terms = tokenize_phrase_text(&query_text)
+                let terms = query_tokens
                     .into_iter()
                     .enumerate()
                     .map(|(offset, token)| {
@@ -3702,10 +3726,20 @@ fn build_tantivy_match_phrase_prefix_query(
     field: &str,
     value: &Value,
     slop: usize,
+    analyzer: Option<&str>,
     zero_terms_all: bool,
 ) -> EngineResult<Option<Box<dyn TantivyQueryTrait>>> {
     let query_text = json_value_to_query_text(value)?;
-    let query_tokens = tokenize_phrase_text(&query_text);
+    let keyword_analyzer = analyzer.is_some_and(|value| value.eq_ignore_ascii_case("keyword"));
+    let query_tokens = if keyword_analyzer {
+        if query_text.is_empty() {
+            Vec::new()
+        } else {
+            vec![query_text.clone()]
+        }
+    } else {
+        tokenize_phrase_text(&query_text)
+    };
     if query_tokens.is_empty() {
         return if zero_terms_all {
             Ok(Some(Box::new(AllQuery)))
@@ -3731,6 +3765,9 @@ fn build_tantivy_match_phrase_prefix_query(
     };
     match indexed_field.field_type {
         TantivyFieldType::Text => {
+            if keyword_analyzer && tokenize_phrase_text(&query_text).len() != 1 {
+                return Ok(Some(Box::new(EmptyQuery)));
+            }
             if slop > 0 {
                 let last_index = query_tokens.len() - 1;
                 let mut should_queries = query_tokens[..last_index]
@@ -3994,14 +4031,20 @@ fn build_tantivy_multi_match_query(
                 transpositions,
                 false,
             )?,
-            MultiMatchType::Phrase => {
-                build_tantivy_match_phrase_query(search_state, base_field, query, slop, false)?
-            }
+            MultiMatchType::Phrase => build_tantivy_match_phrase_query(
+                search_state,
+                base_field,
+                query,
+                slop,
+                None,
+                false,
+            )?,
             MultiMatchType::PhrasePrefix => build_tantivy_match_phrase_prefix_query(
                 search_state,
                 base_field,
                 query,
                 slop,
+                None,
                 false,
             )?,
             MultiMatchType::BoolPrefix => build_tantivy_multi_match_bool_prefix_field_query(
@@ -16758,22 +16801,30 @@ fn document_matches_query(query: &Query, id: &str, source: &Value) -> bool {
             field,
             query,
             slop,
+            analyzer,
             zero_terms_all,
         } if field == "_id" => {
             (*zero_terms_all && match_query_token_count(query) == 0)
-                || matches_match_phrase_query(Some(&Value::String(id.to_string())), query, *slop)
+                || matches_match_phrase_query_with_analyzer(
+                    Some(&Value::String(id.to_string())),
+                    query,
+                    *slop,
+                    analyzer.as_deref(),
+                )
         }
         Query::MatchPhrasePrefix {
             field,
             query,
             slop,
+            analyzer,
             zero_terms_all,
         } if field == "_id" => {
             (*zero_terms_all && match_query_token_count(query) == 0)
-                || matches_match_phrase_prefix_query(
+                || matches_match_phrase_prefix_query_with_analyzer(
                     Some(&Value::String(id.to_string())),
                     query,
                     *slop,
+                    analyzer.as_deref(),
                 )
         }
         Query::MatchBoolPrefix { field, query } if field == "_id" => {
@@ -16897,26 +16948,30 @@ fn document_matches_query(query: &Query, id: &str, source: &Value) -> bool {
             field,
             query,
             slop,
+            analyzer,
             zero_terms_all,
         } => {
             (*zero_terms_all && match_query_token_count(query) == 0)
-                || matches_match_phrase_query(
+                || matches_match_phrase_query_with_analyzer(
                     source_value_for_highlight_field(source, field),
                     query,
                     *slop,
+                    analyzer.as_deref(),
                 )
         }
         Query::MatchPhrasePrefix {
             field,
             query,
             slop,
+            analyzer,
             zero_terms_all,
         } => {
             (*zero_terms_all && match_query_token_count(query) == 0)
-                || matches_match_phrase_prefix_query(
+                || matches_match_phrase_prefix_query_with_analyzer(
                     source_value_for_highlight_field(source, field),
                     query,
                     *slop,
+                    analyzer.as_deref(),
                 )
         }
         Query::MatchBoolPrefix { field, query } => {
@@ -17946,6 +18001,18 @@ fn matches_match_phrase_query(field_value: Option<&Value>, query: &Value, slop: 
     match_phrase_matched_token_count(field_value, query, slop) == match_query_token_count(query)
 }
 
+fn matches_match_phrase_query_with_analyzer(
+    field_value: Option<&Value>,
+    query: &Value,
+    slop: usize,
+    analyzer: Option<&str>,
+) -> bool {
+    if analyzer.is_some_and(|value| value.eq_ignore_ascii_case("keyword")) {
+        return matches_keyword_analyzed_phrase_query(field_value, query, false);
+    }
+    matches_match_phrase_query(field_value, query, slop)
+}
+
 fn phrase_tokens_match_with_slop(
     field_tokens: &[String],
     query_tokens: &[String],
@@ -18040,6 +18107,49 @@ fn matches_match_phrase_prefix_query(
 ) -> bool {
     match_phrase_prefix_matched_token_count(field_value, query, slop)
         == match_query_token_count(query)
+}
+
+fn matches_match_phrase_prefix_query_with_analyzer(
+    field_value: Option<&Value>,
+    query: &Value,
+    slop: usize,
+    analyzer: Option<&str>,
+) -> bool {
+    if analyzer.is_some_and(|value| value.eq_ignore_ascii_case("keyword")) {
+        return matches_keyword_analyzed_phrase_query(field_value, query, true);
+    }
+    matches_match_phrase_prefix_query(field_value, query, slop)
+}
+
+fn matches_keyword_analyzed_phrase_query(
+    field_value: Option<&Value>,
+    query: &Value,
+    prefix_last_token: bool,
+) -> bool {
+    let expected = json_value_to_query_text(query).unwrap_or_default();
+    if expected.is_empty() {
+        return false;
+    }
+    let expected = expected.to_ascii_lowercase();
+    let Some(field_value) = field_value else {
+        return false;
+    };
+    match field_value {
+        Value::Array(items) => items.iter().any(|item| {
+            matches_keyword_analyzed_phrase_query(Some(item), query, prefix_last_token)
+        }),
+        Value::Object(object) => object.values().any(|value| {
+            matches_keyword_analyzed_phrase_query(Some(value), query, prefix_last_token)
+        }),
+        Value::String(field_text) => tokenize_phrase_text(field_text).into_iter().any(|token| {
+            if prefix_last_token {
+                token.starts_with(&expected)
+            } else {
+                token == expected
+            }
+        }),
+        _ => false,
+    }
 }
 
 fn phrase_prefix_tokens_match_with_slop(
@@ -18505,23 +18615,27 @@ fn remap_query_field(query: &Query, field: &str) -> Query {
         Query::MatchPhrase {
             query,
             slop,
+            analyzer,
             zero_terms_all,
             ..
         } => Query::MatchPhrase {
             field: field.to_string(),
             query: query.clone(),
             slop: *slop,
+            analyzer: analyzer.clone(),
             zero_terms_all: *zero_terms_all,
         },
         Query::MatchPhrasePrefix {
             query,
             slop,
+            analyzer,
             zero_terms_all,
             ..
         } => Query::MatchPhrasePrefix {
             field: field.to_string(),
             query: query.clone(),
             slop: *slop,
+            analyzer: analyzer.clone(),
             zero_terms_all: *zero_terms_all,
         },
         Query::MatchBoolPrefix { query, .. } => Query::MatchBoolPrefix {
@@ -18674,22 +18788,26 @@ fn prefix_query_fields_for_nested_path(query: &Query, path: &str) -> Query {
             field,
             query,
             slop,
+            analyzer,
             zero_terms_all,
         } => Query::MatchPhrase {
             field: nested_candidate_field_name(path, field),
             query: query.clone(),
             slop: *slop,
+            analyzer: analyzer.clone(),
             zero_terms_all: *zero_terms_all,
         },
         Query::MatchPhrasePrefix {
             field,
             query,
             slop,
+            analyzer,
             zero_terms_all,
         } => Query::MatchPhrasePrefix {
             field: nested_candidate_field_name(path, field),
             query: query.clone(),
             slop: *slop,
+            analyzer: analyzer.clone(),
             zero_terms_all: *zero_terms_all,
         },
         Query::MatchBoolPrefix { field, query } => Query::MatchBoolPrefix {
@@ -18916,22 +19034,26 @@ fn localize_query_fields_for_nested_child(query: &Query, path: &str) -> Query {
             field,
             query,
             slop,
+            analyzer,
             zero_terms_all,
         } => Query::MatchPhrase {
             field: nested_child_local_field_name(path, field),
             query: query.clone(),
             slop: *slop,
+            analyzer: analyzer.clone(),
             zero_terms_all: *zero_terms_all,
         },
         Query::MatchPhrasePrefix {
             field,
             query,
             slop,
+            analyzer,
             zero_terms_all,
         } => Query::MatchPhrasePrefix {
             field: nested_child_local_field_name(path, field),
             query: query.clone(),
             slop: *slop,
+            analyzer: analyzer.clone(),
             zero_terms_all: *zero_terms_all,
         },
         Query::MatchBoolPrefix { field, query } => Query::MatchBoolPrefix {
@@ -19251,6 +19373,7 @@ fn native_nested_child_ordinals_for_query(
             field,
             query,
             slop,
+            analyzer: _,
             zero_terms_all,
         } => {
             if *zero_terms_all && match_query_token_count(query) == 0 {
@@ -19263,6 +19386,7 @@ fn native_nested_child_ordinals_for_query(
             field,
             query,
             slop,
+            analyzer: _,
             zero_terms_all,
         } => {
             if *zero_terms_all && match_query_token_count(query) == 0 {

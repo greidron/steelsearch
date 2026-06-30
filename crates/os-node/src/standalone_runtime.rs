@@ -30687,22 +30687,24 @@ fn evaluate_search_query_source_with_mappings(
         let (matched, score) = match multi_match.get("type").and_then(Value::as_str) {
             Some("phrase") => {
                 let matched = haystacks.iter().any(|haystack| {
-                    value_matches_phrase(
+                    value_matches_phrase_with_analyzer(
                         Some(&Value::String(haystack.clone())),
                         expected,
                         false,
                         slop,
+                        multi_match.get("analyzer").and_then(Value::as_str),
                     )
                 });
                 (matched, if matched { 1.0 } else { 0.0 })
             }
             Some("phrase_prefix") => {
                 let matched = haystacks.iter().any(|haystack| {
-                    value_matches_phrase(
+                    value_matches_phrase_with_analyzer(
                         Some(&Value::String(haystack.clone())),
                         expected,
                         true,
                         slop,
+                        multi_match.get("analyzer").and_then(Value::as_str),
                     )
                 });
                 (matched, if matched { 1.0 } else { 0.0 })
@@ -30766,11 +30768,12 @@ fn evaluate_search_query_source_with_mappings(
         if query_text.trim().is_empty() && extract_zero_terms_query_all(expected) {
             return Some((true, 1.0));
         }
-        let matched = value_matches_phrase(
+        let matched = value_matches_phrase_with_analyzer(
             lookup_query_field_value(source, field),
             query_text,
             false,
             extract_match_phrase_slop(expected),
+            extract_match_query_analyzer(expected),
         );
         return Some((matched, if matched { 1.0 } else { 0.0 }));
     }
@@ -30780,11 +30783,12 @@ fn evaluate_search_query_source_with_mappings(
         if query_text.trim().is_empty() && extract_zero_terms_query_all(expected) {
             return Some((true, 1.0));
         }
-        let matched = value_matches_phrase(
+        let matched = value_matches_phrase_with_analyzer(
             lookup_query_field_value(source, field),
             query_text,
             true,
             extract_match_phrase_slop(expected),
+            extract_match_query_analyzer(expected),
         );
         return Some((matched, if matched { 1.0 } else { 0.0 }));
     }
@@ -32385,6 +32389,13 @@ fn extract_match_query_operator(value: &Value) -> &str {
         .unwrap_or("or")
 }
 
+fn extract_match_query_analyzer(value: &Value) -> Option<&str> {
+    value
+        .as_object()
+        .and_then(|object| object.get("analyzer"))
+        .and_then(Value::as_str)
+}
+
 fn extract_match_minimum_should_match(value: &Value) -> Option<&Value> {
     value
         .as_object()
@@ -32484,6 +32495,19 @@ fn value_matches_phrase(
     prefix_last_token: bool,
     slop: usize,
 ) -> bool {
+    value_matches_phrase_with_analyzer(candidate, expected, prefix_last_token, slop, None)
+}
+
+fn value_matches_phrase_with_analyzer(
+    candidate: Option<&Value>,
+    expected: &str,
+    prefix_last_token: bool,
+    slop: usize,
+    analyzer: Option<&str>,
+) -> bool {
+    if analyzer.is_some_and(|value| value.eq_ignore_ascii_case("keyword")) {
+        return value_matches_keyword_analyzed_phrase(candidate, expected, prefix_last_token);
+    }
     let Some(candidate_text) = candidate.and_then(Value::as_str) else {
         return false;
     };
@@ -32496,6 +32520,29 @@ fn value_matches_phrase(
         return phrase_prefix_tokens_match_with_slop(&candidate_tokens, &expected_tokens, slop);
     }
     phrase_tokens_match_with_slop(&candidate_tokens, &expected_tokens, slop)
+}
+
+fn value_matches_keyword_analyzed_phrase(
+    candidate: Option<&Value>,
+    expected: &str,
+    prefix_last_token: bool,
+) -> bool {
+    let Some(candidate_text) = candidate.and_then(Value::as_str) else {
+        return false;
+    };
+    let expected = expected.to_ascii_lowercase();
+    if expected.is_empty() {
+        return false;
+    }
+    tokenize_search_text(candidate_text)
+        .into_iter()
+        .any(|token| {
+            if prefix_last_token {
+                token.starts_with(&expected)
+            } else {
+                token == expected
+            }
+        })
 }
 
 fn extract_match_phrase_slop(value: &Value) -> usize {
