@@ -10008,6 +10008,77 @@
       "description": "[lexical] terms set query search"
     },
     {
+      "name": "terms_set_unknown_field_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "terms_set": {
+            "labels": {
+              "terms": [
+                "payment"
+              ],
+              "minimum_should_match_script": {
+                "source": "1"
+              },
+              "unsupported_option": true
+            }
+          }
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] terms set unknown field error search"
+    },
+    {
+      "name": "terms_set_minimum_should_match_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "terms_set": {
+            "labels": {
+              "terms": [
+                "payment"
+              ],
+              "minimum_should_match": 1
+            }
+          }
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] terms set minimum should match shortcut error search"
+    },
+    {
+      "name": "terms_set_boost_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "terms_set": {
+            "labels": {
+              "terms": [
+                "payment"
+              ],
+              "minimum_should_match_script": {
+                "source": "1"
+              },
+              "boost": 2.0
+            }
+          }
+        }
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] terms set boost search"
+    },
+    {
       "name": "timeout_search",
       "area": "search",
       "method": "POST",

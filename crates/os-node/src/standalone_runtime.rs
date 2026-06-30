@@ -27395,30 +27395,36 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
                 "unsupported terms_set terms",
             ));
         }
+        for key in object.keys() {
+            if !matches!(
+                key.as_str(),
+                "terms"
+                    | "minimum_should_match_script"
+                    | "minimum_should_match_field"
+                    | "boost"
+                    | "_name"
+            ) {
+                return Some(build_parsing_search_response_with_root_cause(&format!(
+                    "[terms_set] query does not support [{key}]"
+                )));
+            }
+        }
+        if object.contains_key("minimum_should_match_field") {
+            return None;
+        }
         if object
-            .get("minimum_should_match")
-            .and_then(Value::as_u64)
+            .get("minimum_should_match_script")
+            .and_then(Value::as_object)
+            .and_then(|script| script.get("source"))
+            .and_then(|source| {
+                source
+                    .as_u64()
+                    .or_else(|| source.as_str().and_then(|value| value.parse::<u64>().ok()))
+            })
             .is_none()
-            && object
-                .get("minimum_should_match_script")
-                .and_then(Value::as_object)
-                .and_then(|script| script.get("source"))
-                .and_then(|source| {
-                    source
-                        .as_u64()
-                        .or_else(|| source.as_str().and_then(|value| value.parse::<u64>().ok()))
-                })
-                .is_none()
         {
             return Some(build_unsupported_search_response(
-                "unsupported terms_set minimum_should_match",
-            ));
-        }
-        if object.keys().any(|key| {
-            key != "terms" && key != "minimum_should_match" && key != "minimum_should_match_script"
-        }) {
-            return Some(build_unsupported_search_response(
-                "unsupported terms_set parameter",
+                "unsupported terms_set minimum_should_match_script",
             ));
         }
     }
@@ -31330,18 +31336,13 @@ fn terms_set_minimum_should_match(
     expected_object: &serde_json::Map<String, Value>,
 ) -> Option<usize> {
     expected_object
-        .get("minimum_should_match")
-        .and_then(Value::as_u64)
-        .or_else(|| {
-            expected_object
-                .get("minimum_should_match_script")
-                .and_then(Value::as_object)
-                .and_then(|script| script.get("source"))
-                .and_then(|source| {
-                    source
-                        .as_u64()
-                        .or_else(|| source.as_str().and_then(|value| value.parse::<u64>().ok()))
-                })
+        .get("minimum_should_match_script")
+        .and_then(Value::as_object)
+        .and_then(|script| script.get("source"))
+        .and_then(|source| {
+            source
+                .as_u64()
+                .or_else(|| source.as_str().and_then(|value| value.parse::<u64>().ok()))
         })
         .and_then(|value| usize::try_from(value).ok())
 }
@@ -56052,6 +56053,54 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
     }
 
     #[test]
+    fn search_terms_set_rejects_unknown_fields_and_shortcut_minimum_should_match() {
+        let response = validate_search_query_body(&serde_json::json!({
+            "terms_set": {
+                "labels": {
+                    "terms": ["payment"],
+                    "minimum_should_match_script": { "source": "1" },
+                    "unsupported_option": true
+                }
+            }
+        }))
+        .expect("unknown terms_set option should fail closed");
+        assert_eq!(response.status, 400);
+        assert_eq!(response.body["error"]["type"], "parsing_exception");
+        assert_eq!(
+            response.body["error"]["root_cause"][0]["reason"],
+            "[terms_set] query does not support [unsupported_option]"
+        );
+
+        let response = validate_search_query_body(&serde_json::json!({
+            "terms_set": {
+                "labels": {
+                    "terms": ["payment"],
+                    "minimum_should_match": 1
+                }
+            }
+        }))
+        .expect("OpenSearch rejects the non-field shortcut form");
+        assert_eq!(response.status, 400);
+        assert_eq!(response.body["error"]["type"], "parsing_exception");
+        assert_eq!(
+            response.body["error"]["root_cause"][0]["reason"],
+            "[terms_set] query does not support [minimum_should_match]"
+        );
+
+        assert!(validate_search_query_body(&serde_json::json!({
+            "terms_set": {
+                "labels": {
+                    "terms": ["payment"],
+                    "minimum_should_match_script": { "source": "1" },
+                    "boost": 2.0,
+                    "_name": "named_terms_set"
+                }
+            }
+        }))
+        .is_none());
+    }
+
+    #[test]
     fn point_in_time_field_sort_search_after_keeps_snapshot_after_live_write_like_opensearch() {
         let node = SteelNode::new(NodeInfo {
             name: "steel-node".to_string(),
@@ -61749,7 +61798,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                         "terms_set": {
                             "tags": {
                                 "terms": ["red", "blue"],
-                                "minimum_should_match": 2
+                                "minimum_should_match_script": { "source": "2" }
                             }
                         }
                     }
