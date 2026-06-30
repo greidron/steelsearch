@@ -3192,6 +3192,31 @@
       "description": "[admin-cat] cluster pending tasks representative fields"
     },
     {
+      "name": "allocation_explain_get_no_unassigned_error",
+      "area": "operational",
+      "method": "GET",
+      "path": "/_cluster/allocation/explain",
+      "body": null,
+      "expected_status": 400,
+      "extract": "allocation_explain_error",
+      "family": "admin-cat",
+      "description": "[admin-cat] allocation explain GET reports no unassigned shards"
+    },
+    {
+      "name": "allocation_explain_post_started_primary_shape",
+      "area": "operational",
+      "method": "POST",
+      "path": "/_cluster/allocation/explain",
+      "body": {
+        "index": "logs-compat",
+        "shard": 0,
+        "primary": true
+      },
+      "extract": "allocation_explain",
+      "family": "admin-cat",
+      "description": "[admin-cat] allocation explain POST started primary shape"
+    },
+    {
       "name": "root_info",
       "area": "operational",
       "method": "GET",

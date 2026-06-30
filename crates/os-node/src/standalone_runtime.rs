@@ -14048,14 +14048,17 @@ impl SteelNode {
 
     fn handle_cluster_allocation_explain_route(&self, request: &RestRequest) -> RestResponse {
         if request.body.is_empty() {
-            let created_index = self
-                .created_indices_state
+            let unassigned_replica_index = self
+                .metadata_manifest_state
                 .lock()
-                .expect("created indices state lock poisoned")
-                .iter()
-                .next()
-                .cloned();
-            if let Some(index) = created_index {
+                .expect("metadata manifest state lock poisoned")["indices"]
+                .as_object()
+                .into_iter()
+                .flat_map(|indices| indices.iter())
+                .find_map(|(index, metadata)| {
+                    (replica_count_from_index_metadata(metadata) > 0).then(|| index.clone())
+                });
+            if let Some(index) = unassigned_replica_index {
                 let synthesized = RestRequest::new(request.method, request.path.as_str())
                     .with_json_body(serde_json::json!({
                         "index": index,
@@ -69331,6 +69334,35 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 .as_str()
                 .unwrap_or_default()
                 .contains("bounded development allocation explain")
+        );
+
+        let no_unassigned = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        assert_eq!(
+            no_unassigned
+                .handle_rest_request(
+                    RestRequest::new(RestMethod::Put, "/logs-no-unassigned").with_json_body(
+                        serde_json::json!({
+                            "settings": {
+                                "index.number_of_shards": 1,
+                                "index.number_of_replicas": 0
+                            }
+                        }),
+                    ),
+                )
+                .status,
+            200
+        );
+        let no_unassigned_get = no_unassigned.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_cluster/allocation/explain",
+        ));
+        assert_eq!(no_unassigned_get.status, 400);
+        assert_eq!(
+            no_unassigned_get.body["error"]["type"],
+            "illegal_argument_exception"
         );
     }
 
