@@ -5652,6 +5652,60 @@
       "description": "[lexical] fuzzy query search"
     },
     {
+      "name": "fuzzy_query_prefix_length_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "fuzzy": {
+            "message": {
+              "value": "paymnt",
+              "fuzziness": 1,
+              "prefix_length": 3
+            }
+          }
+        },
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] fuzzy query honors prefix_length like OpenSearch"
+    },
+    {
+      "name": "fuzzy_query_prefix_length_miss_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "fuzzy": {
+            "message": {
+              "value": "xayment",
+              "fuzziness": 1,
+              "prefix_length": 1
+            }
+          }
+        },
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] fuzzy query prefix_length rejects mismatched prefixes like OpenSearch"
+    },
+    {
       "name": "geo_distance_query_search",
       "area": "search",
       "method": "POST",

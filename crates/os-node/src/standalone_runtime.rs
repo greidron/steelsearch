@@ -28364,10 +28364,12 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
                     "unsupported fuzzy query shape",
                 ));
             }
-            if object
-                .keys()
-                .any(|key| key != "value" && key != "fuzziness")
-            {
+            if object.keys().any(|key| {
+                key != "value"
+                    && key != "fuzziness"
+                    && key != "prefix_length"
+                    && key != "transpositions"
+            }) {
                 return Some(build_unsupported_search_response(
                     "unsupported fuzzy parameter",
                 ));
@@ -28380,6 +28382,22 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
                         "unsupported fuzzy fuzziness",
                     ));
                 }
+            }
+            if object
+                .get("prefix_length")
+                .is_some_and(|value| value.as_u64().is_none())
+            {
+                return Some(build_unsupported_search_response(
+                    "unsupported fuzzy prefix_length",
+                ));
+            }
+            if object
+                .get("transpositions")
+                .is_some_and(|value| !value.is_boolean())
+            {
+                return Some(build_unsupported_search_response(
+                    "unsupported fuzzy transpositions",
+                ));
             }
         } else if value.as_str().map(str::is_empty).unwrap_or(true) {
             return Some(build_unsupported_search_response(
@@ -31025,11 +31043,13 @@ fn evaluate_search_query_source_with_mappings(
     }
     if let Some(fuzzy_query) = query.get("fuzzy").and_then(Value::as_object) {
         let (field, expected) = fuzzy_query.iter().next()?;
-        let (expected_value, fuzziness) = extract_fuzzy_query_value(expected)?;
+        let (expected_value, fuzzy_options) = extract_fuzzy_query_value(expected)?;
         let matched = value_matches_fuzzy(
             lookup_query_field_value(source, field),
             expected_value,
-            fuzziness,
+            fuzzy_options.fuzziness,
+            fuzzy_options.prefix_length,
+            fuzzy_options.transpositions,
         );
         return Some((matched, if matched { 1.0 } else { 0.0 }));
     }
@@ -32617,18 +32637,44 @@ fn extract_multi_match_fields(value: Option<&Value>) -> Vec<String> {
     }
 }
 
-fn extract_fuzzy_query_value(value: &Value) -> Option<(&str, usize)> {
+fn extract_fuzzy_query_value(value: &Value) -> Option<(&str, MatchFuzzyOptions)> {
     if let Some(object) = value.as_object() {
         let query_value = object.get("value").and_then(Value::as_str)?;
         let fuzziness = match object.get("fuzziness") {
-            Some(Value::String(mode)) if mode == "AUTO" => auto_fuzziness(query_value),
+            Some(Value::String(mode)) if mode.eq_ignore_ascii_case("AUTO") => {
+                auto_fuzziness(query_value)
+            }
+            Some(Value::String(value)) => value.parse::<usize>().ok()?,
             Some(value) => value.as_u64()? as usize,
             None => auto_fuzziness(query_value),
         };
-        return Some((query_value, fuzziness));
+        let prefix_length = object
+            .get("prefix_length")
+            .and_then(Value::as_u64)
+            .map(|value| value as usize)
+            .unwrap_or(0);
+        let transpositions = object
+            .get("transpositions")
+            .and_then(Value::as_bool)
+            .unwrap_or(true);
+        return Some((
+            query_value,
+            MatchFuzzyOptions {
+                fuzziness,
+                prefix_length,
+                transpositions,
+            },
+        ));
     }
     let query_value = value.as_str()?;
-    Some((query_value, auto_fuzziness(query_value)))
+    Some((
+        query_value,
+        MatchFuzzyOptions {
+            fuzziness: auto_fuzziness(query_value),
+            prefix_length: 0,
+            transpositions: true,
+        },
+    ))
 }
 
 fn auto_fuzziness(query_value: &str) -> usize {
@@ -32892,14 +32938,22 @@ fn bounded_regexp_match(pattern: &[u8], candidate: &[u8]) -> bool {
     )
 }
 
-fn value_matches_fuzzy(candidate: Option<&Value>, expected: &str, fuzziness: usize) -> bool {
+fn value_matches_fuzzy(
+    candidate: Option<&Value>,
+    expected: &str,
+    fuzziness: usize,
+    prefix_length: usize,
+    transpositions: bool,
+) -> bool {
     let Some(candidate_text) = candidate.and_then(Value::as_str) else {
         return false;
     };
     let expected = expected.to_ascii_lowercase();
     tokenize_search_text(candidate_text)
         .into_iter()
-        .any(|token| levenshtein_distance(&token, &expected) <= fuzziness)
+        .any(|token| {
+            fuzzy_token_matches(&token, &expected, fuzziness, prefix_length, transpositions)
+        })
 }
 
 fn value_matches_terms_set(source: &Value, field: &str, expected: &Value) -> Option<(bool, f64)> {
