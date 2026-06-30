@@ -7446,6 +7446,45 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "cancel_after_time_interval_query_param_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search?cancel_after_time_interval=1s",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "sort": [
+          {
+            "ts": {
+              "order": "asc"
+            }
+          }
+        ],
+        "size": 2
+      },
+      "extract": "search_summary",
+      "family": "lexical",
+      "description": "[lexical] cancel_after_time_interval query param search",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "cancel_after_time_interval_invalid_query_param_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search?cancel_after_time_interval=soon",
+      "body": {
+        "query": {
+          "match_all": {}
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error",
+      "family": "lexical",
+      "description": "[lexical] invalid cancel_after_time_interval query param is rejected like OpenSearch",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "min_score_search",
       "area": "search",
       "method": "POST",

@@ -22506,12 +22506,19 @@ fn search_timeout_parse_error(timeout: &Value) -> RestResponse {
 }
 
 fn search_time_query_param_parse_error(param: &str, value: &str) -> RestResponse {
+    let reason = if param == "cancel_after_time_interval" {
+        format!(
+            "failed to parse setting [{param}] with value [{value}] as a time value: unit is missing or unrecognized"
+        )
+    } else {
+        format!("failed to parse setting [{param}] with value [{value}] as a time value")
+    };
     RestResponse::json(
         400,
         serde_json::json!({
             "error": {
                 "type": "illegal_argument_exception",
-                "reason": format!("failed to parse setting [{param}] with value [{value}] as a time value")
+                "reason": reason
             },
             "status": 400
         }),
@@ -62001,7 +62008,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         );
         assert_eq!(
             invalid_cancel_after_metadata.body["responses"][0]["error"]["reason"],
-            "failed to parse setting [cancel_after_time_interval] with value [soon] as a time value"
+            "failed to parse setting [cancel_after_time_interval] with value [soon] as a time value: unit is missing or unrecognized"
         );
     }
 
@@ -64116,7 +64123,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(invalid_cancel_after_time_query_param.status, 400);
         assert_eq!(
             invalid_cancel_after_time_query_param.body["error"]["reason"],
-            "failed to parse setting [cancel_after_time_interval] with value [soon] as a time value"
+            "failed to parse setting [cancel_after_time_interval] with value [soon] as a time value: unit is missing or unrecognized"
         );
 
         for invalid_param in [
