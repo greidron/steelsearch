@@ -2865,9 +2865,13 @@ fn build_tantivy_query(
         Query::ScriptScore { query, .. } => build_tantivy_query(search_state, query),
         Query::Script { .. } => Ok(None),
         Query::Intervals { .. } => Ok(None),
-        Query::CombinedFields { fields, query } => {
-            build_tantivy_tokenized_field_set_query(search_state, Some(fields.as_slice()), query)
-        }
+        Query::CombinedFields { fields, query } => build_tantivy_tokenized_field_set_query(
+            search_state,
+            Some(fields.as_slice()),
+            query,
+            Some("and"),
+            None,
+        ),
         Query::MultiMatch {
             fields,
             query,
@@ -2884,12 +2888,20 @@ fn build_tantivy_query(
             operator.as_deref(),
             *minimum_should_match,
         ),
-        Query::QueryString { query, fields } => {
-            build_tantivy_tokenized_field_set_query(search_state, fields.as_deref(), query)
-        }
-        Query::SimpleQueryString { query, fields } => {
-            build_tantivy_tokenized_field_set_query(search_state, fields.as_deref(), query)
-        }
+        Query::QueryString { query, fields } => build_tantivy_tokenized_field_set_query(
+            search_state,
+            fields.as_deref(),
+            query,
+            None,
+            None,
+        ),
+        Query::SimpleQueryString { query, fields } => build_tantivy_tokenized_field_set_query(
+            search_state,
+            fields.as_deref(),
+            query,
+            None,
+            None,
+        ),
         Query::Range { field, bounds } => build_tantivy_range_query(search_state, field, bounds),
         Query::GeoDistance(geo_query) => build_tantivy_geo_distance_query(search_state, geo_query),
         Query::GeoBoundingBox(geo_query) => {
@@ -3666,6 +3678,8 @@ fn build_tantivy_tokenized_field_set_query(
     search_state: &TantivySearchState,
     fields: Option<&[String]>,
     query: &str,
+    operator: Option<&str>,
+    minimum_should_match: Option<usize>,
 ) -> EngineResult<Option<Box<dyn TantivyQueryTrait>>> {
     let default_fields;
     let fields = if let Some(fields) = fields {
@@ -3691,8 +3705,17 @@ fn build_tantivy_tokenized_field_set_query(
     if query_tokens.is_empty() {
         return Ok(None);
     }
-    let mut token_clauses = Vec::new();
-    for token in query_tokens {
+    let required = minimum_should_match
+        .or_else(|| (operator == Some("and")).then_some(query_tokens.len()))
+        .unwrap_or(1);
+    if required == 0 {
+        return Ok(Some(Box::new(AllQuery)));
+    }
+    if required > query_tokens.len() {
+        return Ok(Some(Box::new(EmptyQuery)));
+    }
+    let mut token_queries = Vec::new();
+    for token in &query_tokens {
         let mut field_clauses = Vec::new();
         for field in fields {
             if field != "_id" {
@@ -3709,7 +3732,7 @@ fn build_tantivy_tokenized_field_set_query(
             let Some(inner_query) = build_tantivy_match_query(
                 search_state,
                 field,
-                &Value::String(token.clone()),
+                &Value::String(token.to_string()),
                 None,
             )?
             else {
@@ -3717,12 +3740,58 @@ fn build_tantivy_tokenized_field_set_query(
             };
             field_clauses.push((Occur::Should, inner_query));
         }
-        token_clauses.push((
-            Occur::Must,
-            Box::new(BooleanQuery::new(field_clauses)) as Box<dyn TantivyQueryTrait>,
+        token_queries
+            .push(Box::new(BooleanQuery::new(field_clauses)) as Box<dyn TantivyQueryTrait>);
+    }
+    if required == token_queries.len() {
+        return Ok(Some(Box::new(BooleanQuery::new(
+            token_queries
+                .into_iter()
+                .map(|query| (Occur::Must, query))
+                .collect(),
+        ))));
+    }
+    if required == 1 {
+        return Ok(Some(Box::new(BooleanQuery::new(
+            token_queries
+                .into_iter()
+                .map(|query| (Occur::Should, query))
+                .collect(),
+        ))));
+    }
+    let combinations = query_index_combinations(token_queries.len(), required);
+    let mut disjunctions = Vec::with_capacity(combinations.len());
+    for combination in combinations {
+        let mut combination_clauses = Vec::new();
+        for (index, token) in query_tokens.iter().enumerate() {
+            let mut field_clauses = Vec::new();
+            for field in fields {
+                let Some(inner_query) = build_tantivy_match_query(
+                    search_state,
+                    field,
+                    &Value::String(token.to_string()),
+                    None,
+                )?
+                else {
+                    return Ok(None);
+                };
+                field_clauses.push((Occur::Should, inner_query));
+            }
+            combination_clauses.push((
+                if combination.contains(&index) {
+                    Occur::Must
+                } else {
+                    Occur::Should
+                },
+                Box::new(BooleanQuery::new(field_clauses)) as Box<dyn TantivyQueryTrait>,
+            ));
+        }
+        disjunctions.push((
+            Occur::Should,
+            Box::new(BooleanQuery::new(combination_clauses)) as Box<dyn TantivyQueryTrait>,
         ));
     }
-    Ok(Some(Box::new(BooleanQuery::new(token_clauses))))
+    Ok(Some(Box::new(BooleanQuery::new(disjunctions))))
 }
 
 fn build_tantivy_multi_match_query(
@@ -3756,6 +3825,15 @@ fn build_tantivy_multi_match_query(
             }
         }
         let inner_query = match query_type {
+            MultiMatchType::CrossFields => {
+                return build_tantivy_tokenized_field_set_query(
+                    search_state,
+                    Some(fields),
+                    &json_value_to_query_text(query)?,
+                    operator,
+                    minimum_should_match,
+                );
+            }
             MultiMatchType::BestFields | MultiMatchType::MostFields => build_tantivy_match_query(
                 search_state,
                 base_field,
@@ -17519,6 +17597,15 @@ fn matches_multi_match_query(
             MultiMatchType::BestFields | MultiMatchType::MostFields => {
                 matches_match_query_with_minimum(field_value, query, field_minimum_should_match)
             }
+            MultiMatchType::CrossFields => {
+                let query_text = json_value_to_query_text(query).unwrap_or_default();
+                let required = minimum_should_match
+                    .or_else(|| {
+                        (operator == Some("and")).then(|| tokenize_phrase_text(&query_text).len())
+                    })
+                    .unwrap_or(1);
+                matched_query_token_count_across_fields(id, source, fields, &query_text) >= required
+            }
             MultiMatchType::Phrase => matches_match_phrase_query(field_value, query, slop),
             MultiMatchType::PhrasePrefix => matches_match_phrase_prefix_query(field_value, query),
             MultiMatchType::BoolPrefix => {
@@ -19048,6 +19135,29 @@ fn nested_child_multi_match_ordinals(
                     query,
                     field_minimum_should_match,
                 )?);
+            }
+            MultiMatchType::CrossFields => {
+                let query_text = json_value_to_query_text(query).ok()?;
+                let local_fields = fields
+                    .iter()
+                    .map(|field| nested_child_local_field_name(path, field))
+                    .collect::<Vec<_>>();
+                let required = minimum_should_match
+                    .or_else(|| {
+                        (operator == Some("and")).then(|| tokenize_phrase_text(&query_text).len())
+                    })
+                    .unwrap_or(1);
+                for (ordinal, child) in path_index.children.iter().enumerate() {
+                    if matched_query_token_count_across_fields(
+                        &child.parent_id,
+                        &child.source,
+                        &local_fields,
+                        &query_text,
+                    ) >= required
+                    {
+                        ordinals.insert(ordinal);
+                    }
+                }
             }
             MultiMatchType::Phrase => {
                 ordinals.extend(nested_child_match_phrase_ordinals(
@@ -145022,6 +145132,21 @@ mod tests {
             .unwrap()
             .expect("native multi_match bool_prefix hits");
         assert_eq!(search_hit_ids(&native_hits), vec!["2", "3"]);
+
+        let cross_fields_query = parse_query(&serde_json::json!({
+            "multi_match": {
+                "query": "alpha checkout",
+                "fields": ["title", "body"],
+                "type": "cross_fields",
+                "operator": "and"
+            }
+        }))
+        .unwrap();
+        let native_hits = index
+            .search_hits_for_query_native("bench", &cross_fields_query, &[])
+            .unwrap()
+            .expect("native multi_match cross_fields hits");
+        assert_eq!(search_hit_ids(&native_hits), vec!["1"]);
     }
 
     #[test]

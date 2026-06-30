@@ -198,6 +198,7 @@ pub enum Query {
 pub enum MultiMatchType {
     BestFields,
     MostFields,
+    CrossFields,
     Phrase,
     PhrasePrefix,
     BoolPrefix,
@@ -2452,6 +2453,7 @@ fn parse_multi_match(body: &Value) -> QueryDslResult<Query> {
         .map(|query_type| match query_type {
             "best_fields" => Ok(MultiMatchType::BestFields),
             "most_fields" => Ok(MultiMatchType::MostFields),
+            "cross_fields" => Ok(MultiMatchType::CrossFields),
             "phrase" => Ok(MultiMatchType::Phrase),
             "phrase_prefix" => Ok(MultiMatchType::PhrasePrefix),
             "bool_prefix" => Ok(MultiMatchType::BoolPrefix),
@@ -4359,6 +4361,28 @@ mod tests {
                 query_type: MultiMatchType::MostFields,
                 slop: 0,
                 operator: None,
+                minimum_should_match: None,
+            }
+        );
+
+        let cross_fields = parse_query(&serde_json::json!({
+            "multi_match": {
+                "query": "alpha checkout",
+                "fields": ["title", "body"],
+                "type": "cross_fields",
+                "operator": "and"
+            }
+        }))
+        .unwrap();
+
+        assert_eq!(
+            cross_fields,
+            Query::MultiMatch {
+                fields: vec!["title".to_string(), "body".to_string()],
+                query: serde_json::json!("alpha checkout"),
+                query_type: MultiMatchType::CrossFields,
+                slop: 0,
+                operator: Some("and".to_string()),
                 minimum_should_match: None,
             }
         );

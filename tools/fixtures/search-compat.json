@@ -295,6 +295,7 @@
       "match_minimum_should_match_search",
       "multi_match_best_fields_search",
       "multi_match_most_fields_search",
+      "multi_match_cross_fields_operator_and_search",
       "multi_match_operator_and_search",
       "multi_match_minimum_should_match_search",
       "nested_query_search",
@@ -5416,6 +5417,35 @@
       "extract": "search_hits",
       "family": "lexical",
       "description": "[lexical] multi_match most_fields type"
+    },
+    {
+      "name": "multi_match_cross_fields_operator_and_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "multi_match": {
+            "query": "catalog cache",
+            "fields": [
+              "message",
+              "service"
+            ],
+            "type": "cross_fields",
+            "operator": "and"
+          }
+        },
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] multi_match cross_fields applies operator across fields"
     },
     {
       "name": "multi_match_minimum_should_match_search",
