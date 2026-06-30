@@ -4444,6 +4444,129 @@
       "description": "[lexical] rank_eval precision search"
     },
     {
+      "name": "rank_eval_precision_target_get_search",
+      "area": "search",
+      "method": "GET",
+      "path": "/logs-compat/_rank_eval",
+      "body": {
+        "requests": [
+          {
+            "id": "catalog_query",
+            "request": {
+              "query": {
+                "term": {
+                  "service": "catalog"
+                }
+              }
+            },
+            "ratings": [
+              {
+                "_index": "logs-compat",
+                "_id": "log-3",
+                "rating": 1
+              }
+            ]
+          }
+        ],
+        "metric": {
+          "precision": {
+            "ignore_unlabeled": true,
+            "k": 3,
+            "relevant_rating_threshold": 1
+          }
+        }
+      },
+      "extract": "rank_eval_precision",
+      "family": "lexical",
+      "description": "[lexical] targeted rank_eval precision GET search"
+    },
+    {
+      "name": "rank_eval_precision_root_get_search",
+      "area": "search",
+      "method": "GET",
+      "path": "/_rank_eval",
+      "body": {
+        "requests": [
+          {
+            "id": "root_catalog_query",
+            "request": {
+              "query": {
+                "term": {
+                  "service": "catalog"
+                }
+              }
+            },
+            "ratings": [
+              {
+                "_index": "logs-compat",
+                "_id": "log-3",
+                "rating": 1
+              }
+            ]
+          }
+        ],
+        "metric": {
+          "precision": {
+            "ignore_unlabeled": true,
+            "k": 3,
+            "relevant_rating_threshold": 1
+          }
+        }
+      },
+      "extract": "rank_eval_precision",
+      "family": "lexical",
+      "description": "[lexical] root rank_eval precision GET search"
+    },
+    {
+      "name": "rank_eval_precision_root_post_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/_rank_eval",
+      "body": {
+        "requests": [
+          {
+            "id": "root_checkout_query",
+            "request": {
+              "query": {
+                "term": {
+                  "service": "checkout"
+                }
+              },
+              "sort": [
+                {
+                  "bytes": {
+                    "order": "asc"
+                  }
+                }
+              ]
+            },
+            "ratings": [
+              {
+                "_index": "logs-compat",
+                "_id": "log-1",
+                "rating": 1
+              },
+              {
+                "_index": "logs-compat",
+                "_id": "log-2",
+                "rating": 0
+              }
+            ]
+          }
+        ],
+        "metric": {
+          "precision": {
+            "ignore_unlabeled": true,
+            "k": 3,
+            "relevant_rating_threshold": 1
+          }
+        }
+      },
+      "extract": "rank_eval_precision",
+      "family": "lexical",
+      "description": "[lexical] root rank_eval precision POST search"
+    },
+    {
       "name": "exists_query_search",
       "area": "search",
       "method": "POST",
