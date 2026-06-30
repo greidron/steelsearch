@@ -39,7 +39,7 @@ use tantivy::aggregation::agg_req::Aggregations as TantivyAggregations;
 use tantivy::aggregation::AggregationCollector;
 use tantivy::collector::{Count, TopDocs};
 use tantivy::query::{
-    AllQuery, BooleanQuery, DisjunctionMaxQuery, EmptyQuery, FuzzyTermQuery, Occur,
+    AllQuery, BooleanQuery, BoostQuery, DisjunctionMaxQuery, EmptyQuery, FuzzyTermQuery, Occur,
     PhrasePrefixQuery, PhraseQuery, Query as TantivyQueryTrait, QueryParser, RangeQuery,
     RegexQuery, TermQuery,
 };
@@ -2887,6 +2887,7 @@ fn build_tantivy_query(
             operator,
             minimum_should_match,
             tie_breaker,
+            boost,
         } => build_tantivy_multi_match_query(
             search_state,
             fields,
@@ -2896,6 +2897,7 @@ fn build_tantivy_query(
             operator.as_deref(),
             *minimum_should_match,
             *tie_breaker,
+            *boost,
         ),
         Query::QueryString { query, fields } => build_tantivy_tokenized_field_set_query(
             search_state,
@@ -2936,7 +2938,10 @@ fn build_tantivy_query(
         }
         Query::Bool { clauses } => {
             let minimum_should_match = effective_bool_minimum_should_match(clauses);
-            if minimum_should_match > 1 {
+            if minimum_should_match > 1
+                || (minimum_should_match == 1
+                    && (!clauses.must.is_empty() || !clauses.filter.is_empty()))
+            {
                 return build_tantivy_minimum_should_match_query(
                     search_state,
                     &clauses
@@ -2986,12 +2991,7 @@ fn build_tantivy_query(
                 let Some(inner) = build_tantivy_query(search_state, query)? else {
                     return Ok(None);
                 };
-                let occur = if minimum_should_match >= 1 {
-                    Occur::Must
-                } else {
-                    Occur::Should
-                };
-                tantivy_clauses.push((occur, inner));
+                tantivy_clauses.push((Occur::Should, inner));
             }
             Ok(Some(Box::new(BooleanQuery::new(tantivy_clauses))))
         }
@@ -3812,6 +3812,7 @@ fn build_tantivy_multi_match_query(
     operator: Option<&str>,
     minimum_should_match: Option<usize>,
     tie_breaker: Option<f64>,
+    boost: Option<f64>,
 ) -> EngineResult<Option<Box<dyn TantivyQueryTrait>>> {
     let mut clauses = Vec::new();
     let field_minimum_should_match = minimum_should_match
@@ -3870,21 +3871,33 @@ fn build_tantivy_multi_match_query(
     }
     let tie_breaker =
         tie_breaker.unwrap_or_else(|| default_multi_match_tie_breaker(query_type)) as f32;
-    if clauses.len() == 1 {
-        return Ok(clauses.pop());
-    }
-    if uses_multi_match_dismax_grouping(query_type) {
-        Ok(Some(Box::new(DisjunctionMaxQuery::with_tie_breaker(
-            clauses,
-            tie_breaker,
-        ))))
+    let query = if clauses.len() == 1 {
+        clauses.pop()
+    } else if uses_multi_match_dismax_grouping(query_type) {
+        Some(
+            Box::new(DisjunctionMaxQuery::with_tie_breaker(clauses, tie_breaker))
+                as Box<dyn TantivyQueryTrait>,
+        )
     } else {
-        Ok(Some(Box::new(BooleanQuery::new(
+        Some(Box::new(BooleanQuery::new(
             clauses
                 .into_iter()
                 .map(|query| (Occur::Should, query))
                 .collect(),
-        ))))
+        )) as Box<dyn TantivyQueryTrait>)
+    };
+    Ok(query.map(|query| maybe_boost_tantivy_query(query, boost)))
+}
+
+fn maybe_boost_tantivy_query(
+    query: Box<dyn TantivyQueryTrait>,
+    boost: Option<f64>,
+) -> Box<dyn TantivyQueryTrait> {
+    match boost {
+        Some(boost) if (boost - 1.0).abs() >= f64::EPSILON => {
+            Box::new(BoostQuery::new(query, boost as f32))
+        }
+        _ => query,
     }
 }
 
@@ -16483,6 +16496,7 @@ fn document_matches_query(query: &Query, id: &str, source: &Value) -> bool {
             operator,
             minimum_should_match,
             tie_breaker: _,
+            boost: _,
         } => matches_multi_match_query(
             id,
             source,
@@ -18340,6 +18354,7 @@ fn localize_query_fields_for_nested_child(query: &Query, path: &str) -> Query {
             operator,
             minimum_should_match,
             tie_breaker,
+            boost,
         } => Query::MultiMatch {
             fields: fields
                 .iter()
@@ -18351,6 +18366,7 @@ fn localize_query_fields_for_nested_child(query: &Query, path: &str) -> Query {
             operator: operator.clone(),
             minimum_should_match: *minimum_should_match,
             tie_breaker: *tie_breaker,
+            boost: *boost,
         },
         Query::QueryString { query, fields } => Query::QueryString {
             query: query.clone(),
@@ -18623,6 +18639,7 @@ fn native_nested_child_ordinals_for_query(
             operator,
             minimum_should_match,
             tie_breaker: _,
+            boost: _,
         } => nested_child_multi_match_ordinals(
             path_index,
             path,

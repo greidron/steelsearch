@@ -94,6 +94,7 @@ pub enum Query {
         operator: Option<String>,
         minimum_should_match: Option<usize>,
         tie_breaker: Option<f64>,
+        boost: Option<f64>,
     },
     QueryString {
         query: String,
@@ -2493,7 +2494,10 @@ fn parse_multi_match(body: &Value) -> QueryDslResult<Query> {
         .unwrap_or(0);
     let tie_breaker = object.get("tie_breaker").and_then(Value::as_f64);
     validate_optional_f64_option(object, "multi_match", "tie_breaker")?;
-    validate_optional_f64_option(object, "multi_match", "boost")?;
+    let boost = object
+        .get("boost")
+        .map(|value| parse_non_negative_f64_option("multi_match", "boost", value))
+        .transpose()?;
     validate_optional_string_option(object, "multi_match", "analyzer")?;
     validate_optional_string_option(object, "multi_match", "_name")?;
     validate_optional_bool_option(object, "multi_match", "lenient")?;
@@ -2528,7 +2532,26 @@ fn parse_multi_match(body: &Value) -> QueryDslResult<Query> {
         operator,
         minimum_should_match,
         tie_breaker,
+        boost,
     })
+}
+
+fn parse_non_negative_f64_option(clause: &str, field: &str, value: &Value) -> QueryDslResult<f64> {
+    let Some(number) = value.as_f64().filter(|number| number.is_finite()) else {
+        return Err(QueryDslError::InvalidValue {
+            clause: clause.to_string(),
+            field: field.to_string(),
+            reason: "must be a finite number".to_string(),
+        });
+    };
+    if number < 0.0 {
+        return Err(QueryDslError::InvalidValue {
+            clause: clause.to_string(),
+            field: field.to_string(),
+            reason: "must be non-negative".to_string(),
+        });
+    }
+    Ok(number)
 }
 
 fn validate_optional_f64_option(
@@ -4366,6 +4389,7 @@ mod tests {
                 operator: Some("and".to_string()),
                 minimum_should_match: None,
                 tie_breaker: None,
+                boost: None,
             }
         );
 
@@ -4388,6 +4412,7 @@ mod tests {
                 operator: None,
                 minimum_should_match: None,
                 tie_breaker: None,
+                boost: None,
             }
         );
 
@@ -4410,6 +4435,7 @@ mod tests {
                 operator: None,
                 minimum_should_match: None,
                 tie_breaker: None,
+                boost: None,
             }
         );
 
@@ -4432,6 +4458,7 @@ mod tests {
                 operator: None,
                 minimum_should_match: None,
                 tie_breaker: None,
+                boost: None,
             }
         );
 
@@ -4455,6 +4482,7 @@ mod tests {
                 operator: Some("and".to_string()),
                 minimum_should_match: None,
                 tie_breaker: None,
+                boost: None,
             }
         );
 
@@ -4482,6 +4510,7 @@ mod tests {
                 operator: None,
                 minimum_should_match: None,
                 tie_breaker: Some(0.2),
+                boost: Some(1.5),
             }
         );
 
@@ -4505,6 +4534,7 @@ mod tests {
                 operator: None,
                 minimum_should_match: None,
                 tie_breaker: None,
+                boost: None,
             }
         );
 
@@ -4526,8 +4556,22 @@ mod tests {
                 operator: None,
                 minimum_should_match: None,
                 tie_breaker: None,
+                boost: None,
             }
         );
+
+        let negative_boost = parse_query(&serde_json::json!({
+            "multi_match": {
+                "query": "alpha",
+                "fields": ["title"],
+                "boost": -1.0
+            }
+        }))
+        .unwrap_err();
+        assert!(matches!(
+            negative_boost,
+            QueryDslError::InvalidValue { field, .. } if field == "boost"
+        ));
     }
 
     #[test]

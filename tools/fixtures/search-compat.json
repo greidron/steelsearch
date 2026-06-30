@@ -295,6 +295,7 @@
       "match_minimum_should_match_search",
       "multi_match_best_fields_search",
       "multi_match_accepts_common_options_search",
+      "multi_match_boost_scoring_search",
       "multi_match_most_fields_search",
       "multi_match_cross_fields_operator_and_search",
       "multi_match_operator_and_search",
@@ -5423,6 +5424,39 @@
       "extract": "search_hits",
       "family": "lexical",
       "description": "[lexical] multi_match accepts common OpenSearch options"
+    },
+    {
+      "name": "multi_match_boost_scoring_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "bool": {
+            "should": [
+              {
+                "multi_match": {
+                  "query": "catalog",
+                  "fields": [
+                    "message",
+                    "service"
+                  ],
+                  "boost": 4.0
+                }
+              },
+              {
+                "term": {
+                  "service": "checkout"
+                }
+              }
+            ],
+            "minimum_should_match": 1
+          }
+        }
+      },
+      "extract": "search_hits",
+      "family": "ranking",
+      "description": "[ranking] multi_match boost changes scoring inside bool should"
     },
     {
       "name": "multi_match_most_fields_search",
