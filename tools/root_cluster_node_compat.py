@@ -28,6 +28,7 @@ def parse_args() -> argparse.Namespace:
         default=os.environ.get("ROOT_CLUSTER_NODE_COMPAT_REPORT", str(DEFAULT_OUTPUT)),
     )
     parser.add_argument("--timeout", type=float, default=30.0)
+    parser.add_argument("--case", action="append", help="case name to run; may be repeated")
     return parser.parse_args()
 
 
@@ -132,6 +133,12 @@ def compare_targets(case: dict[str, Any], steelsearch: dict[str, Any], opensearc
     return errors
 
 
+def require_http_response(label: str, response: dict[str, Any]) -> list[str]:
+    if response.get("status") is None:
+        return [f"{label} did not return an HTTP status: {response.get('error')}"]
+    return []
+
+
 def compare_nodes_usage_rest_actions_only(steelsearch: dict[str, Any], opensearch: dict[str, Any]) -> list[str]:
     errors: list[str] = []
     for label, response in (("steelsearch", steelsearch), ("opensearch", opensearch)):
@@ -229,8 +236,8 @@ def run_setup(
 
 def main() -> int:
     args = parse_args()
-    if not args.steelsearch_url or not args.opensearch_url:
-        print("Both STEELSEARCH_URL and OPENSEARCH_URL are required", file=sys.stderr)
+    if not args.steelsearch_url:
+        print("STEELSEARCH_URL is required", file=sys.stderr)
         return 2
 
     fixture = json.loads(Path(args.fixture).read_text(encoding="utf-8"))
@@ -239,7 +246,6 @@ def main() -> int:
         "fixture": str(Path(args.fixture).resolve()),
         "targets": {
             "steelsearch": args.steelsearch_url,
-            "opensearch": args.opensearch_url,
         },
         "cases": [],
         "summary": {
@@ -247,9 +253,14 @@ def main() -> int:
             "failed": 0,
         },
     }
+    if args.opensearch_url:
+        report["targets"]["opensearch"] = args.opensearch_url
 
     exit_code = 0
     if fixture.get("setup"):
+        if not args.opensearch_url:
+            print("OPENSEARCH_URL is required for setup steps", file=sys.stderr)
+            return 2
         setup_report, setup_errors = run_setup(
             fixture["setup"],
             args.steelsearch_url,
@@ -260,12 +271,31 @@ def main() -> int:
         if setup_errors:
             exit_code = 1
 
+    selected_cases = set(args.case or [])
     for case in fixture.get("cases", []):
+        if selected_cases and case.get("name") not in selected_cases:
+            continue
+        if not case.get("method") or not case.get("path"):
+            exit_code = 1
+            report["summary"]["failed"] += 1
+            report["cases"].append(
+                {
+                    "name": case.get("name"),
+                    "status": "failed",
+                    "steelsearch": None,
+                    "opensearch": None,
+                    "errors": ["case is missing method or path"],
+                }
+            )
+            continue
         steelsearch = request_response(args.steelsearch_url, case, args.timeout)
-        opensearch = request_response(args.opensearch_url, case, args.timeout)
-        steelsearch_errors = check_target(case, steelsearch)
-        opensearch_errors = check_target(case, opensearch)
-        comparison_errors = compare_targets(case, steelsearch, opensearch)
+        opensearch = request_response(args.opensearch_url, case, args.timeout) if args.opensearch_url else None
+        steelsearch_errors = require_http_response("steelsearch", steelsearch) + check_target(case, steelsearch)
+        opensearch_errors = []
+        comparison_errors = []
+        if opensearch is not None:
+            opensearch_errors = require_http_response("opensearch", opensearch) + check_target(case, opensearch)
+            comparison_errors = compare_targets(case, steelsearch, opensearch)
         errors = steelsearch_errors + opensearch_errors + comparison_errors
         status = "passed" if not errors else "failed"
         if errors:
