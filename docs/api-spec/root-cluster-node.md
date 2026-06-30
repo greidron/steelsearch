@@ -293,9 +293,9 @@ precision claim about exact OpenSearch metric coverage.
 | `GET /_nodes/stats` | Node-level runtime, transport, indexing, search, cache, thread-pool, and resource stats. | Steelsearch now serves the standalone validation profile for node identity, HTTP address, local index counters, and basic process/JVM summaries on the live runtime path. Broader telemetry families remain pending. | Partial |
 | `GET /_cluster/stats` | Cluster-wide statistics aggregated from node and shard state. | Steelsearch now serves the standalone validation profile for cluster name/status, aggregate index counters, node counts, and basic cluster-wide totals. Full OpenSearch stat depth remains pending. | Partial |
 | `GET /_stats` | Index/shard statistics surface. | Steelsearch now serves the standalone validation profile for `_shards`, `_all`, and seeded-index doc counters on the live runtime path. Broader shard/store/search telemetry remains pending. | Partial |
-| `GET /_tasks`, `GET /_tasks/{task_id}`, `POST /_tasks/_cancel` | Task listing, lookup, and cancellation for long-running actions. | Development and compatibility documents track these as remaining transport/admin gaps. They are not full parity today. | Planned |
-| `GET /_nodes/hot_threads` | Diagnostic stack and scheduler sampling. | Not implemented as a production-grade equivalent. | Planned |
-| `GET /_nodes/usage` | Returns usage counters per action/feature. | Not implemented as a production-grade equivalent. | Planned |
+| `GET /_tasks`, `GET /_tasks/{task_id}`, `POST /_tasks/_cancel` | Task listing, lookup, and cancellation for long-running actions. | Live standalone route with strict fixture coverage for list shapes, `group_by` variants, validation errors, and bounded unknown-task cancellation shape. Runtime task lifecycle depth remains partial. | Partial |
+| `GET /_nodes/hot_threads` | Diagnostic stack and scheduler sampling. | Live standalone route with strict fixture coverage for the plain-text hot-threads shape, deprecated alias, and bounded parameter validation. Real scheduler sampling depth remains partial. | Partial |
+| `GET /_nodes/usage` | Returns usage counters per action/feature. | Live standalone route with strict fixture coverage for the requested `rest_actions` usage metric and metric filtering. Broader per-action accounting depth remains partial. | Partial |
 
 ### Development Summary vs OpenSearch Statistics
 
