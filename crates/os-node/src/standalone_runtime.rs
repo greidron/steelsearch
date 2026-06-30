@@ -22660,23 +22660,10 @@ fn search_timeout_parse_error(timeout: &Value) -> RestResponse {
 }
 
 fn search_time_query_param_parse_error(param: &str, value: &str) -> RestResponse {
-    let reason = if param == "cancel_after_time_interval" {
-        format!(
-            "failed to parse setting [{param}] with value [{value}] as a time value: unit is missing or unrecognized"
-        )
-    } else {
-        format!("failed to parse setting [{param}] with value [{value}] as a time value")
-    };
-    RestResponse::json(
-        400,
-        serde_json::json!({
-            "error": {
-                "type": "illegal_argument_exception",
-                "reason": reason
-            },
-            "status": 400
-        }),
-    )
+    let reason = format!(
+        "failed to parse setting [{param}] with value [{value}] as a time value: unit is missing or unrecognized"
+    );
+    build_illegal_argument_search_response_with_root_cause(&reason)
 }
 
 fn standalone_search_body_allows_native_engine(body: &Value) -> bool {
@@ -24476,12 +24463,20 @@ fn action_request_validation_error_owned(validation_errors: Vec<String>) -> Rest
 }
 
 fn invalid_tasks_group_by_response(group_by: &str) -> RestResponse {
+    let reason =
+        format!("[group_by] must be one of [nodes], [parents] or [none] but was [{group_by}]");
     RestResponse::json(
         400,
         serde_json::json!({
             "error": {
                 "type": "illegal_argument_exception",
-                "reason": format!("[group_by] must be one of [nodes], [parents] or [none] but was [{group_by}]")
+                "reason": reason,
+                "root_cause": [
+                    {
+                        "type": "illegal_argument_exception",
+                        "reason": reason
+                    }
+                ]
             },
             "status": 400
         }),
@@ -24578,15 +24573,9 @@ fn validate_cluster_health_query_params(request: &RestRequest) -> Option<RestRes
         .query_params
         .contains_key("wait_for_relocating_shards")
     {
-        return Some(RestResponse::json(
-            400,
-            serde_json::json!({
-                "error": {
-                    "type": "illegal_argument_exception",
-                    "reason": "wait_for_relocating_shards has been removed, use wait_for_no_relocating_shards [true/false] instead"
-                },
-                "status": 400
-            }),
+        return Some(RestResponse::opensearch_error_kind(
+            os_rest::RestErrorKind::IllegalArgument,
+            "wait_for_relocating_shards has been removed, use wait_for_no_relocating_shards [true/false] instead",
         ));
     }
     if let Some(status) = request.query_params.get("wait_for_status") {
@@ -45186,6 +45175,14 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             response.body["error"]["reason"],
             "[group_by] must be one of [nodes], [parents] or [none] but was [bogus]"
         );
+        assert_eq!(
+            response.body["error"]["root_cause"][0]["type"],
+            "illegal_argument_exception"
+        );
+        assert_eq!(
+            response.body["error"]["root_cause"][0]["reason"],
+            "[group_by] must be one of [nodes], [parents] or [none] but was [bogus]"
+        );
     }
 
     #[test]
@@ -45204,6 +45201,14 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(response.body["error"]["type"], "illegal_argument_exception");
         assert_eq!(
             response.body["error"]["reason"],
+            "[group_by] must be one of [nodes], [parents] or [none] but was [bogus]"
+        );
+        assert_eq!(
+            response.body["error"]["root_cause"][0]["type"],
+            "illegal_argument_exception"
+        );
+        assert_eq!(
+            response.body["error"]["root_cause"][0]["reason"],
             "[group_by] must be one of [nodes], [parents] or [none] but was [bogus]"
         );
     }
