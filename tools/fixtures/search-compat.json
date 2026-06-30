@@ -8938,6 +8938,29 @@
       "description": "[ranking] sort with unmapped_type admits wildcard targets with unmapped fields"
     },
     {
+      "name": "sort_unknown_field_option_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc",
+              "unsupported_option": true
+            }
+          }
+        ]
+      },
+      "expected_status": 400,
+      "extract": "error_response",
+      "family": "ranking",
+      "description": "[ranking] unknown field-sort options are rejected like OpenSearch"
+    },
+    {
       "name": "result_window_too_large_error_search",
       "area": "search",
       "method": "POST",

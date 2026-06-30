@@ -25893,6 +25893,20 @@ fn validate_search_sort_object(object: &serde_json::Map<String, Value>) -> Optio
                 return Some(malformed_sort_response("No enum constant SortOrder"));
             }
             Value::Object(options) => {
+                if let Some(unknown_key) = options.keys().find(|key| {
+                    !matches!(
+                        key.as_str(),
+                        "order"
+                            | "missing"
+                            | "mode"
+                            | "unmapped_type"
+                            | "format"
+                            | "numeric_type"
+                            | "nested"
+                    )
+                }) {
+                    return Some(field_sort_unknown_field_response(unknown_key));
+                }
                 if let Some(order) = options.get("order").and_then(Value::as_str) {
                     if !matches!(order, "asc" | "desc") {
                         return Some(malformed_sort_response("No enum constant SortOrder"));
@@ -25938,6 +25952,12 @@ fn validate_search_sort_object(object: &serde_json::Map<String, Value>) -> Optio
         }
     }
     None
+}
+
+fn field_sort_unknown_field_response(field: &str) -> RestResponse {
+    build_x_content_parse_search_response_with_root_cause(&format!(
+        "[field_sort] unknown field [{field}]"
+    ))
 }
 
 fn malformed_sort_response(reason: &str) -> RestResponse {
@@ -55620,6 +55640,25 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         ));
         assert_eq!(delete_all_pits.status, 200);
         assert_eq!(delete_all_pits.body["pits"], serde_json::json!([]));
+    }
+
+    #[test]
+    fn search_sort_rejects_unknown_field_sort_options() {
+        let response = validate_search_sort_request_body(&serde_json::json!([
+            {
+                "tenant": {
+                    "order": "asc",
+                    "unsupported_option": true
+                }
+            }
+        ]))
+        .expect("unknown field-sort option should fail closed");
+        assert_eq!(response.status, 400);
+        assert_eq!(response.body["error"]["type"], "x_content_parse_exception");
+        assert_eq!(
+            response.body["error"]["root_cause"][0]["reason"],
+            "[field_sort] unknown field [unsupported_option]"
+        );
     }
 
     #[test]
