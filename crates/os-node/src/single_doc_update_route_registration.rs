@@ -83,11 +83,11 @@ pub fn build_update_doc_response_subset(response: &serde_json::Value) -> serde_j
     serde_json::Value::Object(subset)
 }
 
-pub fn build_update_doc_not_found_error(index: &str, id: &str) -> serde_json::Value {
+pub fn build_update_doc_not_found_error(_index: &str, id: &str) -> serde_json::Value {
     serde_json::json!({
         "error": {
             "type": UPDATE_DOC_NOT_FOUND_BUCKET,
-            "reason": format!("[{id}]: document missing in index [{index}]")
+            "reason": format!("[{id}]: document missing")
         },
         "status": 404
     })

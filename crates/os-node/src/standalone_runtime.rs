@@ -11125,6 +11125,14 @@ impl SteelNode {
             let Some(meta) = meta_value.as_object() else {
                 continue;
             };
+            if action == "index"
+                && meta.contains_key("version")
+                && meta.get("version_type").and_then(Value::as_str) != Some("external")
+            {
+                return action_request_validation_error(vec![
+                    "index operations only support internal or external versioning",
+                ]);
+            }
             if !matches!(action.as_str(), "index" | "create" | "update" | "delete") {
                 let reason = format!(
                     "Malformed action/metadata line [{}], expected one of [create, delete, index, update] but found [{action}]",
@@ -11202,12 +11210,18 @@ impl SteelNode {
                 );
             };
             let Some(meta) = meta_value.as_object().cloned() else {
+                let reason =
+                    "Malformed action/metadata line [1], expected START_OBJECT or END_OBJECT but found [START_ARRAY]";
                 return RestResponse::json(
                     400,
                     serde_json::json!({
                         "error": {
-                            "type": "parse_exception",
-                            "reason": "bulk action metadata must be an object"
+                            "type": "illegal_argument_exception",
+                            "reason": reason,
+                            "root_cause": [{
+                                "type": "illegal_argument_exception",
+                                "reason": reason
+                            }]
                         },
                         "status": 400
                     }),
@@ -11304,6 +11318,10 @@ impl SteelNode {
                     }
                 })
             } else if meta.contains_key("pipeline") {
+                let pipeline_id = meta
+                    .get("pipeline")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default();
                 serde_json::json!({
                     action: {
                         "_index": index,
@@ -11311,7 +11329,7 @@ impl SteelNode {
                         "status": 400,
                         "error": {
                             "type": "illegal_argument_exception",
-                            "reason": "unsupported bulk metadata option [pipeline]"
+                            "reason": format!("pipeline with id [{pipeline_id}] does not exist")
                         }
                     }
                 })
@@ -13762,16 +13780,7 @@ impl SteelNode {
             .and_then(|dest| dest.get("index"))
             .and_then(Value::as_str)
         else {
-            return RestResponse::json(
-                400,
-                serde_json::json!({
-                    "error": {
-                        "type": "illegal_argument_exception",
-                        "reason": "reindex dest.index is required"
-                    },
-                    "status": 400
-                }),
-            );
+            return action_request_validation_error(vec!["index must be specified"]);
         };
         let script = body.get("script");
         if let Some(response) =
@@ -17135,12 +17144,18 @@ impl SteelNode {
                 None => true,
             };
             if conflict {
+                let current = docs.get(&key);
                 return RestResponse::json(
                     409,
                     serde_json::json!({
                         "error": {
                             "type": "version_conflict_engine_exception",
-                            "reason": format!("[{id}]: version conflict in index [{resolved_index}]")
+                            "reason": seq_primary_term_conflict_reason(
+                                id,
+                                expected_seq_no,
+                                expected_primary_term,
+                                current.map(|record| record.as_ref()),
+                            )
                         },
                         "status": 409
                     }),
@@ -17152,12 +17167,13 @@ impl SteelNode {
                 .get(&key)
                 .is_some_and(|record| version <= record.version);
             if conflict {
+                let current_version = docs.get(&key).map(|record| record.version).unwrap_or(1);
                 return RestResponse::json(
                     409,
                     serde_json::json!({
                         "error": {
                             "type": "version_conflict_engine_exception",
-                            "reason": format!("[{id}]: version conflict in index [{resolved_index}]")
+                            "reason": format!("[{id}]: version conflict, current version [{current_version}] is higher or equal to the one provided [{version}]")
                         },
                         "status": 409
                     }),
@@ -17264,12 +17280,13 @@ impl SteelNode {
             .lock()
             .expect("documents state lock poisoned");
         if docs.contains_key(&key) {
+            let current_version = docs.get(&key).map(|record| record.version).unwrap_or(1);
             return RestResponse::json(
                 409,
                 serde_json::json!({
                     "error": {
                         "type": "version_conflict_engine_exception",
-                        "reason": format!("[{id}]: version conflict, document already exists in index [{resolved_index}]")
+                        "reason": format!("[{id}]: version conflict, document already exists (current version [{current_version}])")
                     },
                     "status": 409
                 }),
@@ -17690,12 +17707,18 @@ impl SteelNode {
                 None => true,
             };
             if conflict {
+                let current = docs.get(&key);
                 return RestResponse::json(
                     409,
                     serde_json::json!({
                         "error": {
                             "type": "version_conflict_engine_exception",
-                            "reason": format!("[{id}]: version conflict in index [{resolved_index}]")
+                            "reason": seq_primary_term_conflict_reason(
+                                id,
+                                expected_seq_no,
+                                expected_primary_term,
+                                current.map(|record| record.as_ref()),
+                            )
                         },
                         "status": 409
                     }),
@@ -17856,9 +17879,21 @@ impl SteelNode {
                 None => true,
             };
             if conflict {
+                let current = existing_key.as_ref().and_then(|key| docs.get(key));
                 return RestResponse::json(
                     409,
-                    crate::single_doc_update_route_registration::build_update_doc_version_conflict_error(&resolved_index, id),
+                    serde_json::json!({
+                        "error": {
+                            "type": "version_conflict_engine_exception",
+                            "reason": seq_primary_term_conflict_reason(
+                                id,
+                                expected_seq_no,
+                                expected_primary_term,
+                                current.map(|record| record.as_ref()),
+                            )
+                        },
+                        "status": 409
+                    }),
                 );
             }
         }
@@ -49959,11 +49994,11 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(missing_dest.status, 400);
         assert_eq!(
             missing_dest.body["error"]["type"],
-            "illegal_argument_exception"
+            "action_request_validation_exception"
         );
         assert_eq!(
             missing_dest.body["error"]["reason"],
-            "reindex dest.index is required"
+            "Validation Failed: 1: index must be specified;"
         );
 
         let scripted_reindex = node.handle_rest_request(
@@ -70256,7 +70291,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(pipeline_response.body["items"][0]["index"]["status"], 400);
         assert_eq!(
             pipeline_response.body["items"][0]["index"]["error"]["reason"],
-            "unsupported bulk metadata option [pipeline]"
+            "pipeline with id [ingest-1] does not exist"
         );
 
         let unsupported_versioning = concat!(
@@ -70268,12 +70303,10 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 .with_header("content-type", "application/x-ndjson")
                 .with_body(unsupported_versioning.as_bytes().to_vec()),
         );
-        assert_eq!(version_response.status, 200);
-        assert_eq!(version_response.body["errors"], Value::Bool(true));
-        assert_eq!(version_response.body["items"][0]["index"]["status"], 400);
+        assert_eq!(version_response.status, 400);
         assert_eq!(
-            version_response.body["items"][0]["index"]["error"]["reason"],
-            "unsupported bulk metadata option [version] without [version_type=external]"
+            version_response.body["error"]["reason"],
+            "Validation Failed: 1: index operations only support internal or external versioning;"
         );
     }
 

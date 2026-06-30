@@ -420,9 +420,7 @@
         }
       },
       "extract": "document_write_error",
-      "comparison": "steelsearch_only",
-      "expected_steelsearch_status": 400,
-      "reason": "Steelsearch semantic hardening fixture for missing dest validation."
+      "expected_status": 400
     },
     {
       "name": "reindex_script_transform_readback",
@@ -590,10 +588,7 @@
         "message": "duplicate create",
         "tenant": "tenant-a"
       },
-      "extract": "document_write_error",
-      "comparison": "steelsearch_only",
-      "expected_steelsearch_status": 409,
-      "reason": "Steelsearch semantic hardening fixture for duplicate create conflict."
+      "extract": "document_write_error"
     },
     {
       "name": "single_doc_seq_term_conflict_error",
@@ -604,10 +599,7 @@
         "message": "stale optimistic concurrency write",
         "tenant": "tenant-a"
       },
-      "extract": "document_write_error",
-      "comparison": "steelsearch_only",
-      "expected_steelsearch_status": 409,
-      "reason": "Steelsearch semantic hardening fixture for stale seq_no/primary_term conflict."
+      "extract": "document_write_error"
     },
     {
       "name": "update_routing_same_shard_readback",
@@ -988,10 +980,7 @@
           "processed": true
         }
       },
-      "extract": "document_write_error",
-      "comparison": "steelsearch_only",
-      "expected_steelsearch_status": 404,
-      "reason": "Steelsearch semantic hardening fixture for single-doc update miss."
+      "extract": "document_write_error"
     },
     {
       "name": "single_doc_update_seq_term_success",
@@ -1384,10 +1373,7 @@
       "path": "/_bulk",
       "body": "{\"index\":{\"_index\":\"logs-bulk-metadata-000001\",\"_id\":\"doc-pipeline\",\"pipeline\":\"ingest-1\"}}\n{\"message\":\"pipeline metadata unsupported\"}\n",
       "raw": true,
-      "extract": "bulk_items",
-      "comparison": "steelsearch_only",
-      "expected_steelsearch_status": 200,
-      "reason": "Steelsearch explicit deny fixture for bulk per-item pipeline metadata."
+      "extract": "bulk_items"
     },
     {
       "name": "bulk_version_without_external_policy_error",
@@ -1396,10 +1382,7 @@
       "path": "/_bulk",
       "body": "{\"index\":{\"_index\":\"logs-bulk-metadata-000001\",\"_id\":\"doc-version\",\"version\":7}}\n{\"message\":\"unsupported bulk versioning\"}\n",
       "raw": true,
-      "extract": "bulk_items",
-      "comparison": "steelsearch_only",
-      "expected_steelsearch_status": 200,
-      "reason": "Steelsearch explicit deny fixture for bulk version without version_type=external."
+      "extract": "bulk_items"
     },
     {
       "name": "bulk_item_ordering_partial_failure_matrix",
@@ -1432,10 +1415,7 @@
       "path": "/_bulk",
       "body": "{\"index\":[]}\n{\"message\":\"bad metadata\"}\n",
       "raw": true,
-      "extract": "document_write_error",
-      "comparison": "steelsearch_only",
-      "expected_steelsearch_status": 400,
-      "reason": "Steelsearch explicit fail-closed fixture for non-object bulk action metadata."
+      "extract": "document_write_error"
     },
     {
       "name": "bulk_delete_existing_and_missing_items",
