@@ -134,6 +134,70 @@
       }
     },
     {
+      "name": "close_index_ack",
+      "method": "POST",
+      "path": "/logs-compat-lifecycle-000001/_close",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "acknowledged",
+          "shards_acknowledged"
+        ],
+        "body_paths_equal": [
+          "acknowledged",
+          "shards_acknowledged"
+        ]
+      }
+    },
+    {
+      "name": "open_index_ack",
+      "method": "POST",
+      "path": "/logs-compat-lifecycle-000001/_open",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "acknowledged",
+          "shards_acknowledged"
+        ],
+        "body_paths_equal": [
+          "acknowledged",
+          "shards_acknowledged"
+        ]
+      }
+    },
+    {
+      "name": "close_index_wildcard_ack",
+      "method": "POST",
+      "path": "/logs-compat-lifecycle-*/_close",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "acknowledged",
+          "shards_acknowledged"
+        ],
+        "body_paths_equal": [
+          "acknowledged",
+          "shards_acknowledged"
+        ]
+      }
+    },
+    {
+      "name": "open_index_wildcard_ack",
+      "method": "POST",
+      "path": "/logs-compat-lifecycle-*/_open",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "acknowledged",
+          "shards_acknowledged"
+        ],
+        "body_paths_equal": [
+          "acknowledged",
+          "shards_acknowledged"
+        ]
+      }
+    },
+    {
       "name": "create_second_index_for_comma_delete",
       "method": "PUT",
       "path": "/logs-compat-lifecycle-000002",

@@ -43,7 +43,7 @@ Examples:
 | `GET /{index}` | Read index metadata, aliases, mappings, and settings for one or more targets. | Live standalone route with strict fixture coverage for concrete, wildcard, comma, `_all`, and documented selector options. | Partial |
 | `HEAD /{index}` | Existence check for index targets without response body. | The live standalone profile now supports bodyless exact, wildcard, comma, and `_all` existence probes with index-selector options. Broader index-option parity remains pending. | Partial |
 | `DELETE /{index}` | Delete index metadata and shard data. | The live standalone profile now supports concrete, wildcard, comma, `_all`, and `ignore_unavailable`/`allow_no_indices` delete semantics for existing registered indices. Broader option coverage remains pending. | Partial |
-| `POST /{index}/_open`, `POST /{index}/_close` | Transition index state without deleting it. | Not yet implemented as a complete index-state machine. | Planned |
+| `POST /{index}/_open`, `POST /{index}/_close` | Transition index state without deleting it. | Live standalone route with strict fixture coverage for targeted and wildcard open/close acknowledgements plus closed-index search failure behavior in unit coverage. Broader allocation and recovery side effects remain partial. | Partial |
 
 ### `HEAD /{index}` Current Standalone Profile
 
@@ -167,7 +167,7 @@ The compat fixture now exercises create -> update -> readback with:
 | `PUT /{index}/_mapping` | Updates mappings with compatibility and merge rules. | The live standalone profile now merges `properties`, `dynamic`, and `_meta`, and keeps incompatible field-type changes in the canonical `illegal_argument_exception` bucket. Deeper mapping-merge families still remain pending. | Partial |
 | `GET /_settings`, `GET /{index}/_settings` | Returns effective index settings. | The live standalone profile now covers global, wildcard, and comma-target selection for the current settings readback surface. | Partial |
 | `PUT /{index}/_settings` | Mutates mutable index settings. | The live standalone profile now merges mutable `index` settings, preserves untouched keys, and supports key-level `null` reset for the active mutable setting subset. Broader settings parity is still pending. | Partial |
-| Field mapping inspection (`_mapping/field`) | Returns mapping info for specific fields. | Tracked in source inventory, not implemented as a complete API. | Planned |
+| Field mapping inspection (`_mapping/field`) | Returns mapping info for specific fields. | Live standalone route with strict fixture coverage for global and targeted field mapping readback over the bounded mapping subset. | Partial |
 
 ### `GET /_settings`, `GET /{index}/_settings` Bounded Readback Contract
 
