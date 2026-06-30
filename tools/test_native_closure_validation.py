@@ -91,12 +91,16 @@ class NativeClosureValidationRunnerTests(unittest.TestCase):
         self.assertEqual(len(batch), 1)
         command_text = " ".join(batch[0].command)
         self.assertIn("tools/run-unified-opensearch-e2e.py", command_text)
+        self.assertIn("target/unified-opensearch-e2e-broad-current", command_text)
         self.assertIn("--max-report-age-seconds", command_text)
         self.assertIn("604800", command_text)
         self.assertIn("tools/report-rest-api-coverage.py", command_text)
         self.assertIn("--require-live-required-suites", command_text)
+        self.assertIn("--allow-known-gaps", command_text)
         self.assertIn("--min-live-required-matched-source-route-count", command_text)
-        self.assertIn("15", command_text)
+        self.assertIn("200", command_text)
+        self.assertIn("--min-live-required-matched-source-route-ratio", command_text)
+        self.assertIn("0.5", command_text)
         self.assertIn("target/rest-api-coverage-current.json", command_text)
 
     def test_transport_action_coverage_current_batch_reports_inventory_and_peer_evidence(self):
@@ -154,7 +158,7 @@ class NativeClosureValidationRunnerTests(unittest.TestCase):
                 "search_semantic_and_vector_search_e2e_reports_have_no_failed_missing_or_skipped_cases",
                 "search_compat_and_strict_e2e_reports_have_no_failed_or_missing_cases",
                 "broad_unified_opensearch_e2e_report_has_no_failed_missing_or_drifted_required_suites",
-                "rest_api_source_inventory_coverage_is_reported_for_required_live_suites",
+                "rest_api_source_inventory_coverage_is_reported_for_broad_required_live_suites",
                 "transport_action_inventory_is_reported_with_current_peer_backpressure_evidence",
                 "mixed_cluster_join_and_movement_coverage_is_reported_with_scope_boundary",
                 "targeted_materialization_priority_report_has_zero_ranked_operations",

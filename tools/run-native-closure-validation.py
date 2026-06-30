@@ -526,12 +526,12 @@ BROAD_E2E_PARITY_BATCH: tuple[ExternalValidation, ...] = (
 
 REST_API_COVERAGE_CURRENT_BATCH: tuple[ExternalValidation, ...] = (
     ExternalValidation(
-        "rest_api_source_inventory_coverage_is_reported_for_required_live_suites",
+        "rest_api_source_inventory_coverage_is_reported_for_broad_required_live_suites",
         "rest-api-coverage-current",
         (
             "python3",
             "-c",
-            "import subprocess, sys; output_dir = 'target/unified-opensearch-e2e-audit'; collect = [sys.executable, 'tools/run-unified-opensearch-e2e.py', '--output-dir', output_dir, '--max-report-age-seconds', '604800', '--suite', 'search-semantic', '--suite', 'vector-search']; coverage = [sys.executable, 'tools/report-rest-api-coverage.py', '--unified-report', f'{output_dir}/unified-opensearch-e2e-report.json', '--require-live-required-suites', '--min-live-required-matched-source-route-count', '15', '--output', 'target/rest-api-coverage-current.json']; first = subprocess.run(collect, stdout=subprocess.DEVNULL); sys.exit(first.returncode) if first.returncode else sys.exit(subprocess.run(coverage).returncode)",
+            "import subprocess, sys; output_dir = 'target/unified-opensearch-e2e-broad-current'; collect = [sys.executable, 'tools/run-unified-opensearch-e2e.py', '--output-dir', output_dir, '--max-report-age-seconds', '604800']; coverage = [sys.executable, 'tools/report-rest-api-coverage.py', '--unified-report', f'{output_dir}/unified-opensearch-e2e-report.json', '--require-live-required-suites', '--allow-known-gaps', '--min-live-required-matched-source-route-count', '200', '--min-live-required-matched-source-route-ratio', '0.5', '--output', 'target/rest-api-coverage-current.json']; first = subprocess.run(collect, stdout=subprocess.DEVNULL); sys.exit(first.returncode) if first.returncode else sys.exit(subprocess.run(coverage).returncode)",
         ),
         timeout_seconds=120,
     ),
