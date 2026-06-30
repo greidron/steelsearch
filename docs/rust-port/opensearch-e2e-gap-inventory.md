@@ -21,7 +21,7 @@ Latest audit report:
 - `search-compat`: 500 passed, 0 failed, 20 skipped.
 - `search-strict`: 422 passed, 0 failed, 5 skipped.
 - `search-semantic`: 73 passed, 0 failed, 0 skipped.
-- `vector-search`: 19 passed, 0 failed, 0 skipped.
+- `vector-search`: 23 passed, 0 failed, 0 skipped.
 - Combined required classification:
   `canonical_equal=491`, `strict_equal=422`, `semantic_equal=9`,
   `known_gap_or_skipped=25`, `failed=0`, `missing=0`.

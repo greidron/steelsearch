@@ -130,13 +130,13 @@ Functional OpenSearch E2E comparison status:
   and related metric/index-metric error boundaries, including search
   `open_contexts` and `point_in_time_*` fields in the compared response shape.
 - Current coverage summary: `canonical_equal=491`, `strict_equal=422`, `semantic_equal=9`, `failed=0`, `missing=0`, `known_gap_or_skipped=25`, `steelsearch_only=0`
-- Audit coverage summary: `canonical_equal=73`, `strict_equal=2`, `semantic_equal=14`, `failed=0`, `missing=0`, `known_gap_or_skipped=0`, `steelsearch_only=0`
+- Audit coverage summary: `canonical_equal=80`, `strict_equal=2`, `semantic_equal=14`, `failed=0`, `missing=0`, `known_gap_or_skipped=0`, `steelsearch_only=0`
 - `search-compat`: `500` passed, `0` failed, `20` skipped.
 - `search-strict`: `422` passed, `0` failed, `5` skipped.
 - `search-semantic`: `73` passed, `0` failed, `0` skipped.
-- `vector-search`: `19` passed, `0` failed, `0` skipped.
+- `vector-search`: `23` passed, `0` failed, `0` skipped.
 - REST API source coverage gate:
-  `target/rest-api-coverage-current.json` passes with `18` live-required
+  `target/rest-api-coverage-current.json` passes with `22` live-required
   matched source routes and `0` live-required fixture failures/missing cases.
 - The E2E suite does compare many functional cases against live OpenSearch, but the current evidence does not prove broad full compatibility yet; it proves the covered passing cases and tracks the remaining skipped/deferred cases explicitly. The remaining skipped cases are kNN/ML/plugin or Steelsearch-native telemetry/fail-closed cases, not live comparison failures.
 - Release evidence inventory is complete for the current candidate:

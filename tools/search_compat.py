@@ -3172,6 +3172,14 @@ def extract(kind: str, response: dict[str, Any]) -> Any:
             "breaker_limit": persistent.get("knn.memory.circuit_breaker.limit") if isinstance(persistent, dict) else None,
             "model_cache_size": persistent.get("knn.model.cache.size") if isinstance(persistent, dict) else None,
         }
+    if kind == "shards_ack":
+        shards = body.get("_shards") or {}
+        return {
+            "status": response["status"],
+            "shard_total": shards.get("total") if isinstance(shards, dict) else None,
+            "shard_successful": shards.get("successful") if isinstance(shards, dict) else None,
+            "shard_failed": shards.get("failed") if isinstance(shards, dict) else None,
+        }
     if kind == "knn_warmup_response":
         return {
             "status": response["status"],

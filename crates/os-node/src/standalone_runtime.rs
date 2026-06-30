@@ -17635,6 +17635,8 @@ impl SteelNode {
         let state = state.unwrap_or_default();
         let requested_node = node_id.unwrap_or("local");
         let stats_body = serde_json::json!({
+            "graph_memory_usage": state.native_memory_used_bytes,
+            "graph_memory_usage_percentage": 0,
             "graph_count": state.graph_count,
             "warmed_index_count": state.warmed_index_count,
             "cache_entry_count": state.cache_entry_count,
@@ -17746,6 +17748,11 @@ impl SteelNode {
         RestResponse::json(
             200,
             serde_json::json!({
+                "_shards": {
+                    "total": 1,
+                    "successful": 1,
+                    "failed": 0
+                },
                 "index": index,
                 "warmed": true,
                 "vector_segment_count": vector_segment_count,
@@ -17783,6 +17790,11 @@ impl SteelNode {
         RestResponse::json(
             200,
             serde_json::json!({
+                "_shards": {
+                    "total": 1,
+                    "successful": 1,
+                    "failed": 0
+                },
                 "index": index,
                 "cleared_entries": 1,
                 "released_native_memory_bytes": released_native,
@@ -35835,6 +35847,8 @@ fn index_metadata_is_knn_enabled(index_body: &serde_json::Map<String, Value>) ->
 }
 
 const KNN_BOUNDED_STATS: &[&str] = &[
+    "graph_memory_usage",
+    "graph_memory_usage_percentage",
     "graph_count",
     "warmed_index_count",
     "cache_entry_count",
