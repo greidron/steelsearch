@@ -9616,6 +9616,21 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "allow_no_indices_invalid_query_param_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search?allow_no_indices=maybe",
+      "body": {
+        "query": {
+          "match_all": {}
+        }
+      },
+      "extract": "search_error",
+      "family": "failure-path",
+      "description": "[failure-path] allow_no_indices invalid boolean query param error search",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "disallow_no_indices_empty_wildcard_fail_closed",
       "area": "search",
       "method": "POST",
@@ -9659,6 +9674,21 @@
       "extract": "search_hits",
       "family": "failure-path",
       "description": "[failure-path] ignore unavailable multi target search",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "ignore_unavailable_invalid_query_param_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search?ignore_unavailable=maybe",
+      "body": {
+        "query": {
+          "match_all": {}
+        }
+      },
+      "extract": "search_error",
+      "family": "failure-path",
+      "description": "[failure-path] ignore_unavailable invalid boolean query param error search",
       "strict_source_parity_required": true
     },
     {

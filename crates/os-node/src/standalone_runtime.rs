@@ -10183,6 +10183,14 @@ impl SteelNode {
         {
             return response;
         }
+        for field in ["ignore_unavailable", "allow_no_indices"] {
+            if let Some(response) = validate_opensearch_named_boolean_query_param(
+                field,
+                request.query_params.get(field),
+            ) {
+                return response;
+            }
+        }
         if let Some(cancel_after_time_interval) =
             request.query_params.get("cancel_after_time_interval")
         {
@@ -65334,6 +65342,36 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         );
         assert_eq!(ignore_unavailable.status, 200);
         assert_eq!(ignore_unavailable.body["hits"]["total"]["value"], 2);
+
+        let invalid_allow_no_indices = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/logs-search-params-a/_search?allow_no_indices=maybe",
+            )
+            .with_json_body(serde_json::json!({
+                "query": { "match_all": {} }
+            })),
+        );
+        assert_eq!(invalid_allow_no_indices.status, 400);
+        assert_eq!(
+            invalid_allow_no_indices.body["error"]["reason"],
+            "Could not convert [allow_no_indices] to boolean"
+        );
+
+        let invalid_ignore_unavailable = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/logs-search-params-a/_search?ignore_unavailable=maybe",
+            )
+            .with_json_body(serde_json::json!({
+                "query": { "match_all": {} }
+            })),
+        );
+        assert_eq!(invalid_ignore_unavailable.status, 400);
+        assert_eq!(
+            invalid_ignore_unavailable.body["error"]["reason"],
+            "Could not convert [ignore_unavailable] to boolean"
+        );
     }
 
     #[test]
