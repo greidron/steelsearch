@@ -9508,6 +9508,14 @@ impl SteelNode {
                 },
             )
         } else {
+            for field in ["ignore_unavailable", "allow_no_indices"] {
+                if let Some(response) = validate_opensearch_named_boolean_query_param(
+                    field,
+                    request.query_params.get(field),
+                ) {
+                    return response;
+                }
+            }
             let ignore_unavailable =
                 query_param_is_true(request.query_params.get("ignore_unavailable"));
             let allow_no_indices =
@@ -51380,6 +51388,36 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         );
         assert_eq!(allow_no_indices_count.status, 200);
         assert_eq!(allow_no_indices_count.body["count"], 0);
+
+        let invalid_allow_no_indices_count = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/logs-count-*/_count?allow_no_indices=maybe",
+            )
+            .with_json_body(serde_json::json!({
+                "query": { "match_all": {} }
+            })),
+        );
+        assert_eq!(invalid_allow_no_indices_count.status, 400);
+        assert_eq!(
+            invalid_allow_no_indices_count.body["error"]["reason"],
+            "Could not convert [allow_no_indices] to boolean"
+        );
+
+        let invalid_ignore_unavailable_count = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/logs-count-*/_count?ignore_unavailable=maybe",
+            )
+            .with_json_body(serde_json::json!({
+                "query": { "match_all": {} }
+            })),
+        );
+        assert_eq!(invalid_ignore_unavailable_count.status, 400);
+        assert_eq!(
+            invalid_ignore_unavailable_count.body["error"]["reason"],
+            "Could not convert [ignore_unavailable] to boolean"
+        );
 
         let missing_exact_index_count = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/missing-count-000001/_count").with_json_body(
