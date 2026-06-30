@@ -76,6 +76,38 @@ class UnifiedOpenSearchE2EReportTests(unittest.TestCase):
         self.assertEqual(result["classification"]["canonical_equal"], 1)
         self.assertEqual(result["case_gaps"]["extra"], ["stale-extra"])
 
+    def test_suite_recomputes_failed_count_from_cases_when_summary_lies(self):
+        runner = load_module(RUNNER_PATH, "run_unified_opensearch_e2e_summary_drift")
+        suite = runner.Suite(
+            "synthetic",
+            "search",
+            "semantic_parity",
+            None,
+            "unused-fixture.json",
+            "unused-report.json",
+        )
+
+        result = runner.summarize_suite(
+            suite,
+            {"cases": [{"name": "covered"}]},
+            {
+                "targets": {"steelsearch": "http://steelsearch", "opensearch": "http://opensearch"},
+                "summary": {"passed": 1, "failed": 0, "skipped": 0},
+                "cases": [{"name": "covered", "status": "failed"}],
+            },
+        )
+
+        self.assertEqual(result["status"], "failed")
+        self.assertEqual(result["summary"]["passed"], 0)
+        self.assertEqual(result["summary"]["failed"], 1)
+        self.assertEqual(
+            result["summary_drift"],
+            {
+                "passed": {"reported": 1, "recomputed": 0},
+                "failed": {"reported": 0, "recomputed": 1},
+            },
+        )
+
     def test_checker_rejects_required_suite_with_missing_case_without_allow_missing(self):
         checker = load_module(CHECKER_PATH, "check_unified_opensearch_e2e_report")
         report = {

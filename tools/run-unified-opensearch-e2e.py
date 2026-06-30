@@ -461,11 +461,13 @@ def summarize_suite(suite: Suite, fixture: dict[str, Any], report: dict[str, Any
             "case_gaps": empty_case_gaps(),
             "by_area": {},
         }
-    summary = report.get("summary") or {}
-    failed = int(summary.get("failed") or 0)
-    skipped = int(summary.get("skipped") or 0)
+    reported_summary = report.get("summary") or {}
     has_opensearch = "opensearch" in (report.get("targets") or {})
     report_cases = report.get("cases") or []
+    summary = recompute_case_summary(report_cases, reported_summary)
+    summary_drift = case_summary_drift(reported_summary, summary)
+    failed = int(summary.get("failed") or 0)
+    skipped = int(summary.get("skipped") or 0)
     classification = classify_cases(fixture_cases, report_cases, has_opensearch)
     case_gaps = collect_case_gaps(fixture_cases, report_cases)
     missing = int(classification.get("missing") or 0)
@@ -485,8 +487,22 @@ def summarize_suite(suite: Suite, fixture: dict[str, Any], report: dict[str, Any
         "has_opensearch_target": has_opensearch,
         "classification": classification,
         "case_gaps": case_gaps,
+        "summary_drift": summary_drift,
         "by_area": summary.get("by_area") or {},
     }
+
+
+def case_summary_drift(reported: dict[str, Any], recomputed: dict[str, Any]) -> dict[str, dict[str, int]]:
+    drift: dict[str, dict[str, int]] = {}
+    for key in ("passed", "failed", "skipped"):
+        reported_value = int(reported.get(key) or 0)
+        recomputed_value = int(recomputed.get(key) or 0)
+        if reported_value != recomputed_value:
+            drift[key] = {
+                "reported": reported_value,
+                "recomputed": recomputed_value,
+            }
+    return drift
 
 
 def empty_classification() -> dict[str, int]:
