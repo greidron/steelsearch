@@ -90,6 +90,7 @@ pub enum Query {
         fields: Vec<String>,
         query: serde_json::Value,
         query_type: MultiMatchType,
+        slop: usize,
         operator: Option<String>,
         minimum_should_match: Option<usize>,
     },
@@ -2478,11 +2479,17 @@ fn parse_multi_match(body: &Value) -> QueryDslResult<Query> {
         .map(|value| parse_minimum_should_match(value, match_query_clause_count(&query)))
         .transpose()?
         .map(|value| value as usize);
+    let slop = object
+        .get("slop")
+        .map(|value| parse_usize_option("multi_match", "slop", value))
+        .transpose()?
+        .unwrap_or(0);
 
     for option in object.keys() {
         if option != "query"
             && option != "fields"
             && option != "type"
+            && option != "slop"
             && option != "operator"
             && option != "minimum_should_match"
         {
@@ -2497,6 +2504,7 @@ fn parse_multi_match(body: &Value) -> QueryDslResult<Query> {
         fields,
         query,
         query_type,
+        slop,
         operator,
         minimum_should_match,
     })
@@ -4282,6 +4290,7 @@ mod tests {
                 fields: vec!["title".to_string(), "body".to_string()],
                 query: serde_json::json!("alpha"),
                 query_type: MultiMatchType::BestFields,
+                slop: 0,
                 operator: Some("and".to_string()),
                 minimum_should_match: None,
             }
@@ -4302,6 +4311,29 @@ mod tests {
                 fields: vec!["title".to_string()],
                 query: serde_json::json!("alpha che"),
                 query_type: MultiMatchType::PhrasePrefix,
+                slop: 0,
+                operator: None,
+                minimum_should_match: None,
+            }
+        );
+
+        let phrase_with_slop = parse_query(&serde_json::json!({
+            "multi_match": {
+                "query": "alpha fox",
+                "fields": ["title"],
+                "type": "phrase",
+                "slop": 1
+            }
+        }))
+        .unwrap();
+
+        assert_eq!(
+            phrase_with_slop,
+            Query::MultiMatch {
+                fields: vec!["title".to_string()],
+                query: serde_json::json!("alpha fox"),
+                query_type: MultiMatchType::Phrase,
+                slop: 1,
                 operator: None,
                 minimum_should_match: None,
             }
@@ -4321,6 +4353,7 @@ mod tests {
                 fields: vec!["title^2".to_string()],
                 query: serde_json::json!("alpha"),
                 query_type: MultiMatchType::BestFields,
+                slop: 0,
                 operator: None,
                 minimum_should_match: None,
             }

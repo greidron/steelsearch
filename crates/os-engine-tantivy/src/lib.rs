@@ -2872,6 +2872,7 @@ fn build_tantivy_query(
             fields,
             query,
             query_type,
+            slop,
             operator,
             minimum_should_match,
         } => build_tantivy_multi_match_query(
@@ -2879,6 +2880,7 @@ fn build_tantivy_query(
             fields,
             query,
             *query_type,
+            *slop,
             operator.as_deref(),
             *minimum_should_match,
         ),
@@ -3682,6 +3684,7 @@ fn build_tantivy_multi_match_query(
     fields: &[String],
     query: &Value,
     query_type: MultiMatchType,
+    slop: usize,
     operator: Option<&str>,
     minimum_should_match: Option<usize>,
 ) -> EngineResult<Option<Box<dyn TantivyQueryTrait>>> {
@@ -3714,7 +3717,7 @@ fn build_tantivy_multi_match_query(
                 field_minimum_should_match,
             )?,
             MultiMatchType::Phrase => {
-                build_tantivy_match_phrase_query(search_state, base_field, query, 0)?
+                build_tantivy_match_phrase_query(search_state, base_field, query, slop)?
             }
             MultiMatchType::PhrasePrefix => {
                 build_tantivy_match_phrase_prefix_query(search_state, base_field, query)?
@@ -16302,6 +16305,7 @@ fn document_matches_query(query: &Query, id: &str, source: &Value) -> bool {
             fields,
             query,
             query_type,
+            slop,
             operator,
             minimum_should_match,
         } => matches_multi_match_query(
@@ -16310,6 +16314,7 @@ fn document_matches_query(query: &Query, id: &str, source: &Value) -> bool {
             fields,
             query,
             *query_type,
+            *slop,
             operator.as_deref(),
             *minimum_should_match,
         ),
@@ -17443,6 +17448,7 @@ fn matches_multi_match_query(
     fields: &[String],
     query: &Value,
     query_type: MultiMatchType,
+    slop: usize,
     operator: Option<&str>,
     minimum_should_match: Option<usize>,
 ) -> bool {
@@ -17461,7 +17467,7 @@ fn matches_multi_match_query(
             MultiMatchType::BestFields => {
                 matches_match_query_with_minimum(field_value, query, field_minimum_should_match)
             }
-            MultiMatchType::Phrase => matches_match_phrase_query(field_value, query, 0),
+            MultiMatchType::Phrase => matches_match_phrase_query(field_value, query, slop),
             MultiMatchType::PhrasePrefix => matches_match_phrase_prefix_query(field_value, query),
         }
     })
@@ -18142,6 +18148,7 @@ fn localize_query_fields_for_nested_child(query: &Query, path: &str) -> Query {
             fields,
             query,
             query_type,
+            slop,
             operator,
             minimum_should_match,
         } => Query::MultiMatch {
@@ -18151,6 +18158,7 @@ fn localize_query_fields_for_nested_child(query: &Query, path: &str) -> Query {
                 .collect(),
             query: query.clone(),
             query_type: *query_type,
+            slop: *slop,
             operator: operator.clone(),
             minimum_should_match: *minimum_should_match,
         },
@@ -18421,6 +18429,7 @@ fn native_nested_child_ordinals_for_query(
             fields,
             query,
             query_type,
+            slop,
             operator,
             minimum_should_match,
         } => nested_child_multi_match_ordinals(
@@ -18429,6 +18438,7 @@ fn native_nested_child_ordinals_for_query(
             fields,
             query,
             *query_type,
+            *slop,
             operator.as_deref(),
             *minimum_should_match,
         ),
@@ -18965,6 +18975,7 @@ fn nested_child_multi_match_ordinals(
     fields: &[String],
     query: &Value,
     query_type: MultiMatchType,
+    slop: usize,
     operator: Option<&str>,
     minimum_should_match: Option<usize>,
 ) -> Option<std::collections::BTreeSet<usize>> {
@@ -18984,7 +18995,7 @@ fn nested_child_multi_match_ordinals(
             }
             MultiMatchType::Phrase => {
                 ordinals.extend(nested_child_match_phrase_ordinals(
-                    path_index, path, field, query, 0,
+                    path_index, path, field, query, slop,
                 )?);
             }
             MultiMatchType::PhrasePrefix => {
@@ -144860,7 +144871,7 @@ mod tests {
         for (id, title, body) in [
             ("1", "alpha", "checkout"),
             ("2", "beta", "alpha store"),
-            ("3", "gamma", "omega"),
+            ("3", "gamma", "alpha quick store"),
         ] {
             engine
                 .index_document(IndexDocumentRequest {
@@ -144893,7 +144904,7 @@ mod tests {
             .search_hits_for_query_native("bench", &query, &[])
             .unwrap()
             .expect("native multi_match hits");
-        assert_eq!(search_hit_ids(&native_hits), vec!["1", "2"]);
+        assert_eq!(search_hit_ids(&native_hits), vec!["1", "2", "3"]);
 
         let single_field_query = parse_query(&serde_json::json!({
             "multi_match": {
@@ -144907,6 +144918,35 @@ mod tests {
             .unwrap()
             .expect("native multi_match single field string hits");
         assert_eq!(search_hit_ids(&native_hits), vec!["1"]);
+
+        let phrase_query = parse_query(&serde_json::json!({
+            "multi_match": {
+                "query": "alpha store",
+                "fields": ["body"],
+                "type": "phrase"
+            }
+        }))
+        .unwrap();
+        let native_hits = index
+            .search_hits_for_query_native("bench", &phrase_query, &[])
+            .unwrap()
+            .expect("native multi_match phrase hits");
+        assert_eq!(search_hit_ids(&native_hits), vec!["2"]);
+
+        let phrase_slop_query = parse_query(&serde_json::json!({
+            "multi_match": {
+                "query": "alpha store",
+                "fields": ["body"],
+                "type": "phrase",
+                "slop": 1
+            }
+        }))
+        .unwrap();
+        let native_hits = index
+            .search_hits_for_query_native("bench", &phrase_slop_query, &[])
+            .unwrap()
+            .expect("native multi_match phrase slop hits");
+        assert_eq!(search_hit_ids(&native_hits), vec!["2", "3"]);
     }
 
     #[test]

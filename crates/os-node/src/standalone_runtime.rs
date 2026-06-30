@@ -29762,16 +29762,27 @@ fn evaluate_search_query_source_with_mappings(
         let fields = extract_multi_match_fields(multi_match.get("fields"));
         let field_refs = fields.iter().map(String::as_str).collect::<Vec<_>>();
         let haystacks = collect_searchable_field_values(source, Some(field_refs.as_slice()));
+        let slop = extract_match_phrase_slop(&Value::Object(multi_match.clone()));
         let (matched, score) = match multi_match.get("type").and_then(Value::as_str) {
             Some("phrase") => {
                 let matched = haystacks.iter().any(|haystack| {
-                    value_matches_phrase(Some(&Value::String(haystack.clone())), expected, false, 0)
+                    value_matches_phrase(
+                        Some(&Value::String(haystack.clone())),
+                        expected,
+                        false,
+                        slop,
+                    )
                 });
                 (matched, if matched { 1.0 } else { 0.0 })
             }
             Some("phrase_prefix") => {
                 let matched = haystacks.iter().any(|haystack| {
-                    value_matches_phrase(Some(&Value::String(haystack.clone())), expected, true, 0)
+                    value_matches_phrase(
+                        Some(&Value::String(haystack.clone())),
+                        expected,
+                        true,
+                        slop,
+                    )
                 });
                 (matched, if matched { 1.0 } else { 0.0 })
             }
