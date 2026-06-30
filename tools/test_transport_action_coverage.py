@@ -59,6 +59,7 @@ class TransportActionCoverageTests(unittest.TestCase):
 
     def test_accepted_transport_evidence_scope_counts_are_reported(self):
         evidence = json.loads(ACCEPTED_TRANSPORT_EVIDENCE.read_text(encoding="utf-8"))
+        inventory = json.loads(TRANSPORT_INVENTORY.read_text(encoding="utf-8"))
 
         self.assertEqual(self.report.accepted_evidence_action_count(evidence), 174)
         self.assertEqual(
@@ -70,6 +71,38 @@ class TransportActionCoverageTests(unittest.TestCase):
             },
         )
         self.assertEqual(self.report.accepted_evidence_errors(evidence), [])
+        self.assertEqual(
+            self.report.accepted_evidence_inventory_coverage(inventory, evidence),
+            {
+                "inventory_action_count": 174,
+                "matched_action_count": 174,
+                "missing_actions": [],
+                "extra_actions": [],
+                "errors": [],
+            },
+        )
+
+    def test_accepted_transport_evidence_inventory_coverage_reports_drift(self):
+        inventory = {
+            "actions": [
+                {"action_name": "cluster:monitor/main"},
+                {"action_name": "indices:data/read/search"},
+            ]
+        }
+        evidence = {
+            "actions": [
+                {"action_name": "cluster:monitor/main"},
+                {"action_name": "indices:data/read/get"},
+            ]
+        }
+
+        coverage = self.report.accepted_evidence_inventory_coverage(inventory, evidence)
+
+        self.assertEqual(coverage["inventory_action_count"], 2)
+        self.assertEqual(coverage["matched_action_count"], 1)
+        self.assertEqual(coverage["missing_actions"], ["indices:data/read/search"])
+        self.assertEqual(coverage["extra_actions"], ["indices:data/read/get"])
+        self.assertEqual(len(coverage["errors"]), 2)
 
     def test_peer_report_passed_requires_summary_passed(self):
         self.assertTrue(self.report.peer_report_passed({"summary": {"passed": True}}))
@@ -119,6 +152,10 @@ class TransportActionCoverageTests(unittest.TestCase):
             self.assertEqual(payload["summary"]["implemented_action_count"], 0)
             self.assertEqual(payload["summary"]["partial_action_count"], 0)
             self.assertEqual(payload["summary"]["accepted_evidence_action_count"], 174)
+            self.assertEqual(payload["summary"]["inventory_action_count"], 174)
+            self.assertEqual(payload["summary"]["accepted_evidence_inventory_matched_action_count"], 174)
+            self.assertEqual(payload["summary"]["accepted_evidence_inventory_missing_action_count"], 0)
+            self.assertEqual(payload["summary"]["accepted_evidence_inventory_extra_action_count"], 0)
             self.assertEqual(
                 payload["summary"]["accepted_evidence_scope_counts"]["bounded_execution_boundary"],
                 8,
@@ -146,6 +183,10 @@ class TransportActionCoverageTests(unittest.TestCase):
             self.assertEqual(payload["summary"]["partial_action_count"], 0)
             self.assertEqual(payload["summary"]["planned_action_count"], 0)
             self.assertEqual(payload["summary"]["accepted_evidence_action_count"], 174)
+            self.assertEqual(payload["summary"]["inventory_action_count"], 174)
+            self.assertEqual(payload["summary"]["accepted_evidence_inventory_matched_action_count"], 174)
+            self.assertEqual(payload["summary"]["accepted_evidence_inventory_missing_action_count"], 0)
+            self.assertEqual(payload["summary"]["accepted_evidence_inventory_extra_action_count"], 0)
             self.assertEqual(
                 payload["summary"]["accepted_evidence_scope_counts"],
                 {

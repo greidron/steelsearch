@@ -16,6 +16,7 @@ ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_SOURCE = ROOT / "docs/rust-port/generated/source-transport-actions.tsv"
 DEFAULT_PEER_REPORT = ROOT / "target/runtime-peer-backpressure-current.json"
 DEFAULT_ACCEPTED_EVIDENCE = ROOT / "tools/fixtures/interop-accepted-transport-action-evidence.json"
+DEFAULT_ACTION_INVENTORY = ROOT / "tools/fixtures/interop-transport-action-inventory.json"
 HANDSHAKE_MATRIX = ROOT / "docs/rust-port/transport-handshake-version-skew-matrix.md"
 MESSAGE_SEQUENCE = ROOT / "docs/rust-port/transport-message-sequence.md"
 ACCEPTED_EVIDENCE_SCOPES = {
@@ -30,6 +31,7 @@ def main() -> int:
     parser.add_argument("--source", default=str(DEFAULT_SOURCE))
     parser.add_argument("--peer-backpressure-report", default=str(DEFAULT_PEER_REPORT))
     parser.add_argument("--accepted-evidence", default=str(DEFAULT_ACCEPTED_EVIDENCE))
+    parser.add_argument("--inventory", default=str(DEFAULT_ACTION_INVENTORY))
     parser.add_argument("--output")
     parser.add_argument("--require-peer-backpressure", action="store_true")
     parser.add_argument(
@@ -40,6 +42,8 @@ def main() -> int:
     args = parser.parse_args()
 
     actions = load_actions(Path(args.source))
+    inventory_path = Path(args.inventory)
+    inventory = load_optional_json(inventory_path)
     accepted_evidence_path = Path(args.accepted_evidence)
     accepted_evidence = load_optional_json(accepted_evidence_path)
     peer_path = Path(args.peer_backpressure_report)
@@ -52,6 +56,8 @@ def main() -> int:
         errors.append(peer_fresh["reason"])
     evidence_errors = accepted_evidence_errors(accepted_evidence)
     errors.extend(evidence_errors)
+    evidence_inventory = accepted_evidence_inventory_coverage(inventory, accepted_evidence)
+    errors.extend(evidence_inventory["errors"])
 
     protocol_evidence = {
         "handshake_version_skew_matrix": file_evidence(HANDSHAKE_MATRIX),
@@ -78,6 +84,7 @@ def main() -> int:
         "status": status,
         "errors": errors,
         "source": str(Path(args.source)),
+        "inventory_source": str(inventory_path),
         "accepted_evidence_source": str(accepted_evidence_path),
         "summary": {
             "passed": not errors,
@@ -91,6 +98,10 @@ def main() -> int:
             "peer_backpressure_passed": protocol_evidence["peer_backpressure"]["passed"],
             "accepted_evidence_action_count": accepted_evidence_action_count(accepted_evidence),
             "accepted_evidence_scope_counts": accepted_evidence_scope_counts(accepted_evidence),
+            "inventory_action_count": evidence_inventory["inventory_action_count"],
+            "accepted_evidence_inventory_matched_action_count": evidence_inventory["matched_action_count"],
+            "accepted_evidence_inventory_missing_action_count": len(evidence_inventory["missing_actions"]),
+            "accepted_evidence_inventory_extra_action_count": len(evidence_inventory["extra_actions"]),
         },
         "status_counts": status_counts(actions),
         "protocol_evidence": protocol_evidence,
@@ -101,6 +112,7 @@ def main() -> int:
         "stubbed_actions": filter_status(actions, "stubbed"),
         "out_of_scope_actions": filter_status(actions, "out-of-scope"),
         "accepted_transport_evidence": accepted_evidence_actions(accepted_evidence),
+        "accepted_evidence_inventory_coverage": evidence_inventory,
     }
     text = json.dumps(report, indent=2, sort_keys=True) + "\n"
     if args.output:
@@ -144,6 +156,48 @@ def accepted_evidence_actions(report: dict[str, Any] | None) -> list[dict[str, A
 
 def accepted_evidence_action_count(report: dict[str, Any] | None) -> int:
     return len(accepted_evidence_actions(report))
+
+
+def inventory_action_names(report: dict[str, Any] | None) -> set[str]:
+    if not isinstance(report, dict):
+        return set()
+    names = set()
+    for action in report.get("actions") or []:
+        if isinstance(action, dict) and action.get("action_name"):
+            names.add(str(action["action_name"]))
+    return names
+
+
+def accepted_evidence_action_names(report: dict[str, Any] | None) -> set[str]:
+    return {
+        str(action["action_name"])
+        for action in accepted_evidence_actions(report)
+        if isinstance(action, dict) and action.get("action_name")
+    }
+
+
+def accepted_evidence_inventory_coverage(
+    inventory: dict[str, Any] | None,
+    accepted_evidence: dict[str, Any] | None,
+) -> dict[str, Any]:
+    inventory_names = inventory_action_names(inventory)
+    evidence_names = accepted_evidence_action_names(accepted_evidence)
+    missing = sorted(inventory_names - evidence_names)
+    extra = sorted(evidence_names - inventory_names)
+    errors = []
+    if not isinstance(inventory, dict):
+        errors.append("transport action inventory is missing or invalid")
+    if missing:
+        errors.append(f"accepted transport evidence is missing inventory actions: {', '.join(missing)}")
+    if extra:
+        errors.append(f"accepted transport evidence has actions outside inventory: {', '.join(extra)}")
+    return {
+        "inventory_action_count": len(inventory_names),
+        "matched_action_count": len(inventory_names & evidence_names),
+        "missing_actions": missing,
+        "extra_actions": extra,
+        "errors": errors,
+    }
 
 
 def accepted_evidence_scope_counts(report: dict[str, Any] | None) -> dict[str, int]:
