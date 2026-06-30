@@ -471,10 +471,11 @@ def summarize_suite(suite: Suite, fixture: dict[str, Any], report: dict[str, Any
     classification = classify_cases(fixture_cases, report_cases, has_opensearch)
     case_gaps = collect_case_gaps(fixture_cases, report_cases)
     missing = int(classification.get("missing") or 0)
-    status = "ok" if failed == 0 and missing == 0 else "failed"
-    if skipped and failed == 0:
+    classified_failed = int(classification.get("failed") or 0)
+    status = "ok" if failed == 0 and classified_failed == 0 and missing == 0 else "failed"
+    if skipped and failed == 0 and classified_failed == 0:
         status = "ok"
-    if missing and failed == 0:
+    if missing and failed == 0 and classified_failed == 0:
         status = "missing"
     return {
         **base,
@@ -543,6 +544,9 @@ def classify_cases(fixture_cases: list[dict[str, Any]], report_cases: list[dict[
         if status == "skipped":
             counts["known_gap_or_skipped"] += 1
             continue
+        if status != "passed":
+            counts["failed"] += 1
+            continue
         if fixture_case.get("comparison") == "steelsearch_only":
             if "expected_steelsearch_status" in fixture_case:
                 counts["steelsearch_fail_closed"] += 1
@@ -572,7 +576,8 @@ def collect_case_gaps(fixture_cases: list[dict[str, Any]], report_cases: list[di
     failed = sorted(
         name
         for name, case in report_by_name.items()
-        if name in fixture_names and case.get("status") == "failed"
+        if name in fixture_names
+        and case.get("status") not in {"passed", "skipped"}
     )
     skipped = sorted(
         name
