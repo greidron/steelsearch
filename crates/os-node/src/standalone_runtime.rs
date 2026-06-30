@@ -27224,6 +27224,11 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
             }
         }
     }
+    if let Some(ids) = query.get("ids").and_then(Value::as_object) {
+        if let Some(response) = validate_ids_query_shape(ids) {
+            return Some(response);
+        }
+    }
     for query_name in ["query_string", "simple_query_string"] {
         if let Some(spec) = query.get(query_name).and_then(Value::as_object) {
             if spec
@@ -28073,6 +28078,35 @@ fn validate_dis_max_query_shape(query: &serde_json::Map<String, Value>) -> Optio
     {
         return Some(build_parsing_search_response_with_root_cause(
             "[dis_max] query does not support [boost]",
+        ));
+    }
+    None
+}
+
+fn validate_ids_query_shape(query: &serde_json::Map<String, Value>) -> Option<RestResponse> {
+    for key in query.keys() {
+        if !matches!(key.as_str(), "values" | "boost" | "_name") {
+            return Some(build_parsing_search_response_with_root_cause(&format!(
+                "[1:41] [ids] unknown field [{key}]"
+            )));
+        }
+    }
+    if let Some(values) = query.get("values") {
+        if !values
+            .as_array()
+            .is_some_and(|items| items.iter().all(Value::is_string))
+        {
+            return Some(build_parsing_search_response_with_root_cause(
+                "[ids] failed to parse field [values]",
+            ));
+        }
+    }
+    if query
+        .get("boost")
+        .is_some_and(|value| value.as_f64().is_none())
+    {
+        return Some(build_parsing_search_response_with_root_cause(
+            "[ids] failed to parse field [boost]",
         ));
     }
     None
@@ -55987,6 +56021,31 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                     { "term": { "service": "catalog" } }
                 ],
                 "tie_breaker": 0.2
+            }
+        }))
+        .is_none());
+    }
+
+    #[test]
+    fn search_ids_rejects_unknown_fields_and_accepts_boost() {
+        let response = validate_search_query_body(&serde_json::json!({
+            "ids": {
+                "values": ["log-1"],
+                "unsupported_option": true
+            }
+        }))
+        .expect("unknown ids field should fail closed");
+        assert_eq!(response.status, 400);
+        assert_eq!(response.body["error"]["type"], "parsing_exception");
+        assert_eq!(
+            response.body["error"]["root_cause"][0]["reason"],
+            "[1:41] [ids] unknown field [unsupported_option]"
+        );
+
+        assert!(validate_search_query_body(&serde_json::json!({
+            "ids": {
+                "values": ["log-1"],
+                "boost": 2.0
             }
         }))
         .is_none());

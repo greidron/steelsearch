@@ -4936,6 +4936,53 @@
       "description": "[lexical] ids query search"
     },
     {
+      "name": "ids_query_boost_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "ids": {
+            "values": [
+              "log-3",
+              "log-1"
+            ],
+            "boost": 2.0
+          }
+        },
+        "sort": [
+          {
+            "bytes": {
+              "order": "desc"
+            }
+          }
+        ]
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] ids query accepts boost like OpenSearch"
+    },
+    {
+      "name": "ids_unknown_field_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "ids": {
+            "values": [
+              "log-1"
+            ],
+            "unsupported_option": true
+          }
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] ids query rejects unknown fields like OpenSearch"
+    },
+    {
       "name": "intervals_query_search",
       "area": "search",
       "method": "POST",
