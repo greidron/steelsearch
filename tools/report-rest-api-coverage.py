@@ -56,8 +56,7 @@ def main() -> int:
     live_routes: list[dict[str, str]] = []
     if args.unified_report:
         unified = json.loads(Path(args.unified_report).read_text(encoding="utf-8"))
-        live_fixture_paths = live_required_fixture_paths(unified)
-        live_routes = collect_fixture_routes(live_fixture_paths)
+        live_routes = live_required_fixture_routes(unified)
     live_coverage = coverage_for_routes(source_routes, live_routes)
 
     errors: list[str] = []
@@ -138,7 +137,10 @@ def load_source_routes(path: Path) -> list[dict[str, str]]:
         ]
 
 
-def collect_fixture_routes(paths: list[Path]) -> list[dict[str, str]]:
+def collect_fixture_routes(
+    paths: list[Path],
+    include_case_names_by_path: dict[Path, set[str]] | None = None,
+) -> list[dict[str, str]]:
     routes: list[dict[str, str]] = []
     for path in paths:
         if not path.is_file():
@@ -147,7 +149,12 @@ def collect_fixture_routes(paths: list[Path]) -> list[dict[str, str]]:
             payload = json.loads(path.read_text(encoding="utf-8"))
         except json.JSONDecodeError:
             continue
+        include_case_names = None
+        if include_case_names_by_path is not None:
+            include_case_names = include_case_names_by_path.get(path.resolve())
         for case in iter_fixture_cases(payload):
+            if include_case_names is not None and case.get("name") not in include_case_names:
+                continue
             method = str(case.get("method") or "").upper()
             route_path = str(case.get("path") or "")
             if method and route_path:
@@ -157,7 +164,7 @@ def collect_fixture_routes(paths: list[Path]) -> list[dict[str, str]]:
 
 def iter_fixture_cases(value: Any):
     if isinstance(value, dict):
-        for key in ("setup", "cases"):
+        for key in ("setup", "cases", "steps"):
             items = value.get(key)
             if isinstance(items, list):
                 for item in items:
@@ -178,6 +185,45 @@ def live_required_fixture_paths(report: dict[str, Any]) -> list[Path]:
         if isinstance(fixture_path, str) and fixture_path:
             paths.append(Path(fixture_path))
     return paths
+
+
+def live_required_fixture_routes(report: dict[str, Any]) -> list[dict[str, str]]:
+    routes: list[dict[str, str]] = []
+    for suite in report.get("suite_results") or []:
+        if not isinstance(suite, dict) or not suite.get("required") or suite.get("status") != "ok":
+            continue
+        fixture_path_value = suite.get("fixture_path")
+        if not isinstance(fixture_path_value, str) or not fixture_path_value:
+            continue
+        fixture_path = Path(fixture_path_value)
+        if suite.get("allow_partial_report") is True:
+            case_names = report_case_names(suite.get("report_path"))
+            routes.extend(
+                collect_fixture_routes(
+                    [fixture_path],
+                    {fixture_path.resolve(): case_names},
+                )
+            )
+        else:
+            routes.extend(collect_fixture_routes([fixture_path]))
+    return routes
+
+
+def report_case_names(path_value: Any) -> set[str]:
+    if not isinstance(path_value, str) or not path_value:
+        return set()
+    path = Path(path_value)
+    if not path.is_file():
+        return set()
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return set()
+    return {
+        str(case.get("name"))
+        for case in payload.get("cases") or []
+        if isinstance(case, dict) and case.get("name")
+    }
 
 
 def coverage_for_routes(source_routes: list[dict[str, str]], observed_routes: list[dict[str, str]]) -> dict[str, Any]:

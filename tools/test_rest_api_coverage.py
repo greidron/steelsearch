@@ -162,6 +162,45 @@ class RestApiCoverageTests(unittest.TestCase):
         self.assertEqual(coverage["uncovered_in_scope_source_routes"], [])
         self.assertEqual(coverage["uncovered_in_scope_route_groups"], [])
 
+    def test_collect_fixture_routes_includes_multi_step_case_routes(self):
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            fixture = Path(temp_dir_value) / "fixture.json"
+            fixture.write_text(
+                json.dumps(
+                    {
+                        "cases": [
+                            {
+                                "name": "multi-step",
+                                "steps": [
+                                    {
+                                        "name": "put-settings",
+                                        "method": "PUT",
+                                        "path": "/_plugins/_knn/settings",
+                                    },
+                                    {
+                                        "name": "get-settings",
+                                        "method": "GET",
+                                        "path": "/_plugins/_knn/settings",
+                                    },
+                                ],
+                            }
+                        ]
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            routes = self.report.collect_fixture_routes([fixture])
+
+            self.assertEqual(
+                [(route["method"], route["path"]) for route in routes],
+                [
+                    ("PUT", "/_plugins/_knn/settings"),
+                    ("GET", "/_plugins/_knn/settings"),
+                ],
+            )
+
     def test_live_required_fixture_paths_only_uses_ok_required_suites(self):
         report = {
             "suite_results": [
@@ -190,6 +229,66 @@ class RestApiCoverageTests(unittest.TestCase):
             self.report.live_required_fixture_paths(report),
             [Path("/tmp/search.json")],
         )
+
+    def test_live_required_fixture_routes_filters_partial_suite_to_reported_cases(self):
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            temp_dir = Path(temp_dir_value)
+            fixture = temp_dir / "search.json"
+            partial_report = temp_dir / "partial-report.json"
+            fixture.write_text(
+                json.dumps(
+                    {
+                        "cases": [
+                            {
+                                "name": "full-search",
+                                "method": "POST",
+                                "path": "/logs-000001/_search",
+                            },
+                            {
+                                "name": "partial-knn",
+                                "method": "GET",
+                                "path": "/_plugins/_knn/settings",
+                            },
+                        ]
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            partial_report.write_text(
+                json.dumps({"cases": [{"name": "partial-knn", "status": "passed"}]})
+                + "\n",
+                encoding="utf-8",
+            )
+            report = {
+                "suite_results": [
+                    {
+                        "name": "full",
+                        "required": True,
+                        "status": "ok",
+                        "fixture_path": str(fixture),
+                    },
+                    {
+                        "name": "partial",
+                        "required": True,
+                        "status": "ok",
+                        "fixture_path": str(fixture),
+                        "report_path": str(partial_report),
+                        "allow_partial_report": True,
+                    },
+                ]
+            }
+
+            routes = self.report.live_required_fixture_routes(report)
+
+            self.assertEqual(
+                [(route["method"], route["path"]) for route in routes],
+                [
+                    ("POST", "/logs-000001/_search"),
+                    ("GET", "/_plugins/_knn/settings"),
+                    ("GET", "/_plugins/_knn/settings"),
+                ],
+            )
 
     def test_cli_writes_coverage_summary(self):
         with tempfile.TemporaryDirectory() as temp_dir_value:

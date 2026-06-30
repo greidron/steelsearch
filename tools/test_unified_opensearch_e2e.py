@@ -76,6 +76,37 @@ class UnifiedOpenSearchE2EReportTests(unittest.TestCase):
         self.assertEqual(result["classification"]["canonical_equal"], 1)
         self.assertEqual(result["case_gaps"]["extra"], ["stale-extra"])
 
+    def test_partial_suite_classifies_reported_subset_without_missing_fixture_cases(self):
+        runner = load_module(RUNNER_PATH, "run_unified_opensearch_e2e_partial_suite")
+        suite = runner.Suite(
+            "synthetic-partial",
+            "vector-ml",
+            "semantic_parity",
+            "tools/search_compat.py",
+            "unused-fixture.json",
+            "partial-report.json",
+            needs_opensearch=False,
+            allow_partial_report=True,
+            default_cases=("covered",),
+        )
+
+        result = runner.summarize_suite(
+            suite,
+            {"cases": [{"name": "covered"}, {"name": "not-in-partial-report"}]},
+            {
+                "targets": {"steelsearch": "http://steelsearch"},
+                "summary": {"passed": 1, "failed": 0, "skipped": 0},
+                "cases": [{"name": "covered", "status": "passed"}],
+            },
+        )
+
+        self.assertEqual(result["status"], "ok")
+        self.assertTrue(result["allow_partial_report"])
+        self.assertEqual(result["fixture_case_count"], 1)
+        self.assertEqual(result["classification"]["missing"], 0)
+        self.assertEqual(result["classification"]["steelsearch_only"], 1)
+        self.assertEqual(result["case_gaps"]["missing"], [])
+
     def test_suite_recomputes_failed_count_from_cases_when_summary_lies(self):
         runner = load_module(RUNNER_PATH, "run_unified_opensearch_e2e_summary_drift")
         suite = runner.Suite(
@@ -647,6 +678,23 @@ class UnifiedOpenSearchE2EReportTests(unittest.TestCase):
             self.assertEqual(source, "target-recursive")
             self.assertIsNone(unusable)
             self.assertEqual(report["summary"]["passed"], 1)
+
+    def test_partial_search_suite_does_not_collect_generic_search_report_name(self):
+        runner = load_module(RUNNER_PATH, "run_unified_opensearch_e2e_partial_search_report")
+        suite = runner.Suite(
+            "synthetic-partial",
+            "vector-ml",
+            "semantic_parity",
+            "tools/search_compat.py",
+            "tools/fixtures/search-compat.json",
+            "partial-search-report.json",
+            allow_partial_report=True,
+        )
+
+        self.assertEqual(
+            runner.report_names_for_suite(suite),
+            ("partial-search-report.json",),
+        )
 
     def test_load_best_report_rejects_stale_complete_report_when_age_gate_is_set(self):
         runner = load_module(RUNNER_PATH, "run_unified_opensearch_e2e_stale_report")

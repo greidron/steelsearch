@@ -29,6 +29,8 @@ class Suite:
     required: bool = True
     output_arg: str = "--output"
     needs_opensearch: bool = True
+    allow_partial_report: bool = False
+    default_cases: tuple[str, ...] = ()
 
 
 SUITES: tuple[Suite, ...] = (
@@ -52,6 +54,25 @@ SUITES: tuple[Suite, ...] = (
     Suite("search-strict", "search", "semantic_parity", "tools/search_compat.py", "tools/fixtures/search-strict-compat.json", "search-strict-compat-report.json", output_arg="--report"),
     Suite("search-semantic", "search", "semantic_parity", "tools/search_compat.py", "tools/fixtures/search-semantic-compat.json", "search-semantic-compat-report.json", output_arg="--report"),
     Suite("vector-search", "vector-ml", "semantic_parity", "tools/vector_search_compat.py", "tools/fixtures/vector-search-compat.json", "vector-search-compat-report.json"),
+    Suite(
+        "knn-plugin-surface",
+        "vector-ml",
+        "semantic_parity",
+        "tools/search_compat.py",
+        "tools/fixtures/search-compat.json",
+        "knn-plugin-compat-report.json",
+        output_arg="--report",
+        needs_opensearch=False,
+        allow_partial_report=True,
+        default_cases=(
+            "knn_settings_readback",
+            "knn_warmup_basic_shape",
+            "knn_clear_cache_basic_shape",
+            "knn_model_lifecycle_shape",
+            "knn_warmup_budget_failure",
+            "knn_warmup_clear_cache_telemetry_shape",
+        ),
+    ),
     Suite("ml-model-surface", "vector-ml", "semantic_parity", "tools/ml_model_surface_compat.py", "tools/fixtures/ml-model-surface-compat.json", "ml-model-surface-compat-report.json", needs_opensearch=False),
     Suite("snapshot-lifecycle", "snapshot", "durability_parity", "tools/snapshot_lifecycle_compat.py", "tools/fixtures/snapshot-lifecycle-compat.json", "snapshot-lifecycle-compat-report.json"),
     Suite("alias-template-persistence", "durability", "durability_parity", "tools/alias_template_persistence_compat.py", "tools/fixtures/alias-template-persistence-compat.json", "alias-template-persistence-report.json"),
@@ -161,7 +182,8 @@ def run_or_collect_suite(suite: Suite, output_dir: Path, args: argparse.Namespac
             str(args.timeout),
         ]
     )
-    for case_name in args.case or []:
+    selected_cases = args.case or list(suite.default_cases)
+    for case_name in selected_cases:
         command.extend(["--case", case_name])
     started = time.time()
     completed = subprocess.run(command, cwd=ROOT, capture_output=True, text=True, check=False)
@@ -219,7 +241,11 @@ def collect_suite(
 
 def report_names_for_suite(suite: Suite) -> tuple[str, ...]:
     names = [suite.report]
-    if suite.runner == "tools/search_compat.py" and suite.report != "search-compat-report.json":
+    if (
+        suite.runner == "tools/search_compat.py"
+        and suite.report != "search-compat-report.json"
+        and not suite.allow_partial_report
+    ):
         names.append("search-compat-report.json")
     return tuple(names)
 
@@ -390,7 +416,7 @@ def unreachable_response(response: dict[str, Any]) -> bool:
 
 
 def suite_rerun_commands(suite: Suite, output_dir: Path, case_gaps: dict[str, Any] | None = None) -> dict[str, str]:
-    target_cases = list((case_gaps or {}).get("missing") or [])
+    target_cases = list((case_gaps or {}).get("missing") or []) or list(suite.default_cases)
     unified = [
         sys.executable,
         "tools/run-unified-opensearch-e2e.py",
@@ -444,11 +470,24 @@ def shell_join_with_env(command: list[str]) -> str:
 
 def summarize_suite(suite: Suite, fixture: dict[str, Any], report: dict[str, Any] | None) -> dict[str, Any]:
     fixture_cases = fixture.get("cases") or []
+    report_cases = (report.get("cases") or []) if report is not None else []
+    if suite.allow_partial_report and report_cases:
+        report_names = {
+            case.get("name")
+            for case in report_cases
+            if isinstance(case, dict) and case.get("name")
+        }
+        fixture_cases = [
+            case
+            for case in fixture_cases
+            if isinstance(case, dict) and case.get("name") in report_names
+        ]
     base = {
         "name": suite.name,
         "area": suite.area,
         "parity_section": suite.parity_section,
         "required": suite.required,
+        "allow_partial_report": suite.allow_partial_report,
         "fixture_case_count": len(fixture_cases),
     }
     if report is None:
@@ -463,7 +502,6 @@ def summarize_suite(suite: Suite, fixture: dict[str, Any], report: dict[str, Any
         }
     reported_summary = report.get("summary") or {}
     has_opensearch = "opensearch" in (report.get("targets") or {})
-    report_cases = report.get("cases") or []
     summary = recompute_case_summary(report_cases, reported_summary)
     summary_drift = case_summary_drift(reported_summary, summary)
     failed = int(summary.get("failed") or 0)
