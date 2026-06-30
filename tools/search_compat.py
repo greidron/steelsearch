@@ -670,7 +670,52 @@ def cleanup_target(
                 delete_index,
             )
         )
+    cleanup_repositories = set(request_created_repositories(fixture))
+    for case in fixture.get("cases", []):
+        cleanup_repositories.update(case_step_created_repositories(case))
+    for repository in sorted(cleanup_repositories):
+        delete_repository = http_json(
+            base_url,
+            "DELETE",
+            f"/_snapshot/{repository}",
+            None,
+            timeout,
+            request_headers=setup_headers,
+        )
+        steps.append(
+            step_result(
+                target_name,
+                f"cleanup:repository:{repository}",
+                "passed" if delete_repository["status"] in (200, 202, 404) else "failed",
+                delete_repository,
+            )
+        )
     return steps
+
+
+def request_created_repositories(fixture: dict[str, Any]) -> list[str]:
+    repositories: list[str] = []
+    for request in fixture.get("requests", []):
+        repositories.extend(created_repositories_from_request(request))
+    return sorted(set(repositories))
+
+
+def case_step_created_repositories(case: dict[str, Any]) -> list[str]:
+    repositories: list[str] = []
+    repositories.extend(created_repositories_from_request(case))
+    for step in case.get("steps") or []:
+        repositories.extend(created_repositories_from_request(step))
+    return sorted(set(repositories))
+
+
+def created_repositories_from_request(request: dict[str, Any]) -> list[str]:
+    if request.get("method") != "PUT":
+        return []
+    path = str(request.get("path") or "").strip("/")
+    parts = path.split("/")
+    if len(parts) != 2 or parts[0] != "_snapshot" or not parts[1]:
+        return []
+    return [parts[1]]
 
 
 def request_created_indices(fixture: dict[str, Any]) -> list[str]:
@@ -986,12 +1031,17 @@ def run_case_request(
             request_headers=step_headers,
         )
         expected_status = resolved_step.get("expected_status")
+        passed = (
+            expected_status is None
+            or response["status"] == expected_status
+            or (isinstance(expected_status, list) and response["status"] in expected_status)
+        )
         step_results.append(
             {
                 "name": resolved_step.get("name", f"step-{index + 1}"),
                 "status": response["status"],
                 "expected_status": expected_status,
-                "passed": expected_status is None or response["status"] == expected_status,
+                "passed": passed,
                 "extract": extract(resolved_step.get("extract", "status_only"), response),
             }
         )
@@ -2325,6 +2375,7 @@ def extract(kind: str, response: dict[str, Any]) -> Any:
                 "segments.count",
                 "pri.sc",
                 "pri.segments.count",
+                "search.point_in_time_time",
             },
             "<volatile>",
         )

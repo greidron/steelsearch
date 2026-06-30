@@ -88,7 +88,7 @@ def search_summary(response: dict[str, Any]) -> dict[str, Any]:
         "ids": [hit.get("_id") for hit in hits],
     }
     if response.get("status") != 200:
-        error = body.get("error") or {}
+        error = normalized_error_body(body)
         summary["error_type"] = error.get("type")
         summary["error_reason"] = error.get("reason")
         caused_by = error.get("caused_by") or {}
@@ -98,12 +98,22 @@ def search_summary(response: dict[str, Any]) -> dict[str, Any]:
     return summary
 
 
+def normalized_error_body(body: dict[str, Any]) -> dict[str, Any]:
+    error = body.get("error") or {}
+    if isinstance(error, dict):
+        return error
+    if isinstance(error, str):
+        return {"type": None, "reason": error}
+    return {"type": None, "reason": str(error)}
+
+
 def error_summary(response: dict[str, Any]) -> dict[str, Any]:
     body = response.get("body") or {}
-    error = body.get("error") or {}
+    error = normalized_error_body(body)
     return {
         "status": response.get("status"),
         "error_type": error.get("type"),
+        "error_reason": error.get("reason"),
     }
 
 
@@ -125,7 +135,7 @@ def case_report_base(case: dict[str, Any]) -> dict[str, Any]:
 
 def missing_knn_plugin_response(response: dict[str, Any]) -> bool:
     body = response.get("body") or {}
-    error = body.get("error") or {}
+    error = normalized_error_body(body)
     reason = str(error.get("reason") or "")
     caused_by_reason = str((error.get("caused_by") or {}).get("reason") or "")
     return (
@@ -146,6 +156,11 @@ def missing_knn_plugin_response(response: dict[str, Any]) -> bool:
 def seed_target(base_url: str, fixture: dict[str, Any], timeout: float) -> tuple[list[dict[str, Any]], str | None]:
     index = fixture["index"]
     reports = []
+    delete_index = {
+        "name": "delete_index",
+        **request_json(base_url, "DELETE", f"/{index}", None, timeout),
+    }
+    reports.append(delete_index)
     create_index = {
         "name": "create_index",
         **request_json(

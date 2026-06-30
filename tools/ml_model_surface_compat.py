@@ -87,6 +87,28 @@ def resolve_placeholders(value: Any, results: dict[str, dict[str, Any]]) -> Any:
     return value
 
 
+def cleanup_fixture_indices(base_url: str, fixture: dict[str, Any], timeout: float) -> list[dict[str, Any]]:
+    reports = []
+    seen = set()
+    for case in fixture.get("cases") or []:
+        if case.get("method") != "PUT":
+            continue
+        path = str(case.get("path") or "")
+        if not path.startswith("/") or path.startswith("/_") or "/_" in path.strip("/"):
+            continue
+        index = path.strip("/")
+        if not index or index in seen:
+            continue
+        seen.add(index)
+        reports.append(
+            {
+                "name": f"delete_index:{index}",
+                **request_json(base_url, "DELETE", f"/{index}", None, timeout),
+            }
+        )
+    return reports
+
+
 def main() -> int:
     args = parse_args()
     if not args.steelsearch_url:
@@ -94,7 +116,15 @@ def main() -> int:
         return 2
     fixture = json.loads(Path(args.fixture).read_text(encoding='utf-8'))
     results: dict[str, dict[str, Any]] = {}
-    report = {"name": fixture.get("name", "ml-model-surface-compat"), "fixture": str(Path(args.fixture).resolve()), "target": args.steelsearch_url, "cases": [], "summary": {"passed": 0, "failed": 0}}
+    cleanup = cleanup_fixture_indices(args.steelsearch_url, fixture, args.timeout)
+    report = {
+        "name": fixture.get("name", "ml-model-surface-compat"),
+        "fixture": str(Path(args.fixture).resolve()),
+        "target": args.steelsearch_url,
+        "setup": cleanup,
+        "cases": [],
+        "summary": {"passed": 0, "failed": 0},
+    }
     exit_code = 0
     case_statuses: dict[str, str] = {}
     for case in fixture["cases"]:

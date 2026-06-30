@@ -291,12 +291,20 @@ def run_or_collect_suite(suite: Suite, output_dir: Path, args: argparse.Namespac
         partial_report = load_json(report_path)
         merged_report = merge_case_reports(baseline_report, partial_report)
         report_path.write_text(json.dumps(merged_report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    result = collect_suite(
-        suite,
-        output_dir,
-        recursive_target_scan=not args.no_recursive_target_scan,
-        max_report_age_seconds=args.max_report_age_seconds,
-    )
+    if report_path.exists():
+        result = collect_suite(
+            suite,
+            output_dir,
+            recursive_target_scan=False,
+            max_report_age_seconds=args.max_report_age_seconds,
+        )
+    else:
+        result = summarize_suite(suite, load_json(ROOT / suite.fixture), None)
+        result["fixture_path"] = str(ROOT / suite.fixture)
+        result["report_path"] = str(report_path)
+        result["report_source"] = "missing"
+        result["rerun"] = suite_rerun_commands(suite, output_dir, result.get("case_gaps", {}))
+        result["note"] = "live runner did not produce the expected report"
     result["run"] = {
         "command": command,
         "duration_seconds": time.time() - started,
