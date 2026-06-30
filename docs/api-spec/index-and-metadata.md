@@ -40,9 +40,9 @@ Examples:
 | Route | OpenSearch meaning | Steelsearch behavior | Status |
 | --- | --- | --- | --- |
 | `PUT /{index}` | Create an index with mappings, settings, aliases, and creation options. | Live standalone route with strict fixture coverage for rich create bodies, selector semantics, and canonical create/query options. | Partial |
-| `GET /{index}` | Read index metadata, aliases, mappings, and settings for one or more targets. | Live standalone route with strict fixture coverage for concrete, wildcard, comma, `_all`, and documented selector options. | Partial |
-| `HEAD /{index}` | Existence check for index targets without response body. | The live standalone profile now supports bodyless exact, wildcard, comma, and `_all` existence probes with index-selector options. Broader index-option parity remains pending. | Partial |
-| `DELETE /{index}` | Delete index metadata and shard data. | The live standalone profile now supports concrete, wildcard, comma, `_all`, and `ignore_unavailable`/`allow_no_indices` delete semantics for existing registered indices. Broader option coverage remains pending. | Partial |
+| `GET /{index}` | Read index metadata, aliases, mappings, and settings for one or more targets. | Live standalone route with strict fixture coverage for concrete, wildcard, comma, `_all`, documented selector options, and OpenSearch-style invalid selector boolean rejection. | Partial |
+| `HEAD /{index}` | Existence check for index targets without response body. | The live standalone profile now supports bodyless exact, wildcard, comma, and `_all` existence probes with index-selector options, including invalid selector boolean rejection. Broader index-option parity remains pending. | Partial |
+| `DELETE /{index}` | Delete index metadata and shard data. | The live standalone profile now supports concrete, wildcard, comma, `_all`, and `ignore_unavailable`/`allow_no_indices` delete semantics plus invalid selector boolean rejection for existing registered indices. Broader option coverage remains pending. | Partial |
 | `POST /{index}/_open`, `POST /{index}/_close` | Transition index state without deleting it. | Live standalone route with strict fixture coverage for targeted and wildcard open/close acknowledgements plus closed-index search failure behavior in unit coverage. Broader allocation and recovery side effects remain partial. | Partial |
 
 ### `HEAD /{index}` Current Standalone Profile
@@ -57,6 +57,8 @@ The current live standalone profile now covers:
 - `_all`
 - selector options `ignore_unavailable`, `allow_no_indices`, and
   `expand_wildcards=open|closed|all`
+- OpenSearch-style rejection for invalid `ignore_unavailable` and
+  `allow_no_indices` boolean values
 
 The route remains a pure existence check:
 
@@ -120,6 +122,7 @@ The current live standalone profile for `DELETE /{index}` covers:
 - `ignore_unavailable=true`
 - `allow_no_indices=true`
 - `expand_wildcards=open|closed|all`
+- invalid `ignore_unavailable` / `allow_no_indices` boolean rejection
 
 Canonical missing-index error semantics still use
 `index_not_found_exception` when the selector is not allowed to collapse to an

@@ -3131,6 +3131,15 @@
       "description": "[admin-cat] ignore unavailable preserves present index targets"
     },
     {
+      "name": "ignore_unavailable_invalid_get_index_error",
+      "area": "index",
+      "method": "GET",
+      "path": "/logs-target-visible-000001?ignore_unavailable=maybe",
+      "extract": "search_error",
+      "family": "admin-cat",
+      "description": "[admin-cat] invalid ignore_unavailable get-index boolean error"
+    },
+    {
       "name": "allow_no_indices_get_index_empty",
       "area": "index",
       "method": "GET",
@@ -3138,6 +3147,15 @@
       "extract": "index_names",
       "family": "admin-cat",
       "description": "[admin-cat] allow_no_indices returns empty get-index body"
+    },
+    {
+      "name": "allow_no_indices_invalid_get_index_error",
+      "area": "index",
+      "method": "GET",
+      "path": "/logs-target-visible-000001?allow_no_indices=maybe",
+      "extract": "search_error",
+      "family": "admin-cat",
+      "description": "[admin-cat] invalid allow_no_indices get-index boolean error"
     },
     {
       "name": "settings_hidden_wildcard_put_ack",

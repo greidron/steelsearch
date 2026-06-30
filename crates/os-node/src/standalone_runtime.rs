@@ -6017,6 +6017,14 @@ impl SteelNode {
 
     fn handle_get_index_route(&self, request: &RestRequest) -> RestResponse {
         let target = request.path.trim_matches('/');
+        for field in ["ignore_unavailable", "allow_no_indices"] {
+            if let Some(response) = validate_opensearch_named_boolean_query_param(
+                field,
+                request.query_params.get(field),
+            ) {
+                return response;
+            }
+        }
         let ignore_unavailable =
             query_param_is_true(request.query_params.get("ignore_unavailable"));
         let expand_wildcards = request
@@ -6050,6 +6058,14 @@ impl SteelNode {
 
     fn handle_delete_index_route(&self, request: &RestRequest) -> RestResponse {
         let target = request.path.trim_matches('/');
+        for field in ["ignore_unavailable", "allow_no_indices"] {
+            if let Some(response) = validate_opensearch_named_boolean_query_param(
+                field,
+                request.query_params.get(field),
+            ) {
+                return response;
+            }
+        }
         let ignore_unavailable =
             query_param_is_true(request.query_params.get("ignore_unavailable"));
         let allow_no_indices = query_param_is_true(request.query_params.get("allow_no_indices"));
@@ -6183,6 +6199,14 @@ impl SteelNode {
 
     fn handle_head_index_route(&self, request: &RestRequest) -> RestResponse {
         let target = request.path.trim_matches('/');
+        for field in ["ignore_unavailable", "allow_no_indices"] {
+            if let Some(response) = validate_opensearch_named_boolean_query_param(
+                field,
+                request.query_params.get(field),
+            ) {
+                return response;
+            }
+        }
         let ignore_unavailable =
             query_param_is_true(request.query_params.get("ignore_unavailable"));
         let allow_no_indices = query_param_is_true(request.query_params.get("allow_no_indices"));
@@ -49655,6 +49679,50 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             assert_eq!(response.status, expected_status, "path {path}");
             assert!(response.body.is_null(), "path {path}");
         }
+
+        let invalid_get_ignore_unavailable = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/logs-head-index-000001?ignore_unavailable=maybe",
+        ));
+        assert_eq!(invalid_get_ignore_unavailable.status, 400);
+        assert_eq!(
+            invalid_get_ignore_unavailable.body["error"]["reason"],
+            "Could not convert [ignore_unavailable] to boolean"
+        );
+
+        let invalid_get_allow_no_indices = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/logs-head-index-000001?allow_no_indices=maybe",
+        ));
+        assert_eq!(invalid_get_allow_no_indices.status, 400);
+        assert_eq!(
+            invalid_get_allow_no_indices.body["error"]["reason"],
+            "Could not convert [allow_no_indices] to boolean"
+        );
+
+        let invalid_head_allow_no_indices = node.handle_rest_request(RestRequest::new(
+            RestMethod::Head,
+            "/logs-head-index-000001?allow_no_indices=maybe",
+        ));
+        assert_eq!(invalid_head_allow_no_indices.status, 400);
+
+        let invalid_delete_ignore_unavailable = node.handle_rest_request(RestRequest::new(
+            RestMethod::Delete,
+            "/logs-head-index-000001?ignore_unavailable=maybe",
+        ));
+        assert_eq!(invalid_delete_ignore_unavailable.status, 400);
+        assert_eq!(
+            invalid_delete_ignore_unavailable.body["error"]["reason"],
+            "Could not convert [ignore_unavailable] to boolean"
+        );
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(
+                RestMethod::Head,
+                "/logs-head-index-000001"
+            ))
+            .status,
+            200
+        );
     }
 
     #[test]
