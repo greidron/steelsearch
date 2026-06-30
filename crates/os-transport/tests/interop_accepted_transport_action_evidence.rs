@@ -103,6 +103,11 @@ fn interop_accepted_transport_action_evidence_covers_every_implemented_action() 
             "missing request evidence for {}",
             action.action_name
         );
+        assert!(
+            !action.request_evidence.contains("rejected_action_frame"),
+            "{}: implemented request evidence must describe an accepted action frame or explicit execution boundary, not a rejected action frame",
+            action.action_name
+        );
         assert_evidence_symbol_exists(
             &action.action_name,
             "request_evidence",

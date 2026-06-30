@@ -57533,7 +57533,7 @@ mod tests {
     }
 
     #[test]
-    fn cluster_allocation_explain_transport_messages_bind_rejected_action_frame() {
+    fn cluster_allocation_explain_transport_messages_bind_action_frame_and_execution_boundary() {
         let request = ClusterAllocationExplainRequestWire::default();
         let mut frame = build_cluster_allocation_explain_request_message(
             44,
@@ -70111,7 +70111,7 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_simulate_template_transport_messages_bind_rejected_action_frame() {
+    fn opensearch_simulate_template_transport_messages_bind_action_frame_and_execution_boundary() {
         let request = OpenSearchSimulateTemplateRequestWire::default();
         let mut frame = build_opensearch_simulate_template_request_message(
             67,
@@ -72489,7 +72489,8 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_indices_shard_stores_transport_messages_bind_rejected_action_frame() {
+    fn opensearch_indices_shard_stores_transport_messages_bind_action_frame_and_execution_boundary()
+    {
         let request = OpenSearchIndicesShardStoresRequestWire::default();
         let mut frame = build_opensearch_indices_shard_stores_request_message(
             42,
@@ -79825,7 +79826,7 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_search_transport_messages_bind_rejected_action_frame() {
+    fn opensearch_search_transport_messages_bind_action_frame_and_execution_boundary() {
         let request = OpenSearchSearchRequestWire::default();
         let mut frame =
             build_opensearch_search_request_message(46, OPENSEARCH_3_7_0_TRANSPORT, &request)
@@ -80738,7 +80739,7 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_stream_search_transport_messages_bind_rejected_action_frame() {
+    fn opensearch_stream_search_transport_messages_bind_action_frame_and_execution_boundary() {
         let request = OpenSearchSearchRequestWire::default();
         let mut frame = build_opensearch_stream_search_request_message(
             48,
@@ -80872,7 +80873,7 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_multi_search_transport_messages_bind_rejected_action_frame() {
+    fn opensearch_multi_search_transport_messages_bind_action_frame_and_execution_boundary() {
         let request = OpenSearchMultiSearchRequestWire::default();
         let mut frame =
             build_opensearch_multi_search_request_message(47, OPENSEARCH_3_7_0_TRANSPORT, &request)
@@ -80985,7 +80986,7 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_search_scroll_transport_messages_bind_rejected_action_frame() {
+    fn opensearch_search_scroll_transport_messages_bind_action_frame_and_execution_boundary() {
         let request = OpenSearchSearchScrollRequestWire::default();
         let mut frame = build_opensearch_search_scroll_request_message(
             49,
