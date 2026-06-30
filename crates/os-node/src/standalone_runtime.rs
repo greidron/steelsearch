@@ -3177,6 +3177,9 @@ impl SteelNode {
                 ) {
                     return Some(response);
                 }
+                if let Some(response) = validate_index_stats_query_params(request) {
+                    return Some(response);
+                }
                 stats_route_registration::invoke_index_stats_live_route(&self.index_stats_body())
             })),
             (RestMethod::Get, "/_analyze") | (RestMethod::Post, "/_analyze") => {
@@ -3413,6 +3416,9 @@ impl SteelNode {
                 SecurityPermission::IndexRead,
                 "index metadata",
             ) {
+                return Some(response);
+            }
+            if let Some(response) = validate_index_stats_query_params(request) {
                 return Some(response);
             }
             return Some(self.handle_index_stats_route(None));
@@ -4835,7 +4841,7 @@ impl SteelNode {
                 ) {
                     return Some(response);
                 }
-                if let Some(response) = validate_index_target_boolean_query_params(request) {
+                if let Some(response) = validate_index_stats_query_params(request) {
                     return Some(response);
                 }
                 return Some(self.handle_index_stats_route(Some(index)));
@@ -4853,7 +4859,7 @@ impl SteelNode {
                 ) {
                     return Some(response);
                 }
-                if let Some(response) = validate_index_target_boolean_query_params(request) {
+                if let Some(response) = validate_index_stats_query_params(request) {
                     return Some(response);
                 }
                 return Some(self.handle_index_stats_route(Some(target)));
@@ -25382,6 +25388,71 @@ fn validate_index_target_boolean_query_params(request: &RestRequest) -> Option<R
             return Some(response);
         }
     }
+    None
+}
+
+fn validate_index_stats_query_params(request: &RestRequest) -> Option<RestResponse> {
+    const ALLOWED_PARAMS: &[&str] = &[
+        "allow_no_indices",
+        "completion_fields",
+        "expand_wildcards",
+        "fielddata_fields",
+        "fields",
+        "forbid_closed_indices",
+        "groups",
+        "human",
+        "ignore_throttled",
+        "ignore_unavailable",
+        "include_segment_file_sizes",
+        "include_unloaded_segments",
+        "level",
+        "types",
+    ];
+
+    let unrecognized = request
+        .query_params
+        .keys()
+        .filter(|key| !ALLOWED_PARAMS.contains(&key.as_str()))
+        .collect::<Vec<_>>();
+    if let Some(response) = unrecognized_query_param_response_for_keys(request, &unrecognized) {
+        return Some(response);
+    }
+
+    for field in ["allow_no_indices", "ignore_throttled", "ignore_unavailable"] {
+        if let Some(response) =
+            validate_opensearch_named_boolean_query_param(field, request.query_params.get(field))
+        {
+            return Some(response);
+        }
+    }
+
+    for field in [
+        "forbid_closed_indices",
+        "human",
+        "include_segment_file_sizes",
+        "include_unloaded_segments",
+    ] {
+        if let Some(response) =
+            validate_opensearch_boolean_query_param(request.query_params.get(field))
+        {
+            return Some(response);
+        }
+    }
+
+    if let Some(expand_wildcards) = request.query_params.get("expand_wildcards") {
+        if let Err(response) = parse_index_expand_wildcards(expand_wildcards) {
+            return Some(response);
+        }
+    }
+
+    if let Some(level) = request.query_params.get("level") {
+        if !matches!(level.as_str(), "cluster" | "indices" | "shards") {
+            return Some(delete_pit_illegal_argument(format!(
+                "level parameter must be one of [cluster] or [indices] or [shards] but was [{level}]"
+            )));
+        }
+    }
+
     None
 }
 
@@ -65520,6 +65591,46 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             invalid_ignore_unavailable.body["error"]["reason"],
             "Could not convert [ignore_unavailable] to boolean"
+        );
+
+        let invalid_expand_wildcards = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/logs-*/_stats?expand_wildcards=bogus",
+        ));
+        assert_eq!(invalid_expand_wildcards.status, 400);
+        assert_eq!(
+            invalid_expand_wildcards.body["error"]["reason"],
+            "No valid expand wildcard value [bogus]"
+        );
+
+        let invalid_ignore_throttled = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/logs-*/_stats?ignore_throttled=maybe",
+        ));
+        assert_eq!(invalid_ignore_throttled.status, 400);
+        assert_eq!(
+            invalid_ignore_throttled.body["error"]["reason"],
+            "Could not convert [ignore_throttled] to boolean"
+        );
+
+        let unrecognized_param = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/logs-*/_stats?not_a_param=x",
+        ));
+        assert_eq!(unrecognized_param.status, 400);
+        assert_eq!(
+            unrecognized_param.body["error"]["reason"],
+            "request [/logs-*/_stats] contains unrecognized parameter: [not_a_param]"
+        );
+
+        let invalid_level = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/logs-*/_stats?level=bogus",
+        ));
+        assert_eq!(invalid_level.status, 400);
+        assert_eq!(
+            invalid_level.body["error"]["reason"],
+            "level parameter must be one of [cluster] or [indices] or [shards] but was [bogus]"
         );
     }
 

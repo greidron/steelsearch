@@ -12842,6 +12842,42 @@
       "description": "[misc] index stats invalid allow_no_indices boolean error"
     },
     {
+      "name": "index_stats_invalid_expand_wildcards_error",
+      "area": "operational",
+      "method": "GET",
+      "path": "/logs-compat/_stats?expand_wildcards=bogus",
+      "extract": "search_error",
+      "family": "misc",
+      "description": "[misc] index stats invalid expand_wildcards error"
+    },
+    {
+      "name": "index_stats_invalid_ignore_throttled_error",
+      "area": "operational",
+      "method": "GET",
+      "path": "/logs-compat/_stats?ignore_throttled=maybe",
+      "extract": "search_error",
+      "family": "misc",
+      "description": "[misc] index stats invalid ignore_throttled boolean error"
+    },
+    {
+      "name": "index_stats_unrecognized_query_param_error",
+      "area": "operational",
+      "method": "GET",
+      "path": "/logs-compat/_stats?not_a_param=x",
+      "extract": "search_error",
+      "family": "misc",
+      "description": "[misc] index stats unrecognized query parameter error"
+    },
+    {
+      "name": "index_stats_invalid_level_error",
+      "area": "operational",
+      "method": "GET",
+      "path": "/logs-compat/_stats?level=bogus",
+      "extract": "search_error",
+      "family": "misc",
+      "description": "[misc] index stats invalid level error"
+    },
+    {
       "name": "wildcard_index_read_expansion",
       "area": "index",
       "method": "GET",

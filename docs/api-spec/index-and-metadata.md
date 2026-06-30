@@ -394,7 +394,7 @@ table noise without changing the current contract.
 
 | Route family | OpenSearch meaning | Steelsearch behavior | Status |
 | --- | --- | --- | --- |
-| Analyze, validate query, refresh, flush, force merge, recovery, segments, stats, shard stores, resolve index | Index administration and diagnostics. | Refresh, flush, cache clear, force merge, analyze, validate query, recovery, segments, targeted stats, shard stores, and resolve-index surfaces now have live runtime evidence. The dedicated `admin-ops` acceptance scope pins the Steelsearch-only semantic subset, while search/root fixtures carry the OpenSearch-compared read/diagnostic subset. Targeted stats rejects invalid target selector booleans with strict OpenSearch comparison coverage. | Partial |
+| Analyze, validate query, refresh, flush, force merge, recovery, segments, stats, shard stores, resolve index | Index administration and diagnostics. | Refresh, flush, cache clear, force merge, analyze, validate query, recovery, segments, targeted stats, shard stores, and resolve-index surfaces now have live runtime evidence. The dedicated `admin-ops` acceptance scope pins the Steelsearch-only semantic subset, while search/root fixtures carry the OpenSearch-compared read/diagnostic subset. Stats query validation rejects invalid target selector booleans, `expand_wildcards`, `ignore_throttled`, `level`, and unknown parameters with strict OpenSearch comparison coverage. | Partial |
 
 ## Notes
 
