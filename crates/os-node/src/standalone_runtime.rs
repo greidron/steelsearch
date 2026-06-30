@@ -30649,6 +30649,16 @@ fn evaluate_search_query_source_with_mappings(
         let haystacks = lookup_query_field_value(source, field)
             .map(collect_string_leaf_values)
             .unwrap_or_default();
+        if let Some(fuzziness) = extract_match_query_fuzziness(expected, query_text) {
+            let matched = value_matches_match_fuzzy(
+                &haystacks,
+                query_text,
+                fuzziness,
+                extract_match_query_operator(expected),
+                extract_match_minimum_should_match(expected),
+            );
+            return Some((matched, if matched { 1.0 } else { 0.0 }));
+        }
         let (matched, score) = evaluate_text_query_strings(
             &haystacks,
             query_text,
@@ -31914,6 +31924,42 @@ fn value_matches_multi_match_bool_prefix(
     matched >= required
 }
 
+fn value_matches_match_fuzzy(
+    haystacks: &[String],
+    query_text: &str,
+    fuzziness: usize,
+    operator: &str,
+    minimum_should_match: Option<&Value>,
+) -> bool {
+    let terms = split_query_terms(query_text);
+    if terms.is_empty() {
+        return false;
+    }
+    let matched = terms
+        .iter()
+        .filter(|term| haystack_tokens_match_fuzzy(haystacks, term, fuzziness))
+        .count();
+    let required = minimum_should_match
+        .and_then(|value| bool_minimum_should_match_value(value, terms.len()))
+        .unwrap_or_else(|| {
+            if operator.eq_ignore_ascii_case("and") {
+                terms.len()
+            } else {
+                1
+            }
+        });
+    matched >= required
+}
+
+fn haystack_tokens_match_fuzzy(haystacks: &[String], term: &str, fuzziness: usize) -> bool {
+    let expected = term.to_ascii_lowercase();
+    haystacks.iter().any(|haystack| {
+        tokenize_search_text(haystack)
+            .into_iter()
+            .any(|token| levenshtein_distance(&token, &expected) <= fuzziness)
+    })
+}
+
 fn score_text_query_term(haystacks: &[String], term: &str) -> f64 {
     let phrase = term.trim_matches('"');
     let is_phrase = term.contains(' ') || term.starts_with('"') || term.ends_with('"');
@@ -32313,6 +32359,18 @@ fn extract_match_minimum_should_match(value: &Value) -> Option<&Value> {
     value
         .as_object()
         .and_then(|object| object.get("minimum_should_match"))
+}
+
+fn extract_match_query_fuzziness(value: &Value, query_text: &str) -> Option<usize> {
+    let object = value.as_object()?;
+    match object.get("fuzziness") {
+        Some(Value::String(mode)) if mode.eq_ignore_ascii_case("AUTO") => {
+            Some(auto_fuzziness(query_text))
+        }
+        Some(Value::String(value)) => value.parse::<usize>().ok(),
+        Some(value) => value.as_u64().map(|value| value as usize),
+        None => None,
+    }
 }
 
 fn extract_zero_terms_query_all(value: &Value) -> bool {
