@@ -7,1218 +7,1392 @@
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::cluster_state_transport_messages_bind_action_frames",
-      "response_evidence": "crates/os-node/src/main.rs::cluster_state_transport_route_builds_requested_local_sections"
+      "response_evidence": "crates/os-node/src/main.rs::cluster_state_transport_route_builds_requested_local_sections",
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "cluster:monitor/health",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::cluster_health_transport_messages_bind_action_frames",
-      "response_evidence": "crates/os-node/src/main.rs::cluster_health_transport_route_builds_opensearch_shaped_local_response"
+      "response_evidence": "crates/os-node/src/main.rs::cluster_health_transport_route_builds_opensearch_shaped_local_response",
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "cluster:monitor/stats",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::cluster_stats_transport_messages_bind_action_frame_and_empty_response",
-      "response_evidence": "crates/os-node/src/main.rs::cluster_stats_transport_route_builds_opensearch_shaped_empty_response"
+      "response_evidence": "crates/os-node/src/main.rs::cluster_stats_transport_route_builds_opensearch_shaped_empty_response",
+      "execution_scope": "fail_closed_or_empty_subset"
     },
     {
       "action_name": "cluster:monitor/shards",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::cat_shards_transport_messages_bind_action_frame_and_empty_response",
-      "response_evidence": "crates/os-node/src/main.rs::cat_shards_transport_route_builds_opensearch_shaped_empty_response"
+      "response_evidence": "crates/os-node/src/main.rs::cat_shards_transport_route_builds_opensearch_shaped_empty_response",
+      "execution_scope": "fail_closed_or_empty_subset"
     },
     {
       "action_name": "cluster:monitor/task",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::pending_cluster_tasks_wire_round_trips",
-      "response_evidence": "crates/os-node/src/main.rs::pending_cluster_tasks_transport_route_builds_opensearch_shaped_response_from_queue"
+      "response_evidence": "crates/os-node/src/main.rs::pending_cluster_tasks_transport_route_builds_opensearch_shaped_response_from_queue",
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "cluster:monitor/tasks/lists",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::list_tasks_transport_messages_bind_action_frames",
-      "response_evidence": "crates/os-node/src/main.rs::list_tasks_transport_route_builds_opensearch_shaped_response_from_queue"
+      "response_evidence": "crates/os-node/src/main.rs::list_tasks_transport_route_builds_opensearch_shaped_response_from_queue",
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "cluster:monitor/task/get",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::get_task_transport_messages_bind_supported_action_frame_and_response",
-      "response_evidence": "crates/os-node/src/main.rs::get_task_transport_route_builds_opensearch_shaped_response_from_queue"
+      "response_evidence": "crates/os-node/src/main.rs::get_task_transport_route_builds_opensearch_shaped_response_from_queue",
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "cluster:admin/tasks/cancel",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::cancel_tasks_transport_messages_bind_action_frames",
-      "response_evidence": "crates/os-node/src/main.rs::cancel_tasks_transport_route_builds_opensearch_shaped_response_from_queue"
+      "response_evidence": "crates/os-node/src/main.rs::cancel_tasks_transport_route_builds_opensearch_shaped_response_from_queue",
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "cluster:admin/settings/update",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::update_settings_request_and_response_wire_round_trip",
-      "response_evidence": "crates/os-node/tests/dev_cluster_daemons.rs::daemon_transport_cluster_update_settings_returns_applied_settings"
+      "response_evidence": "crates/os-node/tests/dev_cluster_daemons.rs::daemon_transport_cluster_update_settings_returns_applied_settings",
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "cluster:admin/filecache/prune",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::prune_file_cache_transport_messages_bind_supported_action_frame_and_response",
-      "response_evidence": "crates/os-node/tests/dev_cluster_daemons.rs::daemon_transport_prune_file_cache_returns_local_no_cache_response"
+      "response_evidence": "crates/os-node/tests/dev_cluster_daemons.rs::daemon_transport_prune_file_cache_returns_local_no_cache_response",
+      "execution_scope": "fail_closed_or_empty_subset"
     },
     {
       "action_name": "cluster:admin/routing/awareness/weights/put",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::cluster_put_weighted_routing_transport_messages_bind_supported_action_frame_and_ack_response",
-      "response_evidence": "crates/os-node/tests/dev_cluster_daemons.rs::daemon_transport_put_and_delete_weighted_routing_updates_get_response"
+      "response_evidence": "crates/os-node/tests/dev_cluster_daemons.rs::daemon_transport_put_and_delete_weighted_routing_updates_get_response",
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "cluster:admin/routing/awareness/weights/delete",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::cluster_delete_weighted_routing_transport_messages_bind_supported_action_frame_and_ack_response",
-      "response_evidence": "crates/os-node/tests/dev_cluster_daemons.rs::daemon_transport_put_and_delete_weighted_routing_updates_get_response"
+      "response_evidence": "crates/os-node/tests/dev_cluster_daemons.rs::daemon_transport_put_and_delete_weighted_routing_updates_get_response",
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "cluster:admin/script_context/get",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_get_script_context_transport_messages_bind_supported_action_frame_and_response",
-      "response_evidence": "crates/os-node/src/main.rs::get_script_context_transport_route_builds_rust_catalog_response"
+      "response_evidence": "crates/os-node/src/main.rs::get_script_context_transport_route_builds_rust_catalog_response",
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "cluster:admin/script_language/get",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_get_script_language_transport_messages_bind_supported_action_frame_and_response",
-      "response_evidence": "crates/os-node/src/main.rs::get_script_language_transport_route_builds_rust_catalog_response"
+      "response_evidence": "crates/os-node/src/main.rs::get_script_language_transport_route_builds_rust_catalog_response",
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "cluster:admin/script/get",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_get_stored_script_transport_messages_bind_supported_action_frame_and_response",
-      "response_evidence": "crates/os-node/src/main.rs::get_stored_script_transport_route_builds_manifest_found_and_missing_responses"
+      "response_evidence": "crates/os-node/src/main.rs::get_stored_script_transport_route_builds_manifest_found_and_missing_responses",
+      "execution_scope": "fail_closed_or_empty_subset"
     },
     {
       "action_name": "cluster:admin/script/put",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_put_stored_script_transport_messages_bind_action_frame_and_ack_response",
-      "response_evidence": "crates/os-node/src/main.rs::put_stored_script_transport_route_upserts_manifest_entry"
+      "response_evidence": "crates/os-node/src/main.rs::put_stored_script_transport_route_upserts_manifest_entry",
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "cluster:admin/script/delete",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_delete_stored_script_transport_messages_bind_action_frame_and_ack_response",
-      "response_evidence": "crates/os-node/src/main.rs::delete_stored_script_transport_route_removes_manifest_entry"
+      "response_evidence": "crates/os-node/src/main.rs::delete_stored_script_transport_route_removes_manifest_entry",
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "cluster:admin/search/pipeline/get",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::get_search_pipeline_transport_messages_bind_supported_action_frame_and_response",
-      "response_evidence": "crates/os-node/src/main.rs::get_search_pipeline_transport_route_builds_manifest_backed_filtered_response"
+      "response_evidence": "crates/os-node/src/main.rs::get_search_pipeline_transport_route_builds_manifest_backed_filtered_response",
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "cluster:admin/search/pipeline/delete",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::delete_search_pipeline_transport_messages_bind_action_frame_and_ack_response",
-      "response_evidence": "crates/os-node/src/main.rs::delete_search_pipeline_transport_route_removes_matching_manifest_entries"
+      "response_evidence": "crates/os-node/src/main.rs::delete_search_pipeline_transport_route_removes_matching_manifest_entries",
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "cluster:admin/routing/awareness/weights/get",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::cluster_get_weighted_routing_transport_messages_bind_supported_action_frame_and_response",
-      "response_evidence": "crates/os-node/src/main.rs::get_weighted_routing_transport_route_builds_manifest_backed_response"
+      "response_evidence": "crates/os-node/src/main.rs::get_weighted_routing_transport_route_builds_manifest_backed_response",
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "indices:admin/refresh",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-node/src/main.rs::refresh_transport_route_marks_exact_index_documents_searchable",
-      "response_evidence": "crates/os-node/src/main.rs::refresh_transport_route_marks_exact_index_documents_searchable"
+      "response_evidence": "crates/os-node/src/main.rs::refresh_transport_route_marks_exact_index_documents_searchable",
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "indices:admin/validate/query",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_validate_query_transport_messages_bind_supported_action_frame",
-      "response_evidence": "crates/os-node/src/main.rs::validate_query_transport_route_returns_valid_match_all_response"
+      "response_evidence": "crates/os-node/src/main.rs::validate_query_transport_route_returns_valid_match_all_response",
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "indices:admin/exists",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_indices_exists_transport_messages_bind_supported_action_frame_and_response",
-      "response_evidence": "crates/os-node/src/main.rs::indices_exists_transport_route_resolves_index_alias_and_wildcard_targets"
+      "response_evidence": "crates/os-node/src/main.rs::indices_exists_transport_route_resolves_index_alias_and_wildcard_targets",
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "indices:admin/get",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_get_index_transport_messages_bind_supported_action_frame_and_response",
-      "response_evidence": "crates/os-node/src/main.rs::get_index_transport_route_builds_metadata_response"
+      "response_evidence": "crates/os-node/src/main.rs::get_index_transport_route_builds_metadata_response",
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "indices:admin/resolve/index",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_resolve_index_transport_messages_bind_action_frame_and_response",
-      "response_evidence": "crates/os-node/src/main.rs::resolve_index_transport_route_builds_manifest_backed_response"
+      "response_evidence": "crates/os-node/src/main.rs::resolve_index_transport_route_builds_manifest_backed_response",
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "indices:admin/data_stream/create",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_create_data_stream_transport_messages_bind_action_frame_and_ack_response",
-      "response_evidence": "crates/os-node/src/main.rs::data_stream_create_and_delete_transport_routes_mutate_manifest_backed_metadata"
+      "response_evidence": "crates/os-node/src/main.rs::data_stream_create_and_delete_transport_routes_mutate_manifest_backed_metadata",
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "indices:admin/data_stream/delete",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_delete_data_stream_transport_messages_bind_action_frame_and_ack_response",
-      "response_evidence": "crates/os-node/src/main.rs::data_stream_create_and_delete_transport_routes_mutate_manifest_backed_metadata"
+      "response_evidence": "crates/os-node/src/main.rs::data_stream_create_and_delete_transport_routes_mutate_manifest_backed_metadata",
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "indices:admin/template/get",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_get_index_templates_transport_messages_bind_supported_action_frame_and_response",
-      "response_evidence": "crates/os-node/src/main.rs::get_index_templates_transport_route_builds_legacy_template_response"
+      "response_evidence": "crates/os-node/src/main.rs::get_index_templates_transport_route_builds_legacy_template_response",
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "indices:admin/template/put",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_put_index_template_transport_messages_bind_action_frame_and_ack_response",
-      "response_evidence": "crates/os-node/src/main.rs::template_put_transport_route_mutates_manifest_backed_metadata"
+      "response_evidence": "crates/os-node/src/main.rs::template_put_transport_route_mutates_manifest_backed_metadata",
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "indices:admin/template/delete",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_delete_index_template_transport_messages_bind_action_frame_and_ack_response",
-      "response_evidence": "crates/os-node/src/main.rs::template_delete_transport_routes_mutate_manifest_backed_metadata"
+      "response_evidence": "crates/os-node/src/main.rs::template_delete_transport_routes_mutate_manifest_backed_metadata",
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "cluster:admin/component_template/get",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_get_component_template_transport_messages_bind_supported_action_frame_and_response",
-      "response_evidence": "crates/os-node/src/main.rs::get_component_template_transport_route_builds_manifest_backed_settings_response"
+      "response_evidence": "crates/os-node/src/main.rs::get_component_template_transport_route_builds_manifest_backed_settings_response",
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "cluster:admin/component_template/put",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_put_component_template_transport_messages_bind_action_frame_and_ack_response",
-      "response_evidence": "crates/os-node/src/main.rs::component_template_put_transport_route_mutates_manifest_backed_metadata"
+      "response_evidence": "crates/os-node/src/main.rs::component_template_put_transport_route_mutates_manifest_backed_metadata",
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "cluster:admin/component_template/delete",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_delete_component_template_transport_messages_bind_action_frame_and_ack_response",
-      "response_evidence": "crates/os-node/src/main.rs::template_delete_transport_routes_mutate_manifest_backed_metadata"
+      "response_evidence": "crates/os-node/src/main.rs::template_delete_transport_routes_mutate_manifest_backed_metadata",
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "indices:admin/index_template/get",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_get_composable_index_template_transport_messages_bind_supported_action_frame_and_response",
-      "response_evidence": "crates/os-node/src/main.rs::get_composable_index_template_transport_route_builds_manifest_backed_settings_response"
+      "response_evidence": "crates/os-node/src/main.rs::get_composable_index_template_transport_route_builds_manifest_backed_settings_response",
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "indices:admin/index_template/delete",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_delete_composable_index_template_transport_messages_bind_action_frame_and_ack_response",
-      "response_evidence": "crates/os-node/src/main.rs::template_delete_transport_routes_mutate_manifest_backed_metadata"
+      "response_evidence": "crates/os-node/src/main.rs::template_delete_transport_routes_mutate_manifest_backed_metadata",
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "indices:admin/flush",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_flush_transport_messages_bind_supported_action_frame_and_response",
-      "response_evidence": "crates/os-node/src/main.rs::flush_transport_route_returns_successful_global_shard_counters"
+      "response_evidence": "crates/os-node/src/main.rs::flush_transport_route_returns_successful_global_shard_counters",
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "indices:admin/forcemerge",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_force_merge_transport_messages_bind_supported_action_frame_and_response",
-      "response_evidence": "crates/os-node/src/main.rs::force_merge_transport_route_returns_successful_global_shard_counters"
+      "response_evidence": "crates/os-node/src/main.rs::force_merge_transport_route_returns_successful_global_shard_counters",
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "indices:admin/upgrade",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_upgrade_transport_messages_bind_supported_action_frame_and_response",
-      "response_evidence": "crates/os-node/src/main.rs::upgrade_transport_route_returns_successful_global_shard_counters"
+      "response_evidence": "crates/os-node/src/main.rs::upgrade_transport_route_returns_successful_global_shard_counters",
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "indices:monitor/upgrade",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_upgrade_status_transport_messages_bind_supported_action_frame_and_response",
-      "response_evidence": "crates/os-node/src/main.rs::upgrade_status_transport_route_returns_empty_global_shard_statuses"
+      "response_evidence": "crates/os-node/src/main.rs::upgrade_status_transport_route_returns_empty_global_shard_statuses",
+      "execution_scope": "fail_closed_or_empty_subset"
     },
     {
       "action_name": "indices:admin/cache/clear",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_clear_indices_cache_transport_messages_bind_supported_action_frame_and_response",
-      "response_evidence": "crates/os-node/src/main.rs::clear_indices_cache_transport_route_returns_successful_global_shard_counters"
+      "response_evidence": "crates/os-node/src/main.rs::clear_indices_cache_transport_route_returns_successful_global_shard_counters",
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "indices:data/read/get",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-node/src/main.rs::get_transport_route_returns_refreshed_document_from_local_store",
-      "response_evidence": "crates/os-node/src/main.rs::get_transport_route_returns_refreshed_document_from_local_store"
+      "response_evidence": "crates/os-node/src/main.rs::get_transport_route_returns_refreshed_document_from_local_store",
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "indices:data/read/mget",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-node/src/main.rs::multi_get_transport_route_returns_ordered_local_store_items",
-      "response_evidence": "crates/os-node/src/main.rs::multi_get_transport_route_returns_ordered_local_store_items"
+      "response_evidence": "crates/os-node/src/main.rs::multi_get_transport_route_returns_ordered_local_store_items",
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "indices:data/write/bulk",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-node/src/main.rs::bulk_transport_route_applies_ordered_index_and_delete_items",
-      "response_evidence": "crates/os-node/src/main.rs::bulk_transport_route_applies_ordered_index_and_delete_items"
+      "response_evidence": "crates/os-node/src/main.rs::bulk_transport_route_applies_ordered_index_and_delete_items",
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "indices:data/write/index",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-node/src/main.rs::index_transport_route_writes_unrefreshed_document_to_local_store",
-      "response_evidence": "crates/os-node/src/main.rs::index_transport_route_writes_unrefreshed_document_to_local_store"
+      "response_evidence": "crates/os-node/src/main.rs::index_transport_route_writes_unrefreshed_document_to_local_store",
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "indices:data/write/update",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-node/src/main.rs::update_transport_route_merges_local_store_document_and_upserts",
-      "response_evidence": "crates/os-node/src/main.rs::update_transport_route_merges_local_store_document_and_upserts"
+      "response_evidence": "crates/os-node/src/main.rs::update_transport_route_merges_local_store_document_and_upserts",
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "indices:data/write/delete",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-node/src/main.rs::delete_transport_route_removes_local_store_document",
-      "response_evidence": "crates/os-node/src/main.rs::delete_transport_route_removes_local_store_document"
+      "response_evidence": "crates/os-node/src/main.rs::delete_transport_route_removes_local_store_document",
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "cluster:monitor/main",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::main_transport_messages_bind_supported_action_frame_and_response",
-      "response_evidence": "crates/os-node/src/main.rs::main_transport_route_builds_opensearch_shaped_response_from_identity"
+      "response_evidence": "crates/os-node/src/main.rs::main_transport_route_builds_opensearch_shaped_response_from_identity",
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "cluster:monitor/remote/info",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::remote_info_transport_messages_bind_supported_action_frame_and_response",
-      "response_evidence": "crates/os-node/src/main.rs::remote_info_transport_route_builds_opensearch_shaped_empty_response"
+      "response_evidence": "crates/os-node/src/main.rs::remote_info_transport_route_builds_opensearch_shaped_empty_response",
+      "execution_scope": "fail_closed_or_empty_subset"
     },
     {
       "action_name": "internal:monitor/term",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::get_term_version_transport_messages_bind_supported_action_frame_and_response",
-      "response_evidence": "crates/os-node/src/main.rs::get_term_version_transport_route_builds_opensearch_shaped_response_from_identity"
+      "response_evidence": "crates/os-node/src/main.rs::get_term_version_transport_route_builds_opensearch_shaped_response_from_identity",
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "cluster:monitor/nodes/info",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::nodes_info_transport_messages_bind_supported_action_frame",
-      "response_evidence": "crates/os-node/src/main.rs::nodes_info_transport_route_builds_java_shaped_local_node_response"
+      "response_evidence": "crates/os-node/src/main.rs::nodes_info_transport_route_builds_java_shaped_local_node_response",
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "cluster:monitor/nodes/stats",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::nodes_stats_transport_messages_bind_supported_action_frame",
-      "response_evidence": "crates/os-node/src/main.rs::nodes_stats_transport_route_builds_java_shaped_local_node_response"
+      "response_evidence": "crates/os-node/src/main.rs::nodes_stats_transport_route_builds_java_shaped_local_node_response",
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "cluster:monitor/wlm/stats",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::wlm_stats_transport_messages_bind_supported_action_frame_and_response",
-      "response_evidence": "crates/os-node/src/main.rs::wlm_stats_transport_route_builds_opensearch_shaped_empty_local_response"
+      "response_evidence": "crates/os-node/src/main.rs::wlm_stats_transport_route_builds_opensearch_shaped_empty_local_response",
+      "execution_scope": "fail_closed_or_empty_subset"
     },
     {
       "action_name": "cluster:monitor/_remotestore/stats",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::remote_store_stats_transport_messages_bind_supported_action_frame_and_response",
-      "response_evidence": "crates/os-node/src/main.rs::remote_store_stats_transport_route_builds_opensearch_shaped_empty_response"
+      "response_evidence": "crates/os-node/src/main.rs::remote_store_stats_transport_route_builds_opensearch_shaped_empty_response",
+      "execution_scope": "fail_closed_or_empty_subset"
     },
     {
       "action_name": "cluster:admin/remote_store/metadata",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::remote_store_metadata_transport_messages_bind_supported_action_frame_and_response",
-      "response_evidence": "crates/os-node/src/main.rs::remote_store_metadata_transport_route_builds_opensearch_shaped_empty_response"
+      "response_evidence": "crates/os-node/src/main.rs::remote_store_metadata_transport_route_builds_opensearch_shaped_empty_response",
+      "execution_scope": "fail_closed_or_empty_subset"
     },
     {
       "action_name": "cluster:monitor/nodes/usage",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::nodes_usage_transport_messages_bind_implemented_action_frame",
-      "response_evidence": "crates/os-node/src/main.rs::nodes_usage_transport_route_builds_opensearch_shaped_default_local_response"
+      "response_evidence": "crates/os-node/src/main.rs::nodes_usage_transport_route_builds_opensearch_shaped_default_local_response",
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "cluster:monitor/allocation/explain",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::cluster_allocation_explain_transport_messages_bind_action_frame_and_execution_boundary",
-      "response_evidence": "crates/os-node/src/main.rs::cluster_allocation_explain_transport_route_returns_no_unassigned_error_for_empty_state"
+      "response_evidence": "crates/os-node/src/main.rs::cluster_allocation_explain_transport_route_returns_no_unassigned_error_for_empty_state",
+      "execution_scope": "bounded_execution_boundary"
     },
     {
       "action_name": "cluster:monitor/nodes/hot_threads",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::nodes_hot_threads_transport_messages_bind_supported_action_frame_and_response",
-      "response_evidence": "crates/os-node/src/main.rs::nodes_hot_threads_transport_route_builds_opensearch_shaped_local_response"
+      "response_evidence": "crates/os-node/src/main.rs::nodes_hot_threads_transport_route_builds_opensearch_shaped_local_response",
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "cluster:admin/voting_config/add_exclusions",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::add_voting_config_exclusions_transport_messages_bind_supported_action_frame_and_response",
-      "response_evidence": "crates/os-node/src/main.rs::add_voting_config_exclusions_transport_route_mutates_coordination_state"
+      "response_evidence": "crates/os-node/src/main.rs::add_voting_config_exclusions_transport_route_mutates_coordination_state",
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "cluster:admin/voting_config/clear_exclusions",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::clear_voting_config_exclusions_transport_messages_bind_supported_action_frame_and_response",
-      "response_evidence": "crates/os-node/src/main.rs::clear_voting_config_exclusions_transport_route_clears_coordination_state"
+      "response_evidence": "crates/os-node/src/main.rs::clear_voting_config_exclusions_transport_route_clears_coordination_state",
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "cluster:admin/repository/get",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::get_repositories_transport_messages_bind_supported_action_frame_and_empty_response",
-      "response_evidence": "crates/os-node/src/main.rs::get_repositories_transport_route_builds_opensearch_shaped_empty_response"
+      "response_evidence": "crates/os-node/src/main.rs::get_repositories_transport_route_builds_opensearch_shaped_empty_response",
+      "execution_scope": "fail_closed_or_empty_subset"
     },
     {
       "action_name": "cluster:admin/ingest/pipeline/get",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_get_pipeline_transport_messages_bind_implemented_action_frame_and_response",
-      "response_evidence": "crates/os-node/src/main.rs::get_pipeline_transport_route_builds_manifest_backed_filtered_response"
+      "response_evidence": "crates/os-node/src/main.rs::get_pipeline_transport_route_builds_manifest_backed_filtered_response",
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "cluster:admin/ingest/pipeline/put",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_put_pipeline_transport_messages_bind_action_frames",
-      "response_evidence": "crates/os-node/src/main.rs::put_pipeline_transport_route_upserts_manifest_entry"
+      "response_evidence": "crates/os-node/src/main.rs::put_pipeline_transport_route_upserts_manifest_entry",
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "cluster:admin/ingest/pipeline/delete",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_delete_pipeline_transport_messages_bind_action_frames",
-      "response_evidence": "crates/os-node/src/main.rs::delete_pipeline_transport_route_removes_matching_manifest_entries"
+      "response_evidence": "crates/os-node/src/main.rs::delete_pipeline_transport_route_removes_matching_manifest_entries",
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "cluster:admin/ingest/pipeline/simulate",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_simulate_pipeline_transport_messages_bind_action_frames",
-      "response_evidence": "crates/os-node/src/main.rs::simulate_pipeline_transport_route_returns_empty_doc_response_for_supported_subset"
+      "response_evidence": "crates/os-node/src/main.rs::simulate_pipeline_transport_route_returns_empty_doc_response_for_supported_subset",
+      "execution_scope": "fail_closed_or_empty_subset"
     },
     {
       "action_name": "indices:admin/mappings/get",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_get_mappings_transport_messages_bind_supported_action_frame_and_empty_response",
-      "response_evidence": "crates/os-node/src/main.rs::get_mappings_transport_route_builds_opensearch_shaped_empty_mapping_index_response"
+      "response_evidence": "crates/os-node/src/main.rs::get_mappings_transport_route_builds_opensearch_shaped_empty_mapping_index_response",
+      "execution_scope": "fail_closed_or_empty_subset"
     },
     {
       "action_name": "indices:admin/mappings/fields/get",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_get_field_mappings_transport_messages_bind_supported_action_frame_and_empty_response",
-      "response_evidence": "crates/os-node/src/main.rs::get_field_mappings_transport_route_builds_opensearch_shaped_empty_field_mapping_response"
+      "response_evidence": "crates/os-node/src/main.rs::get_field_mappings_transport_route_builds_opensearch_shaped_empty_field_mapping_response",
+      "execution_scope": "fail_closed_or_empty_subset"
     },
     {
       "action_name": "indices:admin/aliases/get",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_get_aliases_transport_messages_bind_supported_action_frame_and_empty_response",
-      "response_evidence": "crates/os-node/src/main.rs::get_aliases_transport_route_builds_opensearch_shaped_empty_alias_index_response"
+      "response_evidence": "crates/os-node/src/main.rs::get_aliases_transport_route_builds_opensearch_shaped_empty_alias_index_response",
+      "execution_scope": "fail_closed_or_empty_subset"
     },
     {
       "action_name": "indices:monitor/settings/get",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_get_settings_transport_messages_bind_supported_action_frame_and_empty_response",
-      "response_evidence": "crates/os-node/src/main.rs::get_settings_transport_route_builds_opensearch_shaped_metadata_response"
+      "response_evidence": "crates/os-node/src/main.rs::get_settings_transport_route_builds_opensearch_shaped_metadata_response",
+      "execution_scope": "fail_closed_or_empty_subset"
     },
     {
       "action_name": "indices:admin/shards/search_shards",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_cluster_search_shards_transport_messages_bind_supported_action_frame_and_empty_response",
-      "response_evidence": "crates/os-node/src/main.rs::cluster_search_shards_transport_route_builds_opensearch_shaped_empty_response"
+      "response_evidence": "crates/os-node/src/main.rs::cluster_search_shards_transport_route_builds_opensearch_shaped_empty_response",
+      "execution_scope": "fail_closed_or_empty_subset"
     },
     {
       "action_name": "indices:data/read/field_caps",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_field_capabilities_request_wire_round_trips_and_validates_execution_subset",
-      "response_evidence": "crates/os-node/src/main.rs::field_capabilities_transport_route_builds_merged_metadata_response"
+      "response_evidence": "crates/os-node/src/main.rs::field_capabilities_transport_route_builds_merged_metadata_response",
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "indices:monitor/recovery",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_recovery_transport_messages_bind_supported_action_frame",
-      "response_evidence": "crates/os-node/src/main.rs::recovery_transport_route_builds_opensearch_shaped_empty_node_response"
+      "response_evidence": "crates/os-node/src/main.rs::recovery_transport_route_builds_opensearch_shaped_empty_node_response",
+      "execution_scope": "fail_closed_or_empty_subset"
     },
     {
       "action_name": "indices:monitor/segments",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_indices_segments_transport_messages_bind_supported_action_frame_and_empty_response",
-      "response_evidence": "crates/os-node/src/main.rs::indices_segments_transport_route_builds_opensearch_shaped_empty_node_response"
+      "response_evidence": "crates/os-node/src/main.rs::indices_segments_transport_route_builds_opensearch_shaped_empty_node_response",
+      "execution_scope": "fail_closed_or_empty_subset"
     },
     {
       "action_name": "indices:monitor/point_in_time/segments",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_pit_segments_transport_messages_bind_action_frames",
-      "response_evidence": "crates/os-node/src/main.rs::pit_segments_transport_route_builds_opensearch_shaped_empty_all_node_response"
+      "response_evidence": "crates/os-node/src/main.rs::pit_segments_transport_route_builds_opensearch_shaped_empty_all_node_response",
+      "execution_scope": "fail_closed_or_empty_subset"
     },
     {
       "action_name": "indices:monitor/shard_stores",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_indices_shard_stores_transport_messages_bind_action_frame_and_execution_boundary",
-      "response_evidence": "crates/os-node/src/main.rs::indices_shard_stores_transport_route_builds_opensearch_shaped_empty_response"
+      "response_evidence": "crates/os-node/src/main.rs::indices_shard_stores_transport_route_builds_opensearch_shaped_empty_response",
+      "execution_scope": "bounded_execution_boundary"
     },
     {
       "action_name": "indices:admin/data_stream/get",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_get_data_stream_transport_messages_bind_supported_action_frame_and_empty_response",
-      "response_evidence": "crates/os-node/src/main.rs::get_data_stream_transport_route_builds_opensearch_shaped_empty_response"
+      "response_evidence": "crates/os-node/src/main.rs::get_data_stream_transport_route_builds_opensearch_shaped_empty_response",
+      "execution_scope": "fail_closed_or_empty_subset"
     },
     {
       "action_name": "indices:monitor/data_stream/stats",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_data_streams_stats_transport_messages_bind_supported_action_frame_and_empty_response",
-      "response_evidence": "crates/os-node/src/main.rs::data_streams_stats_transport_route_builds_opensearch_shaped_empty_response"
+      "response_evidence": "crates/os-node/src/main.rs::data_streams_stats_transport_route_builds_opensearch_shaped_empty_response",
+      "execution_scope": "fail_closed_or_empty_subset"
     },
     {
       "action_name": "cluster:admin/views/create",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_create_view_transport_messages_bind_supported_action_frame_and_view_response",
-      "response_evidence": "crates/os-node/src/main.rs::view_admin_transport_routes_mutate_manifest_backed_metadata"
+      "response_evidence": "crates/os-node/src/main.rs::view_admin_transport_routes_mutate_manifest_backed_metadata",
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "cluster:admin/views/delete",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_delete_view_transport_messages_bind_supported_action_frame_and_ack_response",
-      "response_evidence": "crates/os-node/src/main.rs::view_admin_transport_routes_mutate_manifest_backed_metadata"
+      "response_evidence": "crates/os-node/src/main.rs::view_admin_transport_routes_mutate_manifest_backed_metadata",
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "views:data/read/get",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_get_view_transport_messages_bind_supported_action_frame_and_view_response",
-      "response_evidence": "crates/os-node/src/main.rs::view_admin_transport_routes_mutate_manifest_backed_metadata"
+      "response_evidence": "crates/os-node/src/main.rs::view_admin_transport_routes_mutate_manifest_backed_metadata",
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "cluster:admin/views/update",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_update_view_transport_messages_bind_supported_action_frame_and_view_response",
-      "response_evidence": "crates/os-node/src/main.rs::view_admin_transport_routes_mutate_manifest_backed_metadata"
+      "response_evidence": "crates/os-node/src/main.rs::view_admin_transport_routes_mutate_manifest_backed_metadata",
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "views:data/read/list",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_list_view_names_transport_messages_bind_supported_action_frame_and_empty_response",
-      "response_evidence": "crates/os-node/src/main.rs::view_admin_transport_routes_mutate_manifest_backed_metadata"
+      "response_evidence": "crates/os-node/src/main.rs::view_admin_transport_routes_mutate_manifest_backed_metadata",
+      "execution_scope": "fail_closed_or_empty_subset"
     },
     {
       "action_name": "views:data/read/search",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_search_view_transport_messages_bind_supported_action_frame",
-      "response_evidence": "crates/os-node/src/main.rs::view_admin_transport_routes_mutate_manifest_backed_metadata"
+      "response_evidence": "crates/os-node/src/main.rs::view_admin_transport_routes_mutate_manifest_backed_metadata",
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "cluster:admin/indices/dangling/find",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_find_dangling_index_transport_messages_bind_supported_action_frame_and_empty_response",
-      "response_evidence": "crates/os-node/src/main.rs::find_dangling_index_transport_route_builds_opensearch_shaped_empty_response"
+      "response_evidence": "crates/os-node/src/main.rs::find_dangling_index_transport_route_builds_opensearch_shaped_empty_response",
+      "execution_scope": "fail_closed_or_empty_subset"
     },
     {
       "action_name": "cluster:admin/decommission/awareness/get",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::get_decommission_state_transport_messages_bind_action_frame_and_response",
-      "response_evidence": "crates/os-node/src/main.rs::get_decommission_state_transport_route_builds_manifest_backed_response"
+      "response_evidence": "crates/os-node/src/main.rs::get_decommission_state_transport_route_builds_manifest_backed_response",
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "cluster:admin/decommission/awareness/delete",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::delete_decommission_state_transport_messages_bind_action_frame_and_ack_response",
-      "response_evidence": "crates/os-node/src/main.rs::delete_decommission_state_transport_route_removes_manifest_state"
+      "response_evidence": "crates/os-node/src/main.rs::delete_decommission_state_transport_route_removes_manifest_state",
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "indices:data/read/search",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_search_transport_messages_bind_action_frame_and_execution_boundary",
-      "response_evidence": "crates/os-node/src/main.rs::search_transport_route_returns_local_match_all_and_term_hits"
+      "response_evidence": "crates/os-node/src/main.rs::search_transport_route_returns_local_match_all_and_term_hits",
+      "execution_scope": "bounded_execution_boundary"
     },
     {
       "action_name": "indices:data/read/search/stream",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_stream_search_transport_messages_bind_action_frame_and_execution_boundary",
-      "response_evidence": "crates/os-node/src/main.rs::search_transport_route_returns_local_match_all_and_term_hits"
+      "response_evidence": "crates/os-node/src/main.rs::search_transport_route_returns_local_match_all_and_term_hits",
+      "execution_scope": "bounded_execution_boundary"
     },
     {
       "action_name": "indices:data/read/msearch",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_multi_search_transport_messages_bind_action_frame_and_execution_boundary",
-      "response_evidence": "crates/os-node/src/main.rs::search_transport_route_returns_local_match_all_and_term_hits"
+      "response_evidence": "crates/os-node/src/main.rs::search_transport_route_returns_local_match_all_and_term_hits",
+      "execution_scope": "bounded_execution_boundary"
     },
     {
       "action_name": "indices:data/read/scroll",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_search_scroll_transport_messages_bind_action_frame_and_execution_boundary",
-      "response_evidence": "crates/os-node/src/main.rs::search_scroll_transport_route_advances_local_context_page"
+      "response_evidence": "crates/os-node/src/main.rs::search_scroll_transport_route_advances_local_context_page",
+      "execution_scope": "bounded_execution_boundary"
     },
     {
       "action_name": "indices:data/read/scroll/clear",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_clear_scroll_transport_messages_bind_action_frames",
-      "response_evidence": "crates/os-node/src/main.rs::clear_scroll_transport_route_builds_opensearch_shaped_empty_all_response"
+      "response_evidence": "crates/os-node/src/main.rs::clear_scroll_transport_route_builds_opensearch_shaped_empty_all_response",
+      "execution_scope": "fail_closed_or_empty_subset"
     },
     {
       "action_name": "indices:data/read/explain",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_explain_transport_messages_bind_action_frame_and_execution_boundary",
-      "response_evidence": "crates/os-node/src/main.rs::explain_transport_route_returns_local_match_explanation"
+      "response_evidence": "crates/os-node/src/main.rs::explain_transport_route_returns_local_match_explanation",
+      "execution_scope": "bounded_execution_boundary"
     },
     {
       "action_name": "indices:data/read/point_in_time/create",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_create_pit_transport_messages_bind_action_frame_and_response",
-      "response_evidence": "crates/os-node/tests/dev_cluster_daemons.rs::multi_daemon_transport_create_pit_binds_reader_contexts_to_target_node"
+      "response_evidence": "crates/os-node/tests/dev_cluster_daemons.rs::multi_daemon_transport_create_pit_binds_reader_contexts_to_target_node",
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "indices:data/read/point_in_time/delete",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_delete_pit_transport_messages_bind_action_frames",
-      "response_evidence": "crates/os-node/tests/dev_cluster_daemons.rs::multi_daemon_get_all_pits_fans_out_to_seed_peers"
+      "response_evidence": "crates/os-node/tests/dev_cluster_daemons.rs::multi_daemon_get_all_pits_fans_out_to_seed_peers",
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "indices:data/read/point_in_time/readall",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_get_all_pits_transport_messages_bind_action_frames",
-      "response_evidence": "crates/os-node/tests/dev_cluster_daemons.rs::multi_daemon_get_all_pits_fans_out_to_seed_peers"
+      "response_evidence": "crates/os-node/tests/dev_cluster_daemons.rs::multi_daemon_get_all_pits_fans_out_to_seed_peers",
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "indices:data/read/search[create_context]",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_pit_reader_context_transport_messages_round_trip",
-      "response_evidence": "crates/os-node/tests/dev_cluster_daemons.rs::multi_daemon_get_all_pits_fans_out_to_seed_peers"
+      "response_evidence": "crates/os-node/tests/dev_cluster_daemons.rs::multi_daemon_get_all_pits_fans_out_to_seed_peers",
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "indices:data/read/search[update_context]",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_pit_reader_context_transport_messages_round_trip",
-      "response_evidence": "crates/os-node/src/main.rs::pit_reader_context_transport_routes_register_update_and_free_local_contexts"
+      "response_evidence": "crates/os-node/src/main.rs::pit_reader_context_transport_routes_register_update_and_free_local_contexts",
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "indices:data/read/search[free_context/pit]",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_free_pit_context_transport_message_round_trips_contexts",
-      "response_evidence": "crates/os-node/tests/dev_cluster_daemons.rs::multi_daemon_get_all_pits_fans_out_to_seed_peers"
+      "response_evidence": "crates/os-node/tests/dev_cluster_daemons.rs::multi_daemon_get_all_pits_fans_out_to_seed_peers",
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "indices:monitor/stats",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_indices_stats_transport_messages_bind_supported_action_frame",
-      "response_evidence": "crates/os-node/src/main.rs::indices_stats_transport_route_builds_opensearch_shaped_empty_node_response"
+      "response_evidence": "crates/os-node/src/main.rs::indices_stats_transport_route_builds_opensearch_shaped_empty_node_response",
+      "execution_scope": "fail_closed_or_empty_subset"
     },
     {
       "action_name": "indices:monitor/segment_replication",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_segment_replication_stats_transport_messages_bind_action_frames",
-      "response_evidence": "crates/os-node/src/main.rs::segment_replication_stats_transport_route_builds_opensearch_shaped_empty_response"
+      "response_evidence": "crates/os-node/src/main.rs::segment_replication_stats_transport_route_builds_opensearch_shaped_empty_response",
+      "execution_scope": "fail_closed_or_empty_subset"
     },
     {
       "action_name": "cluster:admin/indices/dangling/list",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_list_dangling_indices_transport_messages_bind_supported_action_frame_and_empty_response",
-      "response_evidence": "crates/os-node/src/main.rs::list_dangling_indices_transport_route_builds_opensearch_shaped_empty_response"
+      "response_evidence": "crates/os-node/src/main.rs::list_dangling_indices_transport_route_builds_opensearch_shaped_empty_response",
+      "execution_scope": "fail_closed_or_empty_subset"
     },
     {
       "action_name": "cluster:admin/repository/_cleanup",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::cleanup_repository_transport_messages_bind_supported_action_frame",
-      "response_evidence": "crates/os-node/src/main.rs::cleanup_repository_transport_route_returns_zero_cleanup_result_for_fs_repository"
+      "response_evidence": "crates/os-node/src/main.rs::cleanup_repository_transport_route_returns_zero_cleanup_result_for_fs_repository",
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "cluster:admin/repository/delete",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::delete_repository_transport_messages_bind_supported_action_frame",
-      "response_evidence": "crates/os-node/src/main.rs::delete_repository_transport_route_removes_manifest_repository_and_snapshots"
+      "response_evidence": "crates/os-node/src/main.rs::delete_repository_transport_route_removes_manifest_repository_and_snapshots",
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "cluster:admin/repository/put",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::put_repository_transport_messages_bind_supported_action_frame",
-      "response_evidence": "crates/os-node/src/main.rs::put_repository_transport_route_records_manifest_repository"
+      "response_evidence": "crates/os-node/src/main.rs::put_repository_transport_route_records_manifest_repository",
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "cluster:admin/repository/verify",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::verify_repository_transport_messages_bind_supported_action_frame",
-      "response_evidence": "crates/os-node/src/main.rs::verify_repository_transport_route_returns_local_node_view"
+      "response_evidence": "crates/os-node/src/main.rs::verify_repository_transport_route_returns_local_node_view",
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "cluster:admin/search/pipeline/put",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::put_search_pipeline_transport_messages_bind_action_frame_and_ack_response",
-      "response_evidence": "crates/os-node/src/main.rs::put_search_pipeline_transport_route_upserts_manifest_entry"
+      "response_evidence": "crates/os-node/src/main.rs::put_search_pipeline_transport_route_upserts_manifest_entry",
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "cluster:admin/snapshot/clone",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::clone_snapshot_transport_messages_bind_supported_action_frame",
-      "response_evidence": "crates/os-node/src/main.rs::clone_snapshot_transport_route_copies_array_manifest_snapshot_record"
+      "response_evidence": "crates/os-node/src/main.rs::clone_snapshot_transport_route_copies_array_manifest_snapshot_record",
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "cluster:admin/snapshot/create",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::create_snapshot_transport_messages_bind_supported_action_frame",
-      "response_evidence": "crates/os-node/src/main.rs::create_snapshot_transport_route_adds_array_manifest_snapshot_record"
+      "response_evidence": "crates/os-node/src/main.rs::create_snapshot_transport_route_adds_array_manifest_snapshot_record",
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "cluster:admin/snapshot/delete",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::delete_snapshot_transport_messages_bind_supported_action_frame",
-      "response_evidence": "crates/os-node/src/main.rs::delete_snapshot_transport_route_removes_array_manifest_snapshot_records"
+      "response_evidence": "crates/os-node/src/main.rs::delete_snapshot_transport_route_removes_array_manifest_snapshot_records",
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "cluster:admin/snapshot/get",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::get_snapshots_transport_messages_bind_supported_action_frame",
-      "response_evidence": "crates/os-node/src/main.rs::get_snapshots_transport_route_returns_zero_snapshot_response_for_empty_manifest_repository"
+      "response_evidence": "crates/os-node/src/main.rs::get_snapshots_transport_route_returns_zero_snapshot_response_for_empty_manifest_repository",
+      "execution_scope": "fail_closed_or_empty_subset"
     },
     {
       "action_name": "cluster:admin/snapshot/status",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::snapshots_status_transport_messages_bind_supported_action_frame",
-      "response_evidence": "crates/os-node/src/main.rs::snapshots_status_transport_route_returns_empty_status_for_empty_manifest_repository"
+      "response_evidence": "crates/os-node/src/main.rs::snapshots_status_transport_route_returns_empty_status_for_empty_manifest_repository",
+      "execution_scope": "fail_closed_or_empty_subset"
     },
     {
       "action_name": "indices:admin/aliases",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_indices_aliases_transport_messages_bind_action_and_ack_response_frames",
-      "response_evidence": "crates/os-node/src/main.rs::indices_aliases_transport_route_updates_manifest_aliases"
+      "response_evidence": "crates/os-node/src/main.rs::indices_aliases_transport_route_updates_manifest_aliases",
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "indices:admin/analyze",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_analyze_transport_messages_bind_action_and_simple_response_frame",
-      "response_evidence": "crates/os-node/src/main.rs::analyze_transport_route_builds_simple_token_response"
+      "response_evidence": "crates/os-node/src/main.rs::analyze_transport_route_builds_simple_token_response",
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "indices:admin/auto_create",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_auto_create_transport_messages_bind_action_frame_and_response",
-      "response_evidence": "crates/os-node/src/main.rs::auto_create_transport_route_mutates_manifest_and_renders_response"
+      "response_evidence": "crates/os-node/src/main.rs::auto_create_transport_route_mutates_manifest_and_renders_response",
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "indices:admin/block/add",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_add_index_block_transport_messages_bind_action_frame_and_response",
-      "response_evidence": "crates/os-node/src/main.rs::add_index_block_transport_route_marks_manifest_index_blocked"
+      "response_evidence": "crates/os-node/src/main.rs::add_index_block_transport_route_marks_manifest_index_blocked",
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "indices:admin/close",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_close_index_transport_messages_bind_action_frame_and_response",
-      "response_evidence": "crates/os-node/src/main.rs::close_index_transport_route_marks_manifest_index_closed"
+      "response_evidence": "crates/os-node/src/main.rs::close_index_transport_route_marks_manifest_index_closed",
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "indices:admin/create",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_create_index_transport_messages_bind_action_frame_and_response",
-      "response_evidence": "crates/os-node/src/main.rs::create_index_transport_route_mutates_manifest_and_renders_response"
+      "response_evidence": "crates/os-node/src/main.rs::create_index_transport_route_mutates_manifest_and_renders_response",
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "indices:admin/delete",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_delete_index_transport_messages_bind_action_frame_and_ack_response",
-      "response_evidence": "crates/os-node/src/main.rs::delete_index_transport_route_removes_manifest_and_documents"
+      "response_evidence": "crates/os-node/src/main.rs::delete_index_transport_route_removes_manifest_and_documents",
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "indices:admin/index_template/put",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_put_composable_index_template_transport_messages_bind_action_frames",
-      "response_evidence": "crates/os-node/src/main.rs::get_composable_index_template_transport_route_builds_manifest_backed_settings_response"
+      "response_evidence": "crates/os-node/src/main.rs::get_composable_index_template_transport_route_builds_manifest_backed_settings_response",
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "indices:admin/index_template/simulate_index",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_simulate_index_template_transport_messages_bind_action_frame_and_no_match_response",
-      "response_evidence": "crates/os-node/src/main.rs::simulate_index_template_transport_route_returns_no_match_response"
+      "response_evidence": "crates/os-node/src/main.rs::simulate_index_template_transport_route_returns_no_match_response",
+      "execution_scope": "fail_closed_or_empty_subset"
     },
     {
       "action_name": "indices:admin/mapping/auto_put",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_auto_put_mapping_transport_messages_bind_action_and_ack_response_frames",
-      "response_evidence": "crates/os-node/src/main.rs::auto_put_mapping_transport_route_updates_concrete_manifest_index_mappings"
+      "response_evidence": "crates/os-node/src/main.rs::auto_put_mapping_transport_route_updates_concrete_manifest_index_mappings",
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "indices:admin/mapping/put",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_put_mapping_transport_messages_bind_action_and_ack_response_frames",
-      "response_evidence": "crates/os-node/src/main.rs::put_mapping_transport_route_updates_manifest_index_mappings"
+      "response_evidence": "crates/os-node/src/main.rs::put_mapping_transport_route_updates_manifest_index_mappings",
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "indices:admin/open",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_open_index_transport_messages_bind_action_frame_and_response",
-      "response_evidence": "crates/os-node/src/main.rs::open_index_transport_route_marks_manifest_index_open"
+      "response_evidence": "crates/os-node/src/main.rs::open_index_transport_route_marks_manifest_index_open",
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "indices:admin/scale/search_only",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_scale_index_transport_messages_bind_action_frame_and_response",
-      "response_evidence": "crates/os-node/src/main.rs::scale_index_transport_route_marks_manifest_index_search_only"
+      "response_evidence": "crates/os-node/src/main.rs::scale_index_transport_route_marks_manifest_index_search_only",
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "indices:admin/settings/update",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_update_settings_transport_messages_bind_action_and_ack_response_frames",
-      "response_evidence": "crates/os-node/src/main.rs::update_settings_transport_route_updates_manifest_index_settings"
+      "response_evidence": "crates/os-node/src/main.rs::update_settings_transport_route_updates_manifest_index_settings",
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "indices:data/read/search[can_match]",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_can_match_request_message_round_trips_bounded_shard_search_request",
-      "response_evidence": "crates/os-node/src/main.rs::can_match_transport_route_returns_true_for_source_free_local_subset"
+      "response_evidence": "crates/os-node/src/main.rs::can_match_transport_route_returns_true_for_source_free_local_subset",
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "indices:data/read/search[clear_scroll_contexts]",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_clear_scroll_contexts_transport_message_round_trips_empty_request",
-      "response_evidence": "crates/os-node/src/main.rs::clear_scroll_contexts_transport_route_clears_all_contexts_like_opensearch"
+      "response_evidence": "crates/os-node/src/main.rs::clear_scroll_contexts_transport_route_clears_all_contexts_like_opensearch",
+      "execution_scope": "fail_closed_or_empty_subset"
     },
     {
       "action_name": "indices:data/read/search[free_context/scroll]",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_free_context_transport_message_round_trips_original_indices",
-      "response_evidence": "crates/os-node/src/main.rs::free_context_transport_route_frees_scroll_context_and_missing_returns_false"
+      "response_evidence": "crates/os-node/src/main.rs::free_context_transport_route_frees_scroll_context_and_missing_returns_false",
+      "execution_scope": "fail_closed_or_empty_subset"
     },
     {
       "action_name": "indices:data/read/search[free_context]",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_free_context_transport_message_round_trips_original_indices",
-      "response_evidence": "crates/os-node/src/main.rs::free_context_transport_route_frees_reader_context_like_opensearch"
+      "response_evidence": "crates/os-node/src/main.rs::free_context_transport_route_frees_reader_context_like_opensearch",
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "indices:data/read/search[phase/query]",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-node/src/main.rs::query_phase_transport_route_uses_remote_transport_queue_gate_for_admission",
-      "response_evidence": "crates/os-node/src/main.rs::query_phase_transport_route_uses_remote_transport_queue_gate_for_admission"
+      "response_evidence": "crates/os-node/src/main.rs::query_phase_transport_route_uses_remote_transport_queue_gate_for_admission",
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "internal:indices/admin/upgrade",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_upgrade_settings_transport_messages_bind_supported_action_frame",
-      "response_evidence": "crates/os-node/src/main.rs::upgrade_settings_transport_route_updates_manifest_version_settings"
+      "response_evidence": "crates/os-node/src/main.rs::upgrade_settings_transport_route_updates_manifest_version_settings",
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "cluster:admin/_tier/all",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::list_tiering_status_transport_messages_bind_supported_action_frame_and_response",
-      "response_evidence": "crates/os-node/src/main.rs::list_tiering_status_transport_route_builds_empty_response"
+      "response_evidence": "crates/os-node/src/main.rs::list_tiering_status_transport_route_builds_empty_response",
+      "execution_scope": "fail_closed_or_empty_subset"
     },
     {
       "action_name": "indices:admin/_tier/get",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::get_tiering_status_transport_messages_bind_supported_action_frame_and_response",
-      "response_evidence": "crates/os-node/src/main.rs::get_tiering_status_transport_route_returns_no_active_migrations_error"
+      "response_evidence": "crates/os-node/src/main.rs::get_tiering_status_transport_route_returns_no_active_migrations_error",
+      "execution_scope": "fail_closed_or_empty_subset"
     },
     {
       "action_name": "cluster:admin/clear_cache_action",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::clear_cache_transport_messages_bind_implemented_action_frame_and_response",
-      "response_evidence": "crates/os-node/src/main.rs::clear_cache_transport_route_resets_local_knn_runtime_cache_state"
+      "response_evidence": "crates/os-node/src/main.rs::clear_cache_transport_route_resets_local_knn_runtime_cache_state",
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "cluster:admin/decommission/awareness/put",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::decommission_transport_messages_bind_supported_action_frame_and_ack_response",
-      "response_evidence": "crates/os-node/src/main.rs::decommission_transport_route_registers_manifest_state"
+      "response_evidence": "crates/os-node/src/main.rs::decommission_transport_route_registers_manifest_state",
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "cluster:admin/indices/dangling/delete",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_delete_dangling_index_transport_messages_bind_supported_action_frame_and_ack_response",
-      "response_evidence": "crates/os-node/src/main.rs::delete_dangling_index_transport_route_returns_missing_index_error"
+      "response_evidence": "crates/os-node/src/main.rs::delete_dangling_index_transport_route_returns_missing_index_error",
+      "execution_scope": "fail_closed_or_empty_subset"
     },
     {
       "action_name": "cluster:admin/indices/dangling/import",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_import_dangling_index_transport_messages_bind_supported_action_frame_and_ack_response",
-      "response_evidence": "crates/os-node/src/main.rs::import_dangling_index_transport_route_returns_missing_index_error"
+      "response_evidence": "crates/os-node/src/main.rs::import_dangling_index_transport_route_returns_missing_index_error",
+      "execution_scope": "fail_closed_or_empty_subset"
     },
     {
       "action_name": "cluster:admin/knn_delete_model_action",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::delete_model_transport_messages_bind_implemented_action_frame_and_response",
-      "response_evidence": "crates/os-node/src/main.rs::delete_model_transport_route_removes_local_runtime_model"
+      "response_evidence": "crates/os-node/src/main.rs::delete_model_transport_route_removes_local_runtime_model",
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "cluster:admin/knn_get_model_action",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::get_model_transport_messages_bind_implemented_action_frame_and_response",
-      "response_evidence": "crates/os-node/src/main.rs::get_model_transport_route_returns_local_runtime_model_payload"
+      "response_evidence": "crates/os-node/src/main.rs::get_model_transport_route_returns_local_runtime_model_payload",
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "cluster:admin/knn_remove_model_from_cache_action",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::remove_model_from_cache_transport_messages_bind_implemented_action_frame_and_response",
-      "response_evidence": "crates/os-node/src/main.rs::remove_model_from_cache_transport_route_evicts_local_model_cache_state"
+      "response_evidence": "crates/os-node/src/main.rs::remove_model_from_cache_transport_route_evicts_local_model_cache_state",
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "cluster:admin/knn_search_model_action",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::search_model_transport_messages_bind_implemented_action_frame_and_response",
-      "response_evidence": "crates/os-node/src/main.rs::search_model_transport_route_reuses_local_search_response_subset"
+      "response_evidence": "crates/os-node/src/main.rs::search_model_transport_route_reuses_local_search_response_subset",
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "cluster:admin/knn_stats_action",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::knn_stats_transport_messages_bind_implemented_action_frame_and_response",
-      "response_evidence": "crates/os-node/src/main.rs::knn_stats_transport_route_builds_local_runtime_state_response"
+      "response_evidence": "crates/os-node/src/main.rs::knn_stats_transport_route_builds_local_runtime_state_response",
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "cluster:admin/knn_training_job_route_decision_info_action",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::training_job_route_decision_info_transport_messages_bind_implemented_action_frame_and_response",
-      "response_evidence": "crates/os-node/src/main.rs::training_job_route_decision_info_transport_route_reports_local_active_job_count"
+      "response_evidence": "crates/os-node/src/main.rs::training_job_route_decision_info_transport_route_reports_local_active_job_count",
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "cluster:admin/knn_training_job_router_action",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::training_job_router_transport_messages_bind_implemented_action_frame_and_response",
-      "response_evidence": "crates/os-node/src/main.rs::training_model_transport_routes_record_local_runtime_model"
+      "response_evidence": "crates/os-node/src/main.rs::training_model_transport_routes_record_local_runtime_model",
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "cluster:admin/knn_training_model_action",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::training_model_transport_messages_bind_implemented_action_frame_and_response",
-      "response_evidence": "crates/os-node/src/main.rs::training_model_transport_routes_record_local_runtime_model"
+      "response_evidence": "crates/os-node/src/main.rs::training_model_transport_routes_record_local_runtime_model",
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "cluster:admin/knn_update_model_graveyard_action",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::update_model_graveyard_transport_messages_bind_implemented_action_frame_and_response",
-      "response_evidence": "crates/os-node/src/main.rs::update_model_graveyard_transport_route_mutates_local_runtime_graveyard"
+      "response_evidence": "crates/os-node/src/main.rs::update_model_graveyard_transport_route_mutates_local_runtime_graveyard",
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "cluster:admin/knn_update_model_metadata_action",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::update_model_metadata_transport_messages_bind_implemented_action_frame_and_response",
-      "response_evidence": "crates/os-node/src/main.rs::update_model_metadata_transport_route_removes_local_runtime_model_metadata"
+      "response_evidence": "crates/os-node/src/main.rs::update_model_metadata_transport_route_removes_local_runtime_model_metadata",
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "cluster:admin/knn_warmup_action",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::knn_warmup_transport_messages_bind_implemented_action_frame_and_response",
-      "response_evidence": "crates/os-node/src/main.rs::knn_warmup_transport_route_populates_local_knn_runtime_cache_state"
+      "response_evidence": "crates/os-node/src/main.rs::knn_warmup_transport_route_populates_local_knn_runtime_cache_state",
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "cluster:admin/nodes/reload_secure_settings",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::nodes_reload_secure_settings_transport_messages_bind_supported_action_frame_and_response",
-      "response_evidence": "crates/os-node/src/main.rs::reload_secure_settings_transport_route_builds_local_no_exception_response"
+      "response_evidence": "crates/os-node/src/main.rs::reload_secure_settings_transport_route_builds_local_no_exception_response",
+      "execution_scope": "fail_closed_or_empty_subset"
     },
     {
       "action_name": "cluster:admin/persistent/completion",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_completion_persistent_task_transport_messages_bind_supported_action_frame_and_empty_response",
-      "response_evidence": "crates/os-node/src/main.rs::completion_persistent_task_transport_route_reports_missing_task_like_opensearch"
+      "response_evidence": "crates/os-node/src/main.rs::completion_persistent_task_transport_route_reports_missing_task_like_opensearch",
+      "execution_scope": "fail_closed_or_empty_subset"
     },
     {
       "action_name": "cluster:admin/persistent/remove",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_remove_persistent_task_transport_messages_bind_supported_action_frame_and_empty_response",
-      "response_evidence": "crates/os-node/src/main.rs::remove_persistent_task_transport_route_reports_missing_task_like_opensearch"
+      "response_evidence": "crates/os-node/src/main.rs::remove_persistent_task_transport_route_reports_missing_task_like_opensearch",
+      "execution_scope": "fail_closed_or_empty_subset"
     },
     {
       "action_name": "cluster:admin/persistent/start",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_start_persistent_task_transport_messages_bind_implemented_action_frame_and_fixture_response",
-      "response_evidence": "crates/os-node/src/main.rs::start_persistent_task_transport_route_records_fixture_task_like_opensearch"
+      "response_evidence": "crates/os-node/src/main.rs::start_persistent_task_transport_route_records_fixture_task_like_opensearch",
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "cluster:admin/persistent/update_status",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_update_persistent_task_status_transport_messages_bind_supported_action_frame_and_empty_response",
-      "response_evidence": "crates/os-node/src/main.rs::update_persistent_task_status_transport_route_reports_missing_task_like_opensearch"
+      "response_evidence": "crates/os-node/src/main.rs::update_persistent_task_status_transport_route_reports_missing_task_like_opensearch",
+      "execution_scope": "fail_closed_or_empty_subset"
     },
     {
       "action_name": "cluster:admin/remotestore/restore",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::restore_remote_store_transport_messages_bind_implemented_action_frame_and_accepted_response",
-      "response_evidence": "crates/os-node/src/main.rs::restore_remote_store_transport_route_records_manifest_acceptance"
+      "response_evidence": "crates/os-node/src/main.rs::restore_remote_store_transport_route_records_manifest_acceptance",
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "cluster:admin/reroute",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::cluster_reroute_transport_messages_bind_implemented_action_frame_and_response",
-      "response_evidence": "crates/os-node/src/main.rs::cluster_reroute_transport_route_returns_acknowledged_state_with_empty_explanations"
+      "response_evidence": "crates/os-node/src/main.rs::cluster_reroute_transport_route_returns_acknowledged_state_with_empty_explanations",
+      "execution_scope": "fail_closed_or_empty_subset"
     },
     {
       "action_name": "cluster:admin/snapshot/restore",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::restore_snapshot_transport_messages_bind_supported_action_frame",
-      "response_evidence": "crates/os-node/src/main.rs::restore_snapshot_transport_route_restores_object_manifest_index_metadata"
+      "response_evidence": "crates/os-node/src/main.rs::restore_snapshot_transport_route_restores_object_manifest_index_metadata",
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "cluster:internal/extensions",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::extension_proxy_transport_messages_bind_supported_action_frame_and_byte_response",
-      "response_evidence": "crates/os-node/src/main.rs::extension_proxy_transport_route_reports_noop_manager_empty_response"
+      "response_evidence": "crates/os-node/src/main.rs::extension_proxy_transport_route_reports_noop_manager_empty_response",
+      "execution_scope": "fail_closed_or_empty_subset"
     },
     {
       "action_name": "indices:admin/index_template/simulate",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_simulate_template_transport_messages_bind_action_frame_and_execution_boundary",
-      "response_evidence": "crates/os-node/src/main.rs::simulate_template_transport_route_returns_missing_named_template_error"
+      "response_evidence": "crates/os-node/src/main.rs::simulate_template_transport_route_returns_missing_named_template_error",
+      "execution_scope": "bounded_execution_boundary"
     },
     {
       "action_name": "indices:admin/ingestion/pause",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::pause_ingestion_transport_messages_bind_supported_action_frame_and_response",
-      "response_evidence": "crates/os-node/src/main.rs::pause_ingestion_transport_route_reports_missing_index_like_opensearch"
+      "response_evidence": "crates/os-node/src/main.rs::pause_ingestion_transport_route_reports_missing_index_like_opensearch",
+      "execution_scope": "fail_closed_or_empty_subset"
     },
     {
       "action_name": "indices:admin/ingestion/resume",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::resume_ingestion_transport_messages_bind_supported_action_frame_and_response",
-      "response_evidence": "crates/os-node/src/main.rs::resume_ingestion_transport_route_reports_missing_index_like_opensearch"
+      "response_evidence": "crates/os-node/src/main.rs::resume_ingestion_transport_route_reports_missing_index_like_opensearch",
+      "execution_scope": "fail_closed_or_empty_subset"
     },
     {
       "action_name": "indices:admin/ingestion/updateState",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::update_ingestion_state_transport_messages_bind_supported_action_frame_and_response",
-      "response_evidence": "crates/os-node/src/main.rs::update_ingestion_state_transport_route_reports_missing_index_like_opensearch"
+      "response_evidence": "crates/os-node/src/main.rs::update_ingestion_state_transport_route_reports_missing_index_like_opensearch",
+      "execution_scope": "fail_closed_or_empty_subset"
     },
     {
       "action_name": "indices:monitor/ingestion/state",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::get_ingestion_state_transport_messages_bind_supported_action_frame_and_response",
-      "response_evidence": "crates/os-node/src/main.rs::get_ingestion_state_transport_route_reports_missing_index_like_opensearch"
+      "response_evidence": "crates/os-node/src/main.rs::get_ingestion_state_transport_route_reports_missing_index_like_opensearch",
+      "execution_scope": "fail_closed_or_empty_subset"
     },
     {
       "action_name": "indices:admin/resize",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_resize_transport_messages_bind_supported_action_frame_and_response",
-      "response_evidence": "crates/os-node/src/main.rs::resize_transport_route_creates_shrink_target_manifest_metadata"
+      "response_evidence": "crates/os-node/src/main.rs::resize_transport_route_creates_shrink_target_manifest_metadata",
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "indices:admin/rollover",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_rollover_transport_messages_bind_supported_action_frame_and_response",
-      "response_evidence": "crates/os-node/src/main.rs::rollover_transport_route_moves_single_alias_and_renders_response"
+      "response_evidence": "crates/os-node/src/main.rs::rollover_transport_route_moves_single_alias_and_renders_response",
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "indices:admin/seq_no/add_retention_lease",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_add_retention_lease_transport_messages_bind_supported_action_frame_and_empty_response",
-      "response_evidence": "crates/os-node/src/main.rs::retention_lease_transport_routes_report_missing_shard_or_index_like_opensearch"
+      "response_evidence": "crates/os-node/src/main.rs::retention_lease_transport_routes_report_missing_shard_or_index_like_opensearch",
+      "execution_scope": "fail_closed_or_empty_subset"
     },
     {
       "action_name": "indices:admin/seq_no/remove_retention_lease",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_remove_retention_lease_transport_messages_bind_supported_action_frame_and_empty_response",
-      "response_evidence": "crates/os-node/src/main.rs::retention_lease_transport_routes_report_missing_shard_or_index_like_opensearch"
+      "response_evidence": "crates/os-node/src/main.rs::retention_lease_transport_routes_report_missing_shard_or_index_like_opensearch",
+      "execution_scope": "fail_closed_or_empty_subset"
     },
     {
       "action_name": "indices:admin/seq_no/renew_retention_lease",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_renew_retention_lease_transport_messages_bind_supported_action_frame_and_empty_response",
-      "response_evidence": "crates/os-node/src/main.rs::retention_lease_transport_routes_report_missing_shard_or_index_like_opensearch"
+      "response_evidence": "crates/os-node/src/main.rs::retention_lease_transport_routes_report_missing_shard_or_index_like_opensearch",
+      "execution_scope": "fail_closed_or_empty_subset"
     },
     {
       "action_name": "indices:data/read/mtv",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_multi_term_vectors_transport_messages_bind_supported_action_frame",
-      "response_evidence": "crates/os-node/src/main.rs::multi_term_vectors_transport_route_reports_missing_indices_like_opensearch"
+      "response_evidence": "crates/os-node/src/main.rs::multi_term_vectors_transport_route_reports_missing_indices_like_opensearch",
+      "execution_scope": "fail_closed_or_empty_subset"
     },
     {
       "action_name": "indices:data/read/tv",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_term_vectors_transport_messages_bind_supported_action_frame",
-      "response_evidence": "crates/os-node/src/main.rs::term_vectors_transport_route_reports_missing_index_like_opensearch"
+      "response_evidence": "crates/os-node/src/main.rs::term_vectors_transport_route_reports_missing_index_like_opensearch",
+      "execution_scope": "fail_closed_or_empty_subset"
     },
     {
       "action_name": "indices:data/read/search[phase/dfs]",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_dfs_phase_transport_messages_round_trip",
-      "response_evidence": "crates/os-node/src/main.rs::dfs_phase_transport_route_creates_reader_context_and_empty_result"
+      "response_evidence": "crates/os-node/src/main.rs::dfs_phase_transport_route_creates_reader_context_and_empty_result",
+      "execution_scope": "fail_closed_or_empty_subset"
     },
     {
       "action_name": "indices:data/read/search[phase/fetch/id/scroll]",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_fetch_id_scroll_phase_transport_request_round_trips",
-      "response_evidence": "crates/os-node/src/main.rs::fetch_id_phase_route_returns_empty_fetch_result_for_empty_doc_ids"
+      "response_evidence": "crates/os-node/src/main.rs::fetch_id_phase_route_returns_empty_fetch_result_for_empty_doc_ids",
+      "execution_scope": "fail_closed_or_empty_subset"
     },
     {
       "action_name": "indices:data/read/search[phase/fetch/id]",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_fetch_id_phase_transport_messages_round_trip_empty_subset",
-      "response_evidence": "crates/os-node/src/main.rs::fetch_id_phase_route_returns_empty_fetch_result_for_empty_doc_ids"
+      "response_evidence": "crates/os-node/src/main.rs::fetch_id_phase_route_returns_empty_fetch_result_for_empty_doc_ids",
+      "execution_scope": "fail_closed_or_empty_subset"
     },
     {
       "action_name": "indices:data/read/search[phase/query+fetch/scroll]",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_query_fetch_scroll_phase_transport_request_round_trips",
-      "response_evidence": "crates/os-node/src/main.rs::query_fetch_scroll_phase_route_returns_scroll_query_fetch_result_for_context"
+      "response_evidence": "crates/os-node/src/main.rs::query_fetch_scroll_phase_route_returns_scroll_query_fetch_result_for_context",
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "indices:data/read/search[phase/query/id]",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_query_id_request_transport_message_round_trips_dfs_and_context",
-      "response_evidence": "crates/os-node/src/main.rs::query_id_phase_route_returns_query_result_for_dfs_reader_context"
+      "response_evidence": "crates/os-node/src/main.rs::query_id_phase_route_returns_query_result_for_dfs_reader_context",
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "indices:data/read/search[phase/query/scroll]",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_query_scroll_phase_transport_request_round_trips",
-      "response_evidence": "crates/os-node/src/main.rs::query_scroll_phase_route_returns_scroll_query_result_for_context"
+      "response_evidence": "crates/os-node/src/main.rs::query_scroll_phase_route_returns_scroll_query_result_for_context",
+      "execution_scope": "bounded_local_subset"
     }
   ]
 }

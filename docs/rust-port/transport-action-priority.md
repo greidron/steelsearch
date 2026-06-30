@@ -173,13 +173,18 @@ Every transport-facing feature should be tracked in exactly one primary bucket.
 
 ## Current Source Boundary Audit
 
-The source-derived transport inventory currently has 160 rows:
+The accepted transport evidence ledger currently has 174 implemented rows:
 
-| Status | Count | Meaning |
+| Evidence scope | Count | Meaning |
 | --- | ---: | --- |
-| `implemented` | 160 | Steelsearch has a concrete action row with implemented server-side behavior for the declared subset. |
-| `partial` | 0 | No source-derived transport action remains in a partial boundary-only state. |
-| `planned` | 0 | No source-derived transport action remains unclassified. |
+| `bounded_local_subset` | 112 | Steelsearch has request/response evidence and serves the declared local subset. |
+| `fail_closed_or_empty_subset` | 54 | Steelsearch has explicit empty-state, missing-resource, no-op, or fail-closed behavior for the declared subset. |
+| `bounded_execution_boundary` | 8 | Steelsearch recognizes the action frame and pins the current execution boundary instead of silently claiming broader execution. |
+
+This ledger intentionally does not use a `full_parity` scope. The source action
+may be classified as implemented only for the declared subset, and the accepted
+evidence row must state whether that subset is local execution, empty/fail-closed
+behavior, or an execution boundary.
 
 The k-NN plugin action sweep is complete at the boundary layer. All 12
 registrations from

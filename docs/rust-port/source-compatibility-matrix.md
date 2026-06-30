@@ -147,16 +147,18 @@ Interpretation note for the table above:
 | Transport error response decode | Partial | Partial | Known remote errors convert to OpenSearch-shaped errors; complete exception registry is missing. |
 | Cluster-state request/response read path | Partial | Partial | Decode-first scaffold and version-gated custom payload coverage exist; full diff apply and named writeable coverage are incomplete. |
 | Steelsearch-native shard search and development cluster transport | Implemented | N/A | Used for Steelsearch daemon-to-daemon development clusters, not Java node compatibility. |
-| Core `ActionModule` transport actions | Partial | Partial | 142 core action rows are implemented and the remaining 6 core rows have explicit fail-closed transport boundaries; most server-side execution semantics remain partial. |
-| k-NN transport actions | Partial | Partial | All 12 k-NN transport action rows have source-derived fail-closed request/response boundaries; model, cache, warmup, stats, and training execution semantics remain partial. |
+| Core `ActionModule` transport actions | Partial | Partial | Accepted transport evidence now covers every implemented row, but each row is scoped as bounded local execution, empty/fail-closed behavior, or an explicit execution boundary; many server-side execution semantics remain partial. |
+| k-NN transport actions | Partial | Partial | k-NN transport rows have accepted scoped evidence for model, cache, warmup, stats, and training subsets; broader execution semantics remain partial. |
 | Java mixed data-node transport behavior | Out of scope | Out of scope | Discovery, recovery, shard store, Lucene/JVM internals, and Java plugin hot paths are excluded from the current milestone. |
 
 Current transport coverage evidence:
 
+- `tools/fixtures/interop-accepted-transport-action-evidence.json` records 174
+  implemented transport evidence rows: 112 `bounded_local_subset`, 54
+  `fail_closed_or_empty_subset`, and 8 `bounded_execution_boundary`.
 - `tools/report-transport-action-coverage.py` compares the source-derived
   transport inventory in `docs/rust-port/generated/source-transport-actions.tsv`
-  with current Steelsearch evidence. The current inventory has 160 transport
-  actions: 160 `implemented`, 0 `partial`, and 0 `planned`.
+  with current Steelsearch evidence.
 - `target/transport-action-coverage-current.json` is passing current evidence
   for the full source-derived transport action inventory.
 - `target/runtime-peer-backpressure-current.json` is passing evidence for the
@@ -208,11 +210,12 @@ Current 0.2.4 mixed-cluster coverage evidence:
   source-derived route/action inventory, not this human readiness matrix.
 - Current source-derived inventory is not an exhaustive OpenSearch API
   compatibility closure claim. The generated matrix currently has 754 rows:
-  389 REST routes, 160 transport actions, 127 search registrations, and 78 node
-  runtime entries. Of the transport source rows, 142 are `implemented`, 18 are
-  `partial`, and none remain `planned`; the partial rows still require
-  owner-level server-side execution work before they can be promoted. Of the
-  REST source rows, 371 are in scope and all are now classified as
+  389 REST routes, 160 generated transport action rows, 127 search
+  registrations, and 78 node runtime entries. The accepted transport evidence
+  ledger now tracks 174 implemented action rows across source-derived and
+  priority transport surfaces, scoped as bounded local execution,
+  empty/fail-closed behavior, or explicit execution boundary. Of the REST source
+  rows, 371 are in scope and all are now classified as
   `implemented` in the source-derived matrix; exhaustive positive/negative live
   comparison still needs to expand across the route surface. Of the search
   registration rows, 120 are now classified as `implemented` from Rust DSL and

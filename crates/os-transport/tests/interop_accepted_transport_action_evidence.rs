@@ -29,6 +29,7 @@ struct EvidenceAction {
     action_name: String,
     disposition: String,
     evidence_kind: String,
+    execution_scope: String,
     request_evidence: String,
     response_evidence: String,
 }
@@ -99,6 +100,22 @@ fn interop_accepted_transport_action_evidence_covers_every_implemented_action() 
             action.action_name
         );
         assert!(
+            matches!(
+                action.execution_scope.as_str(),
+                "bounded_local_subset"
+                    | "fail_closed_or_empty_subset"
+                    | "bounded_execution_boundary"
+            ),
+            "unexpected execution scope for {}: {}",
+            action.action_name,
+            action.execution_scope
+        );
+        assert!(
+            action.execution_scope != "full_parity",
+            "{}: accepted transport evidence must not claim full parity through the bounded interop ledger",
+            action.action_name
+        );
+        assert!(
             !action.request_evidence.is_empty(),
             "missing request evidence for {}",
             action.action_name
@@ -113,6 +130,13 @@ fn interop_accepted_transport_action_evidence_covers_every_implemented_action() 
             "request_evidence",
             &action.request_evidence,
         );
+        if action.request_evidence.contains("execution_boundary") {
+            assert_eq!(
+                action.execution_scope, "bounded_execution_boundary",
+                "{}: execution-boundary evidence must be scoped as bounded_execution_boundary",
+                action.action_name
+            );
+        }
         assert!(
             !action.response_evidence.is_empty(),
             "missing response evidence for {}",
