@@ -389,7 +389,7 @@ table noise without changing the current contract.
 
 | Route family | OpenSearch meaning | Steelsearch behavior | Status |
 | --- | --- | --- | --- |
-| Analyze, validate query, refresh, flush, force merge, recovery, segments, shard stores, resolve index | Index administration and diagnostics. | Refresh is supported in the development replacement surface. Most other admin routes remain incomplete or absent. | Mixed; refresh is Implemented, most others Planned |
+| Analyze, validate query, refresh, flush, force merge, recovery, segments, shard stores, resolve index | Index administration and diagnostics. | Refresh, flush, cache clear, force merge, analyze, validate query, recovery, segments, shard stores, and resolve-index surfaces now have live runtime evidence. The dedicated `admin-ops` acceptance scope pins the Steelsearch-only semantic subset, while search/root fixtures carry the OpenSearch-compared read/diagnostic subset. | Partial |
 
 ## Notes
 

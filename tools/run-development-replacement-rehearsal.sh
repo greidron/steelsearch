@@ -27,6 +27,7 @@ MIGRATION_CUTOVER_INTEGRATION_REPORT="${MIGRATION_CUTOVER_INTEGRATION_REPORT:-${
 VECTOR_SEARCH_COMPAT_REPORT="${VECTOR_SEARCH_COMPAT_REPORT:-${REHEARSAL_DIR}/vector-search-compat-report.json}"
 KNN_PLUGIN_COMPAT_REPORT="${KNN_PLUGIN_COMPAT_REPORT:-${REHEARSAL_DIR}/knn-plugin-compat-report.json}"
 ML_MODEL_SURFACE_COMPAT_REPORT="${ML_MODEL_SURFACE_COMPAT_REPORT:-${REHEARSAL_DIR}/ml-model-surface-compat-report.json}"
+ADMIN_OPS_SEMANTIC_COMPAT_REPORT="${ADMIN_OPS_SEMANTIC_COMPAT_REPORT:-${REHEARSAL_DIR}/admin-ops-semantic-report.json}"
 MULTI_NODE_TRANSPORT_ADMIN_REPORT="${MULTI_NODE_TRANSPORT_ADMIN_REPORT:-${REHEARSAL_DIR}/multi-node-transport-admin-report.json}"
 ALIAS_TEMPLATE_PERSISTENCE_REPORT="${ALIAS_TEMPLATE_PERSISTENCE_REPORT:-${REHEARSAL_DIR}/alias-template-persistence-report.json}"
 STEELSEARCH_READINESS_REPORT="${STEELSEARCH_READINESS_REPORT:-${REHEARSAL_DIR}/steelsearch-readiness.json}"
@@ -87,7 +88,7 @@ Environment:
                                Artifact-backed production startup evidence manifest.
   STEELSEARCH_RELEASE_EVIDENCE_MAX_AGE_SECONDS
                                Max benchmark/load report age. Default: 86400.
-  PHASE_A_COMPARE_SCOPE        `full`, `root-cluster-node`, `index-metadata`, `document-write-path`, `search`, `search-execution`, `snapshot-migration`, `vector-ml`, or `transport-admin`. Default: full.
+  PHASE_A_COMPARE_SCOPE        `full`, `root-cluster-node`, `index-metadata`, `document-write-path`, `search`, `search-execution`, `snapshot-migration`, `vector-ml`, `transport-admin`, or `admin-ops`. Default: full.
 USAGE
 }
 
@@ -283,6 +284,7 @@ if [[ "${PHASE_A_COMPARE_SCOPE}" == "vector-ml" ]]; then
   export RUN_MIGRATION_CUTOVER_INTEGRATION=0
   export RUN_VECTOR_SEARCH_COMPAT=1
   export RUN_KNN_PLUGIN_COMPAT=1
+  export RUN_ADMIN_OPS_SEMANTIC_COMPAT=0
   export RUN_MULTI_NODE_TRANSPORT_ADMIN_INTEGRATION=0
 fi
 
@@ -308,7 +310,35 @@ if [[ "${PHASE_A_COMPARE_SCOPE}" == "transport-admin" ]]; then
   export RUN_DATA_STREAM_ROLLOVER_COMPAT=0
   export RUN_MIGRATION_CUTOVER_INTEGRATION=0
   export RUN_VECTOR_SEARCH_COMPAT=0
+  export RUN_ADMIN_OPS_SEMANTIC_COMPAT=0
   export RUN_MULTI_NODE_TRANSPORT_ADMIN_INTEGRATION=1
+fi
+
+if [[ "${PHASE_A_COMPARE_SCOPE}" == "admin-ops" ]]; then
+  RUN_SEARCH_COMPAT=0
+  export RUN_CLUSTER_HEALTH_COMPAT=0
+  export RUN_ALLOCATION_EXPLAIN_COMPAT=0
+  export RUN_CLUSTER_SETTINGS_COMPAT=0
+  export RUN_CLUSTER_STATE_COMPAT=0
+  export RUN_ROOT_CLUSTER_NODE_COMPAT=0
+  export RUN_TASKS_COMPAT=0
+  export RUN_STATS_COMPAT=0
+  export RUN_INDEX_LIFECYCLE_COMPAT=0
+  export RUN_MAPPING_COMPAT=0
+  export RUN_SETTINGS_COMPAT=0
+  export RUN_SINGLE_DOC_CRUD_COMPAT=0
+  export RUN_REFRESH_COMPAT=0
+  export RUN_BULK_COMPAT=0
+  export RUN_ROUTING_COMPAT=0
+  export RUN_ALIAS_READ_COMPAT=0
+  export RUN_TEMPLATE_COMPAT=0
+  export RUN_SNAPSHOT_LIFECYCLE_COMPAT=0
+  export RUN_DATA_STREAM_ROLLOVER_COMPAT=0
+  export RUN_MIGRATION_CUTOVER_INTEGRATION=0
+  export RUN_VECTOR_SEARCH_COMPAT=0
+  export RUN_KNN_PLUGIN_COMPAT=0
+  export RUN_MULTI_NODE_TRANSPORT_ADMIN_INTEGRATION=0
+  export RUN_ADMIN_OPS_SEMANTIC_COMPAT=1
 fi
 
 cleanup() {
@@ -614,10 +644,10 @@ if [[ "${PHASE_A_COMPARE_SCOPE}" != "transport-admin" ]]; then
   attach_release_evidence_to_readiness
 fi
 
-if [[ "${PHASE_A_COMPARE_SCOPE}" != "transport-admin" && -n "${OPENSEARCH_URL:-}" ]]; then
+if [[ "${PHASE_A_COMPARE_SCOPE}" != "transport-admin" && "${PHASE_A_COMPARE_SCOPE}" != "admin-ops" && -n "${OPENSEARCH_URL:-}" ]]; then
   OPENSEARCH_URL="${OPENSEARCH_URL%/}"
   echo "Using existing OpenSearch endpoint: ${OPENSEARCH_URL}" >&2
-elif [[ "${PHASE_A_COMPARE_SCOPE}" != "transport-admin" ]]; then
+elif [[ "${PHASE_A_COMPARE_SCOPE}" != "transport-admin" && "${PHASE_A_COMPARE_SCOPE}" != "admin-ops" ]]; then
   OPENSEARCH_HTTP_HOST="${OPENSEARCH_HTTP_HOST:-127.0.0.1}"
   OPENSEARCH_HTTP_PORT="${OPENSEARCH_HTTP_PORT:-9200}"
   OPENSEARCH_URL="http://${OPENSEARCH_HTTP_HOST}:${OPENSEARCH_HTTP_PORT}"
@@ -632,7 +662,7 @@ elif [[ "${PHASE_A_COMPARE_SCOPE}" != "transport-admin" ]]; then
   OPENSEARCH_PID=$!
   OPENSEARCH_STARTED=1
 fi
-if [[ "${PHASE_A_COMPARE_SCOPE}" != "transport-admin" ]]; then
+if [[ "${PHASE_A_COMPARE_SCOPE}" != "transport-admin" && "${PHASE_A_COMPARE_SCOPE}" != "admin-ops" ]]; then
   export OPENSEARCH_URL
   wait_for_endpoint "OpenSearch" "${OPENSEARCH_URL}"
   export REQUIRE_OPENSEARCH_COMPARISON=1
@@ -785,6 +815,14 @@ if [[ "${RUN_ML_MODEL_SURFACE_COMPAT:-0}" == "1" ]]; then
     --steelsearch-url "${STEELSEARCH_URL}" \
     --output "${ML_MODEL_SURFACE_COMPAT_REPORT}"
 fi
+if [[ "${RUN_ADMIN_OPS_SEMANTIC_COMPAT:-0}" == "1" ]]; then
+  OPENSEARCH_URL= python3 "${ROOT}/tools/search_compat.py" \
+    --steelsearch-url "${STEELSEARCH_URL}" \
+    --fixture "${ROOT}/tools/fixtures/admin-ops-semantic-compat.json" \
+    --report "${ADMIN_OPS_SEMANTIC_COMPAT_REPORT}" \
+    --wait \
+    --timeout "${SEARCH_COMPAT_TIMEOUT:-10}"
+fi
 if [[ "${RUN_MULTI_NODE_TRANSPORT_ADMIN_INTEGRATION:-0}" == "1" ]]; then
   python3 "${ROOT}/tools/multi_node_transport_admin_integration.py" \
     --node-a-url "${STEELSEARCH_NODE_A_URL}" \
@@ -880,12 +918,15 @@ fi
 if [[ "${RUN_ML_MODEL_SURFACE_COMPAT:-0}" == "1" ]]; then
   echo "ml model surface compatibility report: ${ML_MODEL_SURFACE_COMPAT_REPORT}"
 fi
+if [[ "${RUN_ADMIN_OPS_SEMANTIC_COMPAT:-0}" == "1" ]]; then
+  echo "admin ops semantic compatibility report: ${ADMIN_OPS_SEMANTIC_COMPAT_REPORT}"
+fi
 if [[ "${RUN_MULTI_NODE_TRANSPORT_ADMIN_INTEGRATION:-0}" == "1" ]]; then
   echo "multi-node transport/admin integration report: ${MULTI_NODE_TRANSPORT_ADMIN_REPORT}"
 fi
 if [[ "${RUN_ALIAS_TEMPLATE_PERSISTENCE_COMPARISON:-0}" == "1" ]]; then
   echo "alias/template persistence report: ${ALIAS_TEMPLATE_PERSISTENCE_REPORT}"
 fi
-if [[ "${PHASE_A_COMPARE_SCOPE}" != "search" && "${PHASE_A_COMPARE_SCOPE}" != "snapshot-migration" && "${PHASE_A_COMPARE_SCOPE}" != "vector-ml" && "${PHASE_A_COMPARE_SCOPE}" != "transport-admin" ]]; then
+if [[ "${PHASE_A_COMPARE_SCOPE}" != "search" && "${PHASE_A_COMPARE_SCOPE}" != "snapshot-migration" && "${PHASE_A_COMPARE_SCOPE}" != "vector-ml" && "${PHASE_A_COMPARE_SCOPE}" != "transport-admin" && "${PHASE_A_COMPARE_SCOPE}" != "admin-ops" ]]; then
   echo "migration validation report: ${VALIDATION_REPORT_PATH}"
 fi
