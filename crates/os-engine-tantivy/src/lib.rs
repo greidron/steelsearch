@@ -9669,11 +9669,6 @@ fn validate_knn_execution_mapping(field: &str, mapping: &KnnVectorMapping) -> En
                 )));
             }
         }
-        if !method.parameters.is_empty() {
-            return Err(invalid_request(format!(
-                "unsupported knn_vector method parameters for field [{field}]"
-            )));
-        }
     }
 
     if let Some(mode) = mapping.mode.as_deref() {
@@ -127130,11 +127125,6 @@ mod tests {
                 "vectors-method-name",
                 serde_json::json!({"method": {"name": "ivf"}}),
                 "unsupported knn_vector method [ivf]",
-            ),
-            (
-                "vectors-method-params",
-                serde_json::json!({"method": {"name": "hnsw", "parameters": {"m": 16}}}),
-                "unsupported knn_vector method parameters",
             ),
             (
                 "vectors-mode",

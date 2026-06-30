@@ -129,12 +129,12 @@ Functional OpenSearch E2E comparison status:
 - Fresh stats live subset: `12` passed, `0` failed, covering `_nodes/stats`
   and related metric/index-metric error boundaries, including search
   `open_contexts` and `point_in_time_*` fields in the compared response shape.
-- Current coverage summary: `canonical_equal=491`, `strict_equal=422`, `semantic_equal=9`, `failed=0`, `missing=0`, `known_gap_or_skipped=25`, `steelsearch_only=0`
-- Audit coverage summary: `canonical_equal=81`, `strict_equal=2`, `semantic_equal=14`, `failed=0`, `missing=0`, `known_gap_or_skipped=0`, `steelsearch_only=0`
-- `search-compat`: `500` passed, `0` failed, `20` skipped.
+- Current coverage summary: `canonical_equal=491`, `strict_equal=422`, `semantic_equal=9`, `failed=0`, `missing=0`, `known_gap_or_skipped=24`, `steelsearch_only=0`
+- Audit coverage summary: `canonical_equal=82`, `strict_equal=2`, `semantic_equal=14`, `failed=0`, `missing=0`, `known_gap_or_skipped=0`, `steelsearch_only=0`
+- `search-compat`: `500` passed, `0` failed, `19` skipped.
 - `search-strict`: `422` passed, `0` failed, `5` skipped.
 - `search-semantic`: `73` passed, `0` failed, `0` skipped.
-- `vector-search`: `24` passed, `0` failed, `0` skipped.
+- `vector-search`: `25` passed, `0` failed, `0` skipped.
 - REST API source coverage gate:
   `target/rest-api-coverage-current.json` passes with `23` live-required
   matched source routes and `0` live-required fixture failures/missing cases.

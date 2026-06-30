@@ -241,7 +241,7 @@ rescore score-mode ordering, highlight encoder, term suggest size, and missing
 `_explain` targets. k-NN query, hybrid-query option parity, and bounded k-NN
 operational stats/warmup parity are covered by the
 dedicated `vector-search` suite, which runs against the OpenSearch k-NN plugin
-profile and currently reports 24 passed, 0 failed, and 0 skipped cases.
+profile and currently reports 25 passed, 0 failed, and 0 skipped cases.
 
 This means OpenSearch feature E2E comparison is broad and currently has no
 observed failing compared cases in the collected required-suite reports. The
@@ -279,7 +279,7 @@ are:
   the retained required suites, including `search-compat` and `search-strict`;
 - that broader report touches 142 of the 371 in-scope source route rows and
   leaves 229 in-scope rows outside the current live required-suite evidence;
-- the broader report still has 25 fixture-classified known gap or skipped cases, so the stricter
+- the broader report still has 24 fixture-classified known gap or skipped cases, so the stricter
   no-skip release gate remains limited to `search-semantic` and
   `vector-search`.
 

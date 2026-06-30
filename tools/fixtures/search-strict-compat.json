@@ -305,7 +305,6 @@
       "knn_warmup_clear_cache_telemetry_shape",
       "knn_unsupported_method_engine_fail_closed",
       "knn_unsupported_mode_fail_closed",
-      "knn_unsupported_method_parameters_fail_closed",
       "ml_model_lifecycle_shape"
     ],
     "aggregation_requests": [
@@ -398,15 +397,6 @@
       {
         "name": "knn_unsupported_mode_fail_closed",
         "request": "POST /vectors-unsupported-mode-compat/_search",
-        "expected_status": 400,
-        "stable_fields": [
-          "error.type",
-          "error.reason"
-        ]
-      },
-      {
-        "name": "knn_unsupported_method_parameters_fail_closed",
-        "request": "POST /vectors-unsupported-method-params-compat/_search",
         "expected_status": 400,
         "stable_fields": [
           "error.type",

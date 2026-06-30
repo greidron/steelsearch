@@ -44032,6 +44032,11 @@ mod tests {
             .expect("dev transport PIT contexts lock poisoned")
             .clear();
         bindings
+            .reader_contexts
+            .lock()
+            .expect("dev transport reader contexts lock poisoned")
+            .clear();
+        bindings
             .created_indices
             .lock()
             .expect("dev transport created indices lock poisoned")
@@ -44215,6 +44220,11 @@ mod tests {
             .contexts
             .lock()
             .expect("dev transport PIT contexts lock poisoned")
+            .clear();
+        bindings
+            .reader_contexts
+            .lock()
+            .expect("dev transport reader contexts lock poisoned")
             .clear();
         bindings
             .created_indices
@@ -47449,6 +47459,11 @@ mod tests {
             .contexts
             .lock()
             .expect("dev transport PIT contexts lock poisoned")
+            .clear();
+        bindings
+            .reader_contexts
+            .lock()
+            .expect("dev transport reader contexts lock poisoned")
             .clear();
         bindings
             .created_indices

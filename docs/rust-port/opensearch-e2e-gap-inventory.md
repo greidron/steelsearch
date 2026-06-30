@@ -18,13 +18,13 @@ Latest audit report:
 - Repeated in both `search-compat` and `search-strict`: 0 cases.
 - Strict-only: none.
 - Basic-only: none.
-- `search-compat`: 500 passed, 0 failed, 20 skipped.
+- `search-compat`: 500 passed, 0 failed, 19 skipped.
 - `search-strict`: 422 passed, 0 failed, 5 skipped.
 - `search-semantic`: 73 passed, 0 failed, 0 skipped.
-- `vector-search`: 24 passed, 0 failed, 0 skipped.
+- `vector-search`: 25 passed, 0 failed, 0 skipped.
 - Combined required classification:
   `canonical_equal=491`, `strict_equal=422`, `semantic_equal=9`,
-  `known_gap_or_skipped=25`, `failed=0`, `missing=0`.
+  `known_gap_or_skipped=24`, `failed=0`, `missing=0`.
 
 ## Remaining Gaps
 
@@ -43,7 +43,7 @@ Current status:
 
 | Area | Current evidence | Exhaustive-compatibility result |
 | --- | --- | --- |
-| Live required OpenSearch E2E suites | `failed=0`, `missing=0`, `known_gap_or_skipped=25` across `491` canonical, `9` semantic, and `422` strict equal cases | Covered cases pass, but skipped/deferred cases remain. |
+| Live required OpenSearch E2E suites | `failed=0`, `missing=0`, `known_gap_or_skipped=24` across `491` canonical, `9` semantic, and `422` strict equal cases | Covered cases pass, but skipped/deferred cases remain. |
 | REST source inventory fixture coverage | `371/371` in-scope source routes matched by fixtures | Fixture inventory is closed, but this is not the same as positive/negative live comparison for every route. |
 | REST live-required source-route mapping | `142/371` in-scope source routes matched by live-required fixture routes | Live-required coverage is representative, not exhaustive. |
 | REST source statuses | `implemented=371`, `out-of-scope=18` | Source-derived route classification is closed, while full positive/negative live comparison still needs to expand across the route surface. |

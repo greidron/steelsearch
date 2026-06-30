@@ -29,6 +29,7 @@
         "knn_query_ignore_unmapped_happy_path",
         "knn_query_radial_max_distance_happy_path",
         "knn_query_method_parameters_happy_path",
+        "knn_mapping_method_parameters_happy_path",
         "knn_byte_vector_subset_happy_path",
         "knn_binary_vector_subset_happy_path",
         "knn_nested_filtered_happy_path",

@@ -31,6 +31,20 @@
           "engine": "lucene"
         }
       },
+      "embedding_hnsw_params": {
+        "type": "knn_vector",
+        "dimension": 3,
+        "data_type": "float",
+        "method": {
+          "name": "hnsw",
+          "engine": "lucene",
+          "space_type": "l2",
+          "parameters": {
+            "ef_construction": 128,
+            "m": 16
+          }
+        }
+      },
       "embedding_cosine": {
         "type": "knn_vector",
         "dimension": 3,
@@ -92,6 +106,11 @@
           0.1,
           0.0
         ],
+        "embedding_hnsw_params": [
+          0.9,
+          0.1,
+          0.0
+        ],
         "embedding_cosine": [
           0.9,
           0.1,
@@ -137,6 +156,11 @@
         "tenant": "tenant-a",
         "category": "beta",
         "embedding": [
+          0.1,
+          0.9,
+          0.0
+        ],
+        "embedding_hnsw_params": [
           0.1,
           0.9,
           0.0
@@ -407,6 +431,32 @@
             }
           }
         },
+        "track_total_hits": true
+      }
+    },
+    {
+      "name": "knn_mapping_method_parameters_happy_path",
+      "metadata": {
+        "evidence_classes": [
+          "lucene-score-space",
+          "exact-ranking",
+          "hnsw-mapping-parameters"
+        ]
+      },
+      "body": {
+        "query": {
+          "knn": {
+            "embedding_hnsw_params": {
+              "vector": [
+                1.0,
+                0.0,
+                0.0
+              ],
+              "k": 2
+            }
+          }
+        },
+        "size": 2,
         "track_total_hits": true
       }
     },

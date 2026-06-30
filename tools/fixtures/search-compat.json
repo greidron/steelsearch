@@ -305,7 +305,6 @@
       "knn_warmup_clear_cache_telemetry_shape",
       "knn_unsupported_method_engine_fail_closed",
       "knn_unsupported_mode_fail_closed",
-      "knn_unsupported_method_parameters_fail_closed",
       "ml_model_lifecycle_shape"
     ],
     "aggregation_requests": [
@@ -398,15 +397,6 @@
       {
         "name": "knn_unsupported_mode_fail_closed",
         "request": "POST /vectors-unsupported-mode-compat/_search",
-        "expected_status": 400,
-        "stable_fields": [
-          "error.type",
-          "error.reason"
-        ]
-      },
-      {
-        "name": "knn_unsupported_method_parameters_fail_closed",
-        "request": "POST /vectors-unsupported-method-params-compat/_search",
         "expected_status": 400,
         "stable_fields": [
           "error.type",
@@ -10634,92 +10624,6 @@
       ],
       "family": "failure-path",
       "description": "[failure-path] knn unsupported method engine fail closed"
-    },
-    {
-      "name": "knn_unsupported_method_parameters_fail_closed",
-      "area": "knn",
-      "comparison": "steelsearch_only",
-      "expected_steelsearch_status": 400,
-      "skip_scope": "unsupported-knn-production-option",
-      "reason": "Steelsearch rejects k-NN method parameters before execution because current native scoring does not yet honor HNSW construction/search parameters.",
-      "extract": "error_response",
-      "steps": [
-        {
-          "name": "delete-index",
-          "method": "DELETE",
-          "path": "/vectors-unsupported-method-params-compat"
-        },
-        {
-          "name": "create-index",
-          "method": "PUT",
-          "path": "/vectors-unsupported-method-params-compat",
-          "expected_status": 200,
-          "body": {
-            "settings": {
-              "index": {
-                "knn": true,
-                "number_of_shards": 1,
-                "number_of_replicas": 0
-              }
-            },
-            "mappings": {
-              "properties": {
-                "embedding": {
-                  "type": "knn_vector",
-                  "dimension": 3,
-                  "method": {
-                    "name": "hnsw",
-                    "engine": "lucene",
-                    "space_type": "l2",
-                    "parameters": {
-                      "ef_construction": 128,
-                      "m": 16
-                    }
-                  }
-                }
-              }
-            }
-          }
-        },
-        {
-          "name": "index-doc",
-          "method": "POST",
-          "path": "/vectors-unsupported-method-params-compat/_bulk",
-          "expected_status": 200,
-          "raw": true,
-          "body": "{\"index\":{\"_id\":\"vec-a\"}}\n{\"embedding\":[1.0,0.0,0.0]}\n"
-        },
-        {
-          "name": "refresh",
-          "method": "POST",
-          "path": "/_refresh",
-          "expected_status": 200,
-          "body": {}
-        },
-        {
-          "name": "search",
-          "method": "POST",
-          "path": "/vectors-unsupported-method-params-compat/_search",
-          "expected_status": 400,
-          "body": {
-            "query": {
-              "knn": {
-                "embedding": {
-                  "vector": [
-                    1.0,
-                    0.0,
-                    0.0
-                  ],
-                  "k": 1
-                }
-              }
-            }
-          },
-          "extract": "error_response"
-        }
-      ],
-      "family": "failure-path",
-      "description": "[failure-path] knn unsupported method parameters fail closed"
     },
     {
       "name": "knn_unsupported_mode_fail_closed",

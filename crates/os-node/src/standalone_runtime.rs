@@ -22170,11 +22170,6 @@ impl SteelNode {
                     "unsupported knn method space_type",
                 ));
             }
-            if method.get("parameters").is_some() {
-                return Some(build_unsupported_search_response(
-                    "unsupported knn method parameters",
-                ));
-            }
         }
         if !any_mapped && !ignore_unmapped {
             return Some(build_unsupported_search_response(
