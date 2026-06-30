@@ -48,6 +48,8 @@ fi
 
 mkdir -p "$REPORT_DIR/$PROFILE"
 REPORT_PATH="$REPORT_DIR/$PROFILE/report.json"
+LOG_DIR="$REPORT_DIR/$PROFILE/logs"
+mkdir -p "$LOG_DIR"
 
 profile_json=$(python3 - "$FIXTURE" "$PROFILE" <<'PY'
 import json
@@ -66,15 +68,20 @@ PY
 run_phase() {
   local phase="$1"
   local cmd="$2"
+  local log_path="$LOG_DIR/$phase.log"
   echo "[$phase] $cmd"
-  bash -lc "$cmd"
+  if ! bash -lc "$cmd" >"$log_path" 2>&1; then
+    cat "$log_path"
+    return 1
+  fi
+  cat "$log_path"
 }
 
 run_phase "prepare" "$PREPARE_CMD"
 run_phase "trigger" "$TRIGGER_CMD"
 run_phase "check" "$CHECK_CMD"
 
-PROFILE_JSON="$profile_json" python3 - "$PROFILE" "$REPORT_PATH" <<'PY'
+PROFILE_JSON="$profile_json" LOG_DIR="$LOG_DIR" python3 - "$PROFILE" "$REPORT_PATH" <<'PY'
 import json
 import os
 import sys
@@ -83,14 +90,33 @@ from pathlib import Path
 profile = sys.argv[1]
 report_path = Path(sys.argv[2])
 profile_spec = json.loads(os.environ["PROFILE_JSON"])
+log_dir = Path(os.environ["LOG_DIR"])
+logs = {
+    phase: (log_dir / f"{phase}.log").read_text(encoding="utf-8", errors="replace")
+    for phase in ["prepare", "trigger", "check"]
+}
+combined_logs = "\n".join(logs.values())
+expected_markers = profile_spec.get("expected_markers", [])
+marker_hits = {marker: (marker in combined_logs) for marker in expected_markers}
+missing_markers = [marker for marker, matched in marker_hits.items() if not matched]
 report = {
     "profile": profile,
     "failure_class": profile_spec["failure_class"],
-    "expected_markers": profile_spec.get("expected_markers", []),
+    "expected_markers": expected_markers,
+    "marker_hits": marker_hits,
+    "missing_markers": missing_markers,
     "phases": ["prepare", "trigger", "check"],
-    "status": "completed"
+    "phase_logs": {phase: str(log_dir / f"{phase}.log") for phase in logs},
+    "status": "failed" if missing_markers else "completed"
 }
 report_path.write_text(json.dumps(report, indent=2) + "\n")
+if missing_markers:
+    print(
+        "phase-c gap harness missing expected marker(s): "
+        + ", ".join(missing_markers),
+        file=sys.stderr,
+    )
+    raise SystemExit(1)
 PY
 
 echo "phase-c gap harness completed"
