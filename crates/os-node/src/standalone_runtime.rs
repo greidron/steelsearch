@@ -27210,6 +27210,9 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
         }
     }
     if let Some(dis_max) = query.get("dis_max").and_then(Value::as_object) {
+        if let Some(response) = validate_dis_max_query_shape(dis_max) {
+            return Some(response);
+        }
         let Some(queries) = dis_max.get("queries").and_then(Value::as_array) else {
             return Some(build_unsupported_search_response(
                 "unsupported dis_max query shape",
@@ -28044,6 +28047,33 @@ fn validate_multi_match_query_shape(
                 "[multi_match] query does not support [fields]",
             ));
         }
+    }
+    None
+}
+
+fn validate_dis_max_query_shape(query: &serde_json::Map<String, Value>) -> Option<RestResponse> {
+    for key in query.keys() {
+        if !matches!(key.as_str(), "queries" | "tie_breaker" | "boost" | "_name") {
+            return Some(build_parsing_search_response_with_root_cause(&format!(
+                "[dis_max] query does not support [{key}]"
+            )));
+        }
+    }
+    if query
+        .get("tie_breaker")
+        .is_some_and(|value| value.as_f64().is_none())
+    {
+        return Some(build_parsing_search_response_with_root_cause(
+            "[dis_max] query does not support [tie_breaker]",
+        ));
+    }
+    if query
+        .get("boost")
+        .is_some_and(|value| value.as_f64().is_none())
+    {
+        return Some(build_parsing_search_response_with_root_cause(
+            "[dis_max] query does not support [boost]",
+        ));
     }
     None
 }
@@ -55931,6 +55961,35 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             extract_multi_match_fields(Some(&serde_json::json!(["message^2", "service"]))),
             vec!["message".to_string(), "service".to_string()]
         );
+    }
+
+    #[test]
+    fn search_dis_max_rejects_unknown_options_and_accepts_tie_breaker() {
+        let response = validate_search_query_body(&serde_json::json!({
+            "dis_max": {
+                "queries": [
+                    { "term": { "service": "catalog" } }
+                ],
+                "unsupported_option": true
+            }
+        }))
+        .expect("unknown dis_max option should fail closed");
+        assert_eq!(response.status, 400);
+        assert_eq!(response.body["error"]["type"], "parsing_exception");
+        assert_eq!(
+            response.body["error"]["root_cause"][0]["reason"],
+            "[dis_max] query does not support [unsupported_option]"
+        );
+
+        assert!(validate_search_query_body(&serde_json::json!({
+            "dis_max": {
+                "queries": [
+                    { "term": { "service": "catalog" } }
+                ],
+                "tie_breaker": 0.2
+            }
+        }))
+        .is_none());
     }
 
     #[test]

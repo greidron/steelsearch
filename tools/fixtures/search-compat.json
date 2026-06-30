@@ -4100,6 +4100,65 @@
       "description": "[lexical] dis max search"
     },
     {
+      "name": "dis_max_tie_breaker_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "dis_max": {
+            "queries": [
+              {
+                "term": {
+                  "service": "catalog"
+                }
+              },
+              {
+                "match": {
+                  "message": "timeout"
+                }
+              }
+            ],
+            "tie_breaker": 0.2
+          }
+        },
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] dis_max accepts tie_breaker like OpenSearch"
+    },
+    {
+      "name": "dis_max_unknown_option_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "dis_max": {
+            "queries": [
+              {
+                "term": {
+                  "service": "catalog"
+                }
+              }
+            ],
+            "unsupported_option": true
+          }
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] dis_max query rejects unknown options like OpenSearch"
+    },
+    {
       "name": "docvalue_fields_search",
       "area": "search",
       "method": "POST",
