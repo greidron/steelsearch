@@ -327,8 +327,10 @@
       "query_string_minimum_should_match_search",
       "dis_max_search",
       "multi_match_phrase_search",
+      "multi_match_phrase_keyword_analyzer_search",
       "multi_match_phrase_slop_search",
       "multi_match_phrase_prefix_search",
+      "multi_match_phrase_prefix_keyword_analyzer_search",
       "multi_match_bool_prefix_search",
       "ids_query_search",
       "knn_search",
@@ -6555,6 +6557,35 @@
       "description": "[lexical] multi_match phrase type"
     },
     {
+      "name": "multi_match_phrase_keyword_analyzer_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "multi_match": {
+            "query": "checkout service accepted payment",
+            "fields": [
+              "message",
+              "service"
+            ],
+            "type": "phrase",
+            "analyzer": "keyword"
+          }
+        },
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] multi_match phrase type honors keyword analyzer like OpenSearch"
+    },
+    {
       "name": "multi_match_phrase_slop_search",
       "area": "search",
       "method": "POST",
@@ -6608,6 +6639,36 @@
       "extract": "search_hits",
       "family": "lexical",
       "description": "[lexical] multi_match phrase_prefix type"
+    },
+    {
+      "name": "multi_match_phrase_prefix_keyword_analyzer_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "multi_match": {
+            "query": "checkout service pay",
+            "fields": [
+              "message",
+              "service"
+            ],
+            "type": "phrase_prefix",
+            "analyzer": "keyword"
+          }
+        },
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] multi_match phrase_prefix rejects keyword field targets like OpenSearch"
     },
     {
       "name": "multi_match_bool_prefix_search",

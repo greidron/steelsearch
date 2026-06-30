@@ -2925,6 +2925,7 @@ fn build_tantivy_query(
             minimum_should_match,
             tie_breaker,
             boost,
+            analyzer,
             fuzziness,
             prefix_length,
             transpositions,
@@ -2939,6 +2940,7 @@ fn build_tantivy_query(
             *minimum_should_match,
             *tie_breaker,
             *boost,
+            analyzer.as_deref(),
             *fuzziness,
             *prefix_length,
             *transpositions,
@@ -3977,6 +3979,7 @@ fn build_tantivy_multi_match_query(
     minimum_should_match: Option<usize>,
     tie_breaker: Option<f64>,
     boost: Option<f64>,
+    analyzer: Option<&str>,
     fuzziness: Option<u8>,
     prefix_length: usize,
     transpositions: bool,
@@ -4036,7 +4039,7 @@ fn build_tantivy_multi_match_query(
                 base_field,
                 query,
                 slop,
-                None,
+                analyzer,
                 false,
             )?,
             MultiMatchType::PhrasePrefix => build_tantivy_match_phrase_prefix_query(
@@ -4044,7 +4047,7 @@ fn build_tantivy_multi_match_query(
                 base_field,
                 query,
                 slop,
-                None,
+                analyzer,
                 false,
             )?,
             MultiMatchType::BoolPrefix => build_tantivy_multi_match_bool_prefix_field_query(
@@ -16842,6 +16845,7 @@ fn document_matches_query(query: &Query, id: &str, source: &Value) -> bool {
             minimum_should_match,
             tie_breaker: _,
             boost: _,
+            analyzer,
             fuzziness,
             prefix_length,
             transpositions,
@@ -16855,6 +16859,7 @@ fn document_matches_query(query: &Query, id: &str, source: &Value) -> bool {
             *slop,
             operator.as_deref(),
             *minimum_should_match,
+            analyzer.as_deref(),
             *fuzziness,
             *prefix_length,
             *transpositions,
@@ -18263,6 +18268,7 @@ fn matches_multi_match_query(
     slop: usize,
     operator: Option<&str>,
     minimum_should_match: Option<usize>,
+    analyzer: Option<&str>,
     fuzziness: Option<u8>,
     prefix_length: usize,
     transpositions: bool,
@@ -18303,9 +18309,11 @@ fn matches_multi_match_query(
                     .unwrap_or(1);
                 matched_query_token_count_across_fields(id, source, fields, &query_text) >= required
             }
-            MultiMatchType::Phrase => matches_match_phrase_query(field_value, query, slop),
+            MultiMatchType::Phrase => {
+                matches_match_phrase_query_with_analyzer(field_value, query, slop, analyzer)
+            }
             MultiMatchType::PhrasePrefix => {
-                matches_match_phrase_prefix_query(field_value, query, slop)
+                matches_match_phrase_prefix_query_with_analyzer(field_value, query, slop, analyzer)
             }
             MultiMatchType::BoolPrefix => {
                 let required = field_minimum_should_match.unwrap_or(1);
@@ -19076,6 +19084,7 @@ fn localize_query_fields_for_nested_child(query: &Query, path: &str) -> Query {
             minimum_should_match,
             tie_breaker,
             boost,
+            analyzer,
             fuzziness,
             prefix_length,
             transpositions,
@@ -19092,6 +19101,7 @@ fn localize_query_fields_for_nested_child(query: &Query, path: &str) -> Query {
             minimum_should_match: *minimum_should_match,
             tie_breaker: *tie_breaker,
             boost: *boost,
+            analyzer: analyzer.clone(),
             fuzziness: *fuzziness,
             prefix_length: *prefix_length,
             transpositions: *transpositions,
@@ -19410,6 +19420,7 @@ fn native_nested_child_ordinals_for_query(
             minimum_should_match,
             tie_breaker: _,
             boost: _,
+            analyzer,
             fuzziness,
             prefix_length,
             transpositions,
@@ -19423,6 +19434,7 @@ fn native_nested_child_ordinals_for_query(
             *slop,
             operator.as_deref(),
             *minimum_should_match,
+            analyzer.as_deref(),
             *fuzziness,
             *prefix_length,
             *transpositions,
@@ -19979,6 +19991,7 @@ fn nested_child_multi_match_ordinals(
     slop: usize,
     operator: Option<&str>,
     minimum_should_match: Option<usize>,
+    analyzer: Option<&str>,
     fuzziness: Option<u8>,
     prefix_length: usize,
     transpositions: bool,
@@ -20029,14 +20042,42 @@ fn nested_child_multi_match_ordinals(
                 }
             }
             MultiMatchType::Phrase => {
-                ordinals.extend(nested_child_match_phrase_ordinals(
-                    path_index, path, field, query, slop,
-                )?);
+                if analyzer.is_some_and(|value| value.eq_ignore_ascii_case("keyword")) {
+                    let local_field = nested_child_local_field_name(path, field);
+                    for (ordinal, child) in path_index.children.iter().enumerate() {
+                        if matches_match_phrase_query_with_analyzer(
+                            source_value_for_highlight_field(&child.source, &local_field),
+                            query,
+                            slop,
+                            analyzer,
+                        ) {
+                            ordinals.insert(ordinal);
+                        }
+                    }
+                } else {
+                    ordinals.extend(nested_child_match_phrase_ordinals(
+                        path_index, path, field, query, slop,
+                    )?);
+                }
             }
             MultiMatchType::PhrasePrefix => {
-                ordinals.extend(nested_child_match_phrase_prefix_ordinals(
-                    path_index, path, field, query, slop,
-                )?);
+                if analyzer.is_some_and(|value| value.eq_ignore_ascii_case("keyword")) {
+                    let local_field = nested_child_local_field_name(path, field);
+                    for (ordinal, child) in path_index.children.iter().enumerate() {
+                        if matches_match_phrase_prefix_query_with_analyzer(
+                            source_value_for_highlight_field(&child.source, &local_field),
+                            query,
+                            slop,
+                            analyzer,
+                        ) {
+                            ordinals.insert(ordinal);
+                        }
+                    }
+                } else {
+                    ordinals.extend(nested_child_match_phrase_prefix_ordinals(
+                        path_index, path, field, query, slop,
+                    )?);
+                }
             }
             MultiMatchType::BoolPrefix => {
                 ordinals.extend(nested_child_match_bool_prefix_ordinals(

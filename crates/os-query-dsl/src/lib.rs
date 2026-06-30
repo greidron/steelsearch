@@ -105,6 +105,7 @@ pub enum Query {
         minimum_should_match: Option<usize>,
         tie_breaker: Option<f64>,
         boost: Option<f64>,
+        analyzer: Option<String>,
         fuzziness: Option<u8>,
         prefix_length: usize,
         transpositions: bool,
@@ -2679,6 +2680,19 @@ fn parse_multi_match(body: &Value) -> QueryDslResult<Query> {
         .get("boost")
         .map(|value| parse_non_negative_f64_option("multi_match", "boost", value))
         .transpose()?;
+    let analyzer = object
+        .get("analyzer")
+        .map(|value| {
+            value
+                .as_str()
+                .map(str::to_string)
+                .ok_or_else(|| QueryDslError::InvalidValue {
+                    clause: "multi_match".to_string(),
+                    field: "analyzer".to_string(),
+                    reason: "must be a string".to_string(),
+                })
+        })
+        .transpose()?;
     let fuzziness = parse_multi_match_fuzziness_option(object.get("fuzziness"), &query)?;
     let prefix_length = object
         .get("prefix_length")
@@ -2695,7 +2709,6 @@ fn parse_multi_match(body: &Value) -> QueryDslResult<Query> {
             reason: "must be a boolean".to_string(),
         })?;
     let zero_terms_all = parse_zero_terms_all_option(object, "multi_match")?;
-    validate_optional_string_option(object, "multi_match", "analyzer")?;
     validate_optional_string_option(object, "multi_match", "_name")?;
     validate_optional_bool_option(object, "multi_match", "lenient")?;
     validate_optional_bool_option(object, "multi_match", "auto_generate_synonyms_phrase_query")?;
@@ -2735,6 +2748,7 @@ fn parse_multi_match(body: &Value) -> QueryDslResult<Query> {
         minimum_should_match,
         tie_breaker,
         boost,
+        analyzer,
         fuzziness,
         prefix_length,
         transpositions,
@@ -4731,6 +4745,7 @@ mod tests {
                 minimum_should_match: None,
                 tie_breaker: None,
                 boost: None,
+                analyzer: None,
                 fuzziness: None,
                 prefix_length: 0,
                 transpositions: true,
@@ -4758,6 +4773,7 @@ mod tests {
                 minimum_should_match: None,
                 tie_breaker: None,
                 boost: None,
+                analyzer: None,
                 fuzziness: None,
                 prefix_length: 0,
                 transpositions: true,
@@ -4785,6 +4801,7 @@ mod tests {
                 minimum_should_match: None,
                 tie_breaker: None,
                 boost: None,
+                analyzer: None,
                 fuzziness: None,
                 prefix_length: 0,
                 transpositions: true,
@@ -4812,6 +4829,7 @@ mod tests {
                 minimum_should_match: None,
                 tie_breaker: None,
                 boost: None,
+                analyzer: None,
                 fuzziness: None,
                 prefix_length: 0,
                 transpositions: true,
@@ -4840,6 +4858,7 @@ mod tests {
                 minimum_should_match: None,
                 tie_breaker: None,
                 boost: None,
+                analyzer: None,
                 fuzziness: None,
                 prefix_length: 0,
                 transpositions: true,
@@ -4872,6 +4891,7 @@ mod tests {
                 minimum_should_match: None,
                 tie_breaker: Some(0.2),
                 boost: Some(1.5),
+                analyzer: Some("standard".to_string()),
                 fuzziness: None,
                 prefix_length: 0,
                 transpositions: true,
@@ -4900,6 +4920,7 @@ mod tests {
                 minimum_should_match: None,
                 tie_breaker: None,
                 boost: None,
+                analyzer: None,
                 fuzziness: None,
                 prefix_length: 0,
                 transpositions: true,
@@ -4926,6 +4947,7 @@ mod tests {
                 minimum_should_match: None,
                 tie_breaker: None,
                 boost: None,
+                analyzer: None,
                 fuzziness: None,
                 prefix_length: 0,
                 transpositions: true,
@@ -4955,6 +4977,7 @@ mod tests {
                 minimum_should_match: None,
                 tie_breaker: None,
                 boost: None,
+                analyzer: None,
                 fuzziness: Some(1),
                 prefix_length: 1,
                 transpositions: false,
@@ -4982,6 +5005,7 @@ mod tests {
                 minimum_should_match: None,
                 tie_breaker: None,
                 boost: None,
+                analyzer: None,
                 fuzziness: None,
                 prefix_length: 0,
                 transpositions: true,

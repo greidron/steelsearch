@@ -10632,6 +10632,11 @@ impl SteelNode {
         } else {
             std::collections::BTreeSet::new()
         };
+        if let Some(response) =
+            validate_multi_match_phrase_prefix_fields_against_mappings(&body, &index_mappings)
+        {
+            return response;
+        }
         let mut failed_indices = geo_failed_indices.clone();
         failed_indices.extend(sort_unmapped_failures.keys().cloned());
         if pit_context.is_none()
@@ -27297,6 +27302,113 @@ fn search_shard_failure_reason(
         "type": "query_shard_exception",
         "reason": "failed to execute query"
     })
+}
+
+fn validate_multi_match_phrase_prefix_fields_against_mappings(
+    body: &Value,
+    index_mappings: &std::collections::HashMap<String, Value>,
+) -> Option<RestResponse> {
+    let query = body.get("query")?;
+    let (field, field_type, index) =
+        collect_multi_match_phrase_prefix_non_text_field(query, index_mappings)?;
+    let reason = format!(
+        "Can only use phrase prefix queries on text fields - not on [{field}] which is of type [{field_type}]"
+    );
+    let shard_reason = format!("failed to create query: {reason}");
+    Some(build_query_shard_search_response(
+        &index,
+        &shard_reason,
+        &reason,
+    ))
+}
+
+fn collect_multi_match_phrase_prefix_non_text_field(
+    query: &Value,
+    index_mappings: &std::collections::HashMap<String, Value>,
+) -> Option<(String, String, String)> {
+    if let Some(multi_match) = query.get("multi_match").and_then(Value::as_object) {
+        if multi_match
+            .get("type")
+            .and_then(Value::as_str)
+            .is_some_and(|value| value == "phrase_prefix")
+        {
+            for field in extract_multi_match_fields(multi_match.get("fields")) {
+                for (index, mappings) in index_mappings {
+                    if let Some(field_type) = lookup_query_field_mapping_type(mappings, &field)
+                        .filter(|field_type| *field_type != "text")
+                    {
+                        return Some((field, field_type.to_string(), index.clone()));
+                    }
+                }
+            }
+        }
+    }
+    if let Some(bool_query) = query.get("bool").and_then(Value::as_object) {
+        for clause_name in ["must", "filter", "should", "must_not"] {
+            for clause in bool_query_clauses(bool_query, clause_name) {
+                if let Some(failure) =
+                    collect_multi_match_phrase_prefix_non_text_field(clause, index_mappings)
+                {
+                    return Some(failure);
+                }
+            }
+        }
+    }
+    if let Some(inner_query) = query
+        .get("constant_score")
+        .and_then(|spec| spec.get("filter").or_else(|| spec.get("query")))
+    {
+        return collect_multi_match_phrase_prefix_non_text_field(inner_query, index_mappings);
+    }
+    None
+}
+
+fn build_query_shard_search_response(
+    index: &str,
+    shard_reason: &str,
+    caused_by_reason: &str,
+) -> RestResponse {
+    RestResponse::json(
+        400,
+        serde_json::json!({
+            "error": {
+                "type": "search_phase_execution_exception",
+                "reason": "all shards failed",
+                "root_cause": [
+                    {
+                        "type": "query_shard_exception",
+                        "reason": shard_reason,
+                        "index": index
+                    }
+                ],
+                "caused_by": {
+                    "type": "query_shard_exception",
+                    "reason": shard_reason,
+                    "index": index,
+                    "caused_by": {
+                        "type": "illegal_argument_exception",
+                        "reason": caused_by_reason
+                    }
+                },
+                "failed_shards": [
+                    {
+                        "shard": 0,
+                        "index": index,
+                        "reason": {
+                            "type": "query_shard_exception",
+                            "reason": shard_reason,
+                            "index": index,
+                            "caused_by": {
+                                "type": "illegal_argument_exception",
+                                "reason": caused_by_reason
+                            }
+                        }
+                    }
+                ]
+            },
+            "status": 400
+        }),
+    )
 }
 
 fn request_scoped_sort_field_is_defined(body: &Value, field_name: &str) -> bool {
