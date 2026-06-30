@@ -197,6 +197,7 @@ pub enum Query {
 #[serde(rename_all = "snake_case")]
 pub enum MultiMatchType {
     BestFields,
+    MostFields,
     Phrase,
     PhrasePrefix,
     BoolPrefix,
@@ -2450,6 +2451,7 @@ fn parse_multi_match(body: &Value) -> QueryDslResult<Query> {
         .and_then(Value::as_str)
         .map(|query_type| match query_type {
             "best_fields" => Ok(MultiMatchType::BestFields),
+            "most_fields" => Ok(MultiMatchType::MostFields),
             "phrase" => Ok(MultiMatchType::Phrase),
             "phrase_prefix" => Ok(MultiMatchType::PhrasePrefix),
             "bool_prefix" => Ok(MultiMatchType::BoolPrefix),
@@ -4334,6 +4336,27 @@ mod tests {
                 fields: vec!["title".to_string(), "body".to_string()],
                 query: serde_json::json!("alpha che"),
                 query_type: MultiMatchType::BoolPrefix,
+                slop: 0,
+                operator: None,
+                minimum_should_match: None,
+            }
+        );
+
+        let most_fields = parse_query(&serde_json::json!({
+            "multi_match": {
+                "query": "alpha che",
+                "fields": ["title", "body"],
+                "type": "most_fields"
+            }
+        }))
+        .unwrap();
+
+        assert_eq!(
+            most_fields,
+            Query::MultiMatch {
+                fields: vec!["title".to_string(), "body".to_string()],
+                query: serde_json::json!("alpha che"),
+                query_type: MultiMatchType::MostFields,
                 slop: 0,
                 operator: None,
                 minimum_should_match: None,

@@ -3756,7 +3756,7 @@ fn build_tantivy_multi_match_query(
             }
         }
         let inner_query = match query_type {
-            MultiMatchType::BestFields => build_tantivy_match_query(
+            MultiMatchType::BestFields | MultiMatchType::MostFields => build_tantivy_match_query(
                 search_state,
                 base_field,
                 query,
@@ -17516,7 +17516,7 @@ fn matches_multi_match_query(
             .as_ref()
             .or_else(|| source_value_for_highlight_field(source, field));
         match query_type {
-            MultiMatchType::BestFields => {
+            MultiMatchType::BestFields | MultiMatchType::MostFields => {
                 matches_match_query_with_minimum(field_value, query, field_minimum_should_match)
             }
             MultiMatchType::Phrase => matches_match_phrase_query(field_value, query, slop),
@@ -19040,7 +19040,7 @@ fn nested_child_multi_match_ordinals(
         .or_else(|| (operator == Some("and")).then(|| match_query_token_count(query).max(1)));
     for field in fields {
         match query_type {
-            MultiMatchType::BestFields => {
+            MultiMatchType::BestFields | MultiMatchType::MostFields => {
                 ordinals.extend(nested_child_match_ordinals(
                     path_index,
                     path,
