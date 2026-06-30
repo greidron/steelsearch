@@ -99,6 +99,20 @@ pub fn write_rejected_execution_exception(output: &mut StreamOutput, message: Op
     write_empty_stack_trace(output);
 }
 
+pub fn write_incompatible_cluster_state_version_exception(
+    output: &mut StreamOutput,
+    message: Option<&str>,
+) {
+    output.write_bool(true);
+    output.write_vint(0);
+    output.write_vint(75);
+    output.write_optional_string(message);
+    output.write_bool(false);
+    write_empty_stack_trace(output);
+    write_empty_string_list_map(output);
+    write_empty_string_list_map(output);
+}
+
 pub fn write_search_context_missing_exception(
     output: &mut StreamOutput,
     message: Option<&str>,
@@ -427,6 +441,7 @@ fn opensearch_exception_class_name(id: i32) -> &'static str {
         19 => "org.opensearch.ResourceNotFoundException",
         68 => "org.opensearch.OpenSearchException",
         71 => "org.opensearch.action.FailedNodeException",
+        75 => "org.opensearch.cluster.IncompatibleClusterStateVersionException",
         100 => "org.opensearch.action.search.SearchPhaseExecutionException",
         101 => "org.opensearch.transport.ActionNotFoundTransportException",
         102 => "org.opensearch.transport.TransportSerializationException",

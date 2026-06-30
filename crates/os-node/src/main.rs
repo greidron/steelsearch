@@ -3,7 +3,8 @@ use os_cluster_state::{
     apply_publication_diff_and_ack, build_cluster_state_request_frame, read_cluster_blocks_prefix,
     read_cluster_state_header, read_cluster_state_tail_prefix, read_discovery_nodes_prefix,
     read_metadata_prefix, read_publication_cluster_state_diff, read_routing_table_prefix,
-    ClusterState, ClusterStateRequest, ClusterStateResponsePrefix, ShardRoutingState,
+    ClusterState, ClusterStateDecodeError, ClusterStateRequest, ClusterStateResponsePrefix,
+    ShardRoutingState,
 };
 use os_core::version::{Version, OPENSEARCH_3_7_0, OPENSEARCH_3_7_0_TRANSPORT};
 use os_node::standalone_runtime::{
@@ -6604,6 +6605,56 @@ fn handle_transport_seed_connection<S: TransportConnection>(
                 Some(transport_identity),
             ) {
                 Ok(value) => value,
+                Err(error) if is_incompatible_publish_state_diff_error(&error) => {
+                    eprintln!("steelsearch_publish_state_incompatible_diff={error}");
+                    let response = build_publish_state_incompatible_diff_error_response(
+                        request_id,
+                        header_version_id,
+                        &error,
+                    );
+                    response_frame = summarize_transport_response_frame_for_action(
+                        &response,
+                        Some("internal:cluster/coordination/publish_state"),
+                    );
+                    stream.write_all(&response)?;
+                    stream.flush()?;
+                    response_frame_sent_at_ms = Some(unix_time_ms());
+                    hold_transport_channel_open(
+                        stream,
+                        transport_identity,
+                        &mut post_follow_up_frame,
+                        &mut post_follow_up_frame_received_at_ms,
+                        true,
+                        &mut proactive_keepalive_sent_at_ms,
+                        &mut proactive_keepalive_count,
+                        transport_connection_hold_duration(),
+                        &mut hold_open_started_at_ms,
+                        &mut first_post_response_event,
+                        &mut connection_end,
+                        &mut connection_end_at_ms,
+                    )?;
+                    persist_transport_seed_capture(
+                        capture_path,
+                        peer_addr,
+                        connection_started_at_ms,
+                        Some(first_frame_received_at_ms),
+                        first_frame,
+                        follow_up_frame_received_at_ms,
+                        follow_up_frame,
+                        post_follow_up_frame_received_at_ms,
+                        post_follow_up_frame,
+                        response_frame_sent_at_ms,
+                        response_frame,
+                        hold_open_started_at_ms,
+                        first_post_response_event,
+                        connection_end,
+                        connection_end_at_ms,
+                        proactive_keepalive_sent_at_ms,
+                        proactive_keepalive_count,
+                        capture_write_lock,
+                    )?;
+                    return Ok(());
+                }
                 Err(error) => {
                     eprintln!("steelsearch_publish_state_decode_error={error}");
                     Default::default()
@@ -7203,6 +7254,8 @@ fn build_publish_with_join_response(
 ) -> Vec<u8> {
     let join_target_peer_identity =
         resolve_join_target_peer_identity(transport_identity, cluster_manager_node_id);
+    let join_last_accepted_version =
+        join_last_accepted_version_before_publish(version, join_last_accepted_version);
     if let Some(payload) = try_build_java_publish_with_join_response(
         term,
         version,
@@ -7254,6 +7307,17 @@ fn build_publish_with_join_response(
         write_bool(&mut payload, false);
     }
     build_transport_response_frame(request_id, header_version_id, payload)
+}
+
+fn join_last_accepted_version_before_publish(
+    publish_version: i64,
+    cached_last_accepted_version: i64,
+) -> i64 {
+    if publish_version > 0 && cached_last_accepted_version >= publish_version {
+        publish_version - 1
+    } else {
+        cached_last_accepted_version
+    }
 }
 
 fn try_build_java_publish_with_join_response(
@@ -27303,6 +27367,14 @@ fn decode_local_initializing_replicas_from_publish_state(
             match read_publication_cluster_state_diff(Bytes::from(payload), stream_version) {
                 Ok(diff) => match apply_publication_diff_and_ack(previous, diff) {
                     Ok(outcome) => outcome.state,
+                    Err(
+                        error @ ClusterStateDecodeError::DiffBaseMismatch {
+                            expected: _,
+                            actual: _,
+                        },
+                    ) => {
+                        return Err(format!("incompatible publish_state diff: {error}"));
+                    }
                     Err(error) => {
                         let fallback = transport_identity
                             .and_then(|identity| {
@@ -27380,6 +27452,23 @@ fn unwrap_bytes_transport_request_payload(bytes: &[u8]) -> Result<Bytes, String>
     input
         .read_bytes_reference()
         .map_err(|error| format!("failed to read wrapped bytes reference: {error}"))
+}
+
+fn is_incompatible_publish_state_diff_error(error: &str) -> bool {
+    error.contains("incompatible publish_state diff")
+}
+
+fn build_publish_state_incompatible_diff_error_response(
+    request_id: i64,
+    header_version_id: u32,
+    reason: &str,
+) -> Vec<u8> {
+    let mut output = StreamOutput::new();
+    os_transport::error::write_incompatible_cluster_state_version_exception(
+        &mut output,
+        Some(reason),
+    );
+    build_transport_error_response_frame(request_id, header_version_id, output.freeze().to_vec())
 }
 
 fn header_version_id_from_request_body(request_body: &[u8]) -> Option<u32> {
@@ -29562,87 +29651,101 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
                 .lock()
                 .ok()
                 .and_then(|state| state.cached_cluster_state.clone());
-            let (local_initializing_replicas, applied_cluster_state) =
-                match decode_local_initializing_replicas_from_publish_state(
-                    body,
-                    &transport_identity.node_id,
-                    Version::from_id(header_version_id as i32),
-                    cached_cluster_state.as_ref(),
-                    Some(transport_identity),
-                ) {
-                    Ok(value) => value,
-                    Err(error) => {
-                        eprintln!("steelsearch_publish_state_decode_error={error}");
-                        Default::default()
-                    }
-                };
-            let routing_summaries = applied_cluster_state
-                .as_ref()
-                .map(summarize_relevant_shard_routings_from_cluster_state)
-                .unwrap_or_default();
-            let (
-                join_last_accepted_term,
-                join_last_accepted_version,
-                cached_cluster_manager_node_id,
-            ) = transport_identity
-                .coordination_state
-                .lock()
-                .map(|state| {
-                    (
-                        state.last_accepted_term,
-                        state.last_accepted_version,
-                        state.cluster_manager_node_id.clone(),
-                    )
-                })
-                .unwrap_or((0, 0, None));
-            let term = applied_cluster_state
-                .as_ref()
-                .map(|state| state.metadata.coordination.term)
-                .unwrap_or(join_last_accepted_term);
-            let version = applied_cluster_state
-                .as_ref()
-                .map(|state| state.header.version)
-                .unwrap_or(join_last_accepted_version);
-            let cluster_manager_node_id = applied_cluster_state
-                .as_ref()
-                .and_then(|state| state.discovery_nodes.cluster_manager_node_id.clone())
-                .or(cached_cluster_manager_node_id);
-            if let Ok(mut coordination_state) = transport_identity.coordination_state.lock() {
-                coordination_state.last_accepted_term = term;
-                coordination_state.last_accepted_version = version;
-                if let Some(node_id) = cluster_manager_node_id.clone() {
-                    coordination_state.cluster_manager_node_id = Some(node_id);
+            let decoded_publish_state = decode_local_initializing_replicas_from_publish_state(
+                body,
+                &transport_identity.node_id,
+                Version::from_id(header_version_id as i32),
+                cached_cluster_state.as_ref(),
+                Some(transport_identity),
+            );
+            let decoded_publish_state = match decoded_publish_state {
+                Ok(value) => Ok(value),
+                Err(error) if is_incompatible_publish_state_diff_error(&error) => Err(error),
+                Err(error) => {
+                    eprintln!("steelsearch_publish_state_decode_error={error}");
+                    Ok(Default::default())
                 }
-                coordination_state.local_initializing_replicas =
-                    local_initializing_replicas.clone();
-                if let Some(cluster_state) = applied_cluster_state.clone() {
-                    coordination_state.cached_cluster_state = Some(cluster_state);
+            };
+            match decoded_publish_state {
+                Err(error) => {
+                    eprintln!("steelsearch_publish_state_incompatible_diff={error}");
+                    Some(build_publish_state_incompatible_diff_error_response(
+                        request_id,
+                        header_version_id,
+                        &error,
+                    ))
+                }
+                Ok((local_initializing_replicas, applied_cluster_state)) => {
+                    let routing_summaries = applied_cluster_state
+                        .as_ref()
+                        .map(summarize_relevant_shard_routings_from_cluster_state)
+                        .unwrap_or_default();
+                    let (
+                        join_last_accepted_term,
+                        join_last_accepted_version,
+                        cached_cluster_manager_node_id,
+                    ) = transport_identity
+                        .coordination_state
+                        .lock()
+                        .map(|state| {
+                            (
+                                state.last_accepted_term,
+                                state.last_accepted_version,
+                                state.cluster_manager_node_id.clone(),
+                            )
+                        })
+                        .unwrap_or((0, 0, None));
+                    let term = applied_cluster_state
+                        .as_ref()
+                        .map(|state| state.metadata.coordination.term)
+                        .unwrap_or(join_last_accepted_term);
+                    let version = applied_cluster_state
+                        .as_ref()
+                        .map(|state| state.header.version)
+                        .unwrap_or(join_last_accepted_version);
+                    let cluster_manager_node_id = applied_cluster_state
+                        .as_ref()
+                        .and_then(|state| state.discovery_nodes.cluster_manager_node_id.clone())
+                        .or(cached_cluster_manager_node_id);
+                    if let Ok(mut coordination_state) = transport_identity.coordination_state.lock()
+                    {
+                        coordination_state.last_accepted_term = term;
+                        coordination_state.last_accepted_version = version;
+                        if let Some(node_id) = cluster_manager_node_id.clone() {
+                            coordination_state.cluster_manager_node_id = Some(node_id);
+                        }
+                        coordination_state.local_initializing_replicas =
+                            local_initializing_replicas.clone();
+                        if let Some(cluster_state) = applied_cluster_state.clone() {
+                            coordination_state.cached_cluster_state = Some(cluster_state);
+                        }
+                    }
+                    maybe_start_peer_recoveries(
+                        transport_identity,
+                        header_version_id,
+                        &local_initializing_replicas,
+                        applied_cluster_state.as_ref(),
+                    );
+                    eprintln!(
+                        "steelsearch_publish_state_local_initializing_replicas={:?}",
+                        local_initializing_replicas
+                    );
+                    eprintln!(
+                        "steelsearch_publish_state_relevant_routings={:?}",
+                        routing_summaries
+                    );
+                    Some(build_publish_with_join_response(
+                        request_id,
+                        header_version_id,
+                        term,
+                        version,
+                        transport_identity,
+                        join_last_accepted_term,
+                        join_last_accepted_version,
+                        cluster_manager_node_id.as_deref(),
+                    ))
                 }
             }
-            maybe_start_peer_recoveries(
-                transport_identity,
-                header_version_id,
-                &local_initializing_replicas,
-                applied_cluster_state.as_ref(),
-            );
-            eprintln!(
-                "steelsearch_publish_state_local_initializing_replicas={:?}",
-                local_initializing_replicas
-            );
-            eprintln!(
-                "steelsearch_publish_state_relevant_routings={:?}",
-                routing_summaries
-            );
-            Some(build_publish_with_join_response(
-                request_id,
-                header_version_id,
-                term,
-                version,
-                transport_identity,
-                join_last_accepted_term,
-                join_last_accepted_version,
-                cluster_manager_node_id.as_deref(),
-            ))
         }
         _ => None,
     };
@@ -66331,5 +66434,19 @@ mod allocation_explain_live_route_parity_tests {
         assert_eq!(response.status, 200);
         assert!(response.body.get("current_state").is_some());
         assert!(response.body.get("node_allocation_decisions").is_some());
+    }
+}
+
+#[cfg(test)]
+mod mixed_cluster_publish_with_join_tests {
+    use super::*;
+
+    #[test]
+    fn publish_with_join_advertises_last_accepted_version_before_current_publish() {
+        assert_eq!(join_last_accepted_version_before_publish(17, 16), 16);
+        assert_eq!(join_last_accepted_version_before_publish(17, 17), 16);
+        assert_eq!(join_last_accepted_version_before_publish(17, 18), 16);
+        assert_eq!(join_last_accepted_version_before_publish(0, 0), 0);
+        assert_eq!(join_last_accepted_version_before_publish(1, 0), 0);
     }
 }
