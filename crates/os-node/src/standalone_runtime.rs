@@ -3160,15 +3160,29 @@ impl SteelNode {
                 ))
             }
             (RestMethod::Get, "/_refresh") | (RestMethod::Post, "/_refresh") => {
+                if let Some(response) = validate_refresh_query_params(request) {
+                    return Some(response);
+                }
                 Some(self.handle_global_refresh_route())
             }
             (RestMethod::Get, "/_flush") | (RestMethod::Post, "/_flush") => {
+                if let Some(response) = validate_flush_query_params(request) {
+                    return Some(response);
+                }
                 Some(self.handle_flush_route(None))
             }
             (RestMethod::Get, "/_flush/synced") | (RestMethod::Post, "/_flush/synced") => {
+                if let Some(response) = validate_flush_query_params(request) {
+                    return Some(response);
+                }
                 Some(self.handle_flush_route(None))
             }
-            (RestMethod::Post, "/_forcemerge") => Some(self.handle_forcemerge_route(None)),
+            (RestMethod::Post, "/_forcemerge") => {
+                if let Some(response) = validate_forcemerge_query_params(request) {
+                    return Some(response);
+                }
+                Some(self.handle_forcemerge_route(None))
+            }
             (RestMethod::Get, "/_stats") => Some(RestResponse::json(200, {
                 if let Err(response) = require_security_permission(
                     request,
@@ -3333,6 +3347,9 @@ impl SteelNode {
                 SecurityPermission::ClusterAdmin,
                 "index maintenance",
             ) {
+                return Some(response);
+            }
+            if let Some(response) = validate_cache_clear_query_params(request) {
                 return Some(response);
             }
             return Some(self.handle_cache_clear_route(None));
@@ -4884,6 +4901,9 @@ impl SteelNode {
             if (request.method == RestMethod::Get || request.method == RestMethod::Post)
                 && !index.is_empty()
             {
+                if let Some(response) = validate_flush_query_params(request) {
+                    return Some(response);
+                }
                 return Some(self.handle_flush_route(Some(index)));
             }
         }
@@ -4895,6 +4915,9 @@ impl SteelNode {
             if (request.method == RestMethod::Get || request.method == RestMethod::Post)
                 && !index.is_empty()
             {
+                if let Some(response) = validate_flush_query_params(request) {
+                    return Some(response);
+                }
                 return Some(self.handle_flush_route(Some(index)));
             }
         }
@@ -4905,6 +4928,9 @@ impl SteelNode {
                     SecurityPermission::ClusterAdmin,
                     "index maintenance",
                 ) {
+                    return Some(response);
+                }
+                if let Some(response) = validate_cache_clear_query_params(request) {
                     return Some(response);
                 }
                 return Some(self.handle_cache_clear_route(Some(index)));
@@ -4936,6 +4962,9 @@ impl SteelNode {
         }
         if let Some(index) = request.path.trim_matches('/').strip_suffix("/_forcemerge") {
             if request.method == RestMethod::Post && !index.is_empty() {
+                if let Some(response) = validate_forcemerge_query_params(request) {
+                    return Some(response);
+                }
                 return Some(self.handle_forcemerge_route(Some(index)));
             }
         }
@@ -5022,6 +5051,9 @@ impl SteelNode {
         }
         if let Some(index) = request.path.trim_matches('/').strip_suffix("/_refresh") {
             if request.method == RestMethod::Get || request.method == RestMethod::Post {
+                if let Some(response) = validate_refresh_query_params(request) {
+                    return Some(response);
+                }
                 return Some(self.handle_index_refresh_route(index));
             }
         }
@@ -25577,6 +25609,131 @@ fn validate_shard_stores_query_params(request: &RestRequest) -> Option<RestRespo
                 )));
             }
         }
+    }
+
+    validate_cluster_manager_timeout_query_params(request)
+}
+
+fn validate_refresh_query_params(request: &RestRequest) -> Option<RestResponse> {
+    const ALLOWED_PARAMS: &[&str] = &[
+        "allow_no_indices",
+        "cluster_manager_timeout",
+        "expand_wildcards",
+        "ignore_throttled",
+        "ignore_unavailable",
+        "master_timeout",
+    ];
+    validate_common_indices_options_query_params(request, ALLOWED_PARAMS)
+}
+
+fn validate_flush_query_params(request: &RestRequest) -> Option<RestResponse> {
+    const ALLOWED_PARAMS: &[&str] = &[
+        "allow_no_indices",
+        "cluster_manager_timeout",
+        "expand_wildcards",
+        "force",
+        "ignore_throttled",
+        "ignore_unavailable",
+        "master_timeout",
+        "wait_if_ongoing",
+    ];
+    if let Some(response) = validate_common_indices_options_query_params(request, ALLOWED_PARAMS) {
+        return Some(response);
+    }
+    for field in ["force", "wait_if_ongoing"] {
+        if let Some(response) =
+            validate_opensearch_boolean_query_param(request.query_params.get(field))
+        {
+            return Some(response);
+        }
+    }
+    None
+}
+
+fn validate_cache_clear_query_params(request: &RestRequest) -> Option<RestResponse> {
+    const ALLOWED_PARAMS: &[&str] = &[
+        "allow_no_indices",
+        "cluster_manager_timeout",
+        "expand_wildcards",
+        "fielddata",
+        "fields",
+        "ignore_throttled",
+        "ignore_unavailable",
+        "master_timeout",
+        "query",
+        "request",
+    ];
+    if let Some(response) = validate_common_indices_options_query_params(request, ALLOWED_PARAMS) {
+        return Some(response);
+    }
+    for field in ["fielddata", "query", "request"] {
+        if let Some(response) =
+            validate_opensearch_boolean_query_param(request.query_params.get(field))
+        {
+            return Some(response);
+        }
+    }
+    None
+}
+
+fn validate_forcemerge_query_params(request: &RestRequest) -> Option<RestResponse> {
+    const ALLOWED_PARAMS: &[&str] = &[
+        "allow_no_indices",
+        "cluster_manager_timeout",
+        "expand_wildcards",
+        "flush",
+        "ignore_throttled",
+        "ignore_unavailable",
+        "max_num_segments",
+        "master_timeout",
+        "only_expunge_deletes",
+    ];
+    if let Some(response) = validate_common_indices_options_query_params(request, ALLOWED_PARAMS) {
+        return Some(response);
+    }
+    for field in ["flush", "only_expunge_deletes"] {
+        if let Some(response) =
+            validate_opensearch_boolean_query_param(request.query_params.get(field))
+        {
+            return Some(response);
+        }
+    }
+    if let Some(raw_value) = request.query_params.get("max_num_segments") {
+        if raw_value.parse::<i32>().is_err() {
+            return Some(delete_pit_illegal_argument(format!(
+                "Failed to parse int parameter [max_num_segments] with value [{raw_value}]"
+            )));
+        }
+    }
+    None
+}
+
+fn validate_common_indices_options_query_params(
+    request: &RestRequest,
+    allowed_params: &[&str],
+) -> Option<RestResponse> {
+    let unrecognized = request
+        .query_params
+        .keys()
+        .filter(|key| !allowed_params.contains(&key.as_str()))
+        .collect::<Vec<_>>();
+    if let Some(response) = unrecognized_query_param_response_for_keys(request, &unrecognized) {
+        return Some(response);
+    }
+
+    if let Some(response) = validate_index_target_boolean_query_params(request) {
+        return Some(response);
+    }
+
+    if let Some(response) = validate_opensearch_named_boolean_query_param(
+        "ignore_throttled",
+        request.query_params.get("ignore_throttled"),
+    ) {
+        return Some(response);
+    }
+
+    if let Some(response) = validate_index_expand_wildcards_query_param(request) {
+        return Some(response);
     }
 
     validate_cluster_manager_timeout_query_params(request)
@@ -68520,6 +68677,46 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             );
             assert_eq!(response.body["_shards"]["failed"], 0, "path {path}");
         }
+
+        let invalid_allow_no_indices = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/logs-*/_flush?allow_no_indices=maybe",
+        ));
+        assert_eq!(invalid_allow_no_indices.status, 400);
+        assert_eq!(
+            invalid_allow_no_indices.body["error"]["reason"],
+            "Could not convert [allow_no_indices] to boolean"
+        );
+
+        let invalid_force = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/logs-*/_flush?force=maybe",
+        ));
+        assert_eq!(invalid_force.status, 400);
+        assert_eq!(
+            invalid_force.body["error"]["reason"],
+            "Failed to parse value [maybe] as only [true] or [false] are allowed."
+        );
+
+        let invalid_expand_wildcards = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/logs-*/_flush?expand_wildcards=bogus",
+        ));
+        assert_eq!(invalid_expand_wildcards.status, 400);
+        assert_eq!(
+            invalid_expand_wildcards.body["error"]["reason"],
+            "No valid expand wildcard value [bogus]"
+        );
+
+        let unrecognized_param = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/logs-*/_flush?not_a_param=x",
+        ));
+        assert_eq!(unrecognized_param.status, 400);
+        assert_eq!(
+            unrecognized_param.body["error"]["reason"],
+            "request [/logs-*/_flush] contains unrecognized parameter: [not_a_param]"
+        );
     }
 
     #[test]
@@ -68555,6 +68752,46 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             );
             assert_eq!(response.body["_shards"]["failed"], 0, "path {path}");
         }
+
+        let invalid_ignore_unavailable = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/logs-*/_cache/clear?ignore_unavailable=maybe",
+        ));
+        assert_eq!(invalid_ignore_unavailable.status, 400);
+        assert_eq!(
+            invalid_ignore_unavailable.body["error"]["reason"],
+            "Could not convert [ignore_unavailable] to boolean"
+        );
+
+        let invalid_fielddata = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/logs-*/_cache/clear?fielddata=maybe",
+        ));
+        assert_eq!(invalid_fielddata.status, 400);
+        assert_eq!(
+            invalid_fielddata.body["error"]["reason"],
+            "Failed to parse value [maybe] as only [true] or [false] are allowed."
+        );
+
+        let invalid_expand_wildcards = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/logs-*/_cache/clear?expand_wildcards=bogus",
+        ));
+        assert_eq!(invalid_expand_wildcards.status, 400);
+        assert_eq!(
+            invalid_expand_wildcards.body["error"]["reason"],
+            "No valid expand wildcard value [bogus]"
+        );
+
+        let unrecognized_param = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/logs-*/_cache/clear?not_a_param=x",
+        ));
+        assert_eq!(unrecognized_param.status, 400);
+        assert_eq!(
+            unrecognized_param.body["error"]["reason"],
+            "request [/logs-*/_cache/clear] contains unrecognized parameter: [not_a_param]"
+        );
     }
 
     #[test]
@@ -68704,6 +68941,46 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             );
             assert_eq!(response.body["_shards"]["failed"], 0, "path {path}");
         }
+
+        let invalid_ignore_unavailable = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/logs-*/_forcemerge?ignore_unavailable=maybe",
+        ));
+        assert_eq!(invalid_ignore_unavailable.status, 400);
+        assert_eq!(
+            invalid_ignore_unavailable.body["error"]["reason"],
+            "Could not convert [ignore_unavailable] to boolean"
+        );
+
+        let invalid_flush = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/logs-*/_forcemerge?flush=maybe",
+        ));
+        assert_eq!(invalid_flush.status, 400);
+        assert_eq!(
+            invalid_flush.body["error"]["reason"],
+            "Failed to parse value [maybe] as only [true] or [false] are allowed."
+        );
+
+        let invalid_max_segments = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/logs-*/_forcemerge?max_num_segments=abc",
+        ));
+        assert_eq!(invalid_max_segments.status, 400);
+        assert_eq!(
+            invalid_max_segments.body["error"]["reason"],
+            "Failed to parse int parameter [max_num_segments] with value [abc]"
+        );
+
+        let unrecognized_param = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/logs-*/_forcemerge?not_a_param=x",
+        ));
+        assert_eq!(unrecognized_param.status, 400);
+        assert_eq!(
+            unrecognized_param.body["error"]["reason"],
+            "request [/logs-*/_forcemerge] contains unrecognized parameter: [not_a_param]"
+        );
     }
 
     #[test]
@@ -69193,6 +69470,36 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             );
             assert_eq!(response.body["_shards"]["failed"], 0, "path {path}");
         }
+
+        let invalid_allow_no_indices = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/logs-refresh-*/_refresh?allow_no_indices=maybe",
+        ));
+        assert_eq!(invalid_allow_no_indices.status, 400);
+        assert_eq!(
+            invalid_allow_no_indices.body["error"]["reason"],
+            "Could not convert [allow_no_indices] to boolean"
+        );
+
+        let invalid_expand_wildcards = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/logs-refresh-*/_refresh?expand_wildcards=bogus",
+        ));
+        assert_eq!(invalid_expand_wildcards.status, 400);
+        assert_eq!(
+            invalid_expand_wildcards.body["error"]["reason"],
+            "No valid expand wildcard value [bogus]"
+        );
+
+        let unrecognized_param = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/logs-refresh-*/_refresh?not_a_param=x",
+        ));
+        assert_eq!(unrecognized_param.status, 400);
+        assert_eq!(
+            unrecognized_param.body["error"]["reason"],
+            "request [/logs-refresh-*/_refresh] contains unrecognized parameter: [not_a_param]"
+        );
     }
 
     #[test]

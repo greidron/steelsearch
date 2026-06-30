@@ -1800,6 +1800,156 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "refresh_invalid_allow_no_indices_error",
+      "area": "operational",
+      "method": "GET",
+      "path": "/logs-compat/_refresh?allow_no_indices=maybe",
+      "extract": "search_error",
+      "family": "admin-cat",
+      "description": "[admin-cat] refresh invalid allow_no_indices boolean error",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "refresh_invalid_expand_wildcards_error",
+      "area": "operational",
+      "method": "GET",
+      "path": "/logs-compat/_refresh?expand_wildcards=bogus",
+      "extract": "search_error",
+      "family": "admin-cat",
+      "description": "[admin-cat] refresh invalid expand_wildcards error",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "refresh_unrecognized_query_param_error",
+      "area": "operational",
+      "method": "GET",
+      "path": "/logs-compat/_refresh?not_a_param=x",
+      "extract": "search_error",
+      "family": "admin-cat",
+      "description": "[admin-cat] refresh unrecognized query parameter error",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "flush_invalid_allow_no_indices_error",
+      "area": "operational",
+      "method": "GET",
+      "path": "/logs-compat/_flush?allow_no_indices=maybe",
+      "extract": "search_error",
+      "family": "admin-cat",
+      "description": "[admin-cat] flush invalid allow_no_indices boolean error",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "flush_invalid_force_error",
+      "area": "operational",
+      "method": "GET",
+      "path": "/logs-compat/_flush?force=maybe",
+      "extract": "search_error",
+      "family": "admin-cat",
+      "description": "[admin-cat] flush invalid force boolean error",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "flush_invalid_expand_wildcards_error",
+      "area": "operational",
+      "method": "GET",
+      "path": "/logs-compat/_flush?expand_wildcards=bogus",
+      "extract": "search_error",
+      "family": "admin-cat",
+      "description": "[admin-cat] flush invalid expand_wildcards error",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "flush_unrecognized_query_param_error",
+      "area": "operational",
+      "method": "GET",
+      "path": "/logs-compat/_flush?not_a_param=x",
+      "extract": "search_error",
+      "family": "admin-cat",
+      "description": "[admin-cat] flush unrecognized query parameter error",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "cache_clear_invalid_ignore_unavailable_error",
+      "area": "operational",
+      "method": "POST",
+      "path": "/logs-compat/_cache/clear?ignore_unavailable=maybe",
+      "extract": "search_error",
+      "family": "admin-cat",
+      "description": "[admin-cat] cache clear invalid ignore_unavailable boolean error",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "cache_clear_invalid_fielddata_error",
+      "area": "operational",
+      "method": "POST",
+      "path": "/logs-compat/_cache/clear?fielddata=maybe",
+      "extract": "search_error",
+      "family": "admin-cat",
+      "description": "[admin-cat] cache clear invalid fielddata boolean error",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "cache_clear_invalid_expand_wildcards_error",
+      "area": "operational",
+      "method": "POST",
+      "path": "/logs-compat/_cache/clear?expand_wildcards=bogus",
+      "extract": "search_error",
+      "family": "admin-cat",
+      "description": "[admin-cat] cache clear invalid expand_wildcards error",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "cache_clear_unrecognized_query_param_error",
+      "area": "operational",
+      "method": "POST",
+      "path": "/logs-compat/_cache/clear?not_a_param=x",
+      "extract": "search_error",
+      "family": "admin-cat",
+      "description": "[admin-cat] cache clear unrecognized query parameter error",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "forcemerge_invalid_ignore_unavailable_error",
+      "area": "operational",
+      "method": "POST",
+      "path": "/logs-compat/_forcemerge?ignore_unavailable=maybe",
+      "extract": "search_error",
+      "family": "admin-cat",
+      "description": "[admin-cat] force merge invalid ignore_unavailable boolean error",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "forcemerge_invalid_flush_error",
+      "area": "operational",
+      "method": "POST",
+      "path": "/logs-compat/_forcemerge?flush=maybe",
+      "extract": "search_error",
+      "family": "admin-cat",
+      "description": "[admin-cat] force merge invalid flush boolean error",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "forcemerge_invalid_max_num_segments_error",
+      "area": "operational",
+      "method": "POST",
+      "path": "/logs-compat/_forcemerge?max_num_segments=abc",
+      "extract": "search_error",
+      "family": "admin-cat",
+      "description": "[admin-cat] force merge invalid max_num_segments error",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "forcemerge_unrecognized_query_param_error",
+      "area": "operational",
+      "method": "POST",
+      "path": "/logs-compat/_forcemerge?not_a_param=x",
+      "extract": "search_error",
+      "family": "admin-cat",
+      "description": "[admin-cat] force merge unrecognized query parameter error",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "node_stats_shape",
       "area": "operational",
       "method": "GET",
