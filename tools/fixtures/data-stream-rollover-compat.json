@@ -59,7 +59,8 @@
         ]
       },
       "body_paths_equal": [
-        "rollover-ds.generation"
+        "rollover-ds.generation",
+        "rollover-ds.status"
       ]
     },
     {
@@ -82,7 +83,8 @@
         ]
       },
       "body_paths_equal": [
-        "rollover-ds.generation"
+        "rollover-ds.generation",
+        "rollover-ds.status"
       ]
     },
     {
@@ -154,7 +156,8 @@
         ]
       },
       "body_paths_equal": [
-        "rollover-ds.generation"
+        "rollover-ds.generation",
+        "rollover-ds.status"
       ]
     },
     {

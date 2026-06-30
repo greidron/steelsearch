@@ -7466,12 +7466,13 @@ impl SteelNode {
                 .cloned()
                 .unwrap_or_else(|| serde_json::json!([]));
             let template = value.get("template").cloned().unwrap_or(Value::Null);
+            let status = Self::data_stream_status(&manifest, &value);
             entries.push(serde_json::json!({
                 "name": name,
                 "timestamp_field": { "name": "@timestamp" },
                 "indices": indices,
                 "generation": generation,
-                "status": "GREEN",
+                "status": status,
                 "template": template
             }));
         }
@@ -7479,6 +7480,21 @@ impl SteelNode {
             return index_not_found_response(target.unwrap_or_default());
         }
         RestResponse::json(200, serde_json::json!({ "data_streams": entries }))
+    }
+
+    fn data_stream_status(manifest: &Value, stream: &Value) -> &'static str {
+        let has_unassigned_replica = stream["indices"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|entry| entry["index_name"].as_str())
+            .filter_map(|index| manifest["indices"].get(index))
+            .any(|index_metadata| replica_count_from_index_metadata(index_metadata) > 0);
+        if has_unassigned_replica {
+            "YELLOW"
+        } else {
+            "GREEN"
+        }
     }
 
     fn handle_data_stream_stats_route(&self, target: Option<&str>) -> RestResponse {
@@ -38013,6 +38029,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         ));
         assert_eq!(get_response.status, 200);
         assert_eq!(get_response.body["data_streams"][0]["name"], "logs-ds-prod");
+        assert_eq!(get_response.body["data_streams"][0]["status"], "GREEN");
         let backing_index = get_response.body["data_streams"][0]["indices"][0]["index_name"]
             .as_str()
             .expect("data stream backing index");
