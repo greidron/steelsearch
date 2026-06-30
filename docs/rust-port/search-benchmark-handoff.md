@@ -104,6 +104,10 @@ Functional OpenSearch E2E comparison status:
 - Current audit report: `target/unified-opensearch-e2e-audit/unified-opensearch-e2e-report.json`
 - Fresh PIT live subset report:
   `target/opensearch-compare-pit-current/search-compat-report.json`
+- Fresh PIT operational live subset report:
+  `target/opensearch-compare-pit-ops-current/search-compat-report.json`
+- Fresh stats live subset report:
+  `target/opensearch-compare-stats-current/rehearsal/stats-compat-report.json`
 - Route parity: `ok`
 - Durability parity: `ok`
 - Semantic parity: `ok`
@@ -111,6 +115,13 @@ Functional OpenSearch E2E comparison status:
   create/open, search, keep-alive extension, routing admission, snapshot after
   update/delete, explicit REST-option rejection, and multi-sort descending
   `search_after`.
+- Fresh PIT operational live subset: `11` passed, `0` failed, `0` skipped.
+  Covered `_cat/pit_segments` text/JSON/selected-column views, explicit PIT
+  segment lookup, PIT list/clear variants, and create/search max-keep-alive
+  error parity.
+- Fresh stats live subset: `12` passed, `0` failed, covering `_nodes/stats`
+  and related metric/index-metric error boundaries, including search
+  `open_contexts` and `point_in_time_*` fields in the compared response shape.
 - Current coverage summary: `canonical_equal=491`, `strict_equal=422`, `semantic_equal=9`, `failed=0`, `missing=0`, `known_gap_or_skipped=25`, `steelsearch_only=0`
 - Audit coverage summary: `canonical_equal=61`, `strict_equal=0`, `semantic_equal=4`, `failed=0`, `missing=0`, `known_gap_or_skipped=0`, `steelsearch_only=0`
 - `search-compat`: `500` passed, `0` failed, `20` skipped.
