@@ -131,6 +131,12 @@ def validate_report(
             errors.append(f"{name}: missing required report")
         if suite.get("required") and suite.get("classification", {}).get("missing", 0) and not allow_missing:
             errors.append(f"{name}: missing fixture case evidence")
+        if suite.get("required") and suite.get("status") in {"failed", "blocked"}:
+            errors.append(f"{name}: required suite status is {suite.get('status')}")
+        if suite.get("required") and int(suite.get("summary", {}).get("failed") or 0):
+            errors.append(f"{name}: required suite has failed cases")
+        if suite.get("required") and int(suite.get("classification", {}).get("failed") or 0):
+            errors.append(f"{name}: failed fixture case evidence")
         if suite.get("required") and require_no_skips:
             skipped = int(suite.get("classification", {}).get("known_gap_or_skipped") or 0)
             if skipped:
