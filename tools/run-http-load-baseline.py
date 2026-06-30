@@ -50,7 +50,7 @@ NATIVE_TELEMETRY_COUNTERS = (
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--base-url", default="http://127.0.0.1:9200")
+    parser.add_argument("--base-url", default="http://127.0.0.1:9200", help="base URL, or comma-separated base URLs for client round-robin")
     parser.add_argument("--index", default="steelsearch-load-baseline")
     parser.add_argument("--clients", type=positive_int, default=4)
     parser.add_argument("--expected-node-count", type=positive_int, default=1)
@@ -99,7 +99,8 @@ def main() -> int:
     except argparse.ArgumentTypeError as error:
         parser.error(str(error))
     config = {
-        "base_url": args.base_url.rstrip("/"),
+        "base_url": args.base_url.split(",")[0].rstrip("/"),
+        "base_urls": [url.strip().rstrip("/") for url in args.base_url.split(",") if url.strip()],
         "index": args.index,
         "clients": args.clients,
         "expected_node_count": args.expected_node_count,
@@ -241,6 +242,10 @@ class LoadRunner:
         self.error_examples: dict[str, list[str]] = defaultdict(list)
         self.operation_resource_deltas: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
 
+    def client_base_url(self, client_id: int) -> str:
+        base_urls = self.config.get("base_urls") or [self.config["base_url"]]
+        return base_urls[client_id % len(base_urls)]
+
     def run(self, probes: "ResourceProbes") -> dict[str, Any]:
         before = probes.sample()
         self.prepare_index()
@@ -346,6 +351,7 @@ class LoadRunner:
     def seed_corpus(self) -> None:
         fallback_diagnostics_enabled = fallback_diagnostic_operations_enabled(self.config["query_mix"])
         for doc_id in range(self.config["corpus_size"]):
+            base_url = self.client_base_url(doc_id)
             response = self.index_document(
                 f"seed-{doc_id}",
                 document_for(
@@ -353,6 +359,7 @@ class LoadRunner:
                     self.config["vector_dimension"],
                     fallback_diagnostics_enabled=fallback_diagnostics_enabled,
                 ),
+                base_url,
             )
             if response["status"] not in (200, 201):
                 raise RuntimeError(f"failed to seed document {doc_id}: {response}")
@@ -363,6 +370,7 @@ class LoadRunner:
     def worker(self, client_id: int, deadline: float, probes: "ResourceProbes") -> None:
         rng = random.Random(self.config["seed"] + client_id)
         cumulative = cumulative_weights(self.config["query_mix"])
+        base_url = self.client_base_url(client_id)
         counter = 0
         while time.monotonic() < deadline:
             operation = choose_operation(rng, cumulative)
@@ -370,7 +378,7 @@ class LoadRunner:
             before_operation = self.operation_resource_sample(probes)
             started = time.perf_counter()
             try:
-                response = self.run_operation(operation, client_id, counter, rng)
+                response = self.run_operation(operation, client_id, counter, rng, base_url)
                 elapsed_ms = (time.perf_counter() - started) * 1000.0
                 after_operation = self.operation_resource_sample(probes)
                 self.record_operation_resource_delta(operation, before_operation, after_operation)
@@ -381,7 +389,14 @@ class LoadRunner:
                 self.record_operation_resource_delta(operation, before_operation, after_operation)
                 self.record_exception(operation, elapsed_ms, error)
 
-    def run_operation(self, operation: str, client_id: int, counter: int, rng: random.Random) -> dict[str, Any]:
+    def run_operation(
+        self,
+        operation: str,
+        client_id: int,
+        counter: int,
+        rng: random.Random,
+        base_url: str | None = None,
+    ) -> dict[str, Any]:
         if operation == "write":
             doc_id = self.config["corpus_size"] + client_id * 1_000_000 + counter
             return self.index_document(
@@ -391,6 +406,7 @@ class LoadRunner:
                     self.config["vector_dimension"],
                     fallback_diagnostics_enabled=self.config["query_mix"].get("fallback_query_string", 0) > 0,
                 ),
+                base_url,
             )
         if operation == "lexical":
             return self.search(
@@ -405,7 +421,8 @@ class LoadRunner:
                             ],
                         }
                     },
-                }
+                },
+                base_url,
             )
         if operation == "ranking":
             return self.search(
@@ -430,7 +447,8 @@ class LoadRunner:
                             "filter": [{"range": {"latency": {"lte": rng.choice([250, 400, 600])}}}],
                         }
                     },
-                }
+                },
+                base_url,
             )
         if operation == "facet":
             return self.search(
@@ -458,7 +476,8 @@ class LoadRunner:
                             }
                         },
                     },
-                }
+                },
+                base_url,
             )
         if operation == "sort_filter":
             return self.search(
@@ -475,7 +494,8 @@ class LoadRunner:
                         }
                     },
                     "sort": [{"latency": "asc"}, {"price": "desc"}],
-                }
+                },
+                base_url,
             )
         if operation == "nested":
             return self.search(
@@ -494,7 +514,8 @@ class LoadRunner:
                             },
                         }
                     },
-                }
+                },
+                base_url,
             )
         if operation == "vector":
             doc_id = rng.randrange(self.config["corpus_size"])
@@ -502,7 +523,8 @@ class LoadRunner:
                 {
                     "size": 10,
                     "query": {"knn": {"embedding": {"vector": vector_for(doc_id, self.config["vector_dimension"]), "k": 10}}},
-                }
+                },
+                base_url,
             )
         if operation == "hybrid":
             doc_id = rng.randrange(self.config["corpus_size"])
@@ -518,10 +540,11 @@ class LoadRunner:
                             "filter": [{"term": {"tenant": "tenant-a"}}],
                         }
                     },
-                }
+                },
+                base_url,
             )
         if operation == "refresh":
-            return self.http("POST", f"/{self.config['index']}/_refresh", {})
+            return self.http("POST", f"/{self.config['index']}/_refresh", {}, base_url)
         if operation == "fallback_query_string":
             return self.search(
                 {
@@ -532,7 +555,8 @@ class LoadRunner:
                             "fields": ["signal"],
                         }
                     },
-                }
+                },
+                base_url,
             )
         if operation == "fallback_terms_set":
             return self.search(
@@ -546,7 +570,8 @@ class LoadRunner:
                             }
                         }
                     },
-                }
+                },
+                base_url,
             )
         if operation == "fallback_distance_feature":
             return self.search(
@@ -559,7 +584,8 @@ class LoadRunner:
                             "pivot": 5.0,
                         }
                     },
-                }
+                },
+                base_url,
             )
         if operation == "fallback_rank_feature":
             return self.search(
@@ -570,7 +596,8 @@ class LoadRunner:
                             "field": "fallback_priority",
                         }
                     },
-                }
+                },
+                base_url,
             )
         if operation == "fallback_more_like_this":
             return self.search(
@@ -581,7 +608,8 @@ class LoadRunner:
                             "like": ["api"],
                         }
                     },
-                }
+                },
+                base_url,
             )
         if operation == "fallback_case_insensitive_wildcard":
             return self.search(
@@ -595,16 +623,17 @@ class LoadRunner:
                             }
                         }
                     },
-                }
+                },
+                base_url,
             )
         raise RuntimeError(f"unsupported operation: {operation}")
 
-    def index_document(self, doc_id: str, document: dict[str, Any]) -> dict[str, Any]:
+    def index_document(self, doc_id: str, document: dict[str, Any], base_url: str | None = None) -> dict[str, Any]:
         encoded_id = urllib.parse.quote(doc_id, safe="")
-        return self.http("PUT", f"/{self.config['index']}/_doc/{encoded_id}?refresh=false", document)
+        return self.http("PUT", f"/{self.config['index']}/_doc/{encoded_id}?refresh=false", document, base_url)
 
-    def search(self, body: dict[str, Any]) -> dict[str, Any]:
-        return self.http("POST", f"/{self.config['index']}/_search", body)
+    def search(self, body: dict[str, Any], base_url: str | None = None) -> dict[str, Any]:
+        return self.http("POST", f"/{self.config['index']}/_search", body, base_url)
 
     def record(self, operation: str, elapsed_ms: float, response: dict[str, Any]) -> None:
         with self.lock:
@@ -657,8 +686,8 @@ class LoadRunner:
             }
         return summary
 
-    def http(self, method: str, path: str, body: dict[str, Any] | None = None) -> dict[str, Any]:
-        url = f"{self.config['base_url']}{path}"
+    def http(self, method: str, path: str, body: dict[str, Any] | None = None, base_url: str | None = None) -> dict[str, Any]:
+        url = f"{base_url or self.config['base_url']}{path}"
         data = None if body is None else json.dumps(body, separators=(",", ":")).encode("utf-8")
         request = urllib.request.Request(
             url,

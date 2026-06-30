@@ -1,58 +1,64 @@
 # Search benchmark optimization handoff
 
-Date: 2026-06-14
+Date: 2026-06-30
 Workspace: `/home/ubuntu/steelsearch`
 
 ## Current status
 
-The search benchmark optimization pass is complete for the current scope.
+The latest retained benchmark run is a full `minilm-knn` matrix with
+single-node and three-node Steelsearch/OpenSearch scenarios.
 
-Final verified RSS-instrumented benchmark artifact:
+Latest benchmark artifact:
 
-- `target/search-benchmark-matrix-minilm-knn-rss-current/summary.json`
+- `target/search-benchmark-matrix-current-20260630T023334Z/summary.json`
 
-Final RSS-instrumented OpenSearch comparison:
+Latest OpenSearch throughput comparison:
 
-| Topology | SteelSearch throughput | OpenSearch throughput | Ratio |
-| --- | ---: | ---: | ---: |
-| 1-node | 278.07 ops/s | 130.10 ops/s | 2.14x |
-| 3-node | 284.81 ops/s | 51.61 ops/s | 5.52x |
+| Topology | Ratio |
+| --- | ---: |
+| 1-node | 0.054x |
+| 3-node | 0.103x |
 
-RSS peak comparison from the same run:
+Latest RSS peak comparison:
 
-| Topology | SteelSearch RSS peak | OpenSearch RSS peak | Ratio |
-| --- | ---: | ---: | ---: |
-| 1-node | 735.74 MiB | 928.38 MiB | 0.79x |
-| 3-node | 779.57 MiB | 2682.63 MiB | 0.29x |
+| Topology | Ratio |
+| --- | ---: |
+| 1-node | 1.580x |
+| 3-node | 1.243x |
 
-Per-operation throughput ratios from the same run:
+Latest per-operation throughput ratios:
 
 | Operation | 1-node ratio | 3-node ratio |
 | --- | ---: | ---: |
-| facet | 2.03x | 5.41x |
-| hybrid | 2.15x | 5.92x |
-| lexical | 2.25x | 6.13x |
-| nested | 2.21x | 5.53x |
-| ranking | 2.04x | 5.17x |
-| refresh | 2.25x | 5.68x |
-| sort_filter | 2.10x | 5.32x |
-| vector | 2.10x | 5.22x |
-| write | 2.21x | 5.57x |
+| facet | 0.059x | 0.094x |
+| hybrid | 0.031x | 0.065x |
+| lexical | 0.057x | 0.128x |
+| nested | 0.048x | 0.109x |
+| ranking | 0.056x | 0.100x |
+| refresh | 0.060x | 0.123x |
+| sort_filter | 0.056x | 0.116x |
+| vector | 0.061x | 0.098x |
+| write | 0.055x | 0.099x |
 
-Remaining slower-than-OpenSearch points in the final RSS-instrumented run:
+Remaining slower-than-OpenSearch points in the latest run:
 
 | Topology | Operation | Metric | SteelSearch | OpenSearch | Ratio |
 | --- | --- | --- | ---: | ---: | ---: |
-| 1-node | none | none | - | - | - |
-| 3-node | none | none | - | - | - |
+| 1-node | overall | throughput | 11.10 ops/s | 204.20 ops/s | 0.054x |
+| 3-node | overall | throughput | 8.74 ops/s | 85.02 ops/s | 0.103x |
 
 Interpretation:
 
-- Search critical paths are materially faster than OpenSearch in the final RSS-instrumented retained state.
-- No slower-than-OpenSearch throughput or latency metric was recorded in the final RSS-instrumented run.
-- SteelSearch RSS peak is smaller than OpenSearch in both measured topologies.
-- Refresh tail remains variable across runs and should still be treated as a separate NRT architecture task.
-- Local 3-node results show SteelSearch faster than OpenSearch on all measured metrics, but SteelSearch 3-node throughput is close to 1-node throughput. Treat this as local OpenSearch comparison evidence, not proof of horizontal scaling.
+- The latest full matrix is materially slower than OpenSearch on every measured
+  throughput case.
+- Steelsearch RSS peak is larger than OpenSearch in both measured topologies in
+  this run.
+- The benchmark runner now distributes three-node timed workload and seed corpus
+  writes across all node HTTP URLs. The latest Steelsearch three-node run showed
+  balanced node CPU during seed, so the remaining slowdown is not the previous
+  single-coordinator benchmark artifact.
+- The dominant observed cost in the latest full matrix is Steelsearch seed/write
+  and mixed search latency at the 5,000-document corpus size.
 - Current benchmark reports now include a SteelSearch materialization budget
   table for `materialized_response_fetches` and
   `compatibility_materialized_response_fetches`, normalized by successful

@@ -71,12 +71,14 @@ class ClusterHandle:
         base_url: str,
         manifest_path: Path | None,
         log_dir: Path,
+        base_urls: list[str] | None = None,
         container_names: list[str] | None = None,
         operation_log_path: Path | None = None,
     ) -> None:
         self.scenario = scenario
         self.process = process
         self.base_url = base_url
+        self.base_urls = base_urls or [base_url]
         self.manifest_path = manifest_path
         self.log_dir = log_dir
         self.container_names = container_names or []
@@ -301,6 +303,7 @@ def start_cluster(scenario: Scenario, scenario_dir: Path) -> ClusterHandle:
             base_url,
             None,
             log_dir,
+            base_urls=[base_url],
             operation_log_path=Path(env["STEELSEARCH_WORK_DIR"]) / "data",
         )
 
@@ -314,12 +317,14 @@ def start_cluster(scenario: Scenario, scenario_dir: Path) -> ClusterHandle:
         process = subprocess.Popen([str(STEELSEARCH_CLUSTER)], cwd=ROOT, env=env, stdout=stdout, stderr=stderr, text=True)
         manifest_path = Path(env["STEELSEARCH_CLUSTER_WORK_DIR"]) / "cluster.json"
         base_url = wait_for_manifest_url(manifest_path)
+        base_urls = manifest_http_urls(manifest_path)
         return ClusterHandle(
             scenario,
             process,
             base_url,
             manifest_path,
             log_dir,
+            base_urls=base_urls,
             operation_log_path=Path(env["STEELSEARCH_CLUSTER_WORK_DIR"]),
         )
 
@@ -335,6 +340,7 @@ def start_cluster(scenario: Scenario, scenario_dir: Path) -> ClusterHandle:
             base_url,
             None,
             log_dir,
+            base_urls=[base_url],
             container_names=[env["OPENSEARCH_VECTOR_CONTAINER_NAME"]],
         )
 
@@ -348,11 +354,20 @@ def start_cluster(scenario: Scenario, scenario_dir: Path) -> ClusterHandle:
     process = subprocess.Popen([str(OPENSEARCH_CLUSTER)], cwd=ROOT, env=env, stdout=stdout, stderr=stderr, text=True)
     manifest_path = Path(env["OPENSEARCH_CLUSTER_WORK_DIR"]) / "cluster.json"
     base_url = wait_for_manifest_url(manifest_path)
+    base_urls = manifest_http_urls(manifest_path)
     container_names = [
         f"{env['OPENSEARCH_CLUSTER_CONTAINER_PREFIX']}-{index}"
         for index in range(1, scenario.node_count + 1)
     ]
-    return ClusterHandle(scenario, process, base_url, manifest_path, log_dir, container_names=container_names)
+    return ClusterHandle(
+        scenario,
+        process,
+        base_url,
+        manifest_path,
+        log_dir,
+        base_urls=base_urls,
+        container_names=container_names,
+    )
 
 
 def wait_for_url_in_log(log_path: Path, prefix: str, timeout: float = 120.0) -> str:
@@ -375,6 +390,18 @@ def wait_for_manifest_url(manifest_path: Path, timeout: float = 120.0) -> str:
             return manifest["nodes"][0]["http_url"]
         time.sleep(0.25)
     raise RuntimeError(f"timed out waiting for manifest at {manifest_path}")
+
+
+def manifest_http_urls(manifest_path: Path) -> list[str]:
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    urls = [
+        str(node["http_url"])
+        for node in manifest.get("nodes", [])
+        if isinstance(node, dict) and node.get("http_url")
+    ]
+    if not urls:
+        raise RuntimeError(f"manifest has no node HTTP URLs: {manifest_path}")
+    return urls
 
 
 def free_port(host: str = "127.0.0.1") -> int:
@@ -508,7 +535,7 @@ def run_baseline(
         sys.executable,
         str(BASELINE),
         "--base-url",
-        handle.base_url,
+        ",".join(handle.base_urls),
         "--index",
         f"search-benchmark-{scenario.key}",
         "--clients",

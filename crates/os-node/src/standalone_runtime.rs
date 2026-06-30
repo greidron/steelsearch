@@ -9136,12 +9136,15 @@ impl SteelNode {
             .filter(|(index, _)| {
                 requested_target == "_all" || matches_index_selector(requested_target, index)
             })
-            .map(|(index, _)| {
-                serde_json::json!({
-                    "index": index,
-                    "shard": 0,
-                    "primary": true,
-                    "node": "local"
+            .flat_map(|(index, metadata)| {
+                let shard_count = primary_shard_count_from_index_metadata(metadata).max(1);
+                (0..shard_count).map(move |shard_id| {
+                    serde_json::json!({
+                        "index": index,
+                        "shard": shard_id,
+                        "primary": true,
+                        "node": "local"
+                    })
                 })
             })
             .collect::<Vec<_>>();
@@ -18881,6 +18884,17 @@ impl SteelNode {
             let store_size = self.index_store_size_bytes(&index, doc_count);
             let completion_size = self.index_completion_size_bytes(&index, doc_count);
             let segment_count = if doc_count > 0 { 1 } else { 0 };
+            let (primary_shards, replica_count) = {
+                let manifest = self
+                    .metadata_manifest_state
+                    .lock()
+                    .expect("metadata manifest state lock poisoned");
+                let metadata = &manifest["indices"][&index];
+                (
+                    primary_shard_count_from_index_metadata(metadata).max(1),
+                    replica_count_from_index_metadata(metadata),
+                )
+            };
             let pit_current = pit_open_contexts_by_index
                 .get(&index)
                 .copied()
@@ -18898,8 +18912,8 @@ impl SteelNode {
                 "status": "open",
                 "index": index,
                 "uuid": "_na_",
-                "pri": "1",
-                "rep": "0",
+                "pri": primary_shards.to_string(),
+                "rep": replica_count.to_string(),
                 "docs.count": doc_count.to_string(),
                 "docs.deleted": "0",
                 "store.size": format!("{store_size}b"),
@@ -21810,18 +21824,7 @@ impl SteelNode {
             .metadata_manifest_state
             .lock()
             .expect("metadata manifest state lock poisoned");
-        let settings = &manifest["indices"][index]["settings"];
-        settings["index"]["number_of_replicas"]
-            .as_str()
-            .or_else(|| settings["number_of_replicas"].as_str())
-            .and_then(|value| value.parse::<usize>().ok())
-            .or_else(|| {
-                settings["index"]["number_of_replicas"]
-                    .as_u64()
-                    .or_else(|| settings["number_of_replicas"].as_u64())
-                    .map(|value| value as usize)
-            })
-            .unwrap_or(0)
+        replica_count_from_index_metadata(&manifest["indices"][index])
     }
 
     fn index_total_shard_copy_count(&self, index: &str) -> usize {
@@ -27970,7 +27973,11 @@ fn index_primary_shard_count_from_manifest(
     let manifest = metadata_manifest_state
         .lock()
         .expect("metadata manifest state lock poisoned");
-    let settings = &manifest["indices"][index]["settings"];
+    primary_shard_count_from_index_metadata(&manifest["indices"][index])
+}
+
+fn primary_shard_count_from_index_metadata(index_metadata: &Value) -> usize {
+    let settings = &index_metadata["settings"];
     settings["index"]["number_of_shards"]
         .as_str()
         .or_else(|| settings["number_of_shards"].as_str())
@@ -27982,6 +27989,21 @@ fn index_primary_shard_count_from_manifest(
                 .map(|value| value as usize)
         })
         .unwrap_or(1)
+}
+
+fn replica_count_from_index_metadata(index_metadata: &Value) -> usize {
+    let settings = &index_metadata["settings"];
+    settings["index"]["number_of_replicas"]
+        .as_str()
+        .or_else(|| settings["number_of_replicas"].as_str())
+        .and_then(|value| value.parse::<usize>().ok())
+        .or_else(|| {
+            settings["index"]["number_of_replicas"]
+                .as_u64()
+                .or_else(|| settings["number_of_replicas"].as_u64())
+                .map(|value| value as usize)
+        })
+        .unwrap_or(0)
 }
 
 fn record_pit_context_time_millis_with_lookup<F>(
@@ -52259,6 +52281,45 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             node.handle_rest_request(RestRequest::new(RestMethod::Get, "/logs-misc-000001/_tier"));
         assert_eq!(tier_after_repeated_cancel.status, 200);
         assert_eq!(tier_after_repeated_cancel.body["tiers"][0], "hot");
+    }
+
+    #[test]
+    fn cat_indices_and_list_shards_reflect_configured_shard_counts() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        let create = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/logs-shard-counts").with_json_body(
+                serde_json::json!({
+                    "settings": {
+                        "index": {
+                            "number_of_shards": 3,
+                            "number_of_replicas": 1
+                        }
+                    }
+                }),
+            ),
+        );
+        assert_eq!(create.status, 200);
+
+        let cat = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_cat/indices/logs-shard-counts?format=json&h=index,pri,rep",
+        ));
+        assert_eq!(cat.status, 200);
+        assert_eq!(cat.body[0]["index"], "logs-shard-counts");
+        assert_eq!(cat.body[0]["pri"], "3");
+        assert_eq!(cat.body[0]["rep"], "1");
+
+        let list_shards = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_list/shards/logs-shard-counts",
+        ));
+        assert_eq!(list_shards.status, 200);
+        assert_eq!(list_shards.body["shards"].as_array().unwrap().len(), 3);
+        assert_eq!(list_shards.body["shards"][2]["shard"], 2);
     }
 
     #[test]
