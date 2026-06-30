@@ -23,6 +23,23 @@ contracts are production-complete.
 
 ### Discovery And Join Validation
 
+Current repo-local join admission evidence:
+
+- `tools/run_mixed_cluster_join_profile.sh` passed on 2026-06-30 against the
+  local OpenSearch dev transport endpoint.
+- Final report:
+  `target/phase-c-mixed-cluster-join/mixed-cluster-join-report.json`
+- Live probe report:
+  `target/phase-c-mixed-cluster-join/live-join-probe-report.json`
+- The live probe verified the OpenSearch transport payload version
+  `137287827`, minimum-compatible response header version `136407827`, cluster
+  name/UUID visibility, single local node visibility, advertised
+  `cluster_manager,data,ingest,remote_cluster_client` roles, required
+  `shard_indexing_pressure_enabled` node attribute, node name, and transport
+  address.
+- The reject fixture gate in `os-transport` also passed through the same
+  profile runner.
+
 Remaining work:
 
 - strict node identity and role compatibility checks;
