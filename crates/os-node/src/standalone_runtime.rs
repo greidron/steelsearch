@@ -27114,6 +27114,11 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
             return Some(response);
         }
     }
+    if let Some(multi_match) = query.get("multi_match").and_then(Value::as_object) {
+        if let Some(response) = validate_multi_match_query_shape(multi_match) {
+            return Some(response);
+        }
+    }
     if let Some(match_bool_prefix) = query.get("match_bool_prefix").and_then(Value::as_object) {
         let Some((_, spec)) = match_bool_prefix.iter().next() else {
             return Some(build_unsupported_search_response(
@@ -27948,6 +27953,28 @@ const MATCH_PHRASE_PREFIX_QUERY_OPTIONS: &[&str] = &[
     "_name",
 ];
 
+const MULTI_MATCH_QUERY_OPTIONS: &[&str] = &[
+    "query",
+    "fields",
+    "type",
+    "analyzer",
+    "boost",
+    "slop",
+    "fuzziness",
+    "prefix_length",
+    "max_expansions",
+    "operator",
+    "minimum_should_match",
+    "fuzzy_rewrite",
+    "tie_breaker",
+    "cutoff_frequency",
+    "lenient",
+    "zero_terms_query",
+    "_name",
+    "auto_generate_synonyms_phrase_query",
+    "fuzzy_transpositions",
+];
+
 fn validate_match_query_shape(
     query_name: &str,
     query: &serde_json::Map<String, Value>,
@@ -27980,6 +28007,43 @@ fn validate_match_query_shape(
         return Some(build_unsupported_search_response(&format!(
             "unsupported {query_name} query shape"
         )));
+    }
+    None
+}
+
+fn validate_multi_match_query_shape(
+    query: &serde_json::Map<String, Value>,
+) -> Option<RestResponse> {
+    for key in query.keys() {
+        if !MULTI_MATCH_QUERY_OPTIONS.contains(&key.as_str()) {
+            return Some(build_parsing_search_response_with_root_cause(&format!(
+                "[multi_match] query does not support [{key}]"
+            )));
+        }
+    }
+    if query
+        .get("query")
+        .and_then(Value::as_str)
+        .map(str::is_empty)
+        .unwrap_or(true)
+    {
+        return Some(build_unsupported_search_response(
+            "unsupported multi_match query shape",
+        ));
+    }
+    if let Some(fields) = query.get("fields") {
+        let valid = fields.as_str().is_some_and(|value| !value.is_empty())
+            || fields.as_array().is_some_and(|items| {
+                !items.is_empty()
+                    && items
+                        .iter()
+                        .all(|value| value.as_str().is_some_and(|field| !field.is_empty()))
+            });
+        if !valid {
+            return Some(build_parsing_search_response_with_root_cause(
+                "[multi_match] query does not support [fields]",
+            ));
+        }
     }
     None
 }
@@ -29520,11 +29584,11 @@ fn evaluate_search_query_source_with_mappings(
             .get("query")
             .and_then(Value::as_str)
             .unwrap_or_default();
-        let fields = multi_match.get("fields").and_then(Value::as_array)?;
+        let fields = extract_multi_match_fields(multi_match.get("fields"));
         let mut best_score: f64 = 0.0;
-        for field in fields.iter().filter_map(Value::as_str) {
+        for field in fields {
             best_score = best_score.max(score_match_query(
-                lookup_query_field_value(source, field),
+                lookup_query_field_value(source, &field),
                 expected,
             ));
         }
@@ -30122,12 +30186,8 @@ fn collect_highlight_terms(query: &Value, field: &str) -> Vec<String> {
             .get("query")
             .and_then(Value::as_str)
             .unwrap_or_default();
-        let fields = multi_match
-            .get("fields")
-            .and_then(Value::as_array)
-            .map(|items| items.iter().filter_map(Value::as_str).collect::<Vec<_>>())
-            .unwrap_or_default();
-        if fields.is_empty() || fields.iter().any(|candidate| *candidate == field) {
+        let fields = extract_multi_match_fields(multi_match.get("fields"));
+        if fields.is_empty() || fields.iter().any(|candidate| candidate == field) {
             terms.extend(tokenize_search_text(query_text));
         }
     }
@@ -31039,6 +31099,25 @@ fn extract_match_query_value(value: &Value) -> Option<&str> {
         return object.get("query").and_then(Value::as_str);
     }
     value.as_str()
+}
+
+fn extract_multi_match_fields(value: Option<&Value>) -> Vec<String> {
+    fn normalize(field: &str) -> String {
+        field
+            .split_once('^')
+            .map_or(field, |(name, _)| name)
+            .to_string()
+    }
+
+    match value {
+        Some(Value::String(field)) => vec![normalize(field)],
+        Some(Value::Array(fields)) => fields
+            .iter()
+            .filter_map(Value::as_str)
+            .map(normalize)
+            .collect(),
+        _ => Vec::new(),
+    }
 }
 
 fn extract_fuzzy_query_value(value: &Value) -> Option<(&str, usize)> {
@@ -55824,6 +55903,33 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             extract_match_query_value(&serde_json::json!({ "query": "checkout" })),
             Some("checkout")
+        );
+    }
+
+    #[test]
+    fn search_multi_match_rejects_unknown_options_and_normalizes_fields() {
+        let response = validate_search_query_body(&serde_json::json!({
+            "multi_match": {
+                "query": "catalog",
+                "fields": ["message", "service"],
+                "unsupported_option": true
+            }
+        }))
+        .expect("unknown multi_match option should fail closed");
+        assert_eq!(response.status, 400);
+        assert_eq!(response.body["error"]["type"], "parsing_exception");
+        assert_eq!(
+            response.body["error"]["root_cause"][0]["reason"],
+            "[multi_match] query does not support [unsupported_option]"
+        );
+
+        assert_eq!(
+            extract_multi_match_fields(Some(&serde_json::json!("message^2"))),
+            vec!["message".to_string()]
+        );
+        assert_eq!(
+            extract_multi_match_fields(Some(&serde_json::json!(["message^2", "service"]))),
+            vec!["message".to_string(), "service".to_string()]
         );
     }
 

@@ -5087,6 +5087,65 @@
       "description": "[lexical] multi match best fields search"
     },
     {
+      "name": "multi_match_single_field_string_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "multi_match": {
+            "query": "catalog",
+            "fields": "message"
+          }
+        }
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] multi_match accepts a single fields string like OpenSearch"
+    },
+    {
+      "name": "multi_match_boosted_field_string_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "multi_match": {
+            "query": "catalog",
+            "fields": [
+              "message^2",
+              "service"
+            ]
+          }
+        }
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] multi_match field boost syntax still resolves the base field"
+    },
+    {
+      "name": "multi_match_unknown_option_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "multi_match": {
+            "query": "catalog",
+            "fields": [
+              "message",
+              "service"
+            ],
+            "unsupported_option": true
+          }
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] multi_match query rejects unknown options like OpenSearch"
+    },
+    {
       "name": "nested_query_search",
       "area": "search",
       "method": "POST",
