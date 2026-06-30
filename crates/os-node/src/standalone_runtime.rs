@@ -30649,11 +30649,13 @@ fn evaluate_search_query_source_with_mappings(
         let haystacks = lookup_query_field_value(source, field)
             .map(collect_string_leaf_values)
             .unwrap_or_default();
-        if let Some(fuzziness) = extract_match_query_fuzziness(expected, query_text) {
+        if let Some(fuzzy_options) = extract_match_query_fuzzy_options(expected, query_text) {
             let matched = value_matches_match_fuzzy(
                 &haystacks,
                 query_text,
-                fuzziness,
+                fuzzy_options.fuzziness,
+                fuzzy_options.prefix_length,
+                fuzzy_options.transpositions,
                 extract_match_query_operator(expected),
                 extract_match_minimum_should_match(expected),
             );
@@ -30732,13 +30734,15 @@ fn evaluate_search_query_source_with_mappings(
                     .get("operator")
                     .and_then(Value::as_str)
                     .unwrap_or("or");
-                if let Some(fuzziness) =
-                    extract_match_query_fuzziness(&Value::Object(multi_match.clone()), expected)
+                if let Some(fuzzy_options) =
+                    extract_match_query_fuzzy_options(&Value::Object(multi_match.clone()), expected)
                 {
                     let matched = value_matches_match_fuzzy(
                         &haystacks,
                         expected,
-                        fuzziness,
+                        fuzzy_options.fuzziness,
+                        fuzzy_options.prefix_length,
+                        fuzzy_options.transpositions,
                         operator,
                         multi_match.get("minimum_should_match"),
                     );
@@ -31944,6 +31948,8 @@ fn value_matches_match_fuzzy(
     haystacks: &[String],
     query_text: &str,
     fuzziness: usize,
+    prefix_length: usize,
+    transpositions: bool,
     operator: &str,
     minimum_should_match: Option<&Value>,
 ) -> bool {
@@ -31953,7 +31959,9 @@ fn value_matches_match_fuzzy(
     }
     let matched = terms
         .iter()
-        .filter(|term| haystack_tokens_match_fuzzy(haystacks, term, fuzziness))
+        .filter(|term| {
+            haystack_tokens_match_fuzzy(haystacks, term, fuzziness, prefix_length, transpositions)
+        })
         .count();
     let required = minimum_should_match
         .and_then(|value| bool_minimum_should_match_value(value, terms.len()))
@@ -31967,12 +31975,18 @@ fn value_matches_match_fuzzy(
     matched >= required
 }
 
-fn haystack_tokens_match_fuzzy(haystacks: &[String], term: &str, fuzziness: usize) -> bool {
+fn haystack_tokens_match_fuzzy(
+    haystacks: &[String],
+    term: &str,
+    fuzziness: usize,
+    prefix_length: usize,
+    transpositions: bool,
+) -> bool {
     let expected = term.to_ascii_lowercase();
     haystacks.iter().any(|haystack| {
-        tokenize_search_text(haystack)
-            .into_iter()
-            .any(|token| levenshtein_distance(&token, &expected) <= fuzziness)
+        tokenize_search_text(haystack).into_iter().any(|token| {
+            fuzzy_token_matches(&token, &expected, fuzziness, prefix_length, transpositions)
+        })
     })
 }
 
@@ -32375,6 +32389,32 @@ fn extract_match_minimum_should_match(value: &Value) -> Option<&Value> {
     value
         .as_object()
         .and_then(|object| object.get("minimum_should_match"))
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct MatchFuzzyOptions {
+    fuzziness: usize,
+    prefix_length: usize,
+    transpositions: bool,
+}
+
+fn extract_match_query_fuzzy_options(value: &Value, query_text: &str) -> Option<MatchFuzzyOptions> {
+    let fuzziness = extract_match_query_fuzziness(value, query_text)?;
+    let object = value.as_object()?;
+    let prefix_length = object
+        .get("prefix_length")
+        .and_then(Value::as_u64)
+        .map(|value| value as usize)
+        .unwrap_or(0);
+    let transpositions = object
+        .get("fuzzy_transpositions")
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
+    Some(MatchFuzzyOptions {
+        fuzziness,
+        prefix_length,
+        transpositions,
+    })
 }
 
 fn extract_match_query_fuzziness(value: &Value, query_text: &str) -> Option<usize> {
@@ -32910,6 +32950,68 @@ fn levenshtein_distance(left: &str, right: &str) -> usize {
         std::mem::swap(&mut prev, &mut curr);
     }
     prev[right_chars.len()]
+}
+
+fn fuzzy_token_matches(
+    candidate: &str,
+    query: &str,
+    fuzziness: usize,
+    prefix_length: usize,
+    transpositions: bool,
+) -> bool {
+    let candidate_chars = candidate.chars().collect::<Vec<_>>();
+    let query_chars = query.chars().collect::<Vec<_>>();
+    if prefix_length > candidate_chars.len() || prefix_length > query_chars.len() {
+        return false;
+    }
+    if candidate_chars[..prefix_length] != query_chars[..prefix_length] {
+        return false;
+    }
+    let candidate_suffix = &candidate_chars[prefix_length..];
+    let query_suffix = &query_chars[prefix_length..];
+    let distance = if transpositions {
+        optimal_string_alignment_distance(candidate_suffix, query_suffix)
+    } else {
+        levenshtein_distance_chars(candidate_suffix, query_suffix)
+    };
+    distance <= fuzziness
+}
+
+fn levenshtein_distance_chars(left: &[char], right: &[char]) -> usize {
+    let mut prev = (0..=right.len()).collect::<Vec<_>>();
+    let mut curr = vec![0; right.len() + 1];
+    for (i, left_char) in left.iter().enumerate() {
+        curr[0] = i + 1;
+        for (j, right_char) in right.iter().enumerate() {
+            let cost = usize::from(left_char != right_char);
+            curr[j + 1] = (curr[j] + 1).min(prev[j + 1] + 1).min(prev[j] + cost);
+        }
+        std::mem::swap(&mut prev, &mut curr);
+    }
+    prev[right.len()]
+}
+
+fn optimal_string_alignment_distance(left: &[char], right: &[char]) -> usize {
+    let mut dp = vec![vec![0; right.len() + 1]; left.len() + 1];
+    for (i, row) in dp.iter_mut().enumerate() {
+        row[0] = i;
+    }
+    for j in 0..=right.len() {
+        dp[0][j] = j;
+    }
+    for i in 1..=left.len() {
+        for j in 1..=right.len() {
+            let substitution_cost = usize::from(left[i - 1] != right[j - 1]);
+            let mut distance = (dp[i - 1][j] + 1)
+                .min(dp[i][j - 1] + 1)
+                .min(dp[i - 1][j - 1] + substitution_cost);
+            if i > 1 && j > 1 && left[i - 1] == right[j - 2] && left[i - 2] == right[j - 1] {
+                distance = distance.min(dp[i - 2][j - 2] + 1);
+            }
+            dp[i][j] = distance;
+        }
+    }
+    dp[left.len()][right.len()]
 }
 
 fn evaluate_span_query(source: &Value, span_term: &serde_json::Map<String, Value>) -> Option<bool> {
@@ -57451,6 +57553,70 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             extract_multi_match_fields(Some(&serde_json::json!(["message^2", "service"]))),
             vec!["message".to_string(), "service".to_string()]
+        );
+
+        let source = serde_json::json!({
+            "message": "checkout service accepted payment"
+        });
+        assert_eq!(
+            evaluate_search_query_source(
+                &source,
+                "doc-1",
+                &serde_json::json!({
+                    "multi_match": {
+                        "query": "paymant",
+                        "fields": ["message"],
+                        "fuzziness": 1,
+                        "prefix_length": 1
+                    }
+                })
+            ),
+            Some((true, 1.0))
+        );
+        assert_eq!(
+            evaluate_search_query_source(
+                &source,
+                "doc-1",
+                &serde_json::json!({
+                    "multi_match": {
+                        "query": "paymant",
+                        "fields": ["message"],
+                        "fuzziness": 1,
+                        "prefix_length": 5
+                    }
+                })
+            ),
+            Some((false, 0.0))
+        );
+        assert_eq!(
+            evaluate_search_query_source(
+                &source,
+                "doc-1",
+                &serde_json::json!({
+                    "multi_match": {
+                        "query": "pamyent",
+                        "fields": ["message"],
+                        "fuzziness": 1,
+                        "fuzzy_transpositions": true
+                    }
+                })
+            ),
+            Some((true, 1.0))
+        );
+        assert_eq!(
+            evaluate_search_query_source(
+                &source,
+                "doc-1",
+                &serde_json::json!({
+                    "multi_match": {
+                        "query": "pamyent",
+                        "fields": ["message"],
+                        "fuzziness": 1,
+                        "fuzzy_transpositions": false
+                    }
+                })
+            ),
+            Some((false, 0.0))
         );
     }
 

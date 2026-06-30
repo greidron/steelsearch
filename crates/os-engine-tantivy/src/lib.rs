@@ -4083,12 +4083,12 @@ fn build_tantivy_fuzzy_query(
     {
         return Ok(None);
     }
+    if prefix_length > 0 {
+        return Ok(None);
+    }
     let term = Term::from_field_text(indexed_field.field, value);
-    let query: Box<dyn TantivyQueryTrait> = if prefix_length == 0 {
-        Box::new(FuzzyTermQuery::new(term, fuzziness, transpositions))
-    } else {
-        Box::new(FuzzyTermQuery::new_prefix(term, fuzziness, transpositions))
-    };
+    let query: Box<dyn TantivyQueryTrait> =
+        Box::new(FuzzyTermQuery::new(term, fuzziness, transpositions));
     Ok(Some(query))
 }
 
