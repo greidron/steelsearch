@@ -110,11 +110,18 @@ def normalized_error_body(body: dict[str, Any]) -> dict[str, Any]:
 def error_summary(response: dict[str, Any]) -> dict[str, Any]:
     body = response.get("body") or {}
     error = normalized_error_body(body)
-    return {
+    summary = {
         "status": response.get("status"),
         "error_type": error.get("type"),
         "error_reason": error.get("reason"),
     }
+    root_cause = error.get("root_cause")
+    if isinstance(root_cause, list) and root_cause:
+        first = root_cause[0]
+        if isinstance(first, dict):
+            summary["root_cause_type"] = first.get("type")
+            summary["root_cause_reason"] = first.get("reason")
+    return summary
 
 
 def summarize_response(kind: str, response: dict[str, Any]) -> dict[str, Any]:
