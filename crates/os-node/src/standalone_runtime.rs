@@ -30981,15 +30981,24 @@ fn evaluate_search_query_source_with_mappings(
     }
     if let Some(wildcard_query) = query.get("wildcard").and_then(Value::as_object) {
         let (field, expected) = wildcard_query.iter().next()?;
-        let expected_value = extract_string_query_value(expected)?;
-        let matched =
-            value_matches_wildcard(lookup_query_field_value(source, field), expected_value);
+        let (expected_value, case_insensitive) =
+            extract_string_query_value_and_case_insensitive(expected)?;
+        let matched = value_matches_wildcard(
+            lookup_query_field_value(source, field),
+            expected_value,
+            case_insensitive,
+        );
         return Some((matched, if matched { 1.0 } else { 0.0 }));
     }
     if let Some(prefix_query) = query.get("prefix").and_then(Value::as_object) {
         let (field, expected) = prefix_query.iter().next()?;
-        let expected_value = extract_string_query_value(expected)?;
-        let matched = value_matches_prefix(lookup_query_field_value(source, field), expected_value);
+        let (expected_value, case_insensitive) =
+            extract_string_query_value_and_case_insensitive(expected)?;
+        let matched = value_matches_prefix(
+            lookup_query_field_value(source, field),
+            expected_value,
+            case_insensitive,
+        );
         return Some((matched, if matched { 1.0 } else { 0.0 }));
     }
     if let Some(regexp_query) = query.get("regexp").and_then(Value::as_object) {
@@ -32486,6 +32495,19 @@ fn extract_string_query_value(value: &Value) -> Option<&str> {
     value.as_str()
 }
 
+fn extract_string_query_value_and_case_insensitive(value: &Value) -> Option<(&str, bool)> {
+    if let Some(object) = value.as_object() {
+        return Some((
+            object.get("value").and_then(Value::as_str)?,
+            object
+                .get("case_insensitive")
+                .and_then(Value::as_bool)
+                .unwrap_or(false),
+        ));
+    }
+    value.as_str().map(|text| (text, false))
+}
+
 fn extract_match_query_value(value: &Value) -> Option<&str> {
     if let Some(object) = value.as_object() {
         return object.get("query").and_then(Value::as_str);
@@ -32787,23 +32809,35 @@ fn phrase_prefix_window_matches(window: &[String], expected_tokens: &[String]) -
     })
 }
 
-fn value_matches_wildcard(candidate: Option<&Value>, expected: &str) -> bool {
+fn value_matches_wildcard(
+    candidate: Option<&Value>,
+    expected: &str,
+    case_insensitive: bool,
+) -> bool {
     let Some(candidate_text) = candidate.and_then(Value::as_str) else {
         return false;
     };
-    wildcard_match(
-        &expected.to_ascii_lowercase(),
-        &candidate_text.to_ascii_lowercase(),
-    )
+    if case_insensitive {
+        wildcard_match(
+            &expected.to_ascii_lowercase(),
+            &candidate_text.to_ascii_lowercase(),
+        )
+    } else {
+        wildcard_match(expected, candidate_text)
+    }
 }
 
-fn value_matches_prefix(candidate: Option<&Value>, expected: &str) -> bool {
+fn value_matches_prefix(candidate: Option<&Value>, expected: &str, case_insensitive: bool) -> bool {
     let Some(candidate_text) = candidate.and_then(Value::as_str) else {
         return false;
     };
-    candidate_text
-        .to_ascii_lowercase()
-        .starts_with(&expected.to_ascii_lowercase())
+    if case_insensitive {
+        candidate_text
+            .to_ascii_lowercase()
+            .starts_with(&expected.to_ascii_lowercase())
+    } else {
+        candidate_text.starts_with(expected)
+    }
 }
 
 fn value_matches_regexp(candidate: Option<&Value>, expected: &str) -> bool {
@@ -33325,6 +33359,7 @@ fn evaluate_span_multi_query(
         return Some(value_matches_prefix(
             lookup_query_field_value(source, field),
             expected_value,
+            false,
         ));
     }
     None

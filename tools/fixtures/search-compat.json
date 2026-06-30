@@ -9228,6 +9228,32 @@
       "description": "[lexical] prefix query search"
     },
     {
+      "name": "prefix_case_insensitive_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "prefix": {
+            "tag": {
+              "value": "PAY",
+              "case_insensitive": true
+            }
+          }
+        },
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] prefix case_insensitive query search"
+    },
+    {
       "name": "query_string_search",
       "area": "search",
       "method": "POST",
@@ -11995,6 +12021,32 @@
       "extract": "search_hits",
       "family": "lexical",
       "description": "[lexical] wildcard query search"
+    },
+    {
+      "name": "wildcard_case_insensitive_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "wildcard": {
+            "service": {
+              "value": "CHECK*",
+              "case_insensitive": true
+            }
+          }
+        },
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] wildcard case_insensitive query search"
     },
     {
       "name": "collapse_search",
