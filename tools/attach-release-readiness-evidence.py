@@ -11,6 +11,11 @@ from pathlib import Path
 from typing import Any
 
 
+RELEASE_EVIDENCE_PLACEHOLDER_BLOCKERS = {
+    "benchmark/load/chaos/packaging/rolling-upgrade evidence has not been attached",
+}
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--readiness-report", required=True)
@@ -46,7 +51,7 @@ def main() -> int:
     categories = report.setdefault("categories", {})
     release = categories.setdefault("release", {"ready": False, "blockers": []})
     release["evidence"] = evidence
-    existing_release_blockers = release.get("blockers", [])
+    existing_release_blockers = retained_release_blockers(release.get("blockers", []))
     release["blockers"] = sorted(set(existing_release_blockers + blockers))
     release["ready"] = len(release["blockers"]) == 0
 
@@ -171,6 +176,16 @@ def readiness_blockers(categories: dict[str, Any]) -> list[str]:
         for blocker in category.get("blockers", []):
             blockers.append(f"{name}: {blocker}")
     return sorted(set(blockers))
+
+
+def retained_release_blockers(blockers: Any) -> list[str]:
+    if not isinstance(blockers, list):
+        return []
+    return [
+        str(blocker)
+        for blocker in blockers
+        if str(blocker) not in RELEASE_EVIDENCE_PLACEHOLDER_BLOCKERS
+    ]
 
 
 def write_release_readiness_file(path: Path, evidence: dict[str, dict[str, Any]]) -> None:

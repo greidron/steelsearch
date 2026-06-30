@@ -84,6 +84,12 @@ class ReplacementGateScriptTests(unittest.TestCase):
                         "ready": True,
                         "categories": {
                             "security": {"ready": True, "blockers": []},
+                            "release": {
+                                "ready": False,
+                                "blockers": [
+                                    "benchmark/load/chaos/packaging/rolling-upgrade evidence has not been attached"
+                                ],
+                            },
                         },
                     }
                 ),
@@ -117,6 +123,7 @@ class ReplacementGateScriptTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             readiness_payload = json.loads(readiness.read_text(encoding="utf-8"))
             self.assertTrue(readiness_payload["categories"]["release"]["ready"])
+            self.assertEqual(readiness_payload["categories"]["release"]["blockers"], [])
             self.assertTrue(readiness_payload["ready"])
             self.assertEqual(readiness_payload["blockers"], [])
             release_payload = json.loads(release_readiness.read_text(encoding="utf-8"))
