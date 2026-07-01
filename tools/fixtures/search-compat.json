@@ -86,6 +86,7 @@
           "latency_optional": "long",
           "bytes": "long",
           "ts": "date",
+          "ts_optional": "date",
           "client_ip": "ip",
           "location": "geo_point"
         }
@@ -516,6 +517,9 @@
               "type": "long"
             },
             "ts": {
+              "type": "date"
+            },
+            "ts_optional": {
               "type": "date"
             },
             "client_ip": {
@@ -13129,6 +13133,36 @@
       "extract": "aggregations",
       "family": "aggregation",
       "description": "[aggregation] date range keyed aggregation"
+    },
+    {
+      "name": "date_range_missing_aggregation",
+      "area": "aggregation",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "by_missing_window": {
+            "date_range": {
+              "field": "ts_optional",
+              "missing": "2026-04-22T00:01:30Z",
+              "ranges": [
+                {
+                  "key": "first-two-minutes",
+                  "to": "2026-04-22T00:02:00Z"
+                },
+                {
+                  "key": "last-two-minutes",
+                  "from": "2026-04-22T00:02:00Z"
+                }
+              ]
+            }
+          }
+        }
+      },
+      "extract": "aggregations",
+      "family": "aggregation",
+      "description": "[aggregation] date range missing aggregation"
     },
     {
       "name": "ip_range_aggregation",
