@@ -482,6 +482,7 @@
         "max_bucket_pipeline_aggregation",
         "stats_bucket_pipeline_aggregation",
         "extended_stats_bucket_pipeline_aggregation",
+        "percentiles_bucket_pipeline_aggregation",
         "cumulative_sum_pipeline_aggregation",
         "derivative_pipeline_aggregation",
         "serial_diff_pipeline_aggregation",

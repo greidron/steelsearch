@@ -36969,6 +36969,18 @@ fn build_search_aggregations(
                 );
                 continue;
             }
+            if pipeline_kind == "percentiles_bucket" {
+                let requested_percentiles = pipeline_object.get("percents").and_then(|value| {
+                    value
+                        .as_array()
+                        .map(|values| values.iter().filter_map(Value::as_f64).collect::<Vec<_>>())
+                });
+                result.insert(
+                    name.clone(),
+                    percentiles_aggregation_value(&counts, requested_percentiles.as_deref()),
+                );
+                continue;
+            }
             let value = match pipeline_kind {
                 "sum_bucket" => counts.iter().sum::<f64>(),
                 "avg_bucket" => {
@@ -37505,6 +37517,8 @@ fn typed_aggregation_prefix(aggregation: &serde_json::Map<String, Value>) -> Opt
         "stats_bucket"
     } else if aggregation.contains_key("extended_stats_bucket") {
         "extended_stats_bucket"
+    } else if aggregation.contains_key("percentiles_bucket") {
+        "percentiles_bucket"
     } else if aggregation.contains_key("composite") {
         "composite"
     } else if aggregation.contains_key("adjacency_matrix") {
@@ -38532,6 +38546,7 @@ fn first_supported_bucket_metric_pipeline_aggregation<'a>(
         "max_bucket",
         "stats_bucket",
         "extended_stats_bucket",
+        "percentiles_bucket",
     ] {
         if let Some(value) = aggregation_object.get(key).and_then(Value::as_object) {
             return Some((key, value));

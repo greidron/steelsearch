@@ -15087,6 +15087,37 @@
       "description": "[aggregation] extended stats bucket pipeline aggregation"
     },
     {
+      "name": "percentiles_bucket_pipeline_aggregation",
+      "area": "aggregation",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "by_service": {
+            "terms": {
+              "field": "service",
+              "order": {
+                "_key": "asc"
+              }
+            }
+          },
+          "service_doc_count_percentiles": {
+            "percentiles_bucket": {
+              "buckets_path": "by_service>_count",
+              "percents": [
+                50,
+                95
+              ]
+            }
+          }
+        }
+      },
+      "extract": "aggregations",
+      "family": "aggregation",
+      "description": "[aggregation] percentiles bucket pipeline aggregation"
+    },
+    {
       "name": "cumulative_sum_pipeline_aggregation",
       "area": "aggregation",
       "method": "POST",
