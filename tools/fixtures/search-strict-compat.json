@@ -326,6 +326,7 @@
       "date_histogram_hard_bounds_aggregation",
       "date_histogram_min_doc_count_aggregation",
       "date_histogram_format_epoch_millis_aggregation",
+      "date_histogram_time_zone_aggregation",
       "date_histogram_missing_aggregation",
       "histogram_keyed_aggregation",
       "histogram_offset_aggregation",
@@ -9850,6 +9851,28 @@
       "extract": "aggregations",
       "family": "aggregation",
       "description": "[aggregation] date histogram epoch_millis format aggregation",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "date_histogram_time_zone_aggregation",
+      "area": "aggregation",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "by_day_tz": {
+            "date_histogram": {
+              "field": "ts",
+              "calendar_interval": "day",
+              "time_zone": "+09:00"
+            }
+          }
+        }
+      },
+      "extract": "aggregations",
+      "family": "aggregation",
+      "description": "[aggregation] date histogram time_zone aggregation",
       "strict_source_parity_required": true
     },
     {

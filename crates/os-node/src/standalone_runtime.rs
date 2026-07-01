@@ -36180,6 +36180,13 @@ fn build_search_aggregations(
                 .get("offset")
                 .and_then(parse_date_histogram_offset_millis)
                 .unwrap_or(0);
+            let time_zone = date_histogram.get("time_zone").and_then(Value::as_str);
+            let Some(time_zone_offset_millis) = date_histogram_time_zone_offset_millis(time_zone)
+            else {
+                return Err(build_unsupported_search_response(
+                    "unsupported aggregation option [date_histogram.time_zone]",
+                ));
+            };
             let format = match date_histogram.get("format").and_then(Value::as_str) {
                 Some("epoch_millis") => Some("epoch_millis"),
                 Some(_) => {
@@ -36209,15 +36216,19 @@ fn build_search_aggregations(
                     .and_then(Value::as_str)
                     .or(missing);
                 let Some(raw) = raw else { continue };
-                let Some((bucket_key, bucket_string)) =
-                    date_histogram_bucket_day_with_offset(raw, offset_millis, format)
-                else {
+                let Some((bucket_key, bucket_string)) = date_histogram_bucket_day_with_offset(
+                    raw,
+                    offset_millis,
+                    time_zone_offset_millis,
+                    format,
+                ) else {
                     continue;
                 };
                 if !fallback_date_histogram_bounds_contain(
                     hard_bounds.as_ref(),
                     bucket_key,
                     offset_millis,
+                    time_zone_offset_millis,
                     format,
                 ) {
                     continue;
@@ -36228,6 +36239,7 @@ fn build_search_aggregations(
             let buckets = render_date_histogram_bucket_values_from_counts(
                 &counts,
                 offset_millis,
+                time_zone_offset_millis,
                 format,
                 min_doc_count,
                 extended_bounds.as_ref(),
@@ -37290,24 +37302,24 @@ fn date_histogram_bucket_day(timestamp: &str) -> Option<(i64, String)> {
 fn date_histogram_bucket_day_with_offset(
     timestamp: &str,
     offset_millis: i64,
+    time_zone_offset_millis: i64,
     format: Option<&str>,
 ) -> Option<(i64, String)> {
     let millis = date_histogram_epoch_millis(timestamp)?;
-    if offset_millis == 0 {
-        let (bucket_key, _) = date_histogram_bucket_day(timestamp)?;
-        return Some((
-            bucket_key,
-            date_histogram_key_as_string_from_epoch_millis(bucket_key, format)?,
-        ));
-    }
     let bucket_key = millis
+        .checked_add(time_zone_offset_millis)?
         .checked_sub(offset_millis)?
         .div_euclid(86_400_000)
         .checked_mul(86_400_000)?
-        .checked_add(offset_millis)?;
+        .checked_add(offset_millis)?
+        .checked_sub(time_zone_offset_millis)?;
     Some((
         bucket_key,
-        date_histogram_key_as_string_from_epoch_millis(bucket_key, format)?,
+        date_histogram_key_as_string_from_epoch_millis(
+            bucket_key,
+            time_zone_offset_millis,
+            format,
+        )?,
     ))
 }
 
@@ -37336,21 +37348,66 @@ fn date_histogram_epoch_millis(timestamp: &str) -> Option<i64> {
 
 fn date_histogram_key_as_string_from_epoch_millis(
     epoch_millis: i64,
+    time_zone_offset_millis: i64,
     format: Option<&str>,
 ) -> Option<String> {
     if format == Some("epoch_millis") {
         return Some(epoch_millis.to_string());
     }
-    let days = epoch_millis.div_euclid(86_400_000);
-    let millis_of_day = epoch_millis.rem_euclid(86_400_000);
+    let zoned_epoch_millis = epoch_millis.checked_add(time_zone_offset_millis)?;
+    let days = zoned_epoch_millis.div_euclid(86_400_000);
+    let millis_of_day = zoned_epoch_millis.rem_euclid(86_400_000);
     let (year, month, day) = civil_from_days(days)?;
     let hour = millis_of_day / 3_600_000;
     let minute = (millis_of_day % 3_600_000) / 60_000;
     let second = (millis_of_day % 60_000) / 1_000;
     let millis = millis_of_day % 1_000;
+    let suffix = date_histogram_time_zone_suffix(time_zone_offset_millis);
     Some(format!(
-        "{year:04}-{month:02}-{day:02}T{hour:02}:{minute:02}:{second:02}.{millis:03}Z"
+        "{year:04}-{month:02}-{day:02}T{hour:02}:{minute:02}:{second:02}.{millis:03}{suffix}"
     ))
+}
+
+fn date_histogram_time_zone_offset_millis(time_zone: Option<&str>) -> Option<i64> {
+    let Some(time_zone) = time_zone else {
+        return Some(0);
+    };
+    match time_zone {
+        "Z" | "UTC" | "+00:00" | "-00:00" => return Some(0),
+        _ => {}
+    }
+    let bytes = time_zone.as_bytes();
+    if bytes.len() != 6 || (bytes[0] != b'+' && bytes[0] != b'-') || bytes[3] != b':' {
+        return None;
+    }
+    let hours: i64 = time_zone.get(1..3)?.parse().ok()?;
+    let minutes: i64 = time_zone.get(4..6)?.parse().ok()?;
+    if hours > 23 || minutes > 59 {
+        return None;
+    }
+    let millis = hours
+        .checked_mul(3_600_000)?
+        .checked_add(minutes.checked_mul(60_000)?)?;
+    if bytes[0] == b'-' {
+        Some(-millis)
+    } else {
+        Some(millis)
+    }
+}
+
+fn date_histogram_time_zone_suffix(time_zone_offset_millis: i64) -> String {
+    if time_zone_offset_millis == 0 {
+        return "Z".to_string();
+    }
+    let sign = if time_zone_offset_millis < 0 {
+        '-'
+    } else {
+        '+'
+    };
+    let total_minutes = time_zone_offset_millis.abs() / 60_000;
+    let hours = total_minutes / 60;
+    let minutes = total_minutes % 60;
+    format!("{sign}{hours:02}:{minutes:02}")
 }
 
 #[derive(Clone)]
@@ -37444,6 +37501,7 @@ fn render_date_histogram_buckets(buckets: Vec<Value>, keyed: bool) -> Value {
 fn render_date_histogram_bucket_values_from_counts(
     counts: &std::collections::BTreeMap<i64, (String, u64)>,
     offset_millis: i64,
+    time_zone_offset_millis: i64,
     format: Option<&str>,
     min_doc_count: u64,
     extended_bounds: Option<&FallbackDateHistogramBounds>,
@@ -37455,7 +37513,14 @@ fn render_date_histogram_bucket_values_from_counts(
         if let Some(bound) = bounds
             .min
             .as_deref()
-            .and_then(|min| date_histogram_bucket_day_with_offset(min, offset_millis, format))
+            .and_then(|min| {
+                date_histogram_bucket_day_with_offset(
+                    min,
+                    offset_millis,
+                    time_zone_offset_millis,
+                    format,
+                )
+            })
             .map(|(key, _)| key)
         {
             min_bucket = Some(min_bucket.map_or(bound, |current| current.min(bound)));
@@ -37463,7 +37528,14 @@ fn render_date_histogram_bucket_values_from_counts(
         if let Some(bound) = bounds
             .max
             .as_deref()
-            .and_then(|max| date_histogram_bucket_day_with_offset(max, offset_millis, format))
+            .and_then(|max| {
+                date_histogram_bucket_day_with_offset(
+                    max,
+                    offset_millis,
+                    time_zone_offset_millis,
+                    format,
+                )
+            })
             .map(|(key, _)| key)
         {
             max_bucket = Some(max_bucket.map_or(bound, |current| current.max(bound)));
@@ -37478,7 +37550,13 @@ fn render_date_histogram_bucket_values_from_counts(
     let mut buckets = Vec::new();
     let mut key = min_bucket;
     while key <= max_bucket {
-        if !fallback_date_histogram_bounds_contain(hard_bounds, key, offset_millis, format) {
+        if !fallback_date_histogram_bounds_contain(
+            hard_bounds,
+            key,
+            offset_millis,
+            time_zone_offset_millis,
+            format,
+        ) {
             let Some(next) = key.checked_add(86_400_000) else {
                 break;
             };
@@ -37493,8 +37571,12 @@ fn render_date_histogram_bucket_values_from_counts(
             .map(|(key_as_string, doc_count)| (key_as_string.clone(), *doc_count))
             .unwrap_or_else(|| {
                 (
-                    date_histogram_key_as_string_from_epoch_millis(key, format)
-                        .unwrap_or_else(|| key.to_string()),
+                    date_histogram_key_as_string_from_epoch_millis(
+                        key,
+                        time_zone_offset_millis,
+                        format,
+                    )
+                    .unwrap_or_else(|| key.to_string()),
                     0,
                 )
             });
@@ -37528,6 +37610,7 @@ fn fallback_date_histogram_bounds_contain(
     bounds: Option<&FallbackDateHistogramBounds>,
     key: i64,
     offset_millis: i64,
+    time_zone_offset_millis: i64,
     format: Option<&str>,
 ) -> bool {
     let Some(bounds) = bounds else {
@@ -37536,7 +37619,14 @@ fn fallback_date_histogram_bounds_contain(
     if let Some(max) = bounds
         .max
         .as_deref()
-        .and_then(|max| date_histogram_bucket_day_with_offset(max, offset_millis, format))
+        .and_then(|max| {
+            date_histogram_bucket_day_with_offset(
+                max,
+                offset_millis,
+                time_zone_offset_millis,
+                format,
+            )
+        })
         .map(|(key, _)| key)
     {
         if key > max {
@@ -37546,7 +37636,14 @@ fn fallback_date_histogram_bounds_contain(
     if let Some(min) = bounds
         .min
         .as_deref()
-        .and_then(|min| date_histogram_bucket_day_with_offset(min, offset_millis, format))
+        .and_then(|min| {
+            date_histogram_bucket_day_with_offset(
+                min,
+                offset_millis,
+                time_zone_offset_millis,
+                format,
+            )
+        })
         .map(|(key, _)| key)
     {
         if key < min {

@@ -341,6 +341,7 @@ pub struct DateHistogramAggregation {
     pub missing: Option<String>,
     pub keyed: bool,
     pub offset_millis: i64,
+    pub time_zone: Option<String>,
     pub format: Option<String>,
     pub min_doc_count: u64,
     pub extended_bounds: Option<DateHistogramBounds>,
@@ -1068,6 +1069,23 @@ fn parse_date_histogram_aggregation(body: &Value) -> QueryDslResult<Aggregation>
         .map(parse_date_histogram_offset_millis)
         .transpose()?
         .unwrap_or(0);
+    let time_zone = object
+        .get("time_zone")
+        .map(|value| {
+            let time_zone = value.as_str().ok_or_else(|| QueryDslError::InvalidValue {
+                clause: "date_histogram".to_string(),
+                field: "time_zone".to_string(),
+                reason: "expected string value".to_string(),
+            })?;
+            parse_date_histogram_time_zone_offset_millis(time_zone).ok_or_else(|| {
+                QueryDslError::UnsupportedOption {
+                    clause: "date_histogram".to_string(),
+                    option: "time_zone".to_string(),
+                }
+            })?;
+            Ok(time_zone.to_string())
+        })
+        .transpose()?;
     let format = object
         .get("format")
         .map(|value| {
@@ -1112,7 +1130,7 @@ fn parse_date_histogram_aggregation(body: &Value) -> QueryDslResult<Aggregation>
     for option in object.keys() {
         match option.as_str() {
             "field" | "calendar_interval" | "fixed_interval" | "missing" | "keyed" | "offset"
-            | "format" | "min_doc_count" | "extended_bounds" | "hard_bounds" => {}
+            | "time_zone" | "format" | "min_doc_count" | "extended_bounds" | "hard_bounds" => {}
             _ => {
                 return Err(QueryDslError::UnsupportedOption {
                     clause: "date_histogram".to_string(),
@@ -1128,6 +1146,7 @@ fn parse_date_histogram_aggregation(body: &Value) -> QueryDslResult<Aggregation>
         missing,
         keyed,
         offset_millis,
+        time_zone,
         format,
         min_doc_count,
         extended_bounds,
@@ -1190,6 +1209,30 @@ fn parse_date_histogram_offset_millis(value: &Value) -> QueryDslResult<i64> {
             field: "offset".to_string(),
             reason: "expected integer millisecond or time value offset".to_string(),
         }),
+    }
+}
+
+fn parse_date_histogram_time_zone_offset_millis(value: &str) -> Option<i64> {
+    match value {
+        "Z" | "UTC" | "+00:00" | "-00:00" => return Some(0),
+        _ => {}
+    }
+    let bytes = value.as_bytes();
+    if bytes.len() != 6 || (bytes[0] != b'+' && bytes[0] != b'-') || bytes[3] != b':' {
+        return None;
+    }
+    let hours: i64 = value.get(1..3)?.parse().ok()?;
+    let minutes: i64 = value.get(4..6)?.parse().ok()?;
+    if hours > 23 || minutes > 59 {
+        return None;
+    }
+    let millis = hours
+        .checked_mul(3_600_000)?
+        .checked_add(minutes.checked_mul(60_000)?)?;
+    if bytes[0] == b'-' {
+        Some(-millis)
+    } else {
+        Some(millis)
     }
 }
 
@@ -6995,6 +7038,7 @@ mod tests {
                 missing: None,
                 keyed: false,
                 offset_millis: 0,
+                time_zone: None,
                 format: None,
                 min_doc_count: 0,
                 extended_bounds: None,
@@ -7025,6 +7069,7 @@ mod tests {
                 missing: None,
                 keyed: false,
                 offset_millis: 0,
+                time_zone: None,
                 format: None,
                 min_doc_count: 0,
                 extended_bounds: None,
@@ -7056,6 +7101,7 @@ mod tests {
                 missing: Some("2026-04-22T00:01:30Z".to_string()),
                 keyed: false,
                 offset_millis: 0,
+                time_zone: None,
                 format: None,
                 min_doc_count: 0,
                 extended_bounds: None,
@@ -7087,6 +7133,7 @@ mod tests {
                 missing: None,
                 keyed: true,
                 offset_millis: 0,
+                time_zone: None,
                 format: None,
                 min_doc_count: 0,
                 extended_bounds: None,
@@ -7118,6 +7165,39 @@ mod tests {
                 missing: None,
                 keyed: false,
                 offset_millis: 43_200_000,
+                time_zone: None,
+                format: None,
+                min_doc_count: 0,
+                extended_bounds: None,
+                hard_bounds: None,
+            })
+        );
+    }
+
+    #[test]
+    fn parses_date_histogram_aggregation_time_zone_option() {
+        let aggregations = parse_search_aggregations(&serde_json::json!({
+            "aggs": {
+                "recent_events": {
+                    "date_histogram": {
+                        "field": "event_time",
+                        "calendar_interval": "day",
+                        "time_zone": "+09:00"
+                    }
+                }
+            }
+        }))
+        .unwrap();
+
+        assert_eq!(
+            aggregations["recent_events"],
+            Aggregation::DateHistogram(DateHistogramAggregation {
+                field: "event_time".to_string(),
+                interval: "day".to_string(),
+                missing: None,
+                keyed: false,
+                offset_millis: 0,
+                time_zone: Some("+09:00".to_string()),
                 format: None,
                 min_doc_count: 0,
                 extended_bounds: None,
@@ -7152,6 +7232,7 @@ mod tests {
                 missing: None,
                 keyed: false,
                 offset_millis: 0,
+                time_zone: None,
                 format: None,
                 min_doc_count: 0,
                 extended_bounds: Some(DateHistogramBounds {
@@ -7189,6 +7270,7 @@ mod tests {
                 missing: None,
                 keyed: false,
                 offset_millis: 0,
+                time_zone: None,
                 format: None,
                 min_doc_count: 0,
                 extended_bounds: None,
@@ -7223,6 +7305,7 @@ mod tests {
                 missing: None,
                 keyed: false,
                 offset_millis: 0,
+                time_zone: None,
                 format: None,
                 min_doc_count: 1,
                 extended_bounds: None,
@@ -7254,6 +7337,7 @@ mod tests {
                 missing: None,
                 keyed: false,
                 offset_millis: 0,
+                time_zone: None,
                 format: Some("epoch_millis".to_string()),
                 min_doc_count: 0,
                 extended_bounds: None,
