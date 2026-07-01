@@ -423,6 +423,7 @@
         "geo_bounds_aggregation",
         "geo_centroid_aggregation",
         "global_aggregation",
+        "diversified_sampler_aggregation",
         "histogram_aggregation",
         "histogram_keyed_aggregation",
         "histogram_offset_aggregation",
