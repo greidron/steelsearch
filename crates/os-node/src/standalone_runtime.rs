@@ -28479,6 +28479,9 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
                     && key != "lenient"
                     && key != "auto_generate_synonyms_phrase_query"
                     && !(query_name == "simple_query_string" && key == "analyze_wildcard")
+                    && !(query_name == "simple_query_string" && key == "analyzer")
+                    && !(query_name == "simple_query_string" && key == "flags")
+                    && !(query_name == "simple_query_string" && key == "quote_field_suffix")
                     && !(query_name == "simple_query_string" && key == "fuzzy_prefix_length")
                     && !(query_name == "simple_query_string" && key == "fuzzy_max_expansions")
                     && !(query_name == "simple_query_string" && key == "fuzzy_transpositions")
@@ -28533,6 +28536,27 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
                 {
                     return Some(build_unsupported_search_response(
                         "unsupported simple_query_string analyze_wildcard",
+                    ));
+                }
+                if spec.get("analyzer").is_some_and(|value| !value.is_string()) {
+                    return Some(build_unsupported_search_response(
+                        "unsupported simple_query_string analyzer",
+                    ));
+                }
+                if spec
+                    .get("flags")
+                    .is_some_and(|value| !(value.is_string() || value.as_u64().is_some()))
+                {
+                    return Some(build_unsupported_search_response(
+                        "unsupported simple_query_string flags",
+                    ));
+                }
+                if spec
+                    .get("quote_field_suffix")
+                    .is_some_and(|value| !value.is_string())
+                {
+                    return Some(build_unsupported_search_response(
+                        "unsupported simple_query_string quote_field_suffix",
                     ));
                 }
                 if spec

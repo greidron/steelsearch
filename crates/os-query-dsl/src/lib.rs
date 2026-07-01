@@ -3349,6 +3349,17 @@ fn parse_simple_query_string(body: &Value) -> QueryDslResult<Query> {
         "auto_generate_synonyms_phrase_query",
     )?;
     validate_optional_bool_option(object, "simple_query_string", "analyze_wildcard")?;
+    validate_optional_string_option(object, "simple_query_string", "analyzer")?;
+    if let Some(value) = object.get("flags") {
+        if !(value.as_str().is_some() || value.as_u64().is_some()) {
+            return Err(QueryDslError::InvalidValue {
+                clause: "simple_query_string".to_string(),
+                field: "flags".to_string(),
+                reason: "must be a string or non-negative integer".to_string(),
+            });
+        }
+    }
+    validate_optional_string_option(object, "simple_query_string", "quote_field_suffix")?;
     let _fuzzy_prefix_length = object
         .get("fuzzy_prefix_length")
         .map(|value| parse_usize_option("simple_query_string", "fuzzy_prefix_length", value))
@@ -3369,6 +3380,9 @@ fn parse_simple_query_string(body: &Value) -> QueryDslResult<Query> {
             && option != "lenient"
             && option != "auto_generate_synonyms_phrase_query"
             && option != "analyze_wildcard"
+            && option != "analyzer"
+            && option != "flags"
+            && option != "quote_field_suffix"
             && option != "fuzzy_prefix_length"
             && option != "fuzzy_max_expansions"
             && option != "fuzzy_transpositions"
@@ -5611,6 +5625,9 @@ mod tests {
                 "lenient": true,
                 "auto_generate_synonyms_phrase_query": false,
                 "analyze_wildcard": false,
+                "analyzer": "standard",
+                "flags": "ALL",
+                "quote_field_suffix": ".exact",
                 "fuzzy_prefix_length": 1,
                 "fuzzy_max_expansions": 50,
                 "fuzzy_transpositions": true
