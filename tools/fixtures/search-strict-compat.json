@@ -8347,6 +8347,38 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "simple_query_string_common_options_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "simple_query_string": {
+            "query": "checkout payment",
+            "fields": [
+              "message",
+              "service"
+            ],
+            "boost": 1.25,
+            "_name": "named_simple_query_string",
+            "lenient": true,
+            "auto_generate_synonyms_phrase_query": false
+          }
+        },
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] simple_query_string accepts common OpenSearch options",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "simple_query_string_minimum_should_match_search",
       "area": "search",
       "method": "POST",

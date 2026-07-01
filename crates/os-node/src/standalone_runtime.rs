@@ -28474,17 +28474,43 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
                     && key != "fields"
                     && key != "default_operator"
                     && key != "minimum_should_match"
+                    && key != "boost"
+                    && key != "_name"
+                    && key != "lenient"
+                    && key != "auto_generate_synonyms_phrase_query"
                     && !(query_name == "query_string" && key == "tie_breaker")
-                    && !(query_name == "query_string" && key == "boost")
-                    && !(query_name == "query_string" && key == "_name")
-                    && !(query_name == "query_string" && key == "lenient")
-                    && !(query_name == "query_string"
-                        && key == "auto_generate_synonyms_phrase_query")
                 {
                     return Some(build_unsupported_search_response(&format!(
                         "unsupported {query_name} parameter [{key}]"
                     )));
                 }
+            }
+            if spec.get("boost").is_some_and(|value| {
+                !value
+                    .as_f64()
+                    .is_some_and(|number| number.is_finite() && number >= 0.0)
+            }) {
+                return Some(build_unsupported_search_response(&format!(
+                    "unsupported {query_name} boost"
+                )));
+            }
+            if spec.get("_name").is_some_and(|value| !value.is_string()) {
+                return Some(build_unsupported_search_response(&format!(
+                    "unsupported {query_name} _name"
+                )));
+            }
+            if spec.get("lenient").is_some_and(|value| !value.is_boolean()) {
+                return Some(build_unsupported_search_response(&format!(
+                    "unsupported {query_name} lenient"
+                )));
+            }
+            if spec
+                .get("auto_generate_synonyms_phrase_query")
+                .is_some_and(|value| !value.is_boolean())
+            {
+                return Some(build_unsupported_search_response(&format!(
+                    "unsupported {query_name} auto_generate_synonyms_phrase_query"
+                )));
             }
             if query_name == "query_string" {
                 if spec
@@ -28493,33 +28519,6 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
                 {
                     return Some(build_unsupported_search_response(
                         "unsupported query_string tie_breaker",
-                    ));
-                }
-                if spec.get("boost").is_some_and(|value| {
-                    !value
-                        .as_f64()
-                        .is_some_and(|number| number.is_finite() && number >= 0.0)
-                }) {
-                    return Some(build_unsupported_search_response(
-                        "unsupported query_string boost",
-                    ));
-                }
-                if spec.get("_name").is_some_and(|value| !value.is_string()) {
-                    return Some(build_unsupported_search_response(
-                        "unsupported query_string _name",
-                    ));
-                }
-                if spec.get("lenient").is_some_and(|value| !value.is_boolean()) {
-                    return Some(build_unsupported_search_response(
-                        "unsupported query_string lenient",
-                    ));
-                }
-                if spec
-                    .get("auto_generate_synonyms_phrase_query")
-                    .is_some_and(|value| !value.is_boolean())
-                {
-                    return Some(build_unsupported_search_response(
-                        "unsupported query_string auto_generate_synonyms_phrase_query",
                     ));
                 }
             }

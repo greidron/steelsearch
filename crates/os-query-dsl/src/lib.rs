@@ -3337,12 +3337,27 @@ fn parse_simple_query_string(body: &Value) -> QueryDslResult<Query> {
             })
         })
         .transpose()?;
+    let _boost = object
+        .get("boost")
+        .map(|value| parse_non_negative_f64_option("simple_query_string", "boost", value))
+        .transpose()?;
+    validate_optional_string_option(object, "simple_query_string", "_name")?;
+    validate_optional_bool_option(object, "simple_query_string", "lenient")?;
+    validate_optional_bool_option(
+        object,
+        "simple_query_string",
+        "auto_generate_synonyms_phrase_query",
+    )?;
 
     for option in object.keys() {
         if option != "query"
             && option != "fields"
             && option != "default_operator"
             && option != "minimum_should_match"
+            && option != "boost"
+            && option != "_name"
+            && option != "lenient"
+            && option != "auto_generate_synonyms_phrase_query"
         {
             return Err(QueryDslError::UnsupportedOption {
                 clause: "simple_query_string".to_string(),
@@ -5529,7 +5544,11 @@ mod tests {
                 "query": "alpha beta gamma",
                 "fields": ["title"],
                 "default_operator": "AND",
-                "minimum_should_match": "75%"
+                "minimum_should_match": "75%",
+                "boost": 1.25,
+                "_name": "named_simple_query_string",
+                "lenient": true,
+                "auto_generate_synonyms_phrase_query": false
             }
         }))
         .unwrap();
