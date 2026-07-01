@@ -12358,6 +12358,39 @@
       "description": "[lexical] span near query search"
     },
     {
+      "name": "span_not_dist_query_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "span_not": {
+            "include": {
+              "span_term": {
+                "message": "checkout"
+              }
+            },
+            "exclude": {
+              "span_term": {
+                "message": "timeout"
+              }
+            },
+            "dist": 10
+          }
+        },
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] span not dist query search"
+    },
+    {
       "name": "span_or_query_search",
       "area": "search",
       "method": "POST",

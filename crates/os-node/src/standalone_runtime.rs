@@ -27689,6 +27689,7 @@ fn validate_search_query_body(query: &Value) -> Option<RestResponse> {
         | "span_or"
         | "span_first"
         | "span_near"
+        | "span_not"
         | "span_multi"
         | "field_masking_span"
         | "more_like_this"
@@ -28865,6 +28866,46 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
             ));
         }
         if let Some(response) = validate_search_query_body(inner_query) {
+            return Some(response);
+        }
+    }
+    if let Some(spec) = query.get("span_not").and_then(Value::as_object) {
+        let Some(include_query) = spec.get("include") else {
+            return Some(build_unsupported_search_response(
+                "unsupported span_not query shape",
+            ));
+        };
+        let Some(exclude_query) = spec.get("exclude") else {
+            return Some(build_unsupported_search_response(
+                "unsupported span_not query shape",
+            ));
+        };
+        if spec.contains_key("dist") && (spec.contains_key("pre") || spec.contains_key("post")) {
+            return Some(build_unsupported_search_response(
+                "unsupported span_not parameter",
+            ));
+        }
+        if spec.keys().any(|key| {
+            !matches!(
+                key.as_str(),
+                "include" | "exclude" | "dist" | "pre" | "post"
+            )
+        }) {
+            return Some(build_unsupported_search_response(
+                "unsupported span_not parameter",
+            ));
+        }
+        for key in ["dist", "pre", "post"] {
+            if spec.get(key).is_some_and(|value| value.as_u64().is_none()) {
+                return Some(build_unsupported_search_response(
+                    "unsupported span_not parameter",
+                ));
+            }
+        }
+        if let Some(response) = validate_search_query_body(include_query) {
+            return Some(response);
+        }
+        if let Some(response) = validate_search_query_body(exclude_query) {
             return Some(response);
         }
     }
@@ -31176,6 +31217,10 @@ fn evaluate_search_query_source_with_mappings(
         let matched = evaluate_span_first_query(source, span_first)?;
         return Some((matched, if matched { 1.0 } else { 0.0 }));
     }
+    if let Some(span_not) = query.get("span_not").and_then(Value::as_object) {
+        let matched = evaluate_span_not_query(source, span_not)?;
+        return Some((matched, if matched { 1.0 } else { 0.0 }));
+    }
     if let Some(span_near) = query.get("span_near").and_then(Value::as_object) {
         let matched = evaluate_span_near_query(source, span_near)?;
         return Some((matched, if matched { 1.0 } else { 0.0 }));
@@ -33449,6 +33494,103 @@ fn span_first_term_matches(field_value: &Value, expected: &Value, end: usize) ->
     }
 }
 
+fn evaluate_span_not_query(
+    source: &Value,
+    span_not: &serde_json::Map<String, Value>,
+) -> Option<bool> {
+    let include = span_not.get("include")?;
+    let exclude = span_not.get("exclude")?;
+    let (pre, post) = span_not_distance_window(span_not);
+    let include_ranges = span_query_position_ranges(source, include)?;
+    if include_ranges.ranges.is_empty() {
+        return Some(false);
+    }
+    let Some(exclude_ranges) = span_query_position_ranges(source, exclude) else {
+        return Some(true);
+    };
+    if include_ranges.field != exclude_ranges.field {
+        return Some(true);
+    }
+    Some(include_ranges.ranges.iter().any(|include_range| {
+        !exclude_ranges.ranges.iter().any(|exclude_range| {
+            span_ranges_overlap_with_window(include_range, exclude_range, pre, post)
+        })
+    }))
+}
+
+fn span_not_distance_window(span_not: &serde_json::Map<String, Value>) -> (usize, usize) {
+    if let Some(distance) = span_not.get("dist").and_then(Value::as_u64) {
+        let distance = distance as usize;
+        return (distance, distance);
+    }
+    (
+        span_not.get("pre").and_then(Value::as_u64).unwrap_or(0) as usize,
+        span_not.get("post").and_then(Value::as_u64).unwrap_or(0) as usize,
+    )
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct RuntimeSpanRanges {
+    field: String,
+    ranges: Vec<(usize, usize)>,
+}
+
+fn span_ranges_overlap_with_window(
+    include: &(usize, usize),
+    exclude: &(usize, usize),
+    pre: usize,
+    post: usize,
+) -> bool {
+    let include_start = include.0.saturating_sub(pre);
+    let include_end = include.1.saturating_add(post);
+    exclude.0 <= include_end && exclude.1 >= include_start
+}
+
+fn span_query_position_ranges(source: &Value, query: &Value) -> Option<RuntimeSpanRanges> {
+    let object = query.as_object()?;
+    if let Some(span_term) = object.get("span_term").and_then(Value::as_object) {
+        let (field, expected) = span_term.iter().next()?;
+        let token = expected.as_str()?.to_ascii_lowercase();
+        let tokens = tokenize_search_text(lookup_query_field_value(source, field)?.as_str()?);
+        let ranges = tokens
+            .iter()
+            .enumerate()
+            .filter_map(|(index, candidate)| (candidate == &token).then_some((index, index)))
+            .collect::<Vec<_>>();
+        return Some(RuntimeSpanRanges {
+            field: field.clone(),
+            ranges,
+        });
+    }
+    if let Some(span_first) = object.get("span_first").and_then(Value::as_object) {
+        let match_query = span_first.get("match")?;
+        let end = span_first.get("end")?.as_u64()? as usize;
+        let mut ranges = span_query_position_ranges(source, match_query)?;
+        ranges.ranges.retain(|(_, range_end)| *range_end < end);
+        return Some(ranges);
+    }
+    if let Some(span_or) = object.get("span_or").and_then(Value::as_object) {
+        let clauses = span_or.get("clauses")?.as_array()?;
+        let mut output: Option<RuntimeSpanRanges> = None;
+        for clause in clauses {
+            let ranges = span_query_position_ranges(source, clause)?;
+            match output.as_mut() {
+                Some(existing) if existing.field == ranges.field => {
+                    existing.ranges.extend(ranges.ranges);
+                }
+                Some(_) => return None,
+                None => output = Some(ranges),
+            }
+        }
+        if let Some(existing) = output.as_mut() {
+            existing.ranges.sort_unstable();
+            existing.ranges.dedup();
+        }
+        return output;
+    }
+    None
+}
+
 fn evaluate_span_near_query(
     source: &Value,
     span_near: &serde_json::Map<String, Value>,
@@ -33618,6 +33760,9 @@ fn evaluate_span_like_clause(source: &Value, clause: &Value) -> Option<bool> {
     }
     if let Some(span_first) = object.get("span_first").and_then(Value::as_object) {
         return evaluate_span_first_query(source, span_first);
+    }
+    if let Some(span_not) = object.get("span_not").and_then(Value::as_object) {
+        return evaluate_span_not_query(source, span_not);
     }
     None
 }
@@ -61870,6 +62015,54 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(response.body["hits"]["total"]["value"], 2);
         assert_eq!(response.body["hits"]["hits"][0]["_id"], "doc-1");
         assert_eq!(response.body["hits"]["hits"][1]["_id"], "doc-3");
+    }
+
+    #[test]
+    fn search_routes_support_span_not_dist_queries() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(RestMethod::Put, "/logs-span-not-000001"))
+                .status,
+            200
+        );
+        for (id, message) in [
+            ("doc-1", "checkout service accepted payment"),
+            ("doc-2", "checkout service payment timeout"),
+            ("doc-3", "catalog service payment timeout"),
+            ("doc-4", "checkout split nested tuple guard"),
+        ] {
+            assert_eq!(
+                node.handle_rest_request(
+                    RestRequest::new(RestMethod::Put, &format!("/logs-span-not-000001/_doc/{id}"))
+                        .with_json_body(serde_json::json!({ "message": message })),
+                )
+                .status,
+                201
+            );
+        }
+
+        let response = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-span-not-000001/_search").with_json_body(
+                serde_json::json!({
+                    "query": {
+                        "span_not": {
+                            "include": { "span_term": { "message": "checkout" } },
+                            "exclude": { "span_term": { "message": "timeout" } },
+                            "dist": 10
+                        }
+                    },
+                    "sort": [{ "_id": { "order": "asc" } }]
+                }),
+            ),
+        );
+        assert_eq!(response.status, 200);
+        assert_eq!(response.body["hits"]["total"]["value"], 2);
+        assert_eq!(response.body["hits"]["hits"][0]["_id"], "doc-1");
+        assert_eq!(response.body["hits"]["hits"][1]["_id"], "doc-4");
     }
 
     #[test]
