@@ -3417,6 +3417,32 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "distance_feature_query_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "distance_feature": {
+            "field": "ts",
+            "origin": "2026-04-22T00:00:00Z",
+            "pivot": "5m"
+          }
+        },
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] distance_feature query matches documents with date field values",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "source_filtering_search",
       "area": "search",
       "method": "POST",

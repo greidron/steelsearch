@@ -104,6 +104,7 @@
         "geo_bounding_box_query_search",
         "geo_polygon_query_search",
         "wrapper_query_search",
+        "distance_feature_query_search",
         "expand_wildcards_open_search",
         "explain_search",
         "field_masking_span_query_search",
