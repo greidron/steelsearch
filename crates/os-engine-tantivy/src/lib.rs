@@ -33768,6 +33768,7 @@ fn collect_plugin_aggregation_from_documents(
                     field,
                     size: usize::MAX,
                     missing: None,
+                    min_doc_count: 1,
                 };
                 let mut value = collect_terms_aggregation_from_documents(documents, &terms);
                 if let Some(object) = value.as_object_mut() {
@@ -33829,6 +33830,7 @@ fn collect_plugin_aggregation_from_documents(
                     field,
                     size: usize::MAX,
                     missing: None,
+                    min_doc_count: 1,
                 };
                 let mut value = collect_terms_aggregation_from_documents(documents, &terms);
                 if let Some(object) = value.as_object_mut() {
@@ -35471,6 +35473,7 @@ fn collect_plugin_aggregation_from_hits_with_input_order(
                     field,
                     size: usize::MAX,
                     missing: None,
+                    min_doc_count: 1,
                 };
                 let mut value = collect_terms_aggregation(hits, &terms);
                 if let Some(object) = value.as_object_mut() {
@@ -35532,6 +35535,7 @@ fn collect_plugin_aggregation_from_hits_with_input_order(
                     field,
                     size: usize::MAX,
                     missing: None,
+                    min_doc_count: 1,
                 };
                 let mut value = collect_terms_aggregation(hits, &terms);
                 if let Some(object) = value.as_object_mut() {
@@ -39167,6 +39171,7 @@ fn collect_terms_aggregation(hits: &[SearchHit], terms: &os_query_dsl::TermsAggr
 
     let bucket_values = buckets
         .into_iter()
+        .filter(|(_, doc_count)| *doc_count >= terms.min_doc_count)
         .map(|(key, doc_count)| {
             serde_json::json!({
                 "key": key,
@@ -39225,6 +39230,7 @@ fn collect_terms_aggregation_from_documents(
 
     let bucket_values = buckets
         .into_iter()
+        .filter(|(_, doc_count)| *doc_count >= terms.min_doc_count)
         .map(|(key, doc_count)| {
             let mut bucket = serde_json::Map::with_capacity(2);
             bucket.insert("key".to_string(), Value::String(key));
@@ -39275,6 +39281,7 @@ fn collect_terms_aggregation_from_documents_generic(
 
     let bucket_values = buckets
         .into_iter()
+        .filter(|(_, doc_count)| *doc_count >= terms.min_doc_count)
         .map(|(key, doc_count)| {
             serde_json::json!({
                 "key": key,
@@ -141628,6 +141635,81 @@ mod tests {
                         {
                             "key": "worker",
                             "doc_count": 1
+                        }
+                    ]
+                }
+            })
+        );
+    }
+
+    #[test]
+    fn terms_aggregation_min_doc_count_option_preserves_opensearch_shape() {
+        let engine = TantivyEngine::default();
+        engine
+            .create_index(CreateIndexRequest {
+                index: "logs-000001".to_string(),
+                settings: serde_json::json!({}),
+                mappings: serde_json::json!({
+                    "properties": {
+                        "service": { "type": "keyword" }
+                    }
+                }),
+            })
+            .unwrap();
+
+        for (id, service) in [("1", "api"), ("2", "api"), ("3", "worker")] {
+            engine
+                .index_document(IndexDocumentRequest {
+                    index: "logs-000001".to_string(),
+                    id: id.to_string(),
+                    source: serde_json::json!({
+                        "service": service
+                    }),
+                })
+                .unwrap();
+        }
+        engine
+            .refresh(RefreshRequest {
+                indices: vec!["logs-000001".to_string()],
+            })
+            .unwrap();
+
+        let body = engine
+            .search(SearchRequest {
+                indices: vec!["logs-000001".to_string()],
+                query: serde_json::json!({ "match_all": {} }),
+                aggregations: serde_json::json!({
+                    "by_service": {
+                        "terms": {
+                            "field": "service",
+                            "min_doc_count": 2
+                        }
+                    }
+                }),
+                sort: Vec::new(),
+                from: 0,
+                size: 0,
+                stored_fields: None,
+                source_fields: None,
+                source_filter: None,
+                source_includes: None,
+                source_include: None,
+                source_excludes: None,
+                source_exclude: None,
+                highlight: None,
+                explain: false,
+            })
+            .unwrap()
+            .to_opensearch_body(0);
+
+        assert_eq!(
+            body["aggregations"],
+            serde_json::json!({
+                "by_service": {
+                    "buckets": [
+                        {
+                            "key": "api",
+                            "doc_count": 2
                         }
                     ]
                 }

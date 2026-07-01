@@ -35598,6 +35598,17 @@ fn build_search_aggregations(
             let missing = terms
                 .get("missing")
                 .filter(|value| !value.is_array() && !value.is_object() && !value.is_null());
+            let min_doc_count = terms
+                .get("min_doc_count")
+                .map(|value| {
+                    value.as_u64().ok_or_else(|| {
+                        build_unsupported_search_response(
+                            "unsupported aggregation option [terms.min_doc_count]",
+                        )
+                    })
+                })
+                .transpose()?
+                .unwrap_or(1);
             let mut counts = std::collections::BTreeMap::new();
             for hit in hits {
                 let key = hit
@@ -35611,6 +35622,7 @@ fn build_search_aggregations(
                 }
             }
             let mut buckets: Vec<(String, u64)> = counts.into_iter().collect();
+            buckets.retain(|(_, doc_count)| *doc_count >= min_doc_count);
             let order = terms.get("order").and_then(Value::as_object);
             let order_key = order
                 .and_then(|value| value.iter().next())

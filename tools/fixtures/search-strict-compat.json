@@ -315,6 +315,7 @@
     ],
     "aggregation_requests": [
       "terms_aggregation",
+      "terms_min_doc_count_aggregation",
       "terms_missing_aggregation",
       "date_histogram_keyed_aggregation",
       "date_histogram_offset_aggregation",
@@ -11183,6 +11184,27 @@
       "extract": "terms_aggregation",
       "family": "aggregation",
       "description": "[aggregation] terms aggregation",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "terms_min_doc_count_aggregation",
+      "area": "aggregation",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "by_service": {
+            "terms": {
+              "field": "service",
+              "min_doc_count": 2
+            }
+          }
+        }
+      },
+      "extract": "aggregations",
+      "family": "aggregation",
+      "description": "[aggregation] terms min_doc_count aggregation",
       "strict_source_parity_required": true
     },
     {

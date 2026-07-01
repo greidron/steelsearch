@@ -329,6 +329,7 @@ pub struct TermsAggregation {
     pub field: String,
     pub size: usize,
     pub missing: Option<Value>,
+    pub min_doc_count: u64,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -928,12 +929,20 @@ fn parse_terms_aggregation(body: &Value) -> QueryDslResult<Aggregation> {
         .to_string();
     let mut size = 10;
     let mut missing = None;
+    let mut min_doc_count = 1;
 
     for (option, value) in object {
         match option.as_str() {
             "field" => {}
             "size" => size = parse_usize_option("terms", "size", value)?,
             "missing" if value.as_str().is_some() => missing = Some(value.clone()),
+            "min_doc_count" => {
+                min_doc_count = value.as_u64().ok_or_else(|| QueryDslError::InvalidValue {
+                    clause: "terms".to_string(),
+                    field: "min_doc_count".to_string(),
+                    reason: "expected non-negative integer value".to_string(),
+                })?;
+            }
             _ => {
                 return Err(QueryDslError::UnsupportedOption {
                     clause: "terms".to_string(),
@@ -947,6 +956,7 @@ fn parse_terms_aggregation(body: &Value) -> QueryDslResult<Aggregation> {
         field,
         size,
         missing,
+        min_doc_count,
     }))
 }
 
@@ -6687,7 +6697,8 @@ mod tests {
             Aggregation::Terms(TermsAggregation {
                 field: "service".to_string(),
                 size: 5,
-                missing: None
+                missing: None,
+                min_doc_count: 1
             })
         );
     }
@@ -6712,7 +6723,33 @@ mod tests {
             Aggregation::Terms(TermsAggregation {
                 field: "service_optional".to_string(),
                 size: 5,
-                missing: Some(Value::String("unknown".to_string()))
+                missing: Some(Value::String("unknown".to_string())),
+                min_doc_count: 1
+            })
+        );
+    }
+
+    #[test]
+    fn parses_terms_aggregation_min_doc_count_option() {
+        let aggregations = parse_search_aggregations(&serde_json::json!({
+            "aggs": {
+                "by_service": {
+                    "terms": {
+                        "field": "service",
+                        "min_doc_count": 2
+                    }
+                }
+            }
+        }))
+        .unwrap();
+
+        assert_eq!(
+            aggregations["by_service"],
+            Aggregation::Terms(TermsAggregation {
+                field: "service".to_string(),
+                size: 10,
+                missing: None,
+                min_doc_count: 2
             })
         );
     }
@@ -6778,7 +6815,8 @@ mod tests {
             Aggregation::Terms(TermsAggregation {
                 field: "level".to_string(),
                 size: 10,
-                missing: None
+                missing: None,
+                min_doc_count: 1
             })
         );
     }
