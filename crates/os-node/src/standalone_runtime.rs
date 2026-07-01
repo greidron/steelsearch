@@ -36807,9 +36807,11 @@ fn build_search_aggregations(
                     field,
                     size,
                     min_doc_count,
+                    significant_terms.get("include"),
+                    significant_terms.get("exclude"),
                     hits,
                     &background_hits,
-                ),
+                )?,
             );
             continue;
         }
@@ -38761,9 +38763,11 @@ fn build_fallback_significant_terms_aggregation(
     field: &str,
     size: usize,
     min_doc_count: u64,
+    include: Option<&Value>,
+    exclude: Option<&Value>,
     hits: &[Value],
     background_hits: &[&Value],
-) -> Value {
+) -> Result<Value, RestResponse> {
     let mut buckets = std::collections::BTreeMap::<String, (Value, u64)>::new();
     let mut background_counts = std::collections::BTreeMap::<String, u64>::new();
     for hit in background_hits {
@@ -38772,6 +38776,9 @@ fn build_fallback_significant_terms_aggregation(
             .and_then(|source| lookup_query_field_value(source, field))
         {
             for value in fallback_scalar_bucket_values(value) {
+                if !aggregation_term_is_allowed_by_include_exclude(&value, include, exclude)? {
+                    continue;
+                }
                 *background_counts
                     .entry(fallback_bucket_sort_key(&value))
                     .or_insert(0) += 1;
@@ -38784,6 +38791,9 @@ fn build_fallback_significant_terms_aggregation(
             .and_then(|source| lookup_query_field_value(source, field))
         {
             for value in fallback_scalar_bucket_values(value) {
+                if !aggregation_term_is_allowed_by_include_exclude(&value, include, exclude)? {
+                    continue;
+                }
                 let bucket_key = fallback_bucket_sort_key(&value);
                 let (_, count) = buckets.entry(bucket_key).or_insert((value, 0));
                 *count += 1;
@@ -38818,11 +38828,11 @@ fn build_fallback_significant_terms_aggregation(
         })
     });
     buckets.truncate(size);
-    serde_json::json!({
+    Ok(serde_json::json!({
         "doc_count": total_doc_count,
         "bg_count": total_bg_count,
         "buckets": buckets
-    })
+    }))
 }
 
 fn build_fallback_significant_text_aggregation(
@@ -63064,6 +63074,37 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             significant_terms_background.body["aggregations"]["sig"]["buckets"][0]["doc_count"],
             3
+        );
+
+        let significant_terms_include_exclude = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-significant-terms-000001/_search")
+                .with_json_body(serde_json::json!({
+                    "size": 0,
+                    "aggs": {
+                        "sig": {
+                            "significant_terms": {
+                                "field": "service",
+                                "include": "check.*",
+                                "exclude": "catalog",
+                                "min_doc_count": 1,
+                                "shard_min_doc_count": 1,
+                                "size": 10
+                            }
+                        }
+                    }
+                })),
+        );
+        assert_eq!(significant_terms_include_exclude.status, 200);
+        assert_eq!(
+            significant_terms_include_exclude.body["aggregations"]["sig"]["buckets"],
+            serde_json::json!([
+                {
+                    "key": "checkout",
+                    "doc_count": 3,
+                    "bg_count": 3,
+                    "score": 3.0
+                }
+            ])
         );
 
         let significant_text = node.handle_rest_request(

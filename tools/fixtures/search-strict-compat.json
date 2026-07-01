@@ -11410,6 +11410,34 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "significant_terms_include_exclude_aggregation",
+      "area": "aggregation",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "size": 0,
+        "query": {
+          "match_all": {}
+        },
+        "aggs": {
+          "significant_services": {
+            "significant_terms": {
+              "field": "service",
+              "include": "check.*",
+              "exclude": "catalog",
+              "min_doc_count": 1,
+              "shard_min_doc_count": 1,
+              "size": 10
+            }
+          }
+        }
+      },
+      "extract": "aggregations",
+      "family": "aggregation",
+      "description": "[aggregation] significant terms include/exclude aggregation",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "significant_text_aggregation",
       "area": "aggregation",
       "method": "POST",
