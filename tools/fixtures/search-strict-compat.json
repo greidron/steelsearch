@@ -10156,6 +10156,33 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "sampler_aggregation",
+      "area": "aggregation",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "sampled": {
+            "sampler": {
+              "shard_size": 10
+            },
+            "aggs": {
+              "sampled_services": {
+                "terms": {
+                  "field": "service"
+                }
+              }
+            }
+          }
+        }
+      },
+      "extract": "aggregations",
+      "family": "aggregation",
+      "description": "[aggregation] sampler aggregation",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "stats_metric_aggregation",
       "area": "aggregation",
       "method": "POST",
