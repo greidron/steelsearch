@@ -16231,23 +16231,16 @@ fn matches_intervals_spec(candidate: &str, spec: &Value) -> bool {
         let Some(query_text) = match_spec.get("query").and_then(Value::as_str) else {
             return false;
         };
-        let ordered = match_spec
-            .get("ordered")
-            .and_then(Value::as_bool)
-            .unwrap_or(true);
-        let max_gaps = match_spec
-            .get("max_gaps")
-            .and_then(Value::as_u64)
-            .unwrap_or(0) as usize;
+        let Some((ordered, max_gaps)) = interval_ordering_options(match_spec) else {
+            return false;
+        };
         let terms = tokenize_phrase_text(query_text);
         return tokens_match_interval_terms(&tokens, &terms, ordered, max_gaps);
     }
     if let Some(all_of) = interval_object.get("all_of").and_then(Value::as_object) {
-        let ordered = all_of
-            .get("ordered")
-            .and_then(Value::as_bool)
-            .unwrap_or(true);
-        let max_gaps = all_of.get("max_gaps").and_then(Value::as_u64).unwrap_or(0) as usize;
+        let Some((ordered, max_gaps)) = interval_ordering_options(all_of) else {
+            return false;
+        };
         let mut terms = Vec::new();
         let Some(intervals) = all_of.get("intervals").and_then(Value::as_array) else {
             return false;
@@ -16276,14 +16269,9 @@ fn matches_intervals_spec(candidate: &str, spec: &Value) -> bool {
             let Some(query_text) = match_spec.get("query").and_then(Value::as_str) else {
                 return false;
             };
-            let ordered = match_spec
-                .get("ordered")
-                .and_then(Value::as_bool)
-                .unwrap_or(true);
-            let max_gaps = match_spec
-                .get("max_gaps")
-                .and_then(Value::as_u64)
-                .unwrap_or(0) as usize;
+            let Some((ordered, max_gaps)) = interval_ordering_options(match_spec) else {
+                return false;
+            };
             let terms = tokenize_phrase_text(query_text);
             tokens_match_interval_terms(&tokens, &terms, ordered, max_gaps)
         });
@@ -16291,11 +16279,29 @@ fn matches_intervals_spec(candidate: &str, spec: &Value) -> bool {
     false
 }
 
+fn interval_ordering_options(
+    object: &serde_json::Map<String, Value>,
+) -> Option<(bool, Option<usize>)> {
+    let ordered = if let Some(ordered) = object.get("ordered") {
+        ordered.as_bool()?
+    } else if let Some(mode) = object.get("mode").and_then(Value::as_str) {
+        mode.eq_ignore_ascii_case("ordered")
+    } else {
+        false
+    };
+    let max_gaps = match object.get("max_gaps").and_then(Value::as_i64) {
+        Some(-1) | None => None,
+        Some(value) if value >= 0 => Some(value as usize),
+        _ => return None,
+    };
+    Some((ordered, max_gaps))
+}
+
 fn tokens_match_interval_terms(
     candidate_tokens: &[String],
     expected_terms: &[String],
     ordered: bool,
-    max_gaps: usize,
+    max_gaps: Option<usize>,
 ) -> bool {
     if expected_terms.is_empty() {
         return false;
@@ -16316,7 +16322,7 @@ fn tokens_match_interval_terms(
             };
             if let Some(previous) = previous_position {
                 let gap = position.saturating_sub(previous + 1);
-                if gap > max_gaps {
+                if max_gaps.is_some_and(|max_gaps| gap > max_gaps) {
                     return false;
                 }
             }
@@ -152386,8 +152392,8 @@ mod tests {
                 "message": {
                     "any_of": {
                         "intervals": [
-                            { "match": { "query": "payment service" } },
-                            { "match": { "query": "service checkout" } }
+                            { "match": { "query": "payment service", "ordered": true, "max_gaps": 0 } },
+                            { "match": { "query": "service checkout", "ordered": true, "max_gaps": 0 } }
                         ]
                     }
                 }

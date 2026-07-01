@@ -4656,29 +4656,22 @@ fn intervals_spec_is_supported(spec: &Value) -> bool {
         return false;
     };
     if let Some(match_spec) = object.get("match").and_then(Value::as_object) {
-        return match_spec
-            .get("query")
-            .and_then(Value::as_str)
-            .is_some_and(|query| !query.is_empty())
-            && match_spec
-                .keys()
-                .all(|key| key == "query" || key == "ordered" || key == "max_gaps");
+        return interval_match_spec_is_supported(match_spec);
     }
     if let Some(all_of) = object.get("all_of").and_then(Value::as_object) {
         let Some(intervals) = all_of.get("intervals").and_then(Value::as_array) else {
             return false;
         };
         return !intervals.is_empty()
-            && all_of
-                .keys()
-                .all(|key| key == "intervals" || key == "ordered" || key == "max_gaps")
+            && all_of.keys().all(|key| {
+                key == "intervals" || key == "ordered" || key == "mode" || key == "max_gaps"
+            })
+            && interval_ordering_options_are_supported(all_of)
             && intervals.iter().all(|interval| {
                 interval
                     .get("match")
                     .and_then(Value::as_object)
-                    .and_then(|match_spec| match_spec.get("query"))
-                    .and_then(Value::as_str)
-                    .is_some_and(|query| !query.is_empty())
+                    .is_some_and(interval_match_spec_is_supported)
             });
     }
     if let Some(any_of) = object.get("any_of").and_then(Value::as_object) {
@@ -4691,12 +4684,35 @@ fn intervals_spec_is_supported(spec: &Value) -> bool {
                 interval
                     .get("match")
                     .and_then(Value::as_object)
-                    .and_then(|match_spec| match_spec.get("query"))
-                    .and_then(Value::as_str)
-                    .is_some_and(|query| !query.is_empty())
+                    .is_some_and(interval_match_spec_is_supported)
             });
     }
     false
+}
+
+fn interval_match_spec_is_supported(match_spec: &serde_json::Map<String, Value>) -> bool {
+    match_spec
+        .get("query")
+        .and_then(Value::as_str)
+        .is_some_and(|query| !query.is_empty())
+        && match_spec
+            .keys()
+            .all(|key| key == "query" || key == "ordered" || key == "mode" || key == "max_gaps")
+        && interval_ordering_options_are_supported(match_spec)
+}
+
+fn interval_ordering_options_are_supported(object: &serde_json::Map<String, Value>) -> bool {
+    object.get("ordered").map_or(true, Value::is_boolean)
+        && object.get("mode").map_or(true, |mode| {
+            mode.as_str().is_some_and(|mode| {
+                mode.eq_ignore_ascii_case("ordered")
+                    || mode.eq_ignore_ascii_case("unordered")
+                    || mode.eq_ignore_ascii_case("unordered_no_overlap")
+            })
+        })
+        && object.get("max_gaps").map_or(true, |max_gaps| {
+            max_gaps.as_i64().is_some_and(|max_gaps| max_gaps >= -1)
+        })
 }
 
 fn parse_string_multiterm(
@@ -7330,6 +7346,32 @@ mod tests {
                             { "match": { "query": "payment timeout" } },
                             { "match": { "query": "catalog service" } }
                         ]
+                    }
+                }),
+            }
+        );
+
+        let mode = parse_query(&serde_json::json!({
+            "intervals": {
+                "message": {
+                    "match": {
+                        "query": "timeout payment",
+                        "mode": "UNORDERED",
+                        "max_gaps": -1
+                    }
+                }
+            }
+        }))
+        .unwrap();
+        assert_eq!(
+            mode,
+            Query::Intervals {
+                field: "message".to_string(),
+                spec: serde_json::json!({
+                    "match": {
+                        "query": "timeout payment",
+                        "mode": "UNORDERED",
+                        "max_gaps": -1
                     }
                 }),
             }

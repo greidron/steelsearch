@@ -30000,22 +30000,9 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
             ));
         };
         if let Some(match_spec) = interval_object.get("match").and_then(Value::as_object) {
-            let Some(query_text) = match_spec.get("query").and_then(Value::as_str) else {
+            if !interval_match_spec_is_supported(match_spec) {
                 return Some(build_unsupported_search_response(
                     "unsupported intervals match",
-                ));
-            };
-            if query_text.is_empty() {
-                return Some(build_unsupported_search_response(
-                    "unsupported intervals match",
-                ));
-            }
-            if match_spec
-                .keys()
-                .any(|key| key != "query" && key != "ordered" && key != "max_gaps")
-            {
-                return Some(build_unsupported_search_response(
-                    "unsupported intervals match parameter",
                 ));
             }
         } else if let Some(all_of) = interval_object.get("all_of").and_then(Value::as_object) {
@@ -30029,9 +30016,9 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
                     "unsupported intervals all_of shape",
                 ));
             }
-            if all_of
-                .keys()
-                .any(|key| key != "intervals" && key != "ordered" && key != "max_gaps")
+            if all_of.keys().any(|key| {
+                key != "intervals" && key != "ordered" && key != "mode" && key != "max_gaps"
+            }) || !interval_ordering_options_are_supported(all_of)
             {
                 return Some(build_unsupported_search_response(
                     "unsupported intervals all_of parameter",
@@ -30043,12 +30030,7 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
                         "unsupported intervals all_of interval",
                     ));
                 };
-                if match_spec
-                    .get("query")
-                    .and_then(Value::as_str)
-                    .map(str::is_empty)
-                    .unwrap_or(true)
-                {
+                if !interval_match_spec_is_supported(match_spec) {
                     return Some(build_unsupported_search_response(
                         "unsupported intervals all_of interval",
                     ));
@@ -30076,12 +30058,7 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
                         "unsupported intervals any_of interval",
                     ));
                 };
-                if match_spec
-                    .get("query")
-                    .and_then(Value::as_str)
-                    .map(str::is_empty)
-                    .unwrap_or(true)
-                {
+                if !interval_match_spec_is_supported(match_spec) {
                     return Some(build_unsupported_search_response(
                         "unsupported intervals any_of interval",
                     ));
@@ -30094,6 +30071,31 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
         }
     }
     None
+}
+
+fn interval_match_spec_is_supported(match_spec: &serde_json::Map<String, Value>) -> bool {
+    match_spec
+        .get("query")
+        .and_then(Value::as_str)
+        .is_some_and(|query| !query.is_empty())
+        && match_spec
+            .keys()
+            .all(|key| key == "query" || key == "ordered" || key == "mode" || key == "max_gaps")
+        && interval_ordering_options_are_supported(match_spec)
+}
+
+fn interval_ordering_options_are_supported(object: &serde_json::Map<String, Value>) -> bool {
+    object.get("ordered").map_or(true, Value::is_boolean)
+        && object.get("mode").map_or(true, |mode| {
+            mode.as_str().is_some_and(|mode| {
+                mode.eq_ignore_ascii_case("ordered")
+                    || mode.eq_ignore_ascii_case("unordered")
+                    || mode.eq_ignore_ascii_case("unordered_no_overlap")
+            })
+        })
+        && object.get("max_gaps").map_or(true, |max_gaps| {
+            max_gaps.as_i64().is_some_and(|max_gaps| max_gaps >= -1)
+        })
 }
 
 const MATCH_QUERY_OPTIONS: &[&str] = &[
@@ -35320,25 +35322,14 @@ fn evaluate_intervals_query(candidate: Option<&Value>, spec: &Value) -> Option<b
     let interval_object = spec.as_object()?;
     if let Some(match_spec) = interval_object.get("match").and_then(Value::as_object) {
         let query_text = match_spec.get("query")?.as_str()?;
-        let ordered = match_spec
-            .get("ordered")
-            .and_then(Value::as_bool)
-            .unwrap_or(true);
-        let max_gaps = match_spec
-            .get("max_gaps")
-            .and_then(Value::as_u64)
-            .unwrap_or(0) as usize;
+        let (ordered, max_gaps) = interval_ordering_options(match_spec)?;
         let terms = tokenize_search_text(query_text);
         return Some(tokens_match_interval_terms(
             &tokens, &terms, ordered, max_gaps,
         ));
     }
     if let Some(all_of) = interval_object.get("all_of").and_then(Value::as_object) {
-        let ordered = all_of
-            .get("ordered")
-            .and_then(Value::as_bool)
-            .unwrap_or(true);
-        let max_gaps = all_of.get("max_gaps").and_then(Value::as_u64).unwrap_or(0) as usize;
+        let (ordered, max_gaps) = interval_ordering_options(all_of)?;
         let mut terms = Vec::new();
         for interval in all_of.get("intervals")?.as_array()? {
             let match_spec = interval.get("match")?.as_object()?;
@@ -35352,14 +35343,7 @@ fn evaluate_intervals_query(candidate: Option<&Value>, spec: &Value) -> Option<b
         for interval in any_of.get("intervals")?.as_array()? {
             let match_spec = interval.get("match")?.as_object()?;
             let query_text = match_spec.get("query")?.as_str()?;
-            let ordered = match_spec
-                .get("ordered")
-                .and_then(Value::as_bool)
-                .unwrap_or(true);
-            let max_gaps = match_spec
-                .get("max_gaps")
-                .and_then(Value::as_u64)
-                .unwrap_or(0) as usize;
+            let (ordered, max_gaps) = interval_ordering_options(match_spec)?;
             let terms = tokenize_search_text(query_text);
             if tokens_match_interval_terms(&tokens, &terms, ordered, max_gaps) {
                 return Some(true);
@@ -35370,11 +35354,29 @@ fn evaluate_intervals_query(candidate: Option<&Value>, spec: &Value) -> Option<b
     None
 }
 
+fn interval_ordering_options(
+    object: &serde_json::Map<String, Value>,
+) -> Option<(bool, Option<usize>)> {
+    let ordered = if let Some(ordered) = object.get("ordered") {
+        ordered.as_bool()?
+    } else if let Some(mode) = object.get("mode").and_then(Value::as_str) {
+        mode.eq_ignore_ascii_case("ordered")
+    } else {
+        false
+    };
+    let max_gaps = match object.get("max_gaps").and_then(Value::as_i64) {
+        Some(-1) | None => None,
+        Some(value) if value >= 0 => Some(value as usize),
+        _ => return None,
+    };
+    Some((ordered, max_gaps))
+}
+
 fn tokens_match_interval_terms(
     candidate_tokens: &[String],
     expected_terms: &[String],
     ordered: bool,
-    max_gaps: usize,
+    max_gaps: Option<usize>,
 ) -> bool {
     if expected_terms.is_empty() {
         return false;
@@ -35395,7 +35397,7 @@ fn tokens_match_interval_terms(
             };
             if let Some(previous) = previous_position {
                 let gap = position.saturating_sub(previous + 1);
-                if gap > max_gaps {
+                if max_gaps.is_some_and(|max_gaps| gap > max_gaps) {
                     return false;
                 }
             }
