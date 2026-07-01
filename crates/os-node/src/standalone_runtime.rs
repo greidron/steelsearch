@@ -31118,7 +31118,7 @@ fn evaluate_search_query_source_with_mappings(
     }
     if let Some(match_bool_prefix) = query.get("match_bool_prefix").and_then(Value::as_object) {
         let (field, expected) = match_bool_prefix.iter().next()?;
-        let expected_value = extract_string_query_value(expected)?;
+        let expected_value = extract_match_query_value(expected)?;
         let haystacks = lookup_query_field_value(source, field)
             .map(collect_string_leaf_values)
             .unwrap_or_default();
@@ -32262,9 +32262,9 @@ fn value_matches_match_bool_prefix(haystacks: &[String], query_text: &str) -> bo
     };
     if required
         .iter()
-        .any(|term| score_text_query_term(haystacks, term) == 0.0)
+        .any(|term| score_text_query_term(haystacks, term) > 0.0)
     {
-        return false;
+        return true;
     }
     let prefix = last.to_ascii_lowercase();
     haystacks.iter().any(|haystack| {
@@ -66682,6 +66682,34 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(match_bool_prefix.status, 200);
         assert_eq!(match_bool_prefix.body["hits"]["total"]["value"], 1);
         assert_eq!(match_bool_prefix.body["hits"]["hits"][0]["_id"], "doc-2");
+
+        let match_bool_prefix_default_should = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-dsl-000001/_search").with_json_body(
+                serde_json::json!({
+                    "query": {
+                        "match_bool_prefix": {
+                            "message": {
+                                "query": "alpha wo"
+                            }
+                        }
+                    },
+                    "sort": [{ "_id": { "order": "asc" } }]
+                }),
+            ),
+        );
+        assert_eq!(match_bool_prefix_default_should.status, 200);
+        assert_eq!(
+            match_bool_prefix_default_should.body["hits"]["total"]["value"],
+            2
+        );
+        assert_eq!(
+            match_bool_prefix_default_should.body["hits"]["hits"][0]["_id"],
+            "doc-1"
+        );
+        assert_eq!(
+            match_bool_prefix_default_should.body["hits"]["hits"][1]["_id"],
+            "doc-2"
+        );
 
         let combined_fields = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/logs-search-dsl-000001/_search").with_json_body(

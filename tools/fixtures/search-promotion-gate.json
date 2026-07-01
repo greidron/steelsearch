@@ -62,6 +62,7 @@
         "match_fuzzy_transpositions_search",
         "match_fuzzy_transpositions_disabled_search",
         "match_minimum_should_match_search",
+        "match_bool_prefix_search",
         "match_operator_and_search",
         "match_zero_terms_query_all_search",
         "dfs_query_then_fetch_search",

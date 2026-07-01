@@ -3665,7 +3665,7 @@ fn build_tantivy_match_bool_prefix_query(
         else {
             return Ok(None);
         };
-        clauses.push((Occur::Must, inner_query));
+        clauses.push((Occur::Should, inner_query));
     }
     let Some(prefix_query) = build_tantivy_query(
         search_state,
@@ -3678,7 +3678,7 @@ fn build_tantivy_match_bool_prefix_query(
     else {
         return Ok(None);
     };
-    clauses.push((Occur::Must, prefix_query));
+    clauses.push((Occur::Should, prefix_query));
     Ok(Some(Box::new(BooleanQuery::new(clauses))))
 }
 
@@ -18337,7 +18337,8 @@ fn match_bool_prefix_matched_token_count(field_value: Option<&Value>, query: &Va
 }
 
 fn matches_match_bool_prefix_query(field_value: Option<&Value>, query: &Value) -> bool {
-    match_bool_prefix_matched_token_count(field_value, query) == match_query_token_count(query)
+    let required = match_query_token_count(query);
+    required > 0 && match_bool_prefix_matched_token_count(field_value, query) > 0
 }
 
 fn matches_multi_match_query(
@@ -148206,7 +148207,7 @@ mod tests {
             .search_hits_for_query_native("bench", &query, &[])
             .unwrap()
             .expect("native match_bool_prefix hits");
-        assert_eq!(search_hit_ids(&native_hits), vec!["1", "3"]);
+        assert_eq!(search_hit_ids(&native_hits), vec!["1", "2", "3"]);
     }
 
     #[test]
