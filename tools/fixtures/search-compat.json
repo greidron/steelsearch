@@ -728,6 +728,30 @@
           }
         }
       }
+    },
+    {
+      "name": "span-mask-compat",
+      "body": {
+        "settings": {
+          "index": {
+            "number_of_shards": 1,
+            "number_of_replicas": 0
+          }
+        },
+        "mappings": {
+          "properties": {
+            "message": {
+              "type": "text"
+            },
+            "body": {
+              "type": "text"
+            },
+            "rank": {
+              "type": "long"
+            }
+          }
+        }
+      }
     }
   ],
   "aliases": [
@@ -1057,6 +1081,35 @@
           "_id": "doc-b",
           "_source": {
             "tenant": "tenant-b"
+          }
+        }
+      ]
+    },
+    {
+      "index": "span-mask-compat",
+      "documents": [
+        {
+          "_id": "mask-1",
+          "_source": {
+            "message": "alpha",
+            "body": "mask target",
+            "rank": 1
+          }
+        },
+        {
+          "_id": "mask-2",
+          "_source": {
+            "message": "beta",
+            "body": "alpha",
+            "rank": 2
+          }
+        },
+        {
+          "_id": "mask-3",
+          "_source": {
+            "message": "alphabet",
+            "body": "mask target",
+            "rank": 3
           }
         }
       ]
@@ -6038,6 +6091,62 @@
       "extract": "search_hits",
       "family": "lexical",
       "description": "[lexical] field masking span query search"
+    },
+    {
+      "name": "span_field_masking_inner_field_query_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/span-mask-compat/_search",
+      "body": {
+        "query": {
+          "span_field_masking": {
+            "field": "body",
+            "query": {
+              "span_term": {
+                "message": "alpha"
+              }
+            }
+          }
+        },
+        "sort": [
+          {
+            "rank": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] span field masking inner field query search"
+    },
+    {
+      "name": "field_masking_span_inner_field_query_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/span-mask-compat/_search",
+      "body": {
+        "query": {
+          "field_masking_span": {
+            "field": "body",
+            "query": {
+              "span_term": {
+                "message": "alpha"
+              }
+            }
+          }
+        },
+        "sort": [
+          {
+            "rank": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] field masking span inner field query search"
     },
     {
       "name": "function_score_search",

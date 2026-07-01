@@ -11822,18 +11822,17 @@ fn search_hit_query_explanation_details(query: &Query, hit: &SearchHit) -> Vec<V
         })];
     }
     if let Query::FieldMaskingSpan { query, field } = query {
-        let remapped_query = remap_query_field(query, field);
-        let source_match = document_matches_query(&remapped_query, &hit.metadata.id, &hit.source);
+        let source_match = document_matches_query(query, &hit.metadata.id, &hit.source);
         return vec![serde_json::json!({
             "value": hit.score,
             "description": format!(
-                "field_masking_span query remaps its wrapped span query onto [{}] in the current narrow explanation tree; source_match={}",
+                "field_masking_span query masks its wrapped span query as [{}] in the current narrow explanation tree; source_match={}",
                 field,
                 source_match
             ),
             "source_match": source_match,
             "details": source_match
-                .then(|| search_hit_query_explanation_details(&remapped_query, hit))
+                .then(|| search_hit_query_explanation_details(query, hit))
                 .unwrap_or_default()
         })];
     }
@@ -13788,10 +13787,9 @@ fn search_hit_query_observation_counts(query: &Query, hit: &SearchHit) -> (usize
             .then(|| search_hit_query_observation_counts(query, hit))
             .unwrap_or((0, 0, 0));
     }
-    if let Query::FieldMaskingSpan { query, field } = query {
-        let remapped_query = remap_query_field(query, field);
-        return document_matches_query(&remapped_query, &hit.metadata.id, &hit.source)
-            .then(|| search_hit_query_observation_counts(&remapped_query, hit))
+    if let Query::FieldMaskingSpan { query, .. } = query {
+        return document_matches_query(query, &hit.metadata.id, &hit.source)
+            .then(|| search_hit_query_observation_counts(query, hit))
             .unwrap_or((0, 0, 0));
     }
     if let Query::Wrapper { query } = query {
@@ -14708,13 +14706,12 @@ fn collect_search_hit_highlights(
         );
         return;
     }
-    if let Query::FieldMaskingSpan { query, field } = query {
-        let remapped_query = remap_query_field(query, field);
-        if !document_matches_query(&remapped_query, hit_id, source) {
+    if let Query::FieldMaskingSpan { query, .. } = query {
+        if !document_matches_query(query, hit_id, source) {
             return;
         }
         collect_search_hit_highlights(
-            &remapped_query,
+            query,
             hit_id,
             source,
             requested_fields,
@@ -16780,8 +16777,8 @@ fn document_matches_query(query: &Query, id: &str, source: &Value) -> bool {
     if let Query::SpanMulti { query } = query {
         return document_matches_query(query, id, source);
     }
-    if let Query::FieldMaskingSpan { query, field } = query {
-        return document_matches_query(&remap_query_field(query, field), id, source);
+    if let Query::FieldMaskingSpan { query, .. } = query {
+        return document_matches_query(query, id, source);
     }
     if let Query::Wrapper { query } = query {
         return document_matches_query(query, id, source);
@@ -20448,6 +20445,10 @@ fn span_query_ranges(
         }
         Query::SpanContaining { big, .. } => span_query_ranges(id, source, big),
         Query::SpanWithin { little, .. } => span_query_ranges(id, source, little),
+        Query::FieldMaskingSpan { query, field } => {
+            let (_, ranges) = span_query_ranges(id, source, query)?;
+            Some((field.clone(), ranges))
+        }
         _ => None,
     }
 }
@@ -151746,18 +151747,23 @@ mod tests {
                 settings: serde_json::json!({}),
                 mappings: serde_json::json!({
                     "properties": {
-                        "body": { "type": "text" }
+                        "body": { "type": "text" },
+                        "message": { "type": "text" }
                     }
                 }),
             })
             .unwrap();
 
-        for (id, body) in [("1", "alpha"), ("2", "beta"), ("3", "alphabet")] {
+        for (id, body, message) in [
+            ("1", "mask target", "alpha"),
+            ("2", "alpha", "beta"),
+            ("3", "mask target", "alphabet"),
+        ] {
             engine
                 .index_document(IndexDocumentRequest {
                     index: "bench".to_string(),
                     id: id.to_string(),
-                    source: serde_json::json!({ "body": body }),
+                    source: serde_json::json!({ "body": body, "message": message }),
                 })
                 .unwrap();
         }
@@ -151768,7 +151774,7 @@ mod tests {
             .unwrap();
 
         let query = parse_query(&serde_json::json!({
-            "field_masking_span": {
+            "span_field_masking": {
                 "query": {
                     "span_term": { "message": "alpha" }
                 },

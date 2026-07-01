@@ -109,6 +109,8 @@
         "expand_wildcards_open_search",
         "explain_search",
         "field_masking_span_query_search",
+        "span_field_masking_inner_field_query_search",
+        "field_masking_span_inner_field_query_search",
         "function_score_search",
         "fuzzy_query_search",
         "fuzzy_query_prefix_length_search",

@@ -22863,7 +22863,7 @@ fn standalone_search_body_allows_native_engine(body: &Value) -> bool {
     !query_contains_native_unsafe_nested_knn(body.get("query").unwrap_or(&Value::Null))
         && !value_contains_any_key(
             body.get("query").unwrap_or(&Value::Null),
-            &["field_masking_span", "span_gap"],
+            &["field_masking_span", "span_field_masking", "span_gap"],
         )
         && body
             .get("sort")
@@ -27693,6 +27693,7 @@ fn validate_search_query_body(query: &Value) -> Option<RestResponse> {
         | "span_containing"
         | "span_within"
         | "span_multi"
+        | "span_field_masking"
         | "field_masking_span"
         | "more_like_this"
         | "distance_feature"
@@ -28980,7 +28981,7 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
             return Some(response);
         }
     }
-    if let Some(spec) = query.get("field_masking_span").and_then(Value::as_object) {
+    if let Some(spec) = field_masking_span_query_object(query) {
         let Some(field) = spec.get("field").and_then(Value::as_str) else {
             return Some(build_unsupported_search_response(
                 "unsupported field_masking_span query shape",
@@ -31270,7 +31271,7 @@ fn evaluate_search_query_source_with_mappings(
         let matched = evaluate_span_multi_query(source, span_multi)?;
         return Some((matched, if matched { 1.0 } else { 0.0 }));
     }
-    if let Some(field_masking_span) = query.get("field_masking_span").and_then(Value::as_object) {
+    if let Some(field_masking_span) = field_masking_span_query_object(query) {
         let matched = evaluate_field_masking_span_query(source, field_masking_span)?;
         return Some((matched, if matched { 1.0 } else { 0.0 }));
     }
@@ -33655,6 +33656,13 @@ fn span_query_position_ranges(source: &Value, query: &Value) -> Option<RuntimeSp
     if let Some(span_near) = object.get("span_near").and_then(Value::as_object) {
         return span_near_position_ranges(source, span_near);
     }
+    if let Some(field_masking_span) = field_masking_span_query_object(query) {
+        let mask_field = field_masking_span.get("field")?.as_str()?.to_string();
+        let inner = field_masking_span.get("query")?;
+        let mut ranges = span_query_position_ranges(source, inner)?;
+        ranges.field = mask_field;
+        return Some(ranges);
+    }
     None
 }
 
@@ -33881,23 +33889,26 @@ fn evaluate_field_masking_span_query(
     source: &Value,
     field_masking_span: &serde_json::Map<String, Value>,
 ) -> Option<bool> {
-    let field = field_masking_span.get("field")?.as_str()?;
     let inner = field_masking_span.get("query")?;
     let Value::Object(inner_object) = inner else {
         return None;
     };
     if let Some(span_term) = inner_object.get("span_term").and_then(Value::as_object) {
         let (inner_field, expected) = span_term.iter().next()?;
-        if inner_field != field {
-            return Some(false);
-        }
         return Some(value_matches_term(
-            lookup_query_field_value(source, field),
+            lookup_query_field_value(source, inner_field),
             expected,
             None,
         ));
     }
     None
+}
+
+fn field_masking_span_query_object(query: &Value) -> Option<&serde_json::Map<String, Value>> {
+    query
+        .get("span_field_masking")
+        .or_else(|| query.get("field_masking_span"))
+        .and_then(Value::as_object)
 }
 
 fn evaluate_span_like_clause(source: &Value, clause: &Value) -> Option<bool> {
@@ -33919,6 +33930,9 @@ fn evaluate_span_like_clause(source: &Value, clause: &Value) -> Option<bool> {
     }
     if let Some(span_within) = object.get("span_within").and_then(Value::as_object) {
         return evaluate_span_containing_query(source, span_within);
+    }
+    if let Some(field_masking_span) = field_masking_span_query_object(clause) {
+        return evaluate_field_masking_span_query(source, field_masking_span);
     }
     None
 }
@@ -62219,6 +62233,58 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(response.body["hits"]["total"]["value"], 2);
         assert_eq!(response.body["hits"]["hits"][0]["_id"], "doc-1");
         assert_eq!(response.body["hits"]["hits"][1]["_id"], "doc-4");
+    }
+
+    #[test]
+    fn search_routes_support_field_masking_span_inner_field_queries() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(RestMethod::Put, "/logs-field-mask-000001"))
+                .status,
+            200
+        );
+        for (id, body, message) in [
+            ("doc-1", "mask target", "alpha"),
+            ("doc-2", "alpha", "beta"),
+            ("doc-3", "mask target", "alphabet"),
+        ] {
+            assert_eq!(
+                node.handle_rest_request(
+                    RestRequest::new(
+                        RestMethod::Put,
+                        &format!("/logs-field-mask-000001/_doc/{id}")
+                    )
+                    .with_json_body(serde_json::json!({
+                        "body": body,
+                        "message": message
+                    })),
+                )
+                .status,
+                201
+            );
+        }
+
+        for clause in ["span_field_masking", "field_masking_span"] {
+            let response = node.handle_rest_request(
+                RestRequest::new(RestMethod::Post, "/logs-field-mask-000001/_search")
+                    .with_json_body(serde_json::json!({
+                        "query": {
+                            clause: {
+                                "field": "body",
+                                "query": { "span_term": { "message": "alpha" } }
+                            }
+                        },
+                        "sort": [{ "_id": { "order": "asc" } }]
+                    })),
+            );
+            assert_eq!(response.status, 200, "{clause}");
+            assert_eq!(response.body["hits"]["total"]["value"], 1, "{clause}");
+            assert_eq!(response.body["hits"]["hits"][0]["_id"], "doc-1");
+        }
     }
 
     #[test]

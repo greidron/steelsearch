@@ -744,7 +744,7 @@ pub fn parse_query(value: &Value) -> QueryDslResult<Query> {
         "span_containing" => parse_span_containing(body),
         "span_within" => parse_span_within(body),
         "span_multi" => parse_span_multi(body),
-        "field_masking_span" => parse_field_masking_span(body),
+        "span_field_masking" | "field_masking_span" => parse_field_masking_span(body),
         "terms_set" => parse_terms_set(body),
         "match" => parse_match(body),
         "match_phrase" => parse_match_phrase(body),
@@ -5966,26 +5966,28 @@ mod tests {
 
     #[test]
     fn parses_field_masking_span_queries() {
-        let query = parse_query(&serde_json::json!({
-            "field_masking_span": {
-                "query": {
-                    "span_term": { "message": "alpha" }
-                },
-                "field": "body"
-            }
-        }))
-        .unwrap();
+        for clause in ["span_field_masking", "field_masking_span"] {
+            let query = parse_query(&serde_json::json!({
+                clause: {
+                    "query": {
+                        "span_term": { "message": "alpha" }
+                    },
+                    "field": "body"
+                }
+            }))
+            .unwrap();
 
-        assert_eq!(
-            query,
-            Query::FieldMaskingSpan {
-                query: Box::new(Query::SpanTerm {
-                    field: "message".to_string(),
-                    value: serde_json::json!("alpha"),
-                }),
-                field: "body".to_string(),
-            }
-        );
+            assert_eq!(
+                query,
+                Query::FieldMaskingSpan {
+                    query: Box::new(Query::SpanTerm {
+                        field: "message".to_string(),
+                        value: serde_json::json!("alpha"),
+                    }),
+                    field: "body".to_string(),
+                }
+            );
+        }
     }
 
     #[test]
