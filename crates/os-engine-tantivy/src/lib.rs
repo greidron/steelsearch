@@ -21005,7 +21005,7 @@ fn rebucket_date_histogram_buckets_to_interval(
             continue;
         };
         let Some((bucket_key, bucket_string)) =
-            date_histogram_bucket(key_as_string, target_interval, 0)
+            date_histogram_bucket(key_as_string, target_interval, 0, None)
         else {
             continue;
         };
@@ -21113,16 +21113,23 @@ fn date_histogram_bucket(
     value: &Value,
     interval: &str,
     offset_millis: i64,
+    format: Option<&str>,
 ) -> Option<(i64, String)> {
     let timestamp = parse_offset_datetime_value(value)?;
     let millis = timestamp.unix_timestamp_nanos() / 1_000_000;
-    date_histogram_bucket_from_epoch_millis(i64::try_from(millis).ok()?, interval, offset_millis)
+    date_histogram_bucket_from_epoch_millis(
+        i64::try_from(millis).ok()?,
+        interval,
+        offset_millis,
+        format,
+    )
 }
 
 fn date_histogram_bucket_from_epoch_millis(
     epoch_millis: i64,
     interval: &str,
     offset_millis: i64,
+    format: Option<&str>,
 ) -> Option<(i64, String)> {
     let interval = normalize_date_histogram_interval(interval)?;
     if offset_millis != 0 {
@@ -21140,7 +21147,7 @@ fn date_histogram_bucket_from_epoch_millis(
                 .checked_add(offset_millis)?;
             return Some((
                 bucket_key,
-                date_histogram_key_as_string_from_epoch_millis(bucket_key)?,
+                date_histogram_key_as_string_from_epoch_millis(bucket_key, format)?,
             ));
         }
     }
@@ -21162,7 +21169,7 @@ fn date_histogram_bucket_from_epoch_millis(
                 .checked_add(i64::from(minute).checked_mul(60_000)?)?;
             Some((
                 millis,
-                format!("{year:04}-{month:02}-{day:02}T{hour:02}:{minute:02}:00.000Z"),
+                date_histogram_key_as_string_from_epoch_millis(millis, format)?,
             ))
         }
         "hour" => {
@@ -21172,7 +21179,7 @@ fn date_histogram_bucket_from_epoch_millis(
                 .checked_add(i64::from(hour).checked_mul(3_600_000)?)?;
             Some((
                 millis,
-                format!("{year:04}-{month:02}-{day:02}T{hour:02}:00:00.000Z"),
+                date_histogram_key_as_string_from_epoch_millis(millis, format)?,
             ))
         }
         "day" => {
@@ -21180,7 +21187,7 @@ fn date_histogram_bucket_from_epoch_millis(
             let millis = days.checked_mul(86_400_000)?;
             Some((
                 millis,
-                format!("{year:04}-{month:02}-{day:02}T00:00:00.000Z"),
+                date_histogram_key_as_string_from_epoch_millis(millis, format)?,
             ))
         }
         "week" => {
@@ -21188,34 +21195,38 @@ fn date_histogram_bucket_from_epoch_millis(
             let weekday_offset = i64::from(timestamp.weekday().number_days_from_monday());
             let monday_days = days.checked_sub(weekday_offset)?;
             let millis = monday_days.checked_mul(86_400_000)?;
-            let start = timestamp
-                .date()
-                .checked_sub(time::Duration::days(weekday_offset))?;
             Some((
                 millis,
-                format!(
-                    "{:04}-{:02}-{:02}T00:00:00.000Z",
-                    start.year(),
-                    start.month() as u32,
-                    u32::from(start.day())
-                ),
+                date_histogram_key_as_string_from_epoch_millis(millis, format)?,
             ))
         }
         "month" => {
             let days = days_from_civil(year, month, 1)?;
             let millis = days.checked_mul(86_400_000)?;
-            Some((millis, format!("{year:04}-{month:02}-01T00:00:00.000Z")))
+            Some((
+                millis,
+                date_histogram_key_as_string_from_epoch_millis(millis, format)?,
+            ))
         }
         "year" => {
             let days = days_from_civil(year, 1, 1)?;
             let millis = days.checked_mul(86_400_000)?;
-            Some((millis, format!("{year:04}-01-01T00:00:00.000Z")))
+            Some((
+                millis,
+                date_histogram_key_as_string_from_epoch_millis(millis, format)?,
+            ))
         }
         _ => None,
     }
 }
 
-fn date_histogram_key_as_string_from_epoch_millis(epoch_millis: i64) -> Option<String> {
+fn date_histogram_key_as_string_from_epoch_millis(
+    epoch_millis: i64,
+    format: Option<&str>,
+) -> Option<String> {
+    if format == Some("epoch_millis") {
+        return Some(epoch_millis.to_string());
+    }
     let timestamp = OffsetDateTime::from_unix_timestamp_nanos(
         i128::from(epoch_millis).saturating_mul(1_000_000),
     )
@@ -34563,6 +34574,7 @@ fn collect_plugin_aggregation_from_documents(
                     missing: None,
                     keyed: false,
                     offset_millis: 0,
+                    format: None,
                 };
                 let mut value =
                     collect_date_histogram_aggregation_from_documents(documents, &date_histogram)
@@ -34745,6 +34757,7 @@ fn collect_plugin_aggregation_from_documents(
                     missing: None,
                     keyed: false,
                     offset_millis: 0,
+                    format: None,
                 };
                 let mut value =
                     collect_date_histogram_aggregation_from_documents(documents, &date_histogram)
@@ -35926,6 +35939,7 @@ fn collect_plugin_aggregation_from_hits_with_input_order(
                     missing: None,
                     keyed: false,
                     offset_millis: 0,
+                    format: None,
                 };
                 let mut value = collect_date_histogram_aggregation(hits, &date_histogram)
                     .unwrap_or_else(|_| bucket_array_visible_and_carrier_value(Vec::new()));
@@ -37381,6 +37395,7 @@ fn collect_date_histogram_aggregation(
                 raw,
                 &date_histogram.interval,
                 date_histogram.offset_millis,
+                date_histogram.format.as_deref(),
             ),
             None => add_date_histogram_missing_bucket(&mut counts, date_histogram),
         }
@@ -37424,9 +37439,10 @@ fn add_date_histogram_buckets_from_value(
     raw: &Value,
     interval: &str,
     offset_millis: i64,
+    format: Option<&str>,
 ) {
     for (bucket_key, bucket_string) in
-        distinct_date_histogram_buckets_with_offset(raw, interval, offset_millis)
+        distinct_date_histogram_buckets_with_offset(raw, interval, offset_millis, format)
     {
         let entry = counts.entry(bucket_key).or_insert((bucket_string, 0));
         entry.1 += 1;
@@ -37446,6 +37462,7 @@ fn add_date_histogram_missing_bucket(
         &missing,
         &date_histogram.interval,
         date_histogram.offset_millis,
+        date_histogram.format.as_deref(),
     );
 }
 
@@ -37472,6 +37489,7 @@ fn collect_date_histogram_aggregation_from_documents(
                     epoch_millis,
                     &date_histogram.interval,
                     date_histogram.offset_millis,
+                    date_histogram.format.as_deref(),
                 ) {
                     let entry = counts.entry(bucket_key).or_insert((bucket_string, 0));
                     entry.1 += 1;
@@ -37494,6 +37512,7 @@ fn collect_date_histogram_aggregation_from_documents(
                     raw,
                     &date_histogram.interval,
                     date_histogram.offset_millis,
+                    date_histogram.format.as_deref(),
                 );
             }
             _ => {
@@ -37501,6 +37520,7 @@ fn collect_date_histogram_aggregation_from_documents(
                     raw,
                     &date_histogram.interval,
                     date_histogram.offset_millis,
+                    date_histogram.format.as_deref(),
                 ) {
                     let entry = counts.entry(bucket_key).or_insert((bucket_string, 0));
                     entry.1 += 1;
@@ -39394,29 +39414,31 @@ fn distinct_scalar_bucket_values(value: &Value) -> Vec<Value> {
 }
 
 fn distinct_date_histogram_buckets(value: &Value, interval: &str) -> Vec<(i64, String)> {
-    distinct_date_histogram_buckets_with_offset(value, interval, 0)
+    distinct_date_histogram_buckets_with_offset(value, interval, 0, None)
 }
 
 fn distinct_date_histogram_buckets_with_offset(
     value: &Value,
     interval: &str,
     offset_millis: i64,
+    format: Option<&str>,
 ) -> Vec<(i64, String)> {
     fn visit(
         value: &Value,
         interval: &str,
         offset_millis: i64,
+        format: Option<&str>,
         buckets: &mut BTreeMap<i64, String>,
     ) {
         match value {
             Value::Array(items) => {
                 for item in items {
-                    visit(item, interval, offset_millis, buckets);
+                    visit(item, interval, offset_millis, format, buckets);
                 }
             }
             _ => {
                 if let Some((bucket_key, bucket_string)) =
-                    date_histogram_bucket(value, interval, offset_millis)
+                    date_histogram_bucket(value, interval, offset_millis, format)
                 {
                     buckets.entry(bucket_key).or_insert(bucket_string);
                 }
@@ -39425,7 +39447,7 @@ fn distinct_date_histogram_buckets_with_offset(
     }
 
     let mut buckets = BTreeMap::new();
-    visit(value, interval, offset_millis, &mut buckets);
+    visit(value, interval, offset_millis, format, &mut buckets);
     buckets.into_iter().collect()
 }
 
@@ -156805,6 +156827,82 @@ mod tests {
                             "key": 1704110400000i64,
                             "key_as_string": "2024-01-01T12:00:00.000Z",
                             "doc_count": 2
+                        }
+                    ]
+                }
+            })
+        );
+    }
+
+    #[test]
+    fn native_tantivy_date_histogram_epoch_millis_format_preserves_shape() {
+        let engine = TantivyEngine::default();
+        engine
+            .create_index(CreateIndexRequest {
+                index: "bench".to_string(),
+                settings: serde_json::json!({}),
+                mappings: serde_json::json!({
+                    "properties": {
+                        "event_time": { "type": "date", "fast": true }
+                    }
+                }),
+            })
+            .unwrap();
+
+        for (id, event_time) in [
+            ("1", "2024-01-01T08:00:00Z"),
+            ("2", "2024-01-01T10:00:00Z"),
+            ("3", "2024-01-02T09:00:00Z"),
+        ] {
+            engine
+                .index_document(IndexDocumentRequest {
+                    index: "bench".to_string(),
+                    id: id.to_string(),
+                    source: serde_json::json!({ "event_time": event_time }),
+                })
+                .unwrap();
+        }
+        engine
+            .refresh(RefreshRequest {
+                indices: vec!["bench".to_string()],
+            })
+            .unwrap();
+
+        let query = parse_query(&serde_json::json!({
+            "match_all": {}
+        }))
+        .unwrap();
+        let aggregations = parse_search_aggregation_map(&serde_json::json!({
+            "recent_events": {
+                "date_histogram": {
+                    "field": "event_time",
+                    "calendar_interval": "day",
+                    "format": "epoch_millis"
+                }
+            }
+        }))
+        .unwrap();
+
+        let mut store = engine.store.write().unwrap();
+        let index = store.indices.get_mut("bench").unwrap();
+        let native = index
+            .collect_aggregations_native(&query, &aggregations)
+            .unwrap()
+            .expect("native date_histogram epoch_millis format aggregation");
+        assert_eq!(
+            native,
+            serde_json::json!({
+                "recent_events": {
+                    "buckets": [
+                        {
+                            "key": 1704067200000i64,
+                            "key_as_string": "1704067200000",
+                            "doc_count": 2
+                        },
+                        {
+                            "key": 1704153600000i64,
+                            "key_as_string": "1704153600000",
+                            "doc_count": 1
                         }
                     ]
                 }

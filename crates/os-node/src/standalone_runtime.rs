@@ -36150,6 +36150,15 @@ fn build_search_aggregations(
                 .get("offset")
                 .and_then(parse_date_histogram_offset_millis)
                 .unwrap_or(0);
+            let format = match date_histogram.get("format").and_then(Value::as_str) {
+                Some("epoch_millis") => Some("epoch_millis"),
+                Some(_) => {
+                    return Err(build_unsupported_search_response(
+                        "unsupported aggregation option [date_histogram.format]",
+                    ));
+                }
+                None => None,
+            };
             let mut counts = std::collections::BTreeMap::<i64, (String, u64)>::new();
             for hit in hits {
                 let raw = hit
@@ -36159,7 +36168,7 @@ fn build_search_aggregations(
                     .or(missing);
                 let Some(raw) = raw else { continue };
                 let Some((bucket_key, bucket_string)) =
-                    date_histogram_bucket_day_with_offset(raw, offset_millis)
+                    date_histogram_bucket_day_with_offset(raw, offset_millis, format)
                 else {
                     continue;
                 };
@@ -37108,10 +37117,15 @@ fn date_histogram_bucket_day(timestamp: &str) -> Option<(i64, String)> {
 fn date_histogram_bucket_day_with_offset(
     timestamp: &str,
     offset_millis: i64,
+    format: Option<&str>,
 ) -> Option<(i64, String)> {
     let millis = date_histogram_epoch_millis(timestamp)?;
     if offset_millis == 0 {
-        return date_histogram_bucket_day(timestamp);
+        let (bucket_key, _) = date_histogram_bucket_day(timestamp)?;
+        return Some((
+            bucket_key,
+            date_histogram_key_as_string_from_epoch_millis(bucket_key, format)?,
+        ));
     }
     let bucket_key = millis
         .checked_sub(offset_millis)?
@@ -37120,7 +37134,7 @@ fn date_histogram_bucket_day_with_offset(
         .checked_add(offset_millis)?;
     Some((
         bucket_key,
-        date_histogram_key_as_string_from_epoch_millis(bucket_key)?,
+        date_histogram_key_as_string_from_epoch_millis(bucket_key, format)?,
     ))
 }
 
@@ -37147,7 +37161,13 @@ fn date_histogram_epoch_millis(timestamp: &str) -> Option<i64> {
     Some(millis)
 }
 
-fn date_histogram_key_as_string_from_epoch_millis(epoch_millis: i64) -> Option<String> {
+fn date_histogram_key_as_string_from_epoch_millis(
+    epoch_millis: i64,
+    format: Option<&str>,
+) -> Option<String> {
+    if format == Some("epoch_millis") {
+        return Some(epoch_millis.to_string());
+    }
     let days = epoch_millis.div_euclid(86_400_000);
     let millis_of_day = epoch_millis.rem_euclid(86_400_000);
     let (year, month, day) = civil_from_days(days)?;

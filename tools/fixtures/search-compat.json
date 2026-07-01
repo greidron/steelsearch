@@ -359,6 +359,7 @@
       "terms_missing_aggregation",
       "date_histogram_keyed_aggregation",
       "date_histogram_offset_aggregation",
+      "date_histogram_format_epoch_millis_aggregation",
       "date_histogram_missing_aggregation",
       "histogram_missing_aggregation",
       "metric_aggregations",
@@ -12534,6 +12535,28 @@
       "extract": "aggregations",
       "family": "aggregation",
       "description": "[aggregation] date histogram offset aggregation",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "date_histogram_format_epoch_millis_aggregation",
+      "area": "aggregation",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "by_day_epoch": {
+            "date_histogram": {
+              "field": "ts",
+              "calendar_interval": "day",
+              "format": "epoch_millis"
+            }
+          }
+        }
+      },
+      "extract": "aggregations",
+      "family": "aggregation",
+      "description": "[aggregation] date histogram epoch_millis format aggregation",
       "strict_source_parity_required": true
     },
     {

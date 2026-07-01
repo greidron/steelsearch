@@ -338,6 +338,7 @@ pub struct DateHistogramAggregation {
     pub missing: Option<String>,
     pub keyed: bool,
     pub offset_millis: i64,
+    pub format: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -977,10 +978,32 @@ fn parse_date_histogram_aggregation(body: &Value) -> QueryDslResult<Aggregation>
         .map(parse_date_histogram_offset_millis)
         .transpose()?
         .unwrap_or(0);
+    let format = object
+        .get("format")
+        .map(|value| {
+            let format = value
+                .as_str()
+                .ok_or_else(|| QueryDslError::InvalidValue {
+                    clause: "date_histogram".to_string(),
+                    field: "format".to_string(),
+                    reason: "expected string value".to_string(),
+                })?
+                .to_string();
+            if format == "epoch_millis" {
+                Ok(format)
+            } else {
+                Err(QueryDslError::UnsupportedOption {
+                    clause: "date_histogram".to_string(),
+                    option: "format".to_string(),
+                })
+            }
+        })
+        .transpose()?;
 
     for option in object.keys() {
         match option.as_str() {
-            "field" | "calendar_interval" | "fixed_interval" | "missing" | "keyed" | "offset" => {}
+            "field" | "calendar_interval" | "fixed_interval" | "missing" | "keyed" | "offset"
+            | "format" => {}
             _ => {
                 return Err(QueryDslError::UnsupportedOption {
                     clause: "date_histogram".to_string(),
@@ -996,6 +1019,7 @@ fn parse_date_histogram_aggregation(body: &Value) -> QueryDslResult<Aggregation>
         missing,
         keyed,
         offset_millis,
+        format,
     }))
 }
 
@@ -6611,6 +6635,7 @@ mod tests {
                 missing: None,
                 keyed: false,
                 offset_millis: 0,
+                format: None,
             })
         );
     }
@@ -6637,6 +6662,7 @@ mod tests {
                 missing: None,
                 keyed: false,
                 offset_millis: 0,
+                format: None,
             })
         );
     }
@@ -6664,6 +6690,7 @@ mod tests {
                 missing: Some("2026-04-22T00:01:30Z".to_string()),
                 keyed: false,
                 offset_millis: 0,
+                format: None,
             })
         );
     }
@@ -6691,6 +6718,7 @@ mod tests {
                 missing: None,
                 keyed: true,
                 offset_millis: 0,
+                format: None,
             })
         );
     }
@@ -6718,6 +6746,35 @@ mod tests {
                 missing: None,
                 keyed: false,
                 offset_millis: 43_200_000,
+                format: None,
+            })
+        );
+    }
+
+    #[test]
+    fn parses_date_histogram_aggregation_epoch_millis_format_option() {
+        let aggregations = parse_search_aggregations(&serde_json::json!({
+            "aggs": {
+                "recent_events": {
+                    "date_histogram": {
+                        "field": "event_time",
+                        "calendar_interval": "day",
+                        "format": "epoch_millis"
+                    }
+                }
+            }
+        }))
+        .unwrap();
+
+        assert_eq!(
+            aggregations["recent_events"],
+            Aggregation::DateHistogram(DateHistogramAggregation {
+                field: "event_time".to_string(),
+                interval: "day".to_string(),
+                missing: None,
+                keyed: false,
+                offset_millis: 0,
+                format: Some("epoch_millis".to_string()),
             })
         );
     }
