@@ -36232,6 +36232,7 @@ fn build_search_aggregations(
                 .get("interval")
                 .and_then(Value::as_f64)
                 .unwrap_or(0.0);
+            let missing = histogram.get("missing").and_then(Value::as_f64);
             if interval <= 0.0 {
                 return Err(build_unsupported_search_response(
                     "unsupported aggregation [histogram]",
@@ -36239,13 +36240,12 @@ fn build_search_aggregations(
             }
             let mut counts = std::collections::BTreeMap::<i64, u64>::new();
             for hit in hits {
-                let Some(value) = hit
+                let value = hit
                     .get("_source")
                     .and_then(|source| source.get(field))
                     .and_then(Value::as_f64)
-                else {
-                    continue;
-                };
+                    .or(missing);
+                let Some(value) = value else { continue };
                 let bucket = (value / interval).floor() as i64;
                 *counts.entry(bucket).or_insert(0) += 1;
             }

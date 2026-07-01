@@ -34269,7 +34269,11 @@ fn collect_plugin_aggregation_from_documents(
                     .collect::<Vec<_>>();
                 plugin_bucket_surface_aggregation_value(plugin, Value::Array(buckets))
             } else {
-                let histogram = os_query_dsl::HistogramAggregation { field, interval };
+                let histogram = os_query_dsl::HistogramAggregation {
+                    field,
+                    interval,
+                    missing: None,
+                };
                 let mut value = collect_histogram_aggregation_from_documents(documents, &histogram);
                 if let Some(object) = value.as_object_mut() {
                     let bucket_values = take_object_bucket_array_carrier(object);
@@ -34594,7 +34598,11 @@ fn collect_plugin_aggregation_from_documents(
                     Value::from(interval),
                 )
             } else {
-                let histogram = os_query_dsl::HistogramAggregation { field, interval };
+                let histogram = os_query_dsl::HistogramAggregation {
+                    field,
+                    interval,
+                    missing: None,
+                };
                 let mut value = collect_histogram_aggregation_from_documents(documents, &histogram);
                 if let Some(object) = value.as_object_mut() {
                     let bucket_values = take_object_bucket_array_carrier(object);
@@ -35615,7 +35623,11 @@ fn collect_plugin_aggregation_from_hits_with_input_order(
                     .collect::<Vec<_>>();
                 plugin_bucket_surface_aggregation_value(plugin, Value::Array(buckets))
             } else {
-                let histogram = os_query_dsl::HistogramAggregation { field, interval };
+                let histogram = os_query_dsl::HistogramAggregation {
+                    field,
+                    interval,
+                    missing: None,
+                };
                 let mut value = collect_histogram_aggregation(hits, &histogram);
                 if let Some(object) = value.as_object_mut() {
                     let bucket_values = take_object_bucket_array_carrier(object);
@@ -35938,7 +35950,11 @@ fn collect_plugin_aggregation_from_hits_with_input_order(
                     Value::from(interval),
                 )
             } else {
-                let histogram = os_query_dsl::HistogramAggregation { field, interval };
+                let histogram = os_query_dsl::HistogramAggregation {
+                    field,
+                    interval,
+                    missing: None,
+                };
                 let mut value = collect_histogram_aggregation(hits, &histogram);
                 if let Some(object) = value.as_object_mut() {
                     let bucket_values = take_object_bucket_array_carrier(object);
@@ -37544,17 +37560,26 @@ fn coarsen_variable_width_histogram_buckets_until_target(
     (current_interval, current_buckets)
 }
 
-fn collect_histogram_aggregation_from_values<'a, I>(
+fn collect_histogram_aggregation_from_optional_values<'a, I>(
     values: I,
     histogram: &os_query_dsl::HistogramAggregation,
 ) -> Value
 where
-    I: IntoIterator<Item = &'a Value>,
+    I: IntoIterator<Item = Option<&'a Value>>,
 {
     let mut counts = std::collections::BTreeMap::<u64, (f64, u64)>::new();
     for raw in values {
         let mut matched_bucket_keys = BTreeMap::<u64, f64>::new();
-        for value in distinct_scalar_bucket_values(raw) {
+        let values = raw.map(distinct_scalar_bucket_values).unwrap_or_default();
+        let values = if values.is_empty() {
+            histogram
+                .missing
+                .map(|missing| vec![Value::from(missing)])
+                .unwrap_or_default()
+        } else {
+            values
+        };
+        for value in values {
             let Some(value) = value.as_f64() else {
                 continue;
             };
@@ -37586,10 +37611,10 @@ fn collect_histogram_aggregation_from_documents(
     documents: &[&StoredDocument],
     histogram: &os_query_dsl::HistogramAggregation,
 ) -> Value {
-    collect_histogram_aggregation_from_values(
-        documents.iter().filter_map(|document| {
-            source_value_for_highlight_field(&document.source, &histogram.field)
-        }),
+    collect_histogram_aggregation_from_optional_values(
+        documents
+            .iter()
+            .map(|document| source_value_for_highlight_field(&document.source, &histogram.field)),
         histogram,
     )
 }
@@ -37598,9 +37623,9 @@ fn collect_histogram_aggregation(
     hits: &[SearchHit],
     histogram: &os_query_dsl::HistogramAggregation,
 ) -> Value {
-    collect_histogram_aggregation_from_values(
+    collect_histogram_aggregation_from_optional_values(
         hits.iter()
-            .filter_map(|hit| source_value_for_highlight_field(&hit.source, &histogram.field)),
+            .map(|hit| source_value_for_highlight_field(&hit.source, &histogram.field)),
         histogram,
     )
 }
@@ -141283,6 +141308,88 @@ mod tests {
         assert_eq!(body["aggregations"]["sum_bytes"]["value"], 300.0);
         assert_eq!(body["aggregations"]["avg_bytes"]["value"], 150.0);
         assert_eq!(body["aggregations"]["count_bytes"]["value"], 2.0);
+    }
+
+    #[test]
+    fn engine_collects_histogram_missing_option() {
+        let engine = TantivyEngine::default();
+        engine
+            .create_index(CreateIndexRequest {
+                index: "logs-000001".to_string(),
+                settings: serde_json::json!({}),
+                mappings: serde_json::json!({
+                    "properties": {
+                        "latency_optional": { "type": "long" }
+                    }
+                }),
+            })
+            .unwrap();
+
+        for (id, latency) in [("1", Some(5)), ("2", None), ("3", Some(15)), ("4", None)] {
+            let mut source = serde_json::Map::new();
+            if let Some(latency) = latency {
+                source.insert("latency_optional".to_string(), Value::from(latency));
+            }
+            engine
+                .index_document(IndexDocumentRequest {
+                    index: "logs-000001".to_string(),
+                    id: id.to_string(),
+                    source: Value::Object(source),
+                })
+                .unwrap();
+        }
+        engine
+            .refresh(RefreshRequest {
+                indices: vec!["logs-000001".to_string()],
+            })
+            .unwrap();
+
+        let body = engine
+            .search(SearchRequest {
+                indices: vec!["logs-000001".to_string()],
+                query: serde_json::json!({ "match_all": {} }),
+                aggregations: serde_json::json!({
+                    "latency": {
+                        "histogram": {
+                            "field": "latency_optional",
+                            "interval": 100,
+                            "missing": 120
+                        }
+                    }
+                }),
+                sort: Vec::new(),
+                from: 0,
+                size: 0,
+                stored_fields: None,
+                source_fields: None,
+                source_filter: None,
+                source_includes: None,
+                source_include: None,
+                source_excludes: None,
+                source_exclude: None,
+                highlight: None,
+                explain: false,
+            })
+            .unwrap()
+            .to_opensearch_body(0);
+
+        assert_eq!(
+            body["aggregations"],
+            serde_json::json!({
+                "latency": {
+                    "buckets": [
+                        {
+                            "key": 0.0,
+                            "doc_count": 2
+                        },
+                        {
+                            "key": 100.0,
+                            "doc_count": 2
+                        }
+                    ]
+                }
+            })
+        );
     }
 
     #[test]

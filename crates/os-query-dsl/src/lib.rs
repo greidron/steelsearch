@@ -341,6 +341,7 @@ pub struct DateHistogramAggregation {
 pub struct HistogramAggregation {
     pub field: String,
     pub interval: f64,
+    pub missing: Option<f64>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -1047,9 +1048,10 @@ fn parse_histogram_aggregation(body: &Value) -> QueryDslResult<Aggregation> {
             clause: "histogram".to_string(),
             field: "interval".to_string(),
         })?;
+    let missing = object.get("missing").map(parse_f64_value).transpose()?;
     for option in object.keys() {
         match option.as_str() {
-            "field" | "interval" => {}
+            "field" | "interval" | "missing" => {}
             _ => {
                 return Err(QueryDslError::UnsupportedOption {
                     clause: "histogram".to_string(),
@@ -1061,6 +1063,7 @@ fn parse_histogram_aggregation(body: &Value) -> QueryDslResult<Aggregation> {
     Ok(Aggregation::Histogram(HistogramAggregation {
         field,
         interval,
+        missing,
     }))
 }
 
@@ -6582,7 +6585,33 @@ mod tests {
             aggregations.get("latency_histogram"),
             Some(&Aggregation::Histogram(HistogramAggregation {
                 field: "latency".to_string(),
-                interval: 10.0
+                interval: 10.0,
+                missing: None
+            }))
+        );
+    }
+
+    #[test]
+    fn parses_histogram_aggregation_missing_option() {
+        let aggregations = parse_search_aggregations(&serde_json::json!({
+            "aggs": {
+                "latency_histogram": {
+                    "histogram": {
+                        "field": "latency_optional",
+                        "interval": 100.0,
+                        "missing": 120.0
+                    }
+                }
+            }
+        }))
+        .unwrap();
+
+        assert_eq!(
+            aggregations.get("latency_histogram"),
+            Some(&Aggregation::Histogram(HistogramAggregation {
+                field: "latency_optional".to_string(),
+                interval: 100.0,
+                missing: Some(120.0)
             }))
         );
     }

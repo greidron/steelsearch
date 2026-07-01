@@ -193,7 +193,7 @@ part of the OpenSearch parity target.
   - selected metrics, including bounded `missing` replacement values for numeric
     metric aggregations
   - date histogram
-  - histogram
+  - histogram, including bounded numeric `missing` replacement values
   - range
   - cardinality
   - filter / filters
