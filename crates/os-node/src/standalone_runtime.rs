@@ -3431,6 +3431,9 @@ impl SteelNode {
             ) {
                 return Some(response);
             }
+            if let Some(response) = validate_open_close_query_params(request) {
+                return Some(response);
+            }
             return Some(self.handle_close_route(None));
         }
         if request.path == "/_open" && request.method == RestMethod::Post {
@@ -3439,6 +3442,9 @@ impl SteelNode {
                 SecurityPermission::ClusterAdmin,
                 "index maintenance",
             ) {
+                return Some(response);
+            }
+            if let Some(response) = validate_open_close_query_params(request) {
                 return Some(response);
             }
             return Some(self.handle_open_route(None));
@@ -5014,6 +5020,9 @@ impl SteelNode {
                 ) {
                     return Some(response);
                 }
+                if let Some(response) = validate_open_close_query_params(request) {
+                    return Some(response);
+                }
                 return Some(self.handle_close_route(Some(index)));
             }
         }
@@ -5024,6 +5033,9 @@ impl SteelNode {
                     SecurityPermission::ClusterAdmin,
                     "index maintenance",
                 ) {
+                    return Some(response);
+                }
+                if let Some(response) = validate_open_close_query_params(request) {
                     return Some(response);
                 }
                 return Some(self.handle_open_route(Some(index)));
@@ -26122,6 +26134,45 @@ fn validate_common_indices_options_query_params(
     }
 
     validate_cluster_manager_timeout_query_params(request)
+}
+
+fn validate_open_close_query_params(request: &RestRequest) -> Option<RestResponse> {
+    const ALLOWED_PARAMS: &[&str] = &[
+        "allow_no_indices",
+        "cluster_manager_timeout",
+        "expand_wildcards",
+        "ignore_throttled",
+        "ignore_unavailable",
+        "master_timeout",
+        "timeout",
+        "wait_for_active_shards",
+    ];
+
+    let unrecognized = request
+        .query_params
+        .keys()
+        .filter(|key| !ALLOWED_PARAMS.contains(&key.as_str()))
+        .collect::<Vec<_>>();
+    if let Some(response) = unrecognized_query_param_response_for_keys(request, &unrecognized) {
+        return Some(response);
+    }
+
+    if let Some(response) = validate_index_target_boolean_query_params(request) {
+        return Some(response);
+    }
+
+    if let Some(response) = validate_opensearch_named_boolean_query_param(
+        "ignore_throttled",
+        request.query_params.get("ignore_throttled"),
+    ) {
+        return Some(response);
+    }
+
+    if let Some(response) = validate_index_expand_wildcards_query_param(request) {
+        return Some(response);
+    }
+
+    validate_cluster_settings_timeout_params(request)
 }
 
 fn validate_index_expand_wildcards_query_param(request: &RestRequest) -> Option<RestResponse> {
@@ -75585,6 +75636,36 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(repeated.body["acknowledged"], Value::Bool(true));
         assert_eq!(repeated.body["shards_acknowledged"], Value::Bool(true));
 
+        let invalid_allow_no_indices = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/_close?allow_no_indices=maybe",
+        ));
+        assert_eq!(invalid_allow_no_indices.status, 400);
+        assert_eq!(
+            invalid_allow_no_indices.body["error"]["reason"],
+            "Could not convert [allow_no_indices] to boolean"
+        );
+
+        let invalid_expand_wildcards = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/logs-*/_close?expand_wildcards=bogus",
+        ));
+        assert_eq!(invalid_expand_wildcards.status, 400);
+        assert_eq!(
+            invalid_expand_wildcards.body["error"]["reason"],
+            "No valid expand wildcard value [bogus]"
+        );
+
+        let unrecognized_param = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/logs-*/_close?not_a_param=x",
+        ));
+        assert_eq!(unrecognized_param.status, 400);
+        assert_eq!(
+            unrecognized_param.body["error"]["reason"],
+            "request [/logs-*/_close] contains unrecognized parameter: [not_a_param]"
+        );
+
         let manifest = node
             .metadata_manifest_state
             .lock()
@@ -75782,6 +75863,36 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(repeated.status, 200);
         assert_eq!(repeated.body["acknowledged"], Value::Bool(true));
         assert_eq!(repeated.body["shards_acknowledged"], Value::Bool(true));
+
+        let invalid_ignore_unavailable = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/_open?ignore_unavailable=maybe",
+        ));
+        assert_eq!(invalid_ignore_unavailable.status, 400);
+        assert_eq!(
+            invalid_ignore_unavailable.body["error"]["reason"],
+            "Could not convert [ignore_unavailable] to boolean"
+        );
+
+        let invalid_timeout = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/logs-*/_open?timeout=bogus",
+        ));
+        assert_eq!(invalid_timeout.status, 400);
+        assert_eq!(
+            invalid_timeout.body["error"]["reason"],
+            "failed to parse setting [timeout] with value [bogus] as a time value"
+        );
+
+        let unrecognized_param = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/logs-*/_open?not_a_param=x",
+        ));
+        assert_eq!(unrecognized_param.status, 400);
+        assert_eq!(
+            unrecognized_param.body["error"]["reason"],
+            "request [/logs-*/_open] contains unrecognized parameter: [not_a_param]"
+        );
 
         let manifest = node
             .metadata_manifest_state

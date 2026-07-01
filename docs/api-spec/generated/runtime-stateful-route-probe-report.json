@@ -5,7 +5,7 @@
       "passed": 48
     },
     "index-and-metadata": {
-      "passed": 110
+      "passed": 112
     },
     "misc": {
       "passed": 5
@@ -4755,6 +4755,23 @@
     {
       "expected_runtime_status": "stateful-route-present",
       "family": "index-and-metadata",
+      "inventory_path": "/_close",
+      "method": "POST",
+      "name": "close_root_invalid_allow_no_indices_error_post",
+      "path": "/_close?allow_no_indices=maybe",
+      "result": {
+        "body": "{\"error\":{\"reason\":\"Could not convert [allow_no_indices] to boolean\",\"root_cause\":[{\"reason\":\"Could not convert [allow_no_indices] to boolean\",\"type\":\"illegal_argument_exception\"}],\"type\":\"illegal_argument_exception\"},\"status\":400}",
+        "status": 400
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "error-path"
+      ],
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
       "inventory_path": "/{index}/_close",
       "method": "POST",
       "name": "close_target_post",
@@ -5056,6 +5073,23 @@
       "runtime_status": "stateful-route-present",
       "semantic_tags": [
         "idempotency-or-selector"
+      ],
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/_open",
+      "method": "POST",
+      "name": "open_root_invalid_ignore_unavailable_error_post",
+      "path": "/_open?ignore_unavailable=maybe",
+      "result": {
+        "body": "{\"error\":{\"reason\":\"Could not convert [ignore_unavailable] to boolean\",\"root_cause\":[{\"reason\":\"Could not convert [ignore_unavailable] to boolean\",\"type\":\"illegal_argument_exception\"}],\"type\":\"illegal_argument_exception\"},\"status\":400}",
+        "status": 400
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "error-path"
       ],
       "status": "passed"
     },
@@ -5549,17 +5583,6 @@
     },
     {
       "complete": false,
-      "inventory_path": "/_close",
-      "missing": [
-        "error-path"
-      ],
-      "present": [
-        "happy-path",
-        "idempotency-or-selector"
-      ]
-    },
-    {
-      "complete": false,
       "inventory_path": "/_cluster/allocation/explain",
       "missing": [
         "error-path",
@@ -5908,17 +5931,6 @@
       ],
       "present": [
         "happy-path"
-      ]
-    },
-    {
-      "complete": false,
-      "inventory_path": "/_open",
-      "missing": [
-        "error-path"
-      ],
-      "present": [
-        "happy-path",
-        "idempotency-or-selector"
       ]
     },
     {
@@ -6926,12 +6938,11 @@
       ]
     },
     {
-      "complete": false,
+      "complete": true,
       "inventory_path": "/_close",
-      "missing": [
-        "error-path"
-      ],
+      "missing": [],
       "present": [
+        "error-path",
         "happy-path",
         "idempotency-or-selector"
       ]
@@ -7289,12 +7300,11 @@
       ]
     },
     {
-      "complete": false,
+      "complete": true,
       "inventory_path": "/_open",
-      "missing": [
-        "error-path"
-      ],
+      "missing": [],
       "present": [
+        "error-path",
         "happy-path",
         "idempotency-or-selector"
       ]
@@ -8264,8 +8274,8 @@
     }
   ],
   "semantic_coverage_summary": {
-    "complete": 9,
-    "incomplete": 121
+    "complete": 11,
+    "incomplete": 119
   },
   "setup": [
     {
@@ -8475,6 +8485,6 @@
     }
   ],
   "summary": {
-    "passed": 275
+    "passed": 277
   }
 }

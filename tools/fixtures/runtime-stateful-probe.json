@@ -2765,6 +2765,17 @@
       "expected_runtime_status": "stateful-route-present"
     },
     {
+      "name": "close_root_invalid_allow_no_indices_error_post",
+      "family": "index-and-metadata",
+      "inventory_path": "/_close",
+      "method": "POST",
+      "path": "/_close?allow_no_indices=maybe",
+      "semantic_tags": [
+        "error-path"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
       "name": "close_target_post",
       "family": "index-and-metadata",
       "inventory_path": "/{index}/_close",
@@ -2934,6 +2945,17 @@
       "inventory_path": "/_open",
       "method": "POST",
       "path": "/_open",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "open_root_invalid_ignore_unavailable_error_post",
+      "family": "index-and-metadata",
+      "inventory_path": "/_open",
+      "method": "POST",
+      "path": "/_open?ignore_unavailable=maybe",
+      "semantic_tags": [
+        "error-path"
+      ],
       "expected_runtime_status": "stateful-route-present"
     },
     {
