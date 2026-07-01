@@ -13180,6 +13180,38 @@
       "description": "[aggregation] adjacency matrix aggregation"
     },
     {
+      "name": "adjacency_matrix_separator_intersecting_aggregation",
+      "area": "aggregation",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "service_level_matrix": {
+            "adjacency_matrix": {
+              "separator": "|",
+              "show_only_intersecting": true,
+              "filters": {
+                "checkout": {
+                  "term": {
+                    "service": "checkout"
+                  }
+                },
+                "warn": {
+                  "term": {
+                    "level": "warn"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "extract": "aggregations",
+      "family": "aggregation",
+      "description": "[aggregation] adjacency matrix custom separator intersecting buckets"
+    },
+    {
       "name": "geo_distance_aggregation",
       "area": "aggregation",
       "method": "POST",
