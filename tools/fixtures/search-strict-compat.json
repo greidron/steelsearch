@@ -12538,6 +12538,86 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "moving_avg_pipeline_aggregation",
+      "area": "aggregation",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "bytes_hist": {
+            "histogram": {
+              "field": "bytes",
+              "interval": 100,
+              "extended_bounds": {
+                "min": 0,
+                "max": 500
+              },
+              "min_doc_count": 0
+            },
+            "aggs": {
+              "bytes_total": {
+                "sum": {
+                  "field": "bytes"
+                }
+              },
+              "bytes_moving_avg": {
+                "moving_avg": {
+                  "buckets_path": "bytes_total",
+                  "window": 2,
+                  "model": "simple"
+                }
+              }
+            }
+          }
+        }
+      },
+      "extract": "aggregations",
+      "family": "aggregation",
+      "description": "[aggregation] moving avg pipeline aggregation",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "moving_fn_pipeline_aggregation",
+      "area": "aggregation",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "bytes_hist": {
+            "histogram": {
+              "field": "bytes",
+              "interval": 100,
+              "extended_bounds": {
+                "min": 0,
+                "max": 500
+              },
+              "min_doc_count": 0
+            },
+            "aggs": {
+              "bytes_total": {
+                "sum": {
+                  "field": "bytes"
+                }
+              },
+              "bytes_moving_fn_avg": {
+                "moving_fn": {
+                  "buckets_path": "bytes_total",
+                  "window": 2,
+                  "script": "MovingFunctions.unweightedAvg(values)"
+                }
+              }
+            }
+          }
+        }
+      },
+      "extract": "aggregations",
+      "family": "aggregation",
+      "description": "[aggregation] moving fn pipeline aggregation",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "terms_aggregation",
       "area": "aggregation",
       "method": "POST",
