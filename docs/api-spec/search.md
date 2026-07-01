@@ -196,7 +196,8 @@ part of the OpenSearch parity target.
     rounding, bounded `format: epoch_millis` key string rendering, and bounded
     string date `missing` replacement values
   - histogram, including keyed bucket output, bounded numeric offset bucket
-    rounding, and bounded numeric `missing` replacement values
+    rounding, bounded numeric `extended_bounds` empty bucket expansion, and
+    bounded numeric `missing` replacement values
   - range
   - cardinality
   - filter / filters

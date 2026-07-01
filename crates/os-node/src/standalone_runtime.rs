@@ -36259,6 +36259,10 @@ fn build_search_aggregations(
                 .and_then(Value::as_f64)
                 .unwrap_or(0.0);
             let missing = histogram.get("missing").and_then(Value::as_f64);
+            let extended_bounds = histogram
+                .get("extended_bounds")
+                .map(parse_fallback_histogram_bounds)
+                .transpose()?;
             let keyed = histogram
                 .get("keyed")
                 .and_then(Value::as_bool)
@@ -36284,7 +36288,12 @@ fn build_search_aggregations(
                 let entry = counts.entry(bucket.to_bits()).or_insert((bucket, 0));
                 entry.1 += 1;
             }
-            let buckets = render_histogram_bucket_values_from_counts(&counts, interval, offset);
+            let buckets = render_histogram_bucket_values_from_counts(
+                &counts,
+                interval,
+                offset,
+                extended_bounds.as_ref(),
+            );
             result.insert(
                 name.clone(),
                 serde_json::json!({ "buckets": render_histogram_buckets(buckets, keyed) }),
@@ -37063,6 +37072,43 @@ fn fallback_histogram_bucket_key_with_offset(
     Some(((value - offset) / interval).floor() * interval + offset)
 }
 
+#[derive(Clone, Copy)]
+struct FallbackHistogramBounds {
+    min: Option<f64>,
+    max: Option<f64>,
+}
+
+fn parse_fallback_histogram_bounds(value: &Value) -> Result<FallbackHistogramBounds, RestResponse> {
+    let Some(object) = value.as_object() else {
+        return Err(build_unsupported_search_response(
+            "unsupported aggregation [histogram]",
+        ));
+    };
+    let min = object.get("min").and_then(|value| {
+        if value.is_null() {
+            None
+        } else {
+            value.as_f64()
+        }
+    });
+    let max = object.get("max").and_then(|value| {
+        if value.is_null() {
+            None
+        } else {
+            value.as_f64()
+        }
+    });
+    if min.is_some_and(|value| !value.is_finite())
+        || max.is_some_and(|value| !value.is_finite())
+        || matches!((min, max), (Some(min), Some(max)) if max < min)
+    {
+        return Err(build_unsupported_search_response(
+            "unsupported aggregation [histogram]",
+        ));
+    }
+    Ok(FallbackHistogramBounds { min, max })
+}
+
 fn collect_nested_child_hits(hits: &[Value], path: &str) -> Vec<Value> {
     let mut nested_hits = Vec::new();
     for hit in hits {
@@ -37273,18 +37319,37 @@ fn render_histogram_bucket_values_from_counts(
     counts: &std::collections::BTreeMap<u64, (f64, u64)>,
     interval: f64,
     offset: f64,
+    extended_bounds: Option<&FallbackHistogramBounds>,
 ) -> Vec<Value> {
-    if counts.is_empty() {
+    if counts.is_empty() && extended_bounds.is_none() {
         return Vec::new();
     }
-    let bucket_indexes = counts
+    let count_bucket_indexes = counts
         .values()
         .filter_map(|(key, _)| histogram_bucket_index(*key, interval, offset))
         .collect::<Vec<_>>();
-    let Some(min_bucket) = bucket_indexes.iter().copied().min() else {
+    let mut min_bucket = count_bucket_indexes.iter().copied().min();
+    let mut max_bucket = count_bucket_indexes.iter().copied().max();
+    if let Some(bounds) = extended_bounds {
+        if let Some(bound) = bounds
+            .min
+            .and_then(|min| fallback_histogram_bucket_key_with_offset(min, interval, offset))
+            .and_then(|key| histogram_bucket_index(key, interval, offset))
+        {
+            min_bucket = Some(min_bucket.map_or(bound, |current| current.min(bound)));
+        }
+        if let Some(bound) = bounds
+            .max
+            .and_then(|max| fallback_histogram_bucket_key_with_offset(max, interval, offset))
+            .and_then(|key| histogram_bucket_index(key, interval, offset))
+        {
+            max_bucket = Some(max_bucket.map_or(bound, |current| current.max(bound)));
+        }
+    }
+    let Some(min_bucket) = min_bucket else {
         return Vec::new();
     };
-    let Some(max_bucket) = bucket_indexes.iter().copied().max() else {
+    let Some(max_bucket) = max_bucket else {
         return Vec::new();
     };
     (min_bucket..=max_bucket)

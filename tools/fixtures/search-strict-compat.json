@@ -322,6 +322,7 @@
       "date_histogram_missing_aggregation",
       "histogram_keyed_aggregation",
       "histogram_offset_aggregation",
+      "histogram_extended_bounds_aggregation",
       "histogram_missing_aggregation",
       "metric_aggregations",
       "filter_aggregations",
@@ -9980,6 +9981,31 @@
       "extract": "aggregations",
       "family": "aggregation",
       "description": "[aggregation] histogram offset aggregation",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "histogram_extended_bounds_aggregation",
+      "area": "aggregation",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "bytes_extended": {
+            "histogram": {
+              "field": "bytes",
+              "interval": 100,
+              "extended_bounds": {
+                "min": 0,
+                "max": 500
+              }
+            }
+          }
+        }
+      },
+      "extract": "aggregations",
+      "family": "aggregation",
+      "description": "[aggregation] histogram extended bounds aggregation",
       "strict_source_parity_required": true
     },
     {

@@ -34365,6 +34365,7 @@ fn collect_plugin_aggregation_from_documents(
                     missing: None,
                     keyed: false,
                     offset: 0.0,
+                    extended_bounds: None,
                 };
                 let mut value = collect_histogram_aggregation_from_documents(documents, &histogram);
                 if let Some(object) = value.as_object_mut() {
@@ -34700,6 +34701,7 @@ fn collect_plugin_aggregation_from_documents(
                     missing: None,
                     keyed: false,
                     offset: 0.0,
+                    extended_bounds: None,
                 };
                 let mut value = collect_histogram_aggregation_from_documents(documents, &histogram);
                 if let Some(object) = value.as_object_mut() {
@@ -35734,6 +35736,7 @@ fn collect_plugin_aggregation_from_hits_with_input_order(
                     missing: None,
                     keyed: false,
                     offset: 0.0,
+                    extended_bounds: None,
                 };
                 let mut value = collect_histogram_aggregation(hits, &histogram);
                 if let Some(object) = value.as_object_mut() {
@@ -36067,6 +36070,7 @@ fn collect_plugin_aggregation_from_hits_with_input_order(
                     missing: None,
                     keyed: false,
                     offset: 0.0,
+                    extended_bounds: None,
                 };
                 let mut value = collect_histogram_aggregation(hits, &histogram);
                 if let Some(object) = value.as_object_mut() {
@@ -37775,8 +37779,12 @@ where
             entry.1 = entry.1.saturating_add(1);
         }
     }
-    let bucket_values =
-        histogram_bucket_values_from_counts(&counts, histogram.interval, histogram.offset);
+    let bucket_values = histogram_bucket_values_from_counts(
+        &counts,
+        histogram.interval,
+        histogram.offset,
+        histogram.extended_bounds.as_ref(),
+    );
     histogram_bucket_surface_value(bucket_values, histogram.keyed)
 }
 
@@ -37784,18 +37792,37 @@ fn histogram_bucket_values_from_counts(
     counts: &std::collections::BTreeMap<u64, (f64, u64)>,
     interval: f64,
     offset: f64,
+    extended_bounds: Option<&os_query_dsl::HistogramBounds>,
 ) -> Vec<Value> {
-    if counts.is_empty() {
+    if counts.is_empty() && extended_bounds.is_none() {
         return Vec::new();
     }
-    let bucket_indexes = counts
+    let count_bucket_indexes = counts
         .values()
         .filter_map(|(key, _)| histogram_bucket_index(*key, interval, offset))
         .collect::<Vec<_>>();
-    let Some(min_bucket) = bucket_indexes.iter().copied().min() else {
+    let mut min_bucket = count_bucket_indexes.iter().copied().min();
+    let mut max_bucket = count_bucket_indexes.iter().copied().max();
+    if let Some(bounds) = extended_bounds {
+        if let Some(bound) = bounds
+            .min
+            .and_then(|min| histogram_bucket_key(min, interval, offset))
+            .and_then(|key| histogram_bucket_index(key, interval, offset))
+        {
+            min_bucket = Some(min_bucket.map_or(bound, |current| current.min(bound)));
+        }
+        if let Some(bound) = bounds
+            .max
+            .and_then(|max| histogram_bucket_key(max, interval, offset))
+            .and_then(|key| histogram_bucket_index(key, interval, offset))
+        {
+            max_bucket = Some(max_bucket.map_or(bound, |current| current.max(bound)));
+        }
+    }
+    let Some(min_bucket) = min_bucket else {
         return Vec::new();
     };
-    let Some(max_bucket) = bucket_indexes.iter().copied().max() else {
+    let Some(max_bucket) = max_bucket else {
         return Vec::new();
     };
     (min_bucket..=max_bucket)
@@ -141798,6 +141825,85 @@ mod tests {
                             "key": 250.0,
                             "doc_count": 1
                         }
+                    ]
+                }
+            })
+        );
+    }
+
+    #[test]
+    fn engine_collects_histogram_extended_bounds_option() {
+        let engine = TantivyEngine::default();
+        engine
+            .create_index(CreateIndexRequest {
+                index: "logs-000001".to_string(),
+                settings: serde_json::json!({}),
+                mappings: serde_json::json!({
+                    "properties": {
+                        "bytes": { "type": "long" }
+                    }
+                }),
+            })
+            .unwrap();
+
+        for (id, bytes) in [("1", 120), ("2", 300)] {
+            engine
+                .index_document(IndexDocumentRequest {
+                    index: "logs-000001".to_string(),
+                    id: id.to_string(),
+                    source: serde_json::json!({ "bytes": bytes }),
+                })
+                .unwrap();
+        }
+        engine
+            .refresh(RefreshRequest {
+                indices: vec!["logs-000001".to_string()],
+            })
+            .unwrap();
+
+        let body = engine
+            .search(SearchRequest {
+                indices: vec!["logs-000001".to_string()],
+                query: serde_json::json!({ "match_all": {} }),
+                aggregations: serde_json::json!({
+                    "bytes": {
+                        "histogram": {
+                            "field": "bytes",
+                            "interval": 100,
+                            "extended_bounds": {
+                                "min": 0,
+                                "max": 500
+                            }
+                        }
+                    }
+                }),
+                sort: Vec::new(),
+                from: 0,
+                size: 0,
+                stored_fields: None,
+                source_fields: None,
+                source_filter: None,
+                source_includes: None,
+                source_include: None,
+                source_excludes: None,
+                source_exclude: None,
+                highlight: None,
+                explain: false,
+            })
+            .unwrap()
+            .to_opensearch_body(0);
+
+        assert_eq!(
+            body["aggregations"],
+            serde_json::json!({
+                "bytes": {
+                    "buckets": [
+                        { "key": 0.0, "doc_count": 0 },
+                        { "key": 100.0, "doc_count": 1 },
+                        { "key": 200.0, "doc_count": 0 },
+                        { "key": 300.0, "doc_count": 1 },
+                        { "key": 400.0, "doc_count": 0 },
+                        { "key": 500.0, "doc_count": 0 }
                     ]
                 }
             })

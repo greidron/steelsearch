@@ -348,6 +348,13 @@ pub struct HistogramAggregation {
     pub missing: Option<f64>,
     pub keyed: bool,
     pub offset: f64,
+    pub extended_bounds: Option<HistogramBounds>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct HistogramBounds {
+    pub min: Option<f64>,
+    pub max: Option<f64>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -1172,6 +1179,10 @@ fn parse_histogram_aggregation(body: &Value) -> QueryDslResult<Aggregation> {
         .transpose()?
         .unwrap_or(0.0);
     let missing = object.get("missing").map(parse_f64_value).transpose()?;
+    let extended_bounds = object
+        .get("extended_bounds")
+        .map(parse_histogram_bounds)
+        .transpose()?;
     let keyed = object
         .get("keyed")
         .map(|value| {
@@ -1185,7 +1196,7 @@ fn parse_histogram_aggregation(body: &Value) -> QueryDslResult<Aggregation> {
         .unwrap_or(false);
     for option in object.keys() {
         match option.as_str() {
-            "field" | "interval" | "offset" | "missing" | "keyed" => {}
+            "field" | "interval" | "offset" | "missing" | "keyed" | "extended_bounds" => {}
             _ => {
                 return Err(QueryDslError::UnsupportedOption {
                     clause: "histogram".to_string(),
@@ -1200,7 +1211,59 @@ fn parse_histogram_aggregation(body: &Value) -> QueryDslResult<Aggregation> {
         missing,
         keyed,
         offset,
+        extended_bounds,
     }))
+}
+
+fn parse_histogram_bounds(value: &Value) -> QueryDslResult<HistogramBounds> {
+    let object = value.as_object().ok_or(QueryDslError::ExpectedObject)?;
+    for option in object.keys() {
+        match option.as_str() {
+            "min" | "max" => {}
+            _ => {
+                return Err(QueryDslError::UnsupportedOption {
+                    clause: "histogram.extended_bounds".to_string(),
+                    option: option.clone(),
+                });
+            }
+        }
+    }
+    let min = object
+        .get("min")
+        .filter(|value| !value.is_null())
+        .map(parse_f64_value)
+        .transpose()?;
+    let max = object
+        .get("max")
+        .filter(|value| !value.is_null())
+        .map(parse_f64_value)
+        .transpose()?;
+    if let Some(min) = min {
+        if !min.is_finite() {
+            return Err(QueryDslError::InvalidValue {
+                clause: "histogram".to_string(),
+                field: "extended_bounds.min".to_string(),
+                reason: "must be finite".to_string(),
+            });
+        }
+    }
+    if let Some(max) = max {
+        if !max.is_finite() {
+            return Err(QueryDslError::InvalidValue {
+                clause: "histogram".to_string(),
+                field: "extended_bounds.max".to_string(),
+                reason: "must be finite".to_string(),
+            });
+        }
+    }
+    if matches!((min, max), (Some(min), Some(max)) if max < min) {
+        return Err(QueryDslError::InvalidValue {
+            clause: "histogram".to_string(),
+            field: "extended_bounds".to_string(),
+            reason: "max must be greater than or equal to min".to_string(),
+        });
+    }
+    Ok(HistogramBounds { min, max })
 }
 
 fn parse_significant_terms_aggregation(body: &Value) -> QueryDslResult<Aggregation> {
@@ -6844,7 +6907,8 @@ mod tests {
                 interval: 10.0,
                 missing: None,
                 keyed: false,
-                offset: 0.0
+                offset: 0.0,
+                extended_bounds: None
             }))
         );
     }
@@ -6871,7 +6935,8 @@ mod tests {
                 interval: 100.0,
                 missing: Some(120.0),
                 keyed: false,
-                offset: 0.0
+                offset: 0.0,
+                extended_bounds: None
             }))
         );
     }
@@ -6898,7 +6963,42 @@ mod tests {
                 interval: 100.0,
                 missing: None,
                 keyed: false,
-                offset: 25.0
+                offset: 25.0,
+                extended_bounds: None
+            }))
+        );
+    }
+
+    #[test]
+    fn parses_histogram_aggregation_extended_bounds_option() {
+        let aggregations = parse_search_aggregations(&serde_json::json!({
+            "aggs": {
+                "latency_histogram": {
+                    "histogram": {
+                        "field": "latency",
+                        "interval": 100.0,
+                        "extended_bounds": {
+                            "min": 0.0,
+                            "max": 400.0
+                        }
+                    }
+                }
+            }
+        }))
+        .unwrap();
+
+        assert_eq!(
+            aggregations.get("latency_histogram"),
+            Some(&Aggregation::Histogram(HistogramAggregation {
+                field: "latency".to_string(),
+                interval: 100.0,
+                missing: None,
+                keyed: false,
+                offset: 0.0,
+                extended_bounds: Some(HistogramBounds {
+                    min: Some(0.0),
+                    max: Some(400.0)
+                })
             }))
         );
     }
@@ -6925,7 +7025,8 @@ mod tests {
                 interval: 100.0,
                 missing: None,
                 keyed: true,
-                offset: 0.0
+                offset: 0.0,
+                extended_bounds: None
             }))
         );
     }
