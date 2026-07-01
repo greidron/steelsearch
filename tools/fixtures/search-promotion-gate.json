@@ -101,6 +101,7 @@
         "constant_score_query_search",
         "boosting_query_search",
         "combined_fields_query_search",
+        "geo_bounding_box_query_search",
         "expand_wildcards_open_search",
         "explain_search",
         "field_masking_span_query_search",

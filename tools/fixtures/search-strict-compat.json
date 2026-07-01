@@ -3317,6 +3317,39 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "geo_bounding_box_query_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "geo_bounding_box": {
+            "location": {
+              "top_left": {
+                "lat": 37.795,
+                "lon": -122.415
+              },
+              "bottom_right": {
+                "lat": 37.775,
+                "lon": -122.395
+              }
+            }
+          }
+        },
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] geo_bounding_box query filters geo_point documents",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "source_filtering_search",
       "area": "search",
       "method": "POST",
