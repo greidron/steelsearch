@@ -6446,6 +6446,38 @@
       "description": "[lexical] fuzzy query search"
     },
     {
+      "name": "fuzzy_query_common_options_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "fuzzy": {
+            "message": {
+              "value": "paymnt",
+              "fuzziness": 1,
+              "prefix_length": 0,
+              "max_expansions": 50,
+              "transpositions": true,
+              "rewrite": "constant_score",
+              "boost": 1.0,
+              "_name": "named_fuzzy"
+            }
+          }
+        },
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] fuzzy query accepts common OpenSearch options"
+    },
+    {
       "name": "fuzzy_query_prefix_length_search",
       "area": "search",
       "method": "POST",

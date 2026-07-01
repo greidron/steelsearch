@@ -116,6 +116,7 @@
         "field_masking_span_inner_field_query_search",
         "function_score_search",
         "fuzzy_query_search",
+        "fuzzy_query_common_options_search",
         "fuzzy_query_prefix_length_search",
         "fuzzy_query_prefix_length_miss_search",
         "fuzzy_query_transpositions_search",

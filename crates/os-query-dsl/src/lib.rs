@@ -3893,6 +3893,7 @@ fn parse_fuzzy(body: &Value) -> QueryDslResult<Query> {
             let value = options
                 .get("value")
                 .or_else(|| options.get("fuzzy"))
+                .or_else(|| options.get("term"))
                 .and_then(Value::as_str)
                 .ok_or_else(|| QueryDslError::MissingField {
                     clause: "fuzzy".to_string(),
@@ -3909,11 +3910,15 @@ fn parse_fuzzy(body: &Value) -> QueryDslResult<Query> {
                         option: "fuzziness".to_string(),
                     })?,
                 Some(Value::String(text)) => {
-                    text.parse::<u8>()
-                        .map_err(|_| QueryDslError::UnsupportedOption {
-                            clause: "fuzzy".to_string(),
-                            option: "fuzziness".to_string(),
-                        })?
+                    if text.eq_ignore_ascii_case("AUTO") {
+                        2
+                    } else {
+                        text.parse::<u8>()
+                            .map_err(|_| QueryDslError::UnsupportedOption {
+                                clause: "fuzzy".to_string(),
+                                option: "fuzziness".to_string(),
+                            })?
+                    }
                 }
                 Some(_) => {
                     return Err(QueryDslError::UnsupportedOption {
@@ -3935,17 +3940,34 @@ fn parse_fuzzy(body: &Value) -> QueryDslResult<Query> {
                     option: "transpositions".to_string(),
                 })?;
 
-            for option in options.keys() {
-                if option != "value"
-                    && option != "fuzzy"
-                    && option != "fuzziness"
-                    && option != "prefix_length"
-                    && option != "transpositions"
-                {
-                    return Err(QueryDslError::UnsupportedOption {
-                        clause: "fuzzy".to_string(),
-                        option: option.clone(),
-                    });
+            for (option, option_value) in options {
+                match option.as_str() {
+                    "value" | "fuzzy" | "term" | "fuzziness" | "prefix_length"
+                    | "transpositions" => {}
+                    "max_expansions" => {
+                        parse_usize_option("fuzzy", "max_expansions", option_value)?;
+                    }
+                    "rewrite" => {
+                        if option_value.as_str().is_none() && !option_value.is_null() {
+                            return Err(QueryDslError::InvalidValue {
+                                clause: "fuzzy".to_string(),
+                                field: option.clone(),
+                                reason: "must be a string or null".to_string(),
+                            });
+                        }
+                    }
+                    "boost" => {
+                        parse_non_negative_f64_option("fuzzy", "boost", option_value)?;
+                    }
+                    "_name" => {
+                        validate_optional_string_option(options, "fuzzy", "_name")?;
+                    }
+                    _ => {
+                        return Err(QueryDslError::UnsupportedOption {
+                            clause: "fuzzy".to_string(),
+                            option: option.clone(),
+                        });
+                    }
                 }
             }
 
@@ -5264,6 +5286,21 @@ mod tests {
             }
         }))
         .unwrap();
+        let with_common_options = parse_query(&serde_json::json!({
+            "fuzzy": {
+                "message": {
+                    "term": "alpah",
+                    "fuzziness": "AUTO",
+                    "prefix_length": 1,
+                    "max_expansions": 50,
+                    "transpositions": true,
+                    "rewrite": "constant_score",
+                    "boost": 1.0,
+                    "_name": "named_fuzzy"
+                }
+            }
+        }))
+        .unwrap();
 
         assert_eq!(
             shorthand,
@@ -5283,6 +5320,16 @@ mod tests {
                 fuzziness: 1,
                 prefix_length: 1,
                 transpositions: false,
+            }
+        );
+        assert_eq!(
+            with_common_options,
+            Query::Fuzzy {
+                field: "message".to_string(),
+                value: "alpah".to_string(),
+                fuzziness: 2,
+                prefix_length: 1,
+                transpositions: true,
             }
         );
     }

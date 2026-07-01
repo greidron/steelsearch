@@ -28910,7 +28910,11 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
             ));
         };
         if let Some(object) = value.as_object() {
-            let Some(query_value) = object.get("value").and_then(Value::as_str) else {
+            let Some(query_value) = object
+                .get("value")
+                .or_else(|| object.get("term"))
+                .and_then(Value::as_str)
+            else {
                 return Some(build_unsupported_search_response(
                     "unsupported fuzzy query shape",
                 ));
@@ -28922,9 +28926,14 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
             }
             if object.keys().any(|key| {
                 key != "value"
+                    && key != "term"
                     && key != "fuzziness"
                     && key != "prefix_length"
                     && key != "transpositions"
+                    && key != "max_expansions"
+                    && key != "rewrite"
+                    && key != "boost"
+                    && key != "_name"
             }) {
                 return Some(build_unsupported_search_response(
                     "unsupported fuzzy parameter",
@@ -28948,12 +28957,38 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
                 ));
             }
             if object
+                .get("max_expansions")
+                .is_some_and(|value| value.as_u64().is_none())
+            {
+                return Some(build_unsupported_search_response(
+                    "unsupported fuzzy max_expansions",
+                ));
+            }
+            if object
                 .get("transpositions")
                 .is_some_and(|value| !value.is_boolean())
             {
                 return Some(build_unsupported_search_response(
                     "unsupported fuzzy transpositions",
                 ));
+            }
+            if object
+                .get("rewrite")
+                .is_some_and(|value| !(value.is_string() || value.is_null()))
+            {
+                return Some(build_unsupported_search_response(
+                    "unsupported fuzzy rewrite",
+                ));
+            }
+            if object.get("boost").is_some_and(|value| {
+                !value
+                    .as_f64()
+                    .is_some_and(|number| number.is_finite() && number >= 0.0)
+            }) {
+                return Some(build_unsupported_search_response("unsupported fuzzy boost"));
+            }
+            if object.get("_name").is_some_and(|value| !value.is_string()) {
+                return Some(build_unsupported_search_response("unsupported fuzzy _name"));
             }
         } else if value.as_str().map(str::is_empty).unwrap_or(true) {
             return Some(build_unsupported_search_response(
@@ -33384,7 +33419,10 @@ fn extract_multi_match_fields(value: Option<&Value>) -> Vec<String> {
 
 fn extract_fuzzy_query_value(value: &Value) -> Option<(&str, MatchFuzzyOptions)> {
     if let Some(object) = value.as_object() {
-        let query_value = object.get("value").and_then(Value::as_str)?;
+        let query_value = object
+            .get("value")
+            .or_else(|| object.get("term"))
+            .and_then(Value::as_str)?;
         let fuzziness = match object.get("fuzziness") {
             Some(Value::String(mode)) if mode.eq_ignore_ascii_case("AUTO") => {
                 auto_fuzziness(query_value)
