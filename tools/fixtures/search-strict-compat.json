@@ -3393,6 +3393,30 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "wrapper_query_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "wrapper": {
+            "query": "eyJ0ZXJtIjp7InRhZyI6ImNhY2hlIn19"
+          }
+        },
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] wrapper query delegates to decoded inner query",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "source_filtering_search",
       "area": "search",
       "method": "POST",
