@@ -336,6 +336,7 @@ pub struct DateHistogramAggregation {
     pub field: String,
     pub interval: String,
     pub missing: Option<String>,
+    pub keyed: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -959,10 +960,21 @@ fn parse_date_histogram_aggregation(body: &Value) -> QueryDslResult<Aggregation>
                 })
         })
         .transpose()?;
+    let keyed = object
+        .get("keyed")
+        .map(|value| {
+            value.as_bool().ok_or_else(|| QueryDslError::InvalidValue {
+                clause: "date_histogram".to_string(),
+                field: "keyed".to_string(),
+                reason: "expected boolean value".to_string(),
+            })
+        })
+        .transpose()?
+        .unwrap_or(false);
 
     for option in object.keys() {
         match option.as_str() {
-            "field" | "calendar_interval" | "fixed_interval" | "missing" => {}
+            "field" | "calendar_interval" | "fixed_interval" | "missing" | "keyed" => {}
             _ => {
                 return Err(QueryDslError::UnsupportedOption {
                     clause: "date_histogram".to_string(),
@@ -976,6 +988,7 @@ fn parse_date_histogram_aggregation(body: &Value) -> QueryDslResult<Aggregation>
         field,
         interval,
         missing,
+        keyed,
     }))
 }
 
@@ -6532,6 +6545,7 @@ mod tests {
                 field: "event_time".to_string(),
                 interval: "day".to_string(),
                 missing: None,
+                keyed: false,
             })
         );
     }
@@ -6556,6 +6570,7 @@ mod tests {
                 field: "event_time".to_string(),
                 interval: "1h".to_string(),
                 missing: None,
+                keyed: false,
             })
         );
     }
@@ -6581,6 +6596,33 @@ mod tests {
                 field: "event_time_optional".to_string(),
                 interval: "day".to_string(),
                 missing: Some("2026-04-22T00:01:30Z".to_string()),
+                keyed: false,
+            })
+        );
+    }
+
+    #[test]
+    fn parses_date_histogram_aggregation_keyed_option() {
+        let aggregations = parse_search_aggregations(&serde_json::json!({
+            "aggs": {
+                "recent_events": {
+                    "date_histogram": {
+                        "field": "event_time",
+                        "calendar_interval": "day",
+                        "keyed": true
+                    }
+                }
+            }
+        }))
+        .unwrap();
+
+        assert_eq!(
+            aggregations["recent_events"],
+            Aggregation::DateHistogram(DateHistogramAggregation {
+                field: "event_time".to_string(),
+                interval: "day".to_string(),
+                missing: None,
+                keyed: true,
             })
         );
     }

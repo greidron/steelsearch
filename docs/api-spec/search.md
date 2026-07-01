@@ -192,7 +192,8 @@ part of the OpenSearch parity target.
 - The current source-owned aggregation subset is bounded to:
   - selected metrics, including bounded `missing` replacement values for numeric
     metric aggregations
-  - date histogram, including bounded string date `missing` replacement values
+  - date histogram, including keyed bucket output and bounded string date
+    `missing` replacement values
   - histogram, including bounded numeric `missing` replacement values
   - range
   - cardinality

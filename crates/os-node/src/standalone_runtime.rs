@@ -36142,6 +36142,10 @@ fn build_search_aggregations(
                 ));
             }
             let missing = date_histogram.get("missing").and_then(Value::as_str);
+            let keyed = date_histogram
+                .get("keyed")
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
             let mut counts = std::collections::BTreeMap::<i64, (String, u64)>::new();
             for hit in hits {
                 let raw = hit
@@ -36166,7 +36170,10 @@ fn build_search_aggregations(
                     })
                 })
                 .collect::<Vec<_>>();
-            result.insert(name.clone(), serde_json::json!({ "buckets": buckets }));
+            result.insert(
+                name.clone(),
+                serde_json::json!({ "buckets": render_date_histogram_buckets(buckets, keyed) }),
+            );
             continue;
         }
         if let Some(auto_date_histogram) = aggregation_object
@@ -37090,6 +37097,24 @@ fn date_histogram_bucket_day(timestamp: &str) -> Option<(i64, String)> {
     let days = days_from_civil(year, month, day)?;
     let millis = days.checked_mul(86_400_000)?;
     Some((millis, format!("{date}T00:00:00.000Z")))
+}
+
+fn render_date_histogram_buckets(buckets: Vec<Value>, keyed: bool) -> Value {
+    if !keyed {
+        return Value::Array(buckets);
+    }
+    let mut keyed_buckets = serde_json::Map::new();
+    for bucket in buckets {
+        let Some(key) = bucket
+            .get("key_as_string")
+            .and_then(Value::as_str)
+            .map(ToString::to_string)
+        else {
+            continue;
+        };
+        keyed_buckets.insert(key, bucket);
+    }
+    Value::Object(keyed_buckets)
 }
 
 fn days_from_civil(year: i32, month: u32, day: u32) -> Option<i64> {

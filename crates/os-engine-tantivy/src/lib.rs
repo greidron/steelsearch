@@ -27861,6 +27861,16 @@ fn value_object_bucket_array_carrier(value: &Value) -> Vec<Value> {
         .unwrap_or_default()
 }
 
+fn value_object_bucket_surface_is_object(value: &Value) -> bool {
+    let Some(object) = value.as_object() else {
+        return false;
+    };
+    object
+        .get("_merge_buckets")
+        .or_else(|| object.get("buckets"))
+        .is_some_and(Value::is_object)
+}
+
 fn take_object_bucket_array_carrier(object: &mut serde_json::Map<String, Value>) -> Vec<Value> {
     object
         .remove("_merge_buckets")
@@ -28634,9 +28644,19 @@ fn merge_date_histogram_aggregation_value(
     if buckets.is_empty() {
         return;
     }
+    let keyed = value_object_bucket_surface_is_object(value)
+        || merged
+            .get(name)
+            .is_some_and(value_object_bucket_surface_is_object);
     let entry = merged
         .entry(name.to_string())
-        .or_insert_with(|| bucket_array_visible_and_carrier_value(Vec::new()));
+        .or_insert_with(|| {
+            if keyed {
+                bucket_object_visible_and_carrier_value(serde_json::Map::new())
+            } else {
+                bucket_array_visible_and_carrier_value(Vec::new())
+            }
+        });
     let mut merged_buckets = {
         let Some(entry_object) = entry.as_object_mut() else {
             return;
@@ -28679,7 +28699,7 @@ fn merge_date_histogram_aggregation_value(
         }
     }
     merged_buckets.sort_by_key(|bucket| bucket.get("key").and_then(Value::as_i64).unwrap_or(0));
-    *entry = bucket_array_visible_and_carrier_value(merged_buckets);
+    *entry = date_histogram_bucket_surface_value(merged_buckets, keyed);
 }
 
 fn merge_histogram_aggregation_value(
@@ -34502,6 +34522,7 @@ fn collect_plugin_aggregation_from_documents(
                     field,
                     interval: interval.clone(),
                     missing: None,
+                    keyed: false,
                 };
                 let mut value =
                     collect_date_histogram_aggregation_from_documents(documents, &date_histogram)
@@ -34682,6 +34703,7 @@ fn collect_plugin_aggregation_from_documents(
                     field,
                     interval,
                     missing: None,
+                    keyed: false,
                 };
                 let mut value =
                     collect_date_histogram_aggregation_from_documents(documents, &date_histogram)
@@ -35861,6 +35883,7 @@ fn collect_plugin_aggregation_from_hits_with_input_order(
                     field,
                     interval: interval.clone(),
                     missing: None,
+                    keyed: false,
                 };
                 let mut value = collect_date_histogram_aggregation(hits, &date_histogram)
                     .unwrap_or_else(|_| bucket_array_visible_and_carrier_value(Vec::new()));
@@ -37329,7 +37352,28 @@ fn collect_date_histogram_aggregation(
             })
         })
         .collect::<Vec<_>>();
-    Ok(bucket_array_visible_and_carrier_value(bucket_values))
+    Ok(date_histogram_bucket_surface_value(
+        bucket_values,
+        date_histogram.keyed,
+    ))
+}
+
+fn date_histogram_bucket_surface_value(bucket_values: Vec<Value>, keyed: bool) -> Value {
+    if !keyed {
+        return bucket_array_visible_and_carrier_value(bucket_values);
+    }
+    let mut buckets = serde_json::Map::new();
+    for bucket in bucket_values {
+        let Some(key) = bucket
+            .get("key_as_string")
+            .and_then(Value::as_str)
+            .map(ToString::to_string)
+        else {
+            continue;
+        };
+        buckets.insert(key, bucket);
+    }
+    bucket_object_visible_and_carrier_value(buckets)
 }
 
 fn add_date_histogram_buckets_from_value(
@@ -37414,7 +37458,10 @@ fn collect_date_histogram_aggregation_from_documents(
             Value::Object(bucket)
         })
         .collect::<Vec<_>>();
-    Ok(bucket_array_visible_and_carrier_value(bucket_values))
+    Ok(date_histogram_bucket_surface_value(
+        bucket_values,
+        date_histogram.keyed,
+    ))
 }
 
 fn histogram_bucket_key(value: f64, interval: f64) -> Option<f64> {
@@ -156533,6 +156580,82 @@ mod tests {
                             "doc_count": 2
                         }
                     ]
+                }
+            })
+        );
+    }
+
+    #[test]
+    fn native_tantivy_date_histogram_keyed_option_preserves_shape() {
+        let engine = TantivyEngine::default();
+        engine
+            .create_index(CreateIndexRequest {
+                index: "bench".to_string(),
+                settings: serde_json::json!({}),
+                mappings: serde_json::json!({
+                    "properties": {
+                        "event_time": { "type": "date", "fast": true }
+                    }
+                }),
+            })
+            .unwrap();
+
+        for (id, event_time) in [
+            ("1", "2024-01-01T08:00:00Z"),
+            ("2", "2024-01-01T10:00:00Z"),
+            ("3", "2024-01-02T09:00:00Z"),
+        ] {
+            engine
+                .index_document(IndexDocumentRequest {
+                    index: "bench".to_string(),
+                    id: id.to_string(),
+                    source: serde_json::json!({ "event_time": event_time }),
+                })
+                .unwrap();
+        }
+        engine
+            .refresh(RefreshRequest {
+                indices: vec!["bench".to_string()],
+            })
+            .unwrap();
+
+        let query = parse_query(&serde_json::json!({
+            "match_all": {}
+        }))
+        .unwrap();
+        let aggregations = parse_search_aggregation_map(&serde_json::json!({
+            "recent_events": {
+                "date_histogram": {
+                    "field": "event_time",
+                    "calendar_interval": "day",
+                    "keyed": true
+                }
+            }
+        }))
+        .unwrap();
+
+        let mut store = engine.store.write().unwrap();
+        let index = store.indices.get_mut("bench").unwrap();
+        let native = index
+            .collect_aggregations_native(&query, &aggregations)
+            .unwrap()
+            .expect("native keyed date_histogram aggregation");
+        assert_eq!(
+            native,
+            serde_json::json!({
+                "recent_events": {
+                    "buckets": {
+                        "2024-01-01T00:00:00.000Z": {
+                            "key": 1704067200000i64,
+                            "key_as_string": "2024-01-01T00:00:00.000Z",
+                            "doc_count": 2
+                        },
+                        "2024-01-02T00:00:00.000Z": {
+                            "key": 1704153600000i64,
+                            "key_as_string": "2024-01-02T00:00:00.000Z",
+                            "doc_count": 1
+                        }
+                    }
                 }
             })
         );
