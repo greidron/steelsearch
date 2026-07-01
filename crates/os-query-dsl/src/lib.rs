@@ -2963,13 +2963,73 @@ fn parse_match_bool_prefix(body: &Value) -> QueryDslResult<Query> {
 
     let (field, match_body) = object.iter().next().expect("checked len");
     let query = if let Some(object) = match_body.as_object() {
-        object
+        let query = object
             .get("query")
             .cloned()
             .ok_or_else(|| QueryDslError::MissingField {
                 clause: "match_bool_prefix".to_string(),
                 field: "query".to_string(),
-            })?
+            })?;
+        validate_optional_string_option(object, "match_bool_prefix", "analyzer")?;
+        if let Some(operator) = object.get("operator") {
+            let operator = operator
+                .as_str()
+                .map(str::to_ascii_lowercase)
+                .ok_or_else(|| QueryDslError::InvalidValue {
+                    clause: "match_bool_prefix".to_string(),
+                    field: "operator".to_string(),
+                    reason: "must be [and] or [or]".to_string(),
+                })?;
+            if operator != "and" && operator != "or" {
+                return Err(QueryDslError::InvalidValue {
+                    clause: "match_bool_prefix".to_string(),
+                    field: "operator".to_string(),
+                    reason: "must be [and] or [or]".to_string(),
+                });
+            }
+        }
+        object
+            .get("minimum_should_match")
+            .map(|value| parse_minimum_should_match(value, match_query_clause_count(&query)))
+            .transpose()?;
+        parse_match_fuzziness_option(object.get("fuzziness"), &query)?;
+        object
+            .get("prefix_length")
+            .map(|value| parse_usize_option("match_bool_prefix", "prefix_length", value))
+            .transpose()?;
+        object
+            .get("max_expansions")
+            .map(|value| parse_usize_option("match_bool_prefix", "max_expansions", value))
+            .transpose()?;
+        validate_optional_bool_option(object, "match_bool_prefix", "fuzzy_transpositions")?;
+        validate_optional_string_option(object, "match_bool_prefix", "fuzzy_rewrite")?;
+        object
+            .get("boost")
+            .map(|value| parse_non_negative_f64_option("match_bool_prefix", "boost", value))
+            .transpose()?;
+        validate_optional_string_option(object, "match_bool_prefix", "_name")?;
+        for option in object.keys() {
+            if !matches!(
+                option.as_str(),
+                "query"
+                    | "analyzer"
+                    | "operator"
+                    | "minimum_should_match"
+                    | "fuzziness"
+                    | "prefix_length"
+                    | "max_expansions"
+                    | "fuzzy_transpositions"
+                    | "fuzzy_rewrite"
+                    | "boost"
+                    | "_name"
+            ) {
+                return Err(QueryDslError::UnsupportedOption {
+                    clause: "match_bool_prefix".to_string(),
+                    option: option.clone(),
+                });
+            }
+        }
+        query
     } else {
         match_body.clone()
     };
@@ -5334,6 +5394,24 @@ mod tests {
             }
         }))
         .unwrap();
+        let with_options = parse_query(&serde_json::json!({
+            "match_bool_prefix": {
+                "message": {
+                    "query": "alpha check",
+                    "analyzer": "standard",
+                    "operator": "or",
+                    "minimum_should_match": 1,
+                    "fuzziness": "AUTO",
+                    "prefix_length": 0,
+                    "max_expansions": 50,
+                    "fuzzy_transpositions": true,
+                    "fuzzy_rewrite": "constant_score",
+                    "boost": 1.0,
+                    "_name": "named_match_bool_prefix"
+                }
+            }
+        }))
+        .unwrap();
 
         assert_eq!(
             shorthand,
@@ -5344,6 +5422,13 @@ mod tests {
         );
         assert_eq!(
             explicit,
+            Query::MatchBoolPrefix {
+                field: "message".to_string(),
+                query: serde_json::json!("alpha check"),
+            }
+        );
+        assert_eq!(
+            with_options,
             Query::MatchBoolPrefix {
                 field: "message".to_string(),
                 query: serde_json::json!("alpha check"),

@@ -4900,6 +4900,41 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "match_bool_prefix_common_options_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_bool_prefix": {
+            "message": {
+              "query": "accepted pay",
+              "analyzer": "standard",
+              "operator": "or",
+              "minimum_should_match": 1,
+              "fuzziness": "0",
+              "prefix_length": 0,
+              "max_expansions": 50,
+              "fuzzy_transpositions": true,
+              "fuzzy_rewrite": "constant_score",
+              "boost": 1.0,
+              "_name": "named_match_bool_prefix"
+            }
+          }
+        },
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] match_bool_prefix accepts common OpenSearch options"
+    },
+    {
       "name": "match_operator_and_search",
       "area": "search",
       "method": "POST",

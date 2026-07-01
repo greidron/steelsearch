@@ -28331,21 +28331,12 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
         }
     }
     if let Some(match_bool_prefix) = query.get("match_bool_prefix").and_then(Value::as_object) {
-        let Some((_, spec)) = match_bool_prefix.iter().next() else {
-            return Some(build_unsupported_search_response(
-                "unsupported match_bool_prefix query shape",
-            ));
-        };
-        let valid = spec.as_str().is_some_and(|value| !value.is_empty())
-            || spec
-                .as_object()
-                .and_then(|object| object.get("query"))
-                .and_then(Value::as_str)
-                .is_some_and(|value| !value.is_empty());
-        if match_bool_prefix.len() != 1 || !valid {
-            return Some(build_unsupported_search_response(
-                "unsupported match_bool_prefix query shape",
-            ));
+        if let Some(response) = validate_match_query_shape(
+            "match_bool_prefix",
+            match_bool_prefix,
+            MATCH_BOOL_PREFIX_QUERY_OPTIONS,
+        ) {
+            return Some(response);
         }
     }
     if let Some(combined_fields) = query.get("combined_fields").and_then(Value::as_object) {
@@ -29565,6 +29556,20 @@ const MATCH_PHRASE_PREFIX_QUERY_OPTIONS: &[&str] = &[
     "slop",
     "max_expansions",
     "zero_terms_query",
+    "boost",
+    "_name",
+];
+
+const MATCH_BOOL_PREFIX_QUERY_OPTIONS: &[&str] = &[
+    "query",
+    "analyzer",
+    "operator",
+    "minimum_should_match",
+    "fuzziness",
+    "prefix_length",
+    "max_expansions",
+    "fuzzy_transpositions",
+    "fuzzy_rewrite",
     "boost",
     "_name",
 ];
