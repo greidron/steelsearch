@@ -13012,6 +13012,36 @@
       "description": "[aggregation] ip range aggregation"
     },
     {
+      "name": "adjacency_matrix_aggregation",
+      "area": "aggregation",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "service_level_matrix": {
+            "adjacency_matrix": {
+              "filters": {
+                "checkout": {
+                  "term": {
+                    "service": "checkout"
+                  }
+                },
+                "warn": {
+                  "term": {
+                    "level": "warn"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "extract": "aggregations",
+      "family": "aggregation",
+      "description": "[aggregation] adjacency matrix aggregation"
+    },
+    {
       "name": "stats_metric_aggregation",
       "area": "aggregation",
       "method": "POST",
