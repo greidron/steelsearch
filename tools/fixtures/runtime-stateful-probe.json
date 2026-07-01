@@ -2201,6 +2201,28 @@
       "expected_runtime_status": "stateful-route-present"
     },
     {
+      "name": "aliases_root_selector_get",
+      "family": "index-and-metadata",
+      "inventory_path": "/_aliases",
+      "method": "GET",
+      "path": "/_aliases?expand_wildcards=open&allow_no_indices=true&ignore_unavailable=false",
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "aliases_root_invalid_ignore_unavailable_error_get",
+      "family": "index-and-metadata",
+      "inventory_path": "/_aliases",
+      "method": "GET",
+      "path": "/_aliases?ignore_unavailable=maybe",
+      "semantic_tags": [
+        "error-path"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
       "name": "alias_named_put",
       "family": "index-and-metadata",
       "inventory_path": "/_alias/{name}",

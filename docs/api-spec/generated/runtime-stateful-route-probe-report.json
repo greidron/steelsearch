@@ -5,7 +5,7 @@
       "passed": 48
     },
     "index-and-metadata": {
-      "passed": 105
+      "passed": 107
     },
     "misc": {
       "passed": 5
@@ -3700,6 +3700,40 @@
       "status": "passed"
     },
     {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/_aliases",
+      "method": "GET",
+      "name": "aliases_root_selector_get",
+      "path": "/_aliases?expand_wildcards=open&allow_no_indices=true&ignore_unavailable=false",
+      "result": {
+        "body": "{\"logs-stateful-probe\":{\"aliases\":{\"logs-stateful-root-read\":{\"is_write_index\":true}}}}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/_aliases",
+      "method": "GET",
+      "name": "aliases_root_invalid_ignore_unavailable_error_get",
+      "path": "/_aliases?ignore_unavailable=maybe",
+      "result": {
+        "body": "{\"error\":{\"reason\":\"Could not convert [ignore_unavailable] to boolean\",\"root_cause\":[{\"reason\":\"Could not convert [ignore_unavailable] to boolean\",\"type\":\"illegal_argument_exception\"}],\"type\":\"illegal_argument_exception\"},\"status\":400}",
+        "status": 400
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "error-path"
+      ],
+      "status": "passed"
+    },
+    {
       "body": {
         "index": "logs-stateful-probe",
         "is_write_index": true
@@ -5425,17 +5459,6 @@
     },
     {
       "complete": false,
-      "inventory_path": "/_aliases",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
-      "present": [
-        "happy-path"
-      ]
-    },
-    {
-      "complete": false,
       "inventory_path": "/_aliases/{name}",
       "missing": [
         "error-path",
@@ -6805,14 +6828,13 @@
       ]
     },
     {
-      "complete": false,
+      "complete": true,
       "inventory_path": "/_aliases",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
+      "missing": [],
       "present": [
-        "happy-path"
+        "error-path",
+        "happy-path",
+        "idempotency-or-selector"
       ]
     },
     {
@@ -8209,8 +8231,8 @@
     }
   ],
   "semantic_coverage_summary": {
-    "complete": 6,
-    "incomplete": 124
+    "complete": 7,
+    "incomplete": 123
   },
   "setup": [
     {
@@ -8331,7 +8353,7 @@
       "method": "POST",
       "path": "/logs-stateful-probe/_search/point_in_time?keep_alive=1m",
       "result": {
-        "body": "{\"_shards\":{\"failed\":0,\"skipped\":0,\"successful\":1,\"total\":1},\"creation_time\":1782946922032,\"pit_id\":\"k7G7QQETbG9ncy1zdGF0ZWZ1bC1wcm9iZRhsb2dzLXN0YXRlZnVsLXByb2JlLXV1aWQAFHN0ZWVsc2VhcmNoLWRldi1ub2RlAAAAAAAAD0JBHnN0ZWVsc2VhcmNoLXJlc3QtcGl0LXNlc3Npb24tMQA=\"}",
+        "body": "{\"_shards\":{\"failed\":0,\"skipped\":0,\"successful\":1,\"total\":1},\"creation_time\":1782947153983,\"pit_id\":\"k7G7QQETbG9ncy1zdGF0ZWZ1bC1wcm9iZRhsb2dzLXN0YXRlZnVsLXByb2JlLXV1aWQAFHN0ZWVsc2VhcmNoLWRldi1ub2RlAAAAAAAAD0JBHnN0ZWVsc2VhcmNoLXJlc3QtcGl0LXNlc3Npb24tMQA=\"}",
         "status": 200
       }
     },
@@ -8339,7 +8361,7 @@
       "method": "POST",
       "path": "/logs-stateful-probe/_search/point_in_time?keep_alive=1m",
       "result": {
-        "body": "{\"_shards\":{\"failed\":0,\"skipped\":0,\"successful\":1,\"total\":1},\"creation_time\":1782946922034,\"pit_id\":\"k7G7QQETbG9ncy1zdGF0ZWZ1bC1wcm9iZRhsb2dzLXN0YXRlZnVsLXByb2JlLXV1aWQAFHN0ZWVsc2VhcmNoLWRldi1ub2RlAAAAAAAAHoSBHnN0ZWVsc2VhcmNoLXJlc3QtcGl0LXNlc3Npb24tMgA=\"}",
+        "body": "{\"_shards\":{\"failed\":0,\"skipped\":0,\"successful\":1,\"total\":1},\"creation_time\":1782947153984,\"pit_id\":\"k7G7QQETbG9ncy1zdGF0ZWZ1bC1wcm9iZRhsb2dzLXN0YXRlZnVsLXByb2JlLXV1aWQAFHN0ZWVsc2VhcmNoLWRldi1ub2RlAAAAAAAAHoSBHnN0ZWVsc2VhcmNoLXJlc3QtcGl0LXNlc3Npb24tMgA=\"}",
         "status": 200
       }
     },
@@ -8420,6 +8442,6 @@
     }
   ],
   "summary": {
-    "passed": 270
+    "passed": 272
   }
 }
