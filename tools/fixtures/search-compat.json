@@ -5717,6 +5717,22 @@
       "description": "[lexical] exists query search"
     },
     {
+      "name": "match_none_query_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_none": {}
+        },
+        "size": 10
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] match_none query returns no hits",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "expand_wildcards_open_search",
       "area": "search",
       "method": "POST",

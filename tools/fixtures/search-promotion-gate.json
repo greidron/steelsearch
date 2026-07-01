@@ -97,6 +97,7 @@
         "rank_eval_precision_root_get_search",
         "rank_eval_precision_root_post_search",
         "exists_query_search",
+        "match_none_query_search",
         "expand_wildcards_open_search",
         "explain_search",
         "field_masking_span_query_search",
