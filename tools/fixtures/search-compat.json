@@ -362,6 +362,7 @@
       "terms_partition_include_aggregation",
       "terms_missing_aggregation",
       "terms_size_sum_other_doc_count_aggregation",
+      "terms_keyed_rejected_aggregation",
       "date_histogram_keyed_aggregation",
       "date_histogram_offset_aggregation",
       "date_histogram_calendar_minute_interval_aggregation",
@@ -14363,6 +14364,27 @@
       "family": "aggregation",
       "description": "[aggregation] terms size and sum_other_doc_count aggregation",
       "strict_source_parity_required": true
+    },
+    {
+      "name": "terms_keyed_rejected_aggregation",
+      "area": "aggregation",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "by_service": {
+            "terms": {
+              "field": "service",
+              "keyed": true
+            }
+          }
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "failure-path",
+      "description": "[aggregation] terms rejects keyed option like OpenSearch"
     },
     {
       "name": "terms_key_order_aggregation",

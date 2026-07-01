@@ -35629,6 +35629,11 @@ fn build_search_aggregations(
                 })
                 .transpose()?
                 .unwrap_or(10) as usize;
+            if terms.contains_key("keyed") {
+                return Err(build_x_content_parse_search_response_with_root_cause(
+                    "[1:67] [terms] unknown field [keyed]",
+                ));
+            }
             let mut counts = std::collections::BTreeMap::new();
             for hit in hits {
                 let key = hit
@@ -35675,16 +35680,17 @@ fn build_search_aggregations(
                 .skip(size)
                 .map(|(_, doc_count)| *doc_count)
                 .sum::<u64>();
+            let bucket_values = buckets
+                .into_iter()
+                .take(size)
+                .map(|(key, doc_count)| serde_json::json!({"key": key, "doc_count": doc_count}))
+                .collect::<Vec<_>>();
             result.insert(
                 name.clone(),
                 serde_json::json!({
                     "doc_count_error_upper_bound": 0,
                     "sum_other_doc_count": sum_other_doc_count,
-                    "buckets": buckets
-                        .into_iter()
-                        .take(size)
-                        .map(|(key, doc_count)| serde_json::json!({"key": key, "doc_count": doc_count}))
-                        .collect::<Vec<_>>()
+                    "buckets": bucket_values
                 }),
             );
             continue;
