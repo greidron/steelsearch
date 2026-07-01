@@ -21005,7 +21005,7 @@ fn rebucket_date_histogram_buckets_to_interval(
             continue;
         };
         let Some((bucket_key, bucket_string)) =
-            date_histogram_bucket(key_as_string, target_interval)
+            date_histogram_bucket(key_as_string, target_interval, 0)
         else {
             continue;
         };
@@ -21109,17 +21109,41 @@ fn coarsen_auto_date_histogram_buckets_until_target(
     (current_interval, current_buckets)
 }
 
-fn date_histogram_bucket(value: &Value, interval: &str) -> Option<(i64, String)> {
+fn date_histogram_bucket(
+    value: &Value,
+    interval: &str,
+    offset_millis: i64,
+) -> Option<(i64, String)> {
     let timestamp = parse_offset_datetime_value(value)?;
     let millis = timestamp.unix_timestamp_nanos() / 1_000_000;
-    date_histogram_bucket_from_epoch_millis(i64::try_from(millis).ok()?, interval)
+    date_histogram_bucket_from_epoch_millis(i64::try_from(millis).ok()?, interval, offset_millis)
 }
 
 fn date_histogram_bucket_from_epoch_millis(
     epoch_millis: i64,
     interval: &str,
+    offset_millis: i64,
 ) -> Option<(i64, String)> {
     let interval = normalize_date_histogram_interval(interval)?;
+    if offset_millis != 0 {
+        let interval_millis = match interval {
+            "minute" => 60_000_i64,
+            "hour" => 3_600_000_i64,
+            "day" => 86_400_000_i64,
+            _ => 0,
+        };
+        if interval_millis > 0 {
+            let shifted = epoch_millis.checked_sub(offset_millis)?;
+            let bucket_key = shifted
+                .div_euclid(interval_millis)
+                .checked_mul(interval_millis)?
+                .checked_add(offset_millis)?;
+            return Some((
+                bucket_key,
+                date_histogram_key_as_string_from_epoch_millis(bucket_key)?,
+            ));
+        }
+    }
     let timestamp = OffsetDateTime::from_unix_timestamp_nanos(
         i128::from(epoch_millis).saturating_mul(1_000_000),
     )
@@ -21189,6 +21213,23 @@ fn date_histogram_bucket_from_epoch_millis(
         }
         _ => None,
     }
+}
+
+fn date_histogram_key_as_string_from_epoch_millis(epoch_millis: i64) -> Option<String> {
+    let timestamp = OffsetDateTime::from_unix_timestamp_nanos(
+        i128::from(epoch_millis).saturating_mul(1_000_000),
+    )
+    .ok()?;
+    Some(format!(
+        "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}.{:03}Z",
+        timestamp.year(),
+        timestamp.month() as u32,
+        u32::from(timestamp.day()),
+        timestamp.hour(),
+        timestamp.minute(),
+        timestamp.second(),
+        timestamp.millisecond()
+    ))
 }
 
 fn days_from_civil(year: i32, month: u32, day: u32) -> Option<i64> {
@@ -28648,15 +28689,13 @@ fn merge_date_histogram_aggregation_value(
         || merged
             .get(name)
             .is_some_and(value_object_bucket_surface_is_object);
-    let entry = merged
-        .entry(name.to_string())
-        .or_insert_with(|| {
-            if keyed {
-                bucket_object_visible_and_carrier_value(serde_json::Map::new())
-            } else {
-                bucket_array_visible_and_carrier_value(Vec::new())
-            }
-        });
+    let entry = merged.entry(name.to_string()).or_insert_with(|| {
+        if keyed {
+            bucket_object_visible_and_carrier_value(serde_json::Map::new())
+        } else {
+            bucket_array_visible_and_carrier_value(Vec::new())
+        }
+    });
     let mut merged_buckets = {
         let Some(entry_object) = entry.as_object_mut() else {
             return;
@@ -34523,6 +34562,7 @@ fn collect_plugin_aggregation_from_documents(
                     interval: interval.clone(),
                     missing: None,
                     keyed: false,
+                    offset_millis: 0,
                 };
                 let mut value =
                     collect_date_histogram_aggregation_from_documents(documents, &date_histogram)
@@ -34704,6 +34744,7 @@ fn collect_plugin_aggregation_from_documents(
                     interval,
                     missing: None,
                     keyed: false,
+                    offset_millis: 0,
                 };
                 let mut value =
                     collect_date_histogram_aggregation_from_documents(documents, &date_histogram)
@@ -35884,6 +35925,7 @@ fn collect_plugin_aggregation_from_hits_with_input_order(
                     interval: interval.clone(),
                     missing: None,
                     keyed: false,
+                    offset_millis: 0,
                 };
                 let mut value = collect_date_histogram_aggregation(hits, &date_histogram)
                     .unwrap_or_else(|_| bucket_array_visible_and_carrier_value(Vec::new()));
@@ -37338,6 +37380,7 @@ fn collect_date_histogram_aggregation(
                 &mut counts,
                 raw,
                 &date_histogram.interval,
+                date_histogram.offset_millis,
             ),
             None => add_date_histogram_missing_bucket(&mut counts, date_histogram),
         }
@@ -37380,8 +37423,11 @@ fn add_date_histogram_buckets_from_value(
     counts: &mut std::collections::BTreeMap<i64, (String, u64)>,
     raw: &Value,
     interval: &str,
+    offset_millis: i64,
 ) {
-    for (bucket_key, bucket_string) in distinct_date_histogram_buckets(raw, interval) {
+    for (bucket_key, bucket_string) in
+        distinct_date_histogram_buckets_with_offset(raw, interval, offset_millis)
+    {
         let entry = counts.entry(bucket_key).or_insert((bucket_string, 0));
         entry.1 += 1;
     }
@@ -37395,7 +37441,12 @@ fn add_date_histogram_missing_bucket(
         return;
     };
     let missing = Value::String(missing.clone());
-    add_date_histogram_buckets_from_value(counts, &missing, &date_histogram.interval);
+    add_date_histogram_buckets_from_value(
+        counts,
+        &missing,
+        &date_histogram.interval,
+        date_histogram.offset_millis,
+    );
 }
 
 fn collect_date_histogram_aggregation_from_documents(
@@ -37417,9 +37468,11 @@ fn collect_date_histogram_aggregation_from_documents(
                 .get(&date_histogram.field)
                 .copied()
             {
-                if let Some((bucket_key, bucket_string)) =
-                    date_histogram_bucket_from_epoch_millis(epoch_millis, &date_histogram.interval)
-                {
+                if let Some((bucket_key, bucket_string)) = date_histogram_bucket_from_epoch_millis(
+                    epoch_millis,
+                    &date_histogram.interval,
+                    date_histogram.offset_millis,
+                ) {
                     let entry = counts.entry(bucket_key).or_insert((bucket_string, 0));
                     entry.1 += 1;
                 }
@@ -37436,12 +37489,19 @@ fn collect_date_histogram_aggregation_from_documents(
         };
         match raw {
             Value::Array(_) => {
-                add_date_histogram_buckets_from_value(&mut counts, raw, &date_histogram.interval);
+                add_date_histogram_buckets_from_value(
+                    &mut counts,
+                    raw,
+                    &date_histogram.interval,
+                    date_histogram.offset_millis,
+                );
             }
             _ => {
-                if let Some((bucket_key, bucket_string)) =
-                    date_histogram_bucket(raw, &date_histogram.interval)
-                {
+                if let Some((bucket_key, bucket_string)) = date_histogram_bucket(
+                    raw,
+                    &date_histogram.interval,
+                    date_histogram.offset_millis,
+                ) {
                     let entry = counts.entry(bucket_key).or_insert((bucket_string, 0));
                     entry.1 += 1;
                 }
@@ -39334,15 +39394,30 @@ fn distinct_scalar_bucket_values(value: &Value) -> Vec<Value> {
 }
 
 fn distinct_date_histogram_buckets(value: &Value, interval: &str) -> Vec<(i64, String)> {
-    fn visit(value: &Value, interval: &str, buckets: &mut BTreeMap<i64, String>) {
+    distinct_date_histogram_buckets_with_offset(value, interval, 0)
+}
+
+fn distinct_date_histogram_buckets_with_offset(
+    value: &Value,
+    interval: &str,
+    offset_millis: i64,
+) -> Vec<(i64, String)> {
+    fn visit(
+        value: &Value,
+        interval: &str,
+        offset_millis: i64,
+        buckets: &mut BTreeMap<i64, String>,
+    ) {
         match value {
             Value::Array(items) => {
                 for item in items {
-                    visit(item, interval, buckets);
+                    visit(item, interval, offset_millis, buckets);
                 }
             }
             _ => {
-                if let Some((bucket_key, bucket_string)) = date_histogram_bucket(value, interval) {
+                if let Some((bucket_key, bucket_string)) =
+                    date_histogram_bucket(value, interval, offset_millis)
+                {
                     buckets.entry(bucket_key).or_insert(bucket_string);
                 }
             }
@@ -39350,7 +39425,7 @@ fn distinct_date_histogram_buckets(value: &Value, interval: &str) -> Vec<(i64, S
     }
 
     let mut buckets = BTreeMap::new();
-    visit(value, interval, &mut buckets);
+    visit(value, interval, offset_millis, &mut buckets);
     buckets.into_iter().collect()
 }
 
@@ -156656,6 +156731,82 @@ mod tests {
                             "doc_count": 1
                         }
                     }
+                }
+            })
+        );
+    }
+
+    #[test]
+    fn native_tantivy_date_histogram_offset_option_preserves_shape() {
+        let engine = TantivyEngine::default();
+        engine
+            .create_index(CreateIndexRequest {
+                index: "bench".to_string(),
+                settings: serde_json::json!({}),
+                mappings: serde_json::json!({
+                    "properties": {
+                        "event_time": { "type": "date", "fast": true }
+                    }
+                }),
+            })
+            .unwrap();
+
+        for (id, event_time) in [
+            ("1", "2024-01-01T08:00:00Z"),
+            ("2", "2024-01-01T16:00:00Z"),
+            ("3", "2024-01-02T01:00:00Z"),
+        ] {
+            engine
+                .index_document(IndexDocumentRequest {
+                    index: "bench".to_string(),
+                    id: id.to_string(),
+                    source: serde_json::json!({ "event_time": event_time }),
+                })
+                .unwrap();
+        }
+        engine
+            .refresh(RefreshRequest {
+                indices: vec!["bench".to_string()],
+            })
+            .unwrap();
+
+        let query = parse_query(&serde_json::json!({
+            "match_all": {}
+        }))
+        .unwrap();
+        let aggregations = parse_search_aggregation_map(&serde_json::json!({
+            "recent_events": {
+                "date_histogram": {
+                    "field": "event_time",
+                    "calendar_interval": "day",
+                    "offset": "+12h"
+                }
+            }
+        }))
+        .unwrap();
+
+        let mut store = engine.store.write().unwrap();
+        let index = store.indices.get_mut("bench").unwrap();
+        let native = index
+            .collect_aggregations_native(&query, &aggregations)
+            .unwrap()
+            .expect("native offset date_histogram aggregation");
+        assert_eq!(
+            native,
+            serde_json::json!({
+                "recent_events": {
+                    "buckets": [
+                        {
+                            "key": 1704024000000i64,
+                            "key_as_string": "2023-12-31T12:00:00.000Z",
+                            "doc_count": 1
+                        },
+                        {
+                            "key": 1704110400000i64,
+                            "key_as_string": "2024-01-01T12:00:00.000Z",
+                            "doc_count": 2
+                        }
+                    ]
                 }
             })
         );

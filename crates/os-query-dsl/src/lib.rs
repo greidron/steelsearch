@@ -337,6 +337,7 @@ pub struct DateHistogramAggregation {
     pub interval: String,
     pub missing: Option<String>,
     pub keyed: bool,
+    pub offset_millis: i64,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -971,10 +972,15 @@ fn parse_date_histogram_aggregation(body: &Value) -> QueryDslResult<Aggregation>
         })
         .transpose()?
         .unwrap_or(false);
+    let offset_millis = object
+        .get("offset")
+        .map(parse_date_histogram_offset_millis)
+        .transpose()?
+        .unwrap_or(0);
 
     for option in object.keys() {
         match option.as_str() {
-            "field" | "calendar_interval" | "fixed_interval" | "missing" | "keyed" => {}
+            "field" | "calendar_interval" | "fixed_interval" | "missing" | "keyed" | "offset" => {}
             _ => {
                 return Err(QueryDslError::UnsupportedOption {
                     clause: "date_histogram".to_string(),
@@ -989,7 +995,65 @@ fn parse_date_histogram_aggregation(body: &Value) -> QueryDslResult<Aggregation>
         interval,
         missing,
         keyed,
+        offset_millis,
     }))
+}
+
+fn parse_date_histogram_offset_millis(value: &Value) -> QueryDslResult<i64> {
+    match value {
+        Value::Number(number) => number.as_i64().ok_or_else(|| QueryDslError::InvalidValue {
+            clause: "date_histogram".to_string(),
+            field: "offset".to_string(),
+            reason: "expected integer millisecond offset".to_string(),
+        }),
+        Value::String(text) => {
+            parse_signed_time_value_millis(text).ok_or_else(|| QueryDslError::InvalidValue {
+                clause: "date_histogram".to_string(),
+                field: "offset".to_string(),
+                reason: "expected time value offset".to_string(),
+            })
+        }
+        _ => Err(QueryDslError::InvalidValue {
+            clause: "date_histogram".to_string(),
+            field: "offset".to_string(),
+            reason: "expected integer millisecond or time value offset".to_string(),
+        }),
+    }
+}
+
+fn parse_signed_time_value_millis(value: &str) -> Option<i64> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    let (sign, unsigned) = match trimmed.as_bytes()[0] {
+        b'-' => (-1_i64, &trimmed[1..]),
+        b'+' => (1_i64, &trimmed[1..]),
+        _ => (1_i64, trimmed),
+    };
+    if unsigned.is_empty() {
+        return None;
+    }
+    let units = [
+        ("micros", 1_i64, 1_000_i64),
+        ("nanos", 1_i64, 1_000_000_i64),
+        ("ms", 1_i64, 1_i64),
+        ("s", 1_000_i64, 1_i64),
+        ("m", 60_000_i64, 1_i64),
+        ("h", 3_600_000_i64, 1_i64),
+        ("d", 86_400_000_i64, 1_i64),
+    ];
+    let (number, multiplier, divisor) =
+        units.iter().find_map(|(suffix, multiplier, divisor)| {
+            unsigned
+                .strip_suffix(suffix)
+                .map(|number| (number, *multiplier, *divisor))
+        })?;
+    let amount = number.parse::<i64>().ok()?;
+    amount
+        .checked_mul(multiplier)
+        .map(|millis| millis / divisor)
+        .and_then(|millis| millis.checked_mul(sign))
 }
 
 fn parse_range_aggregation(body: &Value) -> QueryDslResult<Aggregation> {
@@ -6546,6 +6610,7 @@ mod tests {
                 interval: "day".to_string(),
                 missing: None,
                 keyed: false,
+                offset_millis: 0,
             })
         );
     }
@@ -6571,6 +6636,7 @@ mod tests {
                 interval: "1h".to_string(),
                 missing: None,
                 keyed: false,
+                offset_millis: 0,
             })
         );
     }
@@ -6597,6 +6663,7 @@ mod tests {
                 interval: "day".to_string(),
                 missing: Some("2026-04-22T00:01:30Z".to_string()),
                 keyed: false,
+                offset_millis: 0,
             })
         );
     }
@@ -6623,6 +6690,34 @@ mod tests {
                 interval: "day".to_string(),
                 missing: None,
                 keyed: true,
+                offset_millis: 0,
+            })
+        );
+    }
+
+    #[test]
+    fn parses_date_histogram_aggregation_offset_option() {
+        let aggregations = parse_search_aggregations(&serde_json::json!({
+            "aggs": {
+                "recent_events": {
+                    "date_histogram": {
+                        "field": "event_time",
+                        "calendar_interval": "day",
+                        "offset": "+12h"
+                    }
+                }
+            }
+        }))
+        .unwrap();
+
+        assert_eq!(
+            aggregations["recent_events"],
+            Aggregation::DateHistogram(DateHistogramAggregation {
+                field: "event_time".to_string(),
+                interval: "day".to_string(),
+                missing: None,
+                keyed: false,
+                offset_millis: 43_200_000,
             })
         );
     }

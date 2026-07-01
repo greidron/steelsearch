@@ -36146,6 +36146,10 @@ fn build_search_aggregations(
                 .get("keyed")
                 .and_then(Value::as_bool)
                 .unwrap_or(false);
+            let offset_millis = date_histogram
+                .get("offset")
+                .and_then(parse_date_histogram_offset_millis)
+                .unwrap_or(0);
             let mut counts = std::collections::BTreeMap::<i64, (String, u64)>::new();
             for hit in hits {
                 let raw = hit
@@ -36154,7 +36158,9 @@ fn build_search_aggregations(
                     .and_then(Value::as_str)
                     .or(missing);
                 let Some(raw) = raw else { continue };
-                let Some((bucket_key, bucket_string)) = date_histogram_bucket_day(raw) else {
+                let Some((bucket_key, bucket_string)) =
+                    date_histogram_bucket_day_with_offset(raw, offset_millis)
+                else {
                     continue;
                 };
                 let entry = counts.entry(bucket_key).or_insert((bucket_string, 0));
@@ -37097,6 +37103,100 @@ fn date_histogram_bucket_day(timestamp: &str) -> Option<(i64, String)> {
     let days = days_from_civil(year, month, day)?;
     let millis = days.checked_mul(86_400_000)?;
     Some((millis, format!("{date}T00:00:00.000Z")))
+}
+
+fn date_histogram_bucket_day_with_offset(
+    timestamp: &str,
+    offset_millis: i64,
+) -> Option<(i64, String)> {
+    let millis = date_histogram_epoch_millis(timestamp)?;
+    if offset_millis == 0 {
+        return date_histogram_bucket_day(timestamp);
+    }
+    let bucket_key = millis
+        .checked_sub(offset_millis)?
+        .div_euclid(86_400_000)
+        .checked_mul(86_400_000)?
+        .checked_add(offset_millis)?;
+    Some((
+        bucket_key,
+        date_histogram_key_as_string_from_epoch_millis(bucket_key)?,
+    ))
+}
+
+fn date_histogram_epoch_millis(timestamp: &str) -> Option<i64> {
+    let date = timestamp.get(0..10)?;
+    let year: i32 = date.get(0..4)?.parse().ok()?;
+    let month: u32 = date.get(5..7)?.parse().ok()?;
+    let day: u32 = date.get(8..10)?.parse().ok()?;
+    let days = days_from_civil(year, month, day)?;
+    let mut millis = days.checked_mul(86_400_000)?;
+    let Some(time) = timestamp.get(11..) else {
+        return Some(millis);
+    };
+    let hour: i64 = time.get(0..2)?.parse().ok()?;
+    let minute: i64 = time.get(3..5)?.parse().ok()?;
+    let second: i64 = time
+        .get(6..8)
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(0);
+    millis = millis
+        .checked_add(hour.checked_mul(3_600_000)?)?
+        .checked_add(minute.checked_mul(60_000)?)?
+        .checked_add(second.checked_mul(1_000)?)?;
+    Some(millis)
+}
+
+fn date_histogram_key_as_string_from_epoch_millis(epoch_millis: i64) -> Option<String> {
+    let days = epoch_millis.div_euclid(86_400_000);
+    let millis_of_day = epoch_millis.rem_euclid(86_400_000);
+    let (year, month, day) = civil_from_days(days)?;
+    let hour = millis_of_day / 3_600_000;
+    let minute = (millis_of_day % 3_600_000) / 60_000;
+    let second = (millis_of_day % 60_000) / 1_000;
+    let millis = millis_of_day % 1_000;
+    Some(format!(
+        "{year:04}-{month:02}-{day:02}T{hour:02}:{minute:02}:{second:02}.{millis:03}Z"
+    ))
+}
+
+fn civil_from_days(days: i64) -> Option<(i32, u32, u32)> {
+    let z = days.checked_add(719_468)?;
+    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365;
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let day = doy - (153 * mp + 2) / 5 + 1;
+    let month = mp + if mp < 10 { 3 } else { -9 };
+    let year = y + i64::from(month <= 2);
+    Some((
+        i32::try_from(year).ok()?,
+        u32::try_from(month).ok()?,
+        u32::try_from(day).ok()?,
+    ))
+}
+
+fn parse_date_histogram_offset_millis(value: &Value) -> Option<i64> {
+    match value {
+        Value::Number(number) => number.as_i64(),
+        Value::String(text) => {
+            let trimmed = text.trim();
+            if trimmed.is_empty() {
+                return None;
+            }
+            let (sign, unsigned) = match trimmed.as_bytes()[0] {
+                b'-' => (-1_i64, &trimmed[1..]),
+                b'+' => (1_i64, &trimmed[1..]),
+                _ => (1_i64, trimmed),
+            };
+            i64::try_from(parse_time_value_millis(unsigned)?)
+                .ok()?
+                .checked_mul(sign)
+        }
+        _ => None,
+    }
 }
 
 fn render_date_histogram_buckets(buckets: Vec<Value>, keyed: bool) -> Value {
