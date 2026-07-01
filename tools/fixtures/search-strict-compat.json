@@ -7919,6 +7919,35 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "span_first_query_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "span_first": {
+            "match": {
+              "span_term": {
+                "message": "checkout"
+              }
+            },
+            "end": 1
+          }
+        },
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] span first query search",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "span_near_query_search",
       "area": "search",
       "method": "POST",

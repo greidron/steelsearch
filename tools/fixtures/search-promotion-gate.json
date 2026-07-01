@@ -371,6 +371,7 @@
         "simple_query_string_search",
         "simple_query_string_minimum_should_match_search",
         "span_multi_query_search",
+        "span_first_query_search",
         "span_near_query_search",
         "span_or_query_search",
         "span_term_query_search",

@@ -22863,7 +22863,7 @@ fn standalone_search_body_allows_native_engine(body: &Value) -> bool {
     !query_contains_native_unsafe_nested_knn(body.get("query").unwrap_or(&Value::Null))
         && !value_contains_any_key(
             body.get("query").unwrap_or(&Value::Null),
-            &["field_masking_span"],
+            &["field_masking_span", "span_gap"],
         )
         && body
             .get("sort")
@@ -27687,6 +27687,7 @@ fn validate_search_query_body(query: &Value) -> Option<RestResponse> {
         | "span_term"
         | "span_gap"
         | "span_or"
+        | "span_first"
         | "span_near"
         | "span_multi"
         | "field_masking_span"
@@ -28845,6 +28846,26 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
             if let Some(response) = validate_search_query_body(clause) {
                 return Some(response);
             }
+        }
+    }
+    if let Some(spec) = query.get("span_first").and_then(Value::as_object) {
+        let Some(inner_query) = spec.get("match") else {
+            return Some(build_unsupported_search_response(
+                "unsupported span_first query shape",
+            ));
+        };
+        if spec.get("end").and_then(Value::as_u64).is_none() {
+            return Some(build_unsupported_search_response(
+                "unsupported span_first query shape",
+            ));
+        }
+        if spec.keys().any(|key| key != "match" && key != "end") {
+            return Some(build_unsupported_search_response(
+                "unsupported span_first parameter",
+            ));
+        }
+        if let Some(response) = validate_search_query_body(inner_query) {
+            return Some(response);
         }
     }
     if let Some(spec) = query.get("span_near").and_then(Value::as_object) {
@@ -31151,6 +31172,10 @@ fn evaluate_search_query_source_with_mappings(
         let matched = evaluate_span_or_query(source, span_or)?;
         return Some((matched, if matched { 1.0 } else { 0.0 }));
     }
+    if let Some(span_first) = query.get("span_first").and_then(Value::as_object) {
+        let matched = evaluate_span_first_query(source, span_first)?;
+        return Some((matched, if matched { 1.0 } else { 0.0 }));
+    }
     if let Some(span_near) = query.get("span_near").and_then(Value::as_object) {
         let matched = evaluate_span_near_query(source, span_near)?;
         return Some((matched, if matched { 1.0 } else { 0.0 }));
@@ -33363,6 +33388,67 @@ fn evaluate_span_or_query(
     Some(false)
 }
 
+fn evaluate_span_first_query(
+    source: &Value,
+    span_first: &serde_json::Map<String, Value>,
+) -> Option<bool> {
+    let end = span_first.get("end")?.as_u64()? as usize;
+    if end == 0 {
+        return Some(false);
+    }
+    let match_query = span_first.get("match")?.as_object()?;
+    if let Some(span_term) = match_query.get("span_term").and_then(Value::as_object) {
+        let (field, expected) = span_term.iter().next()?;
+        return Some(span_first_term_matches(
+            lookup_query_field_value(source, field)?,
+            expected,
+            end,
+        ));
+    }
+    if let Some(span_or) = match_query.get("span_or").and_then(Value::as_object) {
+        let clauses = span_or.get("clauses")?.as_array()?;
+        for clause in clauses {
+            if evaluate_span_first_query(
+                source,
+                &serde_json::Map::from_iter([
+                    ("match".to_string(), clause.clone()),
+                    ("end".to_string(), Value::from(end as u64)),
+                ]),
+            )? {
+                return Some(true);
+            }
+        }
+        return Some(false);
+    }
+    if let Some(span_multi) = match_query.get("span_multi").and_then(Value::as_object) {
+        let (field, terms) = extract_span_multi_terms(source, span_multi)?;
+        let tokens = tokenize_search_text(lookup_query_field_value(source, &field)?.as_str()?);
+        return Some(
+            tokens
+                .iter()
+                .take(end)
+                .any(|token| terms.iter().any(|term| term == token)),
+        );
+    }
+    None
+}
+
+fn span_first_term_matches(field_value: &Value, expected: &Value, end: usize) -> bool {
+    match (field_value, expected) {
+        (Value::Array(items), expected) => items
+            .iter()
+            .any(|item| span_first_term_matches(item, expected, end)),
+        (Value::String(field_text), Value::String(term_text)) => {
+            let expected = term_text.to_ascii_lowercase();
+            tokenize_search_text(field_text)
+                .iter()
+                .take(end)
+                .any(|token| token == &expected)
+        }
+        _ => value_matches_term(Some(field_value), expected, None),
+    }
+}
+
 fn evaluate_span_near_query(
     source: &Value,
     span_near: &serde_json::Map<String, Value>,
@@ -33530,6 +33616,9 @@ fn evaluate_span_like_clause(source: &Value, clause: &Value) -> Option<bool> {
     if let Some(span_multi) = object.get("span_multi").and_then(Value::as_object) {
         return evaluate_span_multi_query(source, span_multi);
     }
+    if let Some(span_first) = object.get("span_first").and_then(Value::as_object) {
+        return evaluate_span_first_query(source, span_first);
+    }
     None
 }
 
@@ -33550,18 +33639,26 @@ fn extract_span_clause(source: &Value, clause: &Value) -> Option<(String, Runtim
         ));
     }
     if let Some(span_multi) = object.get("span_multi").and_then(Value::as_object) {
-        let inner = span_multi.get("match")?;
-        let prefix_query = inner.get("prefix").and_then(Value::as_object)?;
-        let (field, expected) = prefix_query.iter().next()?;
-        let expected_value = extract_string_query_value(expected)?.to_ascii_lowercase();
-        let tokens = tokenize_search_text(lookup_query_field_value(source, field)?.as_str()?);
-        let accepted = tokens
-            .into_iter()
-            .filter(|token| token.starts_with(&expected_value))
-            .collect::<Vec<_>>();
+        let (field, accepted) = extract_span_multi_terms(source, span_multi)?;
         return Some((field.clone(), RuntimeSpanClause::Terms(accepted)));
     }
     None
+}
+
+fn extract_span_multi_terms(
+    source: &Value,
+    span_multi: &serde_json::Map<String, Value>,
+) -> Option<(String, Vec<String>)> {
+    let inner = span_multi.get("match")?;
+    let prefix_query = inner.get("prefix").and_then(Value::as_object)?;
+    let (field, expected) = prefix_query.iter().next()?;
+    let expected_value = extract_string_query_value(expected)?.to_ascii_lowercase();
+    let tokens = tokenize_search_text(lookup_query_field_value(source, field)?.as_str()?);
+    let accepted = tokens
+        .into_iter()
+        .filter(|token| token.starts_with(&expected_value))
+        .collect::<Vec<_>>();
+    Some((field.clone(), accepted))
 }
 
 fn evaluate_intervals_query(candidate: Option<&Value>, spec: &Value) -> Option<bool> {
@@ -61724,6 +61821,55 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             span_gap_width_one_match.body["hits"]["hits"][0]["_id"],
             "doc-2"
         );
+    }
+
+    #[test]
+    fn search_routes_support_span_first_queries() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(RestMethod::Put, "/logs-span-first-000001"))
+                .status,
+            200
+        );
+        for (id, message) in [
+            ("doc-1", "checkout service accepted payment"),
+            ("doc-2", "service checkout accepted payment"),
+            ("doc-3", "checkout split nested tuple guard"),
+        ] {
+            assert_eq!(
+                node.handle_rest_request(
+                    RestRequest::new(
+                        RestMethod::Put,
+                        &format!("/logs-span-first-000001/_doc/{id}")
+                    )
+                    .with_json_body(serde_json::json!({ "message": message })),
+                )
+                .status,
+                201
+            );
+        }
+
+        let response = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-span-first-000001/_search").with_json_body(
+                serde_json::json!({
+                    "query": {
+                        "span_first": {
+                            "match": { "span_term": { "message": "checkout" } },
+                            "end": 1
+                        }
+                    },
+                    "sort": [{ "_id": { "order": "asc" } }]
+                }),
+            ),
+        );
+        assert_eq!(response.status, 200);
+        assert_eq!(response.body["hits"]["total"]["value"], 2);
+        assert_eq!(response.body["hits"]["hits"][0]["_id"], "doc-1");
+        assert_eq!(response.body["hits"]["hits"][1]["_id"], "doc-3");
     }
 
     #[test]
