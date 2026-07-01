@@ -10278,6 +10278,39 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "top_hits_from_sorted_aggregation",
+      "area": "aggregation",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "paged_checkout": {
+            "top_hits": {
+              "from": 1,
+              "size": 2,
+              "sort": [
+                {
+                  "ts": {
+                    "order": "desc"
+                  }
+                },
+                {
+                  "bytes": {
+                    "order": "desc"
+                  }
+                }
+              ]
+            }
+          }
+        }
+      },
+      "extract": "aggregations",
+      "family": "aggregation",
+      "description": "[aggregation] top hits from window with sort",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "completion_suggest_search",
       "area": "search",
       "method": "POST",
