@@ -3247,6 +3247,37 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "source_filtering_wildcard_include_exclude_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "_source": {
+          "includes": [
+            "service*"
+          ],
+          "excludes": [
+            "service_optional"
+          ]
+        },
+        "sort": [
+          {
+            "ts": {
+              "order": "asc"
+            }
+          }
+        ],
+        "size": 2
+      },
+      "extract": "search_hits",
+      "family": "fetch",
+      "description": "[fetch] object-form source filtering applies wildcard include and explicit exclude",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "validate_query_empty_search",
       "area": "search",
       "method": "POST",
