@@ -83,6 +83,7 @@
           "latency_optional": "long",
           "bytes": "long",
           "ts": "date",
+          "client_ip": "ip",
           "location": "geo_point"
         }
       },
@@ -455,6 +456,9 @@
             "ts": {
               "type": "date"
             },
+            "client_ip": {
+              "type": "ip"
+            },
             "location": {
               "type": "geo_point"
             }
@@ -577,6 +581,7 @@
             "latency_optional": 5,
             "bytes": 120,
             "ts": "2026-04-22T00:00:00Z",
+            "client_ip": "10.0.0.5",
             "location": {
               "lat": 37.78,
               "lon": -122.41
@@ -603,6 +608,7 @@
             "tag": "payment",
             "bytes": 300,
             "ts": "2026-04-22T00:01:00Z",
+            "client_ip": "10.0.0.9",
             "location": {
               "lat": 37.79,
               "lon": -122.4
@@ -630,6 +636,7 @@
             "latency_optional": 15,
             "bytes": 80,
             "ts": "2026-04-22T00:02:00Z",
+            "client_ip": "10.0.1.4",
             "location": {
               "lat": 37.77,
               "lon": -122.42
@@ -661,6 +668,7 @@
             "tag": "tuple-guard",
             "bytes": 260,
             "ts": "2026-04-22T00:03:00Z",
+            "client_ip": "10.0.1.8",
             "location": {
               "lat": 37.785,
               "lon": -122.405
@@ -10241,6 +10249,36 @@
       "extract": "aggregations",
       "family": "aggregation",
       "description": "[aggregation] date range aggregation",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "ip_range_aggregation",
+      "area": "aggregation",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "client_ip_ranges": {
+            "ip_range": {
+              "field": "client_ip",
+              "ranges": [
+                {
+                  "key": "checkout-subnet",
+                  "to": "10.0.1.0"
+                },
+                {
+                  "key": "catalog-subnet",
+                  "from": "10.0.1.0"
+                }
+              ]
+            }
+          }
+        }
+      },
+      "extract": "aggregations",
+      "family": "aggregation",
+      "description": "[aggregation] ip range aggregation",
       "strict_source_parity_required": true
     },
     {

@@ -39538,6 +39538,9 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                             "ts": {
                                 "type": "date"
                             },
+                            "client_ip": {
+                                "type": "ip"
+                            },
                             "events": {
                                 "type": "nested",
                                 "properties": {
@@ -39562,6 +39565,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                     "service": "checkout",
                     "service_suggest": "checkout",
                     "ts": "2026-04-22T00:00:00Z",
+                    "client_ip": "10.0.0.5",
                     "events": [
                         {
                             "kind": "payment"
@@ -39601,6 +39605,10 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             index_body["mappings"]["properties"]["ts"]["type"],
             Value::String("date".to_string())
+        );
+        assert_eq!(
+            index_body["mappings"]["properties"]["client_ip"]["type"],
+            Value::String("ip".to_string())
         );
         assert_eq!(
             index_body["mappings"]["properties"]["events"]["type"],

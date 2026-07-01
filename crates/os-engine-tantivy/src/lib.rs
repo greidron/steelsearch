@@ -11046,7 +11046,7 @@ fn read_dynamic_mapping(mappings: &Value) -> EngineResult<bool> {
 fn map_field_type(name: &str, field_type: &str) -> EngineResult<TantivyFieldType> {
     match field_type {
         "text" => Ok(TantivyFieldType::Text),
-        "keyword" | "completion" => Ok(TantivyFieldType::Keyword),
+        "keyword" | "completion" | "ip" => Ok(TantivyFieldType::Keyword),
         "byte" | "short" | "integer" | "long" => Ok(TantivyFieldType::I64),
         "float" | "double" => Ok(TantivyFieldType::F64),
         "boolean" => Ok(TantivyFieldType::Bool),
