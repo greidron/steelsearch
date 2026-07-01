@@ -14851,6 +14851,38 @@
       "description": "[aggregation] sum bucket pipeline aggregation"
     },
     {
+      "name": "bucket_selector_pipeline_aggregation",
+      "area": "aggregation",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "by_service": {
+            "terms": {
+              "field": "service",
+              "order": {
+                "_key": "asc"
+              }
+            },
+            "aggs": {
+              "keep_multi_doc_services": {
+                "bucket_selector": {
+                  "buckets_path": {
+                    "docCount": "_count"
+                  },
+                  "script": "params.docCount >= 2"
+                }
+              }
+            }
+          }
+        }
+      },
+      "extract": "aggregations",
+      "family": "aggregation",
+      "description": "[aggregation] bucket selector pipeline aggregation"
+    },
+    {
       "name": "avg_bucket_pipeline_aggregation",
       "area": "aggregation",
       "method": "POST",

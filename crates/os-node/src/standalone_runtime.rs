@@ -35706,11 +35706,15 @@ fn build_search_aggregations(
                 .skip(size)
                 .map(|(_, doc_count)| *doc_count)
                 .sum::<u64>();
-            let bucket_values = buckets
+            let nested_aggs = aggregation_object
+                .get("aggs")
+                .or_else(|| aggregation_object.get("aggregations"));
+            let mut bucket_values = buckets
                 .into_iter()
                 .take(size)
                 .map(|(key, doc_count)| serde_json::json!({"key": key, "doc_count": doc_count}))
                 .collect::<Vec<_>>();
+            apply_terms_bucket_parent_pipeline_filters(&mut bucket_values, nested_aggs);
             result.insert(
                 name.clone(),
                 serde_json::json!({
@@ -37025,6 +37029,127 @@ fn build_search_aggregations(
         }
     }
     Ok(Some(Value::Object(result)))
+}
+
+fn apply_terms_bucket_parent_pipeline_filters(
+    bucket_values: &mut Vec<Value>,
+    nested_aggs: Option<&Value>,
+) {
+    let Some(nested_aggs) = nested_aggs.and_then(Value::as_object) else {
+        return;
+    };
+    let selectors = nested_aggs
+        .values()
+        .filter_map(|aggregation| aggregation.get("bucket_selector"))
+        .filter_map(parent_bucket_selector_filter)
+        .collect::<Vec<_>>();
+    if selectors.is_empty() {
+        return;
+    }
+    bucket_values.retain(|bucket| {
+        selectors.iter().all(|selector| {
+            bucket_selector_bucket_value(bucket, selector.path)
+                .map(|value| {
+                    compare_parent_bucket_selector_value(
+                        value,
+                        selector.operator,
+                        selector.threshold,
+                    )
+                })
+                .unwrap_or(false)
+        })
+    });
+}
+
+#[derive(Clone, Copy)]
+struct ParentBucketSelectorFilter {
+    path: &'static str,
+    operator: &'static str,
+    threshold: f64,
+}
+
+fn parent_bucket_selector_filter(selector: &Value) -> Option<ParentBucketSelectorFilter> {
+    let selector = selector.as_object()?;
+    let (alias, path) = parent_bucket_selector_buckets_path(selector.get("buckets_path")?)?;
+    let script = parent_bucket_selector_script_source(selector.get("script")?)?;
+    let (operator, threshold) = parse_parent_bucket_selector_script(script, alias)?;
+    Some(ParentBucketSelectorFilter {
+        path,
+        operator,
+        threshold,
+    })
+}
+
+fn parent_bucket_selector_buckets_path(value: &Value) -> Option<(&str, &'static str)> {
+    if value.as_str().is_some_and(|path| path == "_count") {
+        return Some(("_value", "_count"));
+    }
+    let object = value.as_object()?;
+    let (alias, path) = object.iter().next()?;
+    if path.as_str()? == "_count" {
+        Some((alias.as_str(), "_count"))
+    } else {
+        None
+    }
+}
+
+fn parent_bucket_selector_script_source(value: &Value) -> Option<&str> {
+    value
+        .as_str()
+        .or_else(|| value.as_object()?.get("source")?.as_str())
+}
+
+fn parse_parent_bucket_selector_script(script: &str, alias: &str) -> Option<(&'static str, f64)> {
+    let trimmed = script.trim();
+    if alias == "_value" {
+        return parse_parent_bucket_selector_script_for_variable(trimmed, "_value");
+    }
+    parse_parent_bucket_selector_script_for_variable(trimmed, &format!("params.{alias}"))
+}
+
+fn parse_parent_bucket_selector_script_for_variable(
+    script: &str,
+    variable: &str,
+) -> Option<(&'static str, f64)> {
+    let expression = script.strip_prefix(variable)?.trim_start();
+    for (token, operator) in [
+        (">=", "gte"),
+        ("<=", "lte"),
+        ("==", "eq"),
+        ("!=", "ne"),
+        (">", "gt"),
+        ("<", "lt"),
+    ] {
+        let Some(rest) = expression.strip_prefix(token) else {
+            continue;
+        };
+        let threshold = rest.trim().parse::<f64>().ok()?;
+        return Some((operator, threshold));
+    }
+    None
+}
+
+fn bucket_selector_bucket_value(bucket: &Value, path: &str) -> Option<f64> {
+    if path == "_count" {
+        return bucket.get("doc_count").and_then(Value::as_f64);
+    }
+    bucket
+        .get(path)
+        .and_then(|value| value.get("value"))
+        .and_then(Value::as_f64)
+        .or_else(|| bucket.get(path).and_then(Value::as_f64))
+}
+
+fn compare_parent_bucket_selector_value(value: f64, operator: &str, threshold: f64) -> bool {
+    match operator {
+        "gt" => value > threshold,
+        "gte" => value >= threshold,
+        "lt" => value < threshold,
+        "lte" => value <= threshold,
+        "eq" => value == threshold,
+        "ne" => value != threshold,
+        _ => false,
+    }
 }
 
 fn apply_typed_aggregation_keys(aggregations: &mut Option<Value>, request_aggs: Option<&Value>) {
@@ -62406,6 +62531,35 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             sum_bucket.body["aggregations"]["service_doc_total"]["value"],
             3.0
+        );
+
+        let bucket_selector = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-aggs-000001/_search").with_json_body(
+                serde_json::json!({
+                    "size": 0,
+                    "aggs": {
+                        "by_service": {
+                            "terms": {
+                                "field": "service",
+                                "order": { "_key": "asc" }
+                            },
+                            "aggs": {
+                                "keep_multi_doc_services": {
+                                    "bucket_selector": {
+                                        "buckets_path": { "docCount": "_count" },
+                                        "script": "params.docCount >= 2"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }),
+            ),
+        );
+        assert_eq!(bucket_selector.status, 200);
+        assert_eq!(
+            bucket_selector.body["aggregations"]["by_service"]["buckets"],
+            serde_json::json!([{ "key": "checkout", "doc_count": 2 }])
         );
 
         let avg_min_max_bucket = node.handle_rest_request(
