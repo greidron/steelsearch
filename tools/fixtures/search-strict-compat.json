@@ -682,6 +682,30 @@
           }
         }
       }
+    },
+    {
+      "name": "geo-shape-compat",
+      "body": {
+        "settings": {
+          "index": {
+            "number_of_shards": 1,
+            "number_of_replicas": 0
+          }
+        },
+        "mappings": {
+          "properties": {
+            "shape": {
+              "type": "geo_shape"
+            },
+            "seq": {
+              "type": "long"
+            },
+            "name": {
+              "type": "keyword"
+            }
+          }
+        }
+      }
     }
   ],
   "bulk": [
@@ -916,6 +940,53 @@
             "message": "alphabet",
             "body": "mask target",
             "rank": 3
+          }
+        }
+      ]
+    },
+    {
+      "index": "geo-shape-compat",
+      "documents": [
+        {
+          "_id": "shape-1",
+          "_source": {
+            "name": "market",
+            "seq": 1,
+            "shape": {
+              "type": "point",
+              "coordinates": [
+                -122.41,
+                37.78
+              ]
+            }
+          }
+        },
+        {
+          "_id": "shape-2",
+          "_source": {
+            "name": "pier",
+            "seq": 2,
+            "shape": {
+              "type": "point",
+              "coordinates": [
+                -122.4,
+                37.79
+              ]
+            }
+          }
+        },
+        {
+          "_id": "shape-3",
+          "_source": {
+            "name": "park",
+            "seq": 3,
+            "shape": {
+              "type": "point",
+              "coordinates": [
+                -121.9,
+                37.3
+              ]
+            }
           }
         }
       ]
@@ -4168,6 +4239,45 @@
       "extract": "search_hits",
       "family": "lexical",
       "description": "[lexical] geo distance query search",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "geo_shape_envelope_query_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/geo-shape-compat/_search",
+      "body": {
+        "query": {
+          "geo_shape": {
+            "shape": {
+              "shape": {
+                "type": "envelope",
+                "coordinates": [
+                  [
+                    -122.42,
+                    37.8
+                  ],
+                  [
+                    -122.39,
+                    37.77
+                  ]
+                ]
+              },
+              "relation": "intersects"
+            }
+          }
+        },
+        "sort": [
+          {
+            "seq": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] geo_shape envelope query filters geo_shape point documents",
       "strict_source_parity_required": true
     },
     {

@@ -118,6 +118,7 @@
         "fuzzy_query_transpositions_search",
         "fuzzy_query_transpositions_disabled_search",
         "geo_distance_query_search",
+        "geo_shape_envelope_query_search",
         "ids_query_search",
         "ids_query_boost_search",
         "ids_unknown_field_error_search",
