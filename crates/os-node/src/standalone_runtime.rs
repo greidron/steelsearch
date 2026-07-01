@@ -36540,6 +36540,7 @@ fn build_search_aggregations(
                 .and_then(Value::as_array)
                 .cloned()
                 .unwrap_or_default();
+            let missing = range.get("missing").and_then(Value::as_f64);
             let mut buckets = Vec::new();
             for bucket in ranges {
                 let bucket_object = match bucket.as_object() {
@@ -36555,13 +36556,12 @@ fn build_search_aggregations(
                 let doc_count = hits
                     .iter()
                     .filter(|hit| {
-                        let Some(value) = hit
+                        let value = hit
                             .get("_source")
                             .and_then(|source| source.get(field))
                             .and_then(Value::as_f64)
-                        else {
-                            return false;
-                        };
+                            .or(missing);
+                        let Some(value) = value else { return false };
                         from.map_or(true, |bound| value >= bound)
                             && to.map_or(true, |bound| value < bound)
                     })

@@ -12826,6 +12826,36 @@
       "description": "[aggregation] range aggregation keyed object bucket output"
     },
     {
+      "name": "range_missing_aggregation",
+      "area": "aggregation",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "latency_missing_ranges": {
+            "range": {
+              "field": "latency_optional",
+              "missing": 120,
+              "ranges": [
+                {
+                  "key": "fast",
+                  "to": 100
+                },
+                {
+                  "key": "fallback",
+                  "from": 100
+                }
+              ]
+            }
+          }
+        }
+      },
+      "extract": "aggregations",
+      "family": "aggregation",
+      "description": "[aggregation] range missing aggregation"
+    },
+    {
       "name": "scripted_metric_aggregation",
       "area": "aggregation",
       "method": "POST",
