@@ -339,6 +339,7 @@ pub struct DateHistogramAggregation {
     pub keyed: bool,
     pub offset_millis: i64,
     pub format: Option<String>,
+    pub min_doc_count: u64,
     pub extended_bounds: Option<DateHistogramBounds>,
     pub hard_bounds: Option<DateHistogramBounds>,
 }
@@ -1017,6 +1018,17 @@ fn parse_date_histogram_aggregation(body: &Value) -> QueryDslResult<Aggregation>
             }
         })
         .transpose()?;
+    let min_doc_count = object
+        .get("min_doc_count")
+        .map(|value| {
+            value.as_u64().ok_or_else(|| QueryDslError::InvalidValue {
+                clause: "date_histogram".to_string(),
+                field: "min_doc_count".to_string(),
+                reason: "expected non-negative integer value".to_string(),
+            })
+        })
+        .transpose()?
+        .unwrap_or(0);
     let extended_bounds = object
         .get("extended_bounds")
         .map(|value| parse_date_histogram_bounds("date_histogram.extended_bounds", value))
@@ -1029,7 +1041,7 @@ fn parse_date_histogram_aggregation(body: &Value) -> QueryDslResult<Aggregation>
     for option in object.keys() {
         match option.as_str() {
             "field" | "calendar_interval" | "fixed_interval" | "missing" | "keyed" | "offset"
-            | "format" | "extended_bounds" | "hard_bounds" => {}
+            | "format" | "min_doc_count" | "extended_bounds" | "hard_bounds" => {}
             _ => {
                 return Err(QueryDslError::UnsupportedOption {
                     clause: "date_histogram".to_string(),
@@ -1046,6 +1058,7 @@ fn parse_date_histogram_aggregation(body: &Value) -> QueryDslResult<Aggregation>
         keyed,
         offset_millis,
         format,
+        min_doc_count,
         extended_bounds,
         hard_bounds,
     }))
@@ -6780,6 +6793,7 @@ mod tests {
                 keyed: false,
                 offset_millis: 0,
                 format: None,
+                min_doc_count: 0,
                 extended_bounds: None,
                 hard_bounds: None,
             })
@@ -6809,6 +6823,7 @@ mod tests {
                 keyed: false,
                 offset_millis: 0,
                 format: None,
+                min_doc_count: 0,
                 extended_bounds: None,
                 hard_bounds: None,
             })
@@ -6839,6 +6854,7 @@ mod tests {
                 keyed: false,
                 offset_millis: 0,
                 format: None,
+                min_doc_count: 0,
                 extended_bounds: None,
                 hard_bounds: None,
             })
@@ -6869,6 +6885,7 @@ mod tests {
                 keyed: true,
                 offset_millis: 0,
                 format: None,
+                min_doc_count: 0,
                 extended_bounds: None,
                 hard_bounds: None,
             })
@@ -6899,6 +6916,7 @@ mod tests {
                 keyed: false,
                 offset_millis: 43_200_000,
                 format: None,
+                min_doc_count: 0,
                 extended_bounds: None,
                 hard_bounds: None,
             })
@@ -6932,6 +6950,7 @@ mod tests {
                 keyed: false,
                 offset_millis: 0,
                 format: None,
+                min_doc_count: 0,
                 extended_bounds: Some(DateHistogramBounds {
                     min: Some("2026-04-20T00:00:00Z".to_string()),
                     max: Some("2026-04-24T00:00:00Z".to_string()),
@@ -6968,11 +6987,43 @@ mod tests {
                 keyed: false,
                 offset_millis: 0,
                 format: None,
+                min_doc_count: 0,
                 extended_bounds: None,
                 hard_bounds: Some(DateHistogramBounds {
                     min: Some("2024-01-02T00:00:00Z".to_string()),
                     max: Some("2024-01-03T00:00:00Z".to_string()),
                 }),
+            })
+        );
+    }
+
+    #[test]
+    fn parses_date_histogram_aggregation_min_doc_count_option() {
+        let aggregations = parse_search_aggregations(&serde_json::json!({
+            "aggs": {
+                "recent_events": {
+                    "date_histogram": {
+                        "field": "event_time",
+                        "calendar_interval": "day",
+                        "min_doc_count": 1
+                    }
+                }
+            }
+        }))
+        .unwrap();
+
+        assert_eq!(
+            aggregations["recent_events"],
+            Aggregation::DateHistogram(DateHistogramAggregation {
+                field: "event_time".to_string(),
+                interval: "day".to_string(),
+                missing: None,
+                keyed: false,
+                offset_millis: 0,
+                format: None,
+                min_doc_count: 1,
+                extended_bounds: None,
+                hard_bounds: None,
             })
         );
     }
@@ -7001,6 +7052,7 @@ mod tests {
                 keyed: false,
                 offset_millis: 0,
                 format: Some("epoch_millis".to_string()),
+                min_doc_count: 0,
                 extended_bounds: None,
                 hard_bounds: None,
             })
@@ -7015,7 +7067,7 @@ mod tests {
                     "date_histogram": {
                         "field": "event_time",
                         "calendar_interval": "day",
-                        "min_doc_count": 0
+                        "order": { "_key": "desc" }
                     }
                 }
             }
@@ -7026,7 +7078,7 @@ mod tests {
             error,
             QueryDslError::UnsupportedOption {
                 clause: "date_histogram".to_string(),
-                option: "min_doc_count".to_string()
+                option: "order".to_string()
             }
         );
     }

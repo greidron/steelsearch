@@ -34599,6 +34599,7 @@ fn collect_plugin_aggregation_from_documents(
                     keyed: false,
                     offset_millis: 0,
                     format: None,
+                    min_doc_count: 0,
                     extended_bounds: None,
                     hard_bounds: None,
                 };
@@ -34788,6 +34789,7 @@ fn collect_plugin_aggregation_from_documents(
                     keyed: false,
                     offset_millis: 0,
                     format: None,
+                    min_doc_count: 0,
                     extended_bounds: None,
                     hard_bounds: None,
                 };
@@ -35976,6 +35978,7 @@ fn collect_plugin_aggregation_from_hits_with_input_order(
                     keyed: false,
                     offset_millis: 0,
                     format: None,
+                    min_doc_count: 0,
                     extended_bounds: None,
                     hard_bounds: None,
                 };
@@ -37642,6 +37645,7 @@ fn date_histogram_bucket_values_from_counts(
                     date_histogram.format.as_deref(),
                 )
             })
+            .filter(|(_, (_, doc_count))| *doc_count >= date_histogram.min_doc_count)
             .map(|(key, (key_as_string, doc_count))| {
                 date_histogram_bucket_value(*key, key_as_string.clone(), *doc_count)
             })
@@ -37679,6 +37683,16 @@ fn date_histogram_bucket_values_from_counts(
                     0,
                 )
             });
+        if doc_count < date_histogram.min_doc_count {
+            let Some(next) = key.checked_add(step_millis) else {
+                break;
+            };
+            if next <= key {
+                break;
+            }
+            key = next;
+            continue;
+        }
         bucket_values.push(date_histogram_bucket_value(key, key_as_string, doc_count));
         let Some(next) = key.checked_add(step_millis) else {
             break;
@@ -157578,6 +157592,74 @@ mod tests {
                     "buckets": [
                         { "key": 1704153600000i64, "key_as_string": "2024-01-02T00:00:00.000Z", "doc_count": 1 },
                         { "key": 1704240000000i64, "key_as_string": "2024-01-03T00:00:00.000Z", "doc_count": 1 }
+                    ]
+                }
+            })
+        );
+    }
+
+    #[test]
+    fn native_tantivy_date_histogram_min_doc_count_option_preserves_shape() {
+        let engine = TantivyEngine::default();
+        engine
+            .create_index(CreateIndexRequest {
+                index: "bench".to_string(),
+                settings: serde_json::json!({}),
+                mappings: serde_json::json!({
+                    "properties": {
+                        "event_time": { "type": "date", "fast": true }
+                    }
+                }),
+            })
+            .unwrap();
+
+        for (id, event_time) in [("1", "2024-01-02T08:00:00Z"), ("2", "2024-01-04T16:00:00Z")] {
+            engine
+                .index_document(IndexDocumentRequest {
+                    index: "bench".to_string(),
+                    id: id.to_string(),
+                    source: serde_json::json!({ "event_time": event_time }),
+                })
+                .unwrap();
+        }
+        engine
+            .refresh(RefreshRequest {
+                indices: vec!["bench".to_string()],
+            })
+            .unwrap();
+
+        let query = parse_query(&serde_json::json!({
+            "match_all": {}
+        }))
+        .unwrap();
+        let aggregations = parse_search_aggregation_map(&serde_json::json!({
+            "recent_events": {
+                "date_histogram": {
+                    "field": "event_time",
+                    "calendar_interval": "day",
+                    "extended_bounds": {
+                        "min": "2024-01-01T00:00:00Z",
+                        "max": "2024-01-05T00:00:00Z"
+                    },
+                    "min_doc_count": 1
+                }
+            }
+        }))
+        .unwrap();
+
+        let mut store = engine.store.write().unwrap();
+        let index = store.indices.get_mut("bench").unwrap();
+        let native = index
+            .collect_aggregations_native(&query, &aggregations)
+            .unwrap()
+            .expect("native min_doc_count date_histogram aggregation");
+        assert_eq!(
+            native,
+            serde_json::json!({
+                "recent_events": {
+                    "buckets": [
+                        { "key": 1704153600000i64, "key_as_string": "2024-01-02T00:00:00.000Z", "doc_count": 1 },
+                        { "key": 1704326400000i64, "key_as_string": "2024-01-04T00:00:00.000Z", "doc_count": 1 }
                     ]
                 }
             })

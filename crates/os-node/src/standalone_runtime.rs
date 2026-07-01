@@ -36159,6 +36159,10 @@ fn build_search_aggregations(
                 }
                 None => None,
             };
+            let min_doc_count = date_histogram
+                .get("min_doc_count")
+                .and_then(Value::as_u64)
+                .unwrap_or(0);
             let extended_bounds = date_histogram
                 .get("extended_bounds")
                 .map(parse_fallback_date_histogram_bounds)
@@ -36195,6 +36199,7 @@ fn build_search_aggregations(
                 &counts,
                 offset_millis,
                 format,
+                min_doc_count,
                 extended_bounds.as_ref(),
                 hard_bounds.as_ref(),
             );
@@ -37353,6 +37358,7 @@ fn render_date_histogram_bucket_values_from_counts(
     counts: &std::collections::BTreeMap<i64, (String, u64)>,
     offset_millis: i64,
     format: Option<&str>,
+    min_doc_count: u64,
     extended_bounds: Option<&FallbackDateHistogramBounds>,
     hard_bounds: Option<&FallbackDateHistogramBounds>,
 ) -> Vec<Value> {
@@ -37405,6 +37411,16 @@ fn render_date_histogram_bucket_values_from_counts(
                     0,
                 )
             });
+        if doc_count < min_doc_count {
+            let Some(next) = key.checked_add(86_400_000) else {
+                break;
+            };
+            if next <= key {
+                break;
+            }
+            key = next;
+            continue;
+        }
         buckets.push(serde_json::json!({
             "key": key,
             "key_as_string": key_as_string,
