@@ -3520,6 +3520,37 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "combined_fields_common_options_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "combined_fields": {
+            "query": "timeout",
+            "fields": [
+              "message"
+            ],
+            "operator": "or",
+            "minimum_should_match": 1,
+            "boost": 1.0,
+            "_name": "named_combined_fields"
+          }
+        },
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] combined_fields accepts common OpenSearch options",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "geo_bounding_box_query_search",
       "area": "search",
       "method": "POST",

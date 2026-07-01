@@ -28353,12 +28353,42 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
                 "unsupported combined_fields query shape",
             ));
         }
-        if combined_fields
-            .keys()
-            .any(|key| key != "query" && key != "fields")
-        {
+        if combined_fields.keys().any(|key| {
+            key != "query"
+                && key != "fields"
+                && key != "operator"
+                && key != "minimum_should_match"
+                && key != "boost"
+                && key != "_name"
+        }) {
             return Some(build_unsupported_search_response(
                 "unsupported combined_fields parameter",
+            ));
+        }
+        if combined_fields.get("operator").is_some_and(|value| {
+            !value.as_str().is_some_and(|operator| {
+                operator.eq_ignore_ascii_case("and") || operator.eq_ignore_ascii_case("or")
+            })
+        }) {
+            return Some(build_unsupported_search_response(
+                "unsupported combined_fields operator",
+            ));
+        }
+        if combined_fields.get("boost").is_some_and(|value| {
+            !value
+                .as_f64()
+                .is_some_and(|number| number.is_finite() && number >= 0.0)
+        }) {
+            return Some(build_unsupported_search_response(
+                "unsupported combined_fields boost",
+            ));
+        }
+        if combined_fields
+            .get("_name")
+            .is_some_and(|value| !value.is_string())
+        {
+            return Some(build_unsupported_search_response(
+                "unsupported combined_fields _name",
             ));
         }
     }

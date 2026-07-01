@@ -3384,9 +3384,41 @@ fn parse_combined_fields(body: &Value) -> QueryDslResult<Query> {
                 .ok_or(QueryDslError::ExpectedObject)
         })
         .collect::<QueryDslResult<Vec<_>>>()?;
+    if let Some(operator) = object.get("operator") {
+        let operator = operator
+            .as_str()
+            .map(str::to_ascii_lowercase)
+            .ok_or_else(|| QueryDslError::InvalidValue {
+                clause: "combined_fields".to_string(),
+                field: "operator".to_string(),
+                reason: "must be [and] or [or]".to_string(),
+            })?;
+        if operator != "and" && operator != "or" {
+            return Err(QueryDslError::InvalidValue {
+                clause: "combined_fields".to_string(),
+                field: "operator".to_string(),
+                reason: "must be [and] or [or]".to_string(),
+            });
+        }
+    }
+    object
+        .get("minimum_should_match")
+        .map(|value| parse_minimum_should_match(value, text_query_clause_count(&query)))
+        .transpose()?;
+    object
+        .get("boost")
+        .map(|value| parse_non_negative_f64_option("combined_fields", "boost", value))
+        .transpose()?;
+    validate_optional_string_option(object, "combined_fields", "_name")?;
 
     for option in object.keys() {
-        if option != "query" && option != "fields" {
+        if option != "query"
+            && option != "fields"
+            && option != "operator"
+            && option != "minimum_should_match"
+            && option != "boost"
+            && option != "_name"
+        {
             return Err(QueryDslError::UnsupportedOption {
                 clause: "combined_fields".to_string(),
                 option: option.clone(),
@@ -5441,7 +5473,11 @@ mod tests {
         let query = parse_query(&serde_json::json!({
             "combined_fields": {
                 "query": "alpha beta",
-                "fields": ["title", "body"]
+                "fields": ["title", "body"],
+                "operator": "or",
+                "minimum_should_match": 1,
+                "boost": 1.0,
+                "_name": "named_combined_fields"
             }
         }))
         .unwrap();

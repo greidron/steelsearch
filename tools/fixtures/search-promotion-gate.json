@@ -103,6 +103,7 @@
         "constant_score_query_search",
         "boosting_query_search",
         "combined_fields_query_search",
+        "combined_fields_common_options_search",
         "geo_bounding_box_query_search",
         "geo_polygon_query_search",
         "wrapper_query_search",
