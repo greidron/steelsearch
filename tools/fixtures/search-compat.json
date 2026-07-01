@@ -13012,6 +13012,35 @@
       "description": "[aggregation] ip range aggregation"
     },
     {
+      "name": "ip_range_mask_aggregation",
+      "area": "aggregation",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "client_ip_mask": {
+            "ip_range": {
+              "field": "client_ip",
+              "ranges": [
+                {
+                  "key": "checkout-mask",
+                  "mask": "10.0.0.0/24"
+                },
+                {
+                  "key": "catalog-mask",
+                  "mask": "10.0.1.0/24"
+                }
+              ]
+            }
+          }
+        }
+      },
+      "extract": "aggregations",
+      "family": "aggregation",
+      "description": "[aggregation] ip range mask aggregation"
+    },
+    {
       "name": "adjacency_matrix_aggregation",
       "area": "aggregation",
       "method": "POST",

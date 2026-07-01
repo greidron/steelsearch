@@ -38404,6 +38404,45 @@ fn ip_string_to_u128(value: &str) -> Option<u128> {
     }
 }
 
+fn ip_cidr_range(mask: &str) -> Option<(String, String, u128, u128)> {
+    use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+
+    let (address, prefix) = mask.split_once('/')?;
+    let prefix = prefix.parse::<u32>().ok()?;
+    match address.parse::<IpAddr>().ok()? {
+        IpAddr::V4(ip) => {
+            if prefix == 0 || prefix > 32 {
+                return None;
+            }
+            let bits = u32::from(ip);
+            let network_mask = u32::MAX << (32 - prefix);
+            let start = bits & network_mask;
+            let end = start.checked_add(1u32 << (32 - prefix))?;
+            Some((
+                Ipv4Addr::from(start).to_string(),
+                Ipv4Addr::from(end).to_string(),
+                start as u128,
+                end as u128,
+            ))
+        }
+        IpAddr::V6(ip) => {
+            if prefix == 0 || prefix > 128 {
+                return None;
+            }
+            let bits = u128::from_be_bytes(ip.octets());
+            let network_mask = u128::MAX << (128 - prefix);
+            let start = bits & network_mask;
+            let end = start.checked_add(1u128 << (128 - prefix))?;
+            Some((
+                Ipv6Addr::from(start).to_string(),
+                Ipv6Addr::from(end).to_string(),
+                start,
+                end,
+            ))
+        }
+    }
+}
+
 fn plugin_numeric_range_buckets_from_params(
     params: &serde_json::Map<String, Value>,
 ) -> Option<Vec<os_query_dsl::RangeBucket>> {
@@ -38446,13 +38485,19 @@ fn plugin_ip_range_buckets_from_params(
             if object.contains_key("key") && object.get("key").and_then(Value::as_str).is_none() {
                 return None;
             }
+            let mask = match object.get("mask") {
+                Some(value) => Some(ip_cidr_range(value.as_str()?)?),
+                None => None,
+            };
             let from = match object.get("from") {
                 Some(value) => {
                     let text = value.as_str()?;
                     let parsed = ip_string_to_u128(text)?;
                     Some((text.to_string(), parsed))
                 }
-                None => None,
+                None => mask
+                    .as_ref()
+                    .map(|(text, _, value, _)| (text.clone(), *value)),
             };
             let to = match object.get("to") {
                 Some(value) => {
@@ -38460,7 +38505,9 @@ fn plugin_ip_range_buckets_from_params(
                     let parsed = ip_string_to_u128(text)?;
                     Some((text.to_string(), parsed))
                 }
-                None => None,
+                None => mask
+                    .as_ref()
+                    .map(|(_, text, _, value)| (text.clone(), *value)),
             };
             Some(PluginIpRangeBucket {
                 key: object

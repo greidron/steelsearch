@@ -36444,8 +36444,18 @@ fn build_search_aggregations(
                 let Some(bucket_object) = bucket.as_object() else {
                     continue;
                 };
-                let from = bucket_object.get("from").and_then(Value::as_str);
-                let to = bucket_object.get("to").and_then(Value::as_str);
+                let mask_range = bucket_object
+                    .get("mask")
+                    .and_then(Value::as_str)
+                    .and_then(ip_cidr_range);
+                let from = bucket_object
+                    .get("from")
+                    .and_then(Value::as_str)
+                    .or_else(|| mask_range.as_ref().map(|range| range.0.as_str()));
+                let to = bucket_object
+                    .get("to")
+                    .and_then(Value::as_str)
+                    .or_else(|| mask_range.as_ref().map(|range| range.1.as_str()));
                 let from_bound = from.and_then(parse_ip_address_to_u128);
                 let to_bound = to.and_then(parse_ip_address_to_u128);
                 let key = bucket_object
@@ -36801,6 +36811,41 @@ fn parse_ip_address_to_u128(value: &str) -> Option<u128> {
     match value.parse::<std::net::IpAddr>().ok()? {
         std::net::IpAddr::V4(ip) => Some(u32::from(ip) as u128),
         std::net::IpAddr::V6(ip) => Some(u128::from(ip)),
+    }
+}
+
+fn ip_cidr_range(mask: &str) -> Option<(String, String)> {
+    use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+
+    let (address, prefix) = mask.split_once('/')?;
+    let prefix = prefix.parse::<u32>().ok()?;
+    match address.parse::<IpAddr>().ok()? {
+        IpAddr::V4(ip) => {
+            if prefix == 0 || prefix > 32 {
+                return None;
+            }
+            let bits = u32::from(ip);
+            let network_mask = u32::MAX << (32 - prefix);
+            let start = bits & network_mask;
+            let end = start.checked_add(1u32 << (32 - prefix))?;
+            Some((
+                Ipv4Addr::from(start).to_string(),
+                Ipv4Addr::from(end).to_string(),
+            ))
+        }
+        IpAddr::V6(ip) => {
+            if prefix == 0 || prefix > 128 {
+                return None;
+            }
+            let bits = u128::from(ip);
+            let network_mask = u128::MAX << (128 - prefix);
+            let start = bits & network_mask;
+            let end = start.checked_add(1u128 << (128 - prefix))?;
+            Some((
+                Ipv6Addr::from(start).to_string(),
+                Ipv6Addr::from(end).to_string(),
+            ))
+        }
     }
 }
 
