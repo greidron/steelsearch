@@ -153,6 +153,7 @@
         "pit_list_multiple_keep_alive_details_search",
         "pit_search_non_positive_keep_alive_preserves_existing_search",
         "pit_search_without_keep_alive_search",
+        "pit_open_routing_multishard_search",
         "pit_search_with_default_ignore_throttled",
         "pit_search_with_order_sensitive_default_wildcards",
         "pit_search_with_default_ccs_minimize_roundtrips",
