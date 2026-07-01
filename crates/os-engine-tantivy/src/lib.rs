@@ -11023,7 +11023,15 @@ fn read_field_mappings_from_properties(
                 .and_then(Value::as_bool)
                 .unwrap_or(matches!(
                     field_type,
-                    "keyword" | "integer" | "long" | "short" | "byte" | "float" | "double" | "date"
+                    "keyword"
+                        | "integer"
+                        | "long"
+                        | "short"
+                        | "byte"
+                        | "float"
+                        | "double"
+                        | "rank_feature"
+                        | "date"
                 )),
             knn_vector: None,
         });
@@ -11048,7 +11056,7 @@ fn map_field_type(name: &str, field_type: &str) -> EngineResult<TantivyFieldType
         "text" => Ok(TantivyFieldType::Text),
         "keyword" | "completion" | "ip" => Ok(TantivyFieldType::Keyword),
         "byte" | "short" | "integer" | "long" => Ok(TantivyFieldType::I64),
-        "float" | "double" => Ok(TantivyFieldType::F64),
+        "float" | "double" | "rank_feature" => Ok(TantivyFieldType::F64),
         "boolean" => Ok(TantivyFieldType::Bool),
         "date" => Ok(TantivyFieldType::Date),
         "geo_point" => Ok(TantivyFieldType::GeoPoint),
@@ -40166,6 +40174,7 @@ mod tests {
                     "service": { "type": "keyword", "store": true },
                     "bytes": { "type": "long" },
                     "ratio": { "type": "double" },
+                    "pagerank": { "type": "rank_feature" },
                     "success": { "type": "boolean" },
                     "created_at": { "type": "date" }
                 }
@@ -40176,7 +40185,7 @@ mod tests {
         assert_eq!(schema.number_of_shards, 3);
         assert_eq!(schema.number_of_replicas, 0);
         assert!(schema.dynamic);
-        assert_eq!(schema.fields.len(), 6);
+        assert_eq!(schema.fields.len(), 7);
 
         let bytes = field(&schema, "bytes");
         assert_eq!(bytes.field_type, TantivyFieldType::I64);
@@ -40188,6 +40197,10 @@ mod tests {
 
         let ratio = field(&schema, "ratio");
         assert_eq!(ratio.field_type, TantivyFieldType::F64);
+
+        let pagerank = field(&schema, "pagerank");
+        assert_eq!(pagerank.field_type, TantivyFieldType::F64);
+        assert!(pagerank.fast);
 
         let service = field(&schema, "service");
         assert!(service.stored);

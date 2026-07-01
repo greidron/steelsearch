@@ -46,6 +46,14 @@
         ]
       },
       {
+        "index": "rank-feature-compat",
+        "features": [
+          "single_shard",
+          "no_replicas",
+          "rank_feature"
+        ]
+      },
+      {
         "index": "search-after-compat",
         "features": [
           "single_shard",
@@ -116,6 +124,13 @@
           "title": "text",
           "category": "keyword",
           "embedding": "knn_vector:3:innerproduct"
+        }
+      },
+      {
+        "index": "rank-feature-compat",
+        "fields": {
+          "pagerank": "rank_feature",
+          "url": "keyword"
         }
       },
       {
@@ -201,6 +216,14 @@
         ]
       },
       {
+        "index": "rank-feature-compat",
+        "ids": [
+          "rank-1",
+          "rank-2",
+          "rank-3"
+        ]
+      },
+      {
         "index": "search-after-compat",
         "ids": [
           "1",
@@ -262,6 +285,16 @@
           "vec-a",
           "vec-b",
           "vec-c"
+        ]
+      },
+      {
+        "name": "rank_feature_bulk",
+        "index": "rank-feature-compat",
+        "format": "application/x-ndjson index actions with explicit _id values",
+        "document_ids": [
+          "rank-1",
+          "rank-2",
+          "rank-3"
         ]
       },
       {
@@ -667,6 +700,27 @@
       }
     },
     {
+      "name": "rank-feature-compat",
+      "body": {
+        "settings": {
+          "index": {
+            "number_of_shards": 1,
+            "number_of_replicas": 0
+          }
+        },
+        "mappings": {
+          "properties": {
+            "pagerank": {
+              "type": "rank_feature"
+            },
+            "url": {
+              "type": "keyword"
+            }
+          }
+        }
+      }
+    },
+    {
       "name": "search-after-compat",
       "body": {
         "settings": {
@@ -1022,6 +1076,31 @@
               1.0,
               0.0
             ]
+          }
+        }
+      ]
+    },
+    {
+      "index": "rank-feature-compat",
+      "documents": [
+        {
+          "_id": "rank-1",
+          "_source": {
+            "url": "/alpha",
+            "pagerank": 3.0
+          }
+        },
+        {
+          "_id": "rank-2",
+          "_source": {
+            "url": "/beta",
+            "pagerank": 1.5
+          }
+        },
+        {
+          "_id": "rank-3",
+          "_source": {
+            "url": "/missing"
           }
         }
       ]
@@ -10059,6 +10138,29 @@
       "extract": "search_hits",
       "family": "lexical",
       "description": "[lexical] query string minimum_should_match"
+    },
+    {
+      "name": "rank_feature_query_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/rank-feature-compat/_search",
+      "body": {
+        "query": {
+          "rank_feature": {
+            "field": "pagerank"
+          }
+        },
+        "sort": [
+          {
+            "_id": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] rank_feature query matches documents with positive feature values"
     },
     {
       "name": "regexp_query_search",

@@ -31185,6 +31185,11 @@ fn evaluate_search_query_source_with_mappings(
         let (matched, score) = value_matches_terms_set(source, field, expected)?;
         return Some((matched, score));
     }
+    if let Some(rank_feature) = query.get("rank_feature").and_then(Value::as_object) {
+        let field = rank_feature.get("field").and_then(Value::as_str)?;
+        let score = rank_feature_score(lookup_query_field_value(source, field))?;
+        return Some((score > 0.0, score));
+    }
     if let Some(constant_score) = query.get("constant_score").and_then(Value::as_object) {
         let inner_query = constant_score
             .get("filter")
@@ -33117,6 +33122,15 @@ fn value_matches_terms_set(source: &Value, field: &str, expected: &Value) -> Opt
             0.0
         },
     ))
+}
+
+fn rank_feature_score(candidate: Option<&Value>) -> Option<f64> {
+    match candidate? {
+        Value::Number(number) => number
+            .as_f64()
+            .filter(|value| value.is_finite() && *value > 0.0),
+        _ => None,
+    }
 }
 
 fn terms_set_minimum_should_match(
