@@ -27642,8 +27642,9 @@ fn interval_effective_fields_for_spec(query_field: &str, spec: &Value) -> Vec<St
                 .map(|intervals| {
                     intervals
                         .iter()
-                        .filter_map(|interval| interval_effective_field(interval, query_field))
-                        .map(str::to_string)
+                        .flat_map(|interval| {
+                            interval_effective_fields_for_spec(query_field, interval)
+                        })
                         .collect()
                 })
                 .unwrap_or_else(|| vec![query_field.to_string()]);
@@ -30148,7 +30149,7 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
                 ));
             }
             for interval in intervals {
-                if !interval_leaf_spec_is_supported(interval) {
+                if !interval_spec_is_supported(interval) {
                     return Some(build_unsupported_search_response(
                         "unsupported intervals all_of interval",
                     ));
@@ -30175,7 +30176,7 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
                 ));
             }
             for interval in intervals {
-                if !interval_leaf_spec_is_supported(interval) {
+                if !interval_spec_is_supported(interval) {
                     return Some(build_unsupported_search_response(
                         "unsupported intervals any_of interval",
                     ));
@@ -30395,7 +30396,8 @@ fn interval_spec_is_supported(interval: &Value) -> bool {
             })
             && interval_ordering_options_are_supported(all_of)
             && interval_filter_is_supported(all_of)
-            && intervals.iter().all(interval_leaf_spec_is_supported);
+            && intervals_share_single_effective_field(intervals, "")
+            && intervals.iter().all(interval_spec_is_supported);
     }
     if let Some(any_of) = object.get("any_of").and_then(Value::as_object) {
         let Some(intervals) = any_of.get("intervals").and_then(Value::as_array) else {
@@ -30406,32 +30408,7 @@ fn interval_spec_is_supported(interval: &Value) -> bool {
                 .keys()
                 .all(|key| key == "intervals" || key == "filter")
             && interval_filter_is_supported(any_of)
-            && intervals.iter().all(interval_leaf_spec_is_supported);
-    }
-    false
-}
-
-fn interval_leaf_spec_is_supported(interval: &Value) -> bool {
-    let Some(object) = interval.as_object() else {
-        return false;
-    };
-    if object.contains_key("all_of") || object.contains_key("any_of") {
-        return false;
-    }
-    if let Some(match_spec) = object.get("match").and_then(Value::as_object) {
-        return interval_match_spec_is_supported(match_spec);
-    }
-    if let Some(prefix_spec) = object.get("prefix").and_then(Value::as_object) {
-        return interval_prefix_spec_is_supported(prefix_spec);
-    }
-    if let Some(wildcard_spec) = object.get("wildcard").and_then(Value::as_object) {
-        return interval_wildcard_spec_is_supported(wildcard_spec);
-    }
-    if let Some(regexp_spec) = object.get("regexp").and_then(Value::as_object) {
-        return interval_regexp_spec_is_supported(regexp_spec);
-    }
-    if let Some(fuzzy_spec) = object.get("fuzzy").and_then(Value::as_object) {
-        return interval_fuzzy_spec_is_supported(fuzzy_spec);
+            && intervals.iter().all(interval_spec_is_supported);
     }
     false
 }
@@ -30473,7 +30450,37 @@ fn interval_effective_field<'a>(interval: &'a Value, query_field: &'a str) -> Op
     if let Some(fuzzy_spec) = object.get("fuzzy").and_then(Value::as_object) {
         return Some(interval_fuzzy_effective_field(fuzzy_spec, query_field));
     }
+    if let Some(all_of) = object.get("all_of").and_then(Value::as_object) {
+        return interval_composite_effective_field(
+            all_of.get("intervals")?.as_array()?,
+            query_field,
+        );
+    }
+    if let Some(any_of) = object.get("any_of").and_then(Value::as_object) {
+        return interval_composite_effective_field(
+            any_of.get("intervals")?.as_array()?,
+            query_field,
+        );
+    }
     None
+}
+
+fn interval_composite_effective_field<'a>(
+    intervals: &'a [Value],
+    query_field: &'a str,
+) -> Option<&'a str> {
+    let mut effective_field: Option<&str> = None;
+    for interval in intervals {
+        let field = interval_effective_field(interval, query_field)?;
+        if let Some(current) = effective_field {
+            if current != field {
+                return None;
+            }
+        } else {
+            effective_field = Some(field);
+        }
+    }
+    effective_field
 }
 
 fn interval_match_effective_field<'a>(

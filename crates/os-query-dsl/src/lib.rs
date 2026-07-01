@@ -4685,7 +4685,7 @@ fn intervals_spec_is_supported(spec: &Value) -> bool {
             && interval_ordering_options_are_supported(all_of)
             && interval_filter_is_supported(all_of)
             && intervals_share_single_effective_field(intervals)
-            && intervals.iter().all(interval_leaf_spec_is_supported);
+            && intervals.iter().all(intervals_spec_is_supported);
     }
     if let Some(any_of) = object.get("any_of").and_then(Value::as_object) {
         let Some(intervals) = any_of.get("intervals").and_then(Value::as_array) else {
@@ -4696,7 +4696,7 @@ fn intervals_spec_is_supported(spec: &Value) -> bool {
                 .keys()
                 .all(|key| key == "intervals" || key == "filter")
             && interval_filter_is_supported(any_of)
-            && intervals.iter().all(interval_leaf_spec_is_supported);
+            && intervals.iter().all(intervals_spec_is_supported);
     }
     false
 }
@@ -4873,16 +4873,6 @@ fn interval_filter_spec_is_supported(filter: &Value) -> bool {
     ) && intervals_spec_is_supported(provider)
 }
 
-fn interval_leaf_spec_is_supported(interval: &Value) -> bool {
-    let Some(object) = interval.as_object() else {
-        return false;
-    };
-    if object.contains_key("all_of") || object.contains_key("any_of") {
-        return false;
-    }
-    intervals_spec_is_supported(interval)
-}
-
 fn intervals_share_single_effective_field(intervals: &[Value]) -> bool {
     let mut effective_field: Option<&str> = None;
     for interval in intervals {
@@ -4942,7 +4932,28 @@ fn interval_effective_field(interval: &Value) -> Option<&str> {
                 .unwrap_or(""),
         );
     }
+    if let Some(all_of) = object.get("all_of").and_then(Value::as_object) {
+        return interval_composite_effective_field(all_of.get("intervals")?.as_array()?);
+    }
+    if let Some(any_of) = object.get("any_of").and_then(Value::as_object) {
+        return interval_composite_effective_field(any_of.get("intervals")?.as_array()?);
+    }
     None
+}
+
+fn interval_composite_effective_field(intervals: &[Value]) -> Option<&str> {
+    let mut effective_field: Option<&str> = None;
+    for interval in intervals {
+        let field = interval_effective_field(interval)?;
+        if let Some(current) = effective_field {
+            if current != field {
+                return None;
+            }
+        } else {
+            effective_field = Some(field);
+        }
+    }
+    effective_field
 }
 
 fn interval_ordering_options_are_supported(object: &serde_json::Map<String, Value>) -> bool {
@@ -7621,6 +7632,52 @@ mod tests {
                         "intervals": [
                             { "match": { "query": "service" } },
                             { "prefix": { "prefix": "pay" } }
+                        ]
+                    }
+                }),
+            }
+        );
+
+        let nested_composite = parse_query(&serde_json::json!({
+            "intervals": {
+                "message": {
+                    "all_of": {
+                        "ordered": true,
+                        "max_gaps": 0,
+                        "intervals": [
+                            { "match": { "query": "checkout" } },
+                            {
+                                "any_of": {
+                                    "intervals": [
+                                        { "match": { "query": "service" } },
+                                        { "prefix": { "prefix": "pay" } }
+                                    ]
+                                }
+                            }
+                        ]
+                    }
+                }
+            }
+        }))
+        .unwrap();
+        assert_eq!(
+            nested_composite,
+            Query::Intervals {
+                field: "message".to_string(),
+                spec: serde_json::json!({
+                    "all_of": {
+                        "ordered": true,
+                        "max_gaps": 0,
+                        "intervals": [
+                            { "match": { "query": "checkout" } },
+                            {
+                                "any_of": {
+                                    "intervals": [
+                                        { "match": { "query": "service" } },
+                                        { "prefix": { "prefix": "pay" } }
+                                    ]
+                                }
+                            }
                         ]
                     }
                 }),

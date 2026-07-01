@@ -16776,7 +16776,37 @@ fn interval_effective_field<'a>(interval: &'a Value, query_field: &'a str) -> Op
     if let Some(fuzzy_spec) = object.get("fuzzy").and_then(Value::as_object) {
         return Some(interval_fuzzy_effective_field(fuzzy_spec, query_field));
     }
+    if let Some(all_of) = object.get("all_of").and_then(Value::as_object) {
+        return interval_composite_effective_field(
+            all_of.get("intervals")?.as_array()?,
+            query_field,
+        );
+    }
+    if let Some(any_of) = object.get("any_of").and_then(Value::as_object) {
+        return interval_composite_effective_field(
+            any_of.get("intervals")?.as_array()?,
+            query_field,
+        );
+    }
     None
+}
+
+fn interval_composite_effective_field<'a>(
+    intervals: &'a [Value],
+    query_field: &'a str,
+) -> Option<&'a str> {
+    let mut effective_field: Option<&str> = None;
+    for interval in intervals {
+        let field = interval_effective_field(interval, query_field)?;
+        if let Some(current) = effective_field {
+            if current != field {
+                return None;
+            }
+        } else {
+            effective_field = Some(field);
+        }
+    }
+    effective_field
 }
 
 fn interval_match_effective_field<'a>(
@@ -152970,6 +153000,28 @@ mod tests {
             }
         }))
         .unwrap();
+        let nested_composite_query = parse_query(&serde_json::json!({
+            "intervals": {
+                "message": {
+                    "all_of": {
+                        "ordered": true,
+                        "max_gaps": 0,
+                        "intervals": [
+                            { "match": { "query": "checkout" } },
+                            {
+                                "any_of": {
+                                    "intervals": [
+                                        { "match": { "query": "service" } },
+                                        { "prefix": { "prefix": "pay" } }
+                                    ]
+                                }
+                            }
+                        ]
+                    }
+                }
+            }
+        }))
+        .unwrap();
         let mixed_any_of_query = parse_query(&serde_json::json!({
             "intervals": {
                 "message": {
@@ -153109,6 +153161,11 @@ mod tests {
             .unwrap()
             .expect("native intervals mixed all_of hits");
         assert_eq!(search_hit_ids(&mixed_all_of_hits), vec!["2"]);
+        let nested_composite_hits = index
+            .search_hits_for_query_native("bench", &nested_composite_query, &[])
+            .unwrap()
+            .expect("native intervals nested composite hits");
+        assert_eq!(search_hit_ids(&nested_composite_hits), vec!["1", "2"]);
         let mixed_any_of_hits = index
             .search_hits_for_query_native("bench", &mixed_any_of_query, &[])
             .unwrap()
