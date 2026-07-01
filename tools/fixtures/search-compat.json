@@ -14926,6 +14926,47 @@
       "description": "[aggregation] bucket sort pipeline aggregation"
     },
     {
+      "name": "bucket_script_pipeline_aggregation",
+      "area": "aggregation",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "by_service": {
+            "terms": {
+              "field": "service",
+              "order": {
+                "_key": "asc"
+              },
+              "size": 10
+            },
+            "aggs": {
+              "double_doc_count": {
+                "bucket_script": {
+                  "buckets_path": {
+                    "docCount": "_count"
+                  },
+                  "script": "params.docCount * 2"
+                }
+              },
+              "keep_scaled_services": {
+                "bucket_selector": {
+                  "buckets_path": {
+                    "scaled": "double_doc_count"
+                  },
+                  "script": "params.scaled >= 4"
+                }
+              }
+            }
+          }
+        }
+      },
+      "extract": "aggregations",
+      "family": "aggregation",
+      "description": "[aggregation] bucket script pipeline aggregation"
+    },
+    {
       "name": "avg_bucket_pipeline_aggregation",
       "area": "aggregation",
       "method": "POST",

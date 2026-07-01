@@ -37038,13 +37038,21 @@ fn apply_terms_bucket_parent_pipeline_transforms(
     let Some(nested_aggs) = nested_aggs.and_then(Value::as_object) else {
         return;
     };
+    for (name, aggregation) in nested_aggs {
+        if let Some(script) = aggregation
+            .get("bucket_script")
+            .and_then(parent_bucket_script_transform)
+        {
+            apply_parent_bucket_script(bucket_values, name, &script);
+        }
+    }
     for aggregation in nested_aggs.values() {
         if let Some(selector) = aggregation
             .get("bucket_selector")
             .and_then(parent_bucket_selector_filter)
         {
             bucket_values.retain(|bucket| {
-                bucket_selector_bucket_value(bucket, selector.path)
+                bucket_selector_bucket_value(bucket, &selector.path)
                     .map(|value| {
                         compare_parent_bucket_selector_value(
                             value,
@@ -37064,9 +37072,9 @@ fn apply_terms_bucket_parent_pipeline_transforms(
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 struct ParentBucketSelectorFilter {
-    path: &'static str,
+    path: String,
     operator: &'static str,
     threshold: f64,
 }
@@ -37077,23 +37085,19 @@ fn parent_bucket_selector_filter(selector: &Value) -> Option<ParentBucketSelecto
     let script = parent_bucket_selector_script_source(selector.get("script")?)?;
     let (operator, threshold) = parse_parent_bucket_selector_script(script, alias)?;
     Some(ParentBucketSelectorFilter {
-        path,
+        path: path.to_string(),
         operator,
         threshold,
     })
 }
 
-fn parent_bucket_selector_buckets_path(value: &Value) -> Option<(&str, &'static str)> {
+fn parent_bucket_selector_buckets_path(value: &Value) -> Option<(&str, &str)> {
     if value.as_str().is_some_and(|path| path == "_count") {
         return Some(("_value", "_count"));
     }
     let object = value.as_object()?;
     let (alias, path) = object.iter().next()?;
-    if path.as_str()? == "_count" {
-        Some((alias.as_str(), "_count"))
-    } else {
-        None
-    }
+    Some((alias.as_str(), path.as_str()?))
 }
 
 fn parent_bucket_selector_script_source(value: &Value) -> Option<&str> {
@@ -37152,6 +37156,102 @@ fn compare_parent_bucket_selector_value(value: f64, operator: &str, threshold: f
         "eq" => value == threshold,
         "ne" => value != threshold,
         _ => false,
+    }
+}
+
+#[derive(Clone)]
+struct ParentBucketScriptTransform {
+    path: String,
+    script: ParentBucketScriptExpression,
+}
+
+#[derive(Clone)]
+struct ParentBucketScriptExpression {
+    alias: String,
+    operator: Option<char>,
+    operand: Option<f64>,
+}
+
+fn parent_bucket_script_transform(bucket_script: &Value) -> Option<ParentBucketScriptTransform> {
+    let bucket_script = bucket_script.as_object()?;
+    let (alias, path) = parent_bucket_script_buckets_path(bucket_script.get("buckets_path")?)?;
+    let source = parent_bucket_selector_script_source(bucket_script.get("script")?)?;
+    let script = parse_parent_bucket_script_expression(source, alias)?;
+    Some(ParentBucketScriptTransform {
+        path: path.to_string(),
+        script,
+    })
+}
+
+fn parent_bucket_script_buckets_path(value: &Value) -> Option<(&str, &str)> {
+    if value.as_str().is_some_and(|path| path == "_count") {
+        return Some(("_value", "_count"));
+    }
+    let object = value.as_object()?;
+    let (alias, path) = object.iter().next()?;
+    Some((alias.as_str(), path.as_str()?))
+}
+
+fn parse_parent_bucket_script_expression(
+    script: &str,
+    alias: &str,
+) -> Option<ParentBucketScriptExpression> {
+    let variable = if alias == "_value" {
+        "_value".to_string()
+    } else {
+        format!("params.{alias}")
+    };
+    let rest = script.trim().strip_prefix(&variable)?.trim_start();
+    if rest.is_empty() {
+        return Some(ParentBucketScriptExpression {
+            alias: alias.to_string(),
+            operator: None,
+            operand: None,
+        });
+    }
+    let mut chars = rest.chars();
+    let operator = chars.next()?;
+    if !matches!(operator, '+' | '-' | '*' | '/') {
+        return None;
+    }
+    let operand = chars.as_str().trim().parse::<f64>().ok()?;
+    Some(ParentBucketScriptExpression {
+        alias: alias.to_string(),
+        operator: Some(operator),
+        operand: Some(operand),
+    })
+}
+
+fn apply_parent_bucket_script(
+    bucket_values: &mut [Value],
+    aggregation_name: &str,
+    script: &ParentBucketScriptTransform,
+) {
+    for bucket in bucket_values {
+        let Some(input) = bucket_selector_bucket_value(bucket, &script.path) else {
+            continue;
+        };
+        let value = evaluate_parent_bucket_script_expression(input, &script.script);
+        if let Some(bucket_object) = bucket.as_object_mut() {
+            bucket_object.insert(
+                aggregation_name.to_string(),
+                serde_json::json!({ "value": value }),
+            );
+        }
+    }
+}
+
+fn evaluate_parent_bucket_script_expression(
+    input: f64,
+    script: &ParentBucketScriptExpression,
+) -> f64 {
+    let _ = &script.alias;
+    match (script.operator, script.operand) {
+        (Some('+'), Some(operand)) => input + operand,
+        (Some('-'), Some(operand)) => input - operand,
+        (Some('*'), Some(operand)) => input * operand,
+        (Some('/'), Some(operand)) => input / operand,
+        _ => input,
     }
 }
 
@@ -62657,6 +62757,44 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             bucket_selector.body["aggregations"]["by_service"]["buckets"],
             serde_json::json!([{ "key": "checkout", "doc_count": 2 }])
+        );
+
+        let bucket_script = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-aggs-000001/_search").with_json_body(
+                serde_json::json!({
+                    "size": 0,
+                    "aggs": {
+                        "by_service": {
+                            "terms": {
+                                "field": "service",
+                                "order": { "_key": "asc" },
+                                "size": 10
+                            },
+                            "aggs": {
+                                "double_doc_count": {
+                                    "bucket_script": {
+                                        "buckets_path": { "docCount": "_count" },
+                                        "script": "params.docCount * 2"
+                                    }
+                                },
+                                "keep_scaled_services": {
+                                    "bucket_selector": {
+                                        "buckets_path": { "scaled": "double_doc_count" },
+                                        "script": "params.scaled >= 4"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }),
+            ),
+        );
+        assert_eq!(bucket_script.status, 200);
+        assert_eq!(
+            bucket_script.body["aggregations"]["by_service"]["buckets"],
+            serde_json::json!([
+                { "key": "checkout", "doc_count": 2, "double_doc_count": { "value": 4.0 } }
+            ])
         );
 
         let bucket_sort = node.handle_rest_request(
