@@ -36263,6 +36263,10 @@ fn build_search_aggregations(
                 .get("extended_bounds")
                 .map(parse_fallback_histogram_bounds)
                 .transpose()?;
+            let hard_bounds = histogram
+                .get("hard_bounds")
+                .map(parse_fallback_histogram_bounds)
+                .transpose()?;
             let keyed = histogram
                 .get("keyed")
                 .and_then(Value::as_bool)
@@ -36285,6 +36289,9 @@ fn build_search_aggregations(
                 else {
                     continue;
                 };
+                if !fallback_histogram_bounds_contain(hard_bounds.as_ref(), bucket) {
+                    continue;
+                }
                 let entry = counts.entry(bucket.to_bits()).or_insert((bucket, 0));
                 entry.1 += 1;
             }
@@ -36293,6 +36300,7 @@ fn build_search_aggregations(
                 interval,
                 offset,
                 extended_bounds.as_ref(),
+                hard_bounds.as_ref(),
             );
             result.insert(
                 name.clone(),
@@ -37412,6 +37420,7 @@ fn render_histogram_bucket_values_from_counts(
     interval: f64,
     offset: f64,
     extended_bounds: Option<&FallbackHistogramBounds>,
+    hard_bounds: Option<&FallbackHistogramBounds>,
 ) -> Vec<Value> {
     if counts.is_empty() && extended_bounds.is_none() {
         return Vec::new();
@@ -37445,14 +37454,29 @@ fn render_histogram_bucket_values_from_counts(
         return Vec::new();
     };
     (min_bucket..=max_bucket)
-        .map(|bucket| {
+        .filter_map(|bucket| {
             let key = (bucket as f64) * interval + offset;
-            serde_json::json!({
+            if !fallback_histogram_bounds_contain(hard_bounds, key) {
+                return None;
+            }
+            Some(serde_json::json!({
                 "key": key,
                 "doc_count": counts.get(&key.to_bits()).map(|(_, count)| *count).unwrap_or(0),
-            })
+            }))
         })
         .collect()
+}
+
+fn fallback_histogram_bounds_contain(bounds: Option<&FallbackHistogramBounds>, value: f64) -> bool {
+    if let Some(bounds) = bounds {
+        if bounds.max.is_some_and(|max| value > max) {
+            return false;
+        }
+        if bounds.min.is_some_and(|min| value < min) {
+            return false;
+        }
+    }
+    true
 }
 
 fn histogram_bucket_index(key: f64, interval: f64, offset: f64) -> Option<i64> {
