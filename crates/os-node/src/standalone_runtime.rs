@@ -36922,15 +36922,9 @@ fn build_search_aggregations(
             result.insert(name.clone(), Value::Object(body));
             continue;
         }
-        for (pipeline_kind, pipeline_body) in [
-            ("sum_bucket", aggregation_object.get("sum_bucket")),
-            ("avg_bucket", aggregation_object.get("avg_bucket")),
-            ("min_bucket", aggregation_object.get("min_bucket")),
-            ("max_bucket", aggregation_object.get("max_bucket")),
-        ] {
-            let Some(pipeline_object) = pipeline_body.and_then(Value::as_object) else {
-                continue;
-            };
+        if let Some((pipeline_kind, pipeline_object)) =
+            first_supported_bucket_metric_pipeline_aggregation(aggregation_object)
+        {
             let buckets_path = pipeline_object
                 .get("buckets_path")
                 .and_then(Value::as_str)
@@ -36945,6 +36939,19 @@ fn build_search_aggregations(
                         .collect::<Vec<_>>()
                 })
                 .unwrap_or_default();
+            if pipeline_kind == "stats_bucket" {
+                result.insert(
+                    name.clone(),
+                    serde_json::json!({
+                        "count": counts.len(),
+                        "min": counts.iter().copied().reduce(f64::min).unwrap_or(0.0),
+                        "max": counts.iter().copied().reduce(f64::max).unwrap_or(0.0),
+                        "avg": if counts.is_empty() { 0.0 } else { counts.iter().sum::<f64>() / counts.len() as f64 },
+                        "sum": counts.iter().sum::<f64>(),
+                    }),
+                );
+                continue;
+            }
             let value = match pipeline_kind {
                 "sum_bucket" => counts.iter().sum::<f64>(),
                 "avg_bucket" => {
@@ -37159,6 +37166,8 @@ fn typed_aggregation_prefix(aggregation: &serde_json::Map<String, Value>) -> Opt
         "min_bucket"
     } else if aggregation.contains_key("max_bucket") {
         "max_bucket"
+    } else if aggregation.contains_key("stats_bucket") {
+        "stats_bucket"
     } else if aggregation.contains_key("composite") {
         "composite"
     } else if aggregation.contains_key("adjacency_matrix") {
@@ -38170,6 +38179,23 @@ fn first_supported_metric_aggregation<'a>(
         "median_absolute_deviation",
     ] {
         if let Some(value) = aggregation_object.get(key) {
+            return Some((key, value));
+        }
+    }
+    None
+}
+
+fn first_supported_bucket_metric_pipeline_aggregation<'a>(
+    aggregation_object: &'a serde_json::Map<String, Value>,
+) -> Option<(&'a str, &'a serde_json::Map<String, Value>)> {
+    for key in [
+        "sum_bucket",
+        "avg_bucket",
+        "min_bucket",
+        "max_bucket",
+        "stats_bucket",
+    ] {
+        if let Some(value) = aggregation_object.get(key).and_then(Value::as_object) {
             return Some((key, value));
         }
     }
@@ -62390,6 +62416,11 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                             "max_bucket": {
                                 "buckets_path": "by_service>_count"
                             }
+                        },
+                        "service_doc_stats": {
+                            "stats_bucket": {
+                                "buckets_path": "by_service>_count"
+                            }
                         }
                     }
                 }),
@@ -62407,6 +62438,16 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             avg_min_max_bucket.body["aggregations"]["service_doc_max"]["value"],
             2.0
+        );
+        assert_eq!(
+            avg_min_max_bucket.body["aggregations"]["service_doc_stats"],
+            serde_json::json!({
+                "count": 2,
+                "min": 1.0,
+                "max": 2.0,
+                "avg": 1.5,
+                "sum": 3.0
+            })
         );
 
         let scripted_metric = node.handle_rest_request(
