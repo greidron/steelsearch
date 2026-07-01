@@ -2733,7 +2733,17 @@ fn build_tantivy_query(
     match query {
         Query::MatchAll => Ok(Some(Box::new(AllQuery))),
         Query::MatchNone => Ok(Some(Box::new(EmptyQuery))),
-        Query::Term { field, value } => build_tantivy_term_query(search_state, field, value),
+        Query::Term {
+            field,
+            value,
+            case_insensitive,
+        } => {
+            if *case_insensitive {
+                Ok(None)
+            } else {
+                build_tantivy_term_query(search_state, field, value)
+            }
+        }
         Query::Terms { field, values } => {
             let mut clauses = Vec::new();
             for value in values {
@@ -2749,6 +2759,7 @@ fn build_tantivy_query(
             &Query::Term {
                 field: field.clone(),
                 value: value.clone(),
+                case_insensitive: false,
             },
         ),
         Query::SpanGap { .. } => Ok(None),
@@ -2802,6 +2813,7 @@ fn build_tantivy_query(
                     .map(|value| Query::Term {
                         field: field.clone(),
                         value: value.clone(),
+                        case_insensitive: false,
                     })
                     .collect::<Vec<_>>();
                 return build_tantivy_minimum_should_match_query(
@@ -4373,6 +4385,7 @@ fn build_tantivy_span_first_query(
             &Query::Term {
                 field: field.clone(),
                 value: value.clone(),
+                case_insensitive: false,
             },
         ),
         Query::SpanTerm { .. } => Ok(None),
@@ -6989,7 +7002,7 @@ impl StoredIndex {
             Query::Term { value, .. } | Query::Match { query: value, .. } if value.is_object() => {
                 Ok(self.all_refreshed_candidate_ids())
             }
-            Query::Term { field, value } if numeric_array_value(value).is_some() => {
+            Query::Term { field, value, .. } if numeric_array_value(value).is_some() => {
                 let expected = numeric_array_value(value).unwrap_or_default();
                 Ok(self
                     .documents
@@ -7227,9 +7240,15 @@ impl StoredIndex {
         query: &Query,
     ) -> Option<std::collections::BTreeSet<String>> {
         match query {
-            Query::Term { field, value } if field != "_id" => {
-                Some(self.fast_top_level_term_candidate_ids(field, value))
-            }
+            Query::Term {
+                field,
+                value,
+                case_insensitive: false,
+            } if field != "_id" => Some(self.fast_top_level_term_candidate_ids(field, value)),
+            Query::Term {
+                case_insensitive: true,
+                ..
+            } => None,
             Query::Match {
                 field,
                 query,
@@ -11667,6 +11686,7 @@ fn search_hit_query_explanation_details(query: &Query, hit: &SearchHit) -> Vec<V
             &Query::Term {
                 field: field.clone(),
                 value: value.clone(),
+                case_insensitive: false,
             },
             hit,
         );
@@ -12124,7 +12144,7 @@ fn search_hit_query_explanation_details(query: &Query, hit: &SearchHit) -> Vec<V
                 )
             })]
         }
-        Query::Term { field, value } if field == "_id" => {
+        Query::Term { field, value, .. } if field == "_id" => {
             let id_match = value.as_str().is_some_and(|value| value == hit.metadata.id);
             let matched_value_count = usize::from(id_match);
             let highlight_present = id_match && search_hit_highlight_field_present(hit, field);
@@ -12150,9 +12170,15 @@ fn search_hit_query_explanation_details(query: &Query, hit: &SearchHit) -> Vec<V
                 "matched_value_count": matched_value_count
             })]
         }
-        Query::Term { field, value } if field != "_id" => {
+        Query::Term {
+            field,
+            value,
+            case_insensitive,
+        } if field != "_id" => {
             let matched_value_count = source_value_for_highlight_field(&hit.source, field)
-                .map(|field_value| term_query_matching_value_count(field_value, value))
+                .map(|field_value| {
+                    term_query_matching_value_count_with_case(field_value, value, *case_insensitive)
+                })
                 .unwrap_or(0);
             let field_match = matched_value_count > 0;
             let highlight_present = field_match && search_hit_highlight_field_present(hit, field);
@@ -13724,6 +13750,7 @@ fn search_hit_query_observation_counts(query: &Query, hit: &SearchHit) -> (usize
             &Query::Term {
                 field: field.clone(),
                 value: value.clone(),
+                case_insensitive: false,
             },
             hit,
         );
@@ -13920,7 +13947,7 @@ fn search_hit_query_observation_counts(query: &Query, hit: &SearchHit) -> (usize
                     .is_some_and(|fields| !fields.is_empty()),
             ),
         ),
-        Query::Term { field, value } if field == "_id" => {
+        Query::Term { field, value, .. } if field == "_id" => {
             let id_match = value.as_str().is_some_and(|value| value == hit.metadata.id);
             (
                 usize::from(id_match),
@@ -14001,10 +14028,17 @@ fn search_hit_query_observation_counts(query: &Query, hit: &SearchHit) -> (usize
                 usize::from(id_match && search_hit_projected_field_present(hit, field)),
             )
         }
-        Query::Term { field, value } if field != "_id" => {
+        Query::Term {
+            field,
+            value,
+            case_insensitive,
+        } if field != "_id" => {
             ({
-                let field_match = source_value_for_highlight_field(&hit.source, field)
-                    .is_some_and(|field_value| matches_term_query(field_value, value));
+                let field_match = source_value_for_highlight_field(&hit.source, field).is_some_and(
+                    |field_value| {
+                        matches_term_query_with_case(field_value, value, *case_insensitive)
+                    },
+                );
                 (
                     usize::from(field_match),
                     usize::from(field_match && search_hit_highlight_field_present(hit, field)),
@@ -14568,6 +14602,7 @@ fn collect_search_hit_highlights(
             &Query::Term {
                 field: field.clone(),
                 value: value.clone(),
+                case_insensitive: false,
             },
             hit_id,
             source,
@@ -14949,7 +14984,7 @@ fn collect_search_hit_highlights(
                 }
             }
         }
-        Query::Term { field, value } if field == "_id" => {
+        Query::Term { field, value, .. } if field == "_id" => {
             if requested_fields.is_some_and(|fields| !fields.contains(field)) {
                 return;
             }
@@ -14974,7 +15009,7 @@ fn collect_search_hit_highlights(
                 append_highlight_snippets(highlights, field, render_spec, snippets);
             }
         }
-        Query::Term { field, value } if field != "_id" => {
+        Query::Term { field, value, .. } if field != "_id" => {
             if requested_fields.is_some_and(|fields| !fields.contains(field)) {
                 return;
             }
@@ -16744,6 +16779,7 @@ fn document_matches_query(query: &Query, id: &str, source: &Value) -> bool {
             &Query::Term {
                 field: field.clone(),
                 value: value.clone(),
+                case_insensitive: false,
             },
             id,
             source,
@@ -16831,7 +16867,7 @@ fn document_matches_query(query: &Query, id: &str, source: &Value) -> bool {
     match query {
         Query::MatchAll => true,
         Query::MatchNone => false,
-        Query::Term { field, value } if field == "_id" => value.as_str() == Some(id),
+        Query::Term { field, value, .. } if field == "_id" => value.as_str() == Some(id),
         Query::Terms { field, values } if field == "_id" => {
             values.iter().any(|value| value.as_str() == Some(id))
         }
@@ -16995,8 +17031,13 @@ fn document_matches_query(query: &Query, id: &str, source: &Value) -> bool {
             *prefix_length,
             *transpositions,
         ),
-        Query::Term { field, value } => source_value_for_highlight_field(source, field)
-            .is_some_and(|field_value| matches_term_query(field_value, value)),
+        Query::Term {
+            field,
+            value,
+            case_insensitive,
+        } => source_value_for_highlight_field(source, field).is_some_and(|field_value| {
+            matches_term_query_with_case(field_value, value, *case_insensitive)
+        }),
         Query::Terms { field, values } => source_value_for_highlight_field(source, field)
             .is_some_and(|value| matches_terms_query(value, values)),
         Query::TermsSet {
@@ -17607,18 +17648,39 @@ fn matches_term_query(field_value: &Value, value: &Value) -> bool {
     term_query_matching_value_count(field_value, value) > 0
 }
 
+fn matches_term_query_with_case(
+    field_value: &Value,
+    value: &Value,
+    case_insensitive: bool,
+) -> bool {
+    term_query_matching_value_count_with_case(field_value, value, case_insensitive) > 0
+}
+
 fn ids_query_matching_value_count(id: &str, values: &[String]) -> usize {
     values.iter().filter(|value| value.as_str() == id).count()
 }
 
 fn term_query_matching_value_count(field_value: &Value, value: &Value) -> usize {
+    term_query_matching_value_count_with_case(field_value, value, false)
+}
+
+fn term_query_matching_value_count_with_case(
+    field_value: &Value,
+    value: &Value,
+    case_insensitive: bool,
+) -> usize {
+    if case_insensitive {
+        if let (Some(left), Some(right)) = (field_value.as_str(), value.as_str()) {
+            return usize::from(left.eq_ignore_ascii_case(right));
+        }
+    }
     if field_value == value {
         return 1;
     }
     match field_value {
         Value::Array(items) => items
             .iter()
-            .map(|item| term_query_matching_value_count(item, value))
+            .map(|item| term_query_matching_value_count_with_case(item, value, case_insensitive))
             .sum(),
         _ => usize::from(field_value == value),
     }
@@ -18694,9 +18756,14 @@ fn matches_span_containing_query(id: &str, source: &Value, big: &Query, little: 
 
 fn remap_query_field(query: &Query, field: &str) -> Query {
     match query {
-        Query::Term { value, .. } => Query::Term {
+        Query::Term {
+            value,
+            case_insensitive,
+            ..
+        } => Query::Term {
             field: field.to_string(),
             value: value.clone(),
+            case_insensitive: *case_insensitive,
         },
         Query::Terms { values, .. } => Query::Terms {
             field: field.to_string(),
@@ -18866,9 +18933,14 @@ fn remap_query_field(query: &Query, field: &str) -> Query {
 
 fn prefix_query_fields_for_nested_path(query: &Query, path: &str) -> Query {
     match query {
-        Query::Term { field, value } => Query::Term {
+        Query::Term {
+            field,
+            value,
+            case_insensitive,
+        } => Query::Term {
             field: nested_candidate_field_name(path, field),
             value: value.clone(),
+            case_insensitive: *case_insensitive,
         },
         Query::Terms { field, values } => Query::Terms {
             field: nested_candidate_field_name(path, field),
@@ -19112,9 +19184,14 @@ fn nested_candidate_field_name(path: &str, field: &str) -> String {
 
 fn localize_query_fields_for_nested_child(query: &Query, path: &str) -> Query {
     match query {
-        Query::Term { field, value } => Query::Term {
+        Query::Term {
+            field,
+            value,
+            case_insensitive,
+        } => Query::Term {
             field: nested_child_local_field_name(path, field),
             value: value.clone(),
+            case_insensitive: *case_insensitive,
         },
         Query::Terms { field, values } => Query::Terms {
             field: nested_child_local_field_name(path, field),
@@ -19436,7 +19513,15 @@ fn native_nested_child_ordinals_for_query(
     query: &Query,
 ) -> Option<std::collections::BTreeSet<usize>> {
     match query {
-        Query::Term { field, value } => nested_child_term_ordinals(path_index, path, field, value),
+        Query::Term {
+            field,
+            value,
+            case_insensitive: false,
+        } => nested_child_term_ordinals(path_index, path, field, value),
+        Query::Term {
+            case_insensitive: true,
+            ..
+        } => None,
         Query::Range { field, bounds } => {
             nested_child_range_ordinals(path_index, path, field, bounds)
         }
@@ -44063,6 +44148,7 @@ mod tests {
                         should: vec![Query::Term {
                             field: "body".to_string(),
                             value: Value::String("alpha".to_string()),
+                            case_insensitive: false,
                         }],
                         minimum_should_match: Some(0),
                         ..BoolQuery::default()
@@ -44132,6 +44218,7 @@ mod tests {
                         must_not: vec![Query::Term {
                             field: "body".to_string(),
                             value: Value::String("alpha".to_string()),
+                            case_insensitive: false,
                         }],
                         ..BoolQuery::default()
                     },
@@ -44178,6 +44265,7 @@ mod tests {
                 must_not: vec![Query::Term {
                     field: "service".to_string(),
                     value: Value::String("alpha".to_string()),
+                    case_insensitive: false,
                 }],
                 ..BoolQuery::default()
             },
@@ -44229,10 +44317,12 @@ mod tests {
                 must: vec![Query::Term {
                     field: "env".to_string(),
                     value: Value::String("prod".to_string()),
+                    case_insensitive: false,
                 }],
                 must_not: vec![Query::Term {
                     field: "service".to_string(),
                     value: Value::String("alpha".to_string()),
+                    case_insensitive: false,
                 }],
                 ..BoolQuery::default()
             },
@@ -44288,6 +44378,7 @@ mod tests {
                 must_not: vec![Query::Term {
                     field: "service".to_string(),
                     value: Value::String("alpha".to_string()),
+                    case_insensitive: false,
                 }],
                 ..BoolQuery::default()
             },
@@ -44347,10 +44438,12 @@ mod tests {
                 must: vec![Query::Term {
                     field: "env".to_string(),
                     value: Value::String("prod".to_string()),
+                    case_insensitive: false,
                 }],
                 must_not: vec![Query::Term {
                     field: "service".to_string(),
                     value: Value::String("alpha".to_string()),
+                    case_insensitive: false,
                 }],
                 ..BoolQuery::default()
             },
@@ -44410,10 +44503,12 @@ mod tests {
                 must: vec![Query::Term {
                     field: "env".to_string(),
                     value: Value::String("prod".to_string()),
+                    case_insensitive: false,
                 }],
                 must_not: vec![Query::Term {
                     field: "service".to_string(),
                     value: Value::String("alpha".to_string()),
+                    case_insensitive: false,
                 }],
                 ..BoolQuery::default()
             },
@@ -44564,10 +44659,12 @@ mod tests {
                 must: vec![Query::Term {
                     field: "env".to_string(),
                     value: Value::String("prod".to_string()),
+                    case_insensitive: false,
                 }],
                 must_not: vec![Query::Term {
                     field: "service".to_string(),
                     value: Value::String("alpha".to_string()),
+                    case_insensitive: false,
                 }],
                 ..BoolQuery::default()
             },
@@ -44630,6 +44727,7 @@ mod tests {
                 must_not: vec![Query::Term {
                     field: "service".to_string(),
                     value: Value::String("alpha".to_string()),
+                    case_insensitive: false,
                 }],
                 ..BoolQuery::default()
             },
@@ -44702,10 +44800,12 @@ mod tests {
                 must: vec![Query::Term {
                     field: "env".to_string(),
                     value: Value::String("prod".to_string()),
+                    case_insensitive: false,
                 }],
                 must_not: vec![Query::Term {
                     field: "service".to_string(),
                     value: Value::String("alpha".to_string()),
+                    case_insensitive: false,
                 }],
                 ..BoolQuery::default()
             },
@@ -44771,6 +44871,7 @@ mod tests {
                 must_not: vec![Query::Term {
                     field: "service".to_string(),
                     value: Value::String("alpha".to_string()),
+                    case_insensitive: false,
                 }],
                 ..BoolQuery::default()
             },
@@ -44842,10 +44943,12 @@ mod tests {
                 must: vec![Query::Term {
                     field: "env".to_string(),
                     value: Value::String("prod".to_string()),
+                    case_insensitive: false,
                 }],
                 must_not: vec![Query::Term {
                     field: "service".to_string(),
                     value: Value::String("alpha".to_string()),
+                    case_insensitive: false,
                 }],
                 ..BoolQuery::default()
             },
@@ -44928,6 +45031,7 @@ mod tests {
                 must_not: vec![Query::Term {
                     field: "service".to_string(),
                     value: Value::String("alpha".to_string()),
+                    case_insensitive: false,
                 }],
                 ..BoolQuery::default()
             },
@@ -45016,10 +45120,12 @@ mod tests {
                 must: vec![Query::Term {
                     field: "env".to_string(),
                     value: Value::String("prod".to_string()),
+                    case_insensitive: false,
                 }],
                 must_not: vec![Query::Term {
                     field: "service".to_string(),
                     value: Value::String("alpha".to_string()),
+                    case_insensitive: false,
                 }],
                 ..BoolQuery::default()
             },
@@ -45080,6 +45186,7 @@ mod tests {
                 must_not: vec![Query::Term {
                     field: "service".to_string(),
                     value: Value::String("alpha".to_string()),
+                    case_insensitive: false,
                 }],
                 ..BoolQuery::default()
             },
@@ -45121,6 +45228,7 @@ mod tests {
         let query = Query::Term {
             field: "service".to_string(),
             value: Value::String("alpha".to_string()),
+            case_insensitive: false,
         };
 
         let count = engine
@@ -45154,6 +45262,7 @@ mod tests {
         let query = Query::Term {
             field: "service".to_string(),
             value: Value::String("alpha".to_string()),
+            case_insensitive: false,
         };
 
         let mut store = engine.store.write().unwrap();
@@ -45240,6 +45349,7 @@ mod tests {
         let query = Query::Term {
             field: "service".to_string(),
             value: Value::String("alpha".to_string()),
+            case_insensitive: false,
         };
 
         let mut store = engine.store.write().unwrap();
@@ -45609,6 +45719,7 @@ mod tests {
         let query = Query::Term {
             field: "service".to_string(),
             value: Value::String("alpha".to_string()),
+            case_insensitive: false,
         };
 
         let mut store = engine.store.write().unwrap();
@@ -45642,6 +45753,7 @@ mod tests {
         let query = Query::Term {
             field: "service".to_string(),
             value: Value::String("alpha".to_string()),
+            case_insensitive: false,
         };
 
         let mut store = engine.store.write().unwrap();
@@ -45755,6 +45867,7 @@ mod tests {
                 should: vec![Query::Term {
                     field: "service".to_string(),
                     value: Value::String("alpha".to_string()),
+                    case_insensitive: false,
                 }],
                 minimum_should_match: Some(0),
                 ..BoolQuery::default()
@@ -45824,6 +45937,7 @@ mod tests {
                 must_not: vec![Query::Term {
                     field: "service".to_string(),
                     value: Value::String("alpha".to_string()),
+                    case_insensitive: false,
                 }],
                 ..BoolQuery::default()
             },
@@ -45900,10 +46014,12 @@ mod tests {
                     Query::Term {
                         field: "service".to_string(),
                         value: Value::String("alpha".to_string()),
+                        case_insensitive: false,
                     },
                     Query::Term {
                         field: "env".to_string(),
                         value: Value::String("prod".to_string()),
+                        case_insensitive: false,
                     },
                 ],
                 minimum_should_match: Some(2),
@@ -45977,10 +46093,12 @@ mod tests {
                     Query::Term {
                         field: "service".to_string(),
                         value: Value::String("alpha".to_string()),
+                        case_insensitive: false,
                     },
                     Query::Term {
                         field: "env".to_string(),
                         value: Value::String("prod".to_string()),
+                        case_insensitive: false,
                     },
                 ],
                 minimum_should_match: Some(2),
@@ -46046,10 +46164,12 @@ mod tests {
                     Query::Term {
                         field: "service".to_string(),
                         value: Value::String("alpha".to_string()),
+                        case_insensitive: false,
                     },
                     Query::Term {
                         field: "env".to_string(),
                         value: Value::String("prod".to_string()),
+                        case_insensitive: false,
                     },
                 ],
                 minimum_should_match: Some(2),
@@ -46464,10 +46584,12 @@ mod tests {
                             Query::Term {
                                 field: "service".to_string(),
                                 value: Value::String("alpha".to_string()),
+                                case_insensitive: false,
                             },
                             Query::Term {
                                 field: "env".to_string(),
                                 value: Value::String("prod".to_string()),
+                                case_insensitive: false,
                             },
                         ],
                         minimum_should_match: Some(2),
@@ -46546,10 +46668,12 @@ mod tests {
                             Query::Term {
                                 field: "service".to_string(),
                                 value: Value::String("alpha".to_string()),
+                                case_insensitive: false,
                             },
                             Query::Term {
                                 field: "env".to_string(),
                                 value: Value::String("prod".to_string()),
+                                case_insensitive: false,
                             },
                         ],
                         minimum_should_match: Some(2),
@@ -46619,10 +46743,12 @@ mod tests {
                             Query::Term {
                                 field: "service".to_string(),
                                 value: Value::String("alpha".to_string()),
+                                case_insensitive: false,
                             },
                             Query::Term {
                                 field: "env".to_string(),
                                 value: Value::String("prod".to_string()),
+                                case_insensitive: false,
                             },
                         ],
                         minimum_should_match: Some(2),
@@ -47194,6 +47320,7 @@ mod tests {
                 must_not: vec![Query::Term {
                     field: "body".to_string(),
                     value: Value::String("banana".to_string()),
+                    case_insensitive: false,
                 }],
                 ..BoolQuery::default()
             },

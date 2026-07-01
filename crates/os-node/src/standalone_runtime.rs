@@ -28461,6 +28461,74 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
             return Some(response);
         }
     }
+    if let Some(term) = query.get("term").and_then(Value::as_object) {
+        let Some((_, value)) = term.iter().next() else {
+            return Some(build_unsupported_search_response(
+                "unsupported term query shape",
+            ));
+        };
+        if term.len() != 1 {
+            return Some(build_unsupported_search_response(
+                "unsupported term query shape",
+            ));
+        }
+        if let Some(object) = value.as_object() {
+            if object.keys().any(|key| {
+                key != "value"
+                    && key != "term"
+                    && key != "case_insensitive"
+                    && key != "boost"
+                    && key != "_name"
+            }) {
+                return Some(build_parsing_search_response_with_root_cause(&format!(
+                    "[term] query does not support [{}]",
+                    object
+                        .keys()
+                        .find(|key| {
+                            key.as_str() != "value"
+                                && key.as_str() != "term"
+                                && key.as_str() != "case_insensitive"
+                                && key.as_str() != "boost"
+                                && key.as_str() != "_name"
+                        })
+                        .cloned()
+                        .unwrap_or_default()
+                )));
+            }
+            let Some(term_value) = object.get("value").or_else(|| object.get("term")) else {
+                return Some(build_unsupported_search_response(
+                    "unsupported term query shape",
+                ));
+            };
+            if term_value.is_array() {
+                return Some(build_parsing_search_response_with_root_cause(
+                    "[term] query does not support array of values",
+                ));
+            }
+            if object
+                .get("case_insensitive")
+                .is_some_and(|value| !value.is_boolean())
+            {
+                return Some(build_unsupported_search_response(
+                    "unsupported term case_insensitive",
+                ));
+            }
+            if object.get("boost").is_some_and(|value| {
+                !value
+                    .as_f64()
+                    .is_some_and(|number| number.is_finite() && number >= 0.0)
+            }) {
+                return Some(build_unsupported_search_response("unsupported term boost"));
+            }
+            if object.get("_name").is_some_and(|value| !value.is_string()) {
+                return Some(build_unsupported_search_response("unsupported term _name"));
+            }
+        } else if value.is_array() {
+            return Some(build_parsing_search_response_with_root_cause(
+                "[term] query does not support array of values",
+            ));
+        }
+    }
     for query_name in ["query_string", "simple_query_string"] {
         if let Some(spec) = query.get(query_name).and_then(Value::as_object) {
             if spec
@@ -31524,10 +31592,12 @@ fn evaluate_search_query_source_with_mappings(
     }
     if let Some(term) = query.get("term").and_then(Value::as_object) {
         let (field, expected) = term.iter().next()?;
+        let (expected, case_insensitive) = extract_term_query_value(expected)?;
         let matched = value_matches_term(
             lookup_query_field_value(source, field),
             expected,
             lookup_query_field_mapping_type(mappings, field),
+            case_insensitive,
         );
         return Some((matched, if matched { 1.0 } else { 0.0 }));
     }
@@ -32165,19 +32235,23 @@ fn value_matches_term(
     candidate: Option<&Value>,
     expected: &Value,
     field_type: Option<&str>,
+    case_insensitive: bool,
 ) -> bool {
     match (candidate, expected) {
         (Some(Value::Array(values)), expected) => values
             .iter()
-            .any(|value| value_matches_term(Some(value), expected, field_type)),
+            .any(|value| value_matches_term(Some(value), expected, field_type, case_insensitive)),
         (Some(Value::String(left)), Value::String(right)) => {
-            let lowered_left = left.to_ascii_lowercase();
             let lowered_right = right.to_ascii_lowercase();
             if matches!(
                 field_type,
                 Some("keyword") | Some("constant_keyword") | Some("wildcard")
             ) {
-                lowered_left == lowered_right
+                if case_insensitive {
+                    left.to_ascii_lowercase() == lowered_right
+                } else {
+                    left == right
+                }
             } else {
                 tokenize_search_text(left)
                     .into_iter()
@@ -32200,7 +32274,7 @@ fn value_matches_terms(
     };
     expected_values
         .iter()
-        .any(|expected| value_matches_term(candidate, expected, field_type))
+        .any(|expected| value_matches_term(candidate, expected, field_type, false))
 }
 
 fn decode_wrapper_query(query: &Value) -> Result<Value, ()> {
@@ -32281,7 +32355,11 @@ fn collect_highlight_terms(query: &Value, field: &str) -> Vec<String> {
     if let Some(term_query) = query.get("term").and_then(Value::as_object) {
         if let Some((query_field, expected)) = term_query.iter().next() {
             if query_field == field {
-                if let Some(value) = expected.as_str() {
+                if let Some((value, _)) =
+                    extract_term_query_value(expected).and_then(|(value, case_insensitive)| {
+                        value.as_str().map(|text| (text, case_insensitive))
+                    })
+                {
                     terms.extend(tokenize_search_text(value));
                 }
             }
@@ -33311,6 +33389,19 @@ fn extract_string_query_value(value: &Value) -> Option<&str> {
     value.as_str()
 }
 
+fn extract_term_query_value(value: &Value) -> Option<(&Value, bool)> {
+    if let Some(object) = value.as_object() {
+        return Some((
+            object.get("value").or_else(|| object.get("term"))?,
+            object
+                .get("case_insensitive")
+                .and_then(Value::as_bool)
+                .unwrap_or(false),
+        ));
+    }
+    Some((value, false))
+}
+
 fn extract_string_query_value_and_case_insensitive(value: &Value) -> Option<(&str, bool)> {
     if let Some(object) = value.as_object() {
         return Some((
@@ -34113,6 +34204,7 @@ fn evaluate_span_query(source: &Value, span_term: &serde_json::Map<String, Value
         lookup_query_field_value(source, field),
         expected,
         None,
+        false,
     ))
 }
 
@@ -34186,7 +34278,7 @@ fn span_first_term_matches(field_value: &Value, expected: &Value, end: usize) ->
                 .take(end)
                 .any(|token| token == &expected)
         }
-        _ => value_matches_term(Some(field_value), expected, None),
+        _ => value_matches_term(Some(field_value), expected, None, false),
     }
 }
 
@@ -34553,6 +34645,7 @@ fn evaluate_field_masking_span_query(
             lookup_query_field_value(source, inner_field),
             expected,
             None,
+            false,
         ));
     }
     None

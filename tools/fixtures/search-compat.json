@@ -13521,6 +13521,57 @@
       "description": "[lexical] term query total hits exactness"
     },
     {
+      "name": "term_query_case_sensitive_uppercase_miss_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "term": {
+            "tag": "CACHE"
+          }
+        },
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] term query is case-sensitive by default like OpenSearch"
+    },
+    {
+      "name": "term_query_case_insensitive_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "term": {
+            "tag": {
+              "term": "CACHE",
+              "case_insensitive": true,
+              "boost": 1.0,
+              "_name": "named_term"
+            }
+          }
+        },
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] term query case_insensitive option matches OpenSearch"
+    },
+    {
       "name": "terminate_after_search",
       "area": "search",
       "method": "POST",

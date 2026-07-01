@@ -9177,6 +9177,59 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "term_query_case_sensitive_uppercase_miss_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "term": {
+            "tag": "CACHE"
+          }
+        },
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] term query is case-sensitive by default like OpenSearch",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "term_query_case_insensitive_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "term": {
+            "tag": {
+              "term": "CACHE",
+              "case_insensitive": true,
+              "boost": 1.0,
+              "_name": "named_term"
+            }
+          }
+        },
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] term query case_insensitive option matches OpenSearch",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "track_scores_field_sort_search",
       "area": "search",
       "method": "POST",

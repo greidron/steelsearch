@@ -15,6 +15,7 @@ pub enum Query {
     Term {
         field: String,
         value: serde_json::Value,
+        case_insensitive: bool,
     },
     Terms {
         field: String,
@@ -2259,8 +2260,8 @@ fn parse_term(body: &Value) -> QueryDslResult<Query> {
     }
 
     let (field, term_body) = object.iter().next().expect("checked len");
-    let value = if let Some(object) = term_body.as_object() {
-        if let Some(value) = object.get("value") {
+    let (value, case_insensitive) = if let Some(object) = term_body.as_object() {
+        let value = if let Some(value) = object.get("value").or_else(|| object.get("term")) {
             value.clone()
         } else if object.contains_key("boost") || object.contains_key("case_insensitive") {
             return Err(QueryDslError::MissingField {
@@ -2269,14 +2270,41 @@ fn parse_term(body: &Value) -> QueryDslResult<Query> {
             });
         } else {
             term_body.clone()
+        };
+        let case_insensitive = object
+            .get("case_insensitive")
+            .map(Value::as_bool)
+            .unwrap_or(Some(false))
+            .ok_or_else(|| QueryDslError::UnsupportedOption {
+                clause: "term".to_string(),
+                option: "case_insensitive".to_string(),
+            })?;
+        if let Some(boost) = object.get("boost") {
+            parse_non_negative_f64_option("term", "boost", boost)?;
         }
+        validate_optional_string_option(object, "term", "_name")?;
+        for option in object.keys() {
+            if option != "value"
+                && option != "term"
+                && option != "case_insensitive"
+                && option != "boost"
+                && option != "_name"
+            {
+                return Err(QueryDslError::UnsupportedOption {
+                    clause: "term".to_string(),
+                    option: option.clone(),
+                });
+            }
+        }
+        (value, case_insensitive)
     } else {
-        term_body.clone()
+        (term_body.clone(), false)
     };
 
     Ok(Query::Term {
         field: field.clone(),
         value,
+        case_insensitive,
     })
 }
 
@@ -5095,7 +5123,8 @@ mod tests {
                 k: 2,
                 filter: Some(Box::new(Query::Term {
                     field: "tenant".to_string(),
-                    value: serde_json::json!("a")
+                    value: serde_json::json!("a"),
+                    case_insensitive: false,
                 })),
                 ignore_unmapped: true,
                 max_distance: Some(1.5),
@@ -5123,7 +5152,8 @@ mod tests {
             query,
             Query::Term {
                 field: "service".to_string(),
-                value: serde_json::json!("api")
+                value: serde_json::json!("api"),
+                case_insensitive: false,
             }
         );
     }
@@ -5143,7 +5173,32 @@ mod tests {
             query,
             Query::Term {
                 field: "status".to_string(),
-                value: serde_json::json!(200)
+                value: serde_json::json!(200),
+                case_insensitive: false,
+            }
+        );
+    }
+
+    #[test]
+    fn parses_term_query_common_options() {
+        let query = parse_query(&serde_json::json!({
+            "term": {
+                "tag": {
+                    "term": "CACHE",
+                    "case_insensitive": true,
+                    "boost": 1.0,
+                    "_name": "named_term"
+                }
+            }
+        }))
+        .unwrap();
+
+        assert_eq!(
+            query,
+            Query::Term {
+                field: "tag".to_string(),
+                value: serde_json::json!("CACHE"),
+                case_insensitive: true,
             }
         );
     }
@@ -6394,6 +6449,7 @@ mod tests {
                 query: Box::new(Query::Term {
                     field: "service".to_string(),
                     value: serde_json::json!("api"),
+                    case_insensitive: false,
                 }),
             }
         );
@@ -6418,6 +6474,7 @@ mod tests {
                 query: Box::new(Query::Term {
                     field: "author".to_string(),
                     value: serde_json::json!("alice"),
+                    case_insensitive: false,
                 }),
             }
         );
@@ -6442,6 +6499,7 @@ mod tests {
                 organic: Box::new(Query::Term {
                     field: "service".to_string(),
                     value: serde_json::json!("api"),
+                    case_insensitive: false,
                 }),
             }
         );
@@ -6483,6 +6541,7 @@ mod tests {
                 filter: Box::new(Query::Term {
                     field: "service".to_string(),
                     value: serde_json::json!("api"),
+                    case_insensitive: false,
                 }),
             }
         );
@@ -6508,10 +6567,12 @@ mod tests {
                     Query::Term {
                         field: "service".to_string(),
                         value: serde_json::json!("api"),
+                        case_insensitive: false,
                     },
                     Query::Term {
                         field: "service".to_string(),
                         value: serde_json::json!("worker"),
+                        case_insensitive: false,
                     },
                 ],
                 tie_breaker: Some(0.1),
@@ -6536,10 +6597,12 @@ mod tests {
                 positive: Box::new(Query::Term {
                     field: "service".to_string(),
                     value: serde_json::json!("api"),
+                    case_insensitive: false,
                 }),
                 negative: Box::new(Query::Term {
                     field: "service".to_string(),
                     value: serde_json::json!("worker"),
+                    case_insensitive: false,
                 }),
                 negative_boost: 0.2,
             }
@@ -6561,6 +6624,7 @@ mod tests {
                 query: Box::new(Query::Term {
                     field: "service".to_string(),
                     value: serde_json::json!("api"),
+                    case_insensitive: false,
                 }),
             }
         );
@@ -6582,6 +6646,7 @@ mod tests {
                 query: Box::new(Query::Term {
                     field: "service".to_string(),
                     value: serde_json::json!("api"),
+                    case_insensitive: false,
                 }),
                 script: serde_json::json!({ "source": "_score" }),
             }
@@ -6679,6 +6744,7 @@ mod tests {
             Query::Term {
                 field: "message".to_string(),
                 value: serde_json::json!("foo"),
+                case_insensitive: false,
             }
         );
     }
@@ -6987,7 +7053,8 @@ mod tests {
                 clauses: BoolQuery {
                     must: vec![Query::Term {
                         field: "service".to_string(),
-                        value: serde_json::json!("api")
+                        value: serde_json::json!("api"),
+                        case_insensitive: false,
                     }],
                     should: vec![Query::MatchAll],
                     filter: vec![Query::Range {
@@ -8253,6 +8320,7 @@ mod tests {
                 filter: Query::Term {
                     field: "level".to_string(),
                     value: serde_json::json!("error"),
+                    case_insensitive: false,
                 }
             })
         );
@@ -8265,6 +8333,7 @@ mod tests {
                         Query::Term {
                             field: "level".to_string(),
                             value: serde_json::json!("error"),
+                            case_insensitive: false,
                         },
                     ),
                     (
@@ -8272,6 +8341,7 @@ mod tests {
                         Query::Term {
                             field: "level".to_string(),
                             value: serde_json::json!("info"),
+                            case_insensitive: false,
                         },
                     ),
                 ])

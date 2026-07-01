@@ -403,6 +403,8 @@
         "span_term_query_search",
         "stored_fields_search",
         "term_query_total_hits_exactness",
+        "term_query_case_sensitive_uppercase_miss_search",
+        "term_query_case_insensitive_search",
         "terminate_after_search",
         "terms_set_query_search",
         "terms_set_unknown_field_error_search",
