@@ -35657,6 +35657,13 @@ fn build_search_aggregations(
                 else {
                     continue;
                 };
+                if !aggregation_term_is_allowed_by_include_exclude(
+                    key,
+                    rare_terms.get("include"),
+                    rare_terms.get("exclude"),
+                ) {
+                    continue;
+                }
                 let sort_key = aggregation_bucket_sort_key(key);
                 let entry = counts.entry(sort_key).or_insert_with(|| (key.clone(), 0));
                 entry.1 += 1;
@@ -36914,6 +36921,34 @@ fn aggregation_bucket_sort_key(value: &Value) -> String {
     match value {
         Value::String(value) => value.clone(),
         other => other.to_string(),
+    }
+}
+
+fn aggregation_term_is_allowed_by_include_exclude(
+    value: &Value,
+    include: Option<&Value>,
+    exclude: Option<&Value>,
+) -> bool {
+    if let Some(include) = include {
+        if !aggregation_term_matches_filter(value, include) {
+            return false;
+        }
+    }
+    if let Some(exclude) = exclude {
+        if aggregation_term_matches_filter(value, exclude) {
+            return false;
+        }
+    }
+    true
+}
+
+fn aggregation_term_matches_filter(value: &Value, filter: &Value) -> bool {
+    match filter {
+        Value::String(expected) => aggregation_bucket_sort_key(value) == *expected,
+        Value::Array(values) => values.iter().any(|candidate| {
+            aggregation_bucket_sort_key(value) == aggregation_bucket_sort_key(candidate)
+        }),
+        _ => false,
     }
 }
 

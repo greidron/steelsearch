@@ -12947,6 +12947,33 @@
       "description": "[aggregation] rare terms aggregation"
     },
     {
+      "name": "rare_terms_include_exclude_aggregation",
+      "area": "aggregation",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "rare_catalog_services": {
+            "rare_terms": {
+              "field": "service",
+              "max_doc_count": 1,
+              "include": [
+                "catalog",
+                "checkout"
+              ],
+              "exclude": [
+                "checkout"
+              ]
+            }
+          }
+        }
+      },
+      "extract": "aggregations",
+      "family": "aggregation",
+      "description": "[aggregation] rare terms include exclude aggregation"
+    },
+    {
       "name": "sampler_aggregation",
       "area": "aggregation",
       "method": "POST",
