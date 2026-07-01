@@ -376,6 +376,7 @@
         "span_containing_query_search",
         "span_within_query_search",
         "span_first_query_search",
+        "span_gap_inside_span_near_query_search",
         "span_near_query_search",
         "span_not_dist_query_search",
         "span_or_query_search",
