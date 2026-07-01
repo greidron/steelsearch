@@ -78,6 +78,7 @@
           "message": "text",
           "service_suggest": "completion",
           "service": "keyword",
+          "service_optional": "keyword",
           "level": "keyword",
           "tag": "keyword",
           "latency_optional": "long",
@@ -314,6 +315,7 @@
     ],
     "aggregation_requests": [
       "terms_aggregation",
+      "terms_missing_aggregation",
       "metric_aggregations",
       "filter_aggregations",
       "top_hits_aggregation",
@@ -443,6 +445,9 @@
             "service": {
               "type": "keyword",
               "store": true
+            },
+            "service_optional": {
+              "type": "keyword"
             },
             "level": {
               "type": "keyword"
@@ -588,6 +593,7 @@
             ],
             "service_suggest": "checkout",
             "service": "checkout",
+            "service_optional": "checkout",
             "level": "info",
             "tag": "payment",
             "latency_optional": 5,
@@ -643,6 +649,7 @@
             ],
             "service_suggest": "catalog",
             "service": "catalog",
+            "service_optional": "catalog",
             "level": "info",
             "tag": "cache",
             "latency_optional": 15,
@@ -10857,6 +10864,30 @@
       "extract": "terms_aggregation",
       "family": "aggregation",
       "description": "[aggregation] terms aggregation",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "terms_missing_aggregation",
+      "area": "aggregation",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "by_optional_service": {
+            "terms": {
+              "field": "service_optional",
+              "missing": "unknown",
+              "order": {
+                "_key": "asc"
+              }
+            }
+          }
+        }
+      },
+      "extract": "aggregations",
+      "family": "aggregation",
+      "description": "[aggregation] terms missing aggregation",
       "strict_source_parity_required": true
     },
     {

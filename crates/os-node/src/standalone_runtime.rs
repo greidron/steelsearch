@@ -35595,13 +35595,18 @@ fn build_search_aggregations(
                 .get("field")
                 .and_then(Value::as_str)
                 .unwrap_or_default();
+            let missing = terms
+                .get("missing")
+                .filter(|value| !value.is_array() && !value.is_object() && !value.is_null());
             let mut counts = std::collections::BTreeMap::new();
             for hit in hits {
-                if let Some(key) = hit
+                let key = hit
                     .get("_source")
                     .and_then(|source| lookup_query_field_value(source, field))
+                    .filter(|value| !value.is_null())
                     .and_then(Value::as_str)
-                {
+                    .or_else(|| missing.and_then(Value::as_str));
+                if let Some(key) = key {
                     *counts.entry(key.to_string()).or_insert(0_u64) += 1;
                 }
             }

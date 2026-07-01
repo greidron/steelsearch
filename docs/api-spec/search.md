@@ -201,6 +201,7 @@ part of the OpenSearch parity target.
   - composite
   - significant terms
   - `terms.order` for `_count` / `_key`
+  - bounded `terms.missing` scalar replacement values for keyword buckets
   - `significant_terms.background_filter`
   - bounded `scripted_metric` with
     - `init_script = "state.count = 0"`

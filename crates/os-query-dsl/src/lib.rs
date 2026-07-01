@@ -328,6 +328,7 @@ pub enum Aggregation {
 pub struct TermsAggregation {
     pub field: String,
     pub size: usize,
+    pub missing: Option<Value>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -891,8 +892,37 @@ fn parse_aggregation(value: &Value) -> QueryDslResult<Aggregation> {
 }
 
 fn parse_terms_aggregation(body: &Value) -> QueryDslResult<Aggregation> {
-    let (field, size) = parse_field_size_aggregation_options("terms", body)?;
-    Ok(Aggregation::Terms(TermsAggregation { field, size }))
+    let object = body.as_object().ok_or(QueryDslError::ExpectedObject)?;
+    let field = object
+        .get("field")
+        .and_then(Value::as_str)
+        .ok_or_else(|| QueryDslError::MissingField {
+            clause: "terms".to_string(),
+            field: "field".to_string(),
+        })?
+        .to_string();
+    let mut size = 10;
+    let mut missing = None;
+
+    for (option, value) in object {
+        match option.as_str() {
+            "field" => {}
+            "size" => size = parse_usize_option("terms", "size", value)?,
+            "missing" if value.as_str().is_some() => missing = Some(value.clone()),
+            _ => {
+                return Err(QueryDslError::UnsupportedOption {
+                    clause: "terms".to_string(),
+                    option: option.clone(),
+                });
+            }
+        }
+    }
+
+    Ok(Aggregation::Terms(TermsAggregation {
+        field,
+        size,
+        missing,
+    }))
 }
 
 fn parse_date_histogram_aggregation(body: &Value) -> QueryDslResult<Aggregation> {
@@ -6367,7 +6397,33 @@ mod tests {
             aggregations["by_service"],
             Aggregation::Terms(TermsAggregation {
                 field: "service".to_string(),
-                size: 5
+                size: 5,
+                missing: None
+            })
+        );
+    }
+
+    #[test]
+    fn parses_terms_aggregation_missing_option() {
+        let aggregations = parse_search_aggregations(&serde_json::json!({
+            "aggs": {
+                "by_service": {
+                    "terms": {
+                        "field": "service_optional",
+                        "size": 5,
+                        "missing": "unknown"
+                    }
+                }
+            }
+        }))
+        .unwrap();
+
+        assert_eq!(
+            aggregations["by_service"],
+            Aggregation::Terms(TermsAggregation {
+                field: "service_optional".to_string(),
+                size: 5,
+                missing: Some(Value::String("unknown".to_string()))
             })
         );
     }
@@ -6432,7 +6488,8 @@ mod tests {
             aggregations["by_level"],
             Aggregation::Terms(TermsAggregation {
                 field: "level".to_string(),
-                size: 10
+                size: 10,
+                missing: None
             })
         );
     }
