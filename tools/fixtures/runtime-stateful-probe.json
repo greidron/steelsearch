@@ -1144,6 +1144,24 @@
       "expected_runtime_status": "stateful-route-present"
     },
     {
+      "name": "validate_query_target_rewrite_selector_post",
+      "family": "search",
+      "inventory_path": "/{index}/_validate/query",
+      "method": "POST",
+      "path": "/logs-stateful-probe/_validate/query?rewrite=true",
+      "body": {
+        "query": {
+          "term": {
+            "tenant": "tenant-a"
+          }
+        }
+      },
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
       "name": "validate_query_root_invalid_post",
       "family": "search",
       "inventory_path": "/_validate/query",
@@ -1360,6 +1378,24 @@
           }
         }
       },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "explain_target_repeat_post",
+      "family": "search",
+      "inventory_path": "/{index}/_explain/{id}",
+      "method": "POST",
+      "path": "/logs-stateful-probe/_explain/doc-1",
+      "body": {
+        "query": {
+          "term": {
+            "tenant": "tenant-a"
+          }
+        }
+      },
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
       "expected_runtime_status": "stateful-route-present"
     },
     {
@@ -2157,6 +2193,24 @@
           }
         }
       },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "mapping_target_repeat_put",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_mapping",
+      "method": "PUT",
+      "path": "/logs-stateful-probe/_mapping",
+      "body": {
+        "properties": {
+          "probe_region": {
+            "type": "keyword"
+          }
+        }
+      },
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
       "expected_runtime_status": "stateful-route-present"
     },
     {

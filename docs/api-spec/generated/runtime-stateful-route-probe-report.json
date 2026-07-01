@@ -5,7 +5,7 @@
       "passed": 51
     },
     "index-and-metadata": {
-      "passed": 124
+      "passed": 125
     },
     "misc": {
       "passed": 5
@@ -14,7 +14,7 @@
       "passed": 32
     },
     "search": {
-      "passed": 58
+      "passed": 60
     },
     "snapshot-migration": {
       "passed": 6
@@ -1784,6 +1784,30 @@
     {
       "body": {
         "query": {
+          "term": {
+            "tenant": "tenant-a"
+          }
+        }
+      },
+      "expected_runtime_status": "stateful-route-present",
+      "family": "search",
+      "inventory_path": "/{index}/_validate/query",
+      "method": "POST",
+      "name": "validate_query_target_rewrite_selector_post",
+      "path": "/logs-stateful-probe/_validate/query?rewrite=true",
+      "result": {
+        "body": "{\"_indices\":[\"logs-stateful-probe\"],\"_shards\":{\"failed\":0,\"skipped\":0,\"successful\":1,\"total\":1},\"explanations\":[{\"explanation\":\"ConstantScore(tenant:tenant-a)\",\"index\":\"logs-stateful-probe\",\"valid\":true}],\"valid\":true}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "status": "passed"
+    },
+    {
+      "body": {
+        "query": {
           "range": {
             "tenant": {
               "gte": "tenant-a"
@@ -2168,6 +2192,30 @@
       "runtime_status": "stateful-route-present",
       "semantic_tags": [
         "error-path"
+      ],
+      "status": "passed"
+    },
+    {
+      "body": {
+        "query": {
+          "term": {
+            "tenant": "tenant-a"
+          }
+        }
+      },
+      "expected_runtime_status": "stateful-route-present",
+      "family": "search",
+      "inventory_path": "/{index}/_explain/{id}",
+      "method": "POST",
+      "name": "explain_target_repeat_post",
+      "path": "/logs-stateful-probe/_explain/doc-1",
+      "result": {
+        "body": "{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-probe\",\"explanation\":{\"description\":\"ConstantScore(tenant:tenant-a)\",\"value\":1.0},\"get\":{\"_source\":{\"message\":\"stateful route probe\",\"processed\":true,\"tenant\":\"tenant-a\"},\"found\":true},\"matched\":true}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "idempotency-or-selector"
       ],
       "status": "passed"
     },
@@ -3610,6 +3658,30 @@
       "runtime_status": "stateful-route-present",
       "semantic_tags": [
         "happy-path"
+      ],
+      "status": "passed"
+    },
+    {
+      "body": {
+        "properties": {
+          "probe_region": {
+            "type": "keyword"
+          }
+        }
+      },
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_mapping",
+      "method": "PUT",
+      "name": "mapping_target_repeat_put",
+      "path": "/logs-stateful-probe/_mapping",
+      "result": {
+        "body": "{\"acknowledged\":true}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "idempotency-or-selector"
       ],
       "status": "passed"
     },
@@ -6703,17 +6775,6 @@
     },
     {
       "complete": false,
-      "inventory_path": "/{index}/_explain/{id}",
-      "missing": [
-        "idempotency-or-selector"
-      ],
-      "present": [
-        "error-path",
-        "happy-path"
-      ]
-    },
-    {
-      "complete": false,
       "inventory_path": "/{index}/_field_caps",
       "missing": [
         "error-path",
@@ -6731,17 +6792,6 @@
         "idempotency-or-selector"
       ],
       "present": [
-        "happy-path"
-      ]
-    },
-    {
-      "complete": false,
-      "inventory_path": "/{index}/_mapping",
-      "missing": [
-        "idempotency-or-selector"
-      ],
-      "present": [
-        "error-path",
         "happy-path"
       ]
     },
@@ -6962,17 +7012,6 @@
         "idempotency-or-selector"
       ],
       "present": [
-        "happy-path"
-      ]
-    },
-    {
-      "complete": false,
-      "inventory_path": "/{index}/_validate/query",
-      "missing": [
-        "idempotency-or-selector"
-      ],
-      "present": [
-        "error-path",
         "happy-path"
       ]
     },
@@ -8055,14 +8094,13 @@
       ]
     },
     {
-      "complete": false,
+      "complete": true,
       "inventory_path": "/{index}/_explain/{id}",
-      "missing": [
-        "idempotency-or-selector"
-      ],
+      "missing": [],
       "present": [
         "error-path",
-        "happy-path"
+        "happy-path",
+        "idempotency-or-selector"
       ]
     },
     {
@@ -8108,14 +8146,13 @@
       ]
     },
     {
-      "complete": false,
+      "complete": true,
       "inventory_path": "/{index}/_mapping",
-      "missing": [
-        "idempotency-or-selector"
-      ],
+      "missing": [],
       "present": [
         "error-path",
-        "happy-path"
+        "happy-path",
+        "idempotency-or-selector"
       ]
     },
     {
@@ -8379,14 +8416,13 @@
       ]
     },
     {
-      "complete": false,
+      "complete": true,
       "inventory_path": "/{index}/_validate/query",
-      "missing": [
-        "idempotency-or-selector"
-      ],
+      "missing": [],
       "present": [
         "error-path",
-        "happy-path"
+        "happy-path",
+        "idempotency-or-selector"
       ]
     },
     {
@@ -8435,8 +8471,8 @@
     }
   ],
   "semantic_coverage_summary": {
-    "complete": 24,
-    "incomplete": 106
+    "complete": 27,
+    "incomplete": 103
   },
   "setup": [
     {
@@ -8646,6 +8682,6 @@
     }
   ],
   "summary": {
-    "passed": 295
+    "passed": 298
   }
 }
