@@ -21266,6 +21266,29 @@ fn date_histogram_key_as_string_from_epoch_millis(
         i128::from(zoned_epoch_millis).saturating_mul(1_000_000),
     )
     .ok()?;
+    if format == Some("yyyy-MM-dd HH:mm:ss") {
+        return Some(format!(
+            "{:04}-{:02}-{:02} {:02}:{:02}:{:02}",
+            timestamp.year(),
+            timestamp.month() as u32,
+            u32::from(timestamp.day()),
+            timestamp.hour(),
+            timestamp.minute(),
+            timestamp.second()
+        ));
+    }
+    if format == Some("basic_date_time_no_millis") {
+        return Some(format!(
+            "{:04}{:02}{:02}T{:02}{:02}{:02}{}",
+            timestamp.year(),
+            timestamp.month() as u32,
+            u32::from(timestamp.day()),
+            timestamp.hour(),
+            timestamp.minute(),
+            timestamp.second(),
+            date_histogram_time_zone_suffix(time_zone_offset_millis)
+        ));
+    }
     let suffix = date_histogram_time_zone_suffix(time_zone_offset_millis);
     Some(format!(
         "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}.{:03}{}",
@@ -158452,6 +158475,99 @@ mod tests {
                         {
                             "key": 1704153600000i64,
                             "key_as_string": "1704153600000",
+                            "doc_count": 1
+                        }
+                    ]
+                }
+            })
+        );
+    }
+
+    #[test]
+    fn native_tantivy_date_histogram_additional_formats_preserve_shape() {
+        let engine = TantivyEngine::default();
+        engine
+            .create_index(CreateIndexRequest {
+                index: "bench".to_string(),
+                settings: serde_json::json!({}),
+                mappings: serde_json::json!({
+                    "properties": {
+                        "event_time": { "type": "date", "fast": true }
+                    }
+                }),
+            })
+            .unwrap();
+
+        for (id, event_time) in [("1", "2024-01-01T08:00:00Z"), ("2", "2024-01-02T09:00:00Z")] {
+            engine
+                .index_document(IndexDocumentRequest {
+                    index: "bench".to_string(),
+                    id: id.to_string(),
+                    source: serde_json::json!({ "event_time": event_time }),
+                })
+                .unwrap();
+        }
+        engine
+            .refresh(RefreshRequest {
+                indices: vec!["bench".to_string()],
+            })
+            .unwrap();
+
+        let query = parse_query(&serde_json::json!({
+            "match_all": {}
+        }))
+        .unwrap();
+        let aggregations = parse_search_aggregation_map(&serde_json::json!({
+            "events_basic": {
+                "date_histogram": {
+                    "field": "event_time",
+                    "calendar_interval": "day",
+                    "format": "basic_date_time_no_millis"
+                }
+            },
+            "events_custom": {
+                "date_histogram": {
+                    "field": "event_time",
+                    "calendar_interval": "day",
+                    "format": "yyyy-MM-dd HH:mm:ss"
+                }
+            }
+        }))
+        .unwrap();
+
+        let mut store = engine.store.write().unwrap();
+        let index = store.indices.get_mut("bench").unwrap();
+        let native = index
+            .collect_aggregations_native(&query, &aggregations)
+            .unwrap()
+            .expect("native date_histogram additional format aggregations");
+        assert_eq!(
+            native,
+            serde_json::json!({
+                "events_basic": {
+                    "buckets": [
+                        {
+                            "key": 1704067200000i64,
+                            "key_as_string": "20240101T000000Z",
+                            "doc_count": 1
+                        },
+                        {
+                            "key": 1704153600000i64,
+                            "key_as_string": "20240102T000000Z",
+                            "doc_count": 1
+                        }
+                    ]
+                },
+                "events_custom": {
+                    "buckets": [
+                        {
+                            "key": 1704067200000i64,
+                            "key_as_string": "2024-01-01 00:00:00",
+                            "doc_count": 1
+                        },
+                        {
+                            "key": 1704153600000i64,
+                            "key_as_string": "2024-01-02 00:00:00",
                             "doc_count": 1
                         }
                     ]

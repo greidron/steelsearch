@@ -1097,7 +1097,7 @@ fn parse_date_histogram_aggregation(body: &Value) -> QueryDslResult<Aggregation>
                     reason: "expected string value".to_string(),
                 })?
                 .to_string();
-            if format == "epoch_millis" {
+            if is_supported_date_histogram_format(&format) {
                 Ok(format)
             } else {
                 Err(QueryDslError::UnsupportedOption {
@@ -1234,6 +1234,13 @@ fn parse_date_histogram_time_zone_offset_millis(value: &str) -> Option<i64> {
     } else {
         Some(millis)
     }
+}
+
+fn is_supported_date_histogram_format(format: &str) -> bool {
+    matches!(
+        format,
+        "epoch_millis" | "yyyy-MM-dd HH:mm:ss" | "basic_date_time_no_millis"
+    )
 }
 
 fn parse_signed_time_value_millis(value: &str) -> Option<i64> {
@@ -7344,6 +7351,40 @@ mod tests {
                 hard_bounds: None,
             })
         );
+    }
+
+    #[test]
+    fn parses_date_histogram_aggregation_additional_format_options() {
+        for format in ["yyyy-MM-dd HH:mm:ss", "basic_date_time_no_millis"] {
+            let aggregations = parse_search_aggregations(&serde_json::json!({
+                "aggs": {
+                    "recent_events": {
+                        "date_histogram": {
+                            "field": "event_time",
+                            "calendar_interval": "day",
+                            "format": format
+                        }
+                    }
+                }
+            }))
+            .unwrap();
+
+            assert_eq!(
+                aggregations["recent_events"],
+                Aggregation::DateHistogram(DateHistogramAggregation {
+                    field: "event_time".to_string(),
+                    interval: "day".to_string(),
+                    missing: None,
+                    keyed: false,
+                    offset_millis: 0,
+                    time_zone: None,
+                    format: Some(format.to_string()),
+                    min_doc_count: 0,
+                    extended_bounds: None,
+                    hard_bounds: None,
+                })
+            );
+        }
     }
 
     #[test]

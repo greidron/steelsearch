@@ -367,6 +367,8 @@
       "date_histogram_hard_bounds_aggregation",
       "date_histogram_min_doc_count_aggregation",
       "date_histogram_format_epoch_millis_aggregation",
+      "date_histogram_format_custom_aggregation",
+      "date_histogram_format_basic_date_time_no_millis_aggregation",
       "date_histogram_time_zone_aggregation",
       "date_histogram_missing_aggregation",
       "histogram_keyed_aggregation",
@@ -12617,6 +12619,50 @@
       "extract": "aggregations",
       "family": "aggregation",
       "description": "[aggregation] date histogram time_zone aggregation",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "date_histogram_format_custom_aggregation",
+      "area": "aggregation",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "by_day_custom_format": {
+            "date_histogram": {
+              "field": "ts",
+              "calendar_interval": "day",
+              "format": "yyyy-MM-dd HH:mm:ss"
+            }
+          }
+        }
+      },
+      "extract": "aggregations",
+      "family": "aggregation",
+      "description": "[aggregation] date histogram custom format aggregation",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "date_histogram_format_basic_date_time_no_millis_aggregation",
+      "area": "aggregation",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "by_day_basic_format": {
+            "date_histogram": {
+              "field": "ts",
+              "calendar_interval": "day",
+              "format": "basic_date_time_no_millis"
+            }
+          }
+        }
+      },
+      "extract": "aggregations",
+      "family": "aggregation",
+      "description": "[aggregation] date histogram basic_date_time_no_millis format aggregation",
       "strict_source_parity_required": true
     },
     {

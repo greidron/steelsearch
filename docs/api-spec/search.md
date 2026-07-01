@@ -195,9 +195,10 @@ part of the OpenSearch parity target.
   - date histogram, including keyed bucket output, bounded day offset
     rounding, bounded day `extended_bounds` empty bucket expansion, bounded
     day `hard_bounds` bucket-key filtering, bounded `min_doc_count: 1`
-    empty-bucket suppression, bounded `format: epoch_millis` key string
-    rendering, bounded fixed-offset `time_zone` rounding/rendering, and
-    bounded string date `missing` replacement values
+    empty-bucket suppression, bounded `format` key string rendering
+    (`epoch_millis`, `yyyy-MM-dd HH:mm:ss`, and
+    `basic_date_time_no_millis`), bounded fixed-offset `time_zone`
+    rounding/rendering, and bounded string date `missing` replacement values
   - histogram, including keyed bucket output, bounded numeric offset bucket
     rounding, bounded numeric `extended_bounds` empty bucket expansion, and
     bounded numeric `hard_bounds` bucket-key filtering, bounded

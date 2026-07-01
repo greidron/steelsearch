@@ -36189,6 +36189,8 @@ fn build_search_aggregations(
             };
             let format = match date_histogram.get("format").and_then(Value::as_str) {
                 Some("epoch_millis") => Some("epoch_millis"),
+                Some("yyyy-MM-dd HH:mm:ss") => Some("yyyy-MM-dd HH:mm:ss"),
+                Some("basic_date_time_no_millis") => Some("basic_date_time_no_millis"),
                 Some(_) => {
                     return Err(build_unsupported_search_response(
                         "unsupported aggregation option [date_histogram.format]",
@@ -37362,6 +37364,17 @@ fn date_histogram_key_as_string_from_epoch_millis(
     let minute = (millis_of_day % 3_600_000) / 60_000;
     let second = (millis_of_day % 60_000) / 1_000;
     let millis = millis_of_day % 1_000;
+    if format == Some("yyyy-MM-dd HH:mm:ss") {
+        return Some(format!(
+            "{year:04}-{month:02}-{day:02} {hour:02}:{minute:02}:{second:02}"
+        ));
+    }
+    if format == Some("basic_date_time_no_millis") {
+        return Some(format!(
+            "{year:04}{month:02}{day:02}T{hour:02}{minute:02}{second:02}{}",
+            date_histogram_time_zone_suffix(time_zone_offset_millis)
+        ));
+    }
     let suffix = date_histogram_time_zone_suffix(time_zone_offset_millis);
     Some(format!(
         "{year:04}-{month:02}-{day:02}T{hour:02}:{minute:02}:{second:02}.{millis:03}{suffix}"
