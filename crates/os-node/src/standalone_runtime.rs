@@ -28762,10 +28762,14 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
                 )));
             };
             let candidate_value = if let Some(object) = value.as_object() {
-                if object
-                    .keys()
-                    .any(|key| key != "value" && key != "case_insensitive")
-                {
+                if object.keys().any(|key| {
+                    key != "value"
+                        && !(query_name == "wildcard" && key == "wildcard")
+                        && key != "case_insensitive"
+                        && key != "rewrite"
+                        && key != "boost"
+                        && key != "_name"
+                }) {
                     return Some(build_unsupported_search_response(&format!(
                         "unsupported {query_name} parameter"
                     )));
@@ -28778,7 +28782,32 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
                         "unsupported {query_name} parameter"
                     )));
                 }
-                object.get("value").and_then(Value::as_str)
+                if object
+                    .get("rewrite")
+                    .is_some_and(|value| !(value.is_string() || value.is_null()))
+                {
+                    return Some(build_unsupported_search_response(&format!(
+                        "unsupported {query_name} rewrite"
+                    )));
+                }
+                if object.get("boost").is_some_and(|value| {
+                    !value
+                        .as_f64()
+                        .is_some_and(|number| number.is_finite() && number >= 0.0)
+                }) {
+                    return Some(build_unsupported_search_response(&format!(
+                        "unsupported {query_name} boost"
+                    )));
+                }
+                if object.get("_name").is_some_and(|value| !value.is_string()) {
+                    return Some(build_unsupported_search_response(&format!(
+                        "unsupported {query_name} _name"
+                    )));
+                }
+                object
+                    .get("value")
+                    .or_else(|| object.get("wildcard"))
+                    .and_then(Value::as_str)
             } else {
                 value.as_str()
             };
@@ -28796,10 +28825,16 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
             ));
         };
         let candidate_value = if let Some(object) = value.as_object() {
-            if object
-                .keys()
-                .any(|key| key != "value" && key != "case_insensitive")
-            {
+            if object.keys().any(|key| {
+                key != "value"
+                    && key != "case_insensitive"
+                    && key != "rewrite"
+                    && key != "boost"
+                    && key != "_name"
+                    && key != "flags"
+                    && key != "flags_value"
+                    && key != "max_determinized_states"
+            }) {
                 return Some(build_unsupported_search_response(
                     "unsupported regexp parameter",
                 ));
@@ -28810,6 +28845,52 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
             {
                 return Some(build_unsupported_search_response(
                     "unsupported regexp parameter",
+                ));
+            }
+            if object
+                .get("rewrite")
+                .is_some_and(|value| !(value.is_string() || value.is_null()))
+            {
+                return Some(build_unsupported_search_response(
+                    "unsupported regexp rewrite",
+                ));
+            }
+            if object.get("boost").is_some_and(|value| {
+                !value
+                    .as_f64()
+                    .is_some_and(|number| number.is_finite() && number >= 0.0)
+            }) {
+                return Some(build_unsupported_search_response(
+                    "unsupported regexp boost",
+                ));
+            }
+            if object.get("_name").is_some_and(|value| !value.is_string()) {
+                return Some(build_unsupported_search_response(
+                    "unsupported regexp _name",
+                ));
+            }
+            if object
+                .get("flags")
+                .is_some_and(|value| !(value.is_string() || value.is_null()))
+            {
+                return Some(build_unsupported_search_response(
+                    "unsupported regexp flags",
+                ));
+            }
+            if object
+                .get("flags_value")
+                .is_some_and(|value| value.as_u64().is_none())
+            {
+                return Some(build_unsupported_search_response(
+                    "unsupported regexp flags_value",
+                ));
+            }
+            if object
+                .get("max_determinized_states")
+                .is_some_and(|value| value.as_u64().is_none())
+            {
+                return Some(build_unsupported_search_response(
+                    "unsupported regexp max_determinized_states",
                 ));
             }
             object.get("value").and_then(Value::as_str)

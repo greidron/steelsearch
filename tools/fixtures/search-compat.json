@@ -10292,6 +10292,34 @@
       "description": "[lexical] prefix case_insensitive query search"
     },
     {
+      "name": "prefix_common_options_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "prefix": {
+            "tag": {
+              "value": "pay",
+              "rewrite": "constant_score",
+              "boost": 1.0,
+              "_name": "named_prefix"
+            }
+          }
+        },
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] prefix accepts common OpenSearch options"
+    },
+    {
       "name": "query_string_search",
       "area": "search",
       "method": "POST",
@@ -10593,6 +10621,37 @@
       "extract": "search_hits",
       "family": "lexical",
       "description": "[lexical] regexp case_insensitive query search"
+    },
+    {
+      "name": "regexp_common_options_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "regexp": {
+            "service": {
+              "value": "check.*",
+              "flags": "ALL",
+              "flags_value": 65535,
+              "max_determinized_states": 10000,
+              "rewrite": "constant_score",
+              "boost": 1.0,
+              "_name": "named_regexp"
+            }
+          }
+        },
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] regexp accepts common OpenSearch options"
     },
     {
       "name": "script_score_search",
@@ -13726,6 +13785,34 @@
       "extract": "search_hits",
       "family": "lexical",
       "description": "[lexical] wildcard case_insensitive query search"
+    },
+    {
+      "name": "wildcard_common_options_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "wildcard": {
+            "service": {
+              "wildcard": "check*",
+              "rewrite": "constant_score",
+              "boost": 1.0,
+              "_name": "named_wildcard"
+            }
+          }
+        },
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] wildcard accepts common OpenSearch options"
     },
     {
       "name": "collapse_search",

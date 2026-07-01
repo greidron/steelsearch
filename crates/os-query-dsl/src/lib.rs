@@ -4451,6 +4451,36 @@ fn parse_string_multiterm(
                             option: option.clone(),
                         })?;
             }
+            "rewrite" => {
+                if option_value.as_str().is_none() && !option_value.is_null() {
+                    return Err(QueryDslError::InvalidValue {
+                        clause: clause.to_string(),
+                        field: option.clone(),
+                        reason: "must be a string or null".to_string(),
+                    });
+                }
+            }
+            "boost" => {
+                parse_non_negative_f64_option(clause, "boost", option_value)?;
+            }
+            "_name" => {
+                validate_optional_string_option(query_object, clause, "_name")?;
+            }
+            "flags" if clause == "regexp" => {
+                if option_value.as_str().is_none() && !option_value.is_null() {
+                    return Err(QueryDslError::InvalidValue {
+                        clause: clause.to_string(),
+                        field: option.clone(),
+                        reason: "must be a string or null".to_string(),
+                    });
+                }
+            }
+            "flags_value" if clause == "regexp" => {
+                parse_usize_option(clause, "flags_value", option_value)?;
+            }
+            "max_determinized_states" if clause == "regexp" => {
+                parse_usize_option(clause, "max_determinized_states", option_value)?;
+            }
             _ => {
                 return Err(QueryDslError::UnsupportedOption {
                     clause: clause.to_string(),
@@ -5154,14 +5184,22 @@ mod tests {
             "prefix": {
                 "service": {
                     "value": "ap",
-                    "case_insensitive": true
+                    "case_insensitive": true,
+                    "rewrite": "constant_score",
+                    "boost": 1.0,
+                    "_name": "named_prefix"
                 }
             }
         }))
         .unwrap();
         let wildcard = parse_query(&serde_json::json!({
             "wildcard": {
-                "message": "err*"
+                "message": {
+                    "wildcard": "err*",
+                    "rewrite": "constant_score",
+                    "boost": 1.0,
+                    "_name": "named_wildcard"
+                }
             }
         }))
         .unwrap();
@@ -5169,7 +5207,13 @@ mod tests {
             "regexp": {
                 "message": {
                     "value": "err.*",
-                    "case_insensitive": true
+                    "case_insensitive": true,
+                    "flags": "ALL",
+                    "flags_value": 65535,
+                    "max_determinized_states": 10000,
+                    "rewrite": "constant_score",
+                    "boost": 1.0,
+                    "_name": "named_regexp"
                 }
             }
         }))
