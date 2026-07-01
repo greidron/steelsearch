@@ -10336,6 +10336,12 @@ impl SteelNode {
         if let Some(response) = apply_search_source_query_params(&mut body, &request.query_params) {
             return response;
         }
+        if request.query_params.contains_key("fields") {
+            return delete_pit_illegal_argument(format!(
+                "request [{}] contains unrecognized parameter: [fields]",
+                request.path
+            ));
+        }
         if let Some(response) = normalize_search_source_scalar_body_options(&mut body) {
             return response;
         }

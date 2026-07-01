@@ -5214,6 +5214,29 @@
       "description": "[fetch] unmapped fields search"
     },
     {
+      "name": "fields_query_param_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search?fields=service,events.status",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "sort": [
+          {
+            "ts": {
+              "order": "asc"
+            }
+          }
+        ],
+        "size": 2
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "failure-path",
+      "description": "[fetch] fields query parameter is rejected like OpenSearch"
+    },
+    {
       "name": "script_fields_projection_search",
       "area": "search",
       "method": "POST",
