@@ -10183,6 +10183,37 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "multi_terms_aggregation",
+      "area": "aggregation",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "service_levels": {
+            "multi_terms": {
+              "terms": [
+                {
+                  "field": "service"
+                },
+                {
+                  "field": "level"
+                }
+              ],
+              "order": {
+                "_count": "desc"
+              },
+              "size": 3
+            }
+          }
+        }
+      },
+      "extract": "aggregations",
+      "family": "aggregation",
+      "description": "[aggregation] multi terms aggregation",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "stats_metric_aggregation",
       "area": "aggregation",
       "method": "POST",

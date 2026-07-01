@@ -35775,14 +35775,28 @@ fn build_search_aggregations(
                     ))
                 }
             }
+            let sum_other_doc_count = buckets
+                .iter()
+                .skip(size)
+                .map(|(_, doc_count)| *doc_count)
+                .sum::<u64>();
             result.insert(
                 name.clone(),
                 serde_json::json!({
                     "buckets": buckets
                         .into_iter()
                         .take(size)
-                        .map(|(key, doc_count)| serde_json::json!({"key": key, "doc_count": doc_count}))
-                        .collect::<Vec<_>>()
+                        .map(|(key, doc_count)| {
+                            let key_as_string = aggregation_multi_terms_key_as_string(&key);
+                            serde_json::json!({
+                                "key": key,
+                                "key_as_string": key_as_string,
+                                "doc_count": doc_count
+                            })
+                        })
+                        .collect::<Vec<_>>(),
+                    "doc_count_error_upper_bound": 0,
+                    "sum_other_doc_count": sum_other_doc_count
                 }),
             );
             continue;
@@ -36803,6 +36817,14 @@ fn aggregation_multi_terms_sort_key(values: &[Value]) -> String {
         .map(aggregation_bucket_sort_key)
         .collect::<Vec<_>>()
         .join("\u{1f}")
+}
+
+fn aggregation_multi_terms_key_as_string(values: &[Value]) -> String {
+    values
+        .iter()
+        .map(aggregation_bucket_sort_key)
+        .collect::<Vec<_>>()
+        .join("|")
 }
 
 fn choose_fallback_variable_width_histogram_interval(values: &[f64], target_buckets: usize) -> f64 {
@@ -60697,10 +60719,18 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             multi_terms.body["aggregations"]["service_levels"]["buckets"],
             serde_json::json!([
-                { "key": ["catalog", "warn"], "doc_count": 1 },
-                { "key": ["checkout", "info"], "doc_count": 1 },
-                { "key": ["checkout", "warn"], "doc_count": 1 }
+                { "key": ["catalog", "warn"], "key_as_string": "catalog|warn", "doc_count": 1 },
+                { "key": ["checkout", "info"], "key_as_string": "checkout|info", "doc_count": 1 },
+                { "key": ["checkout", "warn"], "key_as_string": "checkout|warn", "doc_count": 1 }
             ])
+        );
+        assert_eq!(
+            multi_terms.body["aggregations"]["service_levels"]["doc_count_error_upper_bound"],
+            serde_json::json!(0)
+        );
+        assert_eq!(
+            multi_terms.body["aggregations"]["service_levels"]["sum_other_doc_count"],
+            serde_json::json!(0)
         );
 
         let date_range = node.handle_rest_request(
