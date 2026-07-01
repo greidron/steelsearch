@@ -3398,7 +3398,7 @@ fn parse_query_string(body: &Value) -> QueryDslResult<Query> {
             field: "query".to_string(),
         })?
         .to_string();
-    let fields = object
+    let mut fields = object
         .get("fields")
         .map(|value| {
             value
@@ -3414,6 +3414,22 @@ fn parse_query_string(body: &Value) -> QueryDslResult<Query> {
                 .collect::<QueryDslResult<Vec<_>>>()
         })
         .transpose()?;
+    let default_field = object
+        .get("default_field")
+        .map(|value| {
+            value
+                .as_str()
+                .map(str::to_string)
+                .ok_or_else(|| QueryDslError::InvalidValue {
+                    clause: "query_string".to_string(),
+                    field: "default_field".to_string(),
+                    reason: "must be a string".to_string(),
+                })
+        })
+        .transpose()?;
+    if fields.is_none() {
+        fields = default_field.map(|field| vec![field]);
+    }
     let default_operator =
         parse_text_query_default_operator(object.get("default_operator"), "query_string")?;
     let minimum_should_match = object
@@ -3468,6 +3484,7 @@ fn parse_query_string(body: &Value) -> QueryDslResult<Query> {
     for option in object.keys() {
         if option != "query"
             && option != "fields"
+            && option != "default_field"
             && option != "default_operator"
             && option != "minimum_should_match"
             && option != "tie_breaker"
@@ -5636,7 +5653,7 @@ mod tests {
         let with_options = parse_query(&serde_json::json!({
             "query_string": {
                 "query": "alpha beta gamma",
-                "fields": ["title"],
+                "default_field": "title",
                 "default_operator": "or",
                 "minimum_should_match": 2,
                 "tie_breaker": 0.2,

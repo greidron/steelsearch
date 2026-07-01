@@ -28482,6 +28482,7 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
                     && !(query_name == "simple_query_string" && key == "fuzzy_prefix_length")
                     && !(query_name == "simple_query_string" && key == "fuzzy_max_expansions")
                     && !(query_name == "simple_query_string" && key == "fuzzy_transpositions")
+                    && !(query_name == "query_string" && key == "default_field")
                     && !(query_name == "query_string" && key == "tie_breaker")
                     && !(query_name == "query_string" && key == "analyze_wildcard")
                     && !(query_name == "query_string" && key == "allow_leading_wildcard")
@@ -28560,6 +28561,14 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
                 }
             }
             if query_name == "query_string" {
+                if spec
+                    .get("default_field")
+                    .is_some_and(|value| !value.is_string())
+                {
+                    return Some(build_unsupported_search_response(
+                        "unsupported query_string default_field",
+                    ));
+                }
                 if spec
                     .get("tie_breaker")
                     .is_some_and(|value| !value.as_f64().is_some_and(f64::is_finite))
