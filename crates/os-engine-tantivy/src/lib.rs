@@ -36855,23 +36855,20 @@ fn collect_pipeline_aggregation(
                         Some(sum / (count as f64))
                     };
                     let sum_of_squares = values.iter().map(|value| value * value).sum::<f64>();
-                    let variance = if count == 0 {
+                    let variance_population = if count == 0 {
                         None
                     } else {
-                        let mean = avg.unwrap_or(0.0);
-                        Some(
-                            values
-                                .iter()
-                                .map(|value| {
-                                    let delta = value - mean;
-                                    delta * delta
-                                })
-                                .sum::<f64>()
-                                / (count as f64),
-                        )
+                        Some((sum_of_squares - ((sum * sum) / (count as f64))) / (count as f64))
                     };
-                    let std_deviation = variance.map(f64::sqrt);
-                    let (upper, lower) = match (avg, std_deviation) {
+                    let variance_sampling = if count > 1 {
+                        variance_population
+                            .map(|variance| variance * (count as f64) / ((count - 1) as f64))
+                    } else {
+                        None
+                    };
+                    let std_deviation_population = variance_population.map(f64::sqrt);
+                    let std_deviation_sampling = variance_sampling.map(f64::sqrt);
+                    let (upper, lower) = match (avg, std_deviation_population) {
                         (Some(avg), Some(std_deviation)) => (
                             Some(avg + (std_deviation * 2.0)),
                             Some(avg - (std_deviation * 2.0)),
@@ -36885,11 +36882,29 @@ fn collect_pipeline_aggregation(
                         "avg": avg,
                         "sum": sum,
                         "sum_of_squares": sum_of_squares,
-                        "variance": variance,
-                        "std_deviation": std_deviation,
+                        "variance": variance_population,
+                        "variance_population": variance_population,
+                        "variance_sampling": variance_sampling,
+                        "std_deviation": std_deviation_population,
+                        "std_deviation_population": std_deviation_population,
+                        "std_deviation_sampling": std_deviation_sampling,
                         "std_deviation_bounds": {
                             "upper": upper,
-                            "lower": lower
+                            "lower": lower,
+                            "upper_population": upper,
+                            "lower_population": lower,
+                            "upper_sampling": match (avg, std_deviation_sampling) {
+                                (Some(avg), Some(std_deviation_sampling)) => {
+                                    Some(avg + (std_deviation_sampling * 2.0))
+                                }
+                                _ => None,
+                            },
+                            "lower_sampling": match (avg, std_deviation_sampling) {
+                                (Some(avg), Some(std_deviation_sampling)) => {
+                                    Some(avg - (std_deviation_sampling * 2.0))
+                                }
+                                _ => None,
+                            }
                         }
                     })
                 }
@@ -36901,10 +36916,18 @@ fn collect_pipeline_aggregation(
                     "sum": 0.0,
                     "sum_of_squares": 0.0,
                     "variance": Value::Null,
+                    "variance_population": Value::Null,
+                    "variance_sampling": Value::Null,
                     "std_deviation": Value::Null,
+                    "std_deviation_population": Value::Null,
+                    "std_deviation_sampling": Value::Null,
                     "std_deviation_bounds": {
                         "upper": Value::Null,
-                        "lower": Value::Null
+                        "lower": Value::Null,
+                        "upper_population": Value::Null,
+                        "lower_population": Value::Null,
+                        "upper_sampling": Value::Null,
+                        "lower_sampling": Value::Null
                     }
                 }),
             }
@@ -157694,10 +157717,18 @@ mod tests {
                     "sum": 35.0,
                     "sum_of_squares": 925.0,
                     "variance": 156.25,
+                    "variance_population": 156.25,
+                    "variance_sampling": 312.5,
                     "std_deviation": 12.5,
+                    "std_deviation_population": 12.5,
+                    "std_deviation_sampling": 17.67766952966369,
                     "std_deviation_bounds": {
                         "upper": 42.5,
-                        "lower": -7.5
+                        "lower": -7.5,
+                        "upper_population": 42.5,
+                        "lower_population": -7.5,
+                        "upper_sampling": 52.85533905932738,
+                        "lower_sampling": -17.855339059327378
                     }
                 }
             })
@@ -157788,10 +157819,18 @@ mod tests {
                     "sum": 3.0,
                     "sum_of_squares": 5.0,
                     "variance": 0.25,
+                    "variance_population": 0.25,
+                    "variance_sampling": 0.5,
                     "std_deviation": 0.5,
+                    "std_deviation_population": 0.5,
+                    "std_deviation_sampling": std::f64::consts::FRAC_1_SQRT_2,
                     "std_deviation_bounds": {
                         "upper": 2.5,
-                        "lower": 0.5
+                        "lower": 0.5,
+                        "upper_population": 2.5,
+                        "lower_population": 0.5,
+                        "upper_sampling": 1.5 + (2.0 * std::f64::consts::FRAC_1_SQRT_2),
+                        "lower_sampling": 1.5 - (2.0 * std::f64::consts::FRAC_1_SQRT_2)
                     },
                     "_plugin": "demo",
                     "_type": "extended_stats_bucket",

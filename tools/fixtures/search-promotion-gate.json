@@ -478,6 +478,7 @@
         "min_bucket_pipeline_aggregation",
         "max_bucket_pipeline_aggregation",
         "stats_bucket_pipeline_aggregation",
+        "extended_stats_bucket_pipeline_aggregation",
         "terms_aggregation",
         "terms_typed_keys_aggregation",
         "aggregation_typed_keys_response_names",

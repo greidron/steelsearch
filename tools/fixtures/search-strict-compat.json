@@ -12247,6 +12247,31 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "extended_stats_bucket_pipeline_aggregation",
+      "area": "aggregation",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "by_service": {
+            "terms": {
+              "field": "service"
+            }
+          },
+          "service_doc_extended_stats": {
+            "extended_stats_bucket": {
+              "buckets_path": "by_service>_count"
+            }
+          }
+        }
+      },
+      "extract": "aggregations",
+      "family": "aggregation",
+      "description": "[aggregation] extended stats bucket pipeline aggregation",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "terms_aggregation",
       "area": "aggregation",
       "method": "POST",

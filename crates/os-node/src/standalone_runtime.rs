@@ -36952,6 +36952,19 @@ fn build_search_aggregations(
                 );
                 continue;
             }
+            if pipeline_kind == "extended_stats_bucket" {
+                result.insert(
+                    name.clone(),
+                    extended_stats_aggregation_value(
+                        &counts,
+                        pipeline_object
+                            .get("sigma")
+                            .and_then(metric_missing_value)
+                            .unwrap_or(2.0),
+                    ),
+                );
+                continue;
+            }
             let value = match pipeline_kind {
                 "sum_bucket" => counts.iter().sum::<f64>(),
                 "avg_bucket" => {
@@ -37168,6 +37181,8 @@ fn typed_aggregation_prefix(aggregation: &serde_json::Map<String, Value>) -> Opt
         "max_bucket"
     } else if aggregation.contains_key("stats_bucket") {
         "stats_bucket"
+    } else if aggregation.contains_key("extended_stats_bucket") {
+        "extended_stats_bucket"
     } else if aggregation.contains_key("composite") {
         "composite"
     } else if aggregation.contains_key("adjacency_matrix") {
@@ -38194,6 +38209,7 @@ fn first_supported_bucket_metric_pipeline_aggregation<'a>(
         "min_bucket",
         "max_bucket",
         "stats_bucket",
+        "extended_stats_bucket",
     ] {
         if let Some(value) = aggregation_object.get(key).and_then(Value::as_object) {
             return Some((key, value));
@@ -38233,7 +38249,7 @@ fn extended_stats_aggregation_value(values: &[f64], sigma: f64) -> Value {
     }
     let avg = sum / (count as f64);
     let sum_of_squares = values.iter().map(|value| value * value).sum::<f64>();
-    let variance_population = (sum_of_squares / (count as f64)) - (avg * avg);
+    let variance_population = (sum_of_squares - ((sum * sum) / (count as f64))) / (count as f64);
     let variance_sampling = if count > 1 {
         Some(variance_population * (count as f64) / ((count - 1) as f64))
     } else {
@@ -62421,6 +62437,11 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                             "stats_bucket": {
                                 "buckets_path": "by_service>_count"
                             }
+                        },
+                        "service_doc_extended_stats": {
+                            "extended_stats_bucket": {
+                                "buckets_path": "by_service>_count"
+                            }
                         }
                     }
                 }),
@@ -62448,6 +62469,48 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 "avg": 1.5,
                 "sum": 3.0
             })
+        );
+        assert_eq!(
+            avg_min_max_bucket.body["aggregations"]["service_doc_extended_stats"]["count"],
+            2
+        );
+        assert_eq!(
+            avg_min_max_bucket.body["aggregations"]["service_doc_extended_stats"]["sum"],
+            3.0
+        );
+        assert_eq!(
+            avg_min_max_bucket.body["aggregations"]["service_doc_extended_stats"]["avg"],
+            1.5
+        );
+        assert_eq!(
+            avg_min_max_bucket.body["aggregations"]["service_doc_extended_stats"]
+                ["variance_population"],
+            0.25
+        );
+        assert_eq!(
+            avg_min_max_bucket.body["aggregations"]["service_doc_extended_stats"]
+                ["variance_sampling"],
+            0.5
+        );
+        assert_eq!(
+            avg_min_max_bucket.body["aggregations"]["service_doc_extended_stats"]
+                ["std_deviation_population"],
+            0.5
+        );
+        assert_eq!(
+            avg_min_max_bucket.body["aggregations"]["service_doc_extended_stats"]
+                ["std_deviation_sampling"],
+            std::f64::consts::FRAC_1_SQRT_2
+        );
+        assert_eq!(
+            avg_min_max_bucket.body["aggregations"]["service_doc_extended_stats"]
+                ["std_deviation_bounds"]["upper_population"],
+            2.5
+        );
+        assert_eq!(
+            avg_min_max_bucket.body["aggregations"]["service_doc_extended_stats"]
+                ["std_deviation_bounds"]["lower_sampling"],
+            serde_json::json!(1.5 - (2.0 * std::f64::consts::FRAC_1_SQRT_2))
         );
 
         let scripted_metric = node.handle_rest_request(
