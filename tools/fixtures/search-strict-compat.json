@@ -10236,6 +10236,32 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "terms_set_standard_options_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "terms_set": {
+            "labels": {
+              "terms": [
+                "payment"
+              ],
+              "minimum_should_match_script": {
+                "source": "1"
+              },
+              "boost": 2.0,
+              "_name": "named_terms_set"
+            }
+          }
+        }
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] terms set accepts standard query options",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "timeout_search",
       "area": "search",
       "method": "POST",

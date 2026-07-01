@@ -29142,6 +29142,20 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
                 "A field has already been specified. Cannot specify both a field and script",
             ));
         }
+        if object.get("boost").is_some_and(|value| {
+            !value
+                .as_f64()
+                .is_some_and(|number| number.is_finite() && number >= 0.0)
+        }) {
+            return Some(build_unsupported_search_response(
+                "unsupported terms_set boost",
+            ));
+        }
+        if object.get("_name").is_some_and(|value| !value.is_string()) {
+            return Some(build_unsupported_search_response(
+                "unsupported terms_set _name",
+            ));
+        }
         if object.contains_key("minimum_should_match_field") {
             if object
                 .get("minimum_should_match_field")
@@ -61774,6 +61788,18 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             }
         }))
         .is_none());
+
+        let invalid_name = validate_search_query_body(&serde_json::json!({
+            "terms_set": {
+                "labels": {
+                    "terms": ["payment"],
+                    "minimum_should_match_script": { "source": "1" },
+                    "_name": 1
+                }
+            }
+        }))
+        .expect("non-string terms_set _name should fail closed");
+        assert_eq!(invalid_name.status, 400);
     }
 
     #[test]

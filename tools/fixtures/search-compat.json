@@ -14208,7 +14208,8 @@
               "minimum_should_match_script": {
                 "source": "1"
               },
-              "boost": 2.0
+              "boost": 2.0,
+              "_name": "named_terms_set"
             }
           }
         }

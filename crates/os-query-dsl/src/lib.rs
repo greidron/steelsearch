@@ -2668,43 +2668,44 @@ fn parse_terms_set(body: &Value) -> QueryDslResult<Query> {
             field: "terms".to_string(),
         })?
         .clone();
-    let minimum_should_match = match field_object
-        .get("minimum_should_match")
-        .and_then(Value::as_u64)
-    {
-        Some(value) => value,
-        None => field_object
-            .get("minimum_should_match_script")
-            .and_then(Value::as_object)
-            .and_then(|script| script.get("source"))
-            .and_then(|source| {
-                source
-                    .as_u64()
-                    .or_else(|| source.as_str().and_then(|value| value.parse::<u64>().ok()))
-            })
-            .ok_or_else(|| QueryDslError::MissingField {
-                clause: "terms_set".to_string(),
-                field: "minimum_should_match".to_string(),
-            })?,
-    };
+
+    for (option, value) in field_object {
+        match option.as_str() {
+            "terms" | "minimum_should_match_script" => {}
+            "boost" => {
+                parse_non_negative_f64_option("terms_set", "boost", value)?;
+            }
+            "_name" => {
+                validate_optional_string_option(field_object, "terms_set", "_name")?;
+            }
+            _ => {
+                return Err(QueryDslError::UnsupportedOption {
+                    clause: "terms_set".to_string(),
+                    option: option.clone(),
+                });
+            }
+        }
+    }
+
+    let minimum_should_match = field_object
+        .get("minimum_should_match_script")
+        .and_then(Value::as_object)
+        .and_then(|script| script.get("source"))
+        .and_then(|source| {
+            source
+                .as_u64()
+                .or_else(|| source.as_str().and_then(|value| value.parse::<u64>().ok()))
+        })
+        .ok_or_else(|| QueryDslError::MissingField {
+            clause: "terms_set".to_string(),
+            field: "minimum_should_match_script".to_string(),
+        })?;
     let minimum_should_match =
         usize::try_from(minimum_should_match).map_err(|_| QueryDslError::InvalidValue {
             clause: "terms_set".to_string(),
             field: "minimum_should_match".to_string(),
             reason: "must fit in usize".to_string(),
         })?;
-
-    for option in field_object.keys() {
-        if option != "terms"
-            && option != "minimum_should_match"
-            && option != "minimum_should_match_script"
-        {
-            return Err(QueryDslError::UnsupportedOption {
-                clause: "terms_set".to_string(),
-                option: option.clone(),
-            });
-        }
-    }
 
     Ok(Query::TermsSet {
         field: field.clone(),
@@ -6488,7 +6489,9 @@ mod tests {
             "terms_set": {
                 "tags": {
                     "terms": ["alpha", "beta"],
-                    "minimum_should_match": 2
+                    "minimum_should_match_script": { "source": "2" },
+                    "boost": 2.0,
+                    "_name": "named_terms_set"
                 }
             }
         }))
@@ -6500,6 +6503,24 @@ mod tests {
                 field: "tags".to_string(),
                 values: vec![serde_json::json!("alpha"), serde_json::json!("beta")],
                 minimum_should_match: 2,
+            }
+        );
+
+        let shortcut_error = parse_query(&serde_json::json!({
+            "terms_set": {
+                "tags": {
+                    "terms": ["alpha", "beta"],
+                    "minimum_should_match": 2
+                }
+            }
+        }))
+        .unwrap_err();
+
+        assert_eq!(
+            shortcut_error,
+            QueryDslError::UnsupportedOption {
+                clause: "terms_set".to_string(),
+                option: "minimum_should_match".to_string(),
             }
         );
     }
