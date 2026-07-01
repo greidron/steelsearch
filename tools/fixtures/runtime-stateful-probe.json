@@ -488,11 +488,55 @@
       "expected_runtime_status": "stateful-route-present"
     },
     {
+      "name": "flush_root_selector_post",
+      "family": "index-and-metadata",
+      "inventory_path": "/_flush",
+      "method": "POST",
+      "path": "/_flush?expand_wildcards=open&allow_no_indices=true&ignore_unavailable=false",
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "flush_root_invalid_allow_no_indices_error_post",
+      "family": "index-and-metadata",
+      "inventory_path": "/_flush",
+      "method": "POST",
+      "path": "/_flush?allow_no_indices=maybe",
+      "semantic_tags": [
+        "error-path"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
       "name": "flush_synced_root_post",
       "family": "index-and-metadata",
       "inventory_path": "/_flush/synced",
       "method": "POST",
       "path": "/_flush/synced",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "flush_synced_root_selector_post",
+      "family": "index-and-metadata",
+      "inventory_path": "/_flush/synced",
+      "method": "POST",
+      "path": "/_flush/synced?expand_wildcards=open&allow_no_indices=true&ignore_unavailable=false",
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "flush_synced_root_invalid_ignore_unavailable_error_post",
+      "family": "index-and-metadata",
+      "inventory_path": "/_flush/synced",
+      "method": "POST",
+      "path": "/_flush/synced?ignore_unavailable=maybe",
+      "semantic_tags": [
+        "error-path"
+      ],
       "expected_runtime_status": "stateful-route-present"
     },
     {
@@ -2689,6 +2733,28 @@
       "expected_runtime_status": "stateful-route-present"
     },
     {
+      "name": "refresh_root_selector_post",
+      "family": "document-and-bulk",
+      "inventory_path": "/_refresh",
+      "method": "POST",
+      "path": "/_refresh?expand_wildcards=open&allow_no_indices=true&ignore_unavailable=false",
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "refresh_root_invalid_allow_no_indices_error_post",
+      "family": "document-and-bulk",
+      "inventory_path": "/_refresh",
+      "method": "POST",
+      "path": "/_refresh?allow_no_indices=maybe",
+      "semantic_tags": [
+        "error-path"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
       "name": "refresh_target_post",
       "family": "document-and-bulk",
       "inventory_path": "/{index}/_refresh",
@@ -2730,6 +2796,28 @@
       "inventory_path": "/_cache/clear",
       "method": "POST",
       "path": "/_cache/clear",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "cache_clear_root_selector_post",
+      "family": "index-and-metadata",
+      "inventory_path": "/_cache/clear",
+      "method": "POST",
+      "path": "/_cache/clear?expand_wildcards=open&allow_no_indices=true&ignore_unavailable=false",
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "cache_clear_root_invalid_ignore_unavailable_error_post",
+      "family": "index-and-metadata",
+      "inventory_path": "/_cache/clear",
+      "method": "POST",
+      "path": "/_cache/clear?ignore_unavailable=maybe",
+      "semantic_tags": [
+        "error-path"
+      ],
       "expected_runtime_status": "stateful-route-present"
     },
     {
@@ -2789,6 +2877,28 @@
       "inventory_path": "/_forcemerge",
       "method": "POST",
       "path": "/_forcemerge",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "forcemerge_root_selector_post",
+      "family": "index-and-metadata",
+      "inventory_path": "/_forcemerge",
+      "method": "POST",
+      "path": "/_forcemerge?expand_wildcards=open&allow_no_indices=true&ignore_unavailable=false",
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "forcemerge_root_invalid_ignore_unavailable_error_post",
+      "family": "index-and-metadata",
+      "inventory_path": "/_forcemerge",
+      "method": "POST",
+      "path": "/_forcemerge?ignore_unavailable=maybe",
+      "semantic_tags": [
+        "error-path"
+      ],
       "expected_runtime_status": "stateful-route-present"
     },
     {

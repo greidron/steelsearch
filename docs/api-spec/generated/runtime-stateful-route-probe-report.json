@@ -2,10 +2,10 @@
   "base_url": "http://127.0.0.1:19200",
   "by_family": {
     "document-and-bulk": {
-      "passed": 48
+      "passed": 50
     },
     "index-and-metadata": {
-      "passed": 112
+      "passed": 120
     },
     "misc": {
       "passed": 5
@@ -618,6 +618,40 @@
     {
       "expected_runtime_status": "stateful-route-present",
       "family": "index-and-metadata",
+      "inventory_path": "/_flush",
+      "method": "POST",
+      "name": "flush_root_selector_post",
+      "path": "/_flush?expand_wildcards=open&allow_no_indices=true&ignore_unavailable=false",
+      "result": {
+        "body": "{\"_shards\":{\"failed\":0,\"successful\":3,\"total\":3}}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/_flush",
+      "method": "POST",
+      "name": "flush_root_invalid_allow_no_indices_error_post",
+      "path": "/_flush?allow_no_indices=maybe",
+      "result": {
+        "body": "{\"error\":{\"reason\":\"Could not convert [allow_no_indices] to boolean\",\"root_cause\":[{\"reason\":\"Could not convert [allow_no_indices] to boolean\",\"type\":\"illegal_argument_exception\"}],\"type\":\"illegal_argument_exception\"},\"status\":400}",
+        "status": 400
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "error-path"
+      ],
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
       "inventory_path": "/_flush/synced",
       "method": "POST",
       "name": "flush_synced_root_post",
@@ -629,6 +663,40 @@
       "runtime_status": "stateful-route-present",
       "semantic_tags": [
         "happy-path"
+      ],
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/_flush/synced",
+      "method": "POST",
+      "name": "flush_synced_root_selector_post",
+      "path": "/_flush/synced?expand_wildcards=open&allow_no_indices=true&ignore_unavailable=false",
+      "result": {
+        "body": "{\"_shards\":{\"failed\":0,\"successful\":3,\"total\":3}}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/_flush/synced",
+      "method": "POST",
+      "name": "flush_synced_root_invalid_ignore_unavailable_error_post",
+      "path": "/_flush/synced?ignore_unavailable=maybe",
+      "result": {
+        "body": "{\"error\":{\"reason\":\"Could not convert [ignore_unavailable] to boolean\",\"root_cause\":[{\"reason\":\"Could not convert [ignore_unavailable] to boolean\",\"type\":\"illegal_argument_exception\"}],\"type\":\"illegal_argument_exception\"},\"status\":400}",
+        "status": 400
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "error-path"
       ],
       "status": "passed"
     },
@@ -4598,6 +4666,40 @@
     {
       "expected_runtime_status": "stateful-route-present",
       "family": "document-and-bulk",
+      "inventory_path": "/_refresh",
+      "method": "POST",
+      "name": "refresh_root_selector_post",
+      "path": "/_refresh?expand_wildcards=open&allow_no_indices=true&ignore_unavailable=false",
+      "result": {
+        "body": "{\"_shards\":{\"failed\":0,\"successful\":16,\"total\":16}}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "document-and-bulk",
+      "inventory_path": "/_refresh",
+      "method": "POST",
+      "name": "refresh_root_invalid_allow_no_indices_error_post",
+      "path": "/_refresh?allow_no_indices=maybe",
+      "result": {
+        "body": "{\"error\":{\"reason\":\"Could not convert [allow_no_indices] to boolean\",\"root_cause\":[{\"reason\":\"Could not convert [allow_no_indices] to boolean\",\"type\":\"illegal_argument_exception\"}],\"type\":\"illegal_argument_exception\"},\"status\":400}",
+        "status": 400
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "error-path"
+      ],
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "document-and-bulk",
       "inventory_path": "/{index}/_refresh",
       "method": "POST",
       "name": "refresh_target_post",
@@ -4681,6 +4783,40 @@
       "runtime_status": "stateful-route-present",
       "semantic_tags": [
         "happy-path"
+      ],
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/_cache/clear",
+      "method": "POST",
+      "name": "cache_clear_root_selector_post",
+      "path": "/_cache/clear?expand_wildcards=open&allow_no_indices=true&ignore_unavailable=false",
+      "result": {
+        "body": "{\"_shards\":{\"failed\":0,\"successful\":16,\"total\":16}}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/_cache/clear",
+      "method": "POST",
+      "name": "cache_clear_root_invalid_ignore_unavailable_error_post",
+      "path": "/_cache/clear?ignore_unavailable=maybe",
+      "result": {
+        "body": "{\"error\":{\"reason\":\"Could not convert [ignore_unavailable] to boolean\",\"root_cause\":[{\"reason\":\"Could not convert [ignore_unavailable] to boolean\",\"type\":\"illegal_argument_exception\"}],\"type\":\"illegal_argument_exception\"},\"status\":400}",
+        "status": 400
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "error-path"
       ],
       "status": "passed"
     },
@@ -4800,6 +4936,40 @@
       "runtime_status": "stateful-route-present",
       "semantic_tags": [
         "happy-path"
+      ],
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/_forcemerge",
+      "method": "POST",
+      "name": "forcemerge_root_selector_post",
+      "path": "/_forcemerge?expand_wildcards=open&allow_no_indices=true&ignore_unavailable=false",
+      "result": {
+        "body": "{\"_shards\":{\"failed\":0,\"successful\":16,\"total\":16}}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/_forcemerge",
+      "method": "POST",
+      "name": "forcemerge_root_invalid_ignore_unavailable_error_post",
+      "path": "/_forcemerge?ignore_unavailable=maybe",
+      "result": {
+        "body": "{\"error\":{\"reason\":\"Could not convert [ignore_unavailable] to boolean\",\"root_cause\":[{\"reason\":\"Could not convert [ignore_unavailable] to boolean\",\"type\":\"illegal_argument_exception\"}],\"type\":\"illegal_argument_exception\"},\"status\":400}",
+        "status": 400
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "error-path"
       ],
       "status": "passed"
     },
@@ -5572,17 +5742,6 @@
     },
     {
       "complete": false,
-      "inventory_path": "/_cache/clear",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
-      "present": [
-        "happy-path"
-      ]
-    },
-    {
-      "complete": false,
       "inventory_path": "/_cluster/allocation/explain",
       "missing": [
         "error-path",
@@ -5749,39 +5908,6 @@
     {
       "complete": false,
       "inventory_path": "/_filecache/prune",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
-      "present": [
-        "happy-path"
-      ]
-    },
-    {
-      "complete": false,
-      "inventory_path": "/_flush",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
-      "present": [
-        "happy-path"
-      ]
-    },
-    {
-      "complete": false,
-      "inventory_path": "/_flush/synced",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
-      "present": [
-        "happy-path"
-      ]
-    },
-    {
-      "complete": false,
-      "inventory_path": "/_forcemerge",
       "missing": [
         "error-path",
         "idempotency-or-selector"
@@ -5980,17 +6106,6 @@
     {
       "complete": false,
       "inventory_path": "/_rank_eval",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
-      "present": [
-        "happy-path"
-      ]
-    },
-    {
-      "complete": false,
-      "inventory_path": "/_refresh",
       "missing": [
         "error-path",
         "idempotency-or-selector"
@@ -6927,14 +7042,13 @@
       ]
     },
     {
-      "complete": false,
+      "complete": true,
       "inventory_path": "/_cache/clear",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
+      "missing": [],
       "present": [
-        "happy-path"
+        "error-path",
+        "happy-path",
+        "idempotency-or-selector"
       ]
     },
     {
@@ -7124,36 +7238,33 @@
       ]
     },
     {
-      "complete": false,
+      "complete": true,
       "inventory_path": "/_flush",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
+      "missing": [],
       "present": [
-        "happy-path"
+        "error-path",
+        "happy-path",
+        "idempotency-or-selector"
       ]
     },
     {
-      "complete": false,
+      "complete": true,
       "inventory_path": "/_flush/synced",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
+      "missing": [],
       "present": [
-        "happy-path"
+        "error-path",
+        "happy-path",
+        "idempotency-or-selector"
       ]
     },
     {
-      "complete": false,
+      "complete": true,
       "inventory_path": "/_forcemerge",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
+      "missing": [],
       "present": [
-        "happy-path"
+        "error-path",
+        "happy-path",
+        "idempotency-or-selector"
       ]
     },
     {
@@ -7365,14 +7476,13 @@
       ]
     },
     {
-      "complete": false,
+      "complete": true,
       "inventory_path": "/_refresh",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
+      "missing": [],
       "present": [
-        "happy-path"
+        "error-path",
+        "happy-path",
+        "idempotency-or-selector"
       ]
     },
     {
@@ -8274,8 +8384,8 @@
     }
   ],
   "semantic_coverage_summary": {
-    "complete": 11,
-    "incomplete": 119
+    "complete": 16,
+    "incomplete": 114
   },
   "setup": [
     {
@@ -8485,6 +8595,6 @@
     }
   ],
   "summary": {
-    "passed": 277
+    "passed": 287
   }
 }
