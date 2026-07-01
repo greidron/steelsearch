@@ -4680,12 +4680,7 @@ fn intervals_spec_is_supported(spec: &Value) -> bool {
             })
             && interval_ordering_options_are_supported(all_of)
             && intervals_share_single_effective_field(intervals)
-            && intervals.iter().all(|interval| {
-                interval
-                    .get("match")
-                    .and_then(Value::as_object)
-                    .is_some_and(interval_match_spec_is_supported)
-            });
+            && intervals.iter().all(interval_leaf_spec_is_supported);
     }
     if let Some(any_of) = object.get("any_of").and_then(Value::as_object) {
         let Some(intervals) = any_of.get("intervals").and_then(Value::as_array) else {
@@ -4693,12 +4688,7 @@ fn intervals_spec_is_supported(spec: &Value) -> bool {
         };
         return !intervals.is_empty()
             && any_of.keys().all(|key| key == "intervals")
-            && intervals.iter().all(|interval| {
-                interval
-                    .get("match")
-                    .and_then(Value::as_object)
-                    .is_some_and(interval_match_spec_is_supported)
-            });
+            && intervals.iter().all(interval_leaf_spec_is_supported);
     }
     false
 }
@@ -4802,16 +4792,22 @@ fn interval_fuzzy_spec_is_supported(fuzzy_spec: &serde_json::Map<String, Value>)
             .map_or(true, Value::is_boolean)
 }
 
+fn interval_leaf_spec_is_supported(interval: &Value) -> bool {
+    let Some(object) = interval.as_object() else {
+        return false;
+    };
+    if object.contains_key("all_of") || object.contains_key("any_of") {
+        return false;
+    }
+    intervals_spec_is_supported(interval)
+}
+
 fn intervals_share_single_effective_field(intervals: &[Value]) -> bool {
     let mut effective_field: Option<&str> = None;
     for interval in intervals {
-        let Some(match_spec) = interval.get("match").and_then(Value::as_object) else {
+        let Some(field) = interval_effective_field(interval) else {
             return false;
         };
-        let field = match_spec
-            .get("use_field")
-            .and_then(Value::as_str)
-            .unwrap_or("");
         if let Some(current) = effective_field {
             if current != field {
                 return false;
@@ -4821,6 +4817,51 @@ fn intervals_share_single_effective_field(intervals: &[Value]) -> bool {
         }
     }
     true
+}
+
+fn interval_effective_field(interval: &Value) -> Option<&str> {
+    let object = interval.as_object()?;
+    if let Some(match_spec) = object.get("match").and_then(Value::as_object) {
+        return Some(
+            match_spec
+                .get("use_field")
+                .and_then(Value::as_str)
+                .unwrap_or(""),
+        );
+    }
+    if let Some(prefix_spec) = object.get("prefix").and_then(Value::as_object) {
+        return Some(
+            prefix_spec
+                .get("use_field")
+                .and_then(Value::as_str)
+                .unwrap_or(""),
+        );
+    }
+    if let Some(wildcard_spec) = object.get("wildcard").and_then(Value::as_object) {
+        return Some(
+            wildcard_spec
+                .get("use_field")
+                .and_then(Value::as_str)
+                .unwrap_or(""),
+        );
+    }
+    if let Some(regexp_spec) = object.get("regexp").and_then(Value::as_object) {
+        return Some(
+            regexp_spec
+                .get("use_field")
+                .and_then(Value::as_str)
+                .unwrap_or(""),
+        );
+    }
+    if let Some(fuzzy_spec) = object.get("fuzzy").and_then(Value::as_object) {
+        return Some(
+            fuzzy_spec
+                .get("use_field")
+                .and_then(Value::as_str)
+                .unwrap_or(""),
+        );
+    }
+    None
 }
 
 fn interval_ordering_options_are_supported(object: &serde_json::Map<String, Value>) -> bool {
@@ -7467,6 +7508,38 @@ mod tests {
                         "intervals": [
                             { "match": { "query": "payment timeout" } },
                             { "match": { "query": "catalog service" } }
+                        ]
+                    }
+                }),
+            }
+        );
+
+        let mixed_all_of = parse_query(&serde_json::json!({
+            "intervals": {
+                "message": {
+                    "all_of": {
+                        "ordered": true,
+                        "max_gaps": 0,
+                        "intervals": [
+                            { "match": { "query": "service" } },
+                            { "prefix": { "prefix": "pay" } }
+                        ]
+                    }
+                }
+            }
+        }))
+        .unwrap();
+        assert_eq!(
+            mixed_all_of,
+            Query::Intervals {
+                field: "message".to_string(),
+                spec: serde_json::json!({
+                    "all_of": {
+                        "ordered": true,
+                        "max_gaps": 0,
+                        "intervals": [
+                            { "match": { "query": "service" } },
+                            { "prefix": { "prefix": "pay" } }
                         ]
                     }
                 }),

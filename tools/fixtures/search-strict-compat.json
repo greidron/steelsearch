@@ -90,6 +90,8 @@
           "service_optional": "keyword",
           "level": "keyword",
           "tag": "keyword",
+          "labels": "keyword",
+          "required_matches": "long",
           "latency_optional": "long",
           "bytes": "long",
           "ts": "date",
@@ -4850,6 +4852,47 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "intervals_all_of_mixed_provider_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "intervals": {
+            "message": {
+              "all_of": {
+                "ordered": true,
+                "max_gaps": 0,
+                "intervals": [
+                  {
+                    "match": {
+                      "query": "service"
+                    }
+                  },
+                  {
+                    "prefix": {
+                      "prefix": "pay"
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] intervals all_of supports mixed leaf providers",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "intervals_match_use_field_search",
       "area": "search",
       "method": "POST",
@@ -5028,6 +5071,46 @@
       "extract": "search_hits",
       "family": "lexical",
       "description": "[lexical] intervals any_of query search",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "intervals_any_of_mixed_provider_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "intervals": {
+            "message": {
+              "any_of": {
+                "intervals": [
+                  {
+                    "prefix": {
+                      "prefix": "cat"
+                    }
+                  },
+                  {
+                    "fuzzy": {
+                      "term": "paymant",
+                      "fuzziness": 1
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] intervals any_of supports mixed leaf providers",
       "strict_source_parity_required": true
     },
     {

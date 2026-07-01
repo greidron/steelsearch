@@ -16309,51 +16309,23 @@ fn matches_intervals_spec(source: &Value, query_field: &str, spec: &Value) -> bo
         if !intervals_share_single_effective_field(intervals, query_field) {
             return false;
         }
-        let Some(first_match) = intervals
-            .first()
-            .and_then(|interval| interval.get("match"))
-            .and_then(Value::as_object)
-        else {
-            return false;
-        };
-        let Some(tokens) = interval_match_candidate_tokens(source, query_field, first_match) else {
-            return false;
-        };
-        let mut terms = Vec::new();
+        let mut position_sets = Vec::new();
         for interval in intervals {
-            let Some(query_text) = interval
-                .get("match")
-                .and_then(Value::as_object)
-                .and_then(|match_spec| match_spec.get("query"))
-                .and_then(Value::as_str)
+            let Some(positions) = interval_leaf_matching_positions(source, query_field, interval)
             else {
                 return false;
             };
-            terms.extend(tokenize_phrase_text(query_text));
+            position_sets.push(positions);
         }
-        return tokens_match_interval_terms(&tokens, &terms, ordered, max_gaps);
+        return interval_position_sets_match(&position_sets, ordered, max_gaps);
     }
     if let Some(any_of) = interval_object.get("any_of").and_then(Value::as_object) {
         let Some(intervals) = any_of.get("intervals").and_then(Value::as_array) else {
             return false;
         };
-        return intervals.iter().any(|interval| {
-            let Some(match_spec) = interval.get("match").and_then(Value::as_object) else {
-                return false;
-            };
-            let Some(tokens) = interval_match_candidate_tokens(source, query_field, match_spec)
-            else {
-                return false;
-            };
-            let Some(query_text) = match_spec.get("query").and_then(Value::as_str) else {
-                return false;
-            };
-            let Some((ordered, max_gaps)) = interval_ordering_options(match_spec) else {
-                return false;
-            };
-            let terms = tokenize_phrase_text(query_text);
-            tokens_match_interval_terms(&tokens, &terms, ordered, max_gaps)
-        });
+        return intervals
+            .iter()
+            .any(|interval| matches_intervals_spec(source, query_field, interval));
     }
     false
 }
@@ -16438,13 +16410,116 @@ fn interval_auto_fuzziness(term: &str) -> u8 {
     }
 }
 
+fn interval_leaf_matching_positions(
+    source: &Value,
+    query_field: &str,
+    interval: &Value,
+) -> Option<Vec<usize>> {
+    let interval_object = interval.as_object()?;
+    if let Some(match_spec) = interval_object.get("match").and_then(Value::as_object) {
+        let tokens = interval_match_candidate_tokens(source, query_field, match_spec)?;
+        let query_text = match_spec.get("query")?.as_str()?;
+        let terms = tokenize_phrase_text(query_text);
+        return Some(token_match_positions(&tokens, |token| {
+            terms.iter().any(|term| term == token)
+        }));
+    }
+    if let Some(prefix_spec) = interval_object.get("prefix").and_then(Value::as_object) {
+        let tokens = interval_prefix_candidate_tokens(source, query_field, prefix_spec)?;
+        let prefix = prefix_spec.get("prefix")?.as_str()?.to_ascii_lowercase();
+        return Some(token_match_positions(&tokens, |token| {
+            token.starts_with(&prefix)
+        }));
+    }
+    if let Some(wildcard_spec) = interval_object.get("wildcard").and_then(Value::as_object) {
+        let tokens = interval_wildcard_candidate_tokens(source, query_field, wildcard_spec)?;
+        let pattern = wildcard_spec.get("pattern")?.as_str()?.to_ascii_lowercase();
+        return Some(token_match_positions(&tokens, |token| {
+            wildcard_matches(&pattern, token)
+        }));
+    }
+    if let Some(regexp_spec) = interval_object.get("regexp").and_then(Value::as_object) {
+        let tokens = interval_regexp_candidate_tokens(source, query_field, regexp_spec)?;
+        let pattern = regexp_spec.get("pattern")?.as_str()?;
+        let case_insensitive = regexp_spec
+            .get("case_insensitive")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        return Some(token_match_positions(&tokens, |token| {
+            interval_regexp_token_matches(pattern, token, case_insensitive)
+        }));
+    }
+    if let Some(fuzzy_spec) = interval_object.get("fuzzy").and_then(Value::as_object) {
+        let tokens = interval_fuzzy_candidate_tokens(source, query_field, fuzzy_spec)?;
+        let term = fuzzy_spec.get("term")?.as_str()?.to_ascii_lowercase();
+        let fuzziness = interval_fuzzy_distance(fuzzy_spec, &term)?;
+        let prefix_length = fuzzy_spec
+            .get("prefix_length")
+            .and_then(Value::as_u64)
+            .map(|value| value as usize)
+            .unwrap_or(0);
+        let transpositions = fuzzy_spec
+            .get("transpositions")
+            .and_then(Value::as_bool)
+            .unwrap_or(true);
+        return Some(token_match_positions(&tokens, |token| {
+            fuzzy_matches_candidate(token, &term, fuzziness, prefix_length, transpositions)
+        }));
+    }
+    None
+}
+
+fn token_match_positions<F>(tokens: &[String], mut matches: F) -> Vec<usize>
+where
+    F: FnMut(&str) -> bool,
+{
+    tokens
+        .iter()
+        .enumerate()
+        .filter_map(|(index, token)| matches(token).then_some(index))
+        .collect()
+}
+
+fn interval_position_sets_match(
+    position_sets: &[Vec<usize>],
+    ordered: bool,
+    max_gaps: Option<usize>,
+) -> bool {
+    if position_sets.is_empty() || position_sets.iter().any(Vec::is_empty) {
+        return false;
+    }
+    if !ordered {
+        return true;
+    }
+    for start in &position_sets[0] {
+        let mut previous = *start;
+        let mut matched = true;
+        for positions in &position_sets[1..] {
+            let next = positions.iter().copied().find(|position| {
+                *position > previous
+                    && max_gaps.map_or(true, |max_gaps| {
+                        position.saturating_sub(previous + 1) <= max_gaps
+                    })
+            });
+            let Some(next) = next else {
+                matched = false;
+                break;
+            };
+            previous = next;
+        }
+        if matched {
+            return true;
+        }
+    }
+    false
+}
+
 fn intervals_share_single_effective_field(intervals: &[Value], query_field: &str) -> bool {
     let mut effective_field: Option<&str> = None;
     for interval in intervals {
-        let Some(match_spec) = interval.get("match").and_then(Value::as_object) else {
+        let Some(field) = interval_effective_field(interval, query_field) else {
             return false;
         };
-        let field = interval_match_effective_field(match_spec, query_field);
         if let Some(current) = effective_field {
             if current != field {
                 return false;
@@ -16454,6 +16529,29 @@ fn intervals_share_single_effective_field(intervals: &[Value], query_field: &str
         }
     }
     true
+}
+
+fn interval_effective_field<'a>(interval: &'a Value, query_field: &'a str) -> Option<&'a str> {
+    let object = interval.as_object()?;
+    if let Some(match_spec) = object.get("match").and_then(Value::as_object) {
+        return Some(interval_match_effective_field(match_spec, query_field));
+    }
+    if let Some(prefix_spec) = object.get("prefix").and_then(Value::as_object) {
+        return Some(interval_prefix_effective_field(prefix_spec, query_field));
+    }
+    if let Some(wildcard_spec) = object.get("wildcard").and_then(Value::as_object) {
+        return Some(interval_wildcard_effective_field(
+            wildcard_spec,
+            query_field,
+        ));
+    }
+    if let Some(regexp_spec) = object.get("regexp").and_then(Value::as_object) {
+        return Some(interval_regexp_effective_field(regexp_spec, query_field));
+    }
+    if let Some(fuzzy_spec) = object.get("fuzzy").and_then(Value::as_object) {
+        return Some(interval_fuzzy_effective_field(fuzzy_spec, query_field));
+    }
+    None
 }
 
 fn interval_match_effective_field<'a>(
@@ -152632,6 +152730,34 @@ mod tests {
             }
         }))
         .unwrap();
+        let mixed_all_of_query = parse_query(&serde_json::json!({
+            "intervals": {
+                "message": {
+                    "all_of": {
+                        "ordered": true,
+                        "max_gaps": 0,
+                        "intervals": [
+                            { "match": { "query": "checkout" } },
+                            { "prefix": { "prefix": "pay" } }
+                        ]
+                    }
+                }
+            }
+        }))
+        .unwrap();
+        let mixed_any_of_query = parse_query(&serde_json::json!({
+            "intervals": {
+                "message": {
+                    "any_of": {
+                        "intervals": [
+                            { "prefix": { "prefix": "cat" } },
+                            { "fuzzy": { "term": "paymant", "fuzziness": 1 } }
+                        ]
+                    }
+                }
+            }
+        }))
+        .unwrap();
         let use_field_query = parse_query(&serde_json::json!({
             "intervals": {
                 "message": {
@@ -152697,6 +152823,16 @@ mod tests {
             .unwrap()
             .expect("native intervals any_of hits");
         assert_eq!(search_hit_ids(&any_of_hits), vec!["2", "3"]);
+        let mixed_all_of_hits = index
+            .search_hits_for_query_native("bench", &mixed_all_of_query, &[])
+            .unwrap()
+            .expect("native intervals mixed all_of hits");
+        assert_eq!(search_hit_ids(&mixed_all_of_hits), vec!["2"]);
+        let mixed_any_of_hits = index
+            .search_hits_for_query_native("bench", &mixed_any_of_query, &[])
+            .unwrap()
+            .expect("native intervals mixed any_of hits");
+        assert_eq!(search_hit_ids(&mixed_any_of_hits), vec!["2"]);
         let use_field_hits = index
             .search_hits_for_query_native("bench", &use_field_query, &[])
             .unwrap()

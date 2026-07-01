@@ -27642,10 +27642,8 @@ fn interval_effective_fields_for_spec(query_field: &str, spec: &Value) -> Vec<St
                 .map(|intervals| {
                     intervals
                         .iter()
-                        .filter_map(|interval| interval.get("match").and_then(Value::as_object))
-                        .map(|match_spec| {
-                            interval_match_effective_field(match_spec, query_field).to_string()
-                        })
+                        .filter_map(|interval| interval_effective_field(interval, query_field))
+                        .map(str::to_string)
                         .collect()
                 })
                 .unwrap_or_else(|| vec![query_field.to_string()]);
@@ -30145,12 +30143,7 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
                 ));
             }
             for interval in intervals {
-                let Some(match_spec) = interval.get("match").and_then(Value::as_object) else {
-                    return Some(build_unsupported_search_response(
-                        "unsupported intervals all_of interval",
-                    ));
-                };
-                if !interval_match_spec_is_supported(match_spec) {
+                if !interval_leaf_spec_is_supported(interval) {
                     return Some(build_unsupported_search_response(
                         "unsupported intervals all_of interval",
                     ));
@@ -30173,12 +30166,7 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
                 ));
             }
             for interval in intervals {
-                let Some(match_spec) = interval.get("match").and_then(Value::as_object) else {
-                    return Some(build_unsupported_search_response(
-                        "unsupported intervals any_of interval",
-                    ));
-                };
-                if !interval_match_spec_is_supported(match_spec) {
+                if !interval_leaf_spec_is_supported(interval) {
                     return Some(build_unsupported_search_response(
                         "unsupported intervals any_of interval",
                     ));
@@ -30292,13 +30280,37 @@ fn interval_fuzzy_spec_is_supported(fuzzy_spec: &serde_json::Map<String, Value>)
             .map_or(true, Value::is_boolean)
 }
 
+fn interval_leaf_spec_is_supported(interval: &Value) -> bool {
+    let Some(object) = interval.as_object() else {
+        return false;
+    };
+    if object.contains_key("all_of") || object.contains_key("any_of") {
+        return false;
+    }
+    if let Some(match_spec) = object.get("match").and_then(Value::as_object) {
+        return interval_match_spec_is_supported(match_spec);
+    }
+    if let Some(prefix_spec) = object.get("prefix").and_then(Value::as_object) {
+        return interval_prefix_spec_is_supported(prefix_spec);
+    }
+    if let Some(wildcard_spec) = object.get("wildcard").and_then(Value::as_object) {
+        return interval_wildcard_spec_is_supported(wildcard_spec);
+    }
+    if let Some(regexp_spec) = object.get("regexp").and_then(Value::as_object) {
+        return interval_regexp_spec_is_supported(regexp_spec);
+    }
+    if let Some(fuzzy_spec) = object.get("fuzzy").and_then(Value::as_object) {
+        return interval_fuzzy_spec_is_supported(fuzzy_spec);
+    }
+    false
+}
+
 fn intervals_share_single_effective_field(intervals: &[Value], query_field: &str) -> bool {
     let mut effective_field: Option<&str> = None;
     for interval in intervals {
-        let Some(match_spec) = interval.get("match").and_then(Value::as_object) else {
+        let Some(field) = interval_effective_field(interval, query_field) else {
             return false;
         };
-        let field = interval_match_effective_field(match_spec, query_field);
         if let Some(current) = effective_field {
             if current != field {
                 return false;
@@ -30308,6 +30320,29 @@ fn intervals_share_single_effective_field(intervals: &[Value], query_field: &str
         }
     }
     true
+}
+
+fn interval_effective_field<'a>(interval: &'a Value, query_field: &'a str) -> Option<&'a str> {
+    let object = interval.as_object()?;
+    if let Some(match_spec) = object.get("match").and_then(Value::as_object) {
+        return Some(interval_match_effective_field(match_spec, query_field));
+    }
+    if let Some(prefix_spec) = object.get("prefix").and_then(Value::as_object) {
+        return Some(interval_prefix_effective_field(prefix_spec, query_field));
+    }
+    if let Some(wildcard_spec) = object.get("wildcard").and_then(Value::as_object) {
+        return Some(interval_wildcard_effective_field(
+            wildcard_spec,
+            query_field,
+        ));
+    }
+    if let Some(regexp_spec) = object.get("regexp").and_then(Value::as_object) {
+        return Some(interval_regexp_effective_field(regexp_spec, query_field));
+    }
+    if let Some(fuzzy_spec) = object.get("fuzzy").and_then(Value::as_object) {
+        return Some(interval_fuzzy_effective_field(fuzzy_spec, query_field));
+    }
+    None
 }
 
 fn interval_match_effective_field<'a>(
@@ -35649,25 +35684,23 @@ fn evaluate_intervals_query(source: &Value, query_field: &str, spec: &Value) -> 
         if !intervals_share_single_effective_field(intervals, query_field) {
             return None;
         }
-        let first_match = intervals.first()?.get("match")?.as_object()?;
-        let tokens = interval_match_candidate_tokens(source, query_field, first_match)?;
-        let mut terms = Vec::new();
+        let mut position_sets = Vec::new();
         for interval in intervals {
-            let match_spec = interval.get("match")?.as_object()?;
-            terms.extend(tokenize_search_text(match_spec.get("query")?.as_str()?));
+            position_sets.push(interval_leaf_matching_positions(
+                source,
+                query_field,
+                interval,
+            )?);
         }
-        return Some(tokens_match_interval_terms(
-            &tokens, &terms, ordered, max_gaps,
+        return Some(interval_position_sets_match(
+            &position_sets,
+            ordered,
+            max_gaps,
         ));
     }
     if let Some(any_of) = interval_object.get("any_of").and_then(Value::as_object) {
         for interval in any_of.get("intervals")?.as_array()? {
-            let match_spec = interval.get("match")?.as_object()?;
-            let tokens = interval_match_candidate_tokens(source, query_field, match_spec)?;
-            let query_text = match_spec.get("query")?.as_str()?;
-            let (ordered, max_gaps) = interval_ordering_options(match_spec)?;
-            let terms = tokenize_search_text(query_text);
-            if tokens_match_interval_terms(&tokens, &terms, ordered, max_gaps) {
+            if evaluate_intervals_query(source, query_field, interval)? {
                 return Some(true);
             }
         }
@@ -35749,6 +35782,110 @@ fn interval_fuzzy_distance(
         Some(value) => value.as_u64().map(|value| value as usize),
         None => Some(auto_fuzziness(term)),
     }
+}
+
+fn interval_leaf_matching_positions(
+    source: &Value,
+    query_field: &str,
+    interval: &Value,
+) -> Option<Vec<usize>> {
+    let interval_object = interval.as_object()?;
+    if let Some(match_spec) = interval_object.get("match").and_then(Value::as_object) {
+        let tokens = interval_match_candidate_tokens(source, query_field, match_spec)?;
+        let query_text = match_spec.get("query")?.as_str()?;
+        let terms = tokenize_search_text(query_text);
+        return Some(token_match_positions(&tokens, |token| {
+            terms.iter().any(|term| term == token)
+        }));
+    }
+    if let Some(prefix_spec) = interval_object.get("prefix").and_then(Value::as_object) {
+        let tokens = interval_prefix_candidate_tokens(source, query_field, prefix_spec)?;
+        let prefix = prefix_spec.get("prefix")?.as_str()?.to_ascii_lowercase();
+        return Some(token_match_positions(&tokens, |token| {
+            token.starts_with(&prefix)
+        }));
+    }
+    if let Some(wildcard_spec) = interval_object.get("wildcard").and_then(Value::as_object) {
+        let tokens = interval_wildcard_candidate_tokens(source, query_field, wildcard_spec)?;
+        let pattern = wildcard_spec.get("pattern")?.as_str()?.to_ascii_lowercase();
+        return Some(token_match_positions(&tokens, |token| {
+            wildcard_match(&pattern, token)
+        }));
+    }
+    if let Some(regexp_spec) = interval_object.get("regexp").and_then(Value::as_object) {
+        let tokens = interval_regexp_candidate_tokens(source, query_field, regexp_spec)?;
+        let pattern = regexp_spec.get("pattern")?.as_str()?;
+        let case_insensitive = regexp_spec
+            .get("case_insensitive")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        return Some(token_match_positions(&tokens, |token| {
+            interval_regexp_token_matches(pattern, token, case_insensitive)
+        }));
+    }
+    if let Some(fuzzy_spec) = interval_object.get("fuzzy").and_then(Value::as_object) {
+        let tokens = interval_fuzzy_candidate_tokens(source, query_field, fuzzy_spec)?;
+        let term = fuzzy_spec.get("term")?.as_str()?.to_ascii_lowercase();
+        let fuzziness = interval_fuzzy_distance(fuzzy_spec, &term)?;
+        let prefix_length = fuzzy_spec
+            .get("prefix_length")
+            .and_then(Value::as_u64)
+            .map(|value| value as usize)
+            .unwrap_or(0);
+        let transpositions = fuzzy_spec
+            .get("transpositions")
+            .and_then(Value::as_bool)
+            .unwrap_or(true);
+        return Some(token_match_positions(&tokens, |token| {
+            fuzzy_token_matches(token, &term, fuzziness, prefix_length, transpositions)
+        }));
+    }
+    None
+}
+
+fn token_match_positions<F>(tokens: &[String], mut matches: F) -> Vec<usize>
+where
+    F: FnMut(&str) -> bool,
+{
+    tokens
+        .iter()
+        .enumerate()
+        .filter_map(|(index, token)| matches(token).then_some(index))
+        .collect()
+}
+
+fn interval_position_sets_match(
+    position_sets: &[Vec<usize>],
+    ordered: bool,
+    max_gaps: Option<usize>,
+) -> bool {
+    if position_sets.is_empty() || position_sets.iter().any(Vec::is_empty) {
+        return false;
+    }
+    if !ordered {
+        return true;
+    }
+    for start in &position_sets[0] {
+        let mut previous = *start;
+        let mut matched = true;
+        for positions in &position_sets[1..] {
+            let next = positions.iter().copied().find(|position| {
+                *position > previous
+                    && max_gaps.map_or(true, |max_gaps| {
+                        position.saturating_sub(previous + 1) <= max_gaps
+                    })
+            });
+            let Some(next) = next else {
+                matched = false;
+                break;
+            };
+            previous = next;
+        }
+        if matched {
+            return true;
+        }
+    }
+    false
 }
 
 fn interval_ordering_options(
