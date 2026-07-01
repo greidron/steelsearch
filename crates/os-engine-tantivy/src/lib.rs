@@ -34501,6 +34501,7 @@ fn collect_plugin_aggregation_from_documents(
                 let date_histogram = os_query_dsl::DateHistogramAggregation {
                     field,
                     interval: interval.clone(),
+                    missing: None,
                 };
                 let mut value =
                     collect_date_histogram_aggregation_from_documents(documents, &date_histogram)
@@ -34677,7 +34678,11 @@ fn collect_plugin_aggregation_from_documents(
                     .collect::<Vec<_>>();
                 plugin_bucket_surface_aggregation_value(plugin, Value::Array(buckets))
             } else {
-                let date_histogram = os_query_dsl::DateHistogramAggregation { field, interval };
+                let date_histogram = os_query_dsl::DateHistogramAggregation {
+                    field,
+                    interval,
+                    missing: None,
+                };
                 let mut value =
                     collect_date_histogram_aggregation_from_documents(documents, &date_histogram)
                         .unwrap_or_else(|_| bucket_array_visible_and_carrier_value(Vec::new()));
@@ -35855,6 +35860,7 @@ fn collect_plugin_aggregation_from_hits_with_input_order(
                 let date_histogram = os_query_dsl::DateHistogramAggregation {
                     field,
                     interval: interval.clone(),
+                    missing: None,
                 };
                 let mut value = collect_date_histogram_aggregation(hits, &date_histogram)
                     .unwrap_or_else(|_| bucket_array_visible_and_carrier_value(Vec::new()));
@@ -37304,14 +37310,13 @@ fn collect_date_histogram_aggregation(
     }
     let mut counts = std::collections::BTreeMap::<i64, (String, u64)>::new();
     for hit in hits {
-        let Some(raw) = source_value_for_highlight_field(&hit.source, &date_histogram.field) else {
-            continue;
-        };
-        for (bucket_key, bucket_string) in
-            distinct_date_histogram_buckets(raw, &date_histogram.interval)
-        {
-            let entry = counts.entry(bucket_key).or_insert((bucket_string, 0));
-            entry.1 += 1;
+        match source_value_for_highlight_field(&hit.source, &date_histogram.field) {
+            Some(raw) => add_date_histogram_buckets_from_value(
+                &mut counts,
+                raw,
+                &date_histogram.interval,
+            ),
+            None => add_date_histogram_missing_bucket(&mut counts, date_histogram),
         }
     }
     let bucket_values = counts
@@ -37325,6 +37330,28 @@ fn collect_date_histogram_aggregation(
         })
         .collect::<Vec<_>>();
     Ok(bucket_array_visible_and_carrier_value(bucket_values))
+}
+
+fn add_date_histogram_buckets_from_value(
+    counts: &mut std::collections::BTreeMap<i64, (String, u64)>,
+    raw: &Value,
+    interval: &str,
+) {
+    for (bucket_key, bucket_string) in distinct_date_histogram_buckets(raw, interval) {
+        let entry = counts.entry(bucket_key).or_insert((bucket_string, 0));
+        entry.1 += 1;
+    }
+}
+
+fn add_date_histogram_missing_bucket(
+    counts: &mut std::collections::BTreeMap<i64, (String, u64)>,
+    date_histogram: &os_query_dsl::DateHistogramAggregation,
+) {
+    let Some(missing) = &date_histogram.missing else {
+        return;
+    };
+    let missing = Value::String(missing.clone());
+    add_date_histogram_buckets_from_value(counts, &missing, &date_histogram.interval);
 }
 
 fn collect_date_histogram_aggregation_from_documents(
@@ -37360,16 +37387,12 @@ fn collect_date_histogram_aggregation_from_documents(
             &date_histogram.field,
             top_level_field,
         ) else {
+            add_date_histogram_missing_bucket(&mut counts, date_histogram);
             continue;
         };
         match raw {
             Value::Array(_) => {
-                for (bucket_key, bucket_string) in
-                    distinct_date_histogram_buckets(raw, &date_histogram.interval)
-                {
-                    let entry = counts.entry(bucket_key).or_insert((bucket_string, 0));
-                    entry.1 += 1;
-                }
+                add_date_histogram_buckets_from_value(&mut counts, raw, &date_histogram.interval);
             }
             _ => {
                 if let Some((bucket_key, bucket_string)) =
@@ -156423,6 +156446,91 @@ mod tests {
                             "key": 1704153600000i64,
                             "key_as_string": "2024-01-02T00:00:00.000Z",
                             "doc_count": 1
+                        }
+                    ]
+                }
+            })
+        );
+    }
+
+    #[test]
+    fn native_tantivy_date_histogram_missing_option_preserves_shape() {
+        let engine = TantivyEngine::default();
+        engine
+            .create_index(CreateIndexRequest {
+                index: "bench".to_string(),
+                settings: serde_json::json!({}),
+                mappings: serde_json::json!({
+                    "properties": {
+                        "event_time_optional": { "type": "date", "fast": true },
+                        "status": { "type": "keyword" }
+                    }
+                }),
+            })
+            .unwrap();
+
+        for (id, event_time) in [
+            ("1", Some("2024-01-01T08:00:00Z")),
+            ("2", None),
+            ("3", None),
+        ] {
+            let mut source = serde_json::Map::new();
+            source.insert("status".to_string(), Value::String("ok".to_string()));
+            if let Some(event_time) = event_time {
+                source.insert(
+                    "event_time_optional".to_string(),
+                    Value::String(event_time.to_string()),
+                );
+            }
+            engine
+                .index_document(IndexDocumentRequest {
+                    index: "bench".to_string(),
+                    id: id.to_string(),
+                    source: Value::Object(source),
+                })
+                .unwrap();
+        }
+        engine
+            .refresh(RefreshRequest {
+                indices: vec!["bench".to_string()],
+            })
+            .unwrap();
+
+        let query = parse_query(&serde_json::json!({
+            "match_all": {}
+        }))
+        .unwrap();
+        let aggregations = parse_search_aggregation_map(&serde_json::json!({
+            "recent_events": {
+                "date_histogram": {
+                    "field": "event_time_optional",
+                    "calendar_interval": "day",
+                    "missing": "2024-01-02T09:00:00Z"
+                }
+            }
+        }))
+        .unwrap();
+
+        let mut store = engine.store.write().unwrap();
+        let index = store.indices.get_mut("bench").unwrap();
+        let native = index
+            .collect_aggregations_native(&query, &aggregations)
+            .unwrap()
+            .expect("native date_histogram missing aggregation");
+        assert_eq!(
+            native,
+            serde_json::json!({
+                "recent_events": {
+                    "buckets": [
+                        {
+                            "key": 1704067200000i64,
+                            "key_as_string": "2024-01-01T00:00:00.000Z",
+                            "doc_count": 1
+                        },
+                        {
+                            "key": 1704153600000i64,
+                            "key_as_string": "2024-01-02T00:00:00.000Z",
+                            "doc_count": 2
                         }
                     ]
                 }

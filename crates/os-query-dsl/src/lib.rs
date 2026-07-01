@@ -335,6 +335,7 @@ pub struct TermsAggregation {
 pub struct DateHistogramAggregation {
     pub field: String,
     pub interval: String,
+    pub missing: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -945,10 +946,23 @@ fn parse_date_histogram_aggregation(body: &Value) -> QueryDslResult<Aggregation>
             field: "calendar_interval".to_string(),
         })?
         .to_string();
+    let missing = object
+        .get("missing")
+        .map(|value| {
+            value
+                .as_str()
+                .map(str::to_string)
+                .ok_or_else(|| QueryDslError::InvalidValue {
+                    clause: "date_histogram".to_string(),
+                    field: "missing".to_string(),
+                    reason: "expected string date value".to_string(),
+                })
+        })
+        .transpose()?;
 
     for option in object.keys() {
         match option.as_str() {
-            "field" | "calendar_interval" | "fixed_interval" => {}
+            "field" | "calendar_interval" | "fixed_interval" | "missing" => {}
             _ => {
                 return Err(QueryDslError::UnsupportedOption {
                     clause: "date_histogram".to_string(),
@@ -961,6 +975,7 @@ fn parse_date_histogram_aggregation(body: &Value) -> QueryDslResult<Aggregation>
     Ok(Aggregation::DateHistogram(DateHistogramAggregation {
         field,
         interval,
+        missing,
     }))
 }
 
@@ -6516,6 +6531,7 @@ mod tests {
             Aggregation::DateHistogram(DateHistogramAggregation {
                 field: "event_time".to_string(),
                 interval: "day".to_string(),
+                missing: None,
             })
         );
     }
@@ -6539,6 +6555,32 @@ mod tests {
             Aggregation::DateHistogram(DateHistogramAggregation {
                 field: "event_time".to_string(),
                 interval: "1h".to_string(),
+                missing: None,
+            })
+        );
+    }
+
+    #[test]
+    fn parses_date_histogram_aggregation_missing_option() {
+        let aggregations = parse_search_aggregations(&serde_json::json!({
+            "aggs": {
+                "recent_events": {
+                    "date_histogram": {
+                        "field": "event_time_optional",
+                        "calendar_interval": "day",
+                        "missing": "2026-04-22T00:01:30Z"
+                    }
+                }
+            }
+        }))
+        .unwrap();
+
+        assert_eq!(
+            aggregations["recent_events"],
+            Aggregation::DateHistogram(DateHistogramAggregation {
+                field: "event_time_optional".to_string(),
+                interval: "day".to_string(),
+                missing: Some("2026-04-22T00:01:30Z".to_string()),
             })
         );
     }

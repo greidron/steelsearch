@@ -36141,15 +36141,15 @@ fn build_search_aggregations(
                     "unsupported aggregation [date_histogram]",
                 ));
             }
+            let missing = date_histogram.get("missing").and_then(Value::as_str);
             let mut counts = std::collections::BTreeMap::<i64, (String, u64)>::new();
             for hit in hits {
-                let Some(raw) = hit
+                let raw = hit
                     .get("_source")
                     .and_then(|source| source.get(field))
                     .and_then(Value::as_str)
-                else {
-                    continue;
-                };
+                    .or(missing);
+                let Some(raw) = raw else { continue };
                 let Some((bucket_key, bucket_string)) = date_histogram_bucket_day(raw) else {
                     continue;
                 };

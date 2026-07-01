@@ -316,6 +316,7 @@
     "aggregation_requests": [
       "terms_aggregation",
       "terms_missing_aggregation",
+      "date_histogram_missing_aggregation",
       "histogram_missing_aggregation",
       "metric_aggregations",
       "filter_aggregations",
@@ -9743,6 +9744,28 @@
       "extract": "aggregations",
       "family": "aggregation",
       "description": "[aggregation] date histogram aggregation",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "date_histogram_missing_aggregation",
+      "area": "aggregation",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "by_missing_day": {
+            "date_histogram": {
+              "field": "ts_optional",
+              "calendar_interval": "day",
+              "missing": "2026-04-22T00:01:30Z"
+            }
+          }
+        }
+      },
+      "extract": "aggregations",
+      "family": "aggregation",
+      "description": "[aggregation] date histogram missing aggregation",
       "strict_source_parity_required": true
     },
     {
