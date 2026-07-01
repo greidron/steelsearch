@@ -4681,6 +4681,21 @@ fn intervals_spec_is_supported(spec: &Value) -> bool {
                     .is_some_and(|query| !query.is_empty())
             });
     }
+    if let Some(any_of) = object.get("any_of").and_then(Value::as_object) {
+        let Some(intervals) = any_of.get("intervals").and_then(Value::as_array) else {
+            return false;
+        };
+        return !intervals.is_empty()
+            && any_of.keys().all(|key| key == "intervals")
+            && intervals.iter().all(|interval| {
+                interval
+                    .get("match")
+                    .and_then(Value::as_object)
+                    .and_then(|match_spec| match_spec.get("query"))
+                    .and_then(Value::as_str)
+                    .is_some_and(|query| !query.is_empty())
+            });
+    }
     false
 }
 
@@ -7286,6 +7301,34 @@ mod tests {
                         "intervals": [
                             { "match": { "query": "checkout" } },
                             { "match": { "query": "service" } }
+                        ]
+                    }
+                }),
+            }
+        );
+
+        let any_of = parse_query(&serde_json::json!({
+            "intervals": {
+                "message": {
+                    "any_of": {
+                        "intervals": [
+                            { "match": { "query": "payment timeout" } },
+                            { "match": { "query": "catalog service" } }
+                        ]
+                    }
+                }
+            }
+        }))
+        .unwrap();
+        assert_eq!(
+            any_of,
+            Query::Intervals {
+                field: "message".to_string(),
+                spec: serde_json::json!({
+                    "any_of": {
+                        "intervals": [
+                            { "match": { "query": "payment timeout" } },
+                            { "match": { "query": "catalog service" } }
                         ]
                     }
                 }),

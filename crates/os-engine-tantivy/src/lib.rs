@@ -16265,6 +16265,29 @@ fn matches_intervals_spec(candidate: &str, spec: &Value) -> bool {
         }
         return tokens_match_interval_terms(&tokens, &terms, ordered, max_gaps);
     }
+    if let Some(any_of) = interval_object.get("any_of").and_then(Value::as_object) {
+        let Some(intervals) = any_of.get("intervals").and_then(Value::as_array) else {
+            return false;
+        };
+        return intervals.iter().any(|interval| {
+            let Some(match_spec) = interval.get("match").and_then(Value::as_object) else {
+                return false;
+            };
+            let Some(query_text) = match_spec.get("query").and_then(Value::as_str) else {
+                return false;
+            };
+            let ordered = match_spec
+                .get("ordered")
+                .and_then(Value::as_bool)
+                .unwrap_or(true);
+            let max_gaps = match_spec
+                .get("max_gaps")
+                .and_then(Value::as_u64)
+                .unwrap_or(0) as usize;
+            let terms = tokenize_phrase_text(query_text);
+            tokens_match_interval_terms(&tokens, &terms, ordered, max_gaps)
+        });
+    }
     false
 }
 
@@ -152358,6 +152381,19 @@ mod tests {
             }
         }))
         .unwrap();
+        let any_of_query = parse_query(&serde_json::json!({
+            "intervals": {
+                "message": {
+                    "any_of": {
+                        "intervals": [
+                            { "match": { "query": "payment service" } },
+                            { "match": { "query": "service checkout" } }
+                        ]
+                    }
+                }
+            }
+        }))
+        .unwrap();
 
         let mut store = engine.store.write().unwrap();
         let index = store.indices.get_mut("bench").unwrap();
@@ -152366,6 +152402,11 @@ mod tests {
             .unwrap()
             .expect("native intervals hits");
         assert_eq!(search_hit_ids(&native_hits), vec!["1"]);
+        let any_of_hits = index
+            .search_hits_for_query_native("bench", &any_of_query, &[])
+            .unwrap()
+            .expect("native intervals any_of hits");
+        assert_eq!(search_hit_ids(&any_of_hits), vec!["2", "3"]);
     }
 
     #[test]

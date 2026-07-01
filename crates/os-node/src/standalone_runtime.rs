@@ -30054,6 +30054,39 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
                     ));
                 }
             }
+        } else if let Some(any_of) = interval_object.get("any_of").and_then(Value::as_object) {
+            let Some(intervals) = any_of.get("intervals").and_then(Value::as_array) else {
+                return Some(build_unsupported_search_response(
+                    "unsupported intervals any_of shape",
+                ));
+            };
+            if intervals.is_empty() {
+                return Some(build_unsupported_search_response(
+                    "unsupported intervals any_of shape",
+                ));
+            }
+            if any_of.keys().any(|key| key != "intervals") {
+                return Some(build_unsupported_search_response(
+                    "unsupported intervals any_of parameter",
+                ));
+            }
+            for interval in intervals {
+                let Some(match_spec) = interval.get("match").and_then(Value::as_object) else {
+                    return Some(build_unsupported_search_response(
+                        "unsupported intervals any_of interval",
+                    ));
+                };
+                if match_spec
+                    .get("query")
+                    .and_then(Value::as_str)
+                    .map(str::is_empty)
+                    .unwrap_or(true)
+                {
+                    return Some(build_unsupported_search_response(
+                        "unsupported intervals any_of interval",
+                    ));
+                }
+            }
         } else {
             return Some(build_unsupported_search_response(
                 "unsupported intervals query shape",
@@ -35314,6 +35347,25 @@ fn evaluate_intervals_query(candidate: Option<&Value>, spec: &Value) -> Option<b
         return Some(tokens_match_interval_terms(
             &tokens, &terms, ordered, max_gaps,
         ));
+    }
+    if let Some(any_of) = interval_object.get("any_of").and_then(Value::as_object) {
+        for interval in any_of.get("intervals")?.as_array()? {
+            let match_spec = interval.get("match")?.as_object()?;
+            let query_text = match_spec.get("query")?.as_str()?;
+            let ordered = match_spec
+                .get("ordered")
+                .and_then(Value::as_bool)
+                .unwrap_or(true);
+            let max_gaps = match_spec
+                .get("max_gaps")
+                .and_then(Value::as_u64)
+                .unwrap_or(0) as usize;
+            let terms = tokenize_search_text(query_text);
+            if tokens_match_interval_terms(&tokens, &terms, ordered, max_gaps) {
+                return Some(true);
+            }
+        }
+        return Some(false);
     }
     None
 }

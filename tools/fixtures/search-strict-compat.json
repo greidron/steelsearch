@@ -4778,6 +4778,45 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "intervals_any_of_query_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "intervals": {
+            "message": {
+              "any_of": {
+                "intervals": [
+                  {
+                    "match": {
+                      "query": "payment timeout"
+                    }
+                  },
+                  {
+                    "match": {
+                      "query": "catalog service"
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] intervals any_of query search",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "match_phrase_prefix_search",
       "area": "search",
       "method": "POST",
