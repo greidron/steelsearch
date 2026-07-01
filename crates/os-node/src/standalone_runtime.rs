@@ -27628,6 +27628,9 @@ fn interval_effective_fields_for_spec(query_field: &str, spec: &Value) -> Vec<St
     if let Some(wildcard_spec) = interval_object.get("wildcard").and_then(Value::as_object) {
         return vec![interval_wildcard_effective_field(wildcard_spec, query_field).to_string()];
     }
+    if let Some(regexp_spec) = interval_object.get("regexp").and_then(Value::as_object) {
+        return vec![interval_regexp_effective_field(regexp_spec, query_field).to_string()];
+    }
     for key in ["all_of", "any_of"] {
         if let Some(composite) = interval_object.get(key).and_then(Value::as_object) {
             return composite
@@ -30106,6 +30109,12 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
                     "unsupported intervals wildcard",
                 ));
             }
+        } else if let Some(regexp_spec) = interval_object.get("regexp").and_then(Value::as_object) {
+            if !interval_regexp_spec_is_supported(regexp_spec) {
+                return Some(build_unsupported_search_response(
+                    "unsupported intervals regexp",
+                ));
+            }
         } else if let Some(all_of) = interval_object.get("all_of").and_then(Value::as_object) {
             let Some(intervals) = all_of.get("intervals").and_then(Value::as_array) else {
                 return Some(build_unsupported_search_response(
@@ -30222,6 +30231,28 @@ fn interval_wildcard_spec_is_supported(wildcard_spec: &serde_json::Map<String, V
             .map_or(true, |value| value.as_i64().is_some_and(|value| value > 0))
 }
 
+fn interval_regexp_spec_is_supported(regexp_spec: &serde_json::Map<String, Value>) -> bool {
+    regexp_spec
+        .get("pattern")
+        .and_then(Value::as_str)
+        .is_some_and(|pattern| !pattern.is_empty())
+        && regexp_spec.keys().all(|key| {
+            key == "pattern"
+                || key == "use_field"
+                || key == "max_expansions"
+                || key == "case_insensitive"
+        })
+        && regexp_spec.get("use_field").map_or(true, |use_field| {
+            use_field.as_str().is_some_and(|field| !field.is_empty())
+        })
+        && regexp_spec
+            .get("max_expansions")
+            .map_or(true, |value| value.as_i64().is_some_and(|value| value > 0))
+        && regexp_spec
+            .get("case_insensitive")
+            .map_or(true, Value::is_boolean)
+}
+
 fn intervals_share_single_effective_field(intervals: &[Value], query_field: &str) -> bool {
     let mut effective_field: Option<&str> = None;
     for interval in intervals {
@@ -30265,6 +30296,16 @@ fn interval_wildcard_effective_field<'a>(
     query_field: &'a str,
 ) -> &'a str {
     wildcard_spec
+        .get("use_field")
+        .and_then(Value::as_str)
+        .unwrap_or(query_field)
+}
+
+fn interval_regexp_effective_field<'a>(
+    regexp_spec: &'a serde_json::Map<String, Value>,
+    query_field: &'a str,
+) -> &'a str {
+    regexp_spec
         .get("use_field")
         .and_then(Value::as_str)
         .unwrap_or(query_field)
@@ -35523,6 +35564,19 @@ fn evaluate_intervals_query(source: &Value, query_field: &str, spec: &Value) -> 
         let pattern = wildcard_spec.get("pattern")?.as_str()?.to_ascii_lowercase();
         return Some(tokens.iter().any(|token| wildcard_match(&pattern, token)));
     }
+    if let Some(regexp_spec) = interval_object.get("regexp").and_then(Value::as_object) {
+        let tokens = interval_regexp_candidate_tokens(source, query_field, regexp_spec)?;
+        let pattern = regexp_spec.get("pattern")?.as_str()?;
+        let case_insensitive = regexp_spec
+            .get("case_insensitive")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        return Some(
+            tokens
+                .iter()
+                .any(|token| interval_regexp_token_matches(pattern, token, case_insensitive)),
+        );
+    }
     if let Some(all_of) = interval_object.get("all_of").and_then(Value::as_object) {
         let (ordered, max_gaps) = interval_ordering_options(all_of)?;
         let intervals = all_of.get("intervals")?.as_array()?;
@@ -35587,6 +35641,23 @@ fn interval_wildcard_candidate_tokens(
     lookup_query_field_value(source, effective_field)
         .and_then(Value::as_str)
         .map(tokenize_search_text)
+}
+
+fn interval_regexp_candidate_tokens(
+    source: &Value,
+    query_field: &str,
+    regexp_spec: &serde_json::Map<String, Value>,
+) -> Option<Vec<String>> {
+    let effective_field = interval_regexp_effective_field(regexp_spec, query_field);
+    lookup_query_field_value(source, effective_field)
+        .and_then(Value::as_str)
+        .map(tokenize_search_text)
+}
+
+fn interval_regexp_token_matches(pattern: &str, token: &str, case_insensitive: bool) -> bool {
+    let mut builder = regex::RegexBuilder::new(&format!("^(?:{pattern})$"));
+    builder.case_insensitive(case_insensitive);
+    builder.build().is_ok_and(|regex| regex.is_match(token))
 }
 
 fn interval_ordering_options(

@@ -16259,6 +16259,22 @@ fn matches_intervals_spec(source: &Value, query_field: &str, spec: &Value) -> bo
         let pattern = pattern.to_ascii_lowercase();
         return tokens.iter().any(|token| wildcard_matches(&pattern, token));
     }
+    if let Some(regexp_spec) = interval_object.get("regexp").and_then(Value::as_object) {
+        let Some(tokens) = interval_regexp_candidate_tokens(source, query_field, regexp_spec)
+        else {
+            return false;
+        };
+        let Some(pattern) = regexp_spec.get("pattern").and_then(Value::as_str) else {
+            return false;
+        };
+        let case_insensitive = regexp_spec
+            .get("case_insensitive")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        return tokens
+            .iter()
+            .any(|token| interval_regexp_token_matches(pattern, token, case_insensitive));
+    }
     if let Some(all_of) = interval_object.get("all_of").and_then(Value::as_object) {
         let Some((ordered, max_gaps)) = interval_ordering_options(all_of) else {
             return false;
@@ -16351,6 +16367,23 @@ fn interval_wildcard_candidate_tokens(
         .map(tokenize_phrase_text)
 }
 
+fn interval_regexp_candidate_tokens(
+    source: &Value,
+    query_field: &str,
+    regexp_spec: &serde_json::Map<String, Value>,
+) -> Option<Vec<String>> {
+    let effective_field = interval_regexp_effective_field(regexp_spec, query_field);
+    source_value_for_highlight_field(source, effective_field)
+        .and_then(Value::as_str)
+        .map(tokenize_phrase_text)
+}
+
+fn interval_regexp_token_matches(pattern: &str, token: &str, case_insensitive: bool) -> bool {
+    let mut builder = regex::RegexBuilder::new(&format!("^(?:{pattern})$"));
+    builder.case_insensitive(case_insensitive);
+    builder.build().is_ok_and(|regex| regex.is_match(token))
+}
+
 fn intervals_share_single_effective_field(intervals: &[Value], query_field: &str) -> bool {
     let mut effective_field: Option<&str> = None;
     for interval in intervals {
@@ -16394,6 +16427,16 @@ fn interval_wildcard_effective_field<'a>(
     query_field: &'a str,
 ) -> &'a str {
     wildcard_spec
+        .get("use_field")
+        .and_then(Value::as_str)
+        .unwrap_or(query_field)
+}
+
+fn interval_regexp_effective_field<'a>(
+    regexp_spec: &'a serde_json::Map<String, Value>,
+    query_field: &'a str,
+) -> &'a str {
+    regexp_spec
         .get("use_field")
         .and_then(Value::as_str)
         .unwrap_or(query_field)
@@ -152556,6 +152599,16 @@ mod tests {
             }
         }))
         .unwrap();
+        let regexp_query = parse_query(&serde_json::json!({
+            "intervals": {
+                "message": {
+                    "regexp": {
+                        "pattern": "pay.*"
+                    }
+                }
+            }
+        }))
+        .unwrap();
 
         let mut store = engine.store.write().unwrap();
         let index = store.indices.get_mut("bench").unwrap();
@@ -152584,6 +152637,11 @@ mod tests {
             .unwrap()
             .expect("native intervals wildcard hits");
         assert_eq!(search_hit_ids(&wildcard_hits), vec!["2"]);
+        let regexp_hits = index
+            .search_hits_for_query_native("bench", &regexp_query, &[])
+            .unwrap()
+            .expect("native intervals regexp hits");
+        assert_eq!(search_hit_ids(&regexp_hits), vec!["2"]);
     }
 
     #[test]

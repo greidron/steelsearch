@@ -4664,6 +4664,9 @@ fn intervals_spec_is_supported(spec: &Value) -> bool {
     if let Some(wildcard_spec) = object.get("wildcard").and_then(Value::as_object) {
         return interval_wildcard_spec_is_supported(wildcard_spec);
     }
+    if let Some(regexp_spec) = object.get("regexp").and_then(Value::as_object) {
+        return interval_regexp_spec_is_supported(regexp_spec);
+    }
     if let Some(all_of) = object.get("all_of").and_then(Value::as_object) {
         let Some(intervals) = all_of.get("intervals").and_then(Value::as_array) else {
             return false;
@@ -4742,6 +4745,28 @@ fn interval_wildcard_spec_is_supported(wildcard_spec: &serde_json::Map<String, V
         && wildcard_spec
             .get("max_expansions")
             .map_or(true, |value| value.as_i64().is_some_and(|value| value > 0))
+}
+
+fn interval_regexp_spec_is_supported(regexp_spec: &serde_json::Map<String, Value>) -> bool {
+    regexp_spec
+        .get("pattern")
+        .and_then(Value::as_str)
+        .is_some_and(|pattern| !pattern.is_empty())
+        && regexp_spec.keys().all(|key| {
+            key == "pattern"
+                || key == "use_field"
+                || key == "max_expansions"
+                || key == "case_insensitive"
+        })
+        && regexp_spec.get("use_field").map_or(true, |use_field| {
+            use_field.as_str().is_some_and(|field| !field.is_empty())
+        })
+        && regexp_spec
+            .get("max_expansions")
+            .map_or(true, |value| value.as_i64().is_some_and(|value| value > 0))
+        && regexp_spec
+            .get("case_insensitive")
+            .map_or(true, Value::is_boolean)
 }
 
 fn intervals_share_single_effective_field(intervals: &[Value]) -> bool {
@@ -7504,6 +7529,28 @@ mod tests {
                 spec: serde_json::json!({
                     "wildcard": {
                         "pattern": "pay*"
+                    }
+                }),
+            }
+        );
+
+        let regexp = parse_query(&serde_json::json!({
+            "intervals": {
+                "message": {
+                    "regexp": {
+                        "pattern": "pay.*"
+                    }
+                }
+            }
+        }))
+        .unwrap();
+        assert_eq!(
+            regexp,
+            Query::Intervals {
+                field: "message".to_string(),
+                spec: serde_json::json!({
+                    "regexp": {
+                        "pattern": "pay.*"
                     }
                 }),
             }

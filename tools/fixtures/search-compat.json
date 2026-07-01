@@ -7202,6 +7202,33 @@
       "description": "[lexical] intervals wildcard query search"
     },
     {
+      "name": "intervals_regexp_query_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "intervals": {
+            "message": {
+              "regexp": {
+                "pattern": "pay.*"
+              }
+            }
+          }
+        },
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] intervals regexp query search"
+    },
+    {
       "name": "intervals_any_of_query_search",
       "area": "search",
       "method": "POST",
