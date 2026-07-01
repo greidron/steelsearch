@@ -322,8 +322,11 @@
       "terms_missing_aggregation",
       "date_histogram_keyed_aggregation",
       "date_histogram_offset_aggregation",
+      "date_histogram_calendar_minute_interval_aggregation",
+      "date_histogram_calendar_hour_interval_aggregation",
       "date_histogram_fixed_minute_interval_aggregation",
       "date_histogram_fixed_hour_interval_aggregation",
+      "date_histogram_fixed_day_interval_aggregation",
       "date_histogram_calendar_week_interval_aggregation",
       "date_histogram_calendar_month_interval_aggregation",
       "date_histogram_calendar_year_interval_aggregation",
@@ -9814,6 +9817,50 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "date_histogram_calendar_minute_interval_aggregation",
+      "area": "aggregation",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "by_calendar_minute": {
+            "date_histogram": {
+              "field": "ts",
+              "calendar_interval": "minute",
+              "min_doc_count": 1
+            }
+          }
+        }
+      },
+      "extract": "aggregations",
+      "family": "aggregation",
+      "description": "[aggregation] date histogram calendar minute interval aggregation",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "date_histogram_calendar_hour_interval_aggregation",
+      "area": "aggregation",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "by_calendar_hour": {
+            "date_histogram": {
+              "field": "ts",
+              "calendar_interval": "hour",
+              "min_doc_count": 1
+            }
+          }
+        }
+      },
+      "extract": "aggregations",
+      "family": "aggregation",
+      "description": "[aggregation] date histogram calendar hour interval aggregation",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "date_histogram_fixed_hour_interval_aggregation",
       "area": "aggregation",
       "method": "POST",
@@ -9855,6 +9902,28 @@
       "extract": "aggregations",
       "family": "aggregation",
       "description": "[aggregation] date histogram fixed minute interval aggregation",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "date_histogram_fixed_day_interval_aggregation",
+      "area": "aggregation",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "by_fixed_day": {
+            "date_histogram": {
+              "field": "ts",
+              "fixed_interval": "1d",
+              "min_doc_count": 1
+            }
+          }
+        }
+      },
+      "extract": "aggregations",
+      "family": "aggregation",
+      "description": "[aggregation] date histogram fixed day interval aggregation",
       "strict_source_parity_required": true
     },
     {

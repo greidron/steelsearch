@@ -194,8 +194,8 @@ part of the OpenSearch parity target.
     metric aggregations
   - date histogram, including keyed bucket output, bounded day offset
     rounding, bounded fixed-step minute/hour/day bucket rounding, bounded
-    calendar week/month/year bucket rounding, bounded day `extended_bounds`
-    empty bucket expansion, bounded day `hard_bounds`
+    calendar minute/hour/week/month/year bucket rounding, bounded day
+    `extended_bounds` empty bucket expansion, bounded day `hard_bounds`
     bucket-key filtering, bounded `min_doc_count: 1` empty-bucket
     suppression, bounded `format` key string rendering
     (`epoch_millis`, `yyyy-MM-dd HH:mm:ss`, and
