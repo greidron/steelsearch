@@ -4019,12 +4019,21 @@ fn parse_ids(body: &Value) -> QueryDslResult<Query> {
         })
         .collect::<QueryDslResult<Vec<_>>>()?;
 
-    for (option, _) in object {
-        if option != "values" {
-            return Err(QueryDslError::UnsupportedOption {
-                clause: "ids".to_string(),
-                option: option.clone(),
-            });
+    for (option, value) in object {
+        match option.as_str() {
+            "values" => {}
+            "boost" => {
+                parse_non_negative_f64_option("ids", "boost", value)?;
+            }
+            "_name" => {
+                validate_optional_string_option(object, "ids", "_name")?;
+            }
+            _ => {
+                return Err(QueryDslError::UnsupportedOption {
+                    clause: "ids".to_string(),
+                    option: option.clone(),
+                });
+            }
         }
     }
 
@@ -5652,7 +5661,9 @@ mod tests {
     fn parses_ids_query() {
         let query = parse_query(&serde_json::json!({
             "ids": {
-                "values": ["1", "2"]
+                "values": ["1", "2"],
+                "boost": 2.0,
+                "_name": "named_ids"
             }
         }))
         .unwrap();

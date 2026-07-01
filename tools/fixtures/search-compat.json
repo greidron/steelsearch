@@ -6958,6 +6958,34 @@
       "description": "[lexical] ids query accepts boost like OpenSearch"
     },
     {
+      "name": "ids_query_standard_options_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "ids": {
+            "values": [
+              "log-3",
+              "log-1"
+            ],
+            "boost": 2.0,
+            "_name": "named_ids"
+          }
+        },
+        "sort": [
+          {
+            "bytes": {
+              "order": "desc"
+            }
+          }
+        ]
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] ids query accepts standard query options"
+    },
+    {
       "name": "ids_unknown_field_error_search",
       "area": "search",
       "method": "POST",

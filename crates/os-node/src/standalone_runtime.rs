@@ -30285,6 +30285,11 @@ fn validate_ids_query_shape(query: &serde_json::Map<String, Value>) -> Option<Re
             "[ids] failed to parse field [boost]",
         ));
     }
+    if query.get("_name").is_some_and(|value| !value.is_string()) {
+        return Some(build_parsing_search_response_with_root_cause(
+            "[ids] failed to parse field [_name]",
+        ));
+    }
     None
 }
 
@@ -61703,10 +61708,24 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert!(validate_search_query_body(&serde_json::json!({
             "ids": {
                 "values": ["log-1"],
-                "boost": 2.0
+                "boost": 2.0,
+                "_name": "named_ids"
             }
         }))
         .is_none());
+
+        let invalid_name = validate_search_query_body(&serde_json::json!({
+            "ids": {
+                "values": ["log-1"],
+                "_name": 1
+            }
+        }))
+        .expect("non-string ids _name should fail closed");
+        assert_eq!(invalid_name.status, 400);
+        assert_eq!(
+            invalid_name.body["error"]["root_cause"][0]["reason"],
+            "[ids] failed to parse field [_name]"
+        );
     }
 
     #[test]
