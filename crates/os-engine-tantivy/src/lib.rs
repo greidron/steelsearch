@@ -33769,6 +33769,8 @@ fn collect_plugin_aggregation_from_documents(
                     size: usize::MAX,
                     missing: None,
                     min_doc_count: 1,
+                    include: None,
+                    exclude: None,
                 };
                 let mut value = collect_terms_aggregation_from_documents(documents, &terms);
                 if let Some(object) = value.as_object_mut() {
@@ -33831,6 +33833,8 @@ fn collect_plugin_aggregation_from_documents(
                     size: usize::MAX,
                     missing: None,
                     min_doc_count: 1,
+                    include: None,
+                    exclude: None,
                 };
                 let mut value = collect_terms_aggregation_from_documents(documents, &terms);
                 if let Some(object) = value.as_object_mut() {
@@ -35474,6 +35478,8 @@ fn collect_plugin_aggregation_from_hits_with_input_order(
                     size: usize::MAX,
                     missing: None,
                     min_doc_count: 1,
+                    include: None,
+                    exclude: None,
                 };
                 let mut value = collect_terms_aggregation(hits, &terms);
                 if let Some(object) = value.as_object_mut() {
@@ -35536,6 +35542,8 @@ fn collect_plugin_aggregation_from_hits_with_input_order(
                     size: usize::MAX,
                     missing: None,
                     min_doc_count: 1,
+                    include: None,
+                    exclude: None,
                 };
                 let mut value = collect_terms_aggregation(hits, &terms);
                 if let Some(object) = value.as_object_mut() {
@@ -39156,6 +39164,13 @@ fn collect_terms_aggregation(hits: &[SearchHit], terms: &os_query_dsl::TermsAggr
             values
         };
         for value in values {
+            if !aggregation_term_is_allowed_by_include_exclude(
+                &value,
+                terms.include.as_ref(),
+                terms.exclude.as_ref(),
+            ) {
+                continue;
+            }
             let bucket_key = bucket_sort_key(&value);
             let (_, doc_count) = buckets.entry(bucket_key).or_insert_with(|| (value, 0));
             *doc_count += 1;
@@ -39191,10 +39206,24 @@ fn collect_terms_aggregation_from_documents(
     for document in documents {
         if top_level_field {
             if let Some(text) = document.top_level_string_fields.get(&terms.field) {
+                if !aggregation_term_is_allowed_by_include_exclude(
+                    &Value::String(text.clone()),
+                    terms.include.as_ref(),
+                    terms.exclude.as_ref(),
+                ) {
+                    continue;
+                }
                 let doc_count = string_buckets.entry(text.clone()).or_insert(0);
                 *doc_count += 1;
                 continue;
             } else if let Some(text) = terms.missing.as_ref().and_then(Value::as_str) {
+                if !aggregation_term_is_allowed_by_include_exclude(
+                    &Value::String(text.to_string()),
+                    terms.include.as_ref(),
+                    terms.exclude.as_ref(),
+                ) {
+                    continue;
+                }
                 let doc_count = string_buckets.entry(text.to_string()).or_insert(0);
                 *doc_count += 1;
                 continue;
@@ -39207,6 +39236,13 @@ fn collect_terms_aggregation_from_documents(
         ) else {
             if let Some(missing) = &terms.missing {
                 if let Value::String(text) = missing {
+                    if !aggregation_term_is_allowed_by_include_exclude(
+                        missing,
+                        terms.include.as_ref(),
+                        terms.exclude.as_ref(),
+                    ) {
+                        continue;
+                    }
                     let doc_count = string_buckets.entry(text.clone()).or_insert(0);
                     *doc_count += 1;
                     continue;
@@ -39217,6 +39253,13 @@ fn collect_terms_aggregation_from_documents(
         let Value::String(text) = value else {
             return collect_terms_aggregation_from_documents_generic(documents, terms);
         };
+        if !aggregation_term_is_allowed_by_include_exclude(
+            value,
+            terms.include.as_ref(),
+            terms.exclude.as_ref(),
+        ) {
+            continue;
+        }
         let doc_count = string_buckets.entry(text.clone()).or_insert(0);
         *doc_count += 1;
     }
@@ -39266,6 +39309,13 @@ fn collect_terms_aggregation_from_documents_generic(
             values
         };
         for value in values {
+            if !aggregation_term_is_allowed_by_include_exclude(
+                &value,
+                terms.include.as_ref(),
+                terms.exclude.as_ref(),
+            ) {
+                continue;
+            }
             let bucket_key = bucket_sort_key(&value);
             let (_, doc_count) = buckets.entry(bucket_key).or_insert_with(|| (value, 0));
             *doc_count += 1;
@@ -39290,6 +39340,45 @@ fn collect_terms_aggregation_from_documents_generic(
         })
         .collect::<Vec<_>>();
     bucket_array_visible_and_carrier_value(bucket_values)
+}
+
+fn aggregation_term_is_allowed_by_include_exclude(
+    value: &Value,
+    include: Option<&Value>,
+    exclude: Option<&Value>,
+) -> bool {
+    if let Some(include) = include {
+        if !aggregation_term_matches_filter(value, include) {
+            return false;
+        }
+    }
+    if let Some(exclude) = exclude {
+        if aggregation_term_matches_filter(value, exclude) {
+            return false;
+        }
+    }
+    true
+}
+
+fn aggregation_term_matches_filter(value: &Value, filter: &Value) -> bool {
+    let term_key = aggregation_term_filter_key(value);
+    match filter {
+        Value::String(pattern) => {
+            let anchored_pattern = format!("^(?:{pattern})$");
+            regex::Regex::new(&anchored_pattern).is_ok_and(|regex| regex.is_match(&term_key))
+        }
+        Value::Array(values) => values
+            .iter()
+            .any(|candidate| term_key == aggregation_term_filter_key(candidate)),
+        _ => false,
+    }
+}
+
+fn aggregation_term_filter_key(value: &Value) -> String {
+    match value {
+        Value::String(value) => value.clone(),
+        other => other.to_string(),
+    }
 }
 
 fn range_bucket_key(range: &os_query_dsl::RangeBucket) -> String {
@@ -141683,6 +141772,82 @@ mod tests {
                         "terms": {
                             "field": "service",
                             "min_doc_count": 2
+                        }
+                    }
+                }),
+                sort: Vec::new(),
+                from: 0,
+                size: 0,
+                stored_fields: None,
+                source_fields: None,
+                source_filter: None,
+                source_includes: None,
+                source_include: None,
+                source_excludes: None,
+                source_exclude: None,
+                highlight: None,
+                explain: false,
+            })
+            .unwrap()
+            .to_opensearch_body(0);
+
+        assert_eq!(
+            body["aggregations"],
+            serde_json::json!({
+                "by_service": {
+                    "buckets": [
+                        {
+                            "key": "api",
+                            "doc_count": 2
+                        }
+                    ]
+                }
+            })
+        );
+    }
+
+    #[test]
+    fn terms_aggregation_include_exclude_options_preserve_opensearch_shape() {
+        let engine = TantivyEngine::default();
+        engine
+            .create_index(CreateIndexRequest {
+                index: "logs-000001".to_string(),
+                settings: serde_json::json!({}),
+                mappings: serde_json::json!({
+                    "properties": {
+                        "service": { "type": "keyword" }
+                    }
+                }),
+            })
+            .unwrap();
+
+        for (id, service) in [("1", "api"), ("2", "api"), ("3", "worker")] {
+            engine
+                .index_document(IndexDocumentRequest {
+                    index: "logs-000001".to_string(),
+                    id: id.to_string(),
+                    source: serde_json::json!({
+                        "service": service
+                    }),
+                })
+                .unwrap();
+        }
+        engine
+            .refresh(RefreshRequest {
+                indices: vec!["logs-000001".to_string()],
+            })
+            .unwrap();
+
+        let body = engine
+            .search(SearchRequest {
+                indices: vec!["logs-000001".to_string()],
+                query: serde_json::json!({ "match_all": {} }),
+                aggregations: serde_json::json!({
+                    "by_service": {
+                        "terms": {
+                            "field": "service",
+                            "include": "api|worker",
+                            "exclude": ["worker"]
                         }
                     }
                 }),

@@ -209,6 +209,7 @@ part of the OpenSearch parity target.
   - composite
   - significant terms
   - `terms.order` for `_count` / `_key`
+  - bounded `terms.include` / `terms.exclude` filtering
   - bounded `terms.min_doc_count` bucket suppression
   - bounded `terms.missing` scalar replacement values for keyword buckets
   - `significant_terms.background_filter`

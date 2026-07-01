@@ -35615,9 +35615,18 @@ fn build_search_aggregations(
                     .get("_source")
                     .and_then(|source| lookup_query_field_value(source, field))
                     .filter(|value| !value.is_null())
-                    .and_then(Value::as_str)
-                    .or_else(|| missing.and_then(Value::as_str));
-                if let Some(key) = key {
+                    .or(missing);
+                if let Some(key_value) = key {
+                    if !aggregation_term_is_allowed_by_include_exclude(
+                        key_value,
+                        terms.get("include"),
+                        terms.get("exclude"),
+                    )? {
+                        continue;
+                    }
+                    let Some(key) = key_value.as_str() else {
+                        continue;
+                    };
                     *counts.entry(key.to_string()).or_insert(0_u64) += 1;
                 }
             }
@@ -37050,7 +37059,7 @@ fn aggregation_term_matches_filter(value: &Value, filter: &Value) -> Result<bool
             let anchored_pattern = format!("^(?:{pattern})$");
             let regex = regex::Regex::new(&anchored_pattern).map_err(|_| {
                 build_unsupported_search_response(
-                    "unsupported aggregation option [rare_terms.include/exclude]",
+                    "unsupported aggregation option [include/exclude]",
                 )
             })?;
             Ok(regex.is_match(&sort_key))

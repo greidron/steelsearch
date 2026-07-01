@@ -330,6 +330,8 @@ pub struct TermsAggregation {
     pub size: usize,
     pub missing: Option<Value>,
     pub min_doc_count: u64,
+    pub include: Option<Value>,
+    pub exclude: Option<Value>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -930,12 +932,16 @@ fn parse_terms_aggregation(body: &Value) -> QueryDslResult<Aggregation> {
     let mut size = 10;
     let mut missing = None;
     let mut min_doc_count = 1;
+    let mut include = None;
+    let mut exclude = None;
 
     for (option, value) in object {
         match option.as_str() {
             "field" => {}
             "size" => size = parse_usize_option("terms", "size", value)?,
             "missing" if value.as_str().is_some() => missing = Some(value.clone()),
+            "include" => include = Some(parse_terms_include_exclude_option("include", value)?),
+            "exclude" => exclude = Some(parse_terms_include_exclude_option("exclude", value)?),
             "min_doc_count" => {
                 min_doc_count = value.as_u64().ok_or_else(|| QueryDslError::InvalidValue {
                     clause: "terms".to_string(),
@@ -957,7 +963,25 @@ fn parse_terms_aggregation(body: &Value) -> QueryDslResult<Aggregation> {
         size,
         missing,
         min_doc_count,
+        include,
+        exclude,
     }))
+}
+
+fn parse_terms_include_exclude_option(field: &str, value: &Value) -> QueryDslResult<Value> {
+    if value.as_str().is_some() {
+        return Ok(value.clone());
+    }
+    if let Some(values) = value.as_array() {
+        if values.iter().all(Value::is_string) {
+            return Ok(value.clone());
+        }
+    }
+    Err(QueryDslError::InvalidValue {
+        clause: "terms".to_string(),
+        field: field.to_string(),
+        reason: "expected string regex or string array value".to_string(),
+    })
 }
 
 fn parse_date_histogram_aggregation(body: &Value) -> QueryDslResult<Aggregation> {
@@ -6698,7 +6722,9 @@ mod tests {
                 field: "service".to_string(),
                 size: 5,
                 missing: None,
-                min_doc_count: 1
+                min_doc_count: 1,
+                include: None,
+                exclude: None
             })
         );
     }
@@ -6724,7 +6750,9 @@ mod tests {
                 field: "service_optional".to_string(),
                 size: 5,
                 missing: Some(Value::String("unknown".to_string())),
-                min_doc_count: 1
+                min_doc_count: 1,
+                include: None,
+                exclude: None
             })
         );
     }
@@ -6749,7 +6777,37 @@ mod tests {
                 field: "service".to_string(),
                 size: 10,
                 missing: None,
-                min_doc_count: 2
+                min_doc_count: 2,
+                include: None,
+                exclude: None
+            })
+        );
+    }
+
+    #[test]
+    fn parses_terms_aggregation_include_exclude_options() {
+        let aggregations = parse_search_aggregations(&serde_json::json!({
+            "aggs": {
+                "by_service": {
+                    "terms": {
+                        "field": "service",
+                        "include": "api|worker",
+                        "exclude": ["worker"]
+                    }
+                }
+            }
+        }))
+        .unwrap();
+
+        assert_eq!(
+            aggregations["by_service"],
+            Aggregation::Terms(TermsAggregation {
+                field: "service".to_string(),
+                size: 10,
+                missing: None,
+                min_doc_count: 1,
+                include: Some(Value::String("api|worker".to_string())),
+                exclude: Some(Value::Array(vec![Value::String("worker".to_string())]))
             })
         );
     }
@@ -6816,7 +6874,9 @@ mod tests {
                 field: "level".to_string(),
                 size: 10,
                 missing: None,
-                min_doc_count: 1
+                min_doc_count: 1,
+                include: None,
+                exclude: None
             })
         );
     }

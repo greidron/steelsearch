@@ -357,6 +357,8 @@
     "aggregation_requests": [
       "terms_aggregation",
       "terms_min_doc_count_aggregation",
+      "terms_include_exclude_aggregation",
+      "terms_regex_include_exclude_aggregation",
       "terms_missing_aggregation",
       "date_histogram_keyed_aggregation",
       "date_histogram_offset_aggregation",
@@ -13915,6 +13917,55 @@
       "extract": "aggregations",
       "family": "aggregation",
       "description": "[aggregation] terms min_doc_count aggregation",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "terms_include_exclude_aggregation",
+      "area": "aggregation",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "by_service": {
+            "terms": {
+              "field": "service",
+              "include": [
+                "checkout",
+                "catalog"
+              ],
+              "exclude": [
+                "catalog"
+              ]
+            }
+          }
+        }
+      },
+      "extract": "aggregations",
+      "family": "aggregation",
+      "description": "[aggregation] terms include/exclude aggregation",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "terms_regex_include_exclude_aggregation",
+      "area": "aggregation",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "by_service": {
+            "terms": {
+              "field": "service",
+              "include": "c.*",
+              "exclude": "catalog"
+            }
+          }
+        }
+      },
+      "extract": "aggregations",
+      "family": "aggregation",
+      "description": "[aggregation] terms regex include/exclude aggregation",
       "strict_source_parity_required": true
     },
     {
