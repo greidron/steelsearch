@@ -10720,6 +10720,20 @@ impl SteelNode {
         let mut hits = Vec::new();
         let mut aggregation_context_hits = Vec::new();
         let parsed_slice = parse_search_slice(body.get("slice"));
+        let candidate_sources = candidate_documents
+            .iter()
+            .map(|(_, _, source, _, _, _, _)| source)
+            .collect::<Vec<_>>();
+        if let Some(reason) =
+            interval_max_expansions_overflow_reason_for_sources(&body["query"], &candidate_sources)
+        {
+            let shard_total = resolved_indices
+                .iter()
+                .map(|index| self.index_primary_shard_count(index))
+                .sum::<usize>()
+                .max(1);
+            return build_interval_expansion_search_failure_response(&reason, shard_total);
+        }
         for (doc_index, doc_id, source, version, seq_no, primary_term, routing) in
             candidate_documents
         {
@@ -22865,6 +22879,7 @@ fn standalone_search_body_allows_native_engine(body: &Value) -> bool {
         .or_else(|| body.get("aggregations"))
         .unwrap_or(&Value::Null);
     !query_contains_native_unsafe_nested_knn(body.get("query").unwrap_or(&Value::Null))
+        && !value_contains_key(body.get("query").unwrap_or(&Value::Null), "max_expansions")
         && !value_contains_any_key(
             body.get("query").unwrap_or(&Value::Null),
             &["field_masking_span", "span_field_masking", "span_gap"],
@@ -23358,6 +23373,55 @@ fn search_partial_shards_failure_response(
                     .collect::<Vec<_>>()
             },
             "status": 400
+        }),
+    )
+}
+
+fn build_interval_expansion_search_failure_response(
+    reason: &str,
+    shard_total: usize,
+) -> RestResponse {
+    RestResponse::json(
+        500,
+        serde_json::json!({
+            "error": {
+                "root_cause": [
+                    {
+                        "type": "illegal_state_exception",
+                        "reason": reason
+                    }
+                ],
+                "type": "search_phase_execution_exception",
+                "reason": "all shards failed",
+                "phase": "query",
+                "grouped": true,
+                "failed_shards": [
+                    {
+                        "shard": 0,
+                        "index": null,
+                        "node": null,
+                        "reason": {
+                            "type": "illegal_state_exception",
+                            "reason": reason
+                        }
+                    }
+                ],
+                "caused_by": {
+                    "type": "illegal_state_exception",
+                    "reason": reason,
+                    "caused_by": {
+                        "type": "illegal_state_exception",
+                        "reason": reason
+                    }
+                }
+            },
+            "status": 500,
+            "_shards": {
+                "total": shard_total,
+                "successful": 0,
+                "skipped": 0,
+                "failed": shard_total
+            }
         }),
     )
 }
@@ -35769,6 +35833,176 @@ fn evaluate_intervals_query(source: &Value, query_field: &str, spec: &Value) -> 
     return interval_matching_spans(source, query_field, spec).map(|spans| !spans.is_empty());
 }
 
+fn interval_max_expansions_overflow_reason_for_sources(
+    query: &Value,
+    sources: &[&Value],
+) -> Option<String> {
+    if query.is_null() {
+        return None;
+    }
+    if let Some(intervals) = query.get("intervals").and_then(Value::as_object) {
+        let (field, spec) = intervals.iter().next()?;
+        return interval_spec_max_expansions_overflow_reason(field, spec, sources);
+    }
+    if let Some(bool_query) = query.get("bool").and_then(Value::as_object) {
+        for key in ["must", "should", "filter", "must_not"] {
+            if let Some(reason) =
+                interval_query_value_max_expansions_overflow_reason(bool_query.get(key), sources)
+            {
+                return Some(reason);
+            }
+        }
+    }
+    if let Some(constant_score) = query.get("constant_score").and_then(Value::as_object) {
+        if let Some(reason) = interval_query_value_max_expansions_overflow_reason(
+            constant_score.get("filter"),
+            sources,
+        ) {
+            return Some(reason);
+        }
+    }
+    if let Some(function_score) = query.get("function_score").and_then(Value::as_object) {
+        if let Some(reason) = interval_query_value_max_expansions_overflow_reason(
+            function_score.get("query"),
+            sources,
+        ) {
+            return Some(reason);
+        }
+    }
+    if let Some(dis_max) = query.get("dis_max").and_then(Value::as_object) {
+        if let Some(reason) =
+            interval_query_value_max_expansions_overflow_reason(dis_max.get("queries"), sources)
+        {
+            return Some(reason);
+        }
+    }
+    if let Some(boosting) = query.get("boosting").and_then(Value::as_object) {
+        for key in ["positive", "negative"] {
+            if let Some(reason) =
+                interval_query_value_max_expansions_overflow_reason(boosting.get(key), sources)
+            {
+                return Some(reason);
+            }
+        }
+    }
+    if let Some(nested) = query.get("nested").and_then(Value::as_object) {
+        if let Some(reason) =
+            interval_query_value_max_expansions_overflow_reason(nested.get("query"), sources)
+        {
+            return Some(reason);
+        }
+    }
+    None
+}
+
+fn interval_query_value_max_expansions_overflow_reason(
+    query_value: Option<&Value>,
+    sources: &[&Value],
+) -> Option<String> {
+    match query_value {
+        Some(Value::Array(queries)) => queries
+            .iter()
+            .find_map(|query| interval_max_expansions_overflow_reason_for_sources(query, sources)),
+        Some(query) => interval_max_expansions_overflow_reason_for_sources(query, sources),
+        None => None,
+    }
+}
+
+fn interval_spec_max_expansions_overflow_reason(
+    query_field: &str,
+    spec: &Value,
+    sources: &[&Value],
+) -> Option<String> {
+    let interval_object = spec.as_object()?;
+    if let Some(wildcard_spec) = interval_object.get("wildcard").and_then(Value::as_object) {
+        let max_expansions = interval_max_expansions(wildcard_spec)?;
+        let pattern = wildcard_spec.get("pattern")?.as_str()?.to_ascii_lowercase();
+        let expanded = interval_expanded_terms_for_sources(
+            sources,
+            query_field,
+            wildcard_spec,
+            interval_wildcard_candidate_tokens,
+            |token| wildcard_match(&pattern, token),
+        );
+        if expanded.len() > max_expansions {
+            return Some(format!(
+                "Automaton [{pattern}] expanded to too many terms (limit {max_expansions})"
+            ));
+        }
+    }
+    if let Some(regexp_spec) = interval_object.get("regexp").and_then(Value::as_object) {
+        let max_expansions = interval_max_expansions(regexp_spec)?;
+        let pattern = regexp_spec.get("pattern")?.as_str()?;
+        let case_insensitive = regexp_spec
+            .get("case_insensitive")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        let expanded = interval_expanded_terms_for_sources(
+            sources,
+            query_field,
+            regexp_spec,
+            interval_regexp_candidate_tokens,
+            |token| interval_regexp_token_matches(pattern, token, case_insensitive),
+        );
+        if expanded.len() > max_expansions {
+            return Some(format!(
+                "Automaton [{pattern}] expanded to too many terms (limit {max_expansions})"
+            ));
+        }
+    }
+    if let Some(all_of) = interval_object.get("all_of").and_then(Value::as_object) {
+        if let Some(reason) =
+            interval_composite_max_expansions_overflow_reason(query_field, all_of, sources)
+        {
+            return Some(reason);
+        }
+    }
+    if let Some(any_of) = interval_object.get("any_of").and_then(Value::as_object) {
+        if let Some(reason) =
+            interval_composite_max_expansions_overflow_reason(query_field, any_of, sources)
+        {
+            return Some(reason);
+        }
+    }
+    None
+}
+
+fn interval_composite_max_expansions_overflow_reason(
+    query_field: &str,
+    composite: &serde_json::Map<String, Value>,
+    sources: &[&Value],
+) -> Option<String> {
+    composite
+        .get("intervals")
+        .and_then(Value::as_array)?
+        .iter()
+        .find_map(|interval| {
+            interval_spec_max_expansions_overflow_reason(query_field, interval, sources)
+        })
+}
+
+fn interval_expanded_terms_for_sources<F, C>(
+    sources: &[&Value],
+    query_field: &str,
+    spec: &serde_json::Map<String, Value>,
+    candidate_tokens: C,
+    mut matches: F,
+) -> Vec<String>
+where
+    F: FnMut(&str) -> bool,
+    C: Fn(&Value, &str, &serde_json::Map<String, Value>) -> Option<Vec<String>>,
+{
+    let mut terms = sources
+        .iter()
+        .filter_map(|source| candidate_tokens(source, query_field, spec))
+        .flatten()
+        .filter(|token| matches(token))
+        .collect::<Vec<_>>();
+    terms.sort();
+    terms.dedup();
+    terms
+}
+
 #[derive(Clone, Copy, Debug)]
 struct IntervalSpan {
     start: usize,
@@ -35802,8 +36036,11 @@ fn interval_matching_spans(
     } else if let Some(wildcard_spec) = interval_object.get("wildcard").and_then(Value::as_object) {
         let tokens = interval_wildcard_candidate_tokens(source, query_field, wildcard_spec)?;
         let pattern = wildcard_spec.get("pattern")?.as_str()?.to_ascii_lowercase();
+        let max_expansions = interval_max_expansions(wildcard_spec);
         (
-            token_match_spans(&tokens, |token| wildcard_match(&pattern, token)),
+            token_match_spans_with_expansion_limit(&tokens, max_expansions, |token| {
+                wildcard_match(&pattern, token)
+            }),
             wildcard_spec.get("filter"),
         )
     } else if let Some(regexp_spec) = interval_object.get("regexp").and_then(Value::as_object) {
@@ -35813,8 +36050,9 @@ fn interval_matching_spans(
             .get("case_insensitive")
             .and_then(Value::as_bool)
             .unwrap_or(false);
+        let max_expansions = interval_max_expansions(regexp_spec);
         (
-            token_match_spans(&tokens, |token| {
+            token_match_spans_with_expansion_limit(&tokens, max_expansions, |token| {
                 interval_regexp_token_matches(pattern, token, case_insensitive)
             }),
             regexp_spec.get("filter"),
@@ -35918,6 +36156,54 @@ where
             })
         })
         .collect()
+}
+
+fn token_match_spans_with_expansion_limit<F>(
+    tokens: &[String],
+    max_expansions: Option<usize>,
+    matches: F,
+) -> Vec<IntervalSpan>
+where
+    F: FnMut(&str) -> bool,
+{
+    let accepted_terms = interval_expanded_terms(tokens, max_expansions, matches);
+    tokens
+        .iter()
+        .enumerate()
+        .filter_map(|(index, token)| {
+            accepted_terms.contains(token).then_some(IntervalSpan {
+                start: index,
+                end: index,
+            })
+        })
+        .collect()
+}
+
+fn interval_expanded_terms<F>(
+    tokens: &[String],
+    max_expansions: Option<usize>,
+    mut matches: F,
+) -> Vec<String>
+where
+    F: FnMut(&str) -> bool,
+{
+    let mut terms = tokens
+        .iter()
+        .filter(|token| matches(token))
+        .cloned()
+        .collect::<Vec<_>>();
+    terms.sort();
+    terms.dedup();
+    if let Some(max_expansions) = max_expansions {
+        terms.truncate(max_expansions);
+    }
+    terms
+}
+
+fn interval_max_expansions(spec: &serde_json::Map<String, Value>) -> Option<usize> {
+    spec.get("max_expansions")
+        .and_then(Value::as_u64)
+        .and_then(|value| usize::try_from(value).ok())
 }
 
 fn interval_position_sets_spans(
@@ -36162,9 +36448,11 @@ fn interval_leaf_matching_positions(
     if let Some(wildcard_spec) = interval_object.get("wildcard").and_then(Value::as_object) {
         let tokens = interval_wildcard_candidate_tokens(source, query_field, wildcard_spec)?;
         let pattern = wildcard_spec.get("pattern")?.as_str()?.to_ascii_lowercase();
-        return Some(token_match_positions(&tokens, |token| {
-            wildcard_match(&pattern, token)
-        }));
+        return Some(token_match_positions_with_expansion_limit(
+            &tokens,
+            interval_max_expansions(wildcard_spec),
+            |token| wildcard_match(&pattern, token),
+        ));
     }
     if let Some(regexp_spec) = interval_object.get("regexp").and_then(Value::as_object) {
         let tokens = interval_regexp_candidate_tokens(source, query_field, regexp_spec)?;
@@ -36173,9 +36461,11 @@ fn interval_leaf_matching_positions(
             .get("case_insensitive")
             .and_then(Value::as_bool)
             .unwrap_or(false);
-        return Some(token_match_positions(&tokens, |token| {
-            interval_regexp_token_matches(pattern, token, case_insensitive)
-        }));
+        return Some(token_match_positions_with_expansion_limit(
+            &tokens,
+            interval_max_expansions(regexp_spec),
+            |token| interval_regexp_token_matches(pattern, token, case_insensitive),
+        ));
     }
     if let Some(fuzzy_spec) = interval_object.get("fuzzy").and_then(Value::as_object) {
         let tokens = interval_fuzzy_candidate_tokens(source, query_field, fuzzy_spec)?;
@@ -36205,6 +36495,22 @@ where
         .iter()
         .enumerate()
         .filter_map(|(index, token)| matches(token).then_some(index))
+        .collect()
+}
+
+fn token_match_positions_with_expansion_limit<F>(
+    tokens: &[String],
+    max_expansions: Option<usize>,
+    matches: F,
+) -> Vec<usize>
+where
+    F: FnMut(&str) -> bool,
+{
+    let accepted_terms = interval_expanded_terms(tokens, max_expansions, matches);
+    tokens
+        .iter()
+        .enumerate()
+        .filter_map(|(index, token)| accepted_terms.contains(token).then_some(index))
         .collect()
 }
 
@@ -67742,6 +68048,20 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                             }
                         ],
                         "minimum_should_match": 0
+                    }
+                }
+            })
+        ));
+        assert!(!standalone_search_body_allows_native_engine(
+            &serde_json::json!({
+                "query": {
+                    "intervals": {
+                        "message": {
+                            "wildcard": {
+                                "pattern": "p*",
+                                "max_expansions": 1
+                            }
+                        }
                     }
                 }
             })

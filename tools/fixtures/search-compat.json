@@ -86,6 +86,7 @@
         "fields": {
           "message": "text",
           "message_alt": "text",
+          "message_limited": "text",
           "service_suggest": "completion",
           "service": "keyword",
           "service_optional": "keyword",
@@ -865,6 +866,7 @@
           "_source": {
             "message": "checkout service accepted payment",
             "message_alt": "checkout",
+            "message_limited": "payment product",
             "events": [
               {
                 "kind": "payment",
@@ -896,6 +898,7 @@
           "_source": {
             "message": "checkout service payment timeout",
             "message_alt": "timeout",
+            "message_limited": "payment",
             "events": [
               {
                 "kind": "payment",
@@ -925,6 +928,7 @@
           "_source": {
             "message": "catalog service refreshed product cache",
             "message_alt": "catalog",
+            "message_limited": "catalog",
             "events": [
               {
                 "kind": "cache",
@@ -956,6 +960,7 @@
           "_source": {
             "message": "checkout split nested tuple guard",
             "message_alt": "tuple guard",
+            "message_limited": "tuple guard",
             "events": [
               {
                 "kind": "payment",
@@ -7371,6 +7376,34 @@
       "description": "[lexical] intervals wildcard query search"
     },
     {
+      "name": "intervals_wildcard_max_expansions_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "intervals": {
+            "message_limited": {
+              "wildcard": {
+                "pattern": "p*",
+                "max_expansions": 1
+              }
+            }
+          }
+        },
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] intervals wildcard max_expansions search"
+    },
+    {
       "name": "intervals_regexp_query_search",
       "area": "search",
       "method": "POST",
@@ -7396,6 +7429,34 @@
       "extract": "search_hits",
       "family": "lexical",
       "description": "[lexical] intervals regexp query search"
+    },
+    {
+      "name": "intervals_regexp_max_expansions_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "intervals": {
+            "message_limited": {
+              "regexp": {
+                "pattern": "p.*",
+                "max_expansions": 1
+              }
+            }
+          }
+        },
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] intervals regexp max_expansions search"
     },
     {
       "name": "intervals_regexp_flags_search",

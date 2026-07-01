@@ -7898,6 +7898,30 @@ mod tests {
             }
         );
 
+        let wildcard_max_expansions = parse_query(&serde_json::json!({
+            "intervals": {
+                "message": {
+                    "wildcard": {
+                        "pattern": "p*",
+                        "max_expansions": 1
+                    }
+                }
+            }
+        }))
+        .unwrap();
+        assert_eq!(
+            wildcard_max_expansions,
+            Query::Intervals {
+                field: "message".to_string(),
+                spec: serde_json::json!({
+                    "wildcard": {
+                        "pattern": "p*",
+                        "max_expansions": 1
+                    }
+                }),
+            }
+        );
+
         let regexp = parse_query(&serde_json::json!({
             "intervals": {
                 "message": {

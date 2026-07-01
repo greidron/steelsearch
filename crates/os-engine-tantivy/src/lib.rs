@@ -16273,8 +16273,11 @@ fn interval_matching_spans(source: &Value, query_field: &str, spec: &Value) -> V
             return Vec::new();
         };
         let pattern = pattern.to_ascii_lowercase();
+        let max_expansions = interval_max_expansions(wildcard_spec);
         (
-            token_match_spans(&tokens, |token| wildcard_matches(&pattern, token)),
+            token_match_spans_with_expansion_limit(&tokens, max_expansions, |token| {
+                wildcard_matches(&pattern, token)
+            }),
             wildcard_spec.get("filter"),
         )
     } else if let Some(regexp_spec) = interval_object.get("regexp").and_then(Value::as_object) {
@@ -16289,8 +16292,9 @@ fn interval_matching_spans(source: &Value, query_field: &str, spec: &Value) -> V
             .get("case_insensitive")
             .and_then(Value::as_bool)
             .unwrap_or(false);
+        let max_expansions = interval_max_expansions(regexp_spec);
         (
-            token_match_spans(&tokens, |token| {
+            token_match_spans_with_expansion_limit(&tokens, max_expansions, |token| {
                 interval_regexp_token_matches(pattern, token, case_insensitive)
             }),
             regexp_spec.get("filter"),
@@ -16408,6 +16412,54 @@ where
             })
         })
         .collect()
+}
+
+fn token_match_spans_with_expansion_limit<F>(
+    tokens: &[String],
+    max_expansions: Option<usize>,
+    matches: F,
+) -> Vec<IntervalSpan>
+where
+    F: FnMut(&str) -> bool,
+{
+    let accepted_terms = interval_expanded_terms(tokens, max_expansions, matches);
+    tokens
+        .iter()
+        .enumerate()
+        .filter_map(|(index, token)| {
+            accepted_terms.contains(token).then_some(IntervalSpan {
+                start: index,
+                end: index,
+            })
+        })
+        .collect()
+}
+
+fn interval_expanded_terms<F>(
+    tokens: &[String],
+    max_expansions: Option<usize>,
+    mut matches: F,
+) -> Vec<String>
+where
+    F: FnMut(&str) -> bool,
+{
+    let mut terms = tokens
+        .iter()
+        .filter(|token| matches(token))
+        .cloned()
+        .collect::<Vec<_>>();
+    terms.sort();
+    terms.dedup();
+    if let Some(max_expansions) = max_expansions {
+        terms.truncate(max_expansions);
+    }
+    terms
+}
+
+fn interval_max_expansions(spec: &serde_json::Map<String, Value>) -> Option<usize> {
+    spec.get("max_expansions")
+        .and_then(Value::as_u64)
+        .and_then(|value| usize::try_from(value).ok())
 }
 
 fn interval_position_sets_spans(
@@ -16659,9 +16711,11 @@ fn interval_leaf_matching_positions(
     if let Some(wildcard_spec) = interval_object.get("wildcard").and_then(Value::as_object) {
         let tokens = interval_wildcard_candidate_tokens(source, query_field, wildcard_spec)?;
         let pattern = wildcard_spec.get("pattern")?.as_str()?.to_ascii_lowercase();
-        return Some(token_match_positions(&tokens, |token| {
-            wildcard_matches(&pattern, token)
-        }));
+        return Some(token_match_positions_with_expansion_limit(
+            &tokens,
+            interval_max_expansions(wildcard_spec),
+            |token| wildcard_matches(&pattern, token),
+        ));
     }
     if let Some(regexp_spec) = interval_object.get("regexp").and_then(Value::as_object) {
         let tokens = interval_regexp_candidate_tokens(source, query_field, regexp_spec)?;
@@ -16670,9 +16724,11 @@ fn interval_leaf_matching_positions(
             .get("case_insensitive")
             .and_then(Value::as_bool)
             .unwrap_or(false);
-        return Some(token_match_positions(&tokens, |token| {
-            interval_regexp_token_matches(pattern, token, case_insensitive)
-        }));
+        return Some(token_match_positions_with_expansion_limit(
+            &tokens,
+            interval_max_expansions(regexp_spec),
+            |token| interval_regexp_token_matches(pattern, token, case_insensitive),
+        ));
     }
     if let Some(fuzzy_spec) = interval_object.get("fuzzy").and_then(Value::as_object) {
         let tokens = interval_fuzzy_candidate_tokens(source, query_field, fuzzy_spec)?;
@@ -16702,6 +16758,22 @@ where
         .iter()
         .enumerate()
         .filter_map(|(index, token)| matches(token).then_some(index))
+        .collect()
+}
+
+fn token_match_positions_with_expansion_limit<F>(
+    tokens: &[String],
+    max_expansions: Option<usize>,
+    matches: F,
+) -> Vec<usize>
+where
+    F: FnMut(&str) -> bool,
+{
+    let accepted_terms = interval_expanded_terms(tokens, max_expansions, matches);
+    tokens
+        .iter()
+        .enumerate()
+        .filter_map(|(index, token)| accepted_terms.contains(token).then_some(index))
         .collect()
 }
 
@@ -152928,18 +153000,27 @@ mod tests {
                 mappings: serde_json::json!({
                     "properties": {
                         "message": { "type": "text" },
+                        "message_limited": { "type": "text" },
                         "service_optional": { "type": "keyword" }
                     }
                 }),
             })
             .unwrap();
 
-        for (id, message, service_optional) in [
-            ("1", "checkout service started", Some("checkout")),
-            ("2", "checkout payment service started", None),
-            ("3", "service checkout started", Some("catalog")),
+        for (id, message, message_limited, service_optional) in [
+            (
+                "1",
+                "checkout service started",
+                "payment product",
+                Some("checkout"),
+            ),
+            ("2", "checkout payment service started", "payment", None),
+            ("3", "service checkout started", "catalog", Some("catalog")),
         ] {
-            let mut source = serde_json::json!({ "message": message });
+            let mut source = serde_json::json!({
+                "message": message,
+                "message_limited": message_limited
+            });
             if let Some(service_optional) = service_optional {
                 source["service_optional"] = serde_json::json!(service_optional);
             }
@@ -153099,11 +153180,33 @@ mod tests {
             }
         }))
         .unwrap();
+        let wildcard_max_expansions_query = parse_query(&serde_json::json!({
+            "intervals": {
+                "message_limited": {
+                    "wildcard": {
+                        "pattern": "p*",
+                        "max_expansions": 1
+                    }
+                }
+            }
+        }))
+        .unwrap();
         let regexp_query = parse_query(&serde_json::json!({
             "intervals": {
                 "message": {
                     "regexp": {
                         "pattern": "pay.*"
+                    }
+                }
+            }
+        }))
+        .unwrap();
+        let regexp_max_expansions_query = parse_query(&serde_json::json!({
+            "intervals": {
+                "message_limited": {
+                    "regexp": {
+                        "pattern": "p.*",
+                        "max_expansions": 1
                     }
                 }
             }
@@ -153196,11 +153299,24 @@ mod tests {
             .unwrap()
             .expect("native intervals wildcard hits");
         assert_eq!(search_hit_ids(&wildcard_hits), vec!["2"]);
+        let wildcard_max_expansions_hits = index
+            .search_hits_for_query_native("bench", &wildcard_max_expansions_query, &[])
+            .unwrap()
+            .expect("native intervals wildcard max_expansions hits");
+        assert_eq!(
+            search_hit_ids(&wildcard_max_expansions_hits),
+            vec!["1", "2"]
+        );
         let regexp_hits = index
             .search_hits_for_query_native("bench", &regexp_query, &[])
             .unwrap()
             .expect("native intervals regexp hits");
         assert_eq!(search_hit_ids(&regexp_hits), vec!["2"]);
+        let regexp_max_expansions_hits = index
+            .search_hits_for_query_native("bench", &regexp_max_expansions_query, &[])
+            .unwrap()
+            .expect("native intervals regexp max_expansions hits");
+        assert_eq!(search_hit_ids(&regexp_max_expansions_hits), vec!["1", "2"]);
         let regexp_flags_hits = index
             .search_hits_for_query_native("bench", &regexp_flags_query, &[])
             .unwrap()
