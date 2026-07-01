@@ -365,6 +365,7 @@
       "date_histogram_offset_aggregation",
       "date_histogram_fixed_minute_interval_aggregation",
       "date_histogram_fixed_hour_interval_aggregation",
+      "date_histogram_calendar_month_interval_aggregation",
       "date_histogram_extended_bounds_aggregation",
       "date_histogram_hard_bounds_aggregation",
       "date_histogram_min_doc_count_aggregation",
@@ -12596,6 +12597,28 @@
       "extract": "aggregations",
       "family": "aggregation",
       "description": "[aggregation] date histogram fixed minute interval aggregation",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "date_histogram_calendar_month_interval_aggregation",
+      "area": "aggregation",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "by_month": {
+            "date_histogram": {
+              "field": "ts",
+              "calendar_interval": "month",
+              "min_doc_count": 1
+            }
+          }
+        }
+      },
+      "extract": "aggregations",
+      "family": "aggregation",
+      "description": "[aggregation] date histogram calendar month interval aggregation",
       "strict_source_parity_required": true
     },
     {

@@ -36166,7 +36166,7 @@ fn build_search_aggregations(
                 .or_else(|| date_histogram.get("fixed_interval"))
                 .and_then(Value::as_str)
                 .unwrap_or_default();
-            let Some(interval_millis) = date_histogram_fixed_step_millis(interval) else {
+            let Some(interval_kind) = date_histogram_interval_kind(interval) else {
                 return Err(build_unsupported_search_response(
                     "unsupported aggregation [date_histogram]",
                 ));
@@ -36220,7 +36220,7 @@ fn build_search_aggregations(
                 let Some(raw) = raw else { continue };
                 let Some((bucket_key, bucket_string)) = date_histogram_bucket_with_offset(
                     raw,
-                    interval_millis,
+                    interval_kind,
                     offset_millis,
                     time_zone_offset_millis,
                     format,
@@ -36230,7 +36230,7 @@ fn build_search_aggregations(
                 if !fallback_date_histogram_bounds_contain(
                     hard_bounds.as_ref(),
                     bucket_key,
-                    interval_millis,
+                    interval_kind,
                     offset_millis,
                     time_zone_offset_millis,
                     format,
@@ -36242,7 +36242,7 @@ fn build_search_aggregations(
             }
             let buckets = render_date_histogram_bucket_values_from_counts(
                 &counts,
-                interval_millis,
+                interval_kind,
                 offset_millis,
                 time_zone_offset_millis,
                 format,
@@ -37304,24 +37304,26 @@ fn date_histogram_bucket_day(timestamp: &str) -> Option<(i64, String)> {
     Some((millis, format!("{date}T00:00:00.000Z")))
 }
 
+#[derive(Clone, Copy)]
+enum FallbackDateHistogramInterval {
+    FixedMillis(i64),
+    CalendarMonth,
+}
+
 fn date_histogram_bucket_with_offset(
     timestamp: &str,
-    interval_millis: i64,
+    interval: FallbackDateHistogramInterval,
     offset_millis: i64,
     time_zone_offset_millis: i64,
     format: Option<&str>,
 ) -> Option<(i64, String)> {
-    if interval_millis <= 0 {
-        return None;
-    }
     let millis = date_histogram_epoch_millis(timestamp)?;
-    let bucket_key = millis
-        .checked_add(time_zone_offset_millis)?
-        .checked_sub(offset_millis)?
-        .div_euclid(interval_millis)
-        .checked_mul(interval_millis)?
-        .checked_add(offset_millis)?
-        .checked_sub(time_zone_offset_millis)?;
+    let bucket_key = date_histogram_bucket_key_with_offset(
+        millis,
+        interval,
+        offset_millis,
+        time_zone_offset_millis,
+    )?;
     Some((
         bucket_key,
         date_histogram_key_as_string_from_epoch_millis(
@@ -37332,11 +37334,72 @@ fn date_histogram_bucket_with_offset(
     ))
 }
 
-fn date_histogram_fixed_step_millis(interval: &str) -> Option<i64> {
+fn date_histogram_bucket_key_with_offset(
+    epoch_millis: i64,
+    interval: FallbackDateHistogramInterval,
+    offset_millis: i64,
+    time_zone_offset_millis: i64,
+) -> Option<i64> {
+    let shifted = epoch_millis
+        .checked_add(time_zone_offset_millis)?
+        .checked_sub(offset_millis)?;
     match interval {
-        "minute" | "1m" => Some(60_000),
-        "hour" | "1h" => Some(3_600_000),
-        "day" | "1d" => Some(86_400_000),
+        FallbackDateHistogramInterval::FixedMillis(interval_millis) => {
+            if interval_millis <= 0 {
+                return None;
+            }
+            shifted
+                .div_euclid(interval_millis)
+                .checked_mul(interval_millis)?
+                .checked_add(offset_millis)?
+                .checked_sub(time_zone_offset_millis)
+        }
+        FallbackDateHistogramInterval::CalendarMonth => {
+            let days = shifted.div_euclid(86_400_000);
+            let (year, month, _) = civil_from_days(days)?;
+            days_from_civil(year, month, 1)?
+                .checked_mul(86_400_000)?
+                .checked_add(offset_millis)?
+                .checked_sub(time_zone_offset_millis)
+        }
+    }
+}
+
+fn next_date_histogram_bucket_key(
+    key: i64,
+    interval: FallbackDateHistogramInterval,
+    offset_millis: i64,
+    time_zone_offset_millis: i64,
+) -> Option<i64> {
+    match interval {
+        FallbackDateHistogramInterval::FixedMillis(interval_millis) => {
+            key.checked_add(interval_millis)
+        }
+        FallbackDateHistogramInterval::CalendarMonth => {
+            let local_key = key
+                .checked_add(time_zone_offset_millis)?
+                .checked_sub(offset_millis)?;
+            let days = local_key.div_euclid(86_400_000);
+            let (year, month, _) = civil_from_days(days)?;
+            let (next_year, next_month) = if month == 12 {
+                (year.checked_add(1)?, 1)
+            } else {
+                (year, month + 1)
+            };
+            days_from_civil(next_year, next_month, 1)?
+                .checked_mul(86_400_000)?
+                .checked_add(offset_millis)?
+                .checked_sub(time_zone_offset_millis)
+        }
+    }
+}
+
+fn date_histogram_interval_kind(interval: &str) -> Option<FallbackDateHistogramInterval> {
+    match interval {
+        "minute" | "1m" => Some(FallbackDateHistogramInterval::FixedMillis(60_000)),
+        "hour" | "1h" => Some(FallbackDateHistogramInterval::FixedMillis(3_600_000)),
+        "day" | "1d" => Some(FallbackDateHistogramInterval::FixedMillis(86_400_000)),
+        "month" | "1M" => Some(FallbackDateHistogramInterval::CalendarMonth),
         _ => None,
     }
 }
@@ -37529,7 +37592,7 @@ fn render_date_histogram_buckets(buckets: Vec<Value>, keyed: bool) -> Value {
 
 fn render_date_histogram_bucket_values_from_counts(
     counts: &std::collections::BTreeMap<i64, (String, u64)>,
-    interval_millis: i64,
+    interval: FallbackDateHistogramInterval,
     offset_millis: i64,
     time_zone_offset_millis: i64,
     format: Option<&str>,
@@ -37546,7 +37609,7 @@ fn render_date_histogram_bucket_values_from_counts(
             .and_then(|min| {
                 date_histogram_bucket_with_offset(
                     min,
-                    interval_millis,
+                    interval,
                     offset_millis,
                     time_zone_offset_millis,
                     format,
@@ -37562,7 +37625,7 @@ fn render_date_histogram_bucket_values_from_counts(
             .and_then(|max| {
                 date_histogram_bucket_with_offset(
                     max,
-                    interval_millis,
+                    interval,
                     offset_millis,
                     time_zone_offset_millis,
                     format,
@@ -37585,12 +37648,17 @@ fn render_date_histogram_bucket_values_from_counts(
         if !fallback_date_histogram_bounds_contain(
             hard_bounds,
             key,
-            interval_millis,
+            interval,
             offset_millis,
             time_zone_offset_millis,
             format,
         ) {
-            let Some(next) = key.checked_add(interval_millis) else {
+            let Some(next) = next_date_histogram_bucket_key(
+                key,
+                interval,
+                offset_millis,
+                time_zone_offset_millis,
+            ) else {
                 break;
             };
             if next <= key {
@@ -37614,7 +37682,12 @@ fn render_date_histogram_bucket_values_from_counts(
                 )
             });
         if doc_count < min_doc_count {
-            let Some(next) = key.checked_add(interval_millis) else {
+            let Some(next) = next_date_histogram_bucket_key(
+                key,
+                interval,
+                offset_millis,
+                time_zone_offset_millis,
+            ) else {
                 break;
             };
             if next <= key {
@@ -37628,7 +37701,9 @@ fn render_date_histogram_bucket_values_from_counts(
             "key_as_string": key_as_string,
             "doc_count": doc_count,
         }));
-        let Some(next) = key.checked_add(interval_millis) else {
+        let Some(next) =
+            next_date_histogram_bucket_key(key, interval, offset_millis, time_zone_offset_millis)
+        else {
             break;
         };
         if next <= key {
@@ -37642,7 +37717,7 @@ fn render_date_histogram_bucket_values_from_counts(
 fn fallback_date_histogram_bounds_contain(
     bounds: Option<&FallbackDateHistogramBounds>,
     key: i64,
-    interval_millis: i64,
+    interval: FallbackDateHistogramInterval,
     offset_millis: i64,
     time_zone_offset_millis: i64,
     format: Option<&str>,
@@ -37656,7 +37731,7 @@ fn fallback_date_histogram_bounds_contain(
         .and_then(|max| {
             date_histogram_bucket_with_offset(
                 max,
-                interval_millis,
+                interval,
                 offset_millis,
                 time_zone_offset_millis,
                 format,
@@ -37674,7 +37749,7 @@ fn fallback_date_histogram_bounds_contain(
         .and_then(|min| {
             date_histogram_bucket_with_offset(
                 min,
-                interval_millis,
+                interval,
                 offset_millis,
                 time_zone_offset_millis,
                 format,
