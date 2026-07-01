@@ -122,6 +122,7 @@
         "fuzzy_query_prefix_length_miss_search",
         "fuzzy_query_transpositions_search",
         "fuzzy_query_transpositions_disabled_search",
+        "distance_feature_common_options_search",
         "geo_distance_query_search",
         "geo_shape_envelope_query_search",
         "ids_query_search",

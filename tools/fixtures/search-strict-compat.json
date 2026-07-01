@@ -3703,6 +3703,34 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "distance_feature_common_options_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "distance_feature": {
+            "field": "ts",
+            "origin": "2026-04-22T00:00:00Z",
+            "pivot": "5m",
+            "boost": 1.0,
+            "_name": "named_distance_feature"
+          }
+        },
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] distance_feature query accepts common OpenSearch options",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "script_query_search",
       "area": "search",
       "method": "POST",

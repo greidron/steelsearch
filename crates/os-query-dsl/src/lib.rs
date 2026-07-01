@@ -3867,12 +3867,21 @@ fn parse_distance_feature(body: &Value) -> QueryDslResult<Query> {
             field: "pivot".to_string(),
         })?;
 
-    for (option, _) in object {
-        if option != "field" && option != "origin" && option != "pivot" {
-            return Err(QueryDslError::UnsupportedOption {
-                clause: "distance_feature".to_string(),
-                option: option.clone(),
-            });
+    for (option, value) in object {
+        match option.as_str() {
+            "field" | "origin" | "pivot" => {}
+            "boost" => {
+                parse_non_negative_f64_option("distance_feature", "boost", value)?;
+            }
+            "_name" => {
+                validate_optional_string_option(object, "distance_feature", "_name")?;
+            }
+            _ => {
+                return Err(QueryDslError::UnsupportedOption {
+                    clause: "distance_feature".to_string(),
+                    option: option.clone(),
+                });
+            }
         }
     }
 
@@ -6499,9 +6508,27 @@ mod tests {
             }
         }))
         .unwrap();
+        let with_common_options = parse_query(&serde_json::json!({
+            "distance_feature": {
+                "field": "published_at",
+                "origin": "2025-01-01T00:00:00Z",
+                "pivot": "7d",
+                "boost": 1.0,
+                "_name": "named_distance_feature"
+            }
+        }))
+        .unwrap();
 
         assert_eq!(
             query,
+            Query::DistanceFeature {
+                field: "published_at".to_string(),
+                origin: serde_json::json!("2025-01-01T00:00:00Z"),
+                pivot: serde_json::json!("7d"),
+            }
+        );
+        assert_eq!(
+            with_common_options,
             Query::DistanceFeature {
                 field: "published_at".to_string(),
                 origin: serde_json::json!("2025-01-01T00:00:00Z"),

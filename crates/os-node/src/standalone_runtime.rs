@@ -29179,12 +29179,28 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
                 "unsupported distance_feature query shape",
             ));
         }
-        if spec
-            .keys()
-            .any(|key| key != "field" && key != "origin" && key != "pivot")
-        {
+        if spec.keys().any(|key| {
+            !matches!(
+                key.as_str(),
+                "field" | "origin" | "pivot" | "boost" | "_name"
+            )
+        }) {
             return Some(build_unsupported_search_response(
                 "unsupported distance_feature parameter",
+            ));
+        }
+        if spec.get("boost").is_some_and(|value| {
+            !value
+                .as_f64()
+                .is_some_and(|number| number.is_finite() && number >= 0.0)
+        }) {
+            return Some(build_unsupported_search_response(
+                "unsupported distance_feature boost",
+            ));
+        }
+        if spec.get("_name").is_some_and(|value| !value.is_string()) {
+            return Some(build_unsupported_search_response(
+                "unsupported distance_feature _name",
             ));
         }
     }
