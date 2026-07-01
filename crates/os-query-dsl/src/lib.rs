@@ -957,6 +957,13 @@ fn parse_terms_aggregation(body: &Value) -> QueryDslResult<Aggregation> {
             }
         }
     }
+    if include.as_ref().is_some_and(terms_include_is_partition) && exclude.is_some() {
+        return Err(QueryDslError::InvalidValue {
+            clause: "terms".to_string(),
+            field: "exclude".to_string(),
+            reason: "cannot specify exclude when using a partition-based include".to_string(),
+        });
+    }
 
     Ok(Aggregation::Terms(TermsAggregation {
         field,
@@ -977,10 +984,39 @@ fn parse_terms_include_exclude_option(field: &str, value: &Value) -> QueryDslRes
             return Ok(value.clone());
         }
     }
+    if field == "include" && terms_include_is_valid_partition(value) {
+        return Ok(value.clone());
+    }
     Err(QueryDslError::InvalidValue {
         clause: "terms".to_string(),
         field: field.to_string(),
-        reason: "expected string regex or string array value".to_string(),
+        reason: if field == "include" {
+            "expected string regex, string array value, or partition object".to_string()
+        } else {
+            "expected string regex or string array value".to_string()
+        },
+    })
+}
+
+fn terms_include_is_valid_partition(value: &Value) -> bool {
+    let Some(object) = value.as_object() else {
+        return false;
+    };
+    if object.len() != 2 {
+        return false;
+    }
+    let Some(partition) = object.get("partition").and_then(Value::as_u64) else {
+        return false;
+    };
+    let Some(num_partitions) = object.get("num_partitions").and_then(Value::as_u64) else {
+        return false;
+    };
+    num_partitions > 0 && partition < num_partitions
+}
+
+fn terms_include_is_partition(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object.contains_key("partition") || object.contains_key("num_partitions")
     })
 }
 
@@ -6879,6 +6915,62 @@ mod tests {
                 exclude: None
             })
         );
+    }
+
+    #[test]
+    fn parses_terms_aggregation_partition_include_option() {
+        let aggregations = parse_search_aggregations(&serde_json::json!({
+            "aggs": {
+                "by_service": {
+                    "terms": {
+                        "field": "service",
+                        "include": {
+                            "partition": 1,
+                            "num_partitions": 3
+                        }
+                    }
+                }
+            }
+        }))
+        .unwrap();
+
+        assert_eq!(
+            aggregations["by_service"],
+            Aggregation::Terms(TermsAggregation {
+                field: "service".to_string(),
+                size: 10,
+                missing: None,
+                min_doc_count: 1,
+                include: Some(serde_json::json!({
+                    "partition": 1,
+                    "num_partitions": 3
+                })),
+                exclude: None
+            })
+        );
+    }
+
+    #[test]
+    fn rejects_terms_aggregation_partition_include_with_exclude() {
+        let error = parse_search_aggregations(&serde_json::json!({
+            "aggs": {
+                "by_service": {
+                    "terms": {
+                        "field": "service",
+                        "include": {
+                            "partition": 1,
+                            "num_partitions": 3
+                        },
+                        "exclude": ["catalog"]
+                    }
+                }
+            }
+        }))
+        .unwrap_err();
+
+        assert!(error
+            .to_string()
+            .contains("cannot specify exclude when using a partition-based include"));
     }
 
     #[test]

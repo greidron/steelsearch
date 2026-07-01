@@ -35595,6 +35595,15 @@ fn build_search_aggregations(
                 .get("field")
                 .and_then(Value::as_str)
                 .unwrap_or_default();
+            if terms
+                .get("include")
+                .is_some_and(aggregation_include_filter_is_partition)
+                && terms.contains_key("exclude")
+            {
+                return Err(build_unsupported_search_response(
+                    "Cannot specify any excludes when using a partition-based include",
+                ));
+            }
             let missing = terms
                 .get("missing")
                 .filter(|value| !value.is_array() && !value.is_object() && !value.is_null());
@@ -37067,8 +37076,60 @@ fn aggregation_term_matches_filter(value: &Value, filter: &Value) -> Result<bool
         Value::Array(values) => Ok(values
             .iter()
             .any(|candidate| sort_key == aggregation_bucket_sort_key(candidate))),
+        Value::Object(object) => Ok(aggregation_term_matches_partition(value, object)),
         _ => Ok(false),
     }
+}
+
+fn aggregation_term_matches_partition(
+    value: &Value,
+    object: &serde_json::Map<String, Value>,
+) -> bool {
+    let Some(partition) = object.get("partition").and_then(Value::as_u64) else {
+        return false;
+    };
+    let Some(num_partitions) = object.get("num_partitions").and_then(Value::as_u64) else {
+        return false;
+    };
+    if num_partitions == 0 || partition >= num_partitions {
+        return false;
+    }
+    let hash = aggregation_term_partition_hash(value);
+    hash.rem_euclid(num_partitions as i64) == partition as i64
+}
+
+fn aggregation_include_filter_is_partition(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object.contains_key("partition") || object.contains_key("num_partitions")
+    })
+}
+
+fn aggregation_term_partition_hash(value: &Value) -> i64 {
+    match value {
+        Value::Number(number) => {
+            if let Some(value) = number.as_i64() {
+                opensearch_bit_mixer_mix64(value)
+            } else if let Some(value) = number.as_u64() {
+                opensearch_bit_mixer_mix64(value as i64)
+            } else if let Some(value) = number.as_f64() {
+                opensearch_bit_mixer_mix64(value.to_bits() as i64)
+            } else {
+                opensearch_terms_partition_hash(aggregation_bucket_sort_key(value).as_bytes())
+            }
+        }
+        _ => opensearch_terms_partition_hash(aggregation_bucket_sort_key(value).as_bytes()),
+    }
+}
+
+fn opensearch_terms_partition_hash(value: &[u8]) -> i64 {
+    opensearch_murmur3_x86_32(value, 31)
+}
+
+fn opensearch_bit_mixer_mix64(value: i64) -> i64 {
+    let mut z = value as u64;
+    z = (z ^ (z >> 32)).wrapping_mul(0x4cd6_944c_5cc2_0b6d);
+    z = (z ^ (z >> 29)).wrapping_mul(0xfc12_c5b1_9d32_59e9);
+    (z ^ (z >> 32)) as i64
 }
 
 fn aggregation_multi_terms_sort_key(values: &[Value]) -> String {

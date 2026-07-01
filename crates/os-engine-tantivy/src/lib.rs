@@ -39370,6 +39370,7 @@ fn aggregation_term_matches_filter(value: &Value, filter: &Value) -> bool {
         Value::Array(values) => values
             .iter()
             .any(|candidate| term_key == aggregation_term_filter_key(candidate)),
+        Value::Object(object) => aggregation_term_matches_partition(value, object),
         _ => false,
     }
 }
@@ -39379,6 +39380,98 @@ fn aggregation_term_filter_key(value: &Value) -> String {
         Value::String(value) => value.clone(),
         other => other.to_string(),
     }
+}
+
+fn aggregation_term_matches_partition(
+    value: &Value,
+    object: &serde_json::Map<String, Value>,
+) -> bool {
+    let Some(partition) = object.get("partition").and_then(Value::as_u64) else {
+        return false;
+    };
+    let Some(num_partitions) = object.get("num_partitions").and_then(Value::as_u64) else {
+        return false;
+    };
+    if num_partitions == 0 || partition >= num_partitions {
+        return false;
+    }
+    let hash = aggregation_term_partition_hash(value);
+    hash.rem_euclid(num_partitions as i64) == partition as i64
+}
+
+fn aggregation_term_partition_hash(value: &Value) -> i64 {
+    match value {
+        Value::Number(number) => {
+            if let Some(value) = number.as_i64() {
+                opensearch_bit_mixer_mix64(value)
+            } else if let Some(value) = number.as_u64() {
+                opensearch_bit_mixer_mix64(value as i64)
+            } else if let Some(value) = number.as_f64() {
+                opensearch_bit_mixer_mix64(value.to_bits() as i64)
+            } else {
+                opensearch_terms_partition_hash(aggregation_term_filter_key(value).as_bytes())
+            }
+        }
+        _ => opensearch_terms_partition_hash(aggregation_term_filter_key(value).as_bytes()),
+    }
+}
+
+fn opensearch_terms_partition_hash(value: &[u8]) -> i64 {
+    opensearch_murmur3_x86_32(value, 31)
+}
+
+fn opensearch_murmur3_x86_32(value: &[u8], seed: u32) -> i64 {
+    let mut hash = seed;
+    let mut chunks = value.chunks_exact(4);
+    for chunk in &mut chunks {
+        let mut k = u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
+        k = k.wrapping_mul(0xcc9e2d51);
+        k = k.rotate_left(15);
+        k = k.wrapping_mul(0x1b873593);
+
+        hash ^= k;
+        hash = hash.rotate_left(13);
+        hash = hash.wrapping_mul(5).wrapping_add(0xe6546b64);
+    }
+
+    let tail = chunks.remainder();
+    let mut k = 0_u32;
+    match tail.len() {
+        3 => {
+            k ^= u32::from(tail[2]) << 16;
+            k ^= u32::from(tail[1]) << 8;
+            k ^= u32::from(tail[0]);
+        }
+        2 => {
+            k ^= u32::from(tail[1]) << 8;
+            k ^= u32::from(tail[0]);
+        }
+        1 => {
+            k ^= u32::from(tail[0]);
+        }
+        _ => {}
+    }
+    if !tail.is_empty() {
+        k = k.wrapping_mul(0xcc9e2d51);
+        k = k.rotate_left(15);
+        k = k.wrapping_mul(0x1b873593);
+        hash ^= k;
+    }
+
+    hash ^= value.len() as u32;
+    hash ^= hash >> 16;
+    hash = hash.wrapping_mul(0x85ebca6b);
+    hash ^= hash >> 13;
+    hash = hash.wrapping_mul(0xc2b2ae35);
+    hash ^= hash >> 16;
+    i32::from_ne_bytes(hash.to_ne_bytes()) as i64
+}
+
+fn opensearch_bit_mixer_mix64(value: i64) -> i64 {
+    let mut z = value as u64;
+    z = (z ^ (z >> 32)).wrapping_mul(0x4cd6_944c_5cc2_0b6d);
+    z = (z ^ (z >> 29)).wrapping_mul(0xfc12_c5b1_9d32_59e9);
+    (z ^ (z >> 32)) as i64
 }
 
 fn range_bucket_key(range: &os_query_dsl::RangeBucket) -> String {
@@ -141875,6 +141968,93 @@ mod tests {
                         {
                             "key": "api",
                             "doc_count": 2
+                        }
+                    ]
+                }
+            })
+        );
+    }
+
+    #[test]
+    fn terms_aggregation_partition_include_option_preserves_opensearch_shape() {
+        let engine = TantivyEngine::default();
+        engine
+            .create_index(CreateIndexRequest {
+                index: "logs-000001".to_string(),
+                settings: serde_json::json!({}),
+                mappings: serde_json::json!({
+                    "properties": {
+                        "service": { "type": "keyword" }
+                    }
+                }),
+            })
+            .unwrap();
+
+        for (id, service) in [
+            ("1", "checkout"),
+            ("2", "checkout"),
+            ("3", "catalog"),
+            ("4", "auth"),
+        ] {
+            engine
+                .index_document(IndexDocumentRequest {
+                    index: "logs-000001".to_string(),
+                    id: id.to_string(),
+                    source: serde_json::json!({
+                        "service": service
+                    }),
+                })
+                .unwrap();
+        }
+        engine
+            .refresh(RefreshRequest {
+                indices: vec!["logs-000001".to_string()],
+            })
+            .unwrap();
+
+        let body = engine
+            .search(SearchRequest {
+                indices: vec!["logs-000001".to_string()],
+                query: serde_json::json!({ "match_all": {} }),
+                aggregations: serde_json::json!({
+                    "by_service": {
+                        "terms": {
+                            "field": "service",
+                            "include": {
+                                "partition": 1,
+                                "num_partitions": 3
+                            }
+                        }
+                    }
+                }),
+                sort: Vec::new(),
+                from: 0,
+                size: 0,
+                stored_fields: None,
+                source_fields: None,
+                source_filter: None,
+                source_includes: None,
+                source_include: None,
+                source_excludes: None,
+                source_exclude: None,
+                highlight: None,
+                explain: false,
+            })
+            .unwrap()
+            .to_opensearch_body(0);
+
+        assert_eq!(
+            body["aggregations"],
+            serde_json::json!({
+                "by_service": {
+                    "buckets": [
+                        {
+                            "key": "checkout",
+                            "doc_count": 2
+                        },
+                        {
+                            "key": "auth",
+                            "doc_count": 1
                         }
                     ]
                 }
