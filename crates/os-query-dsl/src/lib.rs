@@ -4773,8 +4773,11 @@ fn interval_regexp_spec_is_supported(regexp_spec: &serde_json::Map<String, Value
                 || key == "max_expansions"
                 || key == "case_insensitive"
                 || key == "filter"
+                || key == "flags"
+                || key == "flags_value"
         })
         && interval_filter_is_supported(regexp_spec)
+        && interval_regexp_flags_are_supported(regexp_spec)
         && regexp_spec.get("use_field").map_or(true, |use_field| {
             use_field.as_str().is_some_and(|field| !field.is_empty())
         })
@@ -4784,6 +4787,28 @@ fn interval_regexp_spec_is_supported(regexp_spec: &serde_json::Map<String, Value
         && regexp_spec
             .get("case_insensitive")
             .map_or(true, Value::is_boolean)
+}
+
+fn interval_regexp_flags_are_supported(regexp_spec: &serde_json::Map<String, Value>) -> bool {
+    regexp_spec
+        .get("flags")
+        .map_or(true, interval_regexp_flags_value_is_supported)
+        && regexp_spec
+            .get("flags_value")
+            .map_or(true, |value| value.as_i64().is_some_and(|value| value >= 0))
+}
+
+fn interval_regexp_flags_value_is_supported(value: &Value) -> bool {
+    let Some(flags) = value.as_str() else {
+        return value.is_null();
+    };
+    flags.split('|').all(|flag| {
+        flag.is_empty()
+            || matches!(
+                flag.to_ascii_uppercase().as_str(),
+                "INTERSECTION" | "COMPLEMENT" | "EMPTY" | "ANYSTRING" | "INTERVAL" | "NONE" | "ALL"
+            )
+    })
 }
 
 fn interval_fuzzy_spec_is_supported(fuzzy_spec: &serde_json::Map<String, Value>) -> bool {
@@ -7693,6 +7718,56 @@ mod tests {
                     "match": {
                         "query": "checkout service",
                         "analyzer": "keyword"
+                    }
+                }),
+            }
+        );
+
+        let regexp_flags = parse_query(&serde_json::json!({
+            "intervals": {
+                "message": {
+                    "regexp": {
+                        "pattern": "pay.*",
+                        "flags": "ALL",
+                        "max_expansions": 10
+                    }
+                }
+            }
+        }))
+        .unwrap();
+        assert_eq!(
+            regexp_flags,
+            Query::Intervals {
+                field: "message".to_string(),
+                spec: serde_json::json!({
+                    "regexp": {
+                        "pattern": "pay.*",
+                        "flags": "ALL",
+                        "max_expansions": 10
+                    }
+                }),
+            }
+        );
+
+        let regexp_flags_value = parse_query(&serde_json::json!({
+            "intervals": {
+                "message": {
+                    "regexp": {
+                        "pattern": "payment",
+                        "flags_value": 0
+                    }
+                }
+            }
+        }))
+        .unwrap();
+        assert_eq!(
+            regexp_flags_value,
+            Query::Intervals {
+                field: "message".to_string(),
+                spec: serde_json::json!({
+                    "regexp": {
+                        "pattern": "payment",
+                        "flags_value": 0
                     }
                 }),
             }

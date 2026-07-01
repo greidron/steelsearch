@@ -153057,6 +153057,29 @@ mod tests {
             }
         }))
         .unwrap();
+        let regexp_flags_query = parse_query(&serde_json::json!({
+            "intervals": {
+                "message": {
+                    "regexp": {
+                        "pattern": "pay.*",
+                        "flags": "ALL",
+                        "max_expansions": 10
+                    }
+                }
+            }
+        }))
+        .unwrap();
+        let regexp_flags_value_query = parse_query(&serde_json::json!({
+            "intervals": {
+                "message": {
+                    "regexp": {
+                        "pattern": "payment",
+                        "flags_value": 0
+                    }
+                }
+            }
+        }))
+        .unwrap();
         let fuzzy_query = parse_query(&serde_json::json!({
             "intervals": {
                 "message": {
@@ -153121,6 +153144,16 @@ mod tests {
             .unwrap()
             .expect("native intervals regexp hits");
         assert_eq!(search_hit_ids(&regexp_hits), vec!["2"]);
+        let regexp_flags_hits = index
+            .search_hits_for_query_native("bench", &regexp_flags_query, &[])
+            .unwrap()
+            .expect("native intervals regexp flags hits");
+        assert_eq!(search_hit_ids(&regexp_flags_hits), vec!["2"]);
+        let regexp_flags_value_hits = index
+            .search_hits_for_query_native("bench", &regexp_flags_value_query, &[])
+            .unwrap()
+            .expect("native intervals regexp flags_value hits");
+        assert_eq!(search_hit_ids(&regexp_flags_value_hits), vec!["2"]);
         let fuzzy_hits = index
             .search_hits_for_query_native("bench", &fuzzy_query, &[])
             .unwrap()

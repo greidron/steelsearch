@@ -5083,6 +5083,65 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "intervals_regexp_flags_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "intervals": {
+            "message": {
+              "regexp": {
+                "pattern": "pay.*",
+                "flags": "ALL",
+                "max_expansions": 10
+              }
+            }
+          }
+        },
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] intervals regexp accepts OpenSearch flags parameter",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "intervals_regexp_flags_value_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "intervals": {
+            "message": {
+              "regexp": {
+                "pattern": "payment",
+                "flags_value": 0
+              }
+            }
+          }
+        },
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] intervals regexp accepts OpenSearch flags_value parameter",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "intervals_fuzzy_query_search",
       "area": "search",
       "method": "POST",
